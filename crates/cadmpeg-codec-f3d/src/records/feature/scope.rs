@@ -101,6 +101,16 @@ cadmpeg_core::named_optional_field!(
     "envelope_offset"
 );
 cadmpeg_core::named_optional_field!(
+    deserialize_tail_flags_wide_state,
+    cadmpeg_ir::native::bytes::NativeBytes<[u8; 3]>,
+    "wide_state"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_companion_suppressed,
+    crate::records::identity::Located<bool>,
+    "companion_suppressed"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_deleted_members,
     super::deleted_members::DesignDeletedMembers,
     "deleted_members"
@@ -549,10 +559,18 @@ impl ScopePayloadCompleteness for DesignCombineScope {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DesignScopeTailFlags {
-    /// State bytes 0 and 1. Either byte set marks the feature suppressed.
+    /// State bytes 0 and 1, each set when it is not zero. Either byte set
+    /// marks the feature suppressed.
     pub(crate) suppression: [bool; 2],
-    /// State byte 2.
+    /// State byte 2, set when it is not zero.
     pub(crate) unevaluated: bool,
+    /// The three state bytes as stored, where one of them is above `1`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_tail_flags_wide_state"
+    )]
+    pub(crate) wide_state: Option<cadmpeg_ir::native::bytes::NativeBytes<[u8; 3]>>,
     /// Byte offset of state byte 0; state bytes 1 and 2 follow it.
     pub(crate) state_offset: u64,
     /// The no-result flag `s0`: the stored history-state identities hold no
@@ -579,20 +597,55 @@ impl DesignScopeTailFlags {
         self.suppression.contains(&true)
     }
 
-    /// The assumption under which a feature whose flags store no current
-    /// result and no suppression is read as active.
-    pub(crate) fn active_without_result(&self) -> Option<crate::loss::F3dLossCode> {
+    /// The three state bytes as stored.
+    pub(crate) fn stored_state(&self) -> [u8; 3] {
+        self.wide_state.map_or_else(
+            || {
+                [
+                    u8::from(self.suppression[0]),
+                    u8::from(self.suppression[1]),
+                    u8::from(self.unevaluated),
+                ]
+            },
+            cadmpeg_ir::native::bytes::NativeBytes::into_inner,
+        )
+    }
+
+    /// The loss notes of the assumptions under which the feature that
+    /// `subject` names is read from these flags.
+    pub(crate) fn assumption_notes(
+        &self,
+        subject: &str,
+    ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
         use crate::loss::F3dLossCode;
-        (self.no_result && !self.suppressed()).then_some(if self.unevaluated {
-            F3dLossCode::FeatureUnevaluatedStateAssumed
-        } else {
-            F3dLossCode::FeatureNoResultActiveAssumed
-        })
+        let wide = self.wide_state.map(|state| {
+            let state = state.into_inner();
+            let bytes = (0..3)
+                .filter(|byte| state[*byte] > 1)
+                .map(|byte| format!("{} at state byte {byte}", state[byte]))
+                .collect::<Vec<_>>()
+                .join(" and ");
+            F3dLossCode::FeatureStateByteAboveOne.note(format!(
+                "{subject} stores {bytes}; a state byte that is not zero is read as set (open item DR-1032)"
+            ))
+        });
+        let active = (self.no_result && !self.suppressed()).then(|| {
+            let code = if self.unevaluated {
+                F3dLossCode::FeatureUnevaluatedStateAssumed
+            } else {
+                F3dLossCode::FeatureNoResultActiveAssumed
+            };
+            code.note(format!(
+                "{subject} stores the no-result flag and no suppression state byte; it is read as an active feature with no current result"
+            ))
+        });
+        wide.into_iter().chain(active).collect()
     }
 
     /// Whether `scope` can hold these flags: state bytes set only with the
-    /// no-result flag, the state bytes before the lane flags, both in its own
-    /// tail before its paired header or, from the earlier envelope at
+    /// no-result flag, stored state bytes that agree with the set bytes and
+    /// hold a byte above `1`, the state bytes before the lane flags, both in
+    /// its own tail before its paired header or, from the earlier envelope at
     /// `envelope_offset`, after that envelope's start and before `scope`'s
     /// start.
     pub(crate) fn lie_within(&self, scope: &DesignParameterScope) -> bool {
@@ -603,7 +656,14 @@ impl DesignScopeTailFlags {
             return false;
         };
         let consistent = self.no_result || (self.suppression == [false; 2] && !self.unevaluated);
+        let wide = self.wide_state.is_none_or(|state| {
+            let state = state.into_inner();
+            state.iter().any(|byte| *byte > 1)
+                && self.suppression == [state[0] != 0, state[1] != 0]
+                && self.unevaluated == (state[2] != 0)
+        });
         consistent
+            && wide
             && state_end <= self.no_result_offset
             && match self.envelope_offset {
                 None => {
@@ -1065,6 +1125,9 @@ pub(crate) struct DesignParameterScope {
     /// Timeline state bytes and lane flags of the tail.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) tail_flags: Option<DesignScopeTailFlags>,
+    /// Suppression flag of the 88-byte Thread companion tail.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) companion_suppressed: Option<crate::records::identity::Located<bool>>,
     /// ASM delta-state identity produced by this scope, when active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     history_state_id: Option<i64>,
@@ -1228,6 +1291,13 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_tail_flags"
     )]
     tail_flags: Option<DesignScopeTailFlags>,
+    /// Suppression flag of the 88-byte Thread companion tail.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_companion_suppressed"
+    )]
+    companion_suppressed: Option<crate::records::identity::Located<bool>>,
     /// ASM delta-state identity produced by this scope, when active.
     #[serde(
         default,
@@ -2826,7 +2896,21 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         }
         admitted.source_kind = wire.source_kind;
         admitted.display_name = wire.display_name;
+        if wire.companion_suppressed.is_some_and(|flag| {
+            use crate::layout::thread_hole_companion_tail as companion;
+            let tail = admitted.feature_ordinal_offset;
+            admitted.kind() != DesignFeatureKind::Thread
+                || wire.tail_flags.is_some()
+                || admitted.paired_byte_offset.checked_sub(tail)
+                    != Some(u64_from_index(companion::LEN))
+                || tail.checked_add(u64_from_index(companion::FLAGS)) != Some(flag.offset)
+        }) {
+            return Err(DesignParameterScopePayloadError(
+                "companion_suppressed outside a Thread companion tail".into(),
+            ));
+        }
         admitted.tail_flags = wire.tail_flags;
+        admitted.companion_suppressed = wire.companion_suppressed;
         admitted.captured_positions = captured_positions;
         admitted.occurrence_transfer = occurrence_transfer;
         admitted.occurrence_transfer_intent = occurrence_transfer_intent;
@@ -2877,6 +2961,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             label: scope.label,
             display_name: scope.display_name,
             tail_flags: scope.tail_flags,
+            companion_suppressed: scope.companion_suppressed,
             history_state_id: scope.history_state_id,
             history_state_id_offset,
             previous_history_state_id: scope.previous_history_state_id,
@@ -3466,6 +3551,7 @@ impl DesignParameterScope {
             label: draft.label,
             display_name: None,
             tail_flags: None,
+            companion_suppressed: None,
             history_state_id: draft.history_state_id,
             previous_history_state_id: draft.previous_history_state_id,
             previous_history_state_id_offset: draft.previous_history_state_id_offset,

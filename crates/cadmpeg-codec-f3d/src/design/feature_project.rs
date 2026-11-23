@@ -1319,17 +1319,14 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             str::to_owned,
                         ),
                 ),
-                suppressed: Some(match scope.tail_flags {
-                    Some(flags) => {
-                        if let Some(code) = flags.active_without_result() {
-                            projection_losses.push(code.note(format!(
-                                "scope {} stores the no-result flag and no suppression state byte; it is read as an active feature with no current result",
-                                scope.id
-                            )));
-                        }
+                suppressed: Some(match (scope.tail_flags, scope.companion_suppressed) {
+                    (Some(flags), _) => {
+                        projection_losses
+                            .extend(flags.assumption_notes(&format!("scope {}", scope.id)));
                         flags.suppressed()
                     }
-                    None => {
+                    (None, Some(flag)) => flag.value,
+                    (None, None) => {
                         family.is_some_and(stateless_scope_is_suppressed)
                             && scope.history_state_id().is_none()
                             && scope.previous_history_state_id().is_none()
@@ -2665,7 +2662,7 @@ pub(crate) fn untyped_parameter_unit_count(parameters: &[DesignParameter]) -> us
         .count()
 }
 
-/// Whether a scope of this family whose tail stores no flags and whose
+/// Whether a scope of this family whose tail stores no timeline state and whose
 /// current and preceding history-state identities are null is suppressed. An
 /// active scope of these families changes ASM topology and carries both
 /// identities.
