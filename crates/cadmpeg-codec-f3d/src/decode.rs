@@ -988,6 +988,11 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 || thickness.is_none()
                 || (outward.is_none() && *mode != Some(cadmpeg_ir::features::operation_settings::ShellMode::BothSides))
         }
+        FeatureDefinition::Operation(FeatureOperation::ExtendSurface { faces, distance, method }) => {
+            !face_selection_is_resolved(faces)
+                || distance.is_none()
+                || matches!(method, cadmpeg_ir::features::surface_inputs::SurfaceExtension::Unresolved)
+        }
         FeatureDefinition::Operation(FeatureOperation::UntrimSurface { faces, loops, extension }) => {
             !face_selection_is_resolved(faces)
                 || extension.is_none()

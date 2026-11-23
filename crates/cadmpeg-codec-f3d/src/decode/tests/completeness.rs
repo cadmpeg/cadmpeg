@@ -274,6 +274,54 @@ fn trim_surface_completeness_accepts_an_explicit_cell_selection() {
 }
 
 #[test]
+fn extend_surface_completeness_requires_faces_distance_and_method() {
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::surface_inputs::SurfaceExtension;
+
+    let face = || {
+        FaceSelection::Faces(vec![
+            cadmpeg_ir::ids::FaceId::mint("f3d:test:face#target").expect("identity grammar")
+        ])
+    };
+    let distance = || cadmpeg_ir::scalar::PositiveLength::new(5.0);
+    let definition = |faces, distance, method| {
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::ExtendSurface {
+                faces,
+                distance,
+                method,
+            },
+        )
+    };
+    for method in [
+        SurfaceExtension::Natural,
+        SurfaceExtension::Linear,
+        SurfaceExtension::Perpendicular,
+    ] {
+        assert!(!feature_definition_is_incomplete(&definition(
+            face(),
+            distance(),
+            method
+        )));
+    }
+    assert!(feature_definition_is_incomplete(&definition(
+        FaceSelection::Native("f3d:test:design-record#500".into()),
+        distance(),
+        SurfaceExtension::Natural
+    )));
+    assert!(feature_definition_is_incomplete(&definition(
+        face(),
+        None,
+        SurfaceExtension::Natural
+    )));
+    assert!(feature_definition_is_incomplete(&definition(
+        face(),
+        distance(),
+        SurfaceExtension::Unresolved
+    )));
+}
+
+#[test]
 fn datum_axes_require_a_finite_nonzero_direction() {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};

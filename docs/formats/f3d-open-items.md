@@ -3016,7 +3016,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-**Note.** The decoder reads the extension method from the fixed scope prologue. With a positive distance, a scope with another prologue or a method code above `2` projects with `SurfaceExtension::Unresolved` and reports `feature.surface-extend-method-unresolved`. The decoder retains each boundary operation and reports `feature.surface-boundary-flag-record-assumed` when its trailing reference does not name a compact flag record.
+**Note.** The decoder reads the extension method from the fixed scope prologue. With a positive distance, a scope with another prologue or a method code above `2` projects with `SurfaceExtension::Unresolved` and reports `feature.surface-extend-method-unresolved`. When each boundary edge has one edge-recipe operand and each operand has one face in one input state, the decoder states those faces as the extended faces and reports `feature.surface-extend-edges-as-faces`; another boundary keeps its native reference. The decoder retains each boundary operation and reports `feature.surface-boundary-flag-record-assumed` when its trailing reference does not name a compact flag record.
 
 ### DR-312. Negative SurfaceExtend distance
 
