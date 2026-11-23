@@ -474,6 +474,12 @@ A `CLSID_JMTopologyProxy` object of 559 bytes selects one straight edge. Its
 the `f64` values at offsets 145, 153 and 161 are the unit edge direction,
 and the `f64` at offset 177 is the edge length. Lengths are metres.
 
+A proxy of another size `S` stores the edge start point at offset `S` - 438.
+The unit edge direction follows the start point after 24 bytes, and the edge
+length follows it after 56 bytes. The 559-byte offsets above are the case
+`S` = 559. A proxy of 563 bytes stores an 8-byte header extension. A proxy of
+575 bytes stores two more `(u32 0, u32 n << 16)` pairs in its name list.
+
 ## 8. Patterns and mirrors
 
 ### 8.1 Pattern features
@@ -628,3 +634,59 @@ side `Double Value Object` 128 bytes after the end of its function name.
 The base tab is a flat sheet of the material thickness over the region of
 its profile. Side `2` puts the material along the profile normal `A`
 (§5.1) and side `1` against it.
+
+### 10.3 Flange
+
+A `CLSID_JMPart` feature with function `JMMultiFlangeFunction` stores these
+object identifiers after the end of its function name (§4.2):
+
+| Bytes after the name | Object |
+| ---: | --- |
+| 40 | the `CLSID_JMPart` feature that precedes this flange in the part |
+| 72 | the `CLSID_JMTopologyProxy` edge selection (§7.6) |
+| 100 | `CLSID_JDim` flange length |
+| 128 | `CLSID_JDim` entered angle |
+| 156 | `Double Value Object` material thickness, the document variable of §10.1 index 4 |
+| 184 | `Double Value Object` extent kind |
+| 240 | `Double Value Object` side |
+| 296 | `Double Value Object` inside bend radius |
+| 324 | `Double Value Object` neutral factor |
+| 380 | `Double Value Object` relief width |
+| 408 | `Double Value Object` relief length |
+| 440 | `Double Value Object` offset kind, `44` |
+| 492 | `CLSID_JDim` partial width, only where the extent kind is `135` |
+| 496 | `Double Value Object` relief type, where the extent kind is `134` |
+| 520 | `Double Value Object` relief type, where the extent kind is `135` |
+| 832 | `Double Value Object` bend method, the document variable of §10.1 index 13 |
+| 860 | `Double Value Object` bend deduction, the document variable of §10.1 index 11 |
+| 888 | `Double Value Object` bend allowance, the document variable of §10.1 index 12 |
+
+The slots from offset 492 on are 24 bytes later where the extent kind is
+`135` than where it is `134`. The slots at offsets 832, 860 and 888 are
+those of the extent kind `134` layout. The feature holds one edge. A flange
+that follows another flange in the part names that flange at offset 40.
+
+The extent kind is `134` for the full length of the edge and `135` for a
+width centred on the edge. The partial width is the stored whole-edge proxy
+and a `CLSID_JDim` at offset 492; the file stores no offset from either end
+of the edge. The side value `2` turns the flange towards the normal of the
+base face. The relief type is `53` for no relief, `51` for a square relief
+and `52` for a round relief.
+
+The length `CLSID_JDim` stores the flange length. The length runs from the
+outer sharp, the intersection of the outer faces of the base and the flange,
+to the top of the flange. The angle `CLSID_JDim` stores the entered angle
+`a`; the flange turns through the angle pi - `a` from the plane of the face
+that bounds the edge.
+
+The values at offsets 296, 324, 380 and 408 are objects of the flange, each
+bound to a document variable of §10.1 by one `Assoc subsystem Standard
+Relation implementation` object of 161 bytes. The `u32` at object offset 99
+is the identifier of the flange object. The `u32` at object offset 127 is
+the identifier of the document variable object (§10.1). A value that has a
+relation follows the document variable. A value that has no relation is set
+on the flange and holds its own number.
+
+A `JMBendTable` object stores 362 bytes and one 93-byte record per bend. In
+record `k`, the `f64` at object offset 374 + 93`k` is the inside bend radius
+and the `f64` at object offset 382 + 93`k` is the bend angle pi - `a`.

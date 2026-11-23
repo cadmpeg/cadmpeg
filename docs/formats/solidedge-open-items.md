@@ -106,8 +106,16 @@
 
 ### DR-1042. Bend relief length and shape
 
-**Question.** Which dimension of a bend relief does the relief length (§10.1) set, and where is the relief shape stored?
+**Question.** Which dimension of a bend relief does the relief length (§10.1) set?
 
-**Known.** The relief width and relief length variables hold the values set as the document defaults. A document with no flange has no bend relief to measure.
+**Known.** The relief width and relief length variables hold the values set as the document defaults. A flange stores its own relief width, relief length and relief type (§10.3).
 
-**Need.** A flange with a bend relief at two relief lengths, and a copy with each relief shape.
+**Need.** A flange with a bend relief at two relief lengths, and the flat pattern of each.
+
+### DR-1034. Flange constants and options
+
+**Question.** Which options set the flange object slots that hold the same value in every stored flange, and which values can the side, the relief type and the object header flag take?
+
+**Known.** The `Double Value Object` slots at offsets 212, 268, 352 and 460 of §10.3, the constants that follow the relief type, and the zero-valued `CLSID_JDim` that follows them hold the same value in every stored flange. The side is `2` in every stored flange. The relief type is `51`, `52` or `53`. The `u16` at object offset 18 of a flange object is `149` where the object has a relation and `157` where it has none. The field that selects the 8-byte header extension of a 563-byte edge proxy (§7.6) is not established.
+
+**Need.** Flanges with the side reversed, each other relief type, each other measure-point and material-side option, and the corner relief option, and a flange of each kind with its radius, relief width and relief length set on the flange.
