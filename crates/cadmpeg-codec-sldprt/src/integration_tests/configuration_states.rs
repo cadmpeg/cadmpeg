@@ -234,6 +234,22 @@ fn bodiless_note(losses: &[cadmpeg_ir::report::loss::LossNote]) -> Option<&str> 
         .map(|loss| loss.message.as_str())
 }
 
+/// A part with two configurations written with no retained source reads
+/// back with the active configuration's bodies in the geometry and the
+/// other configuration's bodies in its evaluation.
+#[test]
+fn a_part_written_without_its_source_keeps_every_configuration_state() {
+    let result = decode(two_configurations());
+    let ir = result.ir();
+    assert!(matches!(stored_states(ir).as_slice(), [(1, faces)] if *faces > 0));
+    let (_, written) = write_without_source(ir);
+    let reread = decode(written);
+    let back = reread.ir();
+    assert_eq!(back.geometry.bodies.len(), ir.geometry.bodies.len());
+    assert_eq!(back.geometry.faces.len(), ir.geometry.faces.len());
+    assert_eq!(stored_states(back), stored_states(ir));
+}
+
 /// The two configurations of [`two_configurations`], with the partition of
 /// the active one, `Second`, an empty partition/deltas model; `stored`
 /// gives `First` a one-triangle body, else an empty model too.
