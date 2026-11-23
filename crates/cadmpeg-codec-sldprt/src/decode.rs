@@ -3556,7 +3556,7 @@ fn build_geometry_ir(
         &supplemental_config_lanes,
     )?;
     let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
-    held_handles.hold_assumed_planes(
+    let (assumed_planes, mut top_references) =
         crate::resolved_features::profiles::project_compact_sketch_profiles(
             ctx,
             &mut ir.model.features,
@@ -3565,8 +3565,8 @@ fn build_geometry_ir(
             &histories,
             &lanes,
             &mut pmi_losses,
-        )?,
-    );
+        )?;
+    held_handles.hold_assumed_planes(assumed_planes);
     // Marker-backed sketches can originate in either lane family. Their
     // geometry and constraints must use the same complete lane set.
     let base_lane_count = lanes.len();
@@ -3582,26 +3582,28 @@ fn build_geometry_ir(
         );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
-    crate::resolved_features::profiles::project_marker_backed_sketches(
-        ctx,
-        &mut ir.model.features,
-        &mut sketches,
-        crate::resolved_features::profiles::MarkerSketchEntities {
-            projected: &mut sketch_entities,
-            held: &mut held_handles,
-        },
-        crate::resolved_features::profiles::MarkerSources {
-            histories: &histories,
-            lanes: sketch_lanes,
-            solid: &crate::resolved_features::stream_readings::SolidEdges::new(
-                &brep.edges,
-                &brep.vertices,
-                &brep.points,
-                &brep.curves,
-            ),
-        },
-        &mut pmi_losses,
-    )?;
+    top_references.extend(
+        crate::resolved_features::profiles::project_marker_backed_sketches(
+            ctx,
+            &mut ir.model.features,
+            &mut sketches,
+            crate::resolved_features::profiles::MarkerSketchEntities {
+                projected: &mut sketch_entities,
+                held: &mut held_handles,
+            },
+            crate::resolved_features::profiles::MarkerSources {
+                histories: &histories,
+                lanes: sketch_lanes,
+                solid: &crate::resolved_features::stream_readings::SolidEdges::new(
+                    &brep.edges,
+                    &brep.vertices,
+                    &brep.points,
+                    &brep.curves,
+                ),
+            },
+            &mut pmi_losses,
+        )?,
+    );
     crate::resolved_features::profiles::project_sketch_block_profiles(
         &mut ir.model.features,
         &mut sketches,
@@ -3902,6 +3904,7 @@ fn build_geometry_ir(
         &all_lanes,
         &exact_profiles,
         &mut annotations,
+        &mut top_references,
     )?;
     pmi_losses.extend(configuration_losses);
     crate::resolved_features::stream_readings::note_stream_readings(
@@ -4373,6 +4376,7 @@ fn build_geometry_ir(
             &mut pmi_losses,
         )?;
     }
+    pmi_losses.extend(top_references.note(&ir.model.sketches));
     // Sort arenas for the order-sensitive loss scans that follow.
     ir.finalize();
     stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;
@@ -4951,7 +4955,7 @@ fn build_metadata_ir(
         &supplemental_config_lanes,
     )?;
     let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
-    held_handles.hold_assumed_planes(
+    let (assumed_planes, mut top_references) =
         crate::resolved_features::profiles::project_compact_sketch_profiles(
             ctx,
             &mut ir.model.features,
@@ -4960,8 +4964,8 @@ fn build_metadata_ir(
             &histories,
             &lanes,
             &mut pmi_losses,
-        )?,
-    );
+        )?;
+    held_handles.hold_assumed_planes(assumed_planes);
     // Marker-backed sketches can originate in either lane family. Their
     // geometry and constraints must use the same complete lane set.
     let base_lane_count = lanes.len();
@@ -4977,21 +4981,23 @@ fn build_metadata_ir(
         );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
-    crate::resolved_features::profiles::project_marker_backed_sketches(
-        ctx,
-        &mut ir.model.features,
-        &mut ir.model.sketches,
-        crate::resolved_features::profiles::MarkerSketchEntities {
-            projected: &mut ir.model.sketch_entities,
-            held: &mut held_handles,
-        },
-        crate::resolved_features::profiles::MarkerSources {
-            histories: &histories,
-            lanes: sketch_lanes,
-            solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
-        },
-        &mut pmi_losses,
-    )?;
+    top_references.extend(
+        crate::resolved_features::profiles::project_marker_backed_sketches(
+            ctx,
+            &mut ir.model.features,
+            &mut ir.model.sketches,
+            crate::resolved_features::profiles::MarkerSketchEntities {
+                projected: &mut ir.model.sketch_entities,
+                held: &mut held_handles,
+            },
+            crate::resolved_features::profiles::MarkerSources {
+                histories: &histories,
+                lanes: sketch_lanes,
+                solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+            },
+            &mut pmi_losses,
+        )?,
+    );
     crate::resolved_features::profiles::project_sketch_block_profiles(
         &mut ir.model.features,
         &mut ir.model.sketches,
@@ -5194,6 +5200,7 @@ fn build_metadata_ir(
         lanes,
         &exact_profiles,
         &mut annotations,
+        &mut top_references,
     )?;
     pmi_losses.extend(configuration_losses);
     crate::resolved_features::stream_readings::note_stream_readings(
@@ -5293,6 +5300,7 @@ fn build_metadata_ir(
             &mut pmi_losses,
         )?;
     }
+    pmi_losses.extend(top_references.note(&ir.model.sketches));
     // Sort arenas for the order-sensitive loss scans that follow.
     ir.finalize();
     stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;

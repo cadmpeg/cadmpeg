@@ -155,6 +155,9 @@ pub(crate) enum SldprtLossCode {
     /// The marker sketch of a sketch feature stays unbound beside the
     /// profile-stream circle bound to the feature.
     SketchMarkerReadingUnbound,
+    /// A profile sketch is placed on the Top frame through the plane its
+    /// feature-input reference names, a binding open item DI-73 questions.
+    SketchTopPlaneBindingAssumed,
     /// A geometry-locus curve uses assumed zero-based sketch point-record indices.
     SketchPointRecordIndexBasisAssumed,
     /// A sketch handle takes the arc of its `sgSketch` curve record although
@@ -203,6 +206,12 @@ pub(crate) enum SldprtLossCode {
     FeatureExtrudeReversalAssumed,
     /// Extrusion start condition is not the sketch plane and has no supported reading.
     FeatureExtrudeStartUnresolved,
+    /// An offset reference plane keeps the side its `D1` sign gives: `D1` is a
+    /// magnitude and no stored frame of the object states the side (DI-81).
+    FeatureOffsetPlaneSideAssumed,
+    /// An offset reference plane stores a frame of its own that is not the
+    /// plane the decoder places from its source plane and `D1` (DI-81).
+    FeatureOffsetPlaneFrameConflict,
     /// Thin extrusion retains an ambiguous inline Boolean operation.
     FeatureThinOperationAmbiguous,
     /// Native edge selection has a refused terminal feature owner.
@@ -483,6 +492,7 @@ impl SldprtLossCode {
         Self::SketchMarkerRecordUnread,
         Self::SketchSecondReading,
         Self::SketchMarkerReadingUnbound,
+        Self::SketchTopPlaneBindingAssumed,
         Self::SketchPointRecordIndexBasisAssumed,
         Self::SketchArcRecordOffChord,
         Self::SketchProfileRejected,
@@ -504,6 +514,8 @@ impl SldprtLossCode {
         Self::FeatureExtrudeReversalContradicted,
         Self::FeatureExtrudeReversalAssumed,
         Self::FeatureExtrudeStartUnresolved,
+        Self::FeatureOffsetPlaneSideAssumed,
+        Self::FeatureOffsetPlaneFrameConflict,
         Self::FeatureThinOperationAmbiguous,
         Self::FeatureEdgeTerminalUnresolved,
         Self::FeatureBodyPathAmbiguous,
@@ -651,6 +663,7 @@ impl SldprtLossCode {
             Self::SketchMarkerRecordUnread => "sketch.marker-record-unread",
             Self::SketchSecondReading => "sketch.second-reading",
             Self::SketchMarkerReadingUnbound => "sketch.marker-reading-unbound",
+            Self::SketchTopPlaneBindingAssumed => "sketch.top-plane-binding-assumed",
             Self::SketchPointRecordIndexBasisAssumed => "sketch.point-record-index-basis-assumed",
             Self::SketchArcRecordOffChord => "sketch.arc-record-off-chord",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
@@ -669,6 +682,8 @@ impl SldprtLossCode {
             Self::FeatureExtrudeReversalContradicted => "feature.extrude-reversal-contradicted",
             Self::FeatureExtrudeReversalAssumed => "feature.extrude-reversal-assumed",
             Self::FeatureExtrudeStartUnresolved => "feature.extrude-start-unresolved",
+            Self::FeatureOffsetPlaneSideAssumed => "feature.offset-plane-side-assumed",
+            Self::FeatureOffsetPlaneFrameConflict => "feature.offset-plane-frame-conflict",
             Self::FeatureThinOperationAmbiguous => "feature.thin-operation-ambiguous",
             Self::FeatureEdgeTerminalUnresolved => "feature.edge-terminal-unresolved",
             Self::FeatureBodyPathAmbiguous => "feature.body-path-ambiguous",
@@ -858,6 +873,7 @@ impl SldprtLossCode {
             | Self::SketchMarkerReadingUnbound
             | Self::SketchPointRecordIndexBasisAssumed
             | Self::SketchArcRecordOffChord
+            | Self::SketchTopPlaneBindingAssumed
             | Self::SketchProfileRejected
             | Self::SketchListedLineConstructionAssumed
             | Self::SketchListedCurveRelationDropped
@@ -877,6 +893,8 @@ impl SldprtLossCode {
             | Self::FeatureExtrudeReversalContradicted
             | Self::FeatureExtrudeReversalAssumed
             | Self::FeatureExtrudeStartUnresolved
+            | Self::FeatureOffsetPlaneSideAssumed
+            | Self::FeatureOffsetPlaneFrameConflict
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureEdgeTerminalUnresolved
             | Self::FeatureBodyPathAmbiguous
@@ -1112,6 +1130,7 @@ impl SldprtLossCode {
             | Self::SketchMarkerReadingUnbound
             | Self::SketchPointRecordIndexBasisAssumed
             | Self::SketchArcRecordOffChord
+            | Self::SketchTopPlaneBindingAssumed
             | Self::SketchProfileRejected
             | Self::SketchListedLineConstructionAssumed
             | Self::SketchListedCurveRelationDropped
@@ -1131,6 +1150,8 @@ impl SldprtLossCode {
             | Self::FeatureExtrudeReversalContradicted
             | Self::FeatureExtrudeReversalAssumed
             | Self::FeatureExtrudeStartUnresolved
+            | Self::FeatureOffsetPlaneSideAssumed
+            | Self::FeatureOffsetPlaneFrameConflict
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureEdgeTerminalUnresolved
             | Self::FeatureBodyPathAmbiguous
@@ -1356,6 +1377,7 @@ mod tests {
                 "sketch.marker-record-unread",
                 "sketch.second-reading",
                 "sketch.marker-reading-unbound",
+                "sketch.top-plane-binding-assumed",
                 "sketch.point-record-index-basis-assumed",
                 "sketch.arc-record-off-chord",
                 "sketch.profile-rejected",
@@ -1377,6 +1399,8 @@ mod tests {
                 "feature.extrude-reversal-contradicted",
                 "feature.extrude-reversal-assumed",
                 "feature.extrude-start-unresolved",
+                "feature.offset-plane-side-assumed",
+                "feature.offset-plane-frame-conflict",
                 "feature.thin-operation-ambiguous",
                 "feature.edge-terminal-unresolved",
                 "feature.body-path-ambiguous",
