@@ -278,20 +278,14 @@ fn a_line_closing_a_c_ring_charges_an_extra_region() {
 }
 
 /// The top edge of the rectangle is read from a curve record of state `0`,
-/// and the rectangle closes only through it: the decoder's rule keeps it
-/// inside the profile, so it stays profile geometry and is not reported as
-/// construction. The stored profile holds only the circle, so the note
-/// names the rectangle's region as extra.
+/// and the rectangle closes only through it: it stays profile geometry and
+/// is not reported as construction. The stored profile holds only the
+/// circle, so the note names the rectangle's region as extra.
 #[test]
 fn a_curve_of_state_zero_that_closes_the_profile_stays_profile_geometry() {
     let (mut ir, _) = sketch_and_extrude();
     set_profiles(&mut ir, &[&[("hole", false)]]);
-    let outside = crate::design_v11::state_zero_outside(
-        &ir.model.sketch_entities,
-        &HashSet::from([entity("l2")]),
-    );
-    assert!(outside.is_empty(), "{outside:?}");
-    let (_, typed) = project(&mut ir, &outside);
+    let (_, typed) = project(&mut ir, &HashSet::from([entity("l2")]));
     let l2 = ir
         .design
         .sketch_entities

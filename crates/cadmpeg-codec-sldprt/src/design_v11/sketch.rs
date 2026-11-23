@@ -8,10 +8,11 @@
 //! `Unread` input of §5.9, with the stored frame as its value. A point record
 //! that several curves name is one point entity with a role for each, so a
 //! coincidence of two of its ends is that entity's. An entity is
-//! construction where the decoder marks it construction or reads it as a
-//! curve outside its sketch's profile ([`state_zero_outside`]); another
-//! entity states no flag. A dimension binds the parameter that holds its
-//! value, and states that parameter's quantity; a reference dimension makes the tree parameter
+//! construction where the decoder marks it construction or reads it from a
+//! curve record of state `0`, which no profile uses, except in a sketch
+//! where another curve closes a loop only with the curves of state `0`;
+//! another entity states no flag. A dimension binds the parameter that holds its value, and states
+//! that parameter's quantity; a reference dimension makes the tree parameter
 //! it binds `Driven`, and one whose parameter no tree node lists binds a
 //! `Driven` parameter minted for it. A sketch with a dimension that binds no
 //! parameter, or with an entity that has no planar curve, stays
@@ -88,8 +89,7 @@ pub(super) struct Context<'a> {
     /// The datum feature of the built-in plane each sketch feature's profile
     /// names, with that plane's principal entity.
     pub(super) supports: &'a HashMap<FeatureId, (FeatureId, PrincipalEntity)>,
-    /// The entities the decoder reads as curves outside their sketch's
-    /// profile ([`state_zero_outside`]).
+    /// The entities read from a curve record of state `0`.
     pub(super) outside_profile: &'a HashSet<SketchEntityId>,
 }
 
@@ -153,12 +153,18 @@ fn sketch(
     let mut failure = None;
     let mut sketch_entities = Vec::with_capacity(entities.len());
     let mut outside_profile = Vec::new();
-    for entity in &entities {
-        let Some(form) = curve(&entity.geometry) else {
+    let forms = entities
+        .iter()
+        .map(|entity| curve(&entity.geometry))
+        .collect::<Vec<_>>();
+    let needed = needed_state_zero(&entities, &forms, context.outside_profile);
+    for (entity, form) in entities.iter().zip(forms.iter().cloned()) {
+        let Some(form) = form else {
             failure.get_or_insert("a sketch entity has no planar curve");
             continue;
         };
-        let outside = context.outside_profile.contains(entity.id());
+        let outside =
+            context.outside_profile.contains(entity.id()) && !needed.contains(entity.id());
         if outside && !entity.construction {
             outside_profile.push(entity.id().clone());
         }
@@ -463,24 +469,17 @@ fn coincident(a: [f64; 2], b: [f64; 2]) -> bool {
         && (a[1] - b[1]).abs() <= EPS_SKETCH_INCIDENCE * scale
 }
 
-/// The curves of one sketch's `entities` read from a curve record of state
-/// `0` (`state_zero`) that stand outside the sketch's profile: every one,
-/// except in a sketch where another non-construction curve closes a loop
-/// only with the non-construction curves of state `0`; there those stay
-/// curves of the profile (`profile_check::needed`; `sldprt-open-items.md`
-/// EV-32). The marker projection decides this once, so the profile loops it
-/// resolves and the construction marks of the design follow one rule.
-pub(crate) fn state_zero_outside(
-    entities: &[cadmpeg_ir::sketches::SketchEntity],
-    state_zero: &HashSet<SketchEntityId>,
-) -> HashSet<SketchEntityId> {
-    let forms = entities
-        .iter()
-        .map(|entity| curve(&entity.geometry))
-        .collect::<Vec<_>>();
+/// The curves of `entities` read from a curve record of state `0`, with
+/// their construction bit clear, where the sketch's other non-construction
+/// curves close only through them (`profile_check::needed`).
+fn needed_state_zero<'a>(
+    entities: &[&'a cadmpeg_ir::sketches::SketchEntity],
+    forms: &'a [Option<PlanarCurve>],
+    outside_profile: &HashSet<SketchEntityId>,
+) -> HashSet<&'a SketchEntityId> {
     let mut live = HashMap::new();
-    let mut zero = HashMap::new();
-    for (entity, form) in entities.iter().zip(&forms) {
+    let mut state_zero = HashMap::new();
+    for (entity, form) in entities.iter().zip(forms) {
         let Some(form) = form
             .as_ref()
             .filter(|form| !matches!(form, PlanarCurve::Point(_)))
@@ -490,18 +489,13 @@ pub(crate) fn state_zero_outside(
         if entity.construction {
             continue;
         }
-        if state_zero.contains(entity.id()) {
-            zero.insert(entity.id(), form);
+        if outside_profile.contains(entity.id()) {
+            state_zero.insert(entity.id(), form);
         } else {
             live.insert(entity.id(), form);
         }
     }
-    let needed = profile_check::needed(&live, &zero);
-    state_zero
-        .iter()
-        .filter(|entity| !needed.contains(entity))
-        .cloned()
-        .collect()
+    profile_check::needed(&live, &state_zero)
 }
 
 /// The v11 curve of a decoded sketch entity, or `None` for a geometry the

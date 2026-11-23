@@ -93,24 +93,6 @@ fn record_read_curves_that_close_more_profiles_alone_give_the_profiles() {
     assert_eq!(members(&profiles), [["ab", "bc", "cd", "da"]]);
 }
 
-/// The square's bottom side is read from a curve record of state `0`, and
-/// the other sides close only through it: the rule keeps it inside the
-/// profile, and the square is the sketch's profile. A diagonal of state `0`
-/// beside the closed square stays outside (`sldprt-open-items.md` EV-32).
-#[test]
-fn a_curve_of_state_zero_the_profile_closes_through_joins_it() {
-    let entities = square();
-    let outside = crate::design_v11::state_zero_outside(&entities, &HashSet::from([id("ab")]));
-    assert!(outside.is_empty(), "{outside:?}");
-    let profiles = marker_sketch_profiles(&entities, |_| true, &outside);
-    assert_eq!(members(&profiles), [["ab", "bc", "cd", "da"]]);
-
-    let mut entities = square();
-    entities.push(line("ac", "a", "c"));
-    let outside = crate::design_v11::state_zero_outside(&entities, &HashSet::from([id("ac")]));
-    assert_eq!(outside, HashSet::from([id("ac")]));
-}
-
 /// A diagonal read from a curve record of state `0` joins no profile; read as
 /// a profile curve it would branch the square at two corners.
 #[test]
