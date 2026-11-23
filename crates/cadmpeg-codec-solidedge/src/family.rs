@@ -13,17 +13,19 @@ pub(crate) const MEMBERS_PATH: &str = "Master\u{1}/Family of Assemblies Members"
 const RECORD_TAG: [u8; 4] = *b"QQQ\0";
 /// Identifiers of members are `0xa000` plus a nonzero ordinal.
 const MEMBER_ID_BASE: u32 = 0xa000;
-/// The `u64` that starts every entry of a member's occurrence list.
-const ENTRY_WORD: u64 = 0x4000_0000;
-/// Bytes of one entry: the `u64` word and the `u32` object identifier.
-const ENTRY_LEN: usize = 12;
+/// Bytes of one entry of the list that precedes the occurrence list, and the
+/// bytes that follow that list.
+const PREFIX_ENTRY_LEN: usize = 4;
+const PREFIX_TAIL_LEN: usize = 12;
+/// Bytes of one block before the occurrence count: a `u32` `1`, a 16-byte
+/// class identifier and a `u32` `0`.
+const BLOCK_LEN: usize = 24;
+/// Bytes of one occurrence entry: the `u32` object identifier, the 13 `f64`
+/// words of the placement (§9.2) and three bytes.
+const ENTRY_LEN: usize = 4 + 13 * 8 + 3;
 
 fn u32_at(bytes: &[u8], at: usize) -> Option<u32> {
     View::u32_le_at(bytes, at)
-}
-
-fn u64_at(bytes: &[u8], at: usize) -> Option<u64> {
-    View::u64_le_at(bytes, at)
 }
 
 /// A name stored as a `u32` count of UTF-16LE units that includes the
@@ -59,12 +61,14 @@ fn record_starts(table: &[u8]) -> Vec<usize> {
 }
 
 /// The occurrence object identifiers the member table lists for the member
-/// `name`. The record ends with a `u32` count `n`, `n` entries and a `u32`
-/// trailer word.
+/// `name`. After the name the record holds a `u32` count `c`, `c` entries of
+/// `PREFIX_ENTRY_LEN` bytes and `PREFIX_TAIL_LEN` bytes, two blocks of
+/// `BLOCK_LEN` bytes, a `u32` count `n` and `n` entries of `ENTRY_LEN` bytes
+/// that start with the `u32` object identifier.
 pub(crate) fn listed_occurrences(table: &[u8], name: &str) -> Option<BTreeSet<u32>> {
     let starts = record_starts(table);
     for (index, &start) in starts.iter().enumerate() {
-        let Some((found, _)) = name_at(table, start + 8) else {
+        let Some((found, name_len)) = name_at(table, start + 8) else {
             continue;
         };
         if !found.eq_ignore_ascii_case(name) {
@@ -72,20 +76,25 @@ pub(crate) fn listed_occurrences(table: &[u8], name: &str) -> Option<BTreeSet<u3
         }
         let end = starts.get(index + 1).copied().unwrap_or(table.len());
         let record = table.get(start..end)?;
-        let body = record.len().checked_sub(4)?;
-        let most = body.checked_sub(4)? / ENTRY_LEN;
-        return (0..=most).rev().find_map(|count| {
-            let first = body.checked_sub(count * ENTRY_LEN)?;
-            let declared = u32_at(record, first.checked_sub(4)?)?;
-            (usize::try_from(declared) == Ok(count)).then_some(())?;
-            (0..count)
-                .map(|entry| {
-                    let at = first + entry * ENTRY_LEN;
-                    (u64_at(record, at)? == ENTRY_WORD).then_some(())?;
-                    u32_at(record, at + 8)
-                })
-                .collect::<Option<BTreeSet<u32>>>()
-        });
+        let after_name = 8 + name_len;
+        let prefix = usize::try_from(u32_at(record, after_name)?).ok()?;
+        let blocks = after_name
+            .checked_add(4)?
+            .checked_add(prefix.checked_mul(PREFIX_ENTRY_LEN)?)?
+            .checked_add(PREFIX_TAIL_LEN)?;
+        for block in 0..2 {
+            let at = blocks.checked_add(block * BLOCK_LEN)?;
+            (u32_at(record, at)? == 1 && u32_at(record, at.checked_add(BLOCK_LEN - 4)?)? == 0)
+                .then_some(())?;
+        }
+        let count_at = blocks.checked_add(2 * BLOCK_LEN)?;
+        let count = usize::try_from(u32_at(record, count_at)?).ok()?;
+        let first = count_at.checked_add(4)?;
+        let room = record.len().checked_sub(first)? / ENTRY_LEN;
+        (count <= room).then_some(())?;
+        return (0..count)
+            .map(|entry| u32_at(record, first.checked_add(entry * ENTRY_LEN)?))
+            .collect::<Option<BTreeSet<u32>>>();
     }
     None
 }
