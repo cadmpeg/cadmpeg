@@ -155,7 +155,7 @@ fn feature_edits(
             continue;
         }
         explained = true;
-        if feature_affects_brep(feature, &ir.model.features) {
+        if stale_after_edit(original, feature, &ir.model.features, definition_written) {
             let edit = match feature.suppressed {
                 Some(true) if original.suppressed != feature.suppressed => {
                     "written suppressed as edited"
@@ -612,6 +612,20 @@ fn feature_directly_affects_brep(feature: &Feature) -> bool {
             | FeatureOperation::DatumPoint { .. }
             | FeatureOperation::DatumCoordinateSystem { .. }
     )
+}
+
+/// Whether the stale-solid loss of a write names the construction edit of
+/// `current`, a feature of `features`, against its source feature
+/// `original`: the edit reaches the written record (`definition_written`
+/// states whether its definition does) and the feature shapes the solid.
+pub(crate) fn stale_after_edit(
+    original: &Feature,
+    current: &Feature,
+    features: &[Feature],
+    definition_written: bool,
+) -> bool {
+    construction_changed(original, current, definition_written)
+        && feature_affects_brep(current, features)
 }
 
 /// Whether the written construction of `current` differs from `original`.

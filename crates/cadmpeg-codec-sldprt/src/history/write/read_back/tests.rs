@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+use std::collections::HashSet;
+
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{FeatureId, ParameterId};
 
@@ -66,12 +68,24 @@ fn claims(source: &CadIr, input: &CadIr, id: &FeatureId, written: bool) -> ReadB
 }
 
 fn judge(source: &CadIr, input: &CadIr, claims: &ReadBackClaims, written: &CadIr) -> ReadBack {
-    let mut read_back = ReadBack::of_claims(&claims.features, Some(written));
+    judge_settled(source, input, claims, written, &HashSet::new())
+}
+
+/// `judge` with the features in `settled` read back as the stored solid
+/// settles their travel.
+fn judge_settled(
+    source: &CadIr,
+    input: &CadIr,
+    claims: &ReadBackClaims,
+    written: &CadIr,
+    settled: &HashSet<FeatureId>,
+) -> ReadBack {
+    let mut read_back = ReadBack::of_claims(&claims.features, Some(written), settled);
     Judge::new(input, &|_| None).judge_part(
         &mut read_back,
         claims,
         (source, &[]),
-        written,
+        (written, settled),
         &mut |_| Vec::new(),
     );
     read_back
@@ -255,4 +269,102 @@ fn a_moved_sketch_is_a_difference_of_that_sketch() {
         &found[0].change,
         Change::Leaf { pointer: at, .. } if at == pointer
     ));
+}
+
+/// The source part, the part with the travel of its first extrusion along
+/// the profile normal with no reversal flag turned against the normal and,
+/// with `other`, the first real leaf of its definition plus one, and that
+/// extrusion's id.
+fn travel_edited(other: bool) -> (CadIr, CadIr, FeatureId) {
+    let source = ftc_06().ir().clone();
+    let mut input = source.clone();
+    let feature = input
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| {
+            let wire = serde_json::to_value(feature.evaluation.definition()).unwrap();
+            super::settled_travel(&wire) == Some("/value/value/direction")
+                && wire.pointer("/value/value/direction/kind")
+                    == Some(&serde_json::json!("profile_normal"))
+                && !crate::history::extrude_direction::reversal_flag(&feature.source_properties)
+        })
+        .expect("an extrusion along its profile normal");
+    let mut wire = serde_json::to_value(feature.evaluation.definition()).unwrap();
+    *wire.pointer_mut("/value/value/direction").unwrap() =
+        serde_json::json!({"kind": "reversed_profile_normal"});
+    if other {
+        let leaf = first_real(&mut wire).unwrap();
+        *leaf = serde_json::json!(leaf.as_f64().unwrap() + 1.0);
+    }
+    feature
+        .evaluation
+        .set_definition(serde_json::from_value(wire).unwrap());
+    let id = feature.id.clone();
+    (source, input, id)
+}
+
+/// A written travel edit of an extrusion that the stale-solid loss names
+/// reads back as the stored solid settles it: that difference is named by
+/// the stale-solid loss, and the edit is carried. Without the stale-solid
+/// loss the same read-back withholds the edit.
+#[test]
+fn a_travel_the_stored_solid_settles_is_carried_under_the_stale_solid_loss() {
+    let (source, input, id) = travel_edited(false);
+    let claims = claims(&source, &input, &id, true);
+    let settled = HashSet::from([id.clone()]);
+
+    let read_back = judge_settled(&source, &input, &claims, &source, &settled);
+
+    assert!(read_back.withhold.is_empty(), "{:?}", read_back.withhold);
+    assert!(
+        read_back.unexplained.is_empty(),
+        "{:?}",
+        read_back.unexplained
+    );
+    assert!(read_back.changed.is_empty(), "{:?}", read_back.changed);
+
+    let read_back = judge(&source, &input, &claims, &source);
+    assert_eq!(read_back.withhold.len(), 1, "{:?}", read_back.withhold);
+    assert_eq!(read_back.withhold[0].0, id);
+}
+
+/// A second edit of the same extrusion that does not read back is withheld,
+/// although the stored solid settles the travel.
+#[test]
+fn another_edit_of_a_feature_whose_travel_the_solid_settles_is_withheld() {
+    let (source, input, id) = travel_edited(true);
+    let claims = claims(&source, &input, &id, true);
+    let settled = HashSet::from([id.clone()]);
+
+    let read_back = judge_settled(&source, &input, &claims, &source, &settled);
+
+    assert_eq!(read_back.withhold.len(), 1, "{:?}", read_back.withhold);
+    assert_eq!(read_back.withhold[0].0, id);
+}
+
+/// The stored solid settles the travel of an edited extrusion that shapes
+/// the solid only where its reversal flag reads back as the encoder writes
+/// it from the caller's feature.
+#[test]
+fn a_travel_whose_reversal_flag_reads_back_otherwise_is_not_settled() {
+    let (source, input, id) = travel_edited(false);
+    let claims = claims(&source, &input, &id, true);
+
+    let settled = super::settled_by_solid(&input, &source, &claims, &HashSet::new(), &source);
+    assert!(settled.contains(&id), "{settled:?}");
+
+    let mut written = source.clone();
+    let feature = written
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.id == id)
+        .unwrap();
+    feature.source_properties.insert(
+        cadmpeg_core::text::NonBlankString::new("Reverse".to_owned()).unwrap(),
+        "true".to_owned(),
+    );
+    let settled = super::settled_by_solid(&input, &source, &claims, &HashSet::new(), &written);
+    assert!(!settled.contains(&id), "{settled:?}");
 }

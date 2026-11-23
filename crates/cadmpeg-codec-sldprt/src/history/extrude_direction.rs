@@ -38,15 +38,44 @@ const MAX_WITNESS_WORK: usize = 2_000_000;
 /// is an edit.
 pub(crate) const REVERSE_DECODED: &str = "reverse_decoded";
 
-/// Whether `properties` state the reversal flag `1`, as the `Reverse`
-/// property: the reversal word of the extrusion's end spec, or a `Reverse`
-/// attribute of its history record.
+/// The source property that states an extrusion's reversal flag: the
+/// reversal word of its end spec, or a `Reverse` attribute of its history
+/// record.
+pub(crate) const REVERSE: &str = "Reverse";
+
+/// Whether `properties` state the reversal flag `1`, as the [`REVERSE`]
+/// property.
 pub(crate) fn reversal_flag(properties: &BTreeMap<NonBlankString, String>) -> bool {
     properties
-        .get("Reverse")
+        .get(REVERSE)
         .map(String::as_str)
         .and_then(parse_bool)
         == Some(true)
+}
+
+/// The reversal flag the encoder writes for `feature`: the flag its record
+/// states, cleared where an edit cleared the reversal the decoder read.
+pub(crate) fn written_reversal_flag(feature: &Feature) -> bool {
+    reversal_flag(&feature.source_properties) && !cleared_reversal(feature)
+}
+
+/// The JSON pointer of the travel in `definition`, the wire form of a
+/// feature definition, where it is an extrusion: with [`REVERSE_DECODED`],
+/// what [`retain_contradicted_directions`] and [`settle_reversal`] settle
+/// against the stored solid over the reversal flag the record states.
+pub(crate) fn settled_travel(definition: &serde_json::Value) -> Option<&'static str> {
+    let kind = |pointer: &str| {
+        definition
+            .pointer(pointer)
+            .and_then(serde_json::Value::as_str)
+    };
+    match kind("/kind")? {
+        "operation" if kind("/value/kind") == Some("extrude") => Some("/value/value/direction"),
+        "post_process" if kind("/value/operation/kind") == Some("extrude") => {
+            Some("/value/operation/value/direction")
+        }
+        _ => None,
+    }
 }
 
 /// Whether the decoder left the reversal flag of `properties` unread.

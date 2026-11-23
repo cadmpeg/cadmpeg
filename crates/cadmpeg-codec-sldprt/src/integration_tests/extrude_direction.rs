@@ -469,8 +469,7 @@ fn edit_and_write(
 
 /// A reversal read from the end-spec word alone travels against the normal
 /// and names its assumption. Cleared by an edit, it is written as a `0`
-/// word, the written record drops its `Reverse` property, which a loss names,
-/// and the written part decodes along the normal with no reversal.
+/// word, and the written part decodes along the normal with no reversal.
 #[test]
 fn a_cleared_reversal_writes_a_zero_end_spec_word() {
     let (bytes, anchor) = lane_flagged(None, None);
@@ -494,12 +493,7 @@ fn a_cleared_reversal_writes_a_zero_end_spec_word() {
         &write_losses,
         SldprtLossCode::WriterExtrudeReversalUnwritten
     ));
-    assert_eq!(write_losses.len(), 2, "{write_losses:?}");
-    let reshaped = messages(&write_losses, SldprtLossCode::WriterFeatureRecordReshaped);
-    assert!(
-        reshaped.len() == 1 && reshaped[0].contains("drops source property Reverse"),
-        "{write_losses:?}"
-    );
+    assert_eq!(write_losses.len(), 1, "{write_losses:?}");
     let stale = messages(&write_losses, SldprtLossCode::WriterSolidStaleAfterEdit);
     assert!(
         stale.len() == 1 && stale[0].contains("Feature \"Extrude\" ("),
@@ -517,12 +511,10 @@ fn a_cleared_reversal_writes_a_zero_end_spec_word() {
     ));
 }
 
-/// An edit that clears a reversal whose stored caps still show it does not
-/// read back as cleared: the decoder reads the reversal from the stored
-/// solid as well. The feature is written with its stored record, which keeps
-/// the end-spec flag, and a loss names the edit.
+/// An edit that clears a reversal whose stored caps still show it is
+/// written, with the `0` word, and named by the general stale-solid loss.
 #[test]
-fn a_cleared_reversal_over_its_stored_caps_is_named() {
+fn a_cleared_reversal_over_its_stored_caps_is_written_and_named() {
     let (bytes, anchor) = lane_flagged(Some(-1.0), None);
     let decoded = decode(bytes);
     let (_, direction, word) = extrusion_state(decoded.ir(), anchor);
@@ -536,19 +528,18 @@ fn a_cleared_reversal_over_its_stored_caps_is_named() {
 
     let (written, write_losses) = clear_and_write(decoded);
     assert_eq!(write_losses.len(), 1, "{write_losses:?}");
-    let unwritten = messages(&write_losses, SldprtLossCode::WriterFeatureEditUnwritten);
+    let stale = messages(&write_losses, SldprtLossCode::WriterSolidStaleAfterEdit);
     assert!(
-        unwritten.len() == 1 && unwritten[0].contains("does not read back as edited"),
+        stale.len() == 1 && stale[0].contains("Feature \"Extrude\" ("),
         "{write_losses:?}"
     );
     assert!(!has(
         &write_losses,
-        SldprtLossCode::WriterSolidStaleAfterEdit
+        SldprtLossCode::WriterExtrudeReversalUnwritten
     ));
 
-    let (_, direction, word) = extrusion_state(decode(written).ir(), anchor);
-    assert_eq!(direction, ExtrudeDirection::ReversedProfileNormal {});
-    assert_eq!(word, [1, 0, 0, 0]);
+    let (_, _, word) = extrusion_state(decode(written).ir(), anchor);
+    assert_eq!(word, [0, 0, 0, 0]);
 }
 
 /// The direction of `Extrude` in the inactive configuration `Alternate`.
@@ -758,8 +749,7 @@ fn an_active_configuration_reversal_takes_the_active_solid_verdict() {
 /// Clearing the model's reversal clears the flag in every lane. The write
 /// names the inactive configuration's lane, whose state still travels
 /// against the normal, and that configuration decodes along it. The edit
-/// also carries the general stale-solid loss for the extrusion, and a loss
-/// names the `Reverse` property the written record drops.
+/// also carries the general stale-solid loss for the extrusion.
 #[test]
 fn a_cleared_reversal_names_the_inactive_configuration_lane_it_clears() {
     let (bytes, anchor) = lane_flagged(None, Some(0));
@@ -788,12 +778,7 @@ fn a_cleared_reversal_names_the_inactive_configuration_lane_it_clears() {
         stale.len() == 1 && stale[0].contains("Feature \"Extrude\" ("),
         "{write_losses:?}"
     );
-    let reshaped = messages(&write_losses, SldprtLossCode::WriterFeatureRecordReshaped);
-    assert!(
-        reshaped.len() == 1 && reshaped[0].contains("drops source property Reverse"),
-        "{write_losses:?}"
-    );
-    assert_eq!(write_losses.len(), 3, "{write_losses:?}");
+    assert_eq!(write_losses.len(), 2, "{write_losses:?}");
 
     let again = decode(written);
     assert_eq!(lane_words(again.ir(), anchor), [[0, 0, 0, 0], [0, 0, 0, 0]]);

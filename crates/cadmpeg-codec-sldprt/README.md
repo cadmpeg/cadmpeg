@@ -155,7 +155,13 @@ the same once each paired id is replaced by its pair. The edit accounts for
 the records the caller changed, the expression, value and display of a
 parameter of an edited feature, the design records and configuration entries
 keyed by an edited record, the definition of a feature that owns an edited
-parameter, and text that names a renamed feature. The source part written with
+parameter, and text that names a renamed feature. An edit that clears an
+extrusion's reversal drops its `Reverse` property, the record form of that
+edit. The decoder settles an extrusion's travel and
+its `reverse_decoded` mark against the stored solid; for an edit that the
+`writer.solid-stale-after-edit` loss names, these read back as the stale solid
+decides once the reversal flag reads back as written, and that loss names the
+difference. The source part written with
 no edit and decoded again gives the differences that every write of the part
 has, and those are accounted for as well. Any other difference (a sibling
 default plane that changes kind, a sketch on an edited plane that moves) is

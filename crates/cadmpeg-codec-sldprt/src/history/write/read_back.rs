@@ -9,10 +9,15 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::Decoded;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{FeatureId, ParameterId};
+use cadmpeg_ir::features::{Feature, FeatureId, ParameterId};
 use serde_json::Value;
 
+use super::brep_agreement::stale_after_edit;
 use super::edits::{listed, ConstructionLeaf, FeatureClaims};
+use crate::history::extrude_direction::{
+    cleared_reversal, reversal_flag, settled_travel, written_reversal_flag, REVERSE,
+    REVERSE_DECODED,
+};
 use crate::writer::SemanticOutput;
 
 pub(crate) mod document;
@@ -325,14 +330,23 @@ impl<'a> Judge<'a> {
             .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
             .ok();
         let written = decoded.as_ref().map(cadmpeg_ir::codec::DecodeResult::ir);
-        let mut read_back = ReadBack::of_claims(&claims.features, written);
+        let settled = written.map_or_else(HashSet::new, |written| {
+            settled_by_solid(
+                self.input,
+                &source.ir,
+                claims,
+                &output.written.kept_definitions,
+                written,
+            )
+        });
+        let mut read_back = ReadBack::of_claims(&claims.features, written, &settled);
         if let Some(written) = written {
             let round_trip = self.round_trip;
             self.judge_part(
                 &mut read_back,
                 claims,
                 (&source.ir, &output.coverage.omitted(self.input)),
-                written,
+                (written, &settled),
                 &mut |stated| baseline_of(round_trip, source, stated),
             );
         }
@@ -344,13 +358,15 @@ impl<'a> Judge<'a> {
     /// feature. Every other difference that no edit, no arena the write omits
     /// and no unedited write of the source explains is unexplained. `source`
     /// is the decoded source document and the labels of the arenas the write
-    /// omits, whose `arena.omitted` losses name their records.
+    /// omits, whose `arena.omitted` losses name their records. `settled`
+    /// holds the claimed features whose travel reads back as the stored solid
+    /// settles it ([`settled_by_solid`]).
     fn judge_part(
         &mut self,
         read_back: &mut ReadBack,
         claims: &ReadBackClaims,
         (source, omitted): (&CadIr, &[&str]),
-        written: &CadIr,
+        (written, settled): (&CadIr, &HashSet<FeatureId>),
         baseline: &mut dyn FnMut(&Document) -> Vec<Difference>,
     ) {
         if self.stated.is_none() {
@@ -363,7 +379,13 @@ impl<'a> Judge<'a> {
             return;
         };
         let pairing = document::pair(stated, &read);
-        let scope = Scope::of(self.input, claims, stated, self.source.as_ref(), omitted);
+        let scope = Scope::of(
+            self.input,
+            claims,
+            (stated, self.source.as_ref()),
+            omitted,
+            settled,
+        );
         let mut claim_changes = HashMap::<FeatureId, Vec<String>>::new();
         let mut unexplained = Vec::new();
         for difference in document::differences(stated, &read, &pairing) {
@@ -435,6 +457,48 @@ impl<'a> Judge<'a> {
             .map(Difference::label)
             .collect()
     }
+}
+
+/// The claimed features whose travel and `reverse_decoded` mark, which the
+/// decoder settles against the stored solid, read back as that solid
+/// decides: the stale-solid loss of the write names each, so the difference
+/// is named. Each is an extrusion whose edit reaches the written record and
+/// that shapes the solid, and whose reversal flag, the record form of its
+/// travel, reads back from `written` as the encoder writes it from the
+/// caller's feature. `kept` holds the features written with their stored
+/// definition record.
+fn settled_by_solid(
+    input: &CadIr,
+    source: &CadIr,
+    claims: &ReadBackClaims,
+    kept: &HashSet<FeatureId>,
+    written: &CadIr,
+) -> HashSet<FeatureId> {
+    fn feature<'ir>(ir: &'ir CadIr, id: &FeatureId) -> Option<&'ir Feature> {
+        ir.model.features.iter().find(|feature| &feature.id == id)
+    }
+    claims
+        .features
+        .iter()
+        .filter(|claim| {
+            let (Some(original), Some(current), Some(read)) = (
+                feature(source, &claim.id),
+                feature(input, &claim.id),
+                claim.read(written),
+            ) else {
+                return false;
+            };
+            settled_travel(&claim.source_definition).is_some()
+                && stale_after_edit(
+                    original,
+                    current,
+                    &input.model.features,
+                    !kept.contains(&claim.id),
+                )
+                && reversal_flag(&read.source_properties) == written_reversal_flag(current)
+        })
+        .map(|claim| claim.id.clone())
+        .collect()
 }
 
 /// The differences between `source`, the decoded source document whose
@@ -524,15 +588,21 @@ struct Scope<'a> {
     renames: Vec<(String, String)>,
     /// The arenas the write omits, as the document names them.
     omitted: HashSet<String>,
+    /// The claimed extrusions whose edit clears the reversal the decoder
+    /// read.
+    cleared: HashSet<&'a str>,
+    /// The claimed features whose travel reads back as the stored solid
+    /// settles it.
+    settled: &'a HashSet<FeatureId>,
 }
 
 impl<'a> Scope<'a> {
     fn of(
         input: &CadIr,
         claims: &'a ReadBackClaims,
-        stated: &'a Document,
-        source: Option<&'a Document>,
+        (stated, source): (&'a Document, Option<&'a Document>),
         omitted: &[&str],
+        settled: &'a HashSet<FeatureId>,
     ) -> Self {
         let claimed = claims
             .features
@@ -577,6 +647,18 @@ impl<'a> Scope<'a> {
                     .collect()
             })
             .unwrap_or_default();
+        let cleared = claims
+            .features
+            .iter()
+            .filter(|claim| {
+                input
+                    .model
+                    .features
+                    .iter()
+                    .any(|feature| feature.id == claim.id && cleared_reversal(feature))
+            })
+            .map(|claim| claim.id.as_str())
+            .collect();
         let touched = claimed_ids
             .iter()
             .chain(&affected)
@@ -604,6 +686,8 @@ impl<'a> Scope<'a> {
                     }
                 })
                 .collect(),
+            cleared,
+            settled,
         }
     }
 
@@ -677,6 +761,11 @@ impl<'a> Scope<'a> {
             "dependencies" if claim.dependencies_edited => Class::Explained,
             "source_properties" => match segments.get(1) {
                 Some(key)
+                    if segments.len() == 2 && self.travel_record(claim, key, written.is_none()) =>
+                {
+                    Class::Explained
+                }
+                Some(key)
                     if stated.is_some()
                         && written.is_none()
                         && segments.len() == 2
@@ -695,6 +784,19 @@ impl<'a> Scope<'a> {
             },
             _ if self.caller_changed(difference) || self.renamed(difference) => Class::Explained,
             field => Class::Claim(claim.id.clone(), format!("its {field} changed")),
+        }
+    }
+
+    /// Whether a difference of `claim`'s source property `key`, which the
+    /// written part `dropped` or not, is the record form of its travel as the
+    /// write states it: the reversal flag that an edit clearing the reversal
+    /// drops, or the `reverse_decoded` mark of a travel the stored solid
+    /// settles.
+    fn travel_record(&self, claim: &FeatureClaims, key: &str, dropped: bool) -> bool {
+        match key {
+            REVERSE => dropped && self.cleared.contains(claim.id.as_str()),
+            REVERSE_DECODED => self.settled.contains(&claim.id),
+            _ => false,
         }
     }
 
@@ -776,7 +878,13 @@ impl<'a> Scope<'a> {
 impl ReadBack {
     /// Judges `claims`, none of which asks to withhold its feature, against
     /// `written`, the written part decoded; `None` when it does not decode.
-    fn of_claims(claims: &[FeatureClaims], written: Option<&CadIr>) -> Self {
+    /// The travel of a feature of `settled` and its `reverse_decoded` mark
+    /// read back as the stored solid settles them.
+    fn of_claims(
+        claims: &[FeatureClaims],
+        written: Option<&CadIr>,
+        settled: &HashSet<FeatureId>,
+    ) -> Self {
         let mut read_back = Self::default();
         for claim in claims {
             let read = written
@@ -794,6 +902,17 @@ impl ReadBack {
                         .push((claim.id.clone(), unread(&claim.id)));
                 }
                 continue;
+            };
+            let travel = settled
+                .contains(&claim.id)
+                .then(|| settled_travel(&claim.source_definition))
+                .flatten();
+            let settled_leaf = |leaf: &ConstructionLeaf| match (travel, leaf) {
+                (Some(travel), ConstructionLeaf::Definition(pointer)) => pointer
+                    .strip_prefix(travel)
+                    .is_some_and(|rest| rest.is_empty() || rest.starts_with('/')),
+                (Some(_), ConstructionLeaf::SourceProperty(key)) => key.as_str() == REVERSE_DECODED,
+                _ => false,
             };
             let mut expected = claim.source_definition.clone();
             let mut failed = false;
@@ -813,7 +932,7 @@ impl ReadBack {
                 };
                 let as_edited = same_read_back(&got, &edit.edited, true);
                 if edit.written {
-                    failed |= !as_edited;
+                    failed |= !as_edited && !settled_leaf(&edit.leaf);
                 } else if !same_read_back(&got, &edit.source, true) {
                     if as_edited {
                         read_back
@@ -823,6 +942,13 @@ impl ReadBack {
                         neither.push(edit.label.clone());
                     }
                 }
+            }
+            if let Some(travel) = travel {
+                put(
+                    &mut expected,
+                    travel,
+                    read_definition.pointer(travel).cloned(),
+                );
             }
             if !same_read_back(&expected, &read_definition, true) {
                 failed = true;
