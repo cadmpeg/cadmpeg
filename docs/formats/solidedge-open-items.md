@@ -96,7 +96,7 @@
 
 **Need.** Flanges at two angles under bend method `1`, and documents set to each other bend method the software offers.
 
-### DR-1032. Bend relief length and shape
+### DR-1042. Bend relief length and shape
 
 **Question.** Which dimension of a bend relief does the relief length (§10.1) set, and where is the relief shape stored?
 
