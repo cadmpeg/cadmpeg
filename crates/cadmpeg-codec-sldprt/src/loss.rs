@@ -417,6 +417,14 @@ pub(crate) enum SldprtLossCode {
     /// Extrudes whose blind depth is bound to their record's only dimension,
     /// whose name is neither `Depth` nor `D1`.
     DesignExtrudeDepthAssumed,
+    /// Dimensions whose kind is the parameter class a compound-file lane's
+    /// own declarations alone give their scalar's class token, which assumes
+    /// the token is the lane's own.
+    DesignParameterClassAssumed,
+    /// Dimensions whose scalars' parameter classes the decoder's class
+    /// sources name differently, and whose length the equation manager's
+    /// stored value gives where their display shows it.
+    DesignParameterClassesDisagree,
     /// Equation-manager lines that the decoder does not read into the
     /// expression of the parameter they assign.
     DesignEquationUnread,
@@ -591,6 +599,8 @@ impl SldprtLossCode {
         Self::DesignParameterDisplayRounded,
         Self::DesignParameterValueUnread,
         Self::DesignExtrudeDepthAssumed,
+        Self::DesignParameterClassAssumed,
+        Self::DesignParameterClassesDisagree,
         Self::DesignEquationUnread,
         Self::DesignEquationSource,
     ];
@@ -789,6 +799,8 @@ impl SldprtLossCode {
             Self::DesignParameterDisplayRounded => "design.parameter-display-rounded",
             Self::DesignParameterValueUnread => "design.parameter-value-unread",
             Self::DesignExtrudeDepthAssumed => "design.extrude-depth-assumed",
+            Self::DesignParameterClassAssumed => "design.parameter-class-assumed",
+            Self::DesignParameterClassesDisagree => "design.parameter-classes-disagree",
             Self::DesignEquationUnread => "design.equation-unread",
             Self::DesignEquationSource => "design.equation-source",
         }
@@ -952,6 +964,8 @@ impl SldprtLossCode {
             | Self::DesignParameterDisplayRounded
             | Self::DesignParameterValueUnread
             | Self::DesignExtrudeDepthAssumed
+            | Self::DesignParameterClassAssumed
+            | Self::DesignParameterClassesDisagree
             | Self::DesignEquationUnread
             | Self::DesignEquationSource => Severity::Warning,
             Self::AssemblyStructureNotTransferred => Severity::Blocking,
@@ -1021,6 +1035,8 @@ impl SldprtLossCode {
             Self::DesignParameterDisplayRounded
             | Self::DesignParameterValueUnread
             | Self::DesignExtrudeDepthAssumed
+            | Self::DesignParameterClassAssumed
+            | Self::DesignParameterClassesDisagree
             | Self::DesignEquationSource => LossTaxonomy::DecodeDiagnostic,
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
@@ -1470,6 +1486,8 @@ mod tests {
                 "design.parameter-display-rounded",
                 "design.parameter-value-unread",
                 "design.extrude-depth-assumed",
+                "design.parameter-class-assumed",
+                "design.parameter-classes-disagree",
                 "design.equation-unread",
                 "design.equation-source",
             ]
