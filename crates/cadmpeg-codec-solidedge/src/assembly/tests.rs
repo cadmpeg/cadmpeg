@@ -8,7 +8,8 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::products::{Occurrence, ProductDefinition, Storage};
 
 use crate::test_support::{
-    assembly_document, mirror_document, MirrorSpec, OccurrenceSpec, SiteSpec,
+    assembly_document, family_document, family_info, member_table, mirror_document, MemberSpec,
+    MirrorSpec, OccurrenceSpec, SiteSpec,
 };
 use crate::SolidEdgeCodec;
 
@@ -279,4 +280,75 @@ fn document_without_a_collection_adds_nothing() {
     assert!(codes(&result)
         .iter()
         .all(|code| !code.starts_with("assembly.")));
+}
+
+fn member<'a>(name: &'a str, listed: &'a [u32], ids: &[u32]) -> MemberSpec<'a> {
+    MemberSpec {
+        name,
+        listed,
+        occurrences: ids
+            .iter()
+            .map(|&id| OccurrenceSpec::at_identity(id, SITE))
+            .collect(),
+    }
+}
+
+fn ids(result: &DecodeResult) -> Vec<String> {
+    occurrences(result)
+        .iter()
+        .map(|occurrence| occurrence.id.to_string())
+        .collect()
+}
+
+#[test]
+fn family_places_the_occurrences_the_active_member_lists() {
+    let members = [
+        member("alpha", &[20], &[20, 21]),
+        member("beta", &[20, 21], &[20]),
+    ];
+    let result = decode(family_document(
+        family_info("alpha"),
+        None,
+        &members,
+        &[site()],
+    ));
+    assert_eq!(ids(&result), ["solidedge:model:occurrence#20"]);
+    assert_eq!(count(&result, "family.member-unread"), 0);
+    let result = decode(family_document(
+        family_info("BETA"),
+        None,
+        &members,
+        &[site()],
+    ));
+    assert_eq!(ids(&result), ["solidedge:model:occurrence#20"]);
+    let all = [member("alpha", &[20, 21], &[20, 21])];
+    let result = decode(family_document(family_info("alpha"), None, &all, &[site()]));
+    assert_eq!(occurrences(&result).len(), 2);
+}
+
+#[test]
+fn family_without_a_member_record_keeps_every_occurrence() {
+    let members = [member("alpha", &[20], &[20, 21])];
+    let table = member_table(&[("other", &[20])]);
+    let result = decode(family_document(
+        family_info("alpha"),
+        Some(table),
+        &members,
+        &[site()],
+    ));
+    assert_eq!(occurrences(&result).len(), 2);
+    assert_eq!(count(&result, "family.member-unread"), 1);
+}
+
+#[test]
+fn family_naming_no_member_storage_places_nothing() {
+    let members = [member("alpha", &[20], &[20])];
+    let result = decode(family_document(
+        family_info("gone"),
+        None,
+        &members,
+        &[site()],
+    ));
+    assert!(occurrences(&result).is_empty());
+    assert_eq!(count(&result, "family.member-unread"), 1);
 }

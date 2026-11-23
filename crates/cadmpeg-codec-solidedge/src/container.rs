@@ -1,24 +1,39 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Solid Edge compound directory access.
 
-use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
+use cadmpeg_container::compound::{
+    CompoundEntry, CompoundPrefixProbe, CompoundSnapshot, CompoundStreamEntry,
+};
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::Confidence;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::{ContainerKind, ContainerSummary};
 
+use std::collections::BTreeSet;
+
 use crate::dialect;
+use crate::family;
 use crate::loss::SolidEdgeLossCode;
 
+/// The root stream that names the active member of a family of assemblies.
+const FAMILY_INFO: &str = "FamilyInfo";
+/// The root stream that, with `FamilyInfo`, identifies a family of assemblies.
+const FAMILY_PUBLISH: &str = "FOAPublishData";
+/// The entries a member storage holds.
+const SITES_LIST: &str = "JSitesList";
+const PSM_ROOTS: &str = "PSMroots";
+
 fn evidence<'a>(paths: impl IntoIterator<Item = &'a str>) -> bool {
-    let mut sites = false;
-    let mut global = false;
+    let (mut sites, mut global, mut info, mut publish) = (false, false, false, false);
     for path in paths {
-        sites |= path.eq_ignore_ascii_case("JSitesList");
+        sites |= path.eq_ignore_ascii_case(SITES_LIST);
         global |= path.eq_ignore_ascii_case("JGlobal");
+        info |= path.eq_ignore_ascii_case(FAMILY_INFO);
+        publish |= path.eq_ignore_ascii_case(FAMILY_PUBLISH);
     }
-    sites && global
+    (sites && global) || (info && publish)
 }
 
 pub(crate) fn detect(ctx: &DecodeContext<'_>, prefix: View<'_>) -> Result<Confidence, CodecError> {
@@ -43,6 +58,97 @@ pub(crate) fn open<'a>(
         ));
     }
     Ok(snapshot)
+}
+
+/// The storage whose streams make up the document: the root of an ordinary
+/// document, the active member storage of a family of assemblies.
+pub(crate) struct DocStreams<'s, 'a> {
+    snapshot: &'s CompoundSnapshot<'a>,
+    /// The storage path with its trailing separator; empty at the root. `None`
+    /// when the family names no member storage.
+    prefix: Option<String>,
+    /// The identifiers of the occurrence objects the active family member
+    /// lists; `None` places every occurrence of the storage.
+    listed: Option<BTreeSet<u32>>,
+}
+
+impl<'s, 'a> DocStreams<'s, 'a> {
+    /// Select the member of `snapshot`. A family document with no readable
+    /// active member adds `family.member-unread` and states no streams.
+    pub(crate) fn select(
+        ctx: &DecodeContext<'a>,
+        snapshot: &'s CompoundSnapshot<'a>,
+        losses: &mut Vec<LossNote>,
+    ) -> Result<Self, CodecError> {
+        if snapshot.stream(SITES_LIST).is_some() {
+            return Ok(Self {
+                snapshot,
+                prefix: Some(String::new()),
+                listed: None,
+            });
+        }
+        let name = match snapshot.stream(FAMILY_INFO) {
+            Some(entry) => family::active_name(snapshot.open(ctx, entry)?.window()),
+            None => None,
+        };
+        let prefix = name
+            .clone()
+            .filter(|name| !name.contains('/'))
+            .map(|name| format!("{name}/"))
+            .filter(|prefix| {
+                snapshot.stream(&format!("{prefix}{SITES_LIST}")).is_some()
+                    && snapshot.stream(&format!("{prefix}{PSM_ROOTS}")).is_some()
+            });
+        if prefix.is_none() {
+            losses.push(SolidEdgeLossCode::FamilyMemberUnread.note(
+                "the family of assemblies names no member storage that holds the document \
+                 streams; no member is read",
+            ));
+        }
+        let mut listed = None;
+        if let (Some(name), Some(_)) = (&name, &prefix) {
+            let table = match snapshot.stream(family::MEMBERS_PATH) {
+                Some(entry) => {
+                    family::listed_occurrences(snapshot.open(ctx, entry)?.window(), name)
+                }
+                None => None,
+            };
+            if table.is_none() {
+                losses.push(SolidEdgeLossCode::FamilyMemberUnread.note(
+                    "the member table has no readable record for the active member; every \
+                     occurrence of the member storage is kept",
+                ));
+            }
+            listed = table;
+        }
+        Ok(Self {
+            snapshot,
+            prefix,
+            listed,
+        })
+    }
+
+    /// Whether the active member places the occurrence object `id`.
+    pub(crate) fn lists(&self, id: u32) -> bool {
+        self.listed
+            .as_ref()
+            .is_none_or(|listed| listed.contains(&id))
+    }
+
+    /// The stream `path` of the member.
+    pub(crate) fn stream(&self, path: &str) -> Option<&'s CompoundStreamEntry> {
+        let prefix = self.prefix.as_deref()?;
+        self.snapshot.stream(&format!("{prefix}{path}"))
+    }
+
+    /// Open a stream of the snapshot.
+    pub(crate) fn open(
+        &self,
+        ctx: &DecodeContext<'a>,
+        entry: &CompoundStreamEntry,
+    ) -> Result<View<'a>, CodecError> {
+        self.snapshot.open(ctx, entry)
+    }
 }
 
 pub(crate) fn summary(
