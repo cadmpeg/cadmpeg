@@ -48,6 +48,22 @@ Parsed by:
 | 27 | 1 | `role` | `u8` | little | spec | a role byte at trailer +27 |
 | 28 | 7 | `zero_tail` | `bytes[7]` | little | spec | seven zero bytes at trailer +28 |
 
+## `feature_input_padded_scalar_cell`
+
+Spec §2 · layout: byte offsets · size: 19 B
+
+Offsets from the end of the 14-byte value-only header: the 18-byte header's last four bytes, the f64, and the opening of a trailer of the first form.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/scalars.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `padding` | `bytes[4]` | little | spec | four zero bytes follow the 14-byte value-only header |
+| 4 | 8 | `value` | `f64` | little | spec | the f64 begins at the 18-byte header's end |
+| 12 | 3 | `trailer_zero_prefix` | `bytes[3]` | little | spec | the trailer begins after the f64 |
+| 15 | 4 | `object_id` | `u32` | little | spec | three zero bytes and the scalar object identifier |
+
 ## `feature_input_operand_cell12`
 
 Spec §2 · layout: byte offsets · size: 12 B

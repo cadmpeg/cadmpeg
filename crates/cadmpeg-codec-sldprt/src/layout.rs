@@ -28,6 +28,22 @@ pub(crate) mod feature_input_shifted_scalar_trailer {
     pub(crate) const ZERO_TAIL: usize = 28;
 }
 
+/// Byte offsets for the `feature_input_padded_scalar_cell` record.
+///
+/// Spec §2. Record length 19 B.
+///
+/// ```text
+/// Offsets from the end of the 14-byte value-only header: the 18-byte header's last four bytes, the f64, and the opening of a trailer of the first form.
+/// ```
+pub(crate) mod feature_input_padded_scalar_cell {
+    /// Offset of `padding` (`bytes[4]`). Spec §2.
+    pub(crate) const PADDING: usize = 0;
+    /// Offset of `value` (`f64`, little-endian). Spec §2.
+    pub(crate) const VALUE: usize = 4;
+    /// Offset of `trailer_zero_prefix` (`bytes[3]`). Spec §2.
+    pub(crate) const TRAILER_ZERO_PREFIX: usize = 12;
+}
+
 /// Byte offsets for the `feature_input_operand_cell12` record.
 ///
 /// Spec §2. Record length 12 B.

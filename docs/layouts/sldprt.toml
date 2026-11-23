@@ -70,6 +70,44 @@ source = "spec"
 anchor = "seven zero bytes at trailer +28"
 
 [[record]]
+name = "feature_input_padded_scalar_cell"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/scalars.rs"
+kind = "byte"
+section = "2"
+anchor = "In a part that writes the 18-byte header, a value-only scalar also begins with that header"
+size = 19
+endianness = "little"
+note = "Offsets from the end of the 14-byte value-only header: the 18-byte header's last four bytes, the f64, and the opening of a trailer of the first form."
+
+[[record.field]]
+name = "padding"
+offset = 0
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes follow the 14-byte value-only header"
+
+[[record.field]]
+name = "value"
+offset = 4
+type = "f64"
+source = "spec"
+anchor = "the f64 begins at the 18-byte header's end"
+
+[[record.field]]
+name = "trailer_zero_prefix"
+offset = 12
+type = "bytes[3]"
+source = "spec"
+anchor = "the trailer begins after the f64"
+
+[[record.field]]
+name = "object_id"
+offset = 15
+type = "u32"
+source = "spec"
+anchor = "three zero bytes and the scalar object identifier"
+
+[[record]]
 name = "feature_input_operand_cell12"
 parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/scalars.rs"
 kind = "byte"

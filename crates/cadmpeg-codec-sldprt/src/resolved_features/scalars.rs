@@ -15,6 +15,7 @@ use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::HashMap;
 
 use crate::layout::feature_input_operand_cell12 as operand_cell;
+use crate::layout::feature_input_padded_scalar_cell as padded;
 use crate::records::ObjectId;
 
 pub(crate) fn named_scalars(
@@ -97,22 +98,30 @@ fn scalar_value_offset(payload: &[u8], name_offset: usize) -> Option<usize> {
 }
 
 /// The value offset of a value-only scalar whose 14-byte header ends at
-/// `header_end`: after four zero bytes where a scalar trailer begins twelve
-/// bytes after the header and no count trailer four bytes after it, else at
-/// the header's end. The shifted record with a role is not this form.
+/// `header_end` (`docs/formats/sldprt.md` §2): the 18-byte header's end
+/// where the four bytes after the 14-byte header are zero, a finite f64
+/// follows them, and a trailer of three zero bytes and the scalar object
+/// identifier begins after the f64 and none after the four bytes; else the
+/// header's end. The shifted record's role trailer has its own reader.
 pub(super) fn value_only_value_offset(payload: &[u8], header_end: usize) -> usize {
-    header_end
-        .checked_add(4)
-        .filter(|&value| {
-            payload.get(header_end..value) == Some(&[0; 4])
-                && !count_trailer(payload, value)
-                && View::f64_le_at(payload, value).is_some_and(f64::is_finite)
-                && value.checked_add(8).is_some_and(|trailer| {
-                    count_trailer(payload, trailer)
-                        && !shifted_value_only_scalar_trailer(payload, trailer)
-                })
-        })
-        .unwrap_or(header_end)
+    let at = |field: usize| header_end.checked_add(field);
+    let (Some(padding), Some(value), Some(trailer)) = (
+        at(padded::PADDING),
+        at(padded::VALUE),
+        at(padded::TRAILER_ZERO_PREFIX),
+    ) else {
+        return header_end;
+    };
+    let padded = payload.get(padding..value) == Some(&[0; 4])
+        && !count_trailer(payload, value)
+        && View::f64_le_at(payload, value).is_some_and(f64::is_finite)
+        && count_trailer(payload, trailer)
+        && !shifted_value_only_scalar_trailer(payload, trailer);
+    if padded {
+        value
+    } else {
+        header_end
+    }
 }
 
 pub(crate) fn scalar_indices_match(
