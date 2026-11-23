@@ -54,8 +54,10 @@ impl WritableEdgeCurve<'_> {
     pub(super) fn point(
         self,
         parameter: FiniteReal,
-    ) -> Result<cadmpeg_ir::features::FinitePoint3, cadmpeg_ir::eval::EvaluationFailure<Point3>>
-    {
+    ) -> Result<
+        cadmpeg_ir::features::geometry::FinitePoint3,
+        cadmpeg_ir::eval::EvaluationFailure<Point3>,
+    > {
         match self {
             Self::Line(line) => cadmpeg_ir::eval::decode::curve_point(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
@@ -690,7 +692,7 @@ impl<'a> WritableModel<'a> {
                 let fit_tolerance = pcurve
                     .as_ref()
                     .and_then(|pcurve| pcurve.source.fit_tolerance())
-                    .map_or(0.0, cadmpeg_ir::geometry::FitTolerance::get);
+                    .map_or(0.0, cadmpeg_ir::geometry::legacy_cache::FitTolerance::get);
                 let face = &faces[loops[owner_loop].face];
                 let c2 = match surfaces[face.surface] {
                     WritableFaceSurface::Plane { origin, normal, u_axis } => {

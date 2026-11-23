@@ -1163,6 +1163,14 @@ section = "4.1"
 anchor = "| 18 | VERTEX | 28 | 60 | OFFSET_SURF | 31 |"
 
 [[token]]
+tag = "67"
+name = "SWEPT_SURF"
+payload_bytes = 53
+note = "logical fixed record length"
+section = "4.1"
+anchor = "| 32 | ELLIPSE | 107 | 67 | SWEPT_SURF | 53 |"
+
+[[token]]
 tag = "124"
 name = "B_SURFACE"
 payload_bytes = 23
@@ -2118,6 +2126,41 @@ offset = 23
 type = "f64"
 source = "spec"
 anchor = "finite `offset_distance:f64 +23` (meters)"
+
+[[record.gap]]
+offset = 0
+size = 19
+note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`."
+
+[[record]]
+name = "swept_surf_payload"
+kind = "byte"
+section = "6.2.1"
+anchor = "**SWEPT_SURF (67):** header through sense `+18`, section curve ref `+19` (large-index capable), unit `sweep` vector `+21`, `scale:f64 +45`, length `53`."
+size = 53
+endianness = "big"
+note = "A large-index section-curve reference shifts every later field by two bytes."
+
+[[record.field]]
+name = "section"
+offset = 19
+type = "xmt_ref"
+source = "spec"
+anchor = "section curve ref `+19` (large-index capable)"
+
+[[record.field]]
+name = "sweep"
+offset = 21
+type = "f64[3]"
+source = "spec"
+anchor = "unit `sweep` vector `+21`"
+
+[[record.field]]
+name = "scale"
+offset = 45
+type = "f64"
+source = "spec"
+anchor = "`scale:f64 +45`"
 
 [[record.gap]]
 offset = 0

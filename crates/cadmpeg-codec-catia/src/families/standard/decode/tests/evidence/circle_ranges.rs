@@ -46,7 +46,7 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
     let end = Point3::new(0.0, -1.0, 0.0);
     assert_eq!(
         native_support_circle_param_range(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &native,
             Point3::new(0.0, 0.0, 0.0),
             1.0,
@@ -66,7 +66,7 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
         .expect("valid LinePcurve fixture"),
     );
     assert!(native_support_circle_param_range(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &disagreeing,
         Point3::new(0.0, 0.0, 0.0),
         1.0,
@@ -77,7 +77,7 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
     .expect("evaluator allocation succeeds")
     .is_none());
     assert!(native_support_circle_param_range(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &native,
         Point3::new(0.0, 0.0, 0.0),
         1.0,
@@ -92,7 +92,7 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
     for (index, position) in [start, end].into_iter().enumerate() {
         ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(position)
+            cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                 .expect("a finite position is a point"),
             None,
         ));

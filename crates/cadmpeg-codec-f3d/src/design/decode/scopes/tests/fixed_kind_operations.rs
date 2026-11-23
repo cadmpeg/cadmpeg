@@ -1422,7 +1422,7 @@ fn fixed_kind_edge_and_revolve_operations(
             DesignOperandRole::ROLE_0X21,
         );
     assert_eq!(
-        crate::design::feature_project::project_fixed_revolve_with_entities(
+        crate::design::feature_project::revolve::project_fixed_revolve_with_entities(
             &revolve_scope,
             &[revolve_profile, revolve_axis],
             &[],
@@ -1557,7 +1557,7 @@ fn fixed_kind_edge_and_revolve_operations(
         planar_z_noise: None,
         tail_marker: None,
     };
-    let projected = crate::design::feature_project::project_fixed_revolve_with_entities(
+    let projected = crate::design::feature_project::revolve::project_fixed_revolve_with_entities(
         &indexed_revolve_scope,
         &[
             indexed_profile.clone(),
@@ -1574,7 +1574,7 @@ fn fixed_kind_edge_and_revolve_operations(
         projected,
         Some(FeatureDefinition::Operation(FeatureOperation::Revolve {
             ref construction,
-            op: cadmpeg_ir::features::BooleanOp::Cut,
+            op: cadmpeg_ir::features::operation_settings::BooleanOp::Cut,
         })) if construction.axis().is_some_and(|axis|
             axis.origin == Point3::new(1.0, 2.0, 3.0)
                 && axis.direction == Vector3::new(0.0, -1.0, 0.0))
@@ -1598,7 +1598,7 @@ fn fixed_kind_edge_and_revolve_operations(
         },
     ];
     let historical_definition =
-        crate::design::feature_project::project_fixed_revolve_with_entities(
+        crate::design::feature_project::revolve::project_fixed_revolve_with_entities(
             &indexed_revolve_scope,
             &[
                 indexed_profile.clone(),
@@ -1631,13 +1631,15 @@ fn fixed_kind_edge_and_revolve_operations(
         source_text: None,
         source_content: Default::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(historical_definition),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            historical_definition,
+        ),
         native_ref: Some(indexed_revolve_scope.id.clone()),
     };
     let surface_id =
         cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#53").expect("identity grammar");
     let mut unknown_feature = feature.clone();
-    crate::design::feature_project::bind_revolve_face_axes(
+    crate::design::feature_project::revolve::bind_revolve_face_axes(
         std::slice::from_mut(&mut unknown_feature),
         std::slice::from_ref(&indexed_revolve_scope),
         &[indexed_profile.clone(), indexed_axis.clone()],
@@ -1681,7 +1683,7 @@ fn fixed_kind_edge_and_revolve_operations(
             ..
         }) if construction.axis().is_none()
     ));
-    crate::design::feature_project::bind_revolve_face_axes(
+    crate::design::feature_project::revolve::bind_revolve_face_axes(
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&indexed_revolve_scope),
         &[indexed_profile.clone(), indexed_axis.clone()],
@@ -1772,24 +1774,25 @@ fn fixed_kind_edge_and_revolve_operations(
             next_byte_offset: 200,
         })
         .unwrap();
-    let face_axis_definition = crate::design::feature_project::project_fixed_revolve_with_entities(
-        &indexed_revolve_scope,
-        &[
-            indexed_profile.clone(),
-            indexed_axis.clone(),
-            indexed_bodies,
-        ],
-        &[],
-        &[],
-        std::slice::from_ref(&face_axis_operand),
-        (&[], &[]),
-        &[],
-    )
-    .expect("face-recipe axis retains a neutral Revolve before geometry binding");
+    let face_axis_definition =
+        crate::design::feature_project::revolve::project_fixed_revolve_with_entities(
+            &indexed_revolve_scope,
+            &[
+                indexed_profile.clone(),
+                indexed_axis.clone(),
+                indexed_bodies,
+            ],
+            &[],
+            &[],
+            std::slice::from_ref(&face_axis_operand),
+            (&[], &[]),
+            &[],
+        )
+        .expect("face-recipe axis retains a neutral Revolve before geometry binding");
     let mut face_axis_feature = cadmpeg_ir::features::Feature {
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
             face_axis_definition.clone(),
-            cadmpeg_ir::features::DistinctMembers::try_from(
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(
                 (feature.clone()).evaluation.outputs().clone(),
             )
             .unwrap(),
@@ -1860,7 +1863,7 @@ fn fixed_kind_edge_and_revolve_operations(
             native_ref: None,
         },
     ];
-    crate::design::feature_project::bind_revolve_face_axes(
+    crate::design::feature_project::revolve::bind_revolve_face_axes(
         std::slice::from_mut(&mut face_axis_feature),
         std::slice::from_ref(&indexed_revolve_scope),
         &[indexed_profile.clone(), indexed_axis.clone()],
@@ -1879,10 +1882,12 @@ fn fixed_kind_edge_and_revolve_operations(
                 && axis.direction == Vector3::new(0.0, 0.0, 1.0))
     ));
     let mut conflicting_face_axis_feature = cadmpeg_ir::features::Feature {
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
             face_axis_definition,
-            cadmpeg_ir::features::DistinctMembers::try_from((feature).evaluation.outputs().clone())
-                .unwrap(),
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(
+                (feature).evaluation.outputs().clone(),
+            )
+            .unwrap(),
         ),
         ..feature
     };
@@ -1896,7 +1901,7 @@ fn fixed_kind_edge_and_revolve_operations(
             )
             .unwrap(),
         ));
-    crate::design::feature_project::bind_revolve_face_axes(
+    crate::design::feature_project::revolve::bind_revolve_face_axes(
         std::slice::from_mut(&mut conflicting_face_axis_feature),
         std::slice::from_ref(&indexed_revolve_scope),
         &[indexed_profile, indexed_axis],

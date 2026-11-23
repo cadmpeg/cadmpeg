@@ -44719,7 +44719,7 @@
               "operation": {
                 "kind": "primitive",
                 "value": {
-                  "op": "join",
+                  "op": "new_body",
                   "placement": [
                     [
                       1.0,
@@ -45368,7 +45368,54 @@
       "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "fcstd:model:body#RevolutionProfile:Shape:RevolutionProfile.Shape.brp:4%40location1",
+            "fcstd:model:body#Revolution:Shape:Revolution.Shape.brp:8%40location1",
+            "fcstd:model:body#ExtrusionProfile:Shape:ExtrusionProfile.Shape.brp:9%40location1",
+            "fcstd:model:body#SymmetricExtrusion:Shape:SymmetricExtrusion.Shape.brp:46%40location1",
+            "fcstd:model:body#LoftSectionA:Shape:LoftSectionA.Shape.brp:3%40location1",
+            "fcstd:model:body#LoftSectionB:Shape:LoftSectionB.Shape.brp:3%40location1",
+            "fcstd:model:body#Loft:Shape:Loft.Shape.brp:13%40location1",
+            "fcstd:model:body#SweepSection:Shape:SweepSection.Shape.brp:3%40location1",
+            "fcstd:model:body#SweepSpine:Shape:SweepSpine.Shape.brp:6%40location1",
+            "fcstd:model:body#Sweep:Shape:Sweep.Shape.brp:18%40location1",
+            "fcstd:model:body#DressupBase:Shape:DressupBase.Shape.brp:34%40location1",
+            "fcstd:model:body#PartFillet:Shape:PartFillet.Shape.brp:42%40location1",
+            "fcstd:model:body#ChamferBase:Shape:ChamferBase.Shape.brp:34%40location1",
+            "fcstd:model:body#PartChamfer:Shape:PartChamfer.Shape.brp:42%40location1",
+            "fcstd:model:body#ThicknessBase:Shape:ThicknessBase.Shape.brp:34%40location1",
+            "fcstd:model:body#Thickness:Shape:Thickness.Shape.brp:66",
+            "fcstd:model:body#MirrorBase:Shape:MirrorBase.Shape.brp:13%40location1",
+            "fcstd:model:body#Mirror:Shape:Mirror.Shape.brp:13%40location1",
+            "fcstd:model:body#DatumPlane:Shape:DatumPlane.Shape.brp:1%40location1",
+            "fcstd:model:body#DatumPoint:Shape:DatumPoint.Shape.brp:1%40location1",
+            "fcstd:model:body#DatumCoordinateSystem:Shape:DatumCoordinateSystem.Shape.brp:1%40location1",
+            "fcstd:model:body#DraftBody:Shape:DraftBody.Shape.brp:34%40location1",
+            "fcstd:model:body#DraftBase:Shape:DraftBase.Shape.brp:34%40location1",
+            "fcstd:model:body#Draft:Shape:Draft.Shape.brp:34%40location1",
+            "fcstd:model:body#HoleBody:Shape:HoleBody.Shape.brp:53%40location1",
+            "fcstd:model:body#HoleBase:Shape:HoleBase.Shape.brp:34%40location1",
+            "fcstd:model:body#HoleProfile:Shape:HoleProfile.Shape.brp:3%40location1",
+            "fcstd:model:body#Hole:Shape:Hole.Shape.brp:53%40location1",
+            "fcstd:model:body#PatternBody:Shape:PatternBody.Shape.brp:34%40location1",
+            "fcstd:model:body#PatternBase:Shape:PatternBase.Shape.brp:34%40location1",
+            "fcstd:model:body#LinearPattern:Shape:LinearPattern.Shape.brp:35%40location1"
+          ],
+          "bom_properties": {},
+          "id": "fcstd:model:product_definition#document:root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
       "sketch_constraints": [],

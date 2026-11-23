@@ -14,10 +14,10 @@ use crate::records::parameters::{DesignParameter, DesignParameterOwner};
 use crate::test_support::configuration_table::{
     bool_cell, expression_cell, object_target, property_target, string_cell, table_document, Row,
 };
-use cadmpeg_ir::features::{
-    ConfigurationEvaluation, DesignParameter as NeutralParameter, Feature, FeatureDefinition,
-    FeatureId, FeatureOperation,
+use cadmpeg_ir::features::parameters::{
+    ConfigurationEvaluation, DesignParameter as NeutralParameter,
 };
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
@@ -102,7 +102,7 @@ fn neutral_parameter(native: &DesignParameter) -> NeutralParameter {
         expression: "10 mm".into(),
         display: None,
         value: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -121,7 +121,7 @@ fn neutral_feature(scope: &DesignParameterScope, dependency: &str) -> Feature {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Extrude".into(),
                 parameters: BTreeMap::new(),
@@ -477,10 +477,12 @@ fn configuration_roots_attach_only_when_one_root_names_a_table_document() {
 
 #[test]
 fn the_active_configuration_and_the_feature_states_fill_each_others_gaps() {
-    let row = |evaluation, feature: &Feature| cadmpeg_ir::features::ConfigurationFeatureState {
-        evaluation,
-        dependencies: feature.dependencies.clone(),
-        definition: feature.evaluation.definition().clone(),
+    let row = |evaluation, feature: &Feature| {
+        cadmpeg_ir::features::parameters::ConfigurationFeatureState {
+            evaluation,
+            dependencies: feature.dependencies.clone(),
+            definition: feature.evaluation.definition().clone(),
+        }
     };
     let mut unlisted = neutral_feature(&scope(1), "f3d:test:feature#a");
     unlisted.suppressed = Some(true);
@@ -488,7 +490,7 @@ fn the_active_configuration_and_the_feature_states_fill_each_others_gaps() {
     unstated.suppressed = None;
     let mut stored = neutral_feature(&scope(3), "f3d:test:feature#c");
     stored.suppressed = Some(false);
-    let configuration = cadmpeg_ir::features::DesignConfiguration {
+    let configuration = cadmpeg_ir::features::parameters::DesignConfiguration {
         id: crate::ids::neutral_configuration_id(ENTRY, "active"),
         ordinal: 0,
         active: true,
@@ -534,7 +536,7 @@ fn the_active_configuration_and_the_feature_states_fill_each_others_gaps() {
 fn an_inferred_suppressed_state_names_its_assumption_when_a_column_is_unresolved() {
     let mut feature = neutral_feature(&scope(1), "f3d:test:feature#a");
     feature.suppressed = Some(true);
-    let mut configuration = cadmpeg_ir::features::DesignConfiguration {
+    let mut configuration = cadmpeg_ir::features::parameters::DesignConfiguration {
         id: crate::ids::neutral_configuration_id(ENTRY, "active"),
         ordinal: 0,
         active: true,
@@ -559,4 +561,33 @@ fn an_inferred_suppressed_state_names_its_assumption_when_a_column_is_unresolved
         .evaluation
         .is_suppressed());
     assert_eq!(inferred_configuration_suppression_count(&configurations), 1);
+}
+
+#[test]
+fn unreadable_configuration_document_keeps_its_sibling_document() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use std::io::{Cursor, Write};
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    let bad = "FusionAssetName[Active]/DesignConfigurationTable.BlobParts/DesignConfigurationTable.bad.dsgcfg";
+    zip.start_file(bad, stored).unwrap();
+    zip.write_all(b"[").unwrap();
+    zip.start_file(ENTRY, stored).unwrap();
+    zip.write_all(&serde_json::to_vec(&document()).unwrap())
+        .unwrap();
+    let bytes = zip.finish().unwrap().into_inner();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    let mut losses = Vec::new();
+    let decoded = super::decode_configurations(&ctx, &scan, &mut losses).unwrap();
+    assert_eq!(decoded.documents.len(), 1);
+    assert_eq!(decoded.documents[0].entry_name().as_str(), ENTRY);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::ConfigurationDocumentUndecoded.kind()
+    );
 }

@@ -12,7 +12,7 @@ use std::ops::Range;
 use crate::checked::extents_overlap;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::FiniteVector;
@@ -1347,6 +1347,8 @@ enum CatiaAllocationReferenceEncoding {
     TaggedU8,
     /// `0a <u16le>`.
     TaggedU16,
+    /// `0e <u24le>`.
+    TaggedU24,
 }
 
 /// Wire addressing form of one fixed-nine owner identity.
@@ -7029,7 +7031,8 @@ pub(crate) struct CatiaZeroEntitySupportOccurrence {
     pub(crate) model_curve: Option<cadmpeg_ir::geometry::CurveGeometry>,
     /// Exact procedural model-space carrier derived from the pcurve and owning surface.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) model_curve_construction: Option<cadmpeg_ir::geometry::ProceduralCurveDefinition>,
+    pub(crate) model_curve_construction:
+        Option<cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition>,
     /// Model-carrier parameters at the two stored UV endpoints.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) model_parameters: Option<[FiniteReal; 2]>,

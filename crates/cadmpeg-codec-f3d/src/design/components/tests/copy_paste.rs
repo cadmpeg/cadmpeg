@@ -158,12 +158,12 @@ fn project(
         ordinal: 3,
         name: None,
         suppressed: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(native()),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(native()),
         native_ref: Some(scope.id.clone()),
     };
     let losses = super::super::project_copy_paste_transfer_features(
@@ -197,7 +197,10 @@ fn a_strict_copy_transfer_retains_history_when_its_occurrence_resolves() {
     else {
         panic!("a fully joined CopyPaste retains its transfer history");
     };
-    assert_eq!(mode, cadmpeg_ir::features::ComponentTransferMode::Copy);
+    assert_eq!(
+        mode,
+        cadmpeg_ir::features::tree::ComponentTransferMode::Copy
+    );
     assert_eq!(occurrence, Some(projected[0].id.clone()));
     assert!(component.is_some());
     assert_eq!(component, target_owner);
@@ -224,7 +227,10 @@ fn a_copy_transfer_keeps_decoded_placement_when_occurrence_join_is_missing() {
     else {
         panic!("unresolved CopyPaste must retain its transfer operation");
     };
-    assert_eq!(mode, cadmpeg_ir::features::ComponentTransferMode::Copy);
+    assert_eq!(
+        mode,
+        cadmpeg_ir::features::tree::ComponentTransferMode::Copy
+    );
     assert_eq!(occurrence, None);
     assert_eq!(source_transform, target_transform);
     assert_eq!(target_transform.unwrap().rows()[0][3], 60.0);
@@ -324,7 +330,10 @@ fn a_cut_transfer_projects_when_its_source_owner_does_not_resolve() {
     else {
         panic!("CutPaste must project as a component transfer");
     };
-    assert_eq!(mode, cadmpeg_ir::features::ComponentTransferMode::Reparent);
+    assert_eq!(
+        mode,
+        cadmpeg_ir::features::tree::ComponentTransferMode::Reparent
+    );
     assert_eq!(occurrence, Some(projected[0].id.clone()));
     assert!(component.is_some());
     assert_eq!(source_owner, None);

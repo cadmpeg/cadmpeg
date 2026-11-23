@@ -1,19 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native XML tag and operation-kind helpers for write.
 
-use cadmpeg_ir::features::{
-    patterns::PatternTransform, BodyRetentionMode, FeatureDefinition, FeatureOperation, SweepMode,
-    UnresolvedFamily,
-};
+use cadmpeg_ir::features::operation_settings::BodyRetentionMode;
+use cadmpeg_ir::features::patterns::PatternTransform;
+use cadmpeg_ir::features::sweeps::SweepMode;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, UnresolvedFamily};
 
 use crate::history::classify::extrude_op;
 
-pub(super) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
-    if let Some(tag) = feature
+/// The source element name of a `SolidWorks` feature. Another format's tag
+/// is a value only its own writer reads (§3.4).
+pub(super) fn solidworks_source_tag(feature: &cadmpeg_ir::features::Feature) -> Option<&String> {
+    feature
         .source_tag
         .as_ref()
-        .filter(|tag| valid_xml_name(tag))
-    {
+        .filter(|tag| feature.id.as_str().starts_with("sldprt:") && valid_xml_name(tag))
+}
+
+pub(super) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
+    if let Some(tag) = solidworks_source_tag(feature) {
         return tag.clone();
     }
     let tag = match feature.evaluation.definition() {
@@ -164,11 +169,95 @@ pub(super) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String
     tag.into()
 }
 
+/// Whether `name` is an XML name without a colon, the only element or
+/// attribute name a written Keywords text can hold.
+///
+/// The reader parses with namespaces: a colon starts a prefix, and the text
+/// declares none. The ranges are the `NameStartChar` and `NameChar`
+/// productions of XML 1.0, which the reader applies.
 pub(crate) fn valid_xml_name(name: &str) -> bool {
-    let mut bytes = name.bytes();
-    bytes
-        .next()
-        .is_some_and(|byte| byte.is_ascii_alphabetic() || matches!(byte, b'_' | b':'))
-        && bytes
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b':' | b'-' | b'.'))
+    let mut chars = name.chars();
+    chars.next().is_some_and(name_start)
+        && chars.all(|character| {
+            name_start(character)
+                || matches!(
+                    character,
+                    '-' | '.'
+                        | '0'..='9'
+                        | '\u{b7}'
+                        | '\u{300}'..='\u{36f}'
+                        | '\u{203f}'..='\u{2040}'
+                )
+        })
+}
+
+fn name_start(character: char) -> bool {
+    matches!(
+        character,
+        'A'..='Z'
+            | '_'
+            | 'a'..='z'
+            | '\u{c0}'..='\u{d6}'
+            | '\u{d8}'..='\u{f6}'
+            | '\u{f8}'..='\u{2ff}'
+            | '\u{370}'..='\u{37d}'
+            | '\u{37f}'..='\u{1fff}'
+            | '\u{200c}'..='\u{200d}'
+            | '\u{2070}'..='\u{218f}'
+            | '\u{2c00}'..='\u{2fef}'
+            | '\u{3001}'..='\u{d7ff}'
+            | '\u{f900}'..='\u{fdcf}'
+            | '\u{fdf0}'..='\u{fffd}'
+            | '\u{10000}'..='\u{effff}'
+    )
+}
+
+/// Whether an XML document can hold `character`, literally or as a character
+/// reference (the `Char` production of XML 1.0).
+pub(crate) fn xml_char(character: char) -> bool {
+    matches!(
+        character,
+        '\t' | '\n' | '\r' | '\u{20}'..='\u{d7ff}' | '\u{e000}'..='\u{fffd}' | '\u{10000}'..
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_ir::features::{
+        evaluation::FeatureEvaluation, selections::DistinctMembers, Feature, FeatureContent,
+        FeatureDefinition, FeatureId, FeatureOperation, UnresolvedFamily,
+    };
+
+    fn datum_plane(id: &str) -> Feature {
+        Feature {
+            product_definition: None,
+            id: FeatureId::mint(id).expect("feature identity"),
+            ordinal: 0,
+            name: None,
+            suppressed: Some(false),
+            dependencies: DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::new(),
+            source_tag: Some("WorkPlane".into()),
+            source_text: None,
+            source_content: FeatureContent::default(),
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                FeatureOperation::Unresolved {
+                    family: UnresolvedFamily::DatumPlane,
+                },
+            )),
+            native_ref: None,
+        }
+    }
+
+    #[test]
+    fn only_a_solidworks_feature_keeps_its_source_tag() {
+        assert_eq!(
+            super::feature_xml_tag(&datum_plane("f3d:model:feature#plane")),
+            "ReferencePlane"
+        );
+        assert_eq!(
+            super::feature_xml_tag(&datum_plane("sldprt:model:feature#plane")),
+            "WorkPlane"
+        );
+    }
 }

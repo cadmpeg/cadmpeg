@@ -148,7 +148,7 @@ fn decode_with_scanned_header(
     let archive = crate::test_support::body_reference_tail_test::archive(&fixture.bytes, meta);
     crate::test_support::with_decode_context(|ctx| {
         crate::test_support::zip_test::with_scan(&archive, |scan| {
-            super::super::decode_face_operands(
+            super::super::face_operands::decode_face_operands(
                 ctx,
                 scan,
                 &[scope],

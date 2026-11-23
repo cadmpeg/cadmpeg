@@ -6,7 +6,8 @@ use super::{
     DesignEdgeIdentityOperand, DesignEdgeOperand,
 };
 use crate::records::topology::historical_context::AsmFaceBoundary;
-use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureId, FeatureOperation};
+use cadmpeg_ir::features::selections::EdgeSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::HashMap;
 
@@ -145,11 +146,13 @@ pub(super) fn apply_group(
         }
         unresolved.retain(|id| id != &operand.id);
         if edge.inferred {
-            notes.push(crate::history::inferred_edge_selection_note(
-                &operand.id,
-                state_id,
-                edge.slot,
-            ));
+            notes.push(
+                crate::history::edge_operand_history::inferred_edge_selection_note(
+                    &operand.id,
+                    state_id,
+                    edge.slot,
+                ),
+            );
         }
         selected = true;
     }

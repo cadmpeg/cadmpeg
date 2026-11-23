@@ -10,9 +10,9 @@ use std::collections::BTreeMap;
 
 #[test]
 fn thicken_boolean_targets_are_identity_references() {
-    use crate::features::{
-        BodySelection, BooleanKind, FaceSelection, FeatureOperation, SolidFeatureResult,
-    };
+    use crate::features::operation_settings::{BooleanKind, SolidFeatureResult};
+    use crate::features::selections::{BodySelection, FaceSelection};
+    use crate::features::FeatureOperation;
     let operation = FeatureOperation::Thicken {
         faces: FaceSelection::Native("test:model:faces#source".into()),
         thickness: None,
@@ -20,17 +20,16 @@ fn thicken_boolean_targets_are_identity_references() {
         result: Some(SolidFeatureResult::Boolean {
             operation: BooleanKind::Cut,
             targets: BodySelection::Bodies(
-                crate::features::DistinctMembers::try_from(vec![crate::ids::BodyId::mint(
-                    "test:model:body#target",
-                )
-                .unwrap()])
+                crate::features::selections::DistinctMembers::try_from(vec![
+                    crate::ids::BodyId::mint("test:model:body#target").unwrap(),
+                ])
                 .unwrap(),
             ),
         }),
         tangent_chain: Some(true),
     };
     let rewritten = identities(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         operation,
         |source| Ok(source.replace("test:model:", "test:occurrence:")),
     )
@@ -103,7 +102,7 @@ fn generic_unknown_links_share_the_typed_identity_rewrite_boundary() {
     };
     let rewritten = serde_json::to_value(
         identities(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             record.clone(),
             |source| Ok(source.replace("test:model:", "test:occurrence:")),
         )
@@ -145,7 +144,7 @@ fn rewriting_distinguishes_identities_from_identical_text_in_every_container() {
     let calls = std::cell::Cell::new(0);
     let rewritten = serde_json::to_value(
         identities(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             entity.clone(),
             |source| {
                 calls.set(calls.get() + 1);
@@ -177,7 +176,7 @@ fn colliding_map_keys_and_invalid_targets_fail_without_changing_the_source() {
     let source = BTreeMap::from([(id("a"), 1), (id("b"), 2)]);
     let before = serde_json::to_value(&source).unwrap();
     let error = identities(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         source.clone(),
         |_| Ok("test:occurrence:point#same".into()),
     )
@@ -185,7 +184,7 @@ fn colliding_map_keys_and_invalid_targets_fail_without_changing_the_source() {
     assert!(error.to_string().contains("test:model:point#b"), "{error}");
     assert!(error.to_string().contains("collides"), "{error}");
     let error = identities(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         source.clone(),
         |_| Ok(String::new()),
     )
@@ -231,7 +230,7 @@ impl RewriteIdentities for SwallowsElementErrors {
 fn a_serializer_cannot_swallow_a_rewrite_collision() {
     let source = SwallowsElementErrors([id("a"), id("b")]);
     let error = identities(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         source.clone(),
         |_| Ok("test:occurrence:point#same".into()),
     )
@@ -259,7 +258,7 @@ fn a_field_walk_cannot_swallow_a_callback_resource_refusal() {
     let source = SwallowsElementErrors([id("a"), id("b")]);
     let calls = std::cell::Cell::new(0);
     let error = identities(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         source,
         |_| {
             calls.set(calls.get() + 1);
@@ -283,7 +282,7 @@ rewrite_record!(NativeLink, []; {id, label, native_ref, geometry_ref, endpoint_r
 
 #[test]
 fn full_fidelity_reference_rewrites_without_rewriting_identical_display_text() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let source = NativeLink {
         id: id("owner"),
         label: "test:native:record#1".into(),

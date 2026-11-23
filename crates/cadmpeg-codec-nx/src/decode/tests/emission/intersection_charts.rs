@@ -3,13 +3,13 @@ use crate::decode::tests::emission::EPS_TOPOLOGY_TOLERANCE;
 use crate::decode::tests::emission::TOLERANT_INTERSECTION_FIT;
 use crate::test_support::test_bytes::put_ref;
 use crate::test_support::test_deltas::partnered_trimmed_topology_partition_stream;
+use cadmpeg_ir::geometry::blends::BlendCrossSection;
+use cadmpeg_ir::geometry::blends::BlendRadiusLaw;
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
 use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
-use cadmpeg_ir::geometry::BlendCrossSection;
-use cadmpeg_ir::geometry::BlendRadiusLaw;
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::CurveGeometry;
-use cadmpeg_ir::geometry::ProceduralCurveDefinition;
-use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::geometry::SurfaceGeometry;
@@ -108,7 +108,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
                 ir.geometry.procedural_curve_owner(&procedural.id) == Some(&curve.id)
             })
             .expect("intersection construction");
-        let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
+        let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::TolerantIntersection {
             construction: intersection,
             parameterization,
             ..
@@ -147,7 +147,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
             .expect("vertex point");
         let moved = point.position().get();
         point.set_position(
-            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
                 moved.x + 0.5,
                 moved.y,
                 moved.z,
@@ -156,7 +156,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         );
         let moved = point.position().get();
         point.set_position(
-            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
                 moved.x,
                 moved.y + 0.5,
                 moved.z,
@@ -165,7 +165,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         );
         let moved = point.position().get();
         point.set_position(
-            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
                 moved.x,
                 moved.y,
                 moved.z + 0.5,
@@ -503,9 +503,8 @@ fn cylinder_plane_transfer_fixture(
     source_pcurve_angle: f64,
     edge_tolerance: f64,
 ) -> cadmpeg_ir::document::CadIr {
-    use cadmpeg_ir::geometry::{
-        Curve, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve, Surface,
-    };
+    use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+    use cadmpeg_ir::geometry::{Curve, ProceduralCurve, Surface};
     use cadmpeg_ir::ids::{CurveId, EdgeId, ProceduralCurveId, SurfaceId, VertexId};
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::topology::Edge;
@@ -611,10 +610,9 @@ fn blend_contact_transfer_fixture(
     tolerance: f64,
     contact_on_source_support: bool,
 ) -> cadmpeg_ir::document::CadIr {
-    use cadmpeg_ir::geometry::{
-        BlendSupport, Curve, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
-        ProceduralSurface, Surface,
-    };
+    use cadmpeg_ir::geometry::blends::BlendSupport;
+    use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+    use cadmpeg_ir::geometry::{Curve, ProceduralCurve, ProceduralSurface, Surface};
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
     use cadmpeg_ir::math::Point3;
 
@@ -755,7 +753,7 @@ fn blend_contact_transfer_fixture(
                 Some(spine),
                 BlendRadiusLaw::constant(2.0).unwrap(),
                 BlendCrossSection::Circular,
-                cadmpeg_ir::geometry::CacheContract::from_form(None),
+                cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
             )
             .unwrap(),
         ),
@@ -803,7 +801,8 @@ fn blend_contact_transfer_fixture(
                 .unwrap(),
                 discontinuity_flag: false,
                 cache: Some(
-                    cadmpeg_ir::geometry::LegacyCache::try_new(tolerance).expect("fit tolerance"),
+                    cadmpeg_ir::geometry::legacy_cache::LegacyCache::try_new(tolerance)
+                        .expect("fit tolerance"),
                 ),
             },
         );
@@ -816,10 +815,9 @@ fn blend_contact_transfer_fixture(
 
 #[test]
 fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluable() {
-    use cadmpeg_ir::geometry::{
-        BlendSupport, Curve, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
-        ProceduralSurface, Surface,
-    };
+    use cadmpeg_ir::geometry::blends::BlendSupport;
+    use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+    use cadmpeg_ir::geometry::{Curve, ProceduralCurve, ProceduralSurface, Surface};
     use cadmpeg_ir::ids::{
         CurveId, EdgeId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, VertexId,
     };
@@ -899,7 +897,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
                     Some(spine),
                     BlendRadiusLaw::constant(2.0).unwrap(),
                     BlendCrossSection::Circular,
-                    cadmpeg_ir::geometry::CacheContract::from_form(None),
+                    cadmpeg_ir::geometry::legacy_cache::CacheContract::from_form(None),
                 )
                 .unwrap(),
             ),
@@ -1083,7 +1081,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
             ProceduralCurve::new(
                 construction,
                 ProceduralCurveDefinition::TolerantIntersection {
-                    construction: cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
+                    construction: cadmpeg_ir::geometry::intersection_curves::TolerantIntersectionConstruction::try_new(
                         [nurbs, plane],
                         [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
                         TOLERANT_INTERSECTION_FIT,
@@ -1105,13 +1103,13 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
         ir.geometry.points.extend([
             Point::new(
                 point_ids[0].clone(),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 None,
             ),
             Point::new(
                 point_ids[1].clone(),
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(10.0, 0.0, 0.0))
+                cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(10.0, 0.0, 0.0))
                     .expect("a finite position is a point"),
                 None,
             ),
@@ -1171,7 +1169,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
         assert_eq!(
             ir.geometry.procedural_curves[0]
                 .cache_fit_tolerance()
-                .map(cadmpeg_ir::geometry::FitTolerance::get),
+                .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
             Some(1.0e-8)
         );
         assert_eq!(parameterization.parameter_range().endpoints(), [0.0, 1.0]);
@@ -1194,7 +1192,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
             )
             .expect("charted tolerant intersection evaluates");
             let inverted = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &cadmpeg_ir::index::ModelIndex::build(&ir),
                 owner,
                 evaluated.get(),
@@ -1240,9 +1238,8 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
 
 #[test]
 fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
-    use cadmpeg_ir::geometry::{
-        Curve, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve, Surface,
-    };
+    use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+    use cadmpeg_ir::geometry::{Curve, ProceduralCurve, Surface};
     use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, ProceduralCurveId, SurfaceId, VertexId};
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::topology::{Edge, Point, Vertex};
@@ -1316,7 +1313,7 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
             .extend(points.iter().map(|(id, position)| {
                 Point::new(
                     id.clone(),
-                    cadmpeg_ir::features::FinitePoint3::new(*position)
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(*position)
                         .expect("a finite position is a point"),
                     None,
                 )
@@ -1375,7 +1372,8 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
                 .unwrap(),
                 discontinuity_flag: false,
                 cache: Some(
-                    cadmpeg_ir::geometry::LegacyCache::try_new(0.25).expect("fit tolerance"),
+                    cadmpeg_ir::geometry::legacy_cache::LegacyCache::try_new(0.25)
+                        .expect("fit tolerance"),
                 ),
             },
         );
@@ -1397,7 +1395,7 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
         assert_eq!(
             procedural
                 .cache_fit_tolerance()
-                .map(cadmpeg_ir::geometry::FitTolerance::get),
+                .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
             Some(0.25)
         );
         let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()

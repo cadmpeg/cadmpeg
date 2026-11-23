@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bind component-local construction history to neutral product definitions.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    BodySelection, DistinctMembers, FeatureDefinition, FeatureOperation, SketchFeatureBinding,
-};
+use cadmpeg_ir::features::selections::{BodySelection, DistinctMembers};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SketchFeatureBinding};
 use cadmpeg_ir::CadIr;
 use cadmpeg_ir::{
     document::Model, ids::ProductDefinitionId, report::loss::LossNote, sketches::SketchId,
 };
 
-use super::feature_project::{ComponentHistoryNamespace, ScopeHistoryGraph};
+use super::feature_project::ComponentHistoryNamespace;
+use crate::design::feature_project::scope_order::ScopeHistoryGraph;
 use crate::{ids::native_stream, loss::F3dLossCode, native::F3dNative};
 
 /// Loss reason when a sketch collection names another product definition.
@@ -237,27 +237,43 @@ fn attach_with_implicit_roots(
         }
     }
     follow_consumed_inputs(&mut ir.model, moved, &listed)?;
+    let mut feature_definitions = HashMap::new();
+    for feature in &ir.model.features {
+        feature_definitions
+            .entry(&feature.id)
+            .or_insert(&feature.product_definition);
+    }
+    let mut sources = HashMap::new();
+    for row in &native.design_parameters {
+        sources.entry(row.id.as_str()).or_insert(row);
+    }
+    let mut parameter_owners = HashMap::new();
+    for row in &native.design_parameter_owners {
+        parameter_owners
+            .entry((native_stream(row.id()), row.record_index()))
+            .or_insert(row);
+    }
     for index in 0..ir.model.parameters.len() {
         let parameter = &ir.model.parameters[index];
         let inherited = parameter
             .owner
             .as_ref()
-            .and_then(|owner| ir.model.features.iter().find(|row| &row.id == owner))
-            .map(|row| row.product_definition.clone());
-        let source = parameter
-            .native_ref
-            .as_deref()
-            .and_then(|id| native.design_parameters.iter().find(|row| row.id == id));
+            .and_then(|owner| feature_definitions.get(owner))
+            .copied()
+            .cloned();
         let owner = if let Some(inherited) = inherited {
             inherited
-        } else if let Some(source) = source {
+        } else if let Some(source) = parameter
+            .native_ref
+            .as_deref()
+            .and_then(|id| sources.get(id).copied())
+        {
             let record_index = source
                 .owner_record_index()
                 .and_then(|record| {
-                    native.design_parameter_owners.iter().find(|row| {
-                        native_stream(row.id()) == native_stream(&source.id)
-                            && row.record_index() == record
-                    })
+                    parameter_owners
+                        .get(&(native_stream(&source.id), record))
+                        .copied()
                 })
                 .map_or(
                     source.record_index,

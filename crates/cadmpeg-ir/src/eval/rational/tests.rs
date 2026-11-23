@@ -5,7 +5,7 @@ use proptest::{prop_assert_eq, proptest};
 use super::Homogeneous;
 use crate::eval::admission::{EvaluationAdmission, EvaluationRefusal};
 use crate::eval::decode::Scratch;
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 
 mod separate_traversals;
 
@@ -23,7 +23,7 @@ fn homogeneous_weights_preserve_early_missing_and_empty_input() {
         weight_sum(crate::math::sum::scaled_finite(1.0)),
     ];
     for (values, expected) in [(&missing[..], None), (&[][..], Some(Vec::<f64>::new()))] {
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let scratch = Scratch::new(&ctx);
         assert_eq!(Homogeneous::weights(&scratch, values).unwrap(), expected);
         ctx.finish_session().unwrap();
@@ -33,7 +33,7 @@ fn homogeneous_weights_preserve_early_missing_and_empty_input() {
 #[test]
 fn homogeneous_sum_projects_unit_weight_poles_and_keeps_exact_cancellation() {
     use super::finite_lanes;
-    use crate::features::FinitePoint3;
+    use crate::features::geometry::FinitePoint3;
     use crate::math::Point3;
     for (points, expected) in [
         (
@@ -53,7 +53,7 @@ fn homogeneous_sum_projects_unit_weight_poles_and_keeps_exact_cancellation() {
             [0.0, 2.0, 0.0],
         ),
     ] {
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let scratch = Scratch::new(&ctx);
         let poles = points.map(|point| FinitePoint3::new(point).expect("finite pole"));
         let sum = Homogeneous::sum(
@@ -100,7 +100,7 @@ fn homogeneous_weights_rescale_the_net_when_a_weight_leaves_the_normal_range() {
         (&overflow[..], Some(vec![f64::MAX * 0.5; 2])),
         (&impossible[..], None),
     ] {
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let scratch = Scratch::new(&ctx);
         assert_eq!(Homogeneous::weights(&scratch, values).unwrap(), expected);
         ctx.finish_session().unwrap();
@@ -180,7 +180,7 @@ fn budgeted_sum(
     shared: bool,
     budget: usize,
 ) -> (Result<Option<Lanes>, EvaluationRefusal>, Option<usize>) {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let parent = cadmpeg_core::decode::WorkBudget::new(budget);
     let sum = EvaluationAdmission::Decode(&ctx)
         .within_work_slice(&parent, |admission| {
@@ -242,7 +242,7 @@ proptest! {
         terms in proptest::collection::vec(any_term(), 0..10),
         shape in 0_u8..3,
     ) {
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let unbudgeted = Scratch::new(&ctx);
         prop_assert_eq!(
             shaped_sum(&unbudgeted, &terms, shape, true),
@@ -260,6 +260,94 @@ proptest! {
                 "budget {}",
                 budget
             );
+        }
+    }
+}
+
+#[test]
+fn project_with_subtract_matches_exact_across_normal_and_cancelling_inputs() {
+    use crate::math::sum::{scaled_finite, ExactSignedSum};
+    use crate::scalar::FiniteReal;
+
+    let real = |v: f64| FiniteReal::new(v).expect("finite");
+    let make_h = |coords: [f64; 3], w: f64| Homogeneous {
+        values: [
+            scaled_finite(coords[0]),
+            scaled_finite(coords[1]),
+            scaled_finite(coords[2]),
+            scaled_finite(w),
+        ],
+        constant: [None; 3],
+    };
+
+    let cases = [
+        // Normal non-cancelling derivative subtraction (hits fast path).
+        (
+            make_h([12.5, -3.25, 7.0], 2.0),
+            make_h([4.0, 2.0, -1.0], 1.5),
+            vec![(
+                make_h([0.0, 0.0, 0.0], 0.5),
+                [real(2.0), real(-1.0), real(3.0)],
+            )],
+        ),
+        // Exact cancellation (falls back to ExactSignedSum).
+        (
+            make_h([6.0, -4.0, 10.0], 2.0),
+            make_h([1.0, 1.0, 1.0], 2.0),
+            vec![(
+                make_h([0.0, 0.0, 0.0], 2.0),
+                [real(3.0), real(-2.0), real(5.0)],
+            )],
+        ),
+        // Near-cancellation within 1e-12 (falls back to ExactSignedSum).
+        (
+            make_h([1.0 + 1e-12, 2.0, 0.0], 1.0),
+            make_h([1.0, 1.0, 1.0], 1.0),
+            vec![(
+                make_h([0.0, 0.0, 0.0], 1.0),
+                [real(1.0), real(2.0), real(0.0)],
+            )],
+        ),
+        // Extreme scale outside normal product range (falls back to ExactSignedSum).
+        (
+            make_h([1e200, 1e-200, 0.0], 1e200),
+            make_h([1.0, 1.0, 1.0], 1e200),
+            vec![(
+                make_h([0.0, 0.0, 0.0], 1e200),
+                [real(1e150), real(1e-200), real(0.0)],
+            )],
+        ),
+    ];
+
+    for (deriv, base, subtract) in cases {
+        let actual = deriv.project(base, &subtract).expect("nonzero denominator");
+        let denom = base.values[3].expect("denom");
+        for (axis, lane) in actual.into_iter().enumerate() {
+            let mut exact = ExactSignedSum::default();
+            exact
+                .add_scaled_product(deriv.values[axis], FiniteReal::ONE)
+                .expect("in range");
+            for (weight, factor) in &subtract {
+                exact
+                    .add_scaled_product(weight.values[3], factor[axis].negated())
+                    .expect("in range");
+            }
+            let expected = exact
+                .finish()
+                .map_or(Ok(FiniteReal::ZERO), |v| v.quotient(denom));
+            match (lane, expected) {
+                (Ok(a), Ok(e)) => {
+                    let tol = 4.0 * f64::EPSILON * e.get().abs().max(f64::MIN_POSITIVE);
+                    assert!(
+                        (a.get() - e.get()).abs() <= tol,
+                        "axis {axis}: got {}, expected {}",
+                        a.get(),
+                        e.get()
+                    );
+                }
+                (Err(a), Err(e)) => assert_eq!(a.to_bits(), e.to_bits()),
+                (a, e) => panic!("axis {axis}: mismatch {a:?} vs {e:?}"),
+            }
         }
     }
 }

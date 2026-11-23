@@ -33,14 +33,20 @@ fn saved_aliases_preserve_localized_names_blank_strings_and_scalar_types() {
     let find = |name: &str| rows.iter().find(|row| row.name == name).unwrap();
     assert_eq!(
         find("日期").values,
-        vec![AttributeValue::String("  2024/1/2  ".into())]
+        vec![Some(AttributeValue::String("  2024/1/2  ".into()))]
     );
     assert_eq!(
         find("Blank").values,
-        vec![AttributeValue::String(String::new())]
+        vec![Some(AttributeValue::String(String::new()))]
     );
-    assert_eq!(find("Integer").values, vec![AttributeValue::Integer(-37)]);
-    assert_eq!(find("Flag").values, vec![AttributeValue::Boolean(true)]);
+    assert_eq!(
+        find("Integer").values,
+        vec![Some(AttributeValue::Integer(-37))]
+    );
+    assert_eq!(
+        find("Flag").values,
+        vec![Some(AttributeValue::Boolean(true))]
+    );
     assert!(find("日期").id.as_str().ends_with(":5:%E6%97%A5%E6%9C%9F"));
     assert!(rows
         .iter()
@@ -71,7 +77,7 @@ fn explicit_nil_properties_preserve_identity_without_conflating_missing_values()
     }
     assert_eq!(
         rows.iter().find(|row| row.name == "Blank").unwrap().values,
-        vec![AttributeValue::String(String::new())]
+        vec![Some(AttributeValue::String(String::new()))]
     );
     assert_eq!(losses.len(), 5);
     assert!(losses
@@ -118,7 +124,10 @@ fn repeated_same_alias_and_pid_coalesce_without_inventing_a_value() {
     );
     let (rows, _, losses) = properties(&[(MEMBER, source.as_bytes())]);
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].values, vec![AttributeValue::String(String::new())]);
+    assert_eq!(
+        rows[0].values,
+        vec![Some(AttributeValue::String(String::new()))]
+    );
     assert!(losses.is_empty());
 }
 #[test]
@@ -326,7 +335,7 @@ fn compound_default_owner_requires_the_complete_root_stream_path() {
     let (mut rows, mut notes, mut losses) = (Vec::new(), Annotations::default(), Vec::new());
     append(&ctx, &scan, &mut rows, &mut notes, &mut losses).unwrap();
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].values, vec![AttributeValue::Integer(7)]);
+    assert_eq!(rows[0].values, vec![Some(AttributeValue::Integer(7))]);
     assert!(losses.is_empty());
 }
 #[test]
@@ -340,7 +349,7 @@ fn xml_keeps_fmtid_namespaces_separate_and_rejects_repeated_default_sets() {
     let mixed = source.replace("</p:Properties>", &format!("{foreign}</p:Properties>"));
     let (rows, _, losses) = properties(&[(MEMBER, mixed.as_bytes())]);
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].values, vec![AttributeValue::Integer(7)]);
+    assert_eq!(rows[0].values, vec![Some(AttributeValue::Integer(7))]);
     assert!(losses.is_empty());
     let repeated = mixed.replace("D5CDD502", "D5CDD505");
     let (rows, _, losses) = properties(&[(MEMBER, repeated.as_bytes())]);
@@ -351,7 +360,7 @@ fn xml_keeps_fmtid_namespaces_separate_and_rejects_repeated_default_sets() {
 fn saved_negative_zero_preserves_its_exact_float_bits() {
     let source = xml(r#"<property pid="2" name="Zero"><v:r8>-0.0</v:r8></property>"#);
     let (rows, _, losses) = properties(&[(MEMBER, source.as_bytes())]);
-    let AttributeValue::Float(value) = rows[0].values[0] else {
+    let Some(AttributeValue::Float(value)) = rows[0].values[0] else {
         panic!("float")
     };
     assert_eq!(value.get().to_bits(), (-0.0f64).to_bits());
@@ -367,7 +376,7 @@ fn saved_xml_utf16_is_strict_and_does_not_discard_unowned_bytes() {
     assert_eq!(rows.len(), 1);
     assert_eq!(
         rows[0].values,
-        vec![AttributeValue::String("scalar".into())]
+        vec![Some(AttributeValue::String("scalar".into()))]
     );
     assert!(losses.is_empty());
     let mut odd = encoded.clone();

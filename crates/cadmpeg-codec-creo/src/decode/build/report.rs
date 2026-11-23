@@ -5,10 +5,9 @@ use crate::container::SectionRole;
 use std::collections::BTreeSet;
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{
-    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry,
-};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
 use crate::container::{self, ContainerScan};

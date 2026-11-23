@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized SLDPRT compound-document images.
 
+mod scan;
+
 mod extrude_direction;
 mod mesh_bodies;
+mod native_skeleton;
 mod profile_data;
+mod root_definition;
 mod scalar_relation_values;
+mod sweep_path_section;
 mod swift_nominal;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
@@ -13,7 +18,7 @@ use cadmpeg_core::container::ContainerRole;
 
 use std::io::Cursor;
 
-use crate::writer::tests::configuration_carriers::semantic_writer_rejects_subds;
+use crate::writer::tests::configuration_carriers::semantic_writer_omits_subds_and_names_them;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::write::Encoder;
@@ -61,7 +66,7 @@ fn assert_valid(result: &EditableDecodeResult) {
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
     let native = crate::resolved_features::validate::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         result.ir(),
     )
     .unwrap();
@@ -256,6 +261,7 @@ fn tessellation_geometry_does_not_choose_between_coincident_faces() {
     let _ = crate::tessellation::assign_unique_surface_owners(
         &ctx,
         &mut decoded.ir_mut(),
+        &std::collections::HashSet::default(),
         &mut Vec::new(),
     )
     .unwrap();
@@ -288,8 +294,7 @@ fn retained_writer_pipeline_regenerates_geometry_and_preserves_unedited_sections
 }
 
 #[test]
-fn authored_with_retained_native_envelope_writer_pipeline_round_trips_a_cube_and_rejects_unrepresentable_ir(
-) {
+fn authored_with_retained_native_envelope_writer_pipeline_round_trips_a_cube_and_omits_subds() {
     let first = EditableDecodeResult::from(encode_decode_result(&source_less_cube()));
     assert_eq!(first.ir().geometry.faces.len(), 6);
     assert_eq!(first.ir().geometry.edges.len(), 12);
@@ -303,7 +308,7 @@ fn authored_with_retained_native_envelope_writer_pipeline_round_trips_a_cube_and
         crate::decode::document_local_sha256(first.ir()).unwrap(),
         crate::decode::document_local_sha256(second.ir()).unwrap()
     );
-    semantic_writer_rejects_subds();
+    semantic_writer_omits_subds_and_names_them();
 }
 
 // --------------------------------------------------------------------------
@@ -444,14 +449,15 @@ fn inherit_refuses_an_off_catalog_source_dialect_with_nothing_retained() {
         "the refusal must name the declared synthesis alternative: {reason}"
     );
     assert!(
-        reason.contains("validated retained local, central and EOCD signature tokens"),
+        reason.contains("that envelope is sldprt:unknown"),
         "{reason}"
     );
 }
 
-/// Cross-dialect synthesis does not consume the retained Native envelope.
+/// Cross-dialect synthesis does not consume the retained Native envelope: it
+/// synthesizes one.
 #[test]
-fn explicit_cross_dialect_synthesis_without_consuming_native_framing_is_refused() {
+fn explicit_cross_dialect_synthesis_writes_a_synthesized_native_envelope() {
     let result = decode(versioned_part());
     assert!(result
         .source_fidelity()
@@ -459,17 +465,22 @@ fn explicit_cross_dialect_synthesis_without_consuming_native_framing_is_refused(
         .unwrap()
         .data()
         .is_some());
-    let error = plan(
+    let plan = plan(
         &result,
         true,
         cadmpeg_ir::codec::write::target::TargetRequest::Explicit("sldprt:unknown"),
     )
-    .expect_err("nonconsuming cross-dialect synthesis has no Native envelope tokens");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(ref detail)
-        if detail.contains("validated retained local, central and EOCD signature tokens")),
-        "{error}"
-    );
+    .expect("nonconsuming cross-dialect synthesis synthesizes its Native envelope");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "record.residual-unavailable"));
+    let claimed = named_target(&plan);
+    assert_eq!(claimed, "sldprt:unknown");
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    assert_eq!(classify(written), claimed);
 }
 
 #[test]
@@ -482,7 +493,7 @@ fn the_patch_path_names_the_preserved_dialect() {
     let mut edited = result.ir().clone();
     let moved = edited.geometry.points[0].position().get();
     edited.geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,
             moved.y,
             moved.z,
@@ -526,7 +537,7 @@ fn the_patch_path_names_the_preserved_dialect() {
 }
 
 #[test]
-fn digest_only_source_image_cannot_supply_native_envelope() {
+fn digest_only_source_image_writes_retained_records_in_a_synthesized_envelope() {
     let result = decode(versioned_part());
     let (ir, _, mut fidelity) = result.into_parts();
     let unavailable = {
@@ -561,28 +572,25 @@ fn digest_only_source_image_cannot_supply_native_envelope() {
         .unwrap()
         .data()
         .is_none());
-    let error = SldprtCodec
+    let plan = SldprtCodec
         .plan(
             cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(&fidelity)),
             cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
         )
-        .expect_err("digest-only source image cannot supply Native envelope framing");
-    let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
-    };
-    assert_eq!(refusal.format(), "sldprt");
-    let wire = serde_json::to_value(refusal).expect("serialize refusal");
-    assert_eq!(wire["refusal"]["source"], "sldprt:sw-version-12000-plus");
-    assert!(refusal
-        .available()
+        .expect("the retained records keep the source's swSolidWorks envelope");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::SldprtLossCode::SourcePreservedImageUnavailable.kind()
+    }));
+    assert!(plan
+        .report()
+        .losses
         .iter()
-        .any(|target| target.id.as_str() == "sldprt:unknown"));
-    let reason = wire["refusal"]["reason"].as_str().expect("refusal reason");
-    assert!(reason.contains("sldprt:unknown"), "{reason}");
-    assert!(
-        reason.contains("validated retained local, central and EOCD signature tokens"),
-        "{reason}"
-    );
+        .any(|loss| loss.code.local_code() == "record.residual-unavailable"));
+    let claimed = named_target(&plan);
+    assert_eq!(claimed, "sldprt:sw-version-12000-plus");
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    assert_eq!(classify(written), claimed);
 }
 
 #[test]
@@ -658,6 +666,7 @@ fn generation_with_retained_envelope_tokens_names_the_catalog_row() {
     assert_eq!(classify(written), claimed);
 }
 
+mod inch_feature_lengths;
 mod mass_property_conformance;
 mod nist_pmi_conformance;
 mod terminal_edge_ownership;
@@ -669,6 +678,8 @@ mod weldment_refusal;
 mod partial_decode;
 
 mod partition_sketches;
+
+mod configuration_states;
 
 fn face_table_bytes() -> Vec<u8> {
     let mut out = descriptor(4, 8, 1, &3_u32.to_le_bytes());

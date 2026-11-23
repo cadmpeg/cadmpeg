@@ -45,7 +45,7 @@ pub(super) fn configurations(
         .map(|configuration| {
             (
                 Some(configuration.name.as_str()),
-                configuration.source_index,
+                configuration.partition_index(),
             )
         })
         .collect::<Vec<_>>();

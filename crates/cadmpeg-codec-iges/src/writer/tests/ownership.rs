@@ -6,12 +6,10 @@ use cadmpeg_ir::codec::{
     write::{target::TargetRequest, EncodeInput, Encoder},
     DecodeOptions,
 };
-use cadmpeg_ir::geometry::{
-    nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
-    surface_payloads::ExactSurfacePayload,
-    ProceduralSurface, ProceduralSurfaceDefinition, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry,
-};
+use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload;
+use cadmpeg_ir::geometry::{ProceduralSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::IncreasingParameterInterval;
 use cadmpeg_ir::{CadIr, Codec, SourceGeometryRole, SourceObjectAssociation};
@@ -89,7 +87,9 @@ fn exact_surface_export_keeps_its_active_rectangle() {
     let ProceduralSurfaceDefinition::Exact(payload) = definition.definition() else {
         panic!("exact domain")
     };
-    let cadmpeg_ir::geometry::ExactSpline::Legacy { ranges, .. } = payload.spline() else {
+    let cadmpeg_ir::geometry::procedural_surfaces::ExactSpline::Legacy { ranges, .. } =
+        payload.spline()
+    else {
         panic!("legacy exact domain")
     };
     assert_eq!(
@@ -120,7 +120,7 @@ fn unowned_support_surface_and_point_are_withheld_with_loss() {
     ir.geometry.surfaces.push(support);
     ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         "test:model:point#support".try_into().unwrap(),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 3.0, 4.0)).unwrap(),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(2.0, 3.0, 4.0)).unwrap(),
         Some(support_association()),
     ));
     let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
@@ -172,7 +172,7 @@ fn support_only_point_export_refuses_an_empty_transfer() {
     let mut ir = CadIr::empty();
     ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         "test:model:point#support".try_into().unwrap(),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 3.0, 4.0)).unwrap(),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(2.0, 3.0, 4.0)).unwrap(),
         Some(support_association()),
     ));
     assert!(matches!(

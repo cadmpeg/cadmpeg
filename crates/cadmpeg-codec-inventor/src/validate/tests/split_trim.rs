@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::{
-    features::{
-        BodySelection, BodyTrimSide, FeatureDefinition, FeatureEvaluation, FeatureOperation,
-        FeatureResultMembers, FeatureResultTopology, TrimBodyOperands,
-    },
-    ids::FeatureResultTopologyId,
+use cadmpeg_ir::features::evaluation::{
+    FeatureEvaluation, FeatureResultMembers, FeatureResultTopology,
 };
+use cadmpeg_ir::features::operation_settings::BodyTrimSide;
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, TrimBodyOperands};
+use cadmpeg_ir::ids::FeatureResultTopologyId;
 
 use super::{annotation, empty_data, TestResult};
 use crate::{

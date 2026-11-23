@@ -22,18 +22,16 @@ use crate::resolved_features::relation_geometry::project_relation_solved_point_g
 use crate::resolved_features::relation_loci::profile_loci_by_marker;
 use crate::resolved_features::relation_loci::typed_relation_definition;
 use crate::resolved_features::selections::COMPACT_EDGE_VECTOR_MARKER;
+use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+use cadmpeg_ir::features::patterns::{PatternKind, PatternSeed, PatternTransform};
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::sweeps::SweepMode;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
     SketchGeometryDefinition, SketchId, SketchLocus, SketchPlacement,
-};
-use cadmpeg_ir::{
-    features::{
-        patterns::{PatternKind, PatternSeed, PatternTransform},
-        DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
-        ParameterValue, PathRef, SweepMode,
-    },
-    scalar::Length,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -498,12 +496,14 @@ fn pattern_inputs_keep_curve_bindings_and_directions_without_guessed_seeds() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            definition,
+        ),
         native_ref: Some(native_ref.into()),
     };
     let sketch = SketchId::mint("synthetic:test:id#path-sketch").unwrap();
@@ -889,11 +889,11 @@ fn pattern_inputs_keep_curve_bindings_and_directions_without_guessed_seeds() {
         .set_definition(FeatureDefinition::Operation(FeatureOperation::Pattern {
             seeds: Vec::new(),
             pattern: PatternKind::new(PatternTransform::Mirror {
-                plane_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                plane_origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                     12.0, -25.0, 0.0,
                 ))
                 .unwrap(),
-                plane_normal: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                plane_normal: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
                     0.0, 1.0, 0.0,
                 ))
                 .unwrap(),
@@ -969,11 +969,11 @@ fn pattern_inputs_keep_curve_bindings_and_directions_without_guessed_seeds() {
     features[0]
         .evaluation
         .set_definition(FeatureDefinition::Operation(FeatureOperation::Sweep {
-            shape: cadmpeg_ir::features::SweepShape::sheet_sections(
+            shape: cadmpeg_ir::features::sweeps::SweepShape::sheet_sections(
                 SweepMode::Solid {
-                    op: cadmpeg_ir::features::SolidSweepOperation::Join,
+                    op: cadmpeg_ir::features::sweeps::SolidSweepOperation::Join,
                 },
-                cadmpeg_ir::features::SweepSection::Unresolved(None),
+                cadmpeg_ir::features::sweeps::SweepSection::Unresolved(None),
                 Vec::new(),
             ),
             path: Some(PathRef::Native("curve-reference".into())),
@@ -1115,12 +1115,12 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
             }),
@@ -1220,7 +1220,7 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         expression: "5mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some(scalar.into()),
@@ -1318,12 +1318,12 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
             }),
@@ -1425,7 +1425,7 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         expression: "30mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(30.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -1508,12 +1508,12 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
             }),
@@ -1630,7 +1630,7 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         expression: "15mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(15.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -1697,12 +1697,12 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
             }),
@@ -1802,7 +1802,7 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         expression: format!("{distance}mm"),
         display: None,
         value: Some(ParameterValue::Length(Length::new(distance).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some(scalar.into()),
@@ -1861,7 +1861,7 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
     .expect("find the profile loci for each marker");
     for (index, relation) in relations.iter().enumerate() {
         let definition = typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             relation,
             Some(&parameters[index]),
             &sketch,

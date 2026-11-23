@@ -3,10 +3,9 @@
 
 use crate::classification::NativeClassKind;
 use crate::records::Feature;
-use cadmpeg_ir::features::{
-    patterns::{PatternKind, PatternSeed, PatternTransform},
-    FeatureDefinition, FeatureId, FeatureOperation, PathRef,
-};
+use cadmpeg_ir::features::patterns::{PatternKind, PatternSeed, PatternTransform};
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 use std::collections::HashMap;
 
 use crate::history::classify::feature_input_class;

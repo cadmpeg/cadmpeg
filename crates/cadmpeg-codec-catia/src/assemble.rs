@@ -11,9 +11,11 @@ use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    pcurve::PcurveGeometry, CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -969,10 +971,12 @@ mod route_tests {
 
     use cadmpeg_ir::document::CadIr;
 
+    use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use cadmpeg_ir::geometry::{
-        pcurve::PcurveGeometry, Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
-        ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-        Surface, SurfaceGeometry,
+        Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
+        SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -1192,7 +1196,7 @@ mod route_tests {
     fn neutral_model_admissibility_rejects_invalid_topology() {
         let mut valid = CadIr::empty();
         assert!(neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut valid,
             &[]
         )
@@ -1202,7 +1206,7 @@ mod route_tests {
             cadmpeg_test_support::admissibility::rejected_missing_region("catia:test")
                 .expect("fixture identities are valid");
         assert!(!neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut invalid,
             &[]
         )
@@ -1214,7 +1218,7 @@ mod route_tests {
     fn phase5_freeze_shared_admissibility_fixtures() {
         let mut accepted = cadmpeg_test_support::admissibility::accepted_empty();
         assert!(neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut accepted,
             &[]
         )
@@ -1223,7 +1227,7 @@ mod route_tests {
             cadmpeg_test_support::admissibility::rejected_missing_region("catia:test")
                 .expect("fixture identities are valid");
         assert!(!neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut rejected,
             &[]
         )
@@ -1263,7 +1267,7 @@ mod route_tests {
             .any(|finding| finding.check == cadmpeg_ir::report::check::Check::ArenaOrder));
 
         neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut ir,
             &[],
         )
@@ -1327,7 +1331,7 @@ mod route_tests {
         )];
 
         assert!(neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut ir,
             &unknowns
         )
@@ -1436,7 +1440,7 @@ mod route_tests {
         ir.geometry.procedural_surfaces[0].edit_definition(|definition| {
             *definition = ProceduralSurfaceDefinition::Exact(
                 cadmpeg_ir::geometry::surface_payloads::ExactSurfacePayload::try_new(
-                    cadmpeg_ir::geometry::ExactSpline::Legacy {
+                    cadmpeg_ir::geometry::procedural_surfaces::ExactSpline::Legacy {
                         ranges: [[0.0, 1.0], [0.0, 1.0]],
                         extension: 0,
                         cache: None,

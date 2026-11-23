@@ -11,7 +11,8 @@ use cadmpeg_ir::design::construction::{
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::options::{NativeOption, NativeOptions};
 use cadmpeg_ir::features::datums::DatumAxisDraft;
-use cadmpeg_ir::features::{FeatureDefinition, FeatureDirection3, FinitePoint3};
+use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
+use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, Length};
@@ -424,7 +425,7 @@ mod tests {
                 candidates: vec![candidate],
                 ..Default::default()
             });
-            let ctx = cadmpeg_test_support::service_decode_context();
+            let ctx = cadmpeg_core::decode::test_support::service_decode_context();
             let definition = project(&ctx, &scope, &mut Vec::new()).unwrap();
             let cadmpeg_ir::features::FeatureOperation::DatumAxis { axis } = definition.operation()
             else {
@@ -478,7 +479,7 @@ mod tests {
                 ..Default::default()
             });
             let mut losses = Vec::new();
-            let ctx = cadmpeg_test_support::service_decode_context();
+            let ctx = cadmpeg_core::decode::test_support::service_decode_context();
             let definition = project(&ctx, &scope, &mut losses).unwrap();
             assert!(
                 losses.is_empty(),

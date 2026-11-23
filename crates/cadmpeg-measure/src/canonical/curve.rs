@@ -5,10 +5,13 @@
 //! forms. Every other carrier is evaluated by the IR evaluators in its own
 //! coordinates and mapped by the body placement.
 
+mod inversion;
+
 use cadmpeg_ir::eval::decode::{curve_point, curve_tangent};
 use cadmpeg_ir::eval::model_curve_point_by_id;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
+use inversion::CurveInverter;
 
 use super::placement::Placement;
 use crate::context::Eval;
@@ -47,6 +50,7 @@ pub(crate) struct CurveChart<'ir> {
     /// The composed placement of the curve's chain and the body.
     pub(crate) placement: Placement,
     pub(crate) shape: CurveShape,
+    nurbs: Option<&'ir cadmpeg_ir::geometry::nurbs::NurbsCurve>,
 }
 
 /// The leaf of a curve's placement chain and the chain's composed placement.
@@ -79,28 +83,38 @@ fn solved_kind(geometry: &SolvedCurveGeometry) -> CurveKind {
 impl<'ir> CurveChart<'ir> {
     /// The chart of `curve` placed by `body`.
     pub(crate) fn new(curve: &'ir Curve, body: Placement) -> Measure<Self> {
-        let (kind, placement, shape) = match &curve.geometry {
+        let (kind, placement, shape, nurbs) = match &curve.geometry {
             CurveGeometry::Procedural {
                 cache: Some(cache), ..
             } => {
                 let (leaf_geometry, chain) = leaf(cache)?;
                 let placement = chain.then(body)?;
+                let nurbs = match leaf_geometry {
+                    SolvedCurveGeometry::Nurbs(nurbs) => Some(nurbs),
+                    _ => None,
+                };
                 (
                     CurveKind::Procedural,
                     placement,
                     Self::closed_form(leaf_geometry, placement),
+                    nurbs,
                 )
             }
             CurveGeometry::Procedural { cache: None, .. } => {
-                (CurveKind::Procedural, body, CurveShape::Evaluated)
+                (CurveKind::Procedural, body, CurveShape::Evaluated, None)
             }
             CurveGeometry::Solved(geometry) => {
                 let (leaf_geometry, chain) = leaf(geometry)?;
                 let placement = chain.then(body)?;
+                let nurbs = match leaf_geometry {
+                    SolvedCurveGeometry::Nurbs(nurbs) => Some(nurbs),
+                    _ => None,
+                };
                 (
                     solved_kind(geometry),
                     placement,
                     Self::closed_form(leaf_geometry, placement),
+                    nurbs,
                 )
             }
         };
@@ -110,6 +124,7 @@ impl<'ir> CurveChart<'ir> {
             body,
             placement,
             shape,
+            nurbs,
         })
     }
 
@@ -275,6 +290,55 @@ impl<'ir> CurveChart<'ir> {
         magnitude.is_finite().then_some(magnitude)
     }
 
+    /// The model-space point and first derivative at `t`, computed in one pass
+    /// for closed-form and NURBS curves.
+    pub(crate) fn point_and_tangent(
+        &self,
+        eval: &Eval<'_, '_>,
+        t: f64,
+    ) -> Measure<(Point3, Vector3)> {
+        match &self.shape {
+            CurveShape::Line { origin, direction } => {
+                Ok((offset(*origin, direction.scale(t)), *direction))
+            }
+            CurveShape::Conic {
+                center,
+                e1,
+                e2,
+                major,
+                minor,
+            } => {
+                let (sine, cosine) = t.sin_cos();
+                Ok((
+                    offset(
+                        *center,
+                        combine(&[(major * cosine, *e1), (minor * sine, *e2)]),
+                    ),
+                    combine(&[(-major * sine, *e1), (minor * cosine, *e2)]),
+                ))
+            }
+            CurveShape::Degenerate { point } => Ok((*point, Vector3::new(0.0, 0.0, 0.0))),
+            CurveShape::Evaluated => {
+                if let Some(nurbs) = self.nurbs {
+                    if let Some(pair) = super::column::nurbs_curve_point_and_tangent_fast(
+                        eval,
+                        nurbs,
+                        t,
+                        self.placement,
+                    )? {
+                        return Ok(pair);
+                    }
+                }
+                Ok((self.point(eval, t)?, self.tangent(eval, t)?))
+            }
+            CurveShape::Unsupported(reason) => Err(MeasureFailure::unavailable(
+                *reason,
+                Some(self.id()),
+                "the curve has no parameterization",
+            )),
+        }
+    }
+
     /// The model-space point at `t`.
     pub(crate) fn point(&self, eval: &Eval<'_, '_>, t: f64) -> Measure<Point3> {
         match &self.shape {
@@ -294,6 +358,16 @@ impl<'ir> CurveChart<'ir> {
             }
             CurveShape::Degenerate { point } => Ok(*point),
             CurveShape::Evaluated => {
+                if let Some(nurbs) = self.nurbs {
+                    if let Some((point, _)) = super::column::nurbs_curve_point_and_tangent_fast(
+                        eval,
+                        nurbs,
+                        t,
+                        self.placement,
+                    )? {
+                        return Ok(point);
+                    }
+                }
                 eval.charge(1)?;
                 let local = match &self.curve.geometry {
                     CurveGeometry::Procedural { cache: None, .. } => {
@@ -331,6 +405,16 @@ impl<'ir> CurveChart<'ir> {
             }
             CurveShape::Degenerate { .. } => Ok(Vector3::new(0.0, 0.0, 0.0)),
             CurveShape::Evaluated => {
+                if let Some(nurbs) = self.nurbs {
+                    if let Some((_, tangent)) = super::column::nurbs_curve_point_and_tangent_fast(
+                        eval,
+                        nurbs,
+                        t,
+                        self.placement,
+                    )? {
+                        return Ok(tangent);
+                    }
+                }
                 if matches!(
                     self.curve.geometry,
                     CurveGeometry::Procedural { cache: None, .. }
@@ -379,6 +463,12 @@ impl<'ir> CurveChart<'ir> {
         }
     }
 
+    pub(crate) fn inverter(&self) -> Option<CurveInverter<'ir>> {
+        let record: &'ir Curve = self.curve;
+        let (basis, _) = leaf(record.geometry.solved()?).ok()?;
+        CurveInverter::new(basis)
+    }
+
     /// The parameter of a model point on the curve within `tolerance`, near
     /// `seed`.
     pub(crate) fn parameter(
@@ -387,6 +477,7 @@ impl<'ir> CurveChart<'ir> {
         point: Point3,
         seed: f64,
         tolerance: f64,
+        inverter: Option<&mut CurveInverter<'_>>,
     ) -> Measure<Option<f64>> {
         if let Some(parameter) = self.closed_form_parameter(point) {
             let reached = self.point(eval, parameter)?;
@@ -401,13 +492,17 @@ impl<'ir> CurveChart<'ir> {
                         return Ok(None);
                     };
                     eval.charge(1)?;
-                    let found = cadmpeg_ir::eval::nurbs_curve_parameter_near_point(
-                        eval.ctx,
-                        nurbs,
-                        local,
-                        tolerance / self.placement.scale,
-                        seed,
-                    )
+                    let found = match inverter {
+                        Some(inverter) if std::ptr::eq(inverter.curve(), nurbs) => inverter
+                            .parameter(eval.ctx, local, tolerance / self.placement.scale, seed),
+                        _ => cadmpeg_ir::eval::nurbs_curve_parameter_near_point(
+                            eval.ctx,
+                            nurbs,
+                            local,
+                            tolerance / self.placement.scale,
+                            seed,
+                        ),
+                    }
                     .map_err(MeasureFailure::from_codec)?;
                     return Ok(found.map(cadmpeg_ir::scalar::FiniteReal::get));
                 }

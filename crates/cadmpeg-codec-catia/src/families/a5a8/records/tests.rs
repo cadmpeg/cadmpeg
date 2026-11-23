@@ -28,6 +28,8 @@ use crate::test_support::test_a5a8::{
 use crate::test_support::test_b5::a8_inline_surface_stream_with_native_vertex_chain;
 
 mod spline_headers;
+mod surface_suffix;
+mod weight_program;
 
 #[test]
 fn surface_tail_scans_continuation_without_materializing_a_lane() {
@@ -1132,6 +1134,7 @@ fn a5_weight_program_reads_independent_palindromic_rows() {
     assert_eq!(
         crate::families::a5a8::records::a5_weights(&bytes, &mut at, 4, 4, bytes.len()).map(
             |weights| weights
+                .values
                 .into_iter()
                 .map(cadmpeg_ir::scalar::NonZeroReal::get)
                 .collect::<Vec<_>>()
@@ -1155,6 +1158,7 @@ fn a5_weight_program_reads_zero_prefixed_complete_grid() {
     assert_eq!(
         crate::families::a5a8::records::a5_weights(&bytes, &mut at, 4, 4, bytes.len()).map(
             |weights| weights
+                .values
                 .into_iter()
                 .map(cadmpeg_ir::scalar::NonZeroReal::get)
                 .collect::<Vec<_>>()
@@ -1277,7 +1281,9 @@ fn rolling_ball_radius_reports_only_actual_rail_movement() {
         .definition_at_radius(radius)
         .expect("nearby radius");
     assert_eq!(moved, radius - 1.0);
-    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(stations) = definition
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::RollingBallJet(
+        stations,
+    ) = definition
     else {
         panic!("rolling-ball definition");
     };
@@ -1429,7 +1435,7 @@ fn owned_rolling_ball_uses_the_terminal_transverse_gauge() {
     tail.extend([0, 0]);
     assert_eq!(
         super::a5_rolling_ball_tail(&tail, 2, [0.0, 1.0], true),
-        Some(2.0)
+        Some((2.0, None))
     );
     assert_eq!(
         super::a5_rolling_ball_tail(&tail, 2, [0.0, 1.0], false),
@@ -1443,7 +1449,7 @@ fn owned_rolling_ball_uses_the_terminal_transverse_gauge() {
     tail[59] = 1;
     assert_eq!(
         super::a5_rolling_ball_tail(&tail, 2, [0.0, 1.0], true),
-        Some(2.0)
+        Some((2.0, None))
     );
 }
 
@@ -1512,7 +1518,7 @@ fn rolling_ball_limit_curves_reproduce_stored_endpoint_sites() {
                 &geometry,
                 knots[0]
             )
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
             Ok(expected[0])
         );
         assert_eq!(
@@ -1521,7 +1527,7 @@ fn rolling_ball_limit_curves_reproduce_stored_endpoint_sites() {
                 &geometry,
                 knots[1]
             )
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
             Ok(expected[1])
         );
     }
@@ -1582,4 +1588,75 @@ fn a8_surface_header_reads_the_frame_object_id() {
     )
     .expect("complete surface header");
     assert_eq!(header.object_id, object_id);
+}
+
+#[test]
+fn owned_surface_tail_rejects_descending_u_until_chart_transfer() {
+    use crate::layout::surface_terminal_span_tail as layout;
+
+    let mut tail = a5_surface_tail();
+    tail.truncate(layout::SUFFIX);
+    tail.extend([0x01, 0, 0x09, 0x01, 0x05, 0x07, 0x07]);
+    tail[layout::CONTROLS + 1] = 0x0d;
+    let u_start = layout::PARAMETERS;
+    tail[u_start..u_start + 8].copy_from_slice(&3.0_f64.to_le_bytes());
+    tail[u_start + 8..u_start + 16].copy_from_slice(&1.0_f64.to_le_bytes());
+    assert_eq!(super::parse_surface_tail(&tail, 0, tail.len(), false), None);
+    assert_eq!(super::parse_surface_tail(&tail, 0, tail.len(), true), None);
+    tail[layout::CONTROLS + 1] = 0x05;
+    assert_eq!(super::parse_surface_tail(&tail, 0, tail.len(), true), None);
+}
+
+#[test]
+fn owned_rolling_ball_doubled_span_retains_the_reference_gauge() {
+    let bytes = a5_freeform_curve_stream();
+    let mut tail = bytes[bytes.len() - 79..].to_vec();
+    tail[24..32].copy_from_slice(&le_f64(4.0));
+    tail[49..57].copy_from_slice(&le_f64(4.0));
+    tail[57] = 0x01;
+    tail.extend(le_f64(2.0));
+    tail.extend([0, 0]);
+    assert_eq!(
+        super::a5_rolling_ball_tail(&tail, 2, [0.0, 1.0], true),
+        Some((2.0, Some(4.0)))
+    );
+    assert_eq!(
+        super::a5_rolling_ball_tail(&tail, 2, [0.0, 1.0], false),
+        None
+    );
+    tail[79..87].copy_from_slice(&le_f64(4.0));
+    assert_eq!(
+        super::a5_rolling_ball_tail(&tail, 2, [0.0, 1.0], true),
+        None
+    );
+}
+
+#[test]
+fn owned_rolling_ball_scalar_map_uses_the_terminal_span() {
+    let bytes = a5_freeform_curve_stream();
+    let original_tail = &bytes[bytes.len() - 79..];
+    let mut tail = original_tail[..57].to_vec();
+    tail[24..32].copy_from_slice(&le_f64(1.0));
+    tail[49..57].copy_from_slice(&le_f64(1.0));
+    tail.extend([0x01, 0x01]);
+    for value in [0.0, 1.0, 1.0, 1.0, 0.0, 0.0] {
+        tail.extend(le_f64(value));
+    }
+    tail.extend(0u32.to_le_bytes());
+    tail.extend_from_slice(&original_tail[63..]);
+    tail.extend(le_f64(1.0));
+    tail.extend([0, 0]);
+    assert_eq!(
+        super::a5_rolling_ball_tail(&tail, 2, [0.0, 1.0], true),
+        Some((1.0, Some(1.0)))
+    );
+    assert_eq!(
+        super::a5_rolling_ball_tail(&tail, 2, [0.0, 1.0], false),
+        None
+    );
+    *tail.last_mut().expect("terminal") = 1;
+    assert_eq!(
+        super::a5_rolling_ball_tail(&tail, 2, [0.0, 1.0], true),
+        None
+    );
 }

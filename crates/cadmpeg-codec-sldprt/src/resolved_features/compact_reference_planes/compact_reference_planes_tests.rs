@@ -1,9 +1,6 @@
 //! Tests for the `compact_reference_planes` module.
 
-use super::{
-    compact_reference_plane_source, principal_sketch_frame, principal_top_component_frame,
-    CompactReferencePlaneIndex,
-};
+use super::{compact_reference_plane_source, principal_sketch_frame, CompactReferencePlaneIndex};
 use cadmpeg_ir::features::PrincipalPlane;
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -149,18 +146,17 @@ fn compact_component_matrix_places_a_sketch_plane() {
 #[test]
 fn indexed_profile_frames_resolve_each_record_interval() {
     let frame = principal_sketch_frame(PrincipalPlane::Top);
-    let records = 4096;
+    let records = 16;
     let width = super::COMPACT_COMPONENT_PLANE_RECORD_LEN;
     let index = CompactReferencePlaneIndex {
         payload_len: records * width,
-        class_offsets: Vec::new(),
+        class_end: None,
         declared: Vec::new(),
         components: (0..records).map(|i| (i * width, 7)).collect(),
-        deferred_principal_components: Vec::new(),
-        top_components: Vec::new(),
+        principal_components: Vec::new(),
         component_frames: (0..records).map(|i| (i * width, frame)).collect(),
     };
-    for i in 0..1000 {
+    for i in 0..records {
         let start = i * width;
         let end = start + width;
         assert_eq!(index.profile_source(start, start, end), Some(7));
@@ -178,11 +174,10 @@ fn indexed_component_frames_keep_complete_boundaries_and_ambiguity() {
     let width = super::COMPACT_COMPONENT_PLANE_RECORD_LEN;
     let index = CompactReferencePlaneIndex {
         payload_len: width * 3,
-        class_offsets: Vec::new(),
+        class_end: None,
         declared: Vec::new(),
         components: vec![(0, 7), (width, 7), (width * 2, 9)],
-        deferred_principal_components: Vec::new(),
-        top_components: Vec::new(),
+        principal_components: Vec::new(),
         component_frames: vec![(0, first), (width, first), (width * 2, second)],
     };
     assert_eq!(index.profile_component_frame(0, 0, width - 1), None);
@@ -208,7 +203,7 @@ fn front_frame_uses_model_xy_with_positive_z_normal() {
 #[test]
 fn principal_top_uses_positive_y_normal() {
     assert_eq!(
-        principal_top_component_frame(),
+        principal_sketch_frame(PrincipalPlane::Top),
         (
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 1.0, 0.0),
@@ -245,11 +240,27 @@ fn top_component_frame_requires_a_complete_local_unmixed_record() {
     record[layout::TRAILER_SENTINEL..layout::TRAILER_SENTINEL + 4].fill(0xff);
     let index = CompactReferencePlaneIndex::new(&record);
     assert_eq!(
-        index.principal_top_profile_frame(0, record.len()),
-        Some(principal_top_component_frame())
+        index.principal_profile_plane(0, record.len()),
+        Some(PrincipalPlane::Top)
     );
-    assert_eq!(index.principal_top_profile_frame(1, record.len()), None);
-    assert_eq!(index.principal_top_profile_frame(0, record.len() - 1), None);
+    assert_eq!(index.principal_profile_plane(1, record.len()), None);
+    assert_eq!(index.principal_profile_plane(0, record.len() - 1), None);
+    // The trailer count word is 2, 3 or 4.
+    for (count, expected) in [
+        (1u32, None),
+        (2, Some(PrincipalPlane::Top)),
+        (3, Some(PrincipalPlane::Top)),
+        (5, None),
+    ] {
+        let mut counted = record;
+        counted[layout::TRAILER_KIND..layout::TRAILER_KIND + 4]
+            .copy_from_slice(&count.to_le_bytes());
+        assert_eq!(
+            CompactReferencePlaneIndex::new(&counted).principal_profile_plane(0, counted.len()),
+            expected,
+            "trailer count {count}"
+        );
+    }
     let top = record;
     let mut right = record;
     right[layout::SOURCE..layout::SOURCE + 4].copy_from_slice(&4u32.to_le_bytes());
@@ -261,10 +272,34 @@ fn top_component_frame_requires_a_complete_local_unmixed_record() {
         let offset = layout::BASIS + index * 8;
         right[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
+    assert_eq!(
+        CompactReferencePlaneIndex::new(&right).principal_profile_plane(0, right.len()),
+        Some(PrincipalPlane::Right)
+    );
+    // The selector names the plane; the source is the plane's feature number,
+    // which is one higher in parts that number the planes from 3.
+    let mut shifted_top = top;
+    shifted_top[layout::SOURCE..layout::SOURCE + 4].copy_from_slice(&4u32.to_le_bytes());
+    let mut shifted_right = right;
+    shifted_right[layout::SOURCE..layout::SOURCE + 4].copy_from_slice(&5u32.to_le_bytes());
+    assert_eq!(
+        CompactReferencePlaneIndex::new(&shifted_top).principal_profile_plane(0, top.len()),
+        Some(PrincipalPlane::Top)
+    );
+    assert_eq!(
+        CompactReferencePlaneIndex::new(&shifted_right).principal_profile_plane(0, right.len()),
+        Some(PrincipalPlane::Right)
+    );
+    let mut both_right = right.to_vec();
+    both_right.extend_from_slice(&right);
+    assert_eq!(
+        CompactReferencePlaneIndex::new(&both_right).principal_profile_plane(0, both_right.len()),
+        Some(PrincipalPlane::Right)
+    );
     let mut mixed = top.to_vec();
     mixed.extend_from_slice(&right);
     assert_eq!(
-        CompactReferencePlaneIndex::new(&mixed).principal_top_profile_frame(0, mixed.len()),
+        CompactReferencePlaneIndex::new(&mixed).principal_profile_plane(0, mixed.len()),
         None
     );
     let mut custom = top;
@@ -279,32 +314,96 @@ fn top_component_frame_requires_a_complete_local_unmixed_record() {
     let mut mixed = top.to_vec();
     mixed.extend_from_slice(&custom);
     assert_eq!(
-        CompactReferencePlaneIndex::new(&mixed).principal_top_profile_frame(0, mixed.len()),
+        CompactReferencePlaneIndex::new(&mixed).principal_profile_plane(0, mixed.len()),
         None
     );
+    // A Right selector with the Top matrix is no principal record.
     record[layout::SELECTOR] = 1;
     assert_eq!(
-        CompactReferencePlaneIndex::new(&record).principal_top_profile_frame(0, record.len()),
+        CompactReferencePlaneIndex::new(&record).principal_profile_plane(0, record.len()),
         None
     );
 }
 
+/// The padded form writes the plane's feature number one word before the
+/// record, a time stamp at +0 and a zero word at +4 (`sldprt.md` §2). Its
+/// selector names the plane as in the first form.
 #[test]
-fn deferred_principal_planes_retain_existing_frames() {
+fn padded_principal_component_record_names_its_plane_by_the_selector() {
+    use crate::layout::compact_principal_plane_component_padded as layout;
+    let mut record = [0u8; 142];
+    record[layout::FEATURE_NUMBER..layout::FEATURE_NUMBER + 4].copy_from_slice(&4u32.to_le_bytes());
+    record[layout::TIME_STAMP..layout::TIME_STAMP + 4]
+        .copy_from_slice(&0x4d5e_6f70u32.to_le_bytes());
+    record[layout::PADDING..layout::PADDING + 4]
+        .copy_from_slice(&layout::PADDING_VALUE.to_le_bytes());
+    record[layout::SELECTOR..layout::SELECTOR + 4].copy_from_slice(&1u32.to_le_bytes());
+    record[layout::MATRIX_PRESENT] = 1;
+    for (index, value) in [
+        0.0f64, 0.0, 1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let offset = layout::BASIS + index * 8;
+        record[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    record[layout::TRAILER_KIND..layout::TRAILER_KIND + 4].copy_from_slice(&4u32.to_le_bytes());
+    record[layout::TRAILER_SENTINEL..layout::TRAILER_SENTINEL + 4].fill(0xff);
+    let index = CompactReferencePlaneIndex::new(&record);
+    // The 138-byte record starts at the time stamp, so an object that starts
+    // there holds it whole.
+    for start in [0, layout::TIME_STAMP] {
+        assert_eq!(
+            index.principal_profile_plane(start, record.len()),
+            Some(PrincipalPlane::Right)
+        );
+    }
     assert_eq!(
-        principal_sketch_frame(PrincipalPlane::Top),
-        (
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 0.0)
-        )
+        index.principal_profile_plane(layout::TIME_STAMP + 1, record.len()),
+        None
     );
+}
+
+/// A lane that writes the `moCompRefPlane_c` class name writes it once, so a
+/// later profile's own declared record follows the name without holding it; it
+/// is still that profile's own record. The decoder reads no declared record in
+/// a lane without the class name (DI-73).
+#[test]
+fn own_declared_record_after_the_lane_class_name_is_the_profile_source() {
+    use super::SourceRoute;
+    let declared = |source: u32| {
+        let mut record = Vec::new();
+        record.extend(source.to_le_bytes());
+        record.extend(19u32.to_le_bytes());
+        record.extend([0, 0, 3, 0]);
+        record.extend([0; 27]);
+        record.extend(1.0f64.to_le_bytes());
+        record.extend([
+            0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0xf9, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00,
+            0x00, 0x65,
+        ]);
+        record.extend([0; 4]);
+        record
+    };
+    let mut payload = b"moCompRefPlane_c".to_vec();
+    payload.extend([0; 11]);
+    payload.extend(declared(2));
+    payload.extend([0xaa; 32]);
+    let second = payload.len();
+    payload.extend([0xbb; 16]);
+    payload.extend(declared(2));
+    payload.extend([0xaa; 32]);
+    let index = CompactReferencePlaneIndex::new(&payload);
     assert_eq!(
-        principal_sketch_frame(PrincipalPlane::Right),
-        (
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(1.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, -1.0)
-        )
+        index.profile_source_route(0, second, payload.len()),
+        Some((2, SourceRoute::Profile))
     );
+    assert!(index.holds_plane_record(second, payload.len()));
+    assert!(!index.holds_plane_record(second + 16 + 67, payload.len()));
+
+    let unnamed = payload[b"moCompRefPlane_c".len()..].to_vec();
+    let index = CompactReferencePlaneIndex::new(&unnamed);
+    assert_eq!(index.profile_source_route(0, 0, unnamed.len()), None);
+    assert!(!index.holds_plane_record(0, unnamed.len()));
 }

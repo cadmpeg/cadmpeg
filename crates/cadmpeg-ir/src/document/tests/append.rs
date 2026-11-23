@@ -11,7 +11,7 @@ fn staged_document() -> CadIr {
     let mut ir = CadIr::empty();
     ir.geometry.points.push(Point::new(
         "test:append:point#new".try_into().unwrap(),
-        crate::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+        crate::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),
         None,
     ));
@@ -31,12 +31,12 @@ fn staged_document() -> CadIr {
             ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: None,
             suppressed: None,
-            dependencies: crate::features::DistinctMembers::default(),
+            dependencies: crate::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::default(),
             source_tag: None,
             source_text: None,
             source_content: crate::features::FeatureContent::default(),
-            evaluation: crate::features::FeatureEvaluation::from_definition(
+            evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
             ),
             native_ref: None,
@@ -133,7 +133,7 @@ fn actual_admission_rejects_duplicate_identity_without_changing_the_document() {
     };
     let result = ir.try_append(geometry, Model::default(), Native::default(), |combined| {
         let report = crate::admit(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             combined,
             crate::DRAFT_CORE_CHECKS,
             Vec::new(),

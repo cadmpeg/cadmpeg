@@ -19,19 +19,15 @@ use crate::resolved_features::transforms::MarkerTransform;
 use crate::resolved_features::transforms::Sign;
 use crate::resolved_features::transforms::{marker_entities, MarkerEntityFilter};
 use crate::resolved_features::SKETCH_MARKER;
+use cadmpeg_ir::features::parameters::{DesignParameter, DimensionDisplay, ParameterValue};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
     SketchLocus,
-};
-use cadmpeg_ir::{
-    features::{
-        DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, FeatureOperation,
-        ParameterId, ParameterValue,
-    },
-    scalar::Length,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -69,12 +65,12 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
             }),
@@ -473,7 +469,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         .collect::<HashMap<_, _>>();
     assert_eq!(
         marker_point_locus(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "sldprt:feature-input:sketch-entity#qualified-curve",
             &markers,
             &loci,
@@ -501,12 +497,12 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
             }),
@@ -649,7 +645,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
         .collect::<HashMap<_, _>>();
     assert_eq!(
         marker_entities(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             point_marker.id(),
             &markers,
             &loci,
@@ -660,7 +656,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
     );
     assert_eq!(
         marker_point_locus(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             point_marker.id(),
             &markers,
             &loci
@@ -679,12 +675,12 @@ fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous(
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
             }),
@@ -933,12 +929,12 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         ordinal: 0,
         name: Some(name.into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(sketch),
             }),
@@ -962,7 +958,7 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         expression: format!("<MOD-DIAM>{diameter}"),
         display: Some(DimensionDisplay::Diameter),
         value: Some(ParameterValue::Length(Length::new(diameter).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1009,7 +1005,13 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         .unwrap(),
     )];
 
-    bind_circular_profile_by_dimension(&mut features, &mut sketches, &entities, &parameters);
+    bind_circular_profile_by_dimension(
+        &mut features,
+        &mut sketches,
+        &entities,
+        &parameters,
+        |_| true,
+    );
 
     assert!(matches!(
         features[0].evaluation.definition(),

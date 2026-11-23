@@ -272,7 +272,7 @@ impl<'de> Deserialize<'de> for NonEmptyMap {
 }
 
 /// Exactness for an entity and sparse overrides for its serialized fields.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ExactnessNote {
@@ -1320,7 +1320,7 @@ mod builder_storage_tests {
 
     #[test]
     fn annotation_builder_transaction_commits_the_same_tables() {
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let stream = StreamHandle::new(crate::stream_name!("test"));
         let mut original = AnnotationBuilder::new();
         original.note("test:model:point#prior", &stream, 0, Some("prior"));

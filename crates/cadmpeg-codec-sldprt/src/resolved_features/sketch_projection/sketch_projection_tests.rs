@@ -220,7 +220,7 @@ fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
 /// A planar face with a line loop and a closed NURBS loop whose poles leave
 /// the finite range when projected onto the face's diagonal sketch axes.
 fn face_with_an_unprojectable_loop() -> crate::brep::graph::Brep {
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::geometry::analytic::{LineCurve, PlaneSurface};
     use cadmpeg_ir::geometry::nurbs::NurbsCurve;
     use cadmpeg_ir::geometry::{
@@ -363,7 +363,7 @@ fn face_with_an_unprojectable_loop() -> crate::brep::graph::Brep {
 
 #[test]
 fn an_unprojectable_edge_costs_its_loop_profile_and_keeps_the_sketch() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let brep = face_with_an_unprojectable_loop();
     let stream = cadmpeg_ir::stream_name!("Contents/Config-0-ResolvedFeatures");
     let mut annotations = cadmpeg_ir::annotations::Annotations::default();

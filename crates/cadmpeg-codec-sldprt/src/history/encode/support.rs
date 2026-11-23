@@ -5,10 +5,13 @@ use crate::classification::{classify, FeatureClass};
 use crate::history::classify::feature_family;
 use crate::records::Feature;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    BodySelection, BooleanOp, EdgeSelection, FaceSelection, FeatureId, FeatureTreeNodeRole,
-    PathRef, PlanarProfileRef, ProfileRef, VertexSelection,
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::selections::{
+    BodySelection, EdgeSelection, FaceSelection, VertexSelection,
 };
+use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
+use cadmpeg_ir::features::FeatureId;
 use std::collections::{BTreeMap, HashMap};
 
 pub(super) fn feature_tree_node_kind(role: FeatureTreeNodeRole) -> &'static str {
@@ -96,6 +99,8 @@ pub(super) fn face_selection_value(selection: &FaceSelection) -> Option<String> 
             Some(native.clone())
         }
         FaceSelection::Generated { native, .. } => Some(native.as_str().to_owned()),
+        FaceSelection::Historical { native, .. }
+        | FaceSelection::HistoricalPartial { native, .. } => Some(native.as_str().to_owned()),
         FaceSelection::Faces(faces) if !faces.is_empty() => Some(
             faces
                 .iter()
@@ -127,6 +132,8 @@ pub(super) fn edge_selection_value(selection: &EdgeSelection) -> Option<String> 
             Some(native.clone())
         }
         EdgeSelection::Generated { native, .. } => Some(native.as_str().to_owned()),
+        EdgeSelection::Historical { native, .. }
+        | EdgeSelection::HistoricalPartial { native, .. } => Some(native.as_str().to_owned()),
         EdgeSelection::Edges(edges) if !edges.is_empty() => Some(
             edges
                 .iter()

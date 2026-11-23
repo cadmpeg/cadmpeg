@@ -2,7 +2,9 @@
 //! Treatment candidate behavior over historical topology.
 #![allow(clippy::unwrap_used)]
 
-use crate::history::{treatment_edge_candidates, treatment_radius_candidates};
+use crate::history::treatment_candidates::{
+    treatment_edge_candidates, treatment_radius_candidates,
+};
 use crate::history_records::{
     AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalRelation,
     AsmHistoricalSurfaceRadius, AsmHistoricalTopology,
@@ -218,6 +220,7 @@ fn capped_blend(cylinder: bool) -> (AsmHistoricalTopology, AsmHistoricalTopology
             edge,
             interior: Point3::new(0.0, 0.0, 0.0),
             tangent: Some(direction),
+            carrier: None,
         });
     }
     let mut result = state(&[(10, &[30]), (11, &[31]), (12, &[32]), (20, &[30, 31, 32])]);

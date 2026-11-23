@@ -3,6 +3,7 @@
 use super::assembly::is_supplemental_config_lane;
 use super::bindings::history_metadata_ids;
 use super::compact_reference_planes::CompactReferencePlaneIndex;
+use super::compact_reference_planes::{PlaneBinding, PlaneBindings};
 use super::curves::{
     closed_marker_profiles, closed_marker_profiles_allowing_shared_endpoints,
     compact_bounded_curve_tangent, compact_legacy_rectangle_line_endpoints,
@@ -35,8 +36,8 @@ use super::endpoints::{
 };
 use super::grid::quantize;
 use super::holes::{
-    feature_input_sketch_frame, feature_input_sketch_marker_transform, principal_top_profile_frame,
-    sketch_feature_frames,
+    feature_input_sketch_marker_transform, feature_input_support_frame, reference_support_frame,
+    sketch_feature_frames, SupportFrame,
 };
 use super::markers::{
     compact_legacy_142_profile_curve_endpoints, inline_arc_coordinates,
@@ -47,8 +48,20 @@ use super::reference_geometry::reference_plane_frame_key;
 use super::relation_geometry::{declared_entity_handle_circular_marker, owned_relation_parameters};
 use super::relation_loci::same_dimension_length;
 use super::scalars::FeatureObjectNames;
-use super::sketch_lists::{listed_record_geometry, SketchRecordLists};
-use super::transforms::{record_top_marker_coordinates, sketch_frame_marker_transform};
+use super::sketch_lists::{
+    construction_record, listed_entity, off_chord_arc, unchecked_record_conflict, ChordConflict,
+    FramedCurve, ListedEntity, SketchRecordLists,
+};
+use super::sketch_projection::is_profile_stream_sketch;
+use super::stream_readings::{
+    is_revolve_profile, marker_reading, EntityIndex, MarkerReading, SolidEdges,
+    UnboundMarkerReading,
+};
+use super::transforms::{
+    component_sketch_marker_transform, record_component_marker_coordinates,
+    sketch_frame_marker_transform, COMPACT_SKETCH_KIND, LEGACY_CONFIG_SKETCH_KIND,
+    MARKER_SKETCH_KIND,
+};
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
 };
@@ -215,6 +228,11 @@ impl SortedOffsets {
         self.0.get(first..last).unwrap_or_default()
     }
 
+    /// Whether `offset` is one of the offsets.
+    fn contains(&self, offset: u64) -> bool {
+        self.0.binary_search(&offset).is_ok()
+    }
+
     /// Whether an offset lies strictly between `start` and `end`.
     fn any_strictly_between(&self, start: u64, end: u64) -> bool {
         let first = self.0.partition_point(|&offset| offset <= start);
@@ -292,7 +310,7 @@ fn enclosed_general_curve_profile(
 pub(crate) fn bind_sketch_profiles(
     features: &mut [cadmpeg_ir::features::Feature],
     arenas: SketchArenas<'_>,
-    parameters: &[cadmpeg_ir::features::DesignParameter],
+    parameters: &[cadmpeg_ir::features::parameters::DesignParameter],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     exact: &ExactProfiles,
@@ -369,12 +387,12 @@ pub(crate) fn bind_sketch_profiles(
                     lanes.iter().all(|candidate| candidate.id == lane.id)
                         && (shape.section_is_unresolved()
                             || matches!(shape.referenced_profile(),
-                                Some(cadmpeg_ir::features::PlanarProfileRef::Native(native))
+                                Some(cadmpeg_ir::features::profiles::PlanarProfileRef::Native(native))
                                     if enclosed_general_curve_profile(native, lane, start, end)))
                 }
                 FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
                     matches!(profile,
-                    cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Unresolved(owner))
+                    cadmpeg_ir::features::profiles::ProfileRef::Planar(cadmpeg_ir::features::profiles::PlanarProfileRef::Unresolved(owner))
                         if owner == &native_feature.id)
                 }
                 _ => false,
@@ -399,8 +417,8 @@ pub(crate) fn bind_sketch_profiles(
                             cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id));
                     }
                     FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
-                        *profile = cadmpeg_ir::features::ProfileRef::Planar(
-                            cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch_id),
+                        *profile = cadmpeg_ir::features::profiles::ProfileRef::Planar(
+                            cadmpeg_ir::features::profiles::PlanarProfileRef::Sketch(sketch_id),
                         );
                     }
                     FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => {
@@ -437,7 +455,9 @@ pub(crate) fn bind_sketch_profiles(
     let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
     builder.retain_exactness(keep);
     *annotations = builder.build();
-    bind_circular_profile_by_dimension(features, sketches, sketch_entities, parameters);
+    bind_circular_profile_by_dimension(features, sketches, sketch_entities, parameters, |sketch| {
+        annotations.provenance.contains_key(sketch.id.as_str())
+    });
 }
 
 #[derive(Debug)]
@@ -445,7 +465,7 @@ pub(super) struct CircleCarrier(pub [f64; 2], pub f64);
 
 fn declared_entity_handle_circular_carriers(
     features: &[cadmpeg_ir::features::Feature],
-    parameters: &[cadmpeg_ir::features::DesignParameter],
+    parameters: &[cadmpeg_ir::features::parameters::DesignParameter],
     lanes: &[FeatureInputLane],
 ) -> HashMap<String, Vec<CircleCarrier>> {
     let ownership = owned_relation_parameters(features, parameters, lanes);
@@ -470,12 +490,16 @@ fn declared_entity_handle_circular_carriers(
             else {
                 continue;
             };
-            let Some(cadmpeg_ir::features::ParameterValue::Length(value)) = &parameter.value else {
+            let Some(cadmpeg_ir::features::parameters::ParameterValue::Length(value)) =
+                &parameter.value
+            else {
                 continue;
             };
             let radius = match parameter.display {
-                Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.get(),
-                Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.get() * 0.5,
+                Some(cadmpeg_ir::features::parameters::DimensionDisplay::Radius) => value.get(),
+                Some(cadmpeg_ir::features::parameters::DimensionDisplay::Diameter) => {
+                    value.get() * 0.5
+                }
                 None => continue,
             };
             let Some((center, encoded_radius)) = declared_entity_handle_circular_marker(
@@ -544,9 +568,10 @@ pub(crate) fn project_compact_sketch_profiles(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<PlaneBindings, CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
+    let mut plane_bindings = PlaneBindings::default();
     let metadata_ids = history_metadata_ids(histories);
 
     let native_features = crate::records::HistoryFeatures::new(histories);
@@ -683,37 +708,43 @@ pub(crate) fn project_compact_sketch_profiles(
                 .and_then(|index| objects.get(index))
                 .and_then(|(offset, _, _)| usize::try_from(*offset).ok())
                 .unwrap_or(0);
-            let top_frame =
-                principal_top_profile_frame(&plane_frames, &plane_index, context_start, start, end);
-            let Some((origin, normal, u_axis)) = top_frame.or_else(|| {
-                feature_input_sketch_frame(
-                    &lane.native_payload,
-                    &plane_frames,
-                    &plane_index,
-                    context_start,
-                    start,
-                    end,
-                )
-            }) else {
+            let Some(SupportFrame {
+                frame: (origin, normal, u_axis),
+                binding,
+            }) = feature_input_support_frame(
+                &lane.native_payload,
+                &plane_frames,
+                &plane_index,
+                context_start,
+                start,
+                end,
+            )
+            else {
                 continue;
             };
+            let component = binding.principal();
             let lane_key = lane
                 .id
                 .rsplit_once('#')
                 .map_or(lane.id.as_str(), |(_, key)| key);
-            let Ok(sketch_id) = SketchId::mint(format!(
-                "sldprt:model:sketch#compact:{lane_key}:{}",
-                native_feature.ordinal
-            )) else {
+            let Some(sketch_id) = compact_sketch_id(lane_key, native_feature.ordinal) else {
                 continue;
             };
-            if sketches.iter().any(|sketch| sketch.id == sketch_id) {
+            // A configuration pass after the main pass meets the sketch that
+            // pass read, from the feature's marker records where they replaced
+            // this reading, and binds it instead of reading the records again.
+            if let Some(read) = [
+                marker_sketch_id(lane_key, native_feature.ordinal),
+                Some(sketch_id.clone()),
+            ]
+            .into_iter()
+            .flatten()
+            .find(|id| sketches.iter().any(|sketch| sketch.id == *id))
+            {
                 features[feature_index].evaluation.set_definition(
                     cadmpeg_ir::features::FeatureDefinition::Operation(
                         cadmpeg_ir::features::FeatureOperation::Sketch {
-                            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
-                                sketch_id,
-                            )),
+                            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(read)),
                         },
                     ),
                 );
@@ -739,6 +770,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 [context_start, start, end],
                 &sketch,
                 QUANTUM,
+                component.is_some(),
             ) else {
                 continue;
             };
@@ -816,7 +848,8 @@ pub(crate) fn project_compact_sketch_profiles(
                 let profiles = vec![profile];
                 sketch.profiles = profiles.try_into().map_err(CodecError::malformed)?;
                 sketches.push(sketch);
-                record_top_marker_coordinates(&mut features[feature_index], top_frame.is_some());
+                record_component_marker_coordinates(&mut features[feature_index], component);
+                plane_bindings.record(&sketch_id, binding);
                 features[feature_index].evaluation.set_definition(
                     cadmpeg_ir::features::FeatureDefinition::Operation(
                         cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -956,7 +989,8 @@ pub(crate) fn project_compact_sketch_profiles(
                 let profiles = vec![profile];
                 sketch.profiles = profiles.try_into().map_err(CodecError::malformed)?;
                 sketches.push(sketch);
-                record_top_marker_coordinates(&mut features[feature_index], top_frame.is_some());
+                record_component_marker_coordinates(&mut features[feature_index], component);
+                plane_bindings.record(&sketch_id, binding);
                 features[feature_index].evaluation.set_definition(
                     cadmpeg_ir::features::FeatureDefinition::Operation(
                         cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -1031,7 +1065,8 @@ pub(crate) fn project_compact_sketch_profiles(
             let profiles = vec![profile];
             sketch.profiles = profiles.try_into().map_err(CodecError::malformed)?;
             sketches.push(sketch);
-            record_top_marker_coordinates(&mut features[feature_index], top_frame.is_some());
+            record_component_marker_coordinates(&mut features[feature_index], component);
+            plane_bindings.record(&sketch_id, binding);
             features[feature_index].evaluation.set_definition(
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -1041,7 +1076,7 @@ pub(crate) fn project_compact_sketch_profiles(
             );
         }
     }
-    Ok(())
+    Ok(plane_bindings)
 }
 
 fn profile_entity(
@@ -1074,16 +1109,99 @@ const DEGENERATE_LINE_PLACEHOLDER: &str = "sldprt:marker-geometry:degenerate-lin
 /// its sketch in [`finalize_unread_marker_entities`].
 const ARC_POINTS_PLACEHOLDER: &str = "sldprt:marker-geometry:arc-points";
 
+/// Marker geometry that waits for the last sketch-geometry pass.
+#[derive(Debug, Default)]
+pub(crate) struct HeldMarkerGeometry {
+    /// Arc handles whose inline points define no minor arc.
+    handles: Vec<SketchEntity>,
+    /// The entity the `sgSketch` record of a marker gives by point-record
+    /// position when the marker reading leaves the marker unread, with the
+    /// losses the marker charges when it takes that entity, by sketch and
+    /// marker reference: a point record the record indexes is no marker of the
+    /// marker's feature object, or the record's arc ends off its endpoint
+    /// point records.
+    listed: HashMap<(SketchId, String), (ListedEntity, Vec<cadmpeg_ir::report::loss::LossNote>)>,
+    /// Why the `sgSketch` curve record of a line's marker gives no entity
+    /// although it states another form, by sketch and marker reference.
+    chord_conflicts: HashMap<(SketchId, String), ChordConflict>,
+    /// The conflict of each marker's `sgSketch` curve record with a line
+    /// that a later reading gives the marker, by marker reference.
+    unchecked: HashMap<String, ChordConflict>,
+    /// The lines an earlier finalize pass examined.
+    finalized: HashSet<SketchEntityId>,
+    /// Each marker that the marker layouts skip and only its `sgSketch`
+    /// record admits, whose record then gives no entity in its sketch, by
+    /// sketch and marker reference, with the record's conflict where it
+    /// states one.
+    unread_admitted: Vec<((SketchId, String), Option<ChordConflict>)>,
+    /// Each feature's marker sketch that stays unbound beside the stream
+    /// circle bound to the feature.
+    unbound_readings: Vec<UnboundMarkerReading>,
+    /// The `sketch.point-record-index-basis-assumed` loss of each entity
+    /// that takes the geometry of a curve record on locus `05 00 01 00`,
+    /// with that geometry: the entity charges it when it keeps the geometry.
+    index_basis_assumptions:
+        HashMap<SketchEntityId, (SketchGeometry, cadmpeg_ir::report::loss::LossNote)>,
+    /// The entities of the kept marker sketches read from a curve record of
+    /// state `0`.
+    outside_profile: HashSet<SketchEntityId>,
+}
+
+impl HeldMarkerGeometry {
+    /// Held geometry for a projection over `sketch_entities` after an
+    /// earlier finalize pass over them.
+    pub(crate) fn after_finalized(sketch_entities: &[SketchEntity]) -> Self {
+        Self {
+            finalized: sketch_entities
+                .iter()
+                .filter(|entity| {
+                    entity.native_ref.is_some()
+                        && matches!(
+                            entity.geometry.definition(),
+                            SketchGeometryDefinition::Line { .. }
+                        )
+                })
+                .map(|entity| entity.id().clone())
+                .collect(),
+            ..Self::default()
+        }
+    }
+}
+
+/// What [`finalize_unread_marker_entities`] hands to the later passes.
+pub(crate) struct Finalized {
+    /// The unbound marker readings, which the model pass notes once every
+    /// binding is made.
+    pub(crate) unbound_readings: Vec<UnboundMarkerReading>,
+    /// The entities read from a curve record of state `0`: curves outside
+    /// their sketch's profile.
+    pub(crate) outside_profile: HashSet<SketchEntityId>,
+}
+
 /// Adds the held arc handles, gives every marker entity that no recovery
-/// pass resolved the marker role as its native kind, and charges one loss
-/// per entity.
+/// pass resolved its held `sgSketch` record geometry and construction mark
+/// where it has them, and otherwise the marker role as its native kind with
+/// one loss per entity, charges one loss for each line whose curve record
+/// states another form, and one for each marker that only its record admits
+/// and whose record gives no entity.
 pub(crate) fn finalize_unread_marker_entities(
     sketch_entities: &mut Vec<SketchEntity>,
-    held_handles: Vec<SketchEntity>,
+    held: HeldMarkerGeometry,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) {
+) -> Finalized {
     use crate::loss::SldprtLossCode;
-    sketch_entities.extend(held_handles);
+    let HeldMarkerGeometry {
+        handles,
+        mut listed,
+        chord_conflicts,
+        unchecked,
+        finalized,
+        unread_admitted,
+        unbound_readings,
+        mut index_basis_assumptions,
+        mut outside_profile,
+    } = held;
+    sketch_entities.extend(handles);
     for entity in sketch_entities.iter_mut() {
         let SketchGeometryDefinition::Native { native_kind } = entity.geometry.definition() else {
             continue;
@@ -1094,6 +1212,19 @@ pub(crate) fn finalize_unread_marker_entities(
         else {
             continue;
         };
+        if let Some((read, charges)) = entity
+            .native_ref
+            .clone()
+            .and_then(|marker| listed.remove(&(entity.sketch.clone(), marker)))
+        {
+            entity.geometry = read.geometry;
+            entity.construction = read.construction;
+            if read.outside_profile {
+                outside_profile.insert(entity.id().clone());
+            }
+            losses.extend(charges);
+            continue;
+        }
         let (role, code) = match placeholder {
             "1" => ("line-or-circle", SldprtLossCode::SketchHandleUnresolved),
             "2" | "arc-points" => ("arc", SldprtLossCode::SketchHandleUnresolved),
@@ -1121,6 +1252,70 @@ pub(crate) fn finalize_unread_marker_entities(
         entity.geometry =
             SketchGeometry::native(cadmpeg_core::nonblank_literal!("sldprt:{role}-handle"));
     }
+    for entity in sketch_entities.iter() {
+        if let Some((geometry, loss)) = index_basis_assumptions.remove(entity.id()) {
+            if geometry == entity.geometry {
+                losses.push(loss);
+            }
+        }
+        if !matches!(
+            entity.geometry.definition(),
+            SketchGeometryDefinition::Line { .. }
+        ) || finalized.contains(entity.id())
+        {
+            continue;
+        }
+        let Some(marker) = entity.native_ref.as_deref() else {
+            continue;
+        };
+        let Some(conflict) = chord_conflicts
+            .get(&(entity.sketch.clone(), marker.to_owned()))
+            .or_else(|| unchecked.get(marker))
+        else {
+            continue;
+        };
+        losses.push(SldprtLossCode::SketchArcRecordConflict.note(format!(
+            "sketch {} entity {}: the sgSketch curve record of marker {marker} {conflict}; the entity keeps the line its marker reading gives",
+            entity.sketch,
+            entity.id(),
+        )));
+    }
+    for ((sketch, marker), conflict) in unread_admitted {
+        let reason = match conflict {
+            Some(conflict) => format!("its sgSketch curve record {conflict}"),
+            None => {
+                "its sgSketch record gives no point or curve in the sketch's coordinates".to_owned()
+            }
+        };
+        losses.push(SldprtLossCode::SketchMarkerRecordUnread.note(format!(
+            "sketch {sketch}: marker {marker}, which the marker layouts skip, gives no entity: {reason}"
+        )));
+    }
+    Finalized {
+        unbound_readings,
+        outside_profile,
+    }
+}
+
+/// Whether every one of a marker sketch's `entities`, held arc handles
+/// among them, has planar geometry once [`finalize_unread_marker_entities`]
+/// runs: geometry now, or a placeholder whose marker has `sgSketch` record
+/// geometry that `listed` holds.
+fn finalizes_planar<'a>(
+    entities: impl IntoIterator<Item = &'a SketchEntity>,
+    listed: impl Fn(&str) -> bool,
+) -> bool {
+    entities
+        .into_iter()
+        .all(|entity| match entity.geometry.definition() {
+            SketchGeometryDefinition::Native { native_kind } => {
+                native_kind
+                    .as_str()
+                    .starts_with(MARKER_GEOMETRY_PLACEHOLDER)
+                    && entity.native_ref.as_deref().is_some_and(&listed)
+            }
+            _ => true,
+        })
 }
 
 impl From<CodecError> for MarkerGeometryFailure {
@@ -1206,17 +1401,83 @@ impl<'a> TerminalRelationCarriers<'a> {
     }
 }
 
+/// Whether the sketch marker or record at `offset` with `geometry` is
+/// construction geometry, and whether that reading is the selector-bit-3
+/// assumption for a list line with profile role `1` (DI-77).
+/// `record_construction` is the selector-bit-3 reading of the `sgSketch`
+/// record that gave the geometry ([`listed_entity`]), `None` when another
+/// reading gave it. A record's geometry is construction when its selector
+/// has bit 3 set. Another reading's geometry is construction when the marker
+/// is a selected construction line, a selected compact roster axis, or a list
+/// curve with selector bit 3. A full circle with profile role `1` is never
+/// construction.
+fn marker_is_construction(
+    payload: &[u8],
+    record_lists: &SketchRecordLists,
+    offset: usize,
+    geometry: &SketchGeometry,
+    record_construction: Option<bool>,
+) -> (bool, bool) {
+    let listed_kind = record_lists.listed_curve_kind(payload, offset);
+    let role_one = marker_profile_curve_role(payload, offset) == Some(1);
+    let role_one_circle = role_one
+        && (matches!(
+            geometry.definition(),
+            SketchGeometryDefinition::Circle { .. }
+        ) || listed_kind == Some(FramedCurve::Circle));
+    let (construction, listed_construction) = match record_construction {
+        Some(bit) => (bit && !role_one_circle, bit),
+        None => {
+            let listed = listed_kind.is_some() && construction_record(payload, offset);
+            let construction = !role_one_circle
+                && (marker_is_selected_construction_line(payload, offset)
+                    || current_compact_roster_selected_axis(payload, offset)
+                    || listed);
+            (construction, listed)
+        }
+    };
+    let line = listed_kind == Some(FramedCurve::Line)
+        || (record_construction.is_some()
+            && matches!(geometry.definition(), SketchGeometryDefinition::Line { .. }));
+    let assumed = construction && listed_construction && line && role_one;
+    (construction, assumed)
+}
+
+pub(crate) struct MarkerSketchEntities<'a> {
+    pub(crate) projected: &'a mut Vec<SketchEntity>,
+    pub(crate) held: &'a mut HeldMarkerGeometry,
+}
+
+/// The records and the solid that [`project_marker_backed_sketches`] reads.
+#[derive(Clone, Copy)]
+pub(crate) struct MarkerSources<'a> {
+    pub(crate) histories: &'a [crate::records::FeatureHistory],
+    pub(crate) lanes: &'a [FeatureInputLane],
+    /// The decoded solid's edges, the witness between a feature's marker
+    /// sketch and the stream circle bound to it.
+    pub(crate) solid: &'a SolidEdges,
+}
+
 pub(crate) fn project_marker_backed_sketches(
     ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut Vec<Sketch>,
-    sketch_entities: &mut Vec<SketchEntity>,
-    held_handles: &mut Vec<SketchEntity>,
-    histories: &[crate::records::FeatureHistory],
-    lanes: &[FeatureInputLane],
-) -> Result<(), CodecError> {
+    entities: MarkerSketchEntities<'_>,
+    sources: MarkerSources<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<PlaneBindings, CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
+    let mut plane_bindings = PlaneBindings::default();
+    let MarkerSketchEntities {
+        projected: sketch_entities,
+        held: held_geometry,
+    } = entities;
+    let MarkerSources {
+        histories,
+        lanes,
+        solid,
+    } = sources;
     let metadata_ids = history_metadata_ids(histories);
 
     let native_features = crate::records::HistoryFeatures::new(histories);
@@ -1236,6 +1497,7 @@ pub(crate) fn project_marker_backed_sketches(
         &native_features,
         lanes,
         &feature_frames,
+        &mut plane_bindings,
     );
     let feature_positions = FeaturePositions::new(features);
     for lane in lanes {
@@ -1245,6 +1507,13 @@ pub(crate) fn project_marker_backed_sketches(
         let mut markers_by_id = HashMap::new();
         for marker in &lane.sketch_entities {
             markers_by_id.insert(marker.id(), marker);
+            if let Some(conflict) = index_from_u64(marker.offset()).and_then(|offset| {
+                unchecked_record_conflict(&lane.native_payload, &record_lists, offset)
+            }) {
+                held_geometry
+                    .unchecked
+                    .insert(marker.id().to_owned(), conflict);
+            }
         }
         let names = FeatureObjectNames::new(&lane.names);
         let markers_by_feature = markers_by_owner(&lane.sketch_entities);
@@ -1305,6 +1574,25 @@ pub(crate) fn project_marker_backed_sketches(
             }
             let object_markers =
                 super::endpoints::coordinate_rosters::CoordinateRosters::new(object_markers);
+            let object_marker_ids = object_markers
+                .iter()
+                .map(|marker| (marker.offset(), marker.id()))
+                .collect::<HashMap<_, _>>();
+            let owns = |at: usize| object_marker_ids.contains_key(&u64_from_index(at));
+            let reads_from_record = |marker: &SketchInputEntity| {
+                index_from_u64(marker.offset())
+                    .and_then(|offset| {
+                        listed_entity(
+                            &lane.native_payload,
+                            &record_lists,
+                            offset,
+                            &owns,
+                            &|[u, v]: [f64; 2]| Some(Point2::new(u, v)),
+                        )
+                    })
+                    .is_some_and(|read| read.is_ok())
+            };
+            let mut admitted_by_record = HashSet::new();
             let context_start = object_index
                 .checked_sub(1)
                 .and_then(|index| objects.get(index))
@@ -1316,60 +1604,46 @@ pub(crate) fn project_marker_backed_sketches(
             ) else {
                 continue;
             };
-            let top_frame = (!block_definition)
-                .then(|| {
-                    principal_top_profile_frame(
-                        &plane_frames,
-                        &plane_index,
-                        context_start,
-                        start,
-                        end,
-                    )
-                })
-                .flatten();
-            let frame = top_frame.or_else(|| {
-                feature_input_sketch_frame(
-                    &lane.native_payload,
-                    &plane_frames,
-                    &plane_index,
-                    context_start,
-                    start,
-                    end,
-                )
+            let support_frame = if block_definition {
+                reference_support_frame
+            } else {
+                feature_input_support_frame
+            };
+            let support = support_frame(
+                &lane.native_payload,
+                &plane_frames,
+                &plane_index,
+                context_start,
+                start,
+                end,
+            )
+            .or_else(|| feature_frames.get(native_feature.id.as_str()).copied());
+            let binding = support.map_or(PlaneBinding::Stored, |support| support.binding);
+            let component = binding.principal();
+            let frame = support.map(|support| support.frame).or_else(|| {
+                block_definition.then_some((
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                ))
             });
-            let frame = frame
-                .or_else(|| feature_frames.get(native_feature.id.as_str()).copied())
-                .or_else(|| {
-                    block_definition.then_some((
-                        Point3::new(0.0, 0.0, 0.0),
-                        Vector3::new(0.0, 0.0, 1.0),
-                        Vector3::new(1.0, 0.0, 0.0),
-                    ))
-                });
             let lane_key = lane
                 .id
                 .rsplit_once('#')
                 .map_or(lane.id.as_str(), |(_, key)| key);
-            let sketch_text = format!(
-                "sldprt:model:sketch#markers:{lane_key}:{}",
-                native_feature.ordinal
-            );
-            let Ok(sketch_id) = SketchId::mint(sketch_text) else {
+            let Some(sketch_id) = marker_sketch_id(lane_key, native_feature.ordinal) else {
                 continue;
             };
             let mut markers = Vec::new();
             for marker in object_markers.iter().copied() {
-                if !matches!(
+                let skipped = !matches!(
                     marker.kind(),
                     SketchInputKind::Point
                         | SketchInputKind::ConstrainedPoint
                         | SketchInputKind::LineOrCircle
                         | SketchInputKind::Arc
-                ) {
-                    continue;
-                }
-                if let Some(offset) = index_from_u64(marker.offset()) {
-                    if legacy_unlocated_geometry_handle(&lane.native_payload, offset)
+                ) || index_from_u64(marker.offset()).is_some_and(|offset| {
+                    legacy_unlocated_geometry_handle(&lane.native_payload, offset)
                         || auxiliary_profile_record(&lane.native_payload, offset)
                         || relation_reference_curve_record(
                             &lane.native_payload,
@@ -1377,9 +1651,12 @@ pub(crate) fn project_marker_backed_sketches(
                             &object_markers,
                         )
                         || terminal_carriers.carries(marker)
-                    {
+                });
+                if skipped {
+                    if !reads_from_record(marker) {
                         continue;
                     }
+                    admitted_by_record.insert(marker.id());
                 }
                 markers.push(marker);
             }
@@ -1413,10 +1690,11 @@ pub(crate) fn project_marker_backed_sketches(
                             native_ref: Some(lane.id.clone()),
                         };
                         sketches.push(sketch);
-                        record_top_marker_coordinates(
+                        record_component_marker_coordinates(
                             &mut features[feature_index],
-                            top_frame.is_some(),
+                            component,
                         );
+                        plane_bindings.record(&sketch_id, binding);
                     }
                     features[feature_index].evaluation.set_definition(
                         cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -1430,7 +1708,34 @@ pub(crate) fn project_marker_backed_sketches(
                 }
                 continue;
             }
-            if sketches.iter().any(|sketch| sketch.id == sketch_id) {
+            let stream_reading = bound_sketch.clone().filter(is_profile_stream_sketch);
+            if let Some(read) = sketches.iter().find(|sketch| sketch.id == sketch_id) {
+                // A later pass over configuration states meets the marker
+                // sketch the first pass read, and takes it in place of a
+                // stream circle only where the first pass did.
+                let stream = stream_reading
+                    .as_ref()
+                    .and_then(|stream| sketches.iter().find(|sketch| sketch.id == *stream));
+                if let Some(stream) = stream {
+                    let entities =
+                        EntityIndex::new(sketch_entities.iter().filter(|entity| {
+                            entity.sketch == sketch_id || entity.sketch == stream.id
+                        }));
+                    let planar = finalizes_planar(
+                        sketch_entities
+                            .iter()
+                            .filter(|entity| entity.sketch == sketch_id),
+                        |_| false,
+                    );
+                    let revolve_profile =
+                        is_revolve_profile(features, &features[feature_index], &stream.id);
+                    if !matches!(
+                        marker_reading(read, stream, &entities, planar, revolve_profile, solid),
+                        MarkerReading::Binds(_)
+                    ) {
+                        continue;
+                    }
+                }
                 features[feature_index]
                     .evaluation
                     .set_definition(if block_definition {
@@ -1450,9 +1755,10 @@ pub(crate) fn project_marker_backed_sketches(
                     });
                 continue;
             }
-            if bound_sketch
-                .as_ref()
-                .is_some_and(|sketch| !sketch.as_str().contains("sketch#compact:"))
+            if stream_reading.is_none()
+                && bound_sketch
+                    .as_ref()
+                    .is_some_and(|sketch| !sketch.as_str().contains("sketch#compact:"))
             {
                 continue;
             }
@@ -1481,6 +1787,7 @@ pub(crate) fn project_marker_backed_sketches(
                 [context_start, start, end],
                 &sketch,
                 QUANTUM,
+                component.is_some(),
             ) else {
                 continue;
             };
@@ -1489,24 +1796,72 @@ pub(crate) fn project_marker_backed_sketches(
             let inferred_points = std::cell::OnceCell::new();
             let mut projected = Vec::new();
             let mut held = Vec::new();
+            let mut chord_conflicts = Vec::new();
+            let mut listed_elsewhere = Vec::new();
+            let mut index_basis_assumptions = Vec::new();
+            let mut listed_entities = HashMap::new();
+            let mut outside_profile = HashSet::new();
+            let mut unread_admitted = Vec::new();
+            let project_coordinates = |[u, v]: [f64; 2]| {
+                let point = transform.apply(quantize(
+                    Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR),
+                    QUANTUM,
+                ))?;
+                Some(Point2::new(
+                    f64_from_i64(point.0)? * QUANTUM,
+                    f64_from_i64(point.1)? * QUANTUM,
+                ))
+            };
             for marker in markers.iter().copied() {
+                if let Some((form, code)) = marker.listed_curve_relation_drop {
+                    losses.push(
+                        crate::loss::SldprtLossCode::SketchListedCurveRelationDropped.note(format!(
+                            "Sketch {sketch_id} (feature {}) marker {} drops relation code {code} at +17 for a listed {form} (DI-77)",
+                            native_feature.name,
+                            marker.id()
+                        )),
+                    );
+                }
                 let native_kind = cadmpeg_core::nonblank_literal!(
                     "sldprt:marker-geometry:{}",
                     marker.kind().native_code()
                 );
+                let (listed, record_conflict) =
+                    match index_from_u64(marker.offset()).and_then(|offset| {
+                        listed_entity(
+                            &lane.native_payload,
+                            &record_lists,
+                            offset,
+                            &owns,
+                            &project_coordinates,
+                        )
+                    }) {
+                        Some(Ok(listed)) => (Some(listed), None),
+                        Some(Err(conflict)) => (None, Some(conflict)),
+                        None => (None, None),
+                    };
+                if listed.is_none() && admitted_by_record.contains(marker.id()) {
+                    unread_admitted.push((marker.id().to_owned(), record_conflict));
+                    continue;
+                }
                 let entity = (|| -> Result<_, MarkerGeometryFailure> {
+                    if let Some(listed) = &listed {
+                        let construction = index_from_u64(marker.offset()).map_or(
+                            (listed.construction, false),
+                            |offset| {
+                                marker_is_construction(
+                                    &lane.native_payload,
+                                    &record_lists,
+                                    offset,
+                                    &listed.geometry,
+                                    Some(listed.construction),
+                                )
+                            },
+                        );
+                        return Ok((listed.geometry.clone(), construction));
+                    }
                     let project = |endpoint: &SketchInputEntity| {
                         let [u, v] = endpoint.coordinates_m?.get();
-                        let point = transform.apply(quantize(
-                            Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR),
-                            QUANTUM,
-                        ))?;
-                        Some(Point2::new(
-                            f64_from_i64(point.0)? * QUANTUM,
-                            f64_from_i64(point.1)? * QUANTUM,
-                        ))
-                    };
-                    let project_coordinates = |[u, v]: [f64; 2]| {
                         let point = transform.apply(quantize(
                             Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR),
                             QUANTUM,
@@ -2141,32 +2496,70 @@ pub(crate) fn project_marker_backed_sketches(
                     {
                         return Err(MarkerGeometryFailure::Absent);
                     }
-                    let geometry = if matches!(
+                    if let (Some(conflict), SketchGeometryDefinition::Line { .. }) =
+                        (record_conflict, geometry.definition())
+                    {
+                        chord_conflicts.push((marker.id().to_owned(), conflict));
+                    }
+                    let off_chord = record_conflict == Some(ChordConflict::MissesChord);
+                    if matches!(
                         geometry.definition(),
                         SketchGeometryDefinition::Native { .. }
-                    ) {
-                        index_from_u64(marker.offset())
-                            .and_then(|offset| {
-                                listed_record_geometry(
-                                    &lane.native_payload,
-                                    &record_lists,
-                                    offset,
-                                    &project_coordinates,
-                                )
+                    ) && (record_conflict.is_none() || off_chord)
+                    {
+                        if let Some((offset, mut read)) =
+                            index_from_u64(marker.offset()).and_then(|offset| {
+                                let read = if off_chord {
+                                    off_chord_arc(
+                                        &lane.native_payload,
+                                        &record_lists,
+                                        offset,
+                                        &project_coordinates,
+                                    )
+                                } else {
+                                    listed_entity(
+                                        &lane.native_payload,
+                                        &record_lists,
+                                        offset,
+                                        &|_| true,
+                                        &project_coordinates,
+                                    )?
+                                    .ok()
+                                };
+                                Some((offset, read?))
                             })
-                            .unwrap_or(geometry)
-                    } else {
-                        geometry
-                    };
-                    let construction = index_from_u64(marker.offset()).is_some_and(|offset| {
-                        (marker_is_selected_construction_line(&lane.native_payload, offset)
-                            || current_compact_roster_selected_axis(&lane.native_payload, offset))
-                            && !(matches!(
-                                geometry.definition(),
-                                SketchGeometryDefinition::Circle { .. }
-                            ) && marker_profile_curve_role(&lane.native_payload, offset)
-                                == Some(1))
-                    });
+                        {
+                            read.construction = marker_is_construction(
+                                &lane.native_payload,
+                                &record_lists,
+                                offset,
+                                &read.geometry,
+                                Some(read.construction),
+                            )
+                            .0;
+                            let mut charges = Vec::from_iter(read.index_basis_loss.clone());
+                            if off_chord {
+                                charges.push(
+                                    crate::loss::SldprtLossCode::SketchArcRecordOffChord.note(format!(
+                                        "Sketch {sketch_id} (feature {}) marker {} takes the arc of its `sgSketch` curve record at {offset}, which, placed in the sketch, ends off its endpoint point records",
+                                        native_feature.name,
+                                        marker.id()
+                                    )),
+                                );
+                            }
+                            listed_elsewhere.push((marker.id().to_owned(), read, charges));
+                        }
+                    }
+                    let construction =
+                        index_from_u64(marker.offset()).map_or((false, false), |offset| {
+                            marker_is_construction(
+                                &lane.native_payload,
+                                &record_lists,
+                                offset,
+                                &geometry,
+                                None,
+                            )
+                        });
                     Ok((geometry, construction))
                 })();
                 let entity = match entity {
@@ -2174,9 +2567,15 @@ pub(crate) fn project_marker_backed_sketches(
                     Err(MarkerGeometryFailure::Absent) => None,
                     Err(MarkerGeometryFailure::Codec(error)) => return Err(error),
                 };
-                if let Some((geometry, construction)) = entity {
+                if let Some((geometry, (construction, assumed))) = entity {
                     let mut endpoint_refs = Vec::new();
-                    if matches!(
+                    if let Some(listed) = &listed {
+                        for at in listed.endpoints.into_iter().flatten() {
+                            if let Some(id) = object_marker_ids.get(&u64_from_index(at)) {
+                                endpoint_refs.push((*id).to_owned());
+                            }
+                        }
+                    } else if matches!(
                         marker.kind(),
                         SketchInputKind::LineOrCircle | SketchInputKind::Arc
                     ) {
@@ -2203,10 +2602,37 @@ pub(crate) fn project_marker_backed_sketches(
                         SketchGeometryDefinition::Native { native_kind }
                             if native_kind.as_str() == ARC_POINTS_PLACEHOLDER
                     );
+                    if assumed {
+                        losses.push(
+                            crate::loss::SldprtLossCode::SketchListedLineConstructionAssumed.note(
+                                format!(
+                                    "Sketch {sketch_id} (feature {}) marker {} is marked construction from selector bit 3 with profile role 1 (DI-77)",
+                                    native_feature.name,
+                                    marker.id()
+                                ),
+                            ),
+                        );
+                    }
                     let entity = SketchEntity::new(entity_id, sketch_id.clone(), geometry)
                         .with_construction(construction)
                         .with_native_ref(Some(marker.id().to_owned()))
                         .with_endpoint_refs(endpoint_refs);
+                    if let Some(loss) = listed
+                        .as_ref()
+                        .and_then(|listed| listed.index_basis_loss.clone())
+                    {
+                        index_basis_assumptions
+                            .push((entity.id().clone(), (entity.geometry.clone(), loss)));
+                    }
+                    if let Some(listed) = &listed {
+                        if listed.outside_profile {
+                            outside_profile.insert(entity.id().clone());
+                        }
+                        listed_entities.insert(
+                            entity.id().clone(),
+                            (entity.geometry.clone(), entity.endpoint_refs.clone()),
+                        );
+                    }
                     if held_handle {
                         held.push(entity);
                     } else {
@@ -2214,7 +2640,72 @@ pub(crate) fn project_marker_backed_sketches(
                     }
                 }
             }
-            if let Some(rectangle) = encoded_rectangle {
+            for offset in record_lists.curves_in(start..end) {
+                if marker_offsets.contains(u64_from_index(offset)) {
+                    continue;
+                }
+                let Some(Ok(listed)) = listed_entity(
+                    &lane.native_payload,
+                    &record_lists,
+                    offset,
+                    &owns,
+                    &project_coordinates,
+                ) else {
+                    continue;
+                };
+                let Ok(entity_id) = SketchEntityId::mint(format!(
+                    "sldprt:model:sketch-entity#markers:{lane_key}:{}:record:{offset}",
+                    native_feature.ordinal
+                )) else {
+                    continue;
+                };
+                let endpoint_refs = listed
+                    .endpoints
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|at| object_marker_ids.get(&u64_from_index(at)))
+                    .map(|id| (*id).to_owned())
+                    .collect();
+                let (construction, assumed) = marker_is_construction(
+                    &lane.native_payload,
+                    &record_lists,
+                    offset,
+                    &listed.geometry,
+                    Some(listed.construction),
+                );
+                if assumed {
+                    losses.push(
+                        crate::loss::SldprtLossCode::SketchListedLineConstructionAssumed.note(
+                            format!(
+                                "Sketch {sketch_id} (feature {}) curve record at {offset} is marked construction from selector bit 3 with profile role 1 (DI-77)",
+                                native_feature.name,
+                            ),
+                        ),
+                    );
+                }
+                let entity = SketchEntity::new(entity_id, sketch_id.clone(), listed.geometry)
+                    .with_construction(construction)
+                    .with_endpoint_refs(endpoint_refs);
+                if listed.outside_profile {
+                    outside_profile.insert(entity.id().clone());
+                }
+                if let Some(loss) = listed.index_basis_loss {
+                    index_basis_assumptions
+                        .push((entity.id().clone(), (entity.geometry.clone(), loss)));
+                }
+                listed_entities.insert(
+                    entity.id().clone(),
+                    (entity.geometry.clone(), entity.endpoint_refs.clone()),
+                );
+                projected.push(entity);
+            }
+            let listed_curves = listed_entities.values().any(|(geometry, _)| {
+                !matches!(
+                    geometry.definition(),
+                    SketchGeometryDefinition::Point { .. }
+                )
+            });
+            if let Some(rectangle) = encoded_rectangle.filter(|_| !listed_curves) {
                 let mut rectangle_marker_refs = HashSet::new();
                 for marker in &object_markers {
                     let Some(marker_id) = (|| {
@@ -2393,23 +2884,93 @@ pub(crate) fn project_marker_backed_sketches(
                 QUANTUM,
             );
             resolve_connected_marker_arcs(&mut projected, QUANTUM);
-            let Ok(profiles) =
-                cadmpeg_ir::sketches::SketchProfiles::try_from(closed_marker_profiles(&projected))
-            else {
+            for entity in &mut projected {
+                if let Some((geometry, endpoint_refs)) = listed_entities.get(entity.id()) {
+                    entity.geometry = geometry.clone();
+                    entity.endpoint_refs = endpoint_refs.clone();
+                }
+            }
+            let closed = marker_sketch_profiles(
+                &projected,
+                |id| listed_entities.contains_key(id),
+                &outside_profile,
+            );
+            let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(closed) else {
                 continue;
             };
             sketch.profiles = profiles;
             if projected.is_empty() || (bound_sketch.is_some() && sketch.profiles.is_empty()) {
                 continue;
             }
-            if let Some(bound_sketch) = &bound_sketch {
+            let mut unbound = None;
+            if let Some(stream) = &stream_reading {
+                if let Some(stream_sketch) = sketches.iter().find(|bound| bound.id == *stream) {
+                    let entities = EntityIndex::new(
+                        projected.iter().chain(
+                            sketch_entities
+                                .iter()
+                                .filter(|entity| entity.sketch == *stream),
+                        ),
+                    );
+                    let planar = finalizes_planar(projected.iter().chain(&held), |marker| {
+                        listed_elsewhere
+                            .iter()
+                            .any(|(listed, _, _)| listed == marker)
+                    });
+                    let revolve_profile =
+                        is_revolve_profile(features, &features[feature_index], stream);
+                    match marker_reading(
+                        &sketch,
+                        stream_sketch,
+                        &entities,
+                        planar,
+                        revolve_profile,
+                        solid,
+                    ) {
+                        MarkerReading::Binds(placement) => sketch.placement = placement,
+                        MarkerReading::Unbound(reason) => {
+                            unbound = Some(UnboundMarkerReading {
+                                marker: sketch_id.clone(),
+                                stream: stream.clone(),
+                                feature: features[feature_index].id.clone(),
+                                reason,
+                            });
+                        }
+                        MarkerReading::Stays => continue,
+                    }
+                }
+            } else if let Some(bound_sketch) = &bound_sketch {
                 sketch_entities.retain(|entity| entity.sketch != *bound_sketch);
                 sketches.retain(|sketch| sketch.id != *bound_sketch);
             }
             sketch_entities.extend(projected);
-            held_handles.extend(held);
+            held_geometry.outside_profile.extend(outside_profile);
+            held_geometry.handles.extend(held);
+            held_geometry.listed.extend(
+                listed_elsewhere
+                    .into_iter()
+                    .map(|(marker, read, charges)| ((sketch_id.clone(), marker), (read, charges))),
+            );
+            held_geometry
+                .index_basis_assumptions
+                .extend(index_basis_assumptions);
+            held_geometry.chord_conflicts.extend(
+                chord_conflicts
+                    .into_iter()
+                    .map(|(marker, conflict)| ((sketch_id.clone(), marker), conflict)),
+            );
+            held_geometry.unread_admitted.extend(
+                unread_admitted
+                    .into_iter()
+                    .map(|(marker, conflict)| ((sketch_id.clone(), marker), conflict)),
+            );
             sketches.push(sketch);
-            record_top_marker_coordinates(&mut features[feature_index], top_frame.is_some());
+            plane_bindings.record(&sketch_id, binding);
+            if let Some(unbound) = unbound {
+                held_geometry.unbound_readings.push(unbound);
+                continue;
+            }
+            record_component_marker_coordinates(&mut features[feature_index], component);
             features[feature_index]
                 .evaluation
                 .set_definition(if block_definition {
@@ -2429,7 +2990,53 @@ pub(crate) fn project_marker_backed_sketches(
                 });
         }
     }
-    Ok(())
+    Ok(plane_bindings)
+}
+
+/// The id of the sketch read from the compact records of feature `ordinal`
+/// in the lane keyed `lane_key`.
+fn compact_sketch_id(lane_key: &str, ordinal: u32) -> Option<SketchId> {
+    SketchId::mint(format!(
+        "sldprt:model:sketch#{COMPACT_SKETCH_KIND}:{lane_key}:{ordinal}"
+    ))
+    .ok()
+}
+
+/// The id of the sketch read from the marker records of feature `ordinal`
+/// in the lane keyed `lane_key`.
+fn marker_sketch_id(lane_key: &str, ordinal: u32) -> Option<SketchId> {
+    SketchId::mint(format!(
+        "sldprt:model:sketch#{MARKER_SKETCH_KIND}:{lane_key}:{ordinal}"
+    ))
+    .ok()
+}
+
+/// The closed profiles of a marker sketch's `projected` entities. A curve in
+/// `outside_profile`, read from a curve record of state `0`, joins no
+/// profile. When the curves that `record_read` names close more profiles
+/// alone than together with the curves of the other marker readings, the
+/// profiles are theirs.
+fn marker_sketch_profiles(
+    projected: &[SketchEntity],
+    record_read: impl Fn(&SketchEntityId) -> bool,
+    outside_profile: &HashSet<SketchEntityId>,
+) -> Vec<Vec<SketchEntityUse>> {
+    let curves = projected
+        .iter()
+        .filter(|entity| !outside_profile.contains(entity.id()))
+        .collect::<Vec<_>>();
+    let closed = closed_marker_profiles(&curves);
+    let read = curves
+        .iter()
+        .copied()
+        .filter(|entity| record_read(entity.id()))
+        .collect::<Vec<_>>();
+    let read = closed_marker_profiles(&read);
+    if read.len() > closed.len() {
+        read
+    } else {
+        closed
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -3062,7 +3669,8 @@ fn project_detached_legacy_config_sketches(
     sketch_entities: &mut Vec<SketchEntity>,
     native_features: &crate::records::HistoryFeatures<'_>,
     lanes: &[FeatureInputLane],
-    feature_frames: &HashMap<String, (Point3, Vector3, Vector3)>,
+    feature_frames: &HashMap<String, SupportFrame>,
+    plane_bindings: &mut PlaneBindings,
 ) {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
@@ -3083,13 +3691,17 @@ fn project_detached_legacy_config_sketches(
                 .filter_map(|feature| feature_frames.get(feature).copied())
                 .collect::<Vec<_>>();
             frames.sort_unstable_by(|left, right| {
-                reference_plane_frame_key(left).cmp(&reference_plane_frame_key(right))
+                reference_plane_frame_key(&left.frame).cmp(&reference_plane_frame_key(&right.frame))
             });
-            frames.dedup();
+            frames.dedup_by(|duplicate, kept| duplicate.frame == kept.frame);
             let [frame] = frames.as_slice() else {
                 continue;
             };
-            *frame
+            // A feature with no frame of its own takes the lane's only frame.
+            SupportFrame {
+                binding: PlaneBinding::LaneFrame,
+                ..*frame
+            }
         };
         let markers_by_feature = markers_by_owner(&lane.sketch_entities);
         for feature in features.iter_mut() {
@@ -3113,12 +3725,15 @@ fn project_detached_legacy_config_sketches(
                 let Some(markers) = markers_by_feature.get(native_ref) else {
                     break 'feature_edit;
                 };
-                let (origin, normal, u_axis) = feature_frames
+                let SupportFrame {
+                    frame: (origin, normal, u_axis),
+                    binding,
+                } = feature_frames
                     .get(native_ref)
                     .copied()
                     .unwrap_or(detached_frame);
                 let Ok(sketch_id) = SketchId::mint(format!(
-                    "sldprt:model:sketch#legacy-config:{lane_key}:{}",
+                    "sldprt:model:sketch#{LEGACY_CONFIG_SKETCH_KIND}:{lane_key}:{}",
                     native_feature.ordinal
                 )) else {
                     break 'feature_edit;
@@ -3137,7 +3752,12 @@ fn project_detached_legacy_config_sketches(
                     profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
                     native_ref: Some(lane.id.clone()),
                 };
-                let Some(transform) = sketch_frame_marker_transform(&sketch, QUANTUM) else {
+                // The principal record that named the frame also names the
+                // reading of the marker pairs (`sldprt.md` §3.3).
+                let component = binding.principal();
+                let Some(transform) =
+                    component_sketch_marker_transform(&sketch, QUANTUM, component.is_some())
+                else {
                     break 'feature_edit;
                 };
                 let project = |coordinates: [f64; 2]| {
@@ -3177,6 +3797,8 @@ fn project_detached_legacy_config_sketches(
                 let sketch_id = sketch.id.clone();
                 sketch_entities.append(&mut entities);
                 sketches.push(sketch);
+                plane_bindings.record(&sketch_id, binding);
+                record_component_marker_coordinates(feature, component);
                 feature
                     .evaluation
                     .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
@@ -3566,8 +4188,9 @@ mod detached_legacy_sketch_tests {
     use super::super::bindings::bind_detached_legacy_sketch_objects;
     use super::{
         assemble_sketch_block_profile, compact_linear_dimensions, legacy_config_collinear_sketch,
-        legacy_config_hex_sketch, project_marker_backed_sketches, SketchBlockInstancePlacement,
-        SketchBlockProfileInput, SortedOffsets, TerminalRelationCarriers,
+        legacy_config_hex_sketch, project_marker_backed_sketches, HeldMarkerGeometry,
+        MarkerSketchEntities, SketchBlockInstancePlacement, SketchBlockProfileInput, SortedOffsets,
+        TerminalRelationCarriers,
     };
     use crate::layout::current_terminal_relation_carrier as terminal;
     use crate::records::FeatureInputLane;
@@ -3674,13 +4297,13 @@ mod detached_legacy_sketch_tests {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
             native_ref: Some("feature".into()),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
                 }),
@@ -3761,13 +4384,13 @@ mod detached_legacy_sketch_tests {
                 ordinal: 0,
                 name: None,
                 suppressed: None,
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 source_properties: BTreeMap::new(),
                 source_tag: None,
                 source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
                 native_ref: Some(native.id.clone()),
-                evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
                     }),
@@ -3888,13 +4511,13 @@ mod detached_legacy_sketch_tests {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
             native_ref: Some("feature".into()),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
                 }),
@@ -4269,7 +4892,7 @@ mod detached_legacy_sketch_tests {
         };
 
         bind_detached_legacy_sketch_objects(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             std::slice::from_ref(&history),
             &HashSet::new(),
             &mut lane,
@@ -4328,12 +4951,12 @@ mod detached_legacy_sketch_tests {
             ordinal: 30,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::default(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
                 }),
@@ -4357,10 +4980,16 @@ mod detached_legacy_sketch_tests {
             &ctx,
             &mut features,
             &mut sketches,
-            &mut sketch_entities,
+            MarkerSketchEntities {
+                projected: &mut sketch_entities,
+                held: &mut HeldMarkerGeometry::default(),
+            },
+            crate::resolved_features::profiles::MarkerSources {
+                histories: &[history],
+                lanes: &[lane],
+                solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+            },
             &mut Vec::new(),
-            &[history],
-            &[lane],
         )
         .expect("marker profile projection fits service policy");
 
@@ -4429,12 +5058,12 @@ mod detached_legacy_sketch_tests {
             ordinal: 30,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::default(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
                 }),
@@ -4458,10 +5087,16 @@ mod detached_legacy_sketch_tests {
             &ctx,
             &mut features,
             &mut sketches,
-            &mut sketch_entities,
+            MarkerSketchEntities {
+                projected: &mut sketch_entities,
+                held: &mut HeldMarkerGeometry::default(),
+            },
+            crate::resolved_features::profiles::MarkerSources {
+                histories: &[history],
+                lanes: &[lane],
+                solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+            },
             &mut Vec::new(),
-            &[history],
-            &[lane],
         )
         .expect("marker profile projection fits service policy");
 
@@ -4527,12 +5162,12 @@ mod detached_legacy_sketch_tests {
             ordinal: 30,
             name: Some("point".into()),
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::default(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
                     sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
                 }),
@@ -4554,10 +5189,16 @@ mod detached_legacy_sketch_tests {
                 &ctx,
                 &mut features,
                 &mut sketches,
-                &mut sketch_entities,
+                MarkerSketchEntities {
+                    projected: &mut sketch_entities,
+                    held: &mut HeldMarkerGeometry::default(),
+                },
+                crate::resolved_features::profiles::MarkerSources {
+                    histories: std::slice::from_ref(&history),
+                    lanes: std::slice::from_ref(&lane),
+                    solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+                },
                 &mut Vec::new(),
-                std::slice::from_ref(&history),
-                std::slice::from_ref(&lane),
             )
             .expect("marker profile projection fits service policy");
 
@@ -4641,8 +5282,9 @@ mod detached_legacy_sketch_tests {
         }
     }
 
-    #[test]
-    fn collinear_dimension_grammar_projects_four_lines_and_unique_points() {
+    /// A supplemental configuration lane holding one collinear dimension
+    /// sketch object of the feature `feature`.
+    fn collinear_lane() -> FeatureInputLane {
         let mut payload = vec![0; 400];
         payload[56..58].copy_from_slice(&[0x1e, 0x00]);
         payload[58..66].copy_from_slice(&(-1.0f64).to_le_bytes());
@@ -4664,7 +5306,7 @@ mod detached_legacy_sketch_tests {
                 Some([f64::from(ordinal), 1.0]),
             ));
         }
-        let lane = FeatureInputLane {
+        FeatureInputLane {
             id: "sldprt:feature-input:config-objects#1".into(),
             configuration: None,
             native_payload: payload.into(),
@@ -4679,7 +5321,12 @@ mod detached_legacy_sketch_tests {
             generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: markers,
-        };
+        }
+    }
+
+    #[test]
+    fn collinear_dimension_grammar_projects_four_lines_and_unique_points() {
+        let lane = collinear_lane();
         let refs = lane.sketch_entities.iter().collect::<Vec<_>>();
         let (_, entities) =
             legacy_config_collinear_sketch(&lane, &feature(), &sketch(), &refs, &|coordinates| {
@@ -4709,6 +5356,90 @@ mod detached_legacy_sketch_tests {
         );
     }
 
+    /// A legacy configuration sketch whose frame the feature's principal Top
+    /// record gives reads its marker pairs as Top sketch coordinates
+    /// (`sldprt.md` §3.3), and its feature carries the coordinate tag that
+    /// later readers follow; a stored frame equal to the Top frame keeps the
+    /// model-component reading (open item DI-80).
+    #[test]
+    fn legacy_configuration_sketch_reads_markers_by_its_principal_top_binding() {
+        use super::super::compact_reference_planes::principal_sketch_frame;
+        use super::super::transforms::feature_sketch_marker_transform;
+        use super::SupportFrame;
+        use super::{project_detached_legacy_config_sketches, PlaneBinding, PlaneBindings};
+        use cadmpeg_ir::features::PrincipalPlane;
+
+        let histories = [FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![feature()],
+        }];
+        let lanes = [collinear_lane()];
+        for (binding, v) in [
+            (PlaneBinding::Principal(PrincipalPlane::Top), 1000.0),
+            (PlaneBinding::Stored, -1000.0),
+        ] {
+            let mut features = [cadmpeg_ir::features::Feature {
+                product_definition: None,
+                id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#legacy-profile")
+                    .unwrap(),
+                ordinal: 30,
+                name: Some("profile".into()),
+                suppressed: Some(false),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: cadmpeg_ir::features::FeatureContent::default(),
+                evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+                    FeatureDefinition::Operation(FeatureOperation::Sketch {
+                        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                    }),
+                ),
+                native_ref: Some("feature".into()),
+            }];
+            let frames = HashMap::from([(
+                "feature".to_owned(),
+                SupportFrame {
+                    frame: principal_sketch_frame(PrincipalPlane::Top),
+                    binding,
+                },
+            )]);
+            let mut sketches = Vec::new();
+            let mut entities = Vec::new();
+            project_detached_legacy_config_sketches(
+                &mut features,
+                &mut sketches,
+                &mut entities,
+                &crate::records::HistoryFeatures::new(&histories),
+                &lanes,
+                &frames,
+                &mut PlaneBindings::default(),
+            );
+            let [sketch] = sketches.as_slice() else {
+                panic!("one legacy sketch: {sketches:?}");
+            };
+            let points = entities
+                .iter()
+                .filter_map(|entity| match *entity.geometry.definition() {
+                    SketchGeometryDefinition::Point { position } => Some(position.get()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert!(points.contains(&Point2::new(8000.0, v)), "{points:?}");
+            assert!(!points.contains(&Point2::new(8000.0, -v)), "{points:?}");
+            let stored = crate::resolved_features::grid::quantize(Point2::new(8.0, 1.0), 1.0);
+            assert_eq!(
+                feature_sketch_marker_transform(sketch, 1.0, &features)
+                    .and_then(|transform| transform.apply(stored)),
+                Some((8, if v > 0.0 { 1 } else { -1 }))
+            );
+        }
+    }
+
     #[test]
     fn marker_profile_projection_accepts_history_without_lanes() {
         let history = FeatureHistory {
@@ -4730,10 +5461,16 @@ mod detached_legacy_sketch_tests {
             &service,
             &mut [],
             &mut Vec::new(),
+            MarkerSketchEntities {
+                projected: &mut Vec::new(),
+                held: &mut HeldMarkerGeometry::default(),
+            },
+            crate::resolved_features::profiles::MarkerSources {
+                histories: &[history],
+                lanes: &[],
+                solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+            },
             &mut Vec::new(),
-            &mut Vec::new(),
-            &[history],
-            &[],
         )
         .unwrap();
     }
@@ -4973,4 +5710,16 @@ mod exact_tests;
 mod index_tests;
 
 #[cfg(test)]
+mod configuration_binding_tests;
+
+#[cfg(test)]
+mod record_profile_tests;
+
+#[cfg(test)]
+mod stream_reading_tests;
+
+#[cfg(test)]
 mod unread_marker_tests;
+
+#[cfg(test)]
+mod listed_curve_tests;
