@@ -8,8 +8,9 @@
 
 use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::feature::FeatureOperation;
-use cadmpeg_ir::design::ops::swept::Extrude;
+use cadmpeg_ir::design::ops::swept::{Extrude, Revolve};
 use cadmpeg_ir::design::options::ProfileRef;
+use cadmpeg_ir::design::options::{BodyForm, Boolean, BooleanOp, SolidOutput};
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::design::selection::{PickTarget, Picks};
@@ -20,6 +21,7 @@ use cadmpeg_ir::ids::BodyId;
 use super::extrude::profile::{profile, ProfileLoop};
 use super::extrude::{self, ExtrudePlan};
 use super::parameters::{OwnedParameter, ParameterPlan};
+use super::revolve::{self, RevolvePlan};
 use super::sketch::{PlannedSketch, SketchPlan};
 
 /// The smallest linear tolerance the profile and the faces are checked
@@ -74,12 +76,14 @@ impl<'a> Decision<'a> {
 #[derive(Debug)]
 pub(super) enum Item<'a> {
     Extrude(Box<ExtrudePlan<'a>>),
+    Revolve(Box<RevolvePlan<'a>>),
 }
 
 impl<'a> Item<'a> {
     pub(super) fn feature(&self) -> &'a FeatureId {
         match self {
             Self::Extrude(plan) => plan.feature,
+            Self::Revolve(plan) => plan.feature,
         }
     }
 
@@ -87,6 +91,7 @@ impl<'a> Item<'a> {
     pub(super) fn after(&self) -> usize {
         match self {
             Self::Extrude(plan) => plan.after,
+            Self::Revolve(plan) => plan.after,
         }
     }
 
@@ -94,6 +99,7 @@ impl<'a> Item<'a> {
     pub(super) fn owned(&self) -> Vec<&OwnedParameter> {
         match self {
             Self::Extrude(plan) => vec![&plan.along, &plan.taper],
+            Self::Revolve(plan) => vec![&plan.angle],
         }
     }
 }
@@ -101,12 +107,14 @@ impl<'a> Item<'a> {
 /// The feature's typed operation the writer can write as an item.
 enum Typed<'a> {
     Extrude(&'a Extrude),
+    Revolve(&'a Revolve),
 }
 
 fn typed<'a>(target: &'a CadIr, feature: &FeatureId) -> Option<Typed<'a>> {
     let record = target.design.features.iter().find(|f| &f.id == feature)?;
     match &record.definition.operation {
         FeatureOperation::Extrude(extrude) => Some(Typed::Extrude(extrude.as_ref())),
+        FeatureOperation::Revolve(revolve) => Some(Typed::Revolve(revolve.as_ref())),
         _ => None,
     }
 }
@@ -153,6 +161,8 @@ pub(super) fn plan<'a>(
     let planned = match operation {
         Typed::Extrude(operation) => extrude::plan(&rows, operation, parameters, ordinal)
             .map(|plan| Item::Extrude(Box::new(plan))),
+        Typed::Revolve(operation) => revolve::plan(&rows, operation, parameters, ordinal)
+            .map(|plan| Item::Revolve(Box::new(plan))),
     };
     match planned {
         Ok(item) => Decision::Item(item),
@@ -319,5 +329,24 @@ impl<'a, 'p> Rows<'a, 'p> {
             .filter(|item| position_of(item.feature).is_some_and(|at| at < self.position))
             .count();
         Ok((index, after))
+    }
+}
+
+/// One new solid; the one-body row leaves no body for a join to act on.
+pub(super) fn new_solid(output: &SolidOutput) -> Result<(), &'static str> {
+    let new = matches!(
+        output.boolean,
+        Some(
+            Boolean::NewBody
+                | Boolean::Apply {
+                    op: BooleanOp::Join,
+                    ..
+                }
+        )
+    );
+    if new && matches!(output.body, None | Some(BodyForm::Solid)) {
+        Ok(())
+    } else {
+        Err("it does not make one new solid")
     }
 }

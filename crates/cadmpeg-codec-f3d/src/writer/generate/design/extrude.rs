@@ -10,7 +10,6 @@ use std::collections::HashMap;
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::ops::shared::{Limit, Span};
 use cadmpeg_ir::design::ops::swept::{Extrude, ExtrudeDirection, ExtrudeOrigin};
-use cadmpeg_ir::design::options::{BodyForm, Boolean, BooleanOp};
 use cadmpeg_ir::design::units::{Quantity, UnitSymbol};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId;
@@ -19,7 +18,7 @@ use cadmpeg_ir::ids::{BodyId, CoedgeId, EdgeId, FaceId};
 use cadmpeg_ir::topology::Sense;
 
 use super::expression;
-use super::item::{Profiled, Rows};
+use super::item::{new_solid, Profiled, Rows};
 use super::parameters::{OwnedParameter, ParameterPlan};
 use super::sketch::{CurveGeometry, PlannedSketch};
 
@@ -71,7 +70,10 @@ impl ExtrudePlan<'_> {
 /// Each entry of `profile` with its loop and its position in the loop, in
 /// side-token order: the loops in stored order, each loop's entries from its
 /// first in run order, or against it where `reversed`.
-fn entries(profile: &[ProfileLoop], reversed: bool) -> impl Iterator<Item = (&ProfileLoop, usize)> {
+pub(super) fn entries(
+    profile: &[ProfileLoop],
+    reversed: bool,
+) -> impl Iterator<Item = (&ProfileLoop, usize)> {
     profile.iter().flat_map(move |profile_loop| {
         let count = profile_loop.entries.len();
         (0..count).map(move |step| {
@@ -123,7 +125,7 @@ pub(super) fn plan<'a>(
     if distance.is_nan() || distance <= 0.0 {
         return Err("its extent is not one-sided blind");
     }
-    output(extrude)?;
+    new_solid(&extrude.output)?;
     let faces = Faces::new(target, body, linear, target.tolerances.angular.get())
         .matched(planned, &loops, distance, reversed)
         .ok_or("its faces do not match its profile")?;
@@ -225,26 +227,6 @@ fn amount(extrude: &Extrude) -> Result<Amount<'_>, &'static str> {
             Ok(Amount::Parameter(parameter))
         }
         _ => Err(NOT_BLIND),
-    }
-}
-
-/// Row 9: one new solid; row 1 leaves no body for a join to act on.
-fn output(extrude: &Extrude) -> Result<(), &'static str> {
-    let output = &extrude.output;
-    let new = matches!(
-        output.boolean,
-        Some(
-            Boolean::NewBody
-                | Boolean::Apply {
-                    op: BooleanOp::Join,
-                    ..
-                }
-        )
-    );
-    if new && matches!(output.body, None | Some(BodyForm::Solid)) {
-        Ok(())
-    } else {
-        Err("it does not make one new solid")
     }
 }
 
@@ -526,38 +508,38 @@ impl<'a> Faces<'a> {
 }
 
 /// The only item of `items`.
-fn unique<T>(mut items: impl Iterator<Item = T>) -> Option<T> {
+pub(super) fn unique<T>(mut items: impl Iterator<Item = T>) -> Option<T> {
     let found = items.next()?;
     items.next().is_none().then_some(found)
 }
 
-fn point(point: cadmpeg_ir::math::Point3) -> [f64; 3] {
+pub(super) fn point(point: cadmpeg_ir::math::Point3) -> [f64; 3] {
     [point.x, point.y, point.z]
 }
 
-fn vector(vector: &cadmpeg_ir::math::Vector3) -> [f64; 3] {
+pub(super) fn vector(vector: &cadmpeg_ir::math::Vector3) -> [f64; 3] {
     [vector.x, vector.y, vector.z]
 }
 
-fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
+pub(super) fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
-fn add(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+pub(super) fn add(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
 }
 
-fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+pub(super) fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
 
-fn scale(a: [f64; 3], factor: f64) -> [f64; 3] {
+pub(super) fn scale(a: [f64; 3], factor: f64) -> [f64; 3] {
     [a[0] * factor, a[1] * factor, a[2] * factor]
 }
 
 /// The distance of `at` from the line through `origin` along the unit
 /// `axis`.
-fn distance_to_axis(at: [f64; 3], origin: [f64; 3], axis: [f64; 3]) -> f64 {
+pub(super) fn distance_to_axis(at: [f64; 3], origin: [f64; 3], axis: [f64; 3]) -> f64 {
     let offset = sub(at, origin);
     let along = scale(axis, dot(offset, axis));
     let off = sub(offset, along);
@@ -589,42 +571,13 @@ pub(super) fn stamp(
     sketches: &[PlannedSketch<'_>],
     native: &mut crate::native::F3dNative,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use crate::records::sketch_links::{
-        DesignPersistentIdText, PersistentDesignLink, PersistentSubentityTag, SketchCurveLink,
-        SketchLinkSense,
-    };
+    use crate::records::sketch_links::{SketchCurveLink, SketchLinkSense};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::attributes::AttributeTarget;
-    let identity = super::roster::swept::persistent_id(plan.preceding)?;
-    let reference =
-        i64::try_from(identity).map_err(|_| CodecError::Malformed("Extrude identity".into()))?;
-    native.persistent_design_links.push(PersistentDesignLink {
-        id: "f3d:generated:extrude-body#0".to_owned(),
-        target: AttributeTarget::Body(plan.body.clone()),
-        design_id: DesignPersistentIdText::try_from(identity.to_string())
-            .map_err(CodecError::Malformed)?,
-        design_reference: BODY_REFERENCE,
-        ordinal: 0,
-    });
     let faces = [(START_TOKEN, plan.start_cap), (END_TOKEN, plan.end_cap)]
         .into_iter()
         .chain((FIRST_SIDE_TOKEN..).zip(plan.sides.iter().copied()));
-    for (token, face) in faces {
-        let text = token.to_string();
-        native
-            .persistent_subentity_tags
-            .push(PersistentSubentityTag {
-                id: format!("f3d:generated:extrude-face#{token}"),
-                target: AttributeTarget::Face(face.clone()),
-                selector: i64::try_from(text.len())
-                    .map_err(|_| CodecError::NotImplemented("face token".into()))?,
-                token: cadmpeg_core::text::NonBlankString::new(text)
-                    .ok_or_else(|| CodecError::Malformed("face token".into()))?,
-                token_integer: 0,
-                design_references: vec![reference],
-                ordinal: 0,
-            });
-    }
+    name_result("extrude", plan.preceding, plan.body, faces, native)?;
     for ((profile_loop, at), coedges) in plan.entries().zip(&plan.links) {
         let entry = profile_loop.entries[at];
         let sense = if profile_loop.exterior {
@@ -649,6 +602,51 @@ pub(super) fn stamp(
                 closure: LINK_CLOSURE,
             });
         }
+    }
+    Ok(())
+}
+
+/// Name the result `body` of the `family` item after `preceding` timeline
+/// items and its `faces` in `native` (f3d.md §3.1, "Side faces"): the body
+/// group `(3, "E", 1, 0, 0)` and face token `t` `(digits(t), t, [E])`.
+pub(super) fn name_result<'f>(
+    family: &str,
+    preceding: usize,
+    body: &BodyId,
+    faces: impl Iterator<Item = (u64, &'f FaceId)>,
+    native: &mut crate::native::F3dNative,
+) -> Result<(), cadmpeg_core::CodecError> {
+    use crate::records::sketch_links::{
+        DesignPersistentIdText, PersistentDesignLink, PersistentSubentityTag,
+    };
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::attributes::AttributeTarget;
+    let identity = super::roster::swept::persistent_id(preceding)?;
+    let reference = i64::try_from(identity)
+        .map_err(|_| CodecError::malformed(format_args!("{family} identity")))?;
+    native.persistent_design_links.push(PersistentDesignLink {
+        id: format!("f3d:generated:{family}-body#0"),
+        target: AttributeTarget::Body(body.clone()),
+        design_id: DesignPersistentIdText::try_from(identity.to_string())
+            .map_err(CodecError::Malformed)?,
+        design_reference: BODY_REFERENCE,
+        ordinal: 0,
+    });
+    for (token, face) in faces {
+        let text = token.to_string();
+        native
+            .persistent_subentity_tags
+            .push(PersistentSubentityTag {
+                id: format!("f3d:generated:{family}-face#{token}"),
+                target: AttributeTarget::Face(face.clone()),
+                selector: i64::try_from(text.len())
+                    .map_err(|_| CodecError::NotImplemented("face token".into()))?,
+                token: cadmpeg_core::text::NonBlankString::new(text)
+                    .ok_or_else(|| CodecError::Malformed("face token".into()))?,
+                token_integer: 0,
+                design_references: vec![reference],
+                ordinal: 0,
+            });
     }
     Ok(())
 }

@@ -22,6 +22,7 @@ pub(super) mod frames;
 pub(super) mod history;
 mod item;
 pub(super) mod parameters;
+mod revolve;
 mod roster;
 mod sketch;
 #[cfg(test)]
@@ -332,6 +333,7 @@ impl NeutralDesign<'_> {
     pub(super) fn stamp(&mut self, native: &mut F3dNative) -> Result<(), CodecError> {
         match self.item.item() {
             Some(Item::Extrude(plan)) => extrude::stamp(plan, &self.sketches.items, native),
+            Some(Item::Revolve(plan)) => revolve::stamp(plan, native),
             None => {
                 let losses = self.base_feature.stamp(native)?;
                 self.losses.extend(losses);

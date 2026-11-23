@@ -15,7 +15,7 @@ use super::super::sketch::CurveGeometry;
 use super::super::types;
 use super::owned::Owned;
 use super::swept::{
-    GroupRecords, ResultRecords, ScopeRecords, SelectionRecords, StartRecords, Swept,
+    allocator, GroupRecords, ResultRecords, ScopeRecords, SelectionRecords, StartRecords, Swept,
     FIRST_SELECTION_IDENTITY, PROFILE_ROLE,
 };
 use super::{Context, PARAMETER_DISCRIMINATOR};
@@ -67,29 +67,22 @@ impl ExtrudeRecords {
         mut next: u32,
         rows: &mut Vec<(u32, TypeRow)>,
     ) -> Result<(Self, u32), CodecError> {
-        let mut take = |row: TypeRow| {
-            let index = next;
-            next = next.checked_add(1).ok_or_else(|| {
-                CodecError::NotImplemented("Extrude record index overflow".into())
-            })?;
-            rows.push((index, row));
-            Ok::<_, CodecError>(index)
-        };
-        let scope = ScopeRecords::allocate(&mut take, types::EXTRUDE_SCOPE)?;
-        let group = GroupRecords::allocate(&mut take)?;
-        let start = StartRecords::allocate(&mut take, types::START_RECORD)?;
-        let selection = SelectionRecords::allocate(&mut take)?;
-        let mut owned = || {
-            Ok::<_, CodecError>([
-                take(types::PARAMETER_OWNER)?,
-                take(types::PARAMETER)?,
-                take(types::RECORD_TIMESTAMPS)?,
-            ])
-        };
-        let along = owned()?;
-        let taper = owned()?;
-        let results = ResultRecords::allocate(&mut take, plan.entries().count())?;
-        Ok((
+        let records = {
+            let mut take = allocator(&mut next, rows);
+            let scope = ScopeRecords::allocate(&mut take, types::EXTRUDE_SCOPE)?;
+            let group = GroupRecords::allocate(&mut take)?;
+            let start = StartRecords::allocate(&mut take, types::START_RECORD)?;
+            let selection = SelectionRecords::allocate(&mut take)?;
+            let mut owned = || {
+                Ok::<_, CodecError>([
+                    take(types::PARAMETER_OWNER)?,
+                    take(types::PARAMETER)?,
+                    take(types::RECORD_TIMESTAMPS)?,
+                ])
+            };
+            let along = owned()?;
+            let taper = owned()?;
+            let results = ResultRecords::allocate(&mut take, plan.entries().count())?;
             Self {
                 scope,
                 group,
@@ -98,9 +91,9 @@ impl ExtrudeRecords {
                 along,
                 taper,
                 results,
-            },
-            next,
-        ))
+            }
+        };
+        Ok((records, next))
     }
 }
 

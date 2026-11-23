@@ -12,6 +12,7 @@ pub(super) mod extrude;
 mod fixed;
 mod owned;
 pub(super) mod planes;
+mod revolve;
 mod rows;
 pub(super) mod segment;
 pub(super) mod sketches;
@@ -31,6 +32,7 @@ use crate::records::references::DesignClassTag;
 use crate::writer::generate::presentation::TypeRow;
 use extrude::ExtrudeRecords;
 use planes::PlaneRecords;
+use revolve::RevolveRecords;
 use segment::TypeTable;
 use sketches::SketchRoster;
 use values::Values;
@@ -122,6 +124,10 @@ pub(in crate::writer::generate::design) enum ItemRecords<'a> {
         plan: &'a super::extrude::ExtrudePlan<'a>,
         records: ExtrudeRecords,
     },
+    Revolve {
+        plan: &'a super::revolve::RevolvePlan<'a>,
+        records: RevolveRecords,
+    },
 }
 
 impl<'a> ItemRecords<'a> {
@@ -138,6 +144,10 @@ impl<'a> ItemRecords<'a> {
                 let (records, next) = ExtrudeRecords::allocate(plan, next, rows)?;
                 (Self::Extrude { plan, records }, next)
             }
+            super::item::Item::Revolve(plan) => {
+                let (records, next) = RevolveRecords::allocate(plan, next, rows)?;
+                (Self::Revolve { plan, records }, next)
+            }
         })
     }
 
@@ -145,6 +155,7 @@ impl<'a> ItemRecords<'a> {
     pub(in crate::writer::generate::design) fn scope(&self) -> u32 {
         match self {
             Self::Extrude { records, .. } => records.scope.record,
+            Self::Revolve { records, .. } => records.scope.record,
         }
     }
 
@@ -152,6 +163,7 @@ impl<'a> ItemRecords<'a> {
     pub(in crate::writer::generate::design) fn after(&self) -> usize {
         match self {
             Self::Extrude { plan, .. } => plan.after,
+            Self::Revolve { plan, .. } => plan.after,
         }
     }
 
@@ -159,6 +171,7 @@ impl<'a> ItemRecords<'a> {
     pub(in crate::writer::generate::design) fn sketch(&self) -> usize {
         match self {
             Self::Extrude { plan, .. } => plan.sketch,
+            Self::Revolve { plan, .. } => plan.sketch,
         }
     }
 
@@ -166,6 +179,7 @@ impl<'a> ItemRecords<'a> {
     pub(in crate::writer::generate::design) fn family(&self) -> &'static str {
         match self {
             Self::Extrude { .. } => extrude::FAMILY,
+            Self::Revolve { .. } => revolve::FAMILY,
         }
     }
 
@@ -173,6 +187,7 @@ impl<'a> ItemRecords<'a> {
     pub(in crate::writer::generate::design) fn counter(&self) -> &'static str {
         match self {
             Self::Extrude { .. } => extrude::COUNTER,
+            Self::Revolve { .. } => revolve::COUNTER,
         }
     }
 
@@ -180,6 +195,7 @@ impl<'a> ItemRecords<'a> {
     pub(in crate::writer::generate::design) fn owners(&self) -> Vec<u32> {
         match self {
             Self::Extrude { records, .. } => records.owners(),
+            Self::Revolve { records, .. } => records.owners(),
         }
     }
 
@@ -187,6 +203,7 @@ impl<'a> ItemRecords<'a> {
     pub(in crate::writer::generate::design) fn context_members(&self) -> Vec<u32> {
         match self {
             Self::Extrude { records, .. } => records.context_members(),
+            Self::Revolve { records, .. } => records.context_members(),
         }
     }
 
@@ -194,6 +211,7 @@ impl<'a> ItemRecords<'a> {
     fn parameters(&self) -> Vec<u32> {
         match self {
             Self::Extrude { records, .. } => records.parameters(),
+            Self::Revolve { records, .. } => records.parameters(),
         }
     }
 
@@ -209,6 +227,7 @@ impl<'a> ItemRecords<'a> {
     ) {
         match self {
             Self::Extrude { records, .. } => records.dependencies(component, profile),
+            Self::Revolve { records, .. } => records.dependencies(component, profile),
         }
     }
 
@@ -217,6 +236,7 @@ impl<'a> ItemRecords<'a> {
     fn ancestors(&self) -> &'static [TypeRow] {
         match self {
             Self::Extrude { .. } => &super::types::EXTRUDE_ANCESTORS,
+            Self::Revolve { .. } => &super::types::REVOLVE_ANCESTORS,
         }
     }
 
@@ -228,6 +248,7 @@ impl<'a> ItemRecords<'a> {
         }
         match self {
             Self::Extrude { plan, records } => extrude::write(ctx, plan, records, out),
+            Self::Revolve { plan, records } => revolve::write(ctx, plan, records, out),
         }
     }
 
@@ -236,6 +257,7 @@ impl<'a> ItemRecords<'a> {
     fn losses(&self, ctx: &Context<'_>) -> Vec<LossNote> {
         match self {
             Self::Extrude { plan, records } => extrude::losses(ctx, plan, records),
+            Self::Revolve { plan, records } => revolve::losses(ctx, plan, records),
         }
     }
 }
@@ -445,6 +467,12 @@ impl ContextValue {
             return Self::Chosen {
                 value: largest(),
                 outside: "the timeline holds WorkPlane items".to_owned(),
+            };
+        }
+        if let Some(super::item::Item::Revolve(_)) = item {
+            return Self::Chosen {
+                value: largest(),
+                outside: "the timeline holds a Revolve item".to_owned(),
             };
         }
         if item.is_none() {
