@@ -23,9 +23,30 @@ pub(crate) fn is_supplemental_config_lane(lane: &FeatureInputLane) -> bool {
     lane.id.contains(":config-objects#")
 }
 
+/// The stream extents of the `moPMarkRecord_c` records the archive walk of
+/// each lane read, by lane id: each record's body start and end.
+pub(crate) type MarkSpans = HashMap<String, Vec<(u64, u64)>>;
+
+/// Mark the compact edge-selection vectors of `lanes` that lie inside a
+/// `moPMarkRecord_c`: they are the record's edge references, not operands of
+/// the feature that holds it.
+pub(crate) fn tag_mark_references(lanes: &mut [FeatureInputLane], spans: &MarkSpans) {
+    for lane in lanes {
+        let Some(spans) = spans.get(&lane.id) else {
+            continue;
+        };
+        for selection in &mut lane.edge_selections {
+            selection.mark_reference = spans
+                .iter()
+                .any(|&(start, end)| (start..end).contains(&selection.offset));
+        }
+    }
+}
+
 /// The feature-input lanes of a part, the exact sketch profiles of each lane,
-/// the archive walk's `moPMarkRecord_c` holders of each configuration, and
-/// the `Config-N` class map each lane continues, by lane id.
+/// the archive walk's `moPMarkRecord_c` holders of each configuration, the
+/// extents of the records, and the `Config-N` class map each lane continues,
+/// by lane id.
 pub(crate) fn lanes(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -36,6 +57,7 @@ pub(crate) fn lanes(
         Vec<FeatureInputLane>,
         super::profiles::ExactProfiles,
         crate::rollback::MarkOwners,
+        MarkSpans,
         ConfigurationMaps,
     ),
     cadmpeg_core::CodecError,
@@ -48,6 +70,7 @@ pub(crate) fn lanes(
     let mut result = Vec::new();
     let mut exact = super::profiles::ExactProfiles::default();
     let mut mark_owners = crate::rollback::MarkOwners::new();
+    let mut mark_spans = MarkSpans::new();
     let mut configuration_maps = ConfigurationMaps::new();
     for source in scan.sections() {
         let Some(section) = source.name() else {
@@ -71,6 +94,15 @@ pub(crate) fn lanes(
                 &mut exact,
                 losses,
             )?;
+            mark_spans.insert(
+                lane.id.clone(),
+                marks
+                    .iter()
+                    .filter_map(|mark| {
+                        Some((u64::try_from(mark.at).ok()?, u64::try_from(mark.end).ok()?))
+                    })
+                    .collect(),
+            );
             if let Some(name) = configuration_name(section) {
                 mark_owners.insert(name.to_ascii_lowercase(), marks);
             }
@@ -80,12 +112,13 @@ pub(crate) fn lanes(
         }
         result.push(lane);
     }
-    Ok((result, exact, mark_owners, configuration_maps))
+    Ok((result, exact, mark_owners, mark_spans, configuration_maps))
 }
 
-/// Give each scalar of a `Config-N-ResolvedFeatures` lane the class of the
-/// parameter object whose value it is, from the exact walk of the stream.
-/// Scalars the walk did not reach keep no class. Returns the walk's
+/// Give each scalar of a `Config-N-ResolvedFeatures` lane the class and the
+/// object identifier of the parameter object whose value it is, from the
+/// exact walk of the stream. Scalars the walk did not reach keep neither, and
+/// a walk that stopped gives no class. Returns the walk's
 /// `moPMarkRecord_c` records with the features that hold them, and the
 /// classes of the `Config-N` map the lane continues, where a walk of
 /// `Config-N` reconciles with the stream's map count.
@@ -135,6 +168,10 @@ fn type_scalars_from_archive(
     if walk.status == crate::carchive::Status::End {
         exact.insert(&lane.id, std::mem::take(&mut walk.sketch_profiles));
     }
+    let object_ids = scalar_archive_object_ids(&walk);
+    for scalar in &mut lane.scalars {
+        scalar.archive_object_id = object_ids.get(&scalar.offset).copied();
+    }
     if let crate::carchive::Status::Stop(_) = walk.status {
         losses.push(SldprtLossCode::FeatureInputArchiveWalkStopped.note(format!(
             "the archive walk of {config_name} stopped before the end of the stream, so its \
@@ -160,6 +197,20 @@ fn configuration_name(section: &str) -> Option<String> {
                 && normalized[length..].eq_ignore_ascii_case(RESOLVED_FEATURES_SUFFIX)
         })
         .map(|length| normalized[..length].to_owned())
+}
+
+/// The object identifier of each parameter the walk read, by value offset.
+/// A parameter read before a stop was read by its class's rule, so it keeps
+/// its identifier.
+fn scalar_archive_object_ids(walk: &crate::carchive::Walk) -> HashMap<u64, u32> {
+    walk.parameters
+        .iter()
+        .filter_map(|parameter| {
+            let id = crate::brep::feature_source::FeatureSourceId::try_from(parameter.object_id?)
+                .ok()?;
+            Some((u64_from_index(parameter.value_at), id.value()))
+        })
+        .collect()
 }
 
 /// The archive parameter class of each scalar value offset.
@@ -324,7 +375,7 @@ pub(crate) fn source_image_profiles(
         &cadmpeg_core::decode::DecodePolicy::desktop(),
     )?;
     let scan = crate::container::scan(&ctx, root)?;
-    let (source_lanes, mut exact, _, _) =
+    let (source_lanes, mut exact, _, _, _) =
         self::lanes(&ctx, &scan, &mut Annotations::default(), &mut Vec::new())?;
     exact.retain(|id| {
         let payload = |of: &[FeatureInputLane]| {

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::Slots;
+use super::FastMap;
 use crate::history_records::{
     AsmHistoricalBodyDesignLink, AsmHistoricalCarrierBinding, AsmHistoricalCoedge,
     AsmHistoricalCurveAxis, AsmHistoricalCylinder, AsmHistoricalEdge, AsmHistoricalEdgeSample,
@@ -8,8 +8,7 @@ use crate::history_records::{
     AsmHistoricalRelation, AsmHistoricalSurfaceAxis, AsmHistoricalSurfaceRadius,
     AsmHistoricalTopology,
 };
-use std::collections::btree_map::Entry;
-use std::collections::BTreeMap;
+use std::collections::hash_map::Entry;
 
 /// One bit per topology family.
 type Families = u64;
@@ -74,9 +73,11 @@ fn group<T>(
     rows: impl IntoIterator<Item = T>,
     key: impl Fn(&T) -> i64,
     family: Families,
-    families: &mut BTreeMap<i64, Families>,
-) -> BTreeMap<i64, Rows<T>> {
-    let mut groups = BTreeMap::<i64, Rows<T>>::new();
+    families: &mut FastMap<i64, Families>,
+) -> FastMap<i64, Rows<T>> {
+    let rows = rows.into_iter();
+    let mut groups = FastMap::<i64, Rows<T>>::default();
+    groups.reserve(rows.size_hint().0);
     for row in rows {
         let slot = key(&row);
         *families.entry(slot).or_default() |= family;
@@ -107,7 +108,7 @@ struct KeyEdit {
 /// Overwrite the rows of each edited key in place. A key's first run replaces
 /// its old rows and later runs append, so an unsorted part keeps every row.
 fn write_family<T: Clone>(
-    current: &mut BTreeMap<i64, Rows<T>>,
+    current: &mut FastMap<i64, Rows<T>>,
     edits: &mut [KeyEdit],
     rows: &[T],
     key: impl Fn(&T) -> i64,
@@ -134,9 +135,9 @@ macro_rules! indexed_topology {
         /// with rows at each slot, so a keyed edit visits only those.
         #[derive(Default)]
         pub(super) struct IndexedTopology {
-            families: BTreeMap<i64, Families>,
-            $($entity: BTreeMap<i64, Rows<$ety>>),*,
-            $($container: BTreeMap<i64, Rows<$cty>>),*
+            families: FastMap<i64, Families>,
+            $($entity: FastMap<i64, Rows<$ety>>),*,
+            $($container: FastMap<i64, Rows<$cty>>),*
         }
         impl IndexedTopology {
             const ENTITIES: Families = $((1 << $ebit))|*;
@@ -149,7 +150,7 @@ macro_rules! indexed_topology {
         );
         impl From<AsmHistoricalTopology> for IndexedTopology {
             fn from(topology: AsmHistoricalTopology) -> Self {
-                let mut families = BTreeMap::new();
+                let mut families = FastMap::default();
                 $(let $entity = group(topology.$entity, $ekey, 1 << $ebit, &mut families);)*
                 $(let $container = group(topology.$container, $ckey, 1 << $cbit, &mut families);)*
                 Self { families, $($entity),*, $($container),* }
@@ -162,12 +163,31 @@ macro_rules! indexed_topology {
             }
             pub(super) fn bodies(&self) -> impl Iterator<Item = &i64> { self.bodies.keys() }
             pub(super) fn materialize(&self) -> AsmHistoricalTopology {
-                AsmHistoricalTopology {
-                    $($entity: self.$entity.values().flat_map(Rows::as_slice).cloned().collect()),*,
-                    $($container: self.$container.values().flat_map(Rows::as_slice).cloned().collect()),*
+                let mut out = AsmHistoricalTopology::default();
+                let mut keys: Vec<i64> = self.families.keys().copied().collect();
+                keys.sort_unstable();
+                for key in keys {
+                    let Some(&present) = self.families.get(&key) else {
+                        continue;
+                    };
+                    if present & Self::ENTITIES != 0 {
+                        $(if present & (1 << $ebit) != 0 {
+                            if let Some(rows) = self.$entity.get(&key) {
+                                out.$entity.extend_from_slice(rows.as_slice());
+                            }
+                        })*
+                    }
+                    if present & Self::CONTAINERS != 0 {
+                        $(if present & (1 << $cbit) != 0 {
+                            if let Some(rows) = self.$container.get(&key) {
+                                out.$container.extend_from_slice(rows.as_slice());
+                            }
+                        })*
+                    }
                 }
+                out
             }
-            pub(super) fn project(&self, keys: &Slots, containers: bool) -> AsmHistoricalTopology {
+            pub(super) fn project(&self, keys: &[i64], containers: bool) -> AsmHistoricalTopology {
                 let mut out = AsmHistoricalTopology::default();
                 for key in keys {
                     let Some(&present) = self.families.get(key) else {
@@ -189,7 +209,7 @@ macro_rules! indexed_topology {
                 }
                 out
             }
-            pub(super) fn replace(&mut self, part: AsmHistoricalTopology, keys: &Slots, containers: bool) {
+            pub(super) fn replace(&mut self, part: AsmHistoricalTopology, keys: &[i64], containers: bool) {
                 let half = if containers { Self::CONTAINERS } else { Self::ENTITIES };
                 let mut edits = keys
                     .iter()
@@ -275,9 +295,11 @@ indexed_topology! {
 
 #[cfg(test)]
 mod tests {
+    use super::super::Slots;
     use super::*;
     use crate::history_records::{AsmHistoricalTransition, AsmStateSnapshot};
     use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
+    use std::collections::BTreeMap;
 
     #[test]
     fn keyed_chain_matches_full_diffs_with_repeats_and_tag_groups() {
@@ -299,7 +321,8 @@ mod tests {
         };
         let mut indexed = IndexedTopology::from(newer.clone());
         let mut newer_versions = BTreeMap::from([(1, 1), (10, 10), (20, 20), (40, 40)]);
-        let keys = Slots::from([1, 10, 40]);
+        let keys = [1, 10, 40];
+        let key_set = Slots::from(keys);
         for state_id in [2, 1] {
             let mut older = newer.clone();
             older.surfaces.retain(|slot| *slot != 10);
@@ -324,17 +347,19 @@ mod tests {
                 topology: &newer,
                 versions: &newer_versions,
             };
+            let older_fast: super::FastMap<i64, i64> =
+                older_versions.iter().map(|(&k, &v)| (k, v)).collect();
+            let newer_fast: super::FastMap<i64, i64> =
+                newer_versions.iter().map(|(&k, &v)| (k, v)).collect();
             assert_eq!(
                 super::super::transition_for_changes(
-                    AsmStateSnapshot {
-                        topology: &older_part,
-                        ..old
-                    },
-                    AsmStateSnapshot {
-                        topology: &newer_part,
-                        ..new
-                    },
-                    &keys,
+                    old.state_id,
+                    &older_part,
+                    &older_fast,
+                    new.state_id,
+                    &newer_part,
+                    &newer_fast,
+                    &key_set,
                 ),
                 AsmHistoricalTransition::between(Some(old), new),
             );
@@ -348,7 +373,7 @@ mod tests {
             surfaces: vec![10, 20, 30],
             ..Default::default()
         });
-        let keys = Slots::from([20]);
+        let keys = [20];
         assert_eq!(indexed.project(&keys, false).surfaces, vec![20]);
         indexed.replace(
             AsmHistoricalTopology {
@@ -373,7 +398,7 @@ mod tests {
                 surfaces: vec![20, 10, 20],
                 ..Default::default()
             },
-            &Slots::from([10, 20]),
+            &[10, 20],
             false,
         );
         assert_eq!(indexed.materialize().surfaces, vec![10, 20, 20, 30]);
@@ -387,7 +412,7 @@ mod tests {
             bodies: vec![5],
             ..Default::default()
         });
-        let keys = Slots::from([5]);
+        let keys = [5];
         indexed.replace(
             AsmHistoricalTopology {
                 surfaces: vec![5],

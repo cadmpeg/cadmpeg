@@ -1,20 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::f64::consts::TAU;
+
 use super::{
     boundary_use_samples, clearance, point_in_polygon, ring_bounds, Aabb2, CURVE_SAMPLES,
     MAX_SCANLINES,
 };
+use crate::design::geometry::sketch_geometry_point;
 use cadmpeg_core::{decode::DecodeContext, CodecError};
 use cadmpeg_ir::features::profiles::SketchProfileRegion;
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::sketches::SketchEntity;
+use cadmpeg_ir::sketches::{SketchEntity, SketchGeometryDefinition};
 
-pub(in crate::design::profile_select) fn regions_are_disjoint(
+/// The sampled rings of each region, the exterior ring first. `None` when a
+/// region is not trimmed or a boundary use cannot be evaluated.
+fn sampled_rings(
     regions: &[SketchProfileRegion],
     entities: &[SketchEntity],
-    tolerance: f64,
     ctx: &DecodeContext<'_>,
-) -> Result<bool, CodecError> {
+) -> Result<Option<Vec<Vec<Vec<Point2>>>>, CodecError> {
     let mut sampled = Vec::new();
     for region in regions {
         let SketchProfileRegion::Trimmed {
@@ -22,7 +26,7 @@ pub(in crate::design::profile_select) fn regions_are_disjoint(
             hole_boundaries,
         } = region
         else {
-            return Ok(false);
+            return Ok(None);
         };
         let mut rings = Vec::new();
         for boundary in std::iter::once(outer_boundary).chain(hole_boundaries) {
@@ -30,7 +34,7 @@ pub(in crate::design::profile_select) fn regions_are_disjoint(
             for use_ in boundary {
                 let Some(mut points) = boundary_use_samples(use_, entities, CURVE_SAMPLES, ctx)?
                 else {
-                    return Ok(false);
+                    return Ok(None);
                 };
                 if use_.reversed {
                     points.reverse();
@@ -41,11 +45,81 @@ pub(in crate::design::profile_select) fn regions_are_disjoint(
         }
         sampled.push(rings);
     }
+    Ok(Some(sampled))
+}
+
+pub(in crate::design::profile_select) fn regions_are_disjoint(
+    regions: &[SketchProfileRegion],
+    entities: &[SketchEntity],
+    tolerance: f64,
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    let Some(sampled) = sampled_rings(regions, entities, ctx)? else {
+        return Ok(false);
+    };
     let rings: Vec<Vec<&[Point2]>> = sampled
         .iter()
         .map(|region| region.iter().map(Vec::as_slice).collect())
         .collect();
     Ok(interiors_are_disjoint(&rings, &[], tolerance))
+}
+
+/// Whether a point of the line, circle, or circular arc `curve` lies in the
+/// interior of one of the trimmed `regions`. The point is inside the sampled
+/// exterior ring, outside each sampled hole ring, and farther from every ring
+/// of that region than its longest sampled chord. A boundary arc stays within
+/// its chord length of the chord that samples it, so the sampled rings and
+/// the region boundary put such a point on the same side. `false` for any
+/// other curve, a region that is not trimmed, or a curve or boundary that
+/// cannot be evaluated.
+pub(in crate::design::profile_select) fn curve_enters_region_interior(
+    curve: &SketchEntity,
+    regions: &[SketchProfileRegion],
+    entities: &[SketchEntity],
+    tolerance: f64,
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    let [from, to] = match curve.geometry.definition() {
+        SketchGeometryDefinition::Line { .. } => [0.0, 1.0],
+        SketchGeometryDefinition::Circle { .. } => [0.0, TAU],
+        SketchGeometryDefinition::Arc {
+            start_angle,
+            end_angle,
+            ..
+        } => [start_angle.get(), end_angle.get()],
+        _ => return Ok(false),
+    };
+    let Some(sampled) = sampled_rings(regions, entities, ctx)? else {
+        return Ok(false);
+    };
+    let mut points = Vec::new();
+    for k in 0..=CURVE_SAMPLES {
+        let parameter = from + (to - from) * f64::from(k) / f64::from(CURVE_SAMPLES);
+        let Some(point) = sketch_geometry_point(&curve.geometry, parameter, ctx)? else {
+            return Ok(false);
+        };
+        points.push(point);
+    }
+    Ok(sampled.iter().any(|rings| {
+        let Some((outer, holes)) = rings.split_first() else {
+            return false;
+        };
+        let margin = rings
+            .iter()
+            .flat_map(|ring| {
+                (0..ring.len()).map(|index| {
+                    let next = ring[(index + 1) % ring.len()];
+                    let point = ring[index];
+                    (next.u - point.u).hypot(next.v - point.v)
+                })
+            })
+            .fold(tolerance, f64::max);
+        points.iter().any(|point| {
+            point_in_polygon(*point, outer)
+                && holes.iter().all(|hole| !point_in_polygon(*point, hole))
+                && rings.iter().all(|ring| clearance(*point, ring) > margin)
+        })
+    }))
 }
 
 pub(super) fn interiors_are_disjoint(

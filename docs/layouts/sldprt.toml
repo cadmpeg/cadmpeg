@@ -10500,6 +10500,37 @@ source = "spec"
 anchor = "In the pairwise-orthogonal form, unit in-plane u- and v-axes occupy the unaligned f64 triples at `+49`, `+57`, `+65` and `+73`, `+81`, `+89`"
 
 [[record]]
+name = "reference_plane_data_head"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
+kind = "byte"
+section = "2"
+anchor = "Its head is the plane's point (three f64, metres), its unit normal (three f64) and a flag byte"
+size = 49
+endianness = "little"
+note = "Offsets begin after the plane-data object's class token or class declaration. With flag `1` the head is the first 49 bytes of the 97-byte `constructed_reference_plane_fixed_frame`."
+
+[[record.field]]
+name = "point"
+offset = 0
+type = "f64[3]"
+source = "spec"
+anchor = "Its head is the plane's point (three f64, metres)"
+
+[[record.field]]
+name = "normal"
+offset = 24
+type = "f64[3]"
+source = "spec"
+anchor = "its unit normal (three f64)"
+
+[[record.field]]
+name = "flag"
+offset = 48
+type = "u8"
+source = "spec"
+anchor = "With flag `1` the head continues as the 97-byte frame"
+
+[[record]]
 name = "constructed_reference_plane_matrix_frame"
 kind = "byte"
 section = "2"
@@ -12486,6 +12517,29 @@ offset = 12
 type = "u32"
 source = "spec"
 anchor = "| +12 | little-endian u32 |"
+
+[[record]]
+name = "model_header_log_tail"
+kind = "byte"
+section = "2.3"
+anchor = "After the last `moLogs_c` record come a little-endian u32 time stamp and a little-endian u32"
+size = 8
+endianness = "little"
+note = "Offsets from the end of the last moLogs_c record's name CString in Contents/Config-N-ModelHeader and Header2."
+
+[[record.field]]
+name = "time_stamp"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "come a little-endian u32 time stamp"
+
+[[record.field]]
+name = "next_object_id"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "the part's next object identifier"
 
 [[record]]
 name = "feature_object_block_head"
@@ -15852,6 +15906,42 @@ offset = 81
 type = "u32"
 source = "spec"
 anchor = "a u32 header word before the complete component source record"
+
+[[record]]
+name = "profile_line_side_words"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs"
+kind = "byte"
+section = "5"
+anchor = "through the profile's 92-byte line records"
+size = 92
+endianness = "little"
+note = "The words of the current-prefix 92-byte profile-locus line record (value 1 or 2, role and state 1, selector 04 00 at marker +37) that join the side faces of an extruded polygon to its lines. Bytes 0..80 are those of the profile curve records of section 2. Bytes 80..92 overlap the zero tail of current_extended_zero_tail_92_profile_curve, which stores zero at +80, +84 and +88 and so names no side face, and the direct profile line of section 2, whose +84 value 1 with a nonzero +88 is a selector and names no side face."
+
+[[record.gap]]
+offset = 0
+size = 80
+note = "Marker prefix, endpoint indices, selectors and constants of the profile curve records of section 2."
+
+[[record.field]]
+name = "line_state"
+offset = 80
+type = "u32"
+source = "spec"
+anchor = "In a line record whose u32 at marker +80 is zero"
+
+[[record.field]]
+name = "next_side"
+offset = 84
+type = "u32"
+source = "spec"
+anchor = "the u32 at marker +84 is the local identifier of the side face that the next line record sweeps"
+
+[[record.field]]
+name = "identity"
+offset = 88
+type = "u32"
+source = "spec"
+anchor = "nonzero, non-null identity at +88"
 
 [[record]]
 name = "sketch_dimension_parameter_trailer"

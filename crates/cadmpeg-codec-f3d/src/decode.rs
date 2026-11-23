@@ -4198,18 +4198,35 @@ impl<'a> F3dDecodeSession<'a> {
             "admit F3D entities",
         )?;
         self.note_uninterpreted_design();
-        self.native
-            .store(ctx, self.ir.native.namespace_mut("f3d"))?;
-        let annotations = populate_annotations(
-            &self.ir,
-            scan,
-            &self.native,
-            Some((
-                &geometry.primary_model_brep_name,
-                &geometry.annotation_records,
-            )),
-            &self.unknowns,
-        )?;
+        let mut f3d_namespace = std::mem::take(self.ir.native.namespace_mut("f3d"));
+        let (store_res, annotations_res) = std::thread::scope(|scope| {
+            let ir = &self.ir;
+            let native = &self.native;
+            let unknowns = &self.unknowns;
+            let brep_name = &geometry.primary_model_brep_name;
+            let brep_records = &geometry.annotation_records;
+            let ann_handle = scope.spawn(move || {
+                populate_annotations(ir, scan, native, Some((brep_name, brep_records)), unknowns)
+            });
+            let store_res = self.native.store(ctx, &mut f3d_namespace);
+            let annotations_res = match ann_handle.join() {
+                Ok(res) => res,
+                Err(_) => populate_annotations(
+                    &self.ir,
+                    scan,
+                    &self.native,
+                    Some((
+                        &geometry.primary_model_brep_name,
+                        &geometry.annotation_records,
+                    )),
+                    &self.unknowns,
+                ),
+            };
+            (store_res, annotations_res)
+        });
+        *self.ir.native.namespace_mut("f3d") = f3d_namespace;
+        store_res?;
+        let annotations = annotations_res?;
         let source_image = preserve_source_image(scan);
         let mut admitted_entities = self.admitted_entities;
         decode_result(

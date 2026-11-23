@@ -614,21 +614,39 @@ impl SubtypeTable {
     pub fn from_records(records: &[crate::sab::Record]) -> Self {
         let mut defs = Vec::new();
         for record in records {
-            for (pos, token) in record.tokens.iter().enumerate() {
-                if matches!(token, Token::SubtypeOpen) {
-                    if let Some(Token::Ident(name) | Token::SubIdent(name)) =
-                        record.tokens.get(pos + 1)
-                    {
-                        if name != "ref" {
-                            defs.push((record.tokens.clone(), pos));
-                        }
-                    }
-                }
-            }
+            Self::push_record_defs(&mut defs, record);
         }
         Self {
             defs,
             save_format_version: None,
+        }
+    }
+
+    /// Build the table over borrowed records without cloning the record table.
+    pub fn from_record_refs(records: &[&crate::sab::Record]) -> Self {
+        let mut defs = Vec::new();
+        for &record in records {
+            Self::push_record_defs(&mut defs, record);
+        }
+        Self {
+            defs,
+            save_format_version: None,
+        }
+    }
+
+    fn push_record_defs(
+        defs: &mut Vec<(std::sync::Arc<[Token]>, usize)>,
+        record: &crate::sab::Record,
+    ) {
+        for (pos, token) in record.tokens.iter().enumerate() {
+            if matches!(token, Token::SubtypeOpen) {
+                if let Some(Token::Ident(name) | Token::SubIdent(name)) = record.tokens.get(pos + 1)
+                {
+                    if name != "ref" {
+                        defs.push((record.tokens.clone(), pos));
+                    }
+                }
+            }
         }
     }
 
