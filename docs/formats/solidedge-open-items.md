@@ -110,4 +110,7 @@
 
 **Known.** The first list is empty in the master member and holds one object identifier in another member. Each block starts with `u32` `1` and ends with `u32` `0`. A second-list entry holds the occurrence object identifier and the 13 `f64` words of its placement. The record trailer word is `1` or `3`. A member storage can hold occurrence objects that its record does not list.
 
-**Need.** Families whose members differ in suppressed, replaced, and moved components, with the stored members table of each.
+**Conflict.** Two documents of one family, the first placing both components of the member storage and the second placing one, store the same `FamilyInfo` (the name of the first member), the same member table except one word, and the same `IOT/Default` stream (108 bytes) in every member storage and in the master storage. The first list is empty in the first member record and holds one object identifier, one of the two second-list identifiers, in the second member record, in both documents. The active member therefore has an empty first list in both documents, and the first list does not select the component that the second document leaves out. The words that differ are the trailer word of the first member record (`3` in the first document, `1` in the second) and, in one pair, the length of the bytes after the second list of that record (12 fewer in the second document).
+
+**Need.** Families whose members differ in suppressed, replaced, and moved components, with the stored members table of each, and a family whose `FamilyInfo` names a member other than the first.
+
