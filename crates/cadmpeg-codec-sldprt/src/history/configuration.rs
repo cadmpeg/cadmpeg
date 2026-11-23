@@ -645,6 +645,7 @@ pub(crate) fn project_configuration_sketch_states(
             &ir.model.sketch_entities,
         );
         let surfaces = configuration_surface_carriers(ir, configuration_index);
+        let configuration_solid = configuration_solid(ir, configuration_index);
         let scoped_lanes = &lanes[lane_index..=lane_index];
         let states = &ir.model.configurations[configuration_index].feature_states;
         let mut features = copy_configuration_state_features(&ir.model.features, states);
@@ -815,7 +816,7 @@ pub(crate) fn project_configuration_sketch_states(
                     &ir.model.sketches,
                     &features,
                     scoped_lanes,
-                    &solid,
+                    &configuration_solid,
                 );
             crate::resolved_features::relation_geometry::append_relation_point_notes(
                 &mut losses,
@@ -1342,6 +1343,74 @@ pub(crate) fn inherit_configuration_reference_plane_states(
         }
     }
     Ok(())
+}
+
+/// The vertices and edges of `configuration_index`'s bodies, or of every body
+/// where its membership is unresolved.
+fn configuration_solid(
+    ir: &cadmpeg_ir::CadIr,
+    configuration_index: usize,
+) -> crate::resolved_features::stream_readings::SolidEdges {
+    let geometry = &ir.geometry;
+    let Some(body_ids) = ir.model.configurations[configuration_index]
+        .bodies
+        .as_deref()
+    else {
+        return crate::resolved_features::stream_readings::SolidEdges::new(
+            &geometry.edges,
+            &geometry.vertices,
+            &geometry.points,
+            &geometry.curves,
+        );
+    };
+    let bodies = body_ids.iter().collect::<HashSet<_>>();
+    let shells = geometry
+        .regions
+        .iter()
+        .filter(|region| bodies.contains(&region.body))
+        .flat_map(|region| &region.shells)
+        .collect::<HashSet<_>>();
+    let faces = geometry
+        .faces
+        .iter()
+        .filter(|face| shells.contains(&face.shell))
+        .map(|face| &face.id)
+        .collect::<HashSet<_>>();
+    let loops = geometry
+        .loops
+        .iter()
+        .filter(|face_loop| faces.contains(&face_loop.face))
+        .map(|face_loop| &face_loop.id)
+        .collect::<HashSet<_>>();
+    let edge_ids = geometry
+        .coedges
+        .iter()
+        .filter(|coedge| loops.contains(&coedge.owner_loop))
+        .map(|coedge| &coedge.edge)
+        .collect::<HashSet<_>>();
+    let edges = geometry
+        .edges
+        .iter()
+        .filter(|edge| edge_ids.contains(&edge.id))
+        .cloned()
+        .collect::<Vec<_>>();
+    let vertex_ids = edges
+        .iter()
+        .filter_map(|edge| edge.ends.as_ref())
+        .flat_map(|ends| [&ends.start, &ends.end])
+        .collect::<HashSet<_>>();
+    let vertices = geometry
+        .vertices
+        .iter()
+        .filter(|vertex| vertex_ids.contains(&vertex.id))
+        .cloned()
+        .collect::<Vec<_>>();
+    crate::resolved_features::stream_readings::SolidEdges::new(
+        &edges,
+        &vertices,
+        &geometry.points,
+        &geometry.curves,
+    )
 }
 
 fn configuration_surface_carriers(
