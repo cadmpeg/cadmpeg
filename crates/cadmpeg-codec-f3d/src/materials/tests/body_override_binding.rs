@@ -105,9 +105,15 @@ fn the_first_body_override_wins_over_a_later_one() {
         &mut Vec::new(),
         earlier.clone(),
     );
-    bind_body_override(&mut bindings, &mut overridden, &mut Vec::new(), later);
+    let mut losses = Vec::new();
+    bind_body_override(&mut bindings, &mut overridden, &mut losses, later);
 
     assert_eq!(bindings, vec![earlier]);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::BodyOverrideSuperseded.kind()
+    );
 }
 
 #[test]

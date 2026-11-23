@@ -4946,6 +4946,12 @@ impl RecordPayload for PmDcEntityStyleLinkPayload {
 
 pub(crate) type PmDcFeature = Located<PmDcFeaturePayload>;
 
+impl PmDcFeaturePayload {
+    pub(crate) fn save_version_major(&self) -> u8 {
+        self.save_version_major
+    }
+}
+
 impl RecordPayload for PmDcFeaturePayload {
     const KIND: &'static str = "feature";
 }

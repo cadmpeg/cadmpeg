@@ -15,10 +15,7 @@
                 "kind": "feature",
                 "value": "sldprt:model:feature#247:0"
               }
-            ],
-            "rollback": {
-              "kind": "end"
-            }
+            ]
           }
         }
       ],
@@ -458,7 +455,7 @@
             "namespace": "sldprt"
           }
         },
-        "message": "The rollback position of the feature tree is not read (the partition section holds no deltas transmit); the timeline is stated built through its last member.",
+        "message": "The rollback position of the feature tree is not read (the partition section holds no deltas transmit); the timeline's rollback is not stated.",
         "severity": "warning"
       },
       {

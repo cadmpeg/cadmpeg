@@ -326,6 +326,8 @@ pub(crate) enum F3dLossCode {
     DecalDefinitionUnresolved,
     /// A body-override appearance replaced a different appearance that the body's material assignment names; the override is assumed to take precedence.
     BodyOverridePrecedenceAssumed,
+    /// A later body-override appearance naming a different appearance than the body's first override is not bound; the first override is assumed to bind.
+    BodyOverrideSuperseded,
     /// Source parametric edge references marked lost have no independent proof.
     EdgeReferenceLostUnrepaired,
     /// Feature scopes have no complete neutral feature definition.
@@ -1374,6 +1376,10 @@ pub(crate) enum F3dLossCode {
     /// An open edge whose source states no range was written over one arc of
     /// a curve that passes one of its vertices twice.
     WriterEdgeRangeAssumed,
+    /// A timeline whose rollback the document does not state was written
+    /// built through its end, with the current geometry as the state after
+    /// its last feature.
+    WriterRollbackAssumed,
     /// An appearance was not written.
     WriterAppearanceOmitted,
     /// The retained source could not carry an edit; the file was regenerated.
@@ -1609,6 +1615,7 @@ impl F3dLossCode {
         Self::DecalImageUnresolved,
         Self::DecalDefinitionUnresolved,
         Self::BodyOverridePrecedenceAssumed,
+        Self::BodyOverrideSuperseded,
         Self::EdgeReferenceLostUnrepaired,
         Self::FeatureDefinitionIncomplete,
         Self::FeatureMeshImportTessellationsUnresolved,
@@ -2239,6 +2246,7 @@ impl F3dLossCode {
         Self::WriterFaceOmitted,
         Self::WriterGeometryOmitted,
         Self::WriterEdgeRangeAssumed,
+        Self::WriterRollbackAssumed,
         Self::WriterAppearanceOmitted,
         Self::WriterPatchDeclined,
         Self::WriterAppearanceGuidAllocated,
@@ -2509,6 +2517,7 @@ impl F3dLossCode {
             Self::DecalImageUnresolved => "appearance.decal-image-unresolved",
             Self::DecalDefinitionUnresolved => "appearance.decal-definition-unresolved",
             Self::BodyOverridePrecedenceAssumed => "appearance.body-override-precedence-assumed",
+            Self::BodyOverrideSuperseded => "appearance.body-override-superseded",
             Self::EdgeReferenceLostUnrepaired => "feature.edge-reference-lost",
             Self::FeatureStoredBodiesEmpty => "feature.stored-bodies-empty",
             Self::FeatureHistoryBodyBounded => "feature.history-body-bounded",
@@ -3473,6 +3482,7 @@ impl F3dLossCode {
             Self::WriterFaceOmitted => "writer.face-omitted",
             Self::WriterGeometryOmitted => "writer.geometry-omitted",
             Self::WriterEdgeRangeAssumed => "writer.edge-range-assumed",
+            Self::WriterRollbackAssumed => "writer.rollback-assumed",
             Self::WriterAppearanceOmitted => "writer.appearance-omitted",
             Self::WriterPatchDeclined => "writer.patch-declined",
             Self::WriterIntegerAsReal => "writer.integer-as-real",
@@ -3584,6 +3594,7 @@ impl F3dLossCode {
             Self::WriterFaceOmitted => Severity::Error,
             Self::WriterGeometryOmitted => Severity::Warning,
             Self::WriterEdgeRangeAssumed => Severity::Warning,
+            Self::WriterRollbackAssumed => Severity::Warning,
             Self::WriterAppearanceOmitted => Severity::Warning,
             Self::WriterPatchDeclined => Severity::Warning,
             Self::WriterIntegerAsReal => Severity::Info,
@@ -3965,6 +3976,7 @@ impl F3dLossCode {
             | Self::MaterialDistanceUnitUntyped
             | Self::FaceAppearanceAmbiguous
             | Self::BodyOverridePrecedenceAssumed
+            | Self::BodyOverrideSuperseded
             | Self::ParameterExpressionUnbound
             | Self::ParameterReferencedDesignUnscoped
             | Self::ParameterOwnerOutsideTimeline
@@ -4429,6 +4441,7 @@ impl F3dLossCode {
             Self::WriterFaceOmitted => LossTaxonomy::TopologyNotTransferred,
             Self::WriterGeometryOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterEdgeRangeAssumed => LossTaxonomy::TopologyGaugeSubstituted,
+            Self::WriterRollbackAssumed => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterAppearanceOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::WriterPatchDeclined => LossTaxonomy::PreservedSourceUnavailable,
             Self::WriterIntegerAsReal => LossTaxonomy::ParametricRecordOmitted,
@@ -5073,9 +5086,9 @@ impl F3dLossCode {
             | Self::AssemblyRootPathIdentitiesNative
             | Self::HistoryOnlyBodyOmitted => LossTaxonomy::FeatureHistoryRetained,
             Self::MaterialDistanceUnitUntyped => LossTaxonomy::MaterialNotTransferred,
-            Self::FaceAppearanceAmbiguous | Self::BodyOverridePrecedenceAssumed => {
-                LossTaxonomy::AppearanceReduced
-            }
+            Self::FaceAppearanceAmbiguous
+            | Self::BodyOverridePrecedenceAssumed
+            | Self::BodyOverrideSuperseded => LossTaxonomy::AppearanceReduced,
             Self::XrefOwnerUnresolved
             | Self::ComponentBodyOwnerUnresolved
             | Self::ComponentBodyOwnerFallback
@@ -5479,6 +5492,7 @@ mod tests {
                 "appearance.decal-image-unresolved",
                 "appearance.decal-definition-unresolved",
                 "appearance.body-override-precedence-assumed",
+                "appearance.body-override-superseded",
                 "feature.edge-reference-lost",
                 "feature.definition-incomplete",
                 "feature.mesh-import-tessellations-unresolved",
@@ -6109,6 +6123,7 @@ mod tests {
                 "writer.face-omitted",
                 "writer.geometry-omitted",
                 "writer.edge-range-assumed",
+                "writer.rollback-assumed",
                 "writer.appearance-omitted",
                 "writer.patch-declined",
                 "writer.appearance-guid-allocated",

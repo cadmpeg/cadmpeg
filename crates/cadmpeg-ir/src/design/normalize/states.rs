@@ -436,7 +436,9 @@ impl States {
 /// nearest member before it that is a feature, or `Start(c)` where no feature
 /// of `c` precedes it (§5.3). A member that is a container is passed over:
 /// the state leaving it is the state entering it. `None` for an unordered
-/// container, and for a rollback that names no member of its container.
+/// container, for an unstated rollback, whose one spelling is
+/// `After(Container(c))` itself, and for a rollback that names no member of
+/// its container.
 fn rollback_position(container: &Container) -> Option<Position> {
     let Container::Ordered {
         id,
@@ -448,8 +450,9 @@ fn rollback_position(container: &Container) -> Option<Position> {
         return None;
     };
     let at = match rollback {
-        Rollback::End => members.len(),
-        Rollback::Before(member) => members.iter().position(|listed| listed == member)?,
+        None => return None,
+        Some(Rollback::End) => members.len(),
+        Some(Rollback::Before(member)) => members.iter().position(|listed| listed == member)?,
     };
     Some(
         members[..at]

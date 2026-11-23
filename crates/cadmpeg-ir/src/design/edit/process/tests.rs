@@ -207,7 +207,7 @@ fn machined() -> CadIr {
         kind: OrderedKind::Timeline,
         members: (1..=2).map(|key| Member::Feature(feature(key))).collect(),
         folders: Vec::new(),
-        rollback: Rollback::End,
+        rollback: Some(Rollback::End),
         placement: None,
     });
     document.design.scopes.push(DesignScope {

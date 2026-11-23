@@ -208,7 +208,7 @@ pub(crate) fn project(
         else {
             continue;
         };
-        let at = rollback_position(id, members, rollback);
+        let at = rollback_position(id, members, rollback.as_ref());
         let current = (!bodies.is_empty())
             .then(|| CurrentState {
                 at,
@@ -251,11 +251,17 @@ pub(crate) fn project(
 }
 
 /// The position of the rollback marker of the timeline `id`: after its last
-/// built member, or at its start when it builds none.
-fn rollback_position(id: &ContainerId, members: &[Member], rollback: &Rollback) -> Position {
+/// built member, or at its start when it builds none; `After(Container(id))`
+/// where the rollback is unstated.
+fn rollback_position(
+    id: &ContainerId,
+    members: &[Member],
+    rollback: Option<&Rollback>,
+) -> Position {
     let built = match rollback {
-        Rollback::End => members.len(),
-        Rollback::Before(marker) => members
+        None => return Position::After(Member::Container(id.clone())),
+        Some(Rollback::End) => members.len(),
+        Some(Rollback::Before(marker)) => members
             .iter()
             .position(|member| member == marker)
             .unwrap_or(members.len()),

@@ -932,7 +932,7 @@ impl Refusals {
                 Some(
                     crate::loss::InventorLossCode::FeatureSheetMetalContourFlangeRefused.note(
                         format!(
-                            "Retained {} and its bend and corner as native: the first refused contour-flange check is {}{}.",
+                            "The legacy feature record of {} and its bend and corner stay native: the first refused contour-flange check is {}{}.",
                             feature.id,
                             refusal.detail(),
                             attachment

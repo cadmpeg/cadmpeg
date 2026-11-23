@@ -241,7 +241,9 @@ impl<'a, 'p> Rows<'a, 'p> {
         })
     }
 
-    /// The feature's timeline is rolled to its end.
+    /// The feature's timeline is rolled to its end. An unstated rollback is
+    /// read as the end (cadir-v11.md §5.2), which the design's report names
+    /// as an assumption.
     fn rollback(&self) -> Result<(), &'static str> {
         let member = Member::Feature(self.feature.clone());
         let container = self
@@ -256,7 +258,7 @@ impl<'a, 'p> Rows<'a, 'p> {
             .ok_or("it is in no ordered timeline")?;
         match container {
             Container::Ordered {
-                rollback: Rollback::End,
+                rollback: None | Some(Rollback::End),
                 ..
             } => Ok(()),
             Container::Ordered { .. } | Container::Unordered { .. } => {
@@ -272,14 +274,26 @@ impl<'a, 'p> Rows<'a, 'p> {
         let [state] = self.scope.current.as_slice() else {
             return Err(NOT_ITS_RESULT);
         };
-        let Position::After(Member::Feature(at)) = &state.at else {
-            return Err(NOT_ITS_RESULT);
+        let later = match &state.at {
+            Position::After(Member::Feature(at)) => self
+                .features
+                .iter()
+                .position(|feature| *feature == at)
+                .is_some_and(|at| at >= self.position),
+            // The state at an unstated rollback, read as built through the
+            // end of the timeline that holds the feature.
+            Position::After(Member::Container(timeline)) => {
+                self.target.design.containers.iter().any(|container| {
+                    matches!(
+                        container,
+                        Container::Ordered { id, members, rollback: None, .. }
+                            if id == timeline
+                                && members.contains(&Member::Feature(self.feature.clone()))
+                    )
+                })
+            }
+            Position::Start(_) => false,
         };
-        let later = self
-            .features
-            .iter()
-            .position(|feature| *feature == at)
-            .is_some_and(|at| at >= self.position);
         if !later || !matches!(state.bodies.as_slice(), [only] if only == body) {
             return Err(NOT_ITS_RESULT);
         }

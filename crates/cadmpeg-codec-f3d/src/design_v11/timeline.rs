@@ -153,7 +153,7 @@ pub(super) fn project(
                 kind: OrderedKind::Timeline,
                 members,
                 folders: Vec::new(),
-                rollback,
+                rollback: Some(rollback),
                 placement: None,
             });
         }

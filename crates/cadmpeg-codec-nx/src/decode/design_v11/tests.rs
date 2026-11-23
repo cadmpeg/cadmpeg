@@ -110,7 +110,7 @@ fn history_is_one_timeline_in_construction_order() {
     assert_eq!(scope.roots, [ContainerId::mint(TIMELINE).unwrap()]);
     let [Container::Ordered {
         members,
-        rollback: Rollback::End,
+        rollback: None,
         kind: OrderedKind::Timeline,
         ..
     }] = ir.design.containers.as_slice()
@@ -134,7 +134,10 @@ fn history_is_one_timeline_in_construction_order() {
     let [current] = scope.current.as_slice() else {
         panic!("one current state");
     };
-    assert_eq!(current.at, Position::After(members[1].clone()));
+    assert_eq!(
+        current.at,
+        Position::After(Member::Container(scope.roots[0].clone()))
+    );
     assert_eq!(current.bodies, [body("1").id, body("2").id]);
     assert_eq!(ir.design.features.len(), 2);
     assert_eq!(

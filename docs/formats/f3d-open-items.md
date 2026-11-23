@@ -24,7 +24,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** When a body has a material assignment that names one appearance and a body-override record that names a different appearance, which appearance does Fusion show on the body?
 
-**Known.** A body-override record takes precedence over the body's material assignment: when the two name different appearances, the body binds the override's appearance. `docs/cadir-v11.md` open item 233 records a user's test in which a body's assigned appearance shows through a root override, which is the opposite order.
+**Known.** A body-override record takes precedence over the body's material assignment: when the two name different appearances, the body binds the override's appearance. `docs/cadir-v11.md` open item 233 concerns an appearance override on a root component or occurrence, not a body record, and does not decide this order.
 
 **Need.** A save with a body whose material assignment and body-override record name different appearances, with the displayed appearance of the body.
 
@@ -2005,6 +2005,18 @@ The same two-edge ambiguity can remain after the candidate-boundary, deletion, a
 **Conflict.** None.
 
 **Note.** An unresolved member retains the native group. A singleton without the deletion proof and a disjoint-name reading report `history.edge-selection-inferred`. A non-unique or incomplete reference proof reports `history.edge-midpoints-unresolved` when the feature requires edge samples. A Chamfer operand can have two common preceding edges of which the transition deletes one, or deletes both. A Fillet operand can name three faces whose edge-set intersection in the preceding state is empty. These cases require the recipe selector proof. A deletion filter changes the cardinality of an ambiguous intersection.
+
+### DR-1060. Chamfer members whose first side names three face references
+
+**Question.** Which edge does a standard Chamfer recipe select when its first side carries three non-null face references, and how does a group with several members that keep the same two candidate edges select its edge set?
+
+**Known.** A member whose first side names two face references selects an edge that both reference lanes hold among the changed edges of the owning transition. The edges that the transition deletes include every selected edge. A member whose first side names three references has an empty intersection of the three lanes' changed-edge sets. Such a member can occur in a group together with members that resolve by two references; the group then keeps its resolved edges as a partial selection. Members that keep the same two candidate edges are interchangeable, and the pair of edges they cover is the same under both assignments. A recipe's selector contexts can exclude the edge that the first-side lane intersection proves, so they do not corroborate the lane intersection for these members.
+
+**Need.** A controlled Chamfer whose selected edges bound faces that persistent names bind to several fragments, with edge sets chosen so that exactly one assignment of three-reference members to edges exists. The role of the third first-side reference in the selector.
+
+**Conflict.** None.
+
+**Note.** The group retains its resolved edges and the unresolved member identities as a partial selection, and a feature that needs edge samples reports `history.edge-midpoints-unresolved`.
 
 ### DR-170. Unresolved DeleteFace operand bindings
 

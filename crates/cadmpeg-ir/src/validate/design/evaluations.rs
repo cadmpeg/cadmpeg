@@ -8,16 +8,15 @@ use super::records::{DesignRecords, MemberKey, OfKey, PositionKey};
 use crate::design::container::Container;
 use crate::design::dimension::Dimension;
 use crate::design::evaluation::{EvaluationStatus, StateBase};
-use crate::design::feature::{Feature, FeatureOperation, OperationFamily};
-use crate::design::ops::body::PatternInstances;
-use crate::design::ops::surface::MeshKind;
+use crate::design::feature::{Feature, FeatureOperation};
 use crate::design::refs::Position;
 use crate::design::selection::{OccurrencePath, StepRef};
 use crate::features::ConfigurationId;
 use crate::report::check::Finding;
 
-/// A position names an existing member of a container, or the start of an
-/// existing ordered container (§5.3). Returns whether it does.
+/// A position names an existing member of a container, an ordered container
+/// that is a root of its scope, or the start of an existing ordered
+/// container (§5.3). Returns whether it does.
 pub(in crate::validate) fn check_position(
     index: &DesignRecords<'_>,
     position: PositionKey<'_>,
@@ -37,12 +36,21 @@ pub(in crate::validate) fn check_position(
             ordered
         }
         PositionKey::After(member) => {
-            let listed = index.member_exists(member) && index.parents.contains_key(&member);
+            let ordered_root = matches!(
+                member,
+                MemberKey::Container(id)
+                    if index.roots.contains_key(id)
+                        && matches!(index.containers.get(id), Some(Container::Ordered { .. }))
+            );
+            let listed = ordered_root
+                || (index.member_exists(member) && index.parents.contains_key(&member));
             if !listed {
                 super::error(
                     findings,
                     entity,
-                    format_args!("{position} names no member of a container"),
+                    format_args!(
+                        "{position} names no member of a container and no ordered root container"
+                    ),
                 );
             }
             listed
@@ -218,11 +226,13 @@ pub(super) fn check_evaluations(
             StateBase::Current(position) => {
                 let position = PositionKey::of(position);
                 if check_position(index, position, id, findings) {
-                    if matches!(position, PositionKey::After(MemberKey::Container(_))) {
+                    if matches!(position, PositionKey::After(MemberKey::Container(_)))
+                        && !index.at_unstated_rollback(position)
+                    {
                         super::error(
                             findings,
                             id,
-                            format_args!("state base names {position}; a rollback position is spelled through its member"),
+                            format_args!("state base names {position}; a stated rollback position is spelled through its member"),
                         );
                     }
                     if !current_positions(index, scope).contains(&position) {
@@ -396,35 +406,10 @@ pub(super) fn is_stateless(
     if suppressed == Some(true) {
         return true;
     }
-    stateless_operation(&index.definition_in(feature, configuration).operation)
-}
-
-/// An operation whose kind cannot change a state: a sketch, a sheet, a datum,
-/// a pattern whose instances are features of their own, a template instance,
-/// a decal, and a mesh section.
-fn stateless_operation(operation: &FeatureOperation) -> bool {
-    match operation {
-        FeatureOperation::Sketch(_)
-        | FeatureOperation::SpatialSketch(_)
-        | FeatureOperation::Spreadsheet(_)
-        | FeatureOperation::Datum(_)
-        | FeatureOperation::TemplateInstance(_)
-        | FeatureOperation::Decal(_) => true,
-        FeatureOperation::Pattern(pattern) => {
-            matches!(pattern.instances, PatternInstances::Members(_))
-        }
-        FeatureOperation::Mesh(mesh) => matches!(mesh.kind, MeshKind::Section { .. }),
-        FeatureOperation::Unresolved { family } => matches!(
-            family,
-            OperationFamily::Sketch
-                | OperationFamily::SpatialSketch
-                | OperationFamily::Spreadsheet
-                | OperationFamily::Datum
-                | OperationFamily::TemplateInstance
-                | OperationFamily::Decal
-        ),
-        _ => false,
-    }
+    index
+        .definition_in(feature, configuration)
+        .operation
+        .cannot_change_state()
 }
 
 /// Every `Occurrence` step of the path names an occurrence of the model.
@@ -560,8 +545,10 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
     check_stored_features(index, findings);
 }
 
-/// A current state names an existing position through its member, and one
-/// inside an ordered container is at that container's rollback position.
+/// A current state names an existing position, and one inside an ordered
+/// container is at that container's rollback position: spelled through its
+/// member where the rollback is stated, and as `After(Container(c))` where
+/// it is not (§5.3).
 fn check_current_position(
     index: &DesignRecords<'_>,
     at: &Position,
@@ -573,13 +560,15 @@ fn check_current_position(
         return;
     }
     if matches!(at, PositionKey::After(MemberKey::Container(_))) {
-        super::error(
-            findings,
-            entity,
-            format_args!(
-                "current state is at {at}; a rollback position is spelled through its member"
-            ),
-        );
+        if !index.at_unstated_rollback(at) {
+            super::error(
+                findings,
+                entity,
+                format_args!(
+                    "current state is at {at}; a stated rollback position is spelled through its member"
+                ),
+            );
+        }
         return;
     }
     let Some(container) = index.container_of(at) else {

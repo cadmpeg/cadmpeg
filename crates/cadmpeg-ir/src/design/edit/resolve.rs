@@ -13,9 +13,7 @@ use crate::design::configuration::{
     own_value_holds, Arrangement, DesignConfiguration, Overrides, ParameterOverride, Stated,
 };
 use crate::design::dimension::Dimension;
-use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation};
-use crate::design::ops::body::PatternInstances;
-use crate::design::ops::surface::MeshKind;
+use crate::design::feature::{Feature, FeatureDefinition};
 use crate::design::parameter::{DesignParameter, ParameterValue};
 use crate::design::refs::ConfigurationRef;
 use crate::design::scope::DesignScope;
@@ -425,26 +423,7 @@ impl CadIr {
             return Ok(true);
         }
         let definition = self.feature_definition_in(feature, configuration)?;
-        Ok(stateless_operation(&definition.operation))
-    }
-}
-
-/// Whether an operation's kind cannot change a state: a sketch, a sheet, a
-/// datum, a feature that only generates other features, an appearance, and a
-/// section that only writes curves into a sketch.
-pub(super) fn stateless_operation(operation: &FeatureOperation) -> bool {
-    match operation {
-        FeatureOperation::Sketch(_)
-        | FeatureOperation::SpatialSketch(_)
-        | FeatureOperation::Spreadsheet(_)
-        | FeatureOperation::Datum(_)
-        | FeatureOperation::TemplateInstance(_)
-        | FeatureOperation::Decal(_) => true,
-        FeatureOperation::Pattern(pattern) => {
-            matches!(pattern.instances, PatternInstances::Members(_))
-        }
-        FeatureOperation::Mesh(mesh) => matches!(mesh.kind, MeshKind::Section { .. }),
-        _ => false,
+        Ok(definition.operation.cannot_change_state())
     }
 }
 

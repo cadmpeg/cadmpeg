@@ -128,8 +128,11 @@ fn regeneration_order(ir: &CadIr) -> impl Iterator<Item = &LegacyFeature> {
 }
 
 /// One ordered timeline holding every model feature in regeneration order.
-/// The decoder reads no insert position, so the timeline ends at its last
-/// member, which holds the current geometry.
+/// The decoder reads no insert position (part 11, entry B.95), so the
+/// rollback of a timeline with members is unstated and the current geometry
+/// is its current state at `After(Container(timeline))` (§5.3). A timeline
+/// with no member has no member to stand before: it is built through its end,
+/// and its current state is at its start.
 fn project_timeline(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -143,10 +146,11 @@ fn project_timeline(
         .iter()
         .map(|feature| Member::Feature(feature.id.clone()))
         .collect::<Vec<_>>();
-    let at = members.last().map_or_else(
-        || Position::Start(timeline.clone()),
-        |last| Position::After(last.clone()),
-    );
+    let (rollback, at) = if members.is_empty() {
+        (Some(Rollback::End), Position::Start(timeline.clone()))
+    } else {
+        (None, Position::After(Member::Container(timeline.clone())))
+    };
     let stated = operations::Stated::new(&ir.design.sketches, names);
     let mut features = Vec::new();
     for feature in &ordered {
@@ -168,7 +172,7 @@ fn project_timeline(
         kind: OrderedKind::Timeline,
         members,
         folders: Vec::new(),
-        rollback: Rollback::End,
+        rollback,
         placement: None,
     });
     ir.design.scopes.push(DesignScope {

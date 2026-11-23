@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::{unique_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::dimension::Dimension;
@@ -42,7 +42,11 @@ pub(super) fn project(
             })?;
         let target = &mut ir.design.features[index];
         ctx.charge_entities(1, "project Inventor v11 operation")?;
-        let (definition, reason) = definition(source, ir.model.sketches.as_slice())?;
+        let (definition, reason) = definition(
+            source,
+            ir.model.sketches.as_slice(),
+            &ir.model.feature_input_topologies,
+        )?;
         target.definition = definition;
         if let Some(reason) = reason {
             losses.push(InventorLossCode::FeatureDesignOperationNative.note(format!(
@@ -76,9 +80,10 @@ fn projects(operation: &LegacyOperation) -> bool {
 fn definition(
     source: &cadmpeg_ir::features::Feature,
     sketches: &[cadmpeg_ir::sketches::Sketch],
+    inputs: &[cadmpeg_ir::features::evaluation::FeatureInputTopology],
 ) -> Result<(FeatureDefinition, Option<&'static str>), CodecError> {
     let operation = source.evaluation.definition().operation();
-    let (mut operation, reason) = match typed(operation, sketches) {
+    let (mut operation, reason) = match typed(operation, sketches, inputs) {
         Ok(value) => (value, None),
         Err(reason) => (retained(operation)?, Some(reason)),
     };
@@ -114,48 +119,17 @@ fn definition(
     Ok((result, reason))
 }
 
-pub(super) fn validate(ir: &CadIr) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
-    use cadmpeg_ir::report::{
-        check::{Check, Finding},
-        Severity,
-    };
-    let mut findings = Vec::new();
-    if ir.model.product_definitions.is_empty() {
-        return Ok(findings);
-    }
-    let targets = unique_index(ir.design.features.iter().map(|target| (&target.id, target)));
-    for source in &ir.model.features {
-        if !projects(source.evaluation.definition().operation()) {
-            continue;
-        }
-        let (expected, _) = definition(source, &ir.model.sketches)?;
-        let target = targets.get(&source.id).and_then(|target| *target);
-        if target.is_none_or(|target| target.definition != expected) {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: format!(
-                    "Inventor v11 operation {} differs from its admitted source operands",
-                    source.id
-                ),
-                entity: Some(source.id.to_string()),
-                related: Vec::new(),
-            });
-        }
-    }
-    Ok(findings)
-}
-
 type Projected<T> = Result<T, &'static str>;
 
 fn typed(
     operation: &LegacyOperation,
     sketches: &[cadmpeg_ir::sketches::Sketch],
+    inputs: &[cadmpeg_ir::features::evaluation::FeatureInputTopology],
 ) -> Projected<FeatureOperation> {
     if let Some(value) = swept::operation(operation, sketches) {
         return value;
     }
-    if let Some(value) = dressup::operation(operation, sketches) {
+    if let Some(value) = dressup::operation(operation, sketches, inputs) {
         return value;
     }
     if let Some(value) = body::operation(operation) {

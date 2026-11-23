@@ -16,6 +16,7 @@ default = [
   "fcstd",
   "f3d",
   "inventor",
+  "solidedge",
   "sldprt",
   "catia",
   "creo",
@@ -31,6 +32,7 @@ default = [
 ]
 fcstd = ["dep:cadmpeg-codec-freecad"]
 f3d = ["dep:cadmpeg-codec-f3d"]
+solidedge = ["dep:cadmpeg-codec-solidedge"]
 inventor = ["dep:cadmpeg-codec-inventor"]
 sldprt = ["dep:cadmpeg-codec-sldprt"]
 catia = ["dep:cadmpeg-codec-catia"]
@@ -52,6 +54,7 @@ cadmpeg-ir.workspace = true
 cadmpeg-measure.workspace = true
 serde_json.workspace = true
 cadmpeg-codec-f3d = { workspace = true, optional = true }
+cadmpeg-codec-solidedge = { workspace = true, optional = true }
 cadmpeg-codec-inventor = { workspace = true, optional = true }
 cadmpeg-codec-freecad = { workspace = true, optional = true }
 cadmpeg-codec-sldprt = { workspace = true, optional = true }

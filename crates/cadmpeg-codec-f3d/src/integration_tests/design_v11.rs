@@ -114,7 +114,7 @@ fn a_timeline_is_one_ordered_container_of_the_root_scope() {
         panic!("ordered container")
     };
     assert_eq!(*kind, OrderedKind::Timeline);
-    assert_eq!(*rollback, Rollback::End);
+    assert_eq!(*rollback, Some(Rollback::End));
     let rollback_losses = decoded
         .report()
         .losses

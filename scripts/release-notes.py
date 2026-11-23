@@ -59,6 +59,7 @@ AREAS = {
     "nx": "NX",
     "rhino": "Rhino",
     "catia": "CATIA",
+    "solidedge": "Solid Edge",
     "sat": "ACIS",
     "asm": "Shape Manager",
     "parasolid": "Parasolid",
