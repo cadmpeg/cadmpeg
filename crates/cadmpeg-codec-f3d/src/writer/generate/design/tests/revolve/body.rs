@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Bodies of revolution about `+z` for the `Revolve` tests: the solid that
-//! a closed polygon of the `(r, z)` half-plane sweeps in a full turn.
+//! Bodies of revolution for the `Revolve` tests: the solid that a closed
+//! polygon of the `(r, z)` half-plane sweeps in a full turn about an axis
+//! through the origin.
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::geometry::FinitePoint3;
@@ -27,13 +28,30 @@ fn id<T>(mint: fn(String) -> Result<T, IdentityError>, kind: &str, key: &str) ->
 /// A coedge of a face's loop: its key, its edge and its sense.
 type Use = (String, String, Sense);
 
+/// [`revolved_about`] `+z`, with `r` along `+x`.
+pub(super) fn revolved(corners: &[(f64, f64)]) -> CadIr {
+    revolved_about(
+        corners,
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+    )
+}
+
 /// The solid that the closed polygon `corners` of `(r, z)` points, in mm and
 /// counterclockwise in the half-plane `r ≥ 0`, sweeps in a full turn about
-/// `+z`. Each side with both ends on the axis makes no face; a side of
-/// constant `z` makes a plane, a side of constant `r` a cylinder with a seam
-/// at angle 0. A corner off the axis makes a circle edge.
-pub(super) fn revolved(corners: &[(f64, f64)]) -> CadIr {
-    let (axis, reference) = (Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0));
+/// the unit `axis` through the origin, `z` measured along `axis` and `r`
+/// along the unit `reference` across it. Each side with both ends on the
+/// axis makes no face; a side of constant `z` makes a plane, a side of
+/// constant `r` a cylinder with a seam at angle 0. A corner off the axis
+/// makes a circle edge.
+pub(super) fn revolved_about(corners: &[(f64, f64)], axis: Vector3, reference: Vector3) -> CadIr {
+    let place = |r: f64, z: f64| {
+        Point3::new(
+            r * reference.x + z * axis.x,
+            r * reference.y + z * axis.y,
+            r * reference.z + z * axis.z,
+        )
+    };
     let mut ir = CadIr::empty();
     let count = corners.len();
     let circle = |at: usize| format!("circle{at}");
@@ -42,7 +60,7 @@ pub(super) fn revolved(corners: &[(f64, f64)]) -> CadIr {
             continue;
         }
         let key = circle(at);
-        let position = FinitePoint3::new(Point3::new(r, 0.0, z)).expect("finite position");
+        let position = FinitePoint3::new(place(r, z)).expect("finite position");
         ir.geometry
             .points
             .push(Point::new(id(PointId::mint, "point", &key), position, None));
@@ -56,7 +74,7 @@ pub(super) fn revolved(corners: &[(f64, f64)]) -> CadIr {
             parameter_range: None,
             id: id(CurveId::mint, "curve", &key),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                CircleCurve::try_new(Point3::new(0.0, 0.0, z), axis, reference, r).expect("circle"),
+                CircleCurve::try_new(place(0.0, z), axis, reference, r).expect("circle"),
             )),
             source_object: None,
             native_ref: None,
@@ -79,8 +97,7 @@ pub(super) fn revolved(corners: &[(f64, f64)]) -> CadIr {
             ir.geometry.surfaces.push(Surface {
                 id: id(SurfaceId::mint, "surface", &face),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                    PlaneSurface::try_new(Point3::new(0.0, 0.0, za), axis, reference)
-                        .expect("plane"),
+                    PlaneSurface::try_new(place(0.0, za), axis, reference).expect("plane"),
                 )),
                 source_object: None,
                 native_ref: None,
@@ -113,7 +130,7 @@ pub(super) fn revolved(corners: &[(f64, f64)]) -> CadIr {
             ir.geometry.surfaces.push(Surface {
                 id: id(SurfaceId::mint, "surface", &face),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                    CylinderSurface::try_new(Point3::new(0.0, 0.0, 0.0), axis, reference, ra)
+                    CylinderSurface::try_new(place(0.0, 0.0), axis, reference, ra)
                         .expect("cylinder"),
                 )),
                 source_object: None,
@@ -125,7 +142,7 @@ pub(super) fn revolved(corners: &[(f64, f64)]) -> CadIr {
                 parameter_range: None,
                 id: id(CurveId::mint, "curve", &seam),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                    LineCurve::try_new(Point3::new(ra, 0.0, corners[low].1), axis).expect("line"),
+                    LineCurve::try_new(place(ra, corners[low].1), axis).expect("line"),
                 )),
                 source_object: None,
                 native_ref: None,

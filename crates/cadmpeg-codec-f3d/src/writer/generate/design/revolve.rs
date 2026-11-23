@@ -21,7 +21,7 @@ use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::ids::{BodyId, FaceId};
 use cadmpeg_ir::math::portable::Portable;
-use cadmpeg_ir::topology::Sense;
+use cadmpeg_ir::topology::{BodyKind, Sense};
 
 use super::extrude::profile::ProfileLoop;
 use super::extrude::{self, add, distance_to_axis, dot, point, scale, sub, unique, vector};
@@ -35,7 +35,9 @@ const MM_PER_CM: f64 = 10.0;
 /// §3.1, "Angle owners").
 const FULL_TURN: &str = "360.0 deg";
 
-const NOT_A_LINE: &str = "its axis is not a line of its profile sketch";
+const NOT_PICKED_LINE: &str =
+    "its axis input is not a coincident pick of one whole line of its profile sketch";
+const UNHELD: &str = "its profile names a curve or point its sketch does not hold";
 const NOT_FULL_TURN: &str = "its extent is not one-sided full turn";
 
 /// The revolve the design writes as a `Revolve` item.
@@ -100,17 +102,28 @@ pub(super) fn plan<'a>(
         linear,
     } = rows.profiled(&revolve.profile)?;
     if revolve.loops.is_some() || revolve.fit.is_some() {
-        return Err("its profile loops or fit are not established");
+        return Err("its profile states a loop nesting or a fit, which the writer does not write");
     }
     let construction = revolve.axis.as_ref().ok_or("its axis is not established")?;
     let frame = Frame::of(planned).ok_or("its sketch lies on a construction plane")?;
     let axis = axis(construction, planned, &frame, linear)?;
-    let line = SketchLine::of(planned, axis).ok_or(NOT_A_LINE)?;
+    let line = SketchLine::of(planned, axis).ok_or("its axis line has no length")?;
     let tolerance = linear / MM_PER_CM;
     let on_axis = beside(planned, &loops, &line, tolerance)?;
     let angular = target.tolerances.angular.get();
     let angle = angle(revolve, parameters, ordinal, angular)?;
     new_solid(&revolve.output)?;
+    // The scope frame stores the solid flag, and a full turn of a sheet has
+    // the faces of the solid: the face row cannot tell them apart.
+    let kind = target
+        .geometry
+        .bodies
+        .iter()
+        .find(|candidate| &candidate.id == body)
+        .map(|candidate| candidate.kind);
+    if kind != Some(BodyKind::Solid) {
+        return Err("its body is not a solid");
+    }
     let entries = off_axis(&loops, &on_axis)
         .map(|(profile_loop, at)| profile_loop.entries[at].curve)
         .collect::<Vec<_>>();
@@ -212,12 +225,14 @@ fn axis(
             .iter()
             .all(|step| matches!(step, PostStep::Flip(Dimension::Literal(_))));
     if !established {
-        return Err(NOT_A_LINE);
+        return Err(
+            "its axis construction states a method, solution, step or configuration value the writer does not write",
+        );
     }
     let picked = match construction.inputs.as_slice() {
         [] => None,
         [input] => Some(picked_line(input, sketch)?),
-        _ => return Err(NOT_A_LINE),
+        _ => return Err("its axis has more than one input"),
     };
     let lies_on = |curve: usize, value: &cadmpeg_ir::design::construction::AxisValue| {
         let origin = point(value.origin.get());
@@ -238,7 +253,10 @@ fn axis(
                 .filter(|curve| lies_on(*curve, value))
                 .collect::<Vec<_>>();
             lines.sort_by_key(|curve| !sketch.curves[*curve].construction);
-            lines.first().copied().ok_or(NOT_A_LINE)
+            lines
+                .first()
+                .copied()
+                .ok_or("its axis is not a line of its profile sketch")
         }
         (None, None) => Err("its axis is not established"),
     }
@@ -251,6 +269,13 @@ fn picked_line(
     input: &ConstructionInput,
     sketch: &PlannedSketch<'_>,
 ) -> Result<usize, &'static str> {
+    let unread = match &input.reference {
+        Some(InputReference::Picks(selection)) => matches!(selection.picks, Picks::Unread),
+        Some(InputReference::Built(_)) | None => false,
+    };
+    if input.role.is_none() || unread {
+        return Err("its axis input is not read");
+    }
     let ConstructionInput {
         role:
             Some(InputRole {
@@ -262,16 +287,16 @@ fn picked_line(
         reversed: _,
     } = input
     else {
-        return Err(NOT_A_LINE);
+        return Err(NOT_PICKED_LINE);
     };
     let Picks::Named(members) = &selection.picks else {
-        return Err(NOT_A_LINE);
+        return Err(NOT_PICKED_LINE);
     };
     let [picked] = members.as_slice() else {
-        return Err(NOT_A_LINE);
+        return Err(NOT_PICKED_LINE);
     };
     let PickTarget::SketchEntity(entity) = &picked.target else {
-        return Err(NOT_A_LINE);
+        return Err(NOT_PICKED_LINE);
     };
     match sketch.entities.get(entity) {
         Some(Entity::Curve(curve))
@@ -282,7 +307,7 @@ fn picked_line(
         {
             Ok(*curve)
         }
-        _ => Err(NOT_A_LINE),
+        _ => Err(NOT_PICKED_LINE),
     }
 }
 
@@ -301,8 +326,8 @@ fn beside(
         .iter()
         .flat_map(|profile_loop| &profile_loop.entries)
     {
-        let curve = sketch.curves.get(entry.curve).ok_or(NOT_A_LINE)?;
-        let at = |index: usize| sketch.points.get(index).copied().ok_or(NOT_A_LINE);
+        let curve = sketch.curves.get(entry.curve).ok_or(UNHELD)?;
+        let at = |index: usize| sketch.points.get(index).copied().ok_or(UNHELD);
         let (low, high) = match curve.geometry {
             CurveGeometry::Line { start, end } => {
                 let (a, b) = (line.side(at(start)?), line.side(at(end)?));

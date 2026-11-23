@@ -17,30 +17,37 @@ use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::ops::shared::{Limit, Span};
 use cadmpeg_ir::design::ops::sketch::{DefiningRole, PlanarCurve};
 use cadmpeg_ir::design::ops::swept::Revolve;
-use cadmpeg_ir::design::options::{BodyForm, Boolean, BooleanOp, NativeOptions, SolidOutput};
+use cadmpeg_ir::design::options::{
+    BodyForm, Boolean, BooleanOp, LoopNesting, NativeOptions, SolidOutput,
+};
+use cadmpeg_ir::design::parameter::DesignParameter;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::design::selection::{
     Anchor, Members, OrderedSelection, PickTarget, Picked, Picks, PrincipalEntity, Selection,
 };
+use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::features::parameters::ParameterValue as V10Value;
 use cadmpeg_ir::features::revolve::{RevolveConstruction, RevolveExtent};
 use cadmpeg_ir::geometry::analytic::{SphereSurface, TorusSurface};
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::Angle;
-use cadmpeg_ir::units::UnitVector3;
+use cadmpeg_ir::topology::BodyKind;
+use cadmpeg_ir::units::{FinitePoint2, UnitVector3};
 
 use super::super::item::{Decision, Item};
+use super::super::parameters::OwnedParameter;
 use super::super::{plan, Fallback};
 use super::roster::segment;
 use super::sketch::{entity_id, feature, feature_id, frame, picked, point2, principal, Source};
-use super::{loss, root, write_bytes};
+use super::{loss, neutral, number, parameter, parameter_id, reference, root, write, write_bytes};
 
 mod body;
 
-use body::{faces_only, revolved};
+use body::{faces_only, revolved, revolved_about};
 
 const TOLERANCE: f64 = 1e-9;
 /// The loss code of a feature written without its state.
@@ -63,16 +70,51 @@ fn cylinder() -> Vec<(f64, f64)> {
     vec![(0.0, 0.0), (OUTER, 0.0), (OUTER, HEIGHT), (0.0, HEIGHT)]
 }
 
-/// A sketch on `XZ`, whose point `(u, v)` lies at `(u, 0, -v)`, of the
-/// polygon `corners` of `(r, z)` points: line `l<i>` from corner `i` to the
-/// next. `centreline` adds the construction line `axis` parallel to the `z`
-/// axis at that radius.
+/// The origin plane of a profile sketch, which holds the half-plane of
+/// [`revolved`] or of [`revolved_about`] `+y`.
+#[derive(Clone, Copy)]
+enum Plane {
+    /// `XZ`: sketch point `(u, v)` at `(u, 0, -v)`, `r` along `+x` and `z`
+    /// along `+z`.
+    Xz,
+    /// `XY`: sketch point `(u, v)` at `(u, v, 0)`, `r` along `+x` and `z`
+    /// along `+y`.
+    Xy,
+}
+
+impl Plane {
+    fn sketch(self) -> Source {
+        let (entity, v) = match self {
+            Self::Xz => (PrincipalEntity::XzPlane, [0.0, 0.0, -1.0]),
+            Self::Xy => (PrincipalEntity::XyPlane, [0.0, 1.0, 0.0]),
+        };
+        Source::new(
+            "profile",
+            picked(principal(entity)),
+            frame([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], v),
+        )
+    }
+
+    /// The sketch point of the half-plane point `(r, z)`.
+    fn at(self, r: f64, z: f64) -> FinitePoint2 {
+        match self {
+            Self::Xz => point2(r, -z),
+            Self::Xy => point2(r, z),
+        }
+    }
+}
+
+/// [`profile_on`] `XZ`.
 fn profile(corners: &[(f64, f64)], centreline: Option<f64>) -> Source {
-    let mut sketch = Source::new(
-        "profile",
-        picked(principal(PrincipalEntity::XzPlane)),
-        frame([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, -1.0]),
-    );
+    profile_on(Plane::Xz, corners, centreline)
+}
+
+/// A sketch on `plane` of the polygon `corners` of `(r, z)` points: line
+/// `l<i>` from corner `i` to the next. `centreline` adds the construction
+/// line `axis` of constant `r` at that radius, from `z = -1` to
+/// `z = HEIGHT + 1`.
+fn profile_on(plane: Plane, corners: &[(f64, f64)], centreline: Option<f64>) -> Source {
+    let mut sketch = plane.sketch();
     let count = corners.len();
     for (index, (r, z)) in corners.iter().enumerate() {
         let before = (index + count - 1) % count;
@@ -80,7 +122,7 @@ fn profile(corners: &[(f64, f64)], centreline: Option<f64>) -> Source {
         let end_of = format!("l{before}");
         sketch.entity(
             &format!("p{index}"),
-            PlanarCurve::Point(point2(*r, -z)),
+            PlanarCurve::Point(plane.at(*r, *z)),
             &[
                 (start_of.as_str(), DefiningRole::Start),
                 (end_of.as_str(), DefiningRole::End),
@@ -92,8 +134,8 @@ fn profile(corners: &[(f64, f64)], centreline: Option<f64>) -> Source {
         sketch.entity(
             &format!("l{index}"),
             PlanarCurve::Line {
-                start: point2(*r, -z),
-                end: point2(rn, -zn),
+                start: plane.at(*r, *z),
+                end: plane.at(rn, zn),
             },
             &[],
         );
@@ -102,8 +144,8 @@ fn profile(corners: &[(f64, f64)], centreline: Option<f64>) -> Source {
         sketch.entity(
             "axis",
             PlanarCurve::Line {
-                start: point2(r, 1.0),
-                end: point2(r, -HEIGHT - 1.0),
+                start: plane.at(r, -1.0),
+                end: plane.at(r, HEIGHT + 1.0),
             },
             &[],
         );
@@ -612,6 +654,37 @@ fn each_row_outside_the_slice_names_its_reason() {
         reason("its axis is not established")
     );
     assert_eq!(
+        with(|revolve| revolve.loops = Some(LoopNesting::Alternate)),
+        reason("its profile states a loop nesting or a fit, which the writer does not write")
+    );
+    // An axis whose one input another decoder did not read, beside its
+    // resolved value.
+    assert_eq!(
+        with(|revolve| {
+            if let Some(axis) = &mut revolve.axis {
+                axis.inputs[0] = ConstructionInput {
+                    role: None,
+                    reference: Some(InputReference::Picks(Selection {
+                        at: Anchor::Input,
+                        picks: Picks::Unread,
+                        native: None,
+                    })),
+                    value: None,
+                    reversed: None,
+                };
+            }
+        }),
+        reason("its axis input is not read")
+    );
+    assert_eq!(
+        with(|revolve| {
+            if let Some(axis) = &mut revolve.axis {
+                axis.inputs.push(axis.inputs[0].clone());
+            }
+        }),
+        reason("its axis has more than one input")
+    );
+    assert_eq!(
         with(|revolve| {
             revolve.output.boolean = Some(Boolean::Apply {
                 op: BooleanOp::Cut,
@@ -672,4 +745,188 @@ fn a_revolve_outside_the_slice_stays_in_the_base_feature_with_its_reason() {
     assert!(design
         .records_of("E3849A15-2FC6-42A0-AF3A-2F1D7273B406")
         .is_empty());
+}
+
+#[test]
+fn a_full_turn_whose_body_is_a_sheet_stays_in_the_base_feature() {
+    for stated in [Some(BodyForm::Solid), None] {
+        let mut operation = revolve(Some(axis("axis")));
+        operation.output.body = stated.clone();
+        let mut ir = design(revolved(&tube()), profile(&tube(), Some(0.0)), operation);
+        ir.geometry.bodies[0].kind = BodyKind::Sheet;
+        assert_eq!(
+            decided(&ir),
+            Err("its body is not a solid".to_owned()),
+            "{stated:?}"
+        );
+    }
+}
+
+/// The user angle parameter `Turn` of `degrees`.
+fn turn_parameter(degrees: f64) -> DesignParameter {
+    let mut turn = parameter(
+        "turn",
+        "Turn",
+        neutral(number(degrees, Some(UnitSymbol::Deg))),
+        Some(degrees.to_radians()),
+    );
+    turn.kind = ValueKind::Quantity(Quantity::ANGLE);
+    turn
+}
+
+/// The tube about its centreline, whose angle binds the parameter `turn`,
+/// with the user parameters `parameters`.
+fn bound_to(parameters: Vec<DesignParameter>) -> CadIr {
+    let mut operation = revolve(Some(axis("axis")));
+    operation.span = Some(Span::Between {
+        start: Box::new(Limit::AtOrigin),
+        end: Box::new(Limit::Amount(Dimension::Parameter(parameter_id("turn")))),
+    });
+    let mut ir = design(revolved(&tube()), profile(&tube(), Some(0.0)), operation);
+    ir.design.parameters.extend(parameters);
+    ir
+}
+
+/// The `AlongAngle` parameter of the Revolve the design writes for `ir`, or
+/// the reason the Base Feature holds it.
+fn planned_angle(ir: &CadIr) -> Result<OwnedParameter, String> {
+    let design = plan(ir, &Fallback::default())
+        .expect("a plan")
+        .expect("a design scope");
+    match design.item {
+        Decision::Item(Item::Revolve(plan)) => Ok(plan.angle.clone()),
+        Decision::BaseFeature { reason, .. } => Err(reason),
+        other => Err(format!("{other:?}")),
+    }
+}
+
+/// The decoded parameter `name` and the decoded `Revolve` feature.
+fn decoded_parameter<'a>(
+    decoded: &'a CadIr,
+    name: &str,
+) -> (
+    &'a cadmpeg_ir::features::parameters::DesignParameter,
+    &'a cadmpeg_ir::features::FeatureId,
+) {
+    let revolve = decoded
+        .model
+        .features
+        .iter()
+        .find(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Revolve { .. }
+                )
+            )
+        })
+        .expect("a decoded Revolve");
+    let parameter = decoded
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == name)
+        .unwrap_or_else(|| panic!("a decoded parameter {name}"));
+    (parameter, &revolve.id)
+}
+
+#[test]
+fn an_angle_bound_to_a_full_turn_parameter_is_owned_by_the_revolve() {
+    let ir = bound_to(vec![turn_parameter(360.0)]);
+    let angle = planned_angle(&ir).expect("a Revolve");
+    assert_eq!(
+        (angle.name.as_str(), angle.unit, angle.names_parameter),
+        ("Turn", UnitSymbol::Deg, false)
+    );
+    assert!((angle.value - TAU).abs() <= TOLERANCE, "{angle:?}");
+    let (report, decoded) = write(&ir);
+    let missing = loss(&report, EVALUATION_MISSING).join("\n");
+    assert!(!missing.contains("feature#revolve"), "{missing}");
+    let (turn, revolve) = decoded_parameter(&decoded, "Turn");
+    assert_eq!(turn.owner.as_ref(), Some(revolve), "{turn:#?}");
+    let Some(V10Value::Angle(value)) = &turn.value else {
+        panic!("Turn is an angle: {turn:#?}");
+    };
+    assert!((value.get() - TAU).abs() <= TOLERANCE, "{turn:#?}");
+}
+
+#[test]
+fn an_angle_bound_to_a_parameter_another_names_is_named_by_its_own_parameter() {
+    let mut again = parameter("again", "Again", neutral(reference("turn")), Some(TAU));
+    again.kind = ValueKind::Quantity(Quantity::ANGLE);
+    let ir = bound_to(vec![turn_parameter(360.0), again]);
+    let angle = planned_angle(&ir).expect("a Revolve");
+    assert_eq!(angle.expression, "Turn", "{angle:?}");
+    assert!(angle.names_parameter, "{angle:?}");
+    assert_ne!(angle.name, "Turn", "{angle:?}");
+    assert!((angle.value - TAU).abs() <= TOLERANCE, "{angle:?}");
+    let (report, decoded) = write(&ir);
+    let missing = loss(&report, EVALUATION_MISSING).join("\n");
+    assert!(!missing.contains("feature#revolve"), "{missing}");
+    let (turn, _) = decoded_parameter(&decoded, "Turn");
+    assert_eq!(turn.owner, None, "{turn:#?}");
+    let (owned, revolve) = decoded_parameter(&decoded, &angle.name);
+    assert_eq!(owned.owner.as_ref(), Some(revolve), "{owned:#?}");
+}
+
+#[test]
+fn an_angle_parameter_that_is_no_full_turn_angle_names_its_reason() {
+    assert_eq!(
+        decided(&bound_to(vec![turn_parameter(180.0)])),
+        Err("its extent is not one-sided full turn".to_owned())
+    );
+    let length = parameter(
+        "turn",
+        "Turn",
+        neutral(number(360.0, Some(UnitSymbol::Mm))),
+        Some(360.0),
+    );
+    assert_eq!(
+        decided(&bound_to(vec![length])),
+        Err("its angle parameter is not written as an angle".to_owned())
+    );
+}
+
+#[test]
+fn a_sketch_on_xy_stores_the_axis_carrier_without_a_matrix() {
+    let mut construction = axis("axis");
+    construction.resolved = Some(AxisValue {
+        origin: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).expect("finite"),
+        direction: UnitVector3::Y_AXIS,
+    });
+    let ir = design(
+        revolved_about(
+            &tube(),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        ),
+        profile_on(Plane::Xy, &tube(), Some(0.0)),
+        revolve(Some(construction)),
+    );
+    assert_eq!(decided(&ir), Ok(4));
+    let (_, decoded, bytes) = write_bytes(&ir);
+    let (construction, _) = decoded_revolve(&decoded);
+    let RevolveConstruction::Resolved { axis, .. } = construction else {
+        panic!("a resolved revolve: {construction:?}");
+    };
+    let direction = cadmpeg_ir::features::geometry::FiniteVector3::from(axis.direction).get();
+    assert!((direction.y.abs() - 1.0).abs() <= TOLERANCE, "{axis:?}");
+
+    let design = segment(&bytes, "FusionDesignSegmentType1");
+    let [(scope, _)] = design.records_of("E3849A15-2FC6-42A0-AF3A-2F1D7273B406")[..] else {
+        panic!("one Revolve scope");
+    };
+    let axis_group = design.record(reference_at(design.record(scope), 50));
+    let selection = reference_at(axis_group, 25);
+    let carrier = reference_at(design.record(selection), 200);
+    let record = design.record(carrier);
+    assert_eq!(record.len(), 104);
+    assert_eq!(record[92], 1, "the XY frame stores no matrix");
+    assert_eq!(reference_at(record, 93), carrier + 1);
+    // The centreline runs from (0, -1) to (0, 7) mm on XY: from model
+    // (0, -1, 0) towards +y, in cm.
+    let at = |offset: usize| [0, 1, 2].map(|axis| f64_at(record, offset + 8 * axis));
+    let near = |a: [f64; 3], b: [f64; 3]| a.iter().zip(b).all(|(x, y)| (x - y).abs() <= 1e-12);
+    assert!(near(at(21), [0.0, -0.1, 0.0]), "{:?}", at(21));
+    assert!(near(at(45), [0.0, 0.8, 0.0]), "{:?}", at(45));
 }
