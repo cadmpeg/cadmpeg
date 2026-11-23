@@ -340,6 +340,8 @@ pub(super) struct PlannedSketch<'a> {
     /// The points in sketch coordinates in cm, without the origin point.
     pub(super) points: Vec<[f64; 2]>,
     pub(super) curves: Vec<PlannedCurve>,
+    /// The written entity of each written source entity.
+    pub(super) entities: HashMap<&'a SketchEntityId, Entity>,
     pub(super) relations: Vec<PlannedRelation>,
     /// The dimensions measured on the written geometry, before their
     /// parameters are planned.
@@ -787,6 +789,7 @@ impl<'a> PlannedSketch<'a> {
             mirrored: frame.sense < 0.0,
             points: Vec::new(),
             curves: Vec::new(),
+            entities: HashMap::new(),
             relations: Vec::new(),
             candidates: Vec::new(),
             dimensions: Vec::new(),
@@ -884,6 +887,7 @@ impl<'a> PlannedSketch<'a> {
                 });
             }
         }
+        planned.entities = written;
         planned
     }
 

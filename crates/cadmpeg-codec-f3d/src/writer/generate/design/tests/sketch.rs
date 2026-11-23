@@ -205,6 +205,15 @@ impl Source {
         self
     }
 
+    /// Mark the entity `name` a construction entity.
+    pub(super) fn construction(&mut self, name: &str) -> &mut Self {
+        let id = entity_id(self.name, name);
+        for entity in self.entities.iter_mut().filter(|entity| entity.id == id) {
+            entity.construction = Some(true);
+        }
+        self
+    }
+
     pub(super) fn constraint(&mut self, name: &str, relation: SketchRelation<Planar>) -> &mut Self {
         self.constraints.push(SketchConstraint {
             id: constraint_id(self.name, name),
