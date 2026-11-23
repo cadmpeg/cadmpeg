@@ -82,9 +82,12 @@ and end limits. A chart carries a counted array of model-space points, a
 base parameter, a nonzero parameter scale, and a repeated point count.
 The parameter increment between successive points is their distance in
 metres times the scale. `chordal_error` is a model-space length; the null
-real denotes an unstated fit bound. Limit records carry a type character
-and a counted point array. Types `L`, `H`, `T`, and `B` place their terminal
-point first in that array.
+real denotes an unstated fit bound. The chart polyline approximates the
+exact intersection of the two supports, which is the edge carrier. The
+vertices of an edge lie on that intersection. The chart may stop short of a
+vertex or run past it. Limit records carry a type character and a counted
+point array. Types `L`, `H`, `T`, and `B` place their terminal point first in
+that array.
 
 ## 5. Document version declarations
 
