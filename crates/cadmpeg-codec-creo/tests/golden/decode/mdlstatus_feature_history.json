@@ -163,135 +163,13 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "fillet",
-              "value": {
-                "groups": [
-                  {
-                    "edges": {
-                      "kind": "unresolved"
-                    },
-                    "radius": {
-                      "kind": "unresolved"
-                    }
-                  }
-                ]
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "creo:model:feature#41",
-          "name": "Round id 41",
-          "ordinal": 0,
-          "outputs": [],
-          "source_content": [],
-          "source_properties": {},
-          "suppressed": false
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "native",
-              "value": {
-                "kind": "Future Feature",
-                "parameters": {}
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "creo:model:feature#42",
-          "name": "Future Feature id 42",
-          "ordinal": 1,
-          "outputs": [],
-          "source_content": [],
-          "source_properties": {},
-          "suppressed": false
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "unresolved",
-              "value": {
-                "family": "datum_plane"
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "creo:model:feature#43",
-          "name": "Datum Plane id 43",
-          "ordinal": 2,
-          "outputs": [],
-          "source_content": [],
-          "source_properties": {},
-          "suppressed": false
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "draft",
-              "value": {
-                "anchor": {
-                  "kind": "neutral_plane",
-                  "plane": {
-                    "kind": "unresolved"
-                  }
-                },
-                "faces": {
-                  "kind": "unresolved"
-                }
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "creo:model:feature#44",
-          "name": "Draft id 44",
-          "ordinal": 3,
-          "outputs": [],
-          "source_content": [],
-          "source_properties": {},
-          "suppressed": false
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "native",
-              "value": {
-                "kind": "ySurface",
-                "parameters": {}
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "creo:model:feature#45",
-          "name": "ySurface id 45",
-          "ordinal": 4,
-          "outputs": [],
-          "source_content": [],
-          "source_properties": {},
-          "suppressed": false
-        }
-      ],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -307,7 +185,6 @@
           "kind": "part",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
@@ -317,14 +194,7 @@
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },

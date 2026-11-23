@@ -70,263 +70,6 @@
           }
         }
       ],
-      "assembly_joints": [
-        {
-          "drives": [],
-          "id": "usd:stage:joint#/Arm/Joints/Anchor",
-          "native_ref": "/Arm/Joints/Anchor",
-          "operands": {
-            "kind": "grounded",
-            "value": {
-              "connector": {
-                "detached": false,
-                "frame": [
-                  [
-                    1.0,
-                    0.0,
-                    0.0,
-                    0.0
-                  ],
-                  [
-                    0.0,
-                    1.0,
-                    0.0,
-                    0.0
-                  ],
-                  [
-                    0.0,
-                    0.0,
-                    1.0,
-                    0.0
-                  ]
-                ],
-                "operand": {
-                  "container": {
-                    "kind": "occurrence",
-                    "occurrence": "usd:stage:occurrence#/Arm/Base",
-                    "occurrence_path": []
-                  },
-                  "object": "/Arm/Base",
-                  "subelements": []
-                }
-              },
-              "offset_frame": [
-                [
-                  1.0,
-                  0.0,
-                  0.0,
-                  0.0
-                ],
-                [
-                  0.0,
-                  1.0,
-                  0.0,
-                  0.0
-                ],
-                [
-                  0.0,
-                  0.0,
-                  1.0,
-                  0.0
-                ]
-              ]
-            }
-          },
-          "suppressed": false
-        },
-        {
-          "drives": [
-            {
-              "axis": {
-                "axis": "z",
-                "kind": "translation"
-              },
-              "damping": 2.0,
-              "mode": "force",
-              "stiffness": 20.0
-            }
-          ],
-          "id": "usd:stage:joint#/Arm/Joints/Rail",
-          "native_ref": "/Arm/Joints/Rail",
-          "operands": {
-            "kind": "pair",
-            "value": {
-              "connectors": [
-                {
-                  "detached": false,
-                  "frame": [
-                    [
-                      1.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    [
-                      0.0,
-                      1.0,
-                      0.0,
-                      0.0
-                    ],
-                    [
-                      0.0,
-                      0.0,
-                      1.0,
-                      100.0
-                    ]
-                  ],
-                  "operand": {
-                    "container": {
-                      "kind": "occurrence",
-                      "occurrence": "usd:stage:occurrence#/Arm/Upper",
-                      "occurrence_path": []
-                    },
-                    "object": "/Arm/Upper",
-                    "subelements": []
-                  }
-                },
-                {
-                  "detached": false,
-                  "frame": [
-                    [
-                      1.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    [
-                      0.0,
-                      1.0,
-                      0.0,
-                      0.0
-                    ],
-                    [
-                      0.0,
-                      0.0,
-                      1.0,
-                      0.0
-                    ]
-                  ],
-                  "operand": {
-                    "container": {
-                      "kind": "occurrence",
-                      "occurrence": "usd:stage:occurrence#/Arm/Slider",
-                      "occurrence_path": []
-                    },
-                    "object": "/Arm/Slider",
-                    "subelements": []
-                  }
-                }
-              ],
-              "kind": {
-                "kind": "slider",
-                "linear_limits": {
-                  "kind": "range",
-                  "maximum": 50.0,
-                  "minimum": 0.0
-                }
-              }
-            }
-          },
-          "suppressed": false
-        },
-        {
-          "drives": [
-            {
-              "axis": {
-                "axis": "z",
-                "kind": "rotation"
-              },
-              "damping": 28647.88975654116,
-              "max_force": 100000.0,
-              "mode": "force",
-              "stiffness": 572957.7951308233,
-              "target_position": 0.5235987755982988
-            }
-          ],
-          "id": "usd:stage:joint#/Arm/Joints/Shoulder",
-          "native_ref": "/Arm/Joints/Shoulder",
-          "operands": {
-            "kind": "pair",
-            "value": {
-              "connectors": [
-                {
-                  "detached": false,
-                  "frame": [
-                    [
-                      0.0,
-                      1.0,
-                      0.0,
-                      0.0
-                    ],
-                    [
-                      0.0,
-                      0.0,
-                      1.0,
-                      0.0
-                    ],
-                    [
-                      1.0,
-                      0.0,
-                      0.0,
-                      20.0
-                    ]
-                  ],
-                  "operand": {
-                    "container": {
-                      "kind": "occurrence",
-                      "occurrence": "usd:stage:occurrence#/Arm/Base",
-                      "occurrence_path": []
-                    },
-                    "object": "/Arm/Base",
-                    "subelements": []
-                  }
-                },
-                {
-                  "detached": false,
-                  "frame": [
-                    [
-                      0.0,
-                      1.0,
-                      0.0,
-                      0.0
-                    ],
-                    [
-                      0.0,
-                      0.0,
-                      1.0,
-                      0.0
-                    ],
-                    [
-                      1.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ]
-                  ],
-                  "operand": {
-                    "container": {
-                      "kind": "occurrence",
-                      "occurrence": "usd:stage:occurrence#/Arm/Upper",
-                      "occurrence_path": []
-                    },
-                    "object": "/Arm/Upper",
-                    "subelements": []
-                  }
-                }
-              ],
-              "kind": {
-                "angular_limits": {
-                  "kind": "range",
-                  "maximum": 0.7853981633974483,
-                  "minimum": -1.5707963267948966
-                },
-                "kind": "revolute"
-              }
-            }
-          },
-          "suppressed": false
-        }
-      ],
       "assets": [],
       "attributes": [],
       "colliders": [
@@ -376,13 +119,8 @@
           }
         }
       ],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [
         {
           "center_of_mass": {
@@ -645,7 +383,6 @@
           ]
         }
       ],
-      "parameters": [],
       "physical_materials": [
         {
           "density": 7.849999703466892e-6,
@@ -676,7 +413,6 @@
             "usd:stage:occurrence#/Arm/Slider"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "Arm",
           "storage": {
             "kind": "embedded"
@@ -694,7 +430,6 @@
             "usd:stage:occurrence#/Arm/Base/Geom"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "Base",
           "storage": {
             "kind": "embedded"
@@ -712,7 +447,6 @@
           "native_ref": "/Arm/Base/Geom",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Geom",
           "storage": {
             "kind": "embedded"
@@ -730,7 +464,6 @@
             "usd:stage:occurrence#/Arm/Slider/Geom"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "Slider",
           "storage": {
             "kind": "embedded"
@@ -748,7 +481,6 @@
           "native_ref": "/Arm/Slider/Geom",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Geom",
           "storage": {
             "kind": "embedded"
@@ -766,7 +498,6 @@
             "usd:stage:occurrence#/Arm/Upper/Geom"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "Upper",
           "storage": {
             "kind": "embedded"
@@ -784,7 +515,6 @@
           "native_ref": "/Arm/Upper/Geom",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Geom",
           "storage": {
             "kind": "embedded"
@@ -800,7 +530,6 @@
             "usd:stage:occurrence#/Arm"
           ],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
@@ -850,14 +579,7 @@
         }
       ],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [
         {
           "body": "usd:stage:body#/Arm/Base/Geom",

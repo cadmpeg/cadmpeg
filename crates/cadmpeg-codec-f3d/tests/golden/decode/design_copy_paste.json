@@ -255,40 +255,6 @@
     },
     "model": {
       "assets": [],
-      "features": [
-        {
-          "id": "f3d:model:feature#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat9:CopyPaste1:1400",
-          "ordinal": 0,
-          "name": "CopyPaste 1",
-          "suppressed": false,
-          "dependencies": [],
-          "source_properties": {},
-          "source_tag": "CopyPaste",
-          "source_content": [],
-          "outputs": [],
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "insert_component",
-              "value": {
-                "occurrence": "f3d:model:occurrence#cccccccc-1111-2222-3333-dddddddddddd"
-              }
-            }
-          },
-          "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#3680"
-        }
-      ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "configurations": [],
-      "parameters": [],
-      "sketches": [],
-      "sketch_entities": [],
-      "sketch_constraints": [],
-      "spatial_sketches": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketch_constraints": [],
-      "spreadsheets": [],
       "product_definitions": [
         {
           "id": "f3d:model:component#11111111-2222-3333-4444-555555555555",
@@ -300,8 +266,7 @@
           "tessellations": [],
           "occurrences": [],
           "instance_bodies": [],
-          "representations": [],
-          "sketches": []
+          "representations": []
         },
         {
           "id": "f3d:model:product-definition#root",
@@ -319,8 +284,7 @@
             "f3d:model:occurrence#cccccccc-1111-2222-3333-dddddddddddd"
           ],
           "instance_bodies": [],
-          "representations": [],
-          "sketches": []
+          "representations": []
         }
       ],
       "occurrences": [
@@ -377,7 +341,6 @@
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-component-occurrence#3255"
         }
       ],
-      "assembly_joints": [],
       "drawings": [],
       "semantic_annotations": [],
       "presentation_documents": [],
@@ -435,8 +398,7 @@
       "physics_scenes": [],
       "solver_settings": [],
       "declared_measures": [],
-      "point_clouds": [],
-      "history_bodies": []
+      "point_clouds": []
     },
     "design": {
       "scopes": [],

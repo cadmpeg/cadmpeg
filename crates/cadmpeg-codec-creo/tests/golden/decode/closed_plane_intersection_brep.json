@@ -1449,94 +1449,13 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [
-        {
-          "id": "creo:model:feature-result-topology#4",
-          "members": [
-            {
-              "id": "curve#10",
-              "kind": "edge"
-            },
-            {
-              "id": "curve#11",
-              "kind": "edge"
-            },
-            {
-              "id": "curve#12",
-              "kind": "edge"
-            },
-            {
-              "id": "curve#13",
-              "kind": "edge"
-            },
-            {
-              "id": "curve#14",
-              "kind": "edge"
-            },
-            {
-              "id": "curve#15",
-              "kind": "edge"
-            }
-          ],
-          "output_of": "creo:model:feature#4"
-        }
-      ],
-      "features": [
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "fillet",
-              "value": {
-                "groups": [
-                  {
-                    "edges": {
-                      "kind": "resolved",
-                      "value": {
-                        "edges": [
-                          "creo:visibgeom:edge#10",
-                          "creo:visibgeom:edge#11"
-                        ],
-                        "native": "creo:allfeatur:edgs_affected#4:10,11"
-                      }
-                    },
-                    "radius": {
-                      "kind": "unresolved"
-                    }
-                  }
-                ]
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "creo:model:feature#4",
-          "name": "Round id 4",
-          "ordinal": 0,
-          "outputs": [
-            "creo:visibgeom:body#1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "featdefs_row_schema_classes": "913",
-            "featdefs_schema_class": "913",
-            "native_parameter.affected_edge_ids": "10,11",
-            "native_parameter.affected_geometry_ids": "99"
-          },
-          "suppressed": false
-        }
-      ],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -1554,7 +1473,6 @@
           "kind": "part",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
@@ -1564,14 +1482,7 @@
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },

@@ -808,17 +808,11 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [
         {
@@ -1011,7 +1005,6 @@
           ]
         }
       ],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -1035,7 +1028,6 @@
             "usd:stage:occurrence#/Curves/Arc"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "Curves",
           "storage": {
             "kind": "embedded"
@@ -1053,7 +1045,6 @@
           "native_ref": "/Curves/Arc",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Arc",
           "storage": {
             "kind": "embedded"
@@ -1071,7 +1062,6 @@
           "native_ref": "/Curves/Bezier",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Bezier",
           "storage": {
             "kind": "embedded"
@@ -1089,7 +1079,6 @@
           "native_ref": "/Curves/CatmullRom",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "CatmullRom",
           "storage": {
             "kind": "embedded"
@@ -1107,7 +1096,6 @@
           "native_ref": "/Curves/Loop",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Loop",
           "storage": {
             "kind": "embedded"
@@ -1125,7 +1113,6 @@
           "native_ref": "/Curves/Polyline",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Polyline",
           "storage": {
             "kind": "embedded"
@@ -1143,7 +1130,6 @@
           "native_ref": "/Curves/Splines",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Splines",
           "storage": {
             "kind": "embedded"
@@ -1159,7 +1145,6 @@
             "usd:stage:occurrence#/Curves"
           ],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
@@ -1169,14 +1154,7 @@
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },

@@ -1264,9 +1264,9 @@ fn schema_lists_model_arenas_with_element_types() {
 }
 
 #[test]
-fn schema_projects_feature_fields_with_tagged_union_inventory() {
+fn schema_projects_design_feature_fields() {
     let output = cadmpeg()
-        .args(["query", "schema", "types", "model.features"])
+        .args(["query", "schema", "types", "design.features"])
         .output()
         .unwrap();
     assert!(output.status.success());
@@ -1275,24 +1275,22 @@ fn schema_projects_feature_fields_with_tagged_union_inventory() {
         stdout.starts_with("field\ttype\trequired\tdescription\n"),
         "{stdout}"
     );
-    // The measured trap: the discriminator of a feature's definition is
-    // `.definition.kind`, and the schema view names the tag key.
-    assert!(
-        stdout.contains("definition\tFeatureDefinition (tagged by kind,"),
-        "{stdout}"
-    );
-    assert!(stdout.contains("operation"), "{stdout}");
-    // The other measured trap: an optional field is absent and a list is always written.
-    assert!(stdout.contains("suppressed\tboolean?\tno"), "{stdout}");
-    assert!(stdout.contains("outputs\tarray<BodyId>\tyes"), "{stdout}");
+    assert!(stdout.contains("definition\tFeatureDefinition"), "{stdout}");
+    // An optional field is absent and its type says so.
+    assert!(stdout.contains("name\tstring?\tno"), "{stdout}");
     assert!(stdout.contains("id\tFeatureId\tyes"), "{stdout}");
 
-    // Bare shorthand is byte-identical to the dotted name.
-    let bare = cadmpeg()
-        .args(["query", "schema", "types", "features"])
+    // Bare shorthand is byte-identical to the dotted name of a `model` arena.
+    let dotted = cadmpeg()
+        .args(["query", "schema", "types", "model.occurrences"])
         .output()
         .unwrap();
-    assert_eq!(output.stdout, bare.stdout);
+    assert!(dotted.status.success());
+    let bare = cadmpeg()
+        .args(["query", "schema", "types", "occurrences"])
+        .output()
+        .unwrap();
+    assert_eq!(dotted.stdout, bare.stdout);
 }
 
 #[test]

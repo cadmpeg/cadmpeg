@@ -3165,17 +3165,11 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [
         {
@@ -3427,7 +3421,6 @@
           "visible": false
         }
       ],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -3447,7 +3440,6 @@
           "native_ref": "/include library/shared/body0",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "body0",
           "storage": {
             "kind": "embedded"
@@ -3466,7 +3458,6 @@
           "native_ref": "/include library/shared/body1",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "body1",
           "storage": {
             "kind": "embedded"
@@ -3485,7 +3476,6 @@
           "label": "Pair-1",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "kind": "embedded"
           },
@@ -3503,7 +3493,6 @@
           "native_ref": "/include library/shared/body2",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "body2",
           "storage": {
             "kind": "embedded"
@@ -3523,7 +3512,6 @@
             "edrawings:model:occurrence#8"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "synthetic solidworks assembly.sldasm",
           "storage": {
             "document": {},
@@ -3544,7 +3532,6 @@
             "edrawings:model:occurrence#5"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "Group A",
           "storage": {
             "kind": "embedded"
@@ -3562,7 +3549,6 @@
             "edrawings:model:occurrence#3"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "Group B",
           "storage": {
             "kind": "embedded"
@@ -3580,7 +3566,6 @@
             "edrawings:model:occurrence#7"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "Group C",
           "storage": {
             "kind": "embedded"
@@ -3590,14 +3575,7 @@
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },

@@ -322,157 +322,13 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "native",
-              "value": {
-                "kind": "CurveFromEquation",
-                "parameters": {
-                  "assignment_count": "5",
-                  "entity_id": "7"
-                }
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "creo:depdb:curve_expression_feature#7-102",
-          "name": "Curve Equation 7",
-          "native_ref": "creo:depdb:curve_expression#active-7-102",
-          "ordinal": 0,
-          "outputs": [],
-          "source_content": [
-            {
-              "kind": "parameter",
-              "value": "creo:depdb:curve_expression_parameter#7-102-0"
-            },
-            {
-              "kind": "parameter",
-              "value": "creo:depdb:curve_expression_parameter#7-102-1"
-            },
-            {
-              "kind": "parameter",
-              "value": "creo:depdb:curve_expression_parameter#7-102-2"
-            },
-            {
-              "kind": "parameter",
-              "value": "creo:depdb:curve_expression_parameter#7-102-3"
-            },
-            {
-              "kind": "parameter",
-              "value": "creo:depdb:curve_expression_parameter#7-102-4"
-            }
-          ],
-          "source_properties": {},
-          "source_tag": "crv_fr_eqn",
-          "source_text": "span[inch]=2\ncopy=span+25.4[mm]\nstress[N/mm^2]=2\nangle=atan2(span,25.4[mm])\nfreezing[C]=0",
-          "suppressed": false
-        }
-      ],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [
-        {
-          "dependencies": [],
-          "expression": "2",
-          "id": "creo:depdb:curve_expression_parameter#7-102-0",
-          "name": "span",
-          "native_ref": "creo:depdb:curve_expression#active-7-102",
-          "ordinal": 0,
-          "owner": "creo:depdb:curve_expression_feature#7-102",
-          "properties": {
-            "activation": "active",
-            "declared_unit": "inch",
-            "source_assignment_ordinal": "0"
-          },
-          "value": {
-            "kind": "length",
-            "value": 50.8
-          }
-        },
-        {
-          "dependencies": [
-            "creo:depdb:curve_expression_parameter#7-102-0"
-          ],
-          "expression": "span+25.4[mm]",
-          "id": "creo:depdb:curve_expression_parameter#7-102-1",
-          "name": "copy",
-          "native_ref": "creo:depdb:curve_expression#active-7-102",
-          "ordinal": 1,
-          "owner": "creo:depdb:curve_expression_feature#7-102",
-          "properties": {
-            "activation": "active",
-            "source_assignment_ordinal": "1"
-          },
-          "value": {
-            "kind": "length",
-            "value": 76.19999999999999
-          }
-        },
-        {
-          "dependencies": [],
-          "expression": "2",
-          "id": "creo:depdb:curve_expression_parameter#7-102-2",
-          "name": "stress",
-          "native_ref": "creo:depdb:curve_expression#active-7-102",
-          "ordinal": 2,
-          "owner": "creo:depdb:curve_expression_feature#7-102",
-          "properties": {
-            "activation": "active",
-            "declared_unit": "N/mm^2",
-            "evaluated_canonical_value": "2000",
-            "evaluated_dimension": "length:-1,mass:1,time:-2,angle:0,temperature:0",
-            "source_assignment_ordinal": "2"
-          }
-        },
-        {
-          "dependencies": [
-            "creo:depdb:curve_expression_parameter#7-102-0"
-          ],
-          "expression": "atan2(span,25.4[mm])",
-          "id": "creo:depdb:curve_expression_parameter#7-102-3",
-          "name": "angle",
-          "native_ref": "creo:depdb:curve_expression#active-7-102",
-          "ordinal": 3,
-          "owner": "creo:depdb:curve_expression_feature#7-102",
-          "properties": {
-            "activation": "active",
-            "source_assignment_ordinal": "3"
-          },
-          "value": {
-            "kind": "angle",
-            "value": 1.1071487177940904
-          }
-        },
-        {
-          "dependencies": [],
-          "expression": "0",
-          "id": "creo:depdb:curve_expression_parameter#7-102-4",
-          "name": "freezing",
-          "native_ref": "creo:depdb:curve_expression#active-7-102",
-          "ordinal": 4,
-          "owner": "creo:depdb:curve_expression_feature#7-102",
-          "properties": {
-            "activation": "active",
-            "declared_unit": "C",
-            "evaluated_canonical_value": "273.15",
-            "evaluated_dimension": "length:0,mass:0,time:0,angle:0,temperature:1",
-            "source_assignment_ordinal": "4"
-          }
-        }
-      ],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -488,7 +344,6 @@
           "kind": "part",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
@@ -498,14 +353,7 @@
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },

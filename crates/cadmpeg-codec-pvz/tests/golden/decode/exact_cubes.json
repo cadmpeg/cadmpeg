@@ -3392,17 +3392,11 @@
         }
       ],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [
         {
@@ -3487,7 +3481,6 @@
           ]
         }
       ],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -3508,7 +3501,6 @@
             "pvz:model:occurrence#2"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "TOP.ASM",
           "storage": {
             "document": {},
@@ -3527,7 +3519,6 @@
           "native_ref": "definition 1",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "CUBE64.PRT",
           "storage": {
             "kind": "embedded"
@@ -3545,7 +3536,6 @@
           "native_ref": "definition 2",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "CUBE32.PRT",
           "storage": {
             "kind": "embedded"
@@ -3563,7 +3553,6 @@
           "native_ref": "definition 3",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "PLATE.PRT",
           "storage": {
             "kind": "embedded"
@@ -3573,14 +3562,7 @@
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [
         {
           "body": "pvz:model:body#cube32.ol",

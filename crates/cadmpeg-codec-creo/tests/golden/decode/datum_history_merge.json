@@ -111,68 +111,13 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "fillet",
-              "value": {
-                "groups": [
-                  {
-                    "edges": {
-                      "kind": "unresolved"
-                    },
-                    "radius": {
-                      "kind": "unresolved"
-                    }
-                  }
-                ]
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "creo:model:feature#3",
-          "name": "Round id 3",
-          "ordinal": 0,
-          "outputs": [],
-          "source_content": [],
-          "source_properties": {},
-          "suppressed": false
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "unresolved",
-              "value": {
-                "family": "datum_plane"
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "creo:model:feature#4",
-          "name": "Datum Plane id 4",
-          "ordinal": 1,
-          "outputs": [],
-          "source_content": [],
-          "source_properties": {},
-          "suppressed": false
-        }
-      ],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -188,7 +133,6 @@
           "kind": "part",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
@@ -198,14 +142,7 @@
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },

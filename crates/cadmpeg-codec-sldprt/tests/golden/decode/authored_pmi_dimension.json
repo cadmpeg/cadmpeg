@@ -277,109 +277,13 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [
-        {
-          "active": true,
-          "bodies": [
-            "sldprt:brep:body#900"
-          ],
-          "feature_states": {
-            "sldprt:model:feature#348:0": {
-              "definition": {
-                "kind": "operation",
-                "value": {
-                  "kind": "sketch",
-                  "value": {
-                    "sketch": {
-                      "kind": "planar"
-                    }
-                  }
-                }
-              },
-              "dependencies": [],
-              "evaluation": {
-                "kind": "active",
-                "outputs": []
-              }
-            }
-          },
-          "id": "sldprt:model:configuration#348:0",
-          "name": "Default",
-          "native_ref": "sldprt:history:configuration#348:0",
-          "ordinal": 0,
-          "parameter_overrides": {},
-          "parameter_values": {
-            "sldprt:model:parameter#348:0:0": {
-              "kind": "length",
-              "value": 25.0
-            }
-          },
-          "properties": {},
-          "source_index": 0
-        }
-      ],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "sketch",
-              "value": {
-                "sketch": {
-                  "kind": "planar"
-                }
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "sldprt:model:feature#348:0",
-          "name": "Sketch1",
-          "native_ref": "sldprt:history:feature#348:0",
-          "ordinal": 0,
-          "outputs": [],
-          "source_content": [],
-          "source_properties": {},
-          "source_tag": "Sketch",
-          "suppressed": false
-        }
-      ],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [
-        {
-          "dependencies": [],
-          "expression": "25mm",
-          "id": "sldprt:model:parameter#348:0:0",
-          "name": "D1",
-          "ordinal": 0,
-          "owner": "sldprt:model:feature#348:0",
-          "pmi": {
-            "basic": true,
-            "display_text": "25.000 mm",
-            "inspection": false,
-            "native_ref": "sldprt:pmi:dimension#01234567-89ab-cdef-0123-456789abcdef",
-            "precision": 3,
-            "reference_only": true,
-            "subtype": {
-              "kind": "linear"
-            }
-          },
-          "properties": {},
-          "value": {
-            "kind": "length",
-            "value": 25.0
-          }
-        }
-      ],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -397,7 +301,6 @@
           "kind": "part",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
@@ -407,14 +310,7 @@
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
