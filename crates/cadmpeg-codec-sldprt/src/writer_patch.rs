@@ -86,7 +86,7 @@ pub(crate) fn patch_partition(
         &bodies,
         &cadmpeg_ir::stream_name!("native-patch-baseline"),
     )?;
-    let colors = crate::writer::face_colors(ir)?;
+    let colors = crate::writer::face_colors(ir);
     if native
         .faces
         .iter()

@@ -20,7 +20,7 @@
 //! the descent is counted against [`MAX_NATIVE_NESTING_DEPTH`].
 
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::HashSet;
 use std::fmt::{Display, Write as _};
 use std::io::{self, Write};
 use std::ops::Range;
@@ -64,6 +64,43 @@ struct Member {
     value: usize,
 }
 
+/// Fast JSON string writer for the common case with no characters requiring escaping.
+#[inline]
+fn write_json_str(out: &mut Vec<u8>, text: &str) -> serde_json::Result<()> {
+    let bytes = text.as_bytes();
+    if bytes.iter().all(|&b| b >= 0x20 && b != b'"' && b != b'\\') {
+        out.reserve(bytes.len() + 2);
+        out.push(b'"');
+        out.extend_from_slice(bytes);
+        out.push(b'"');
+        return Ok(());
+    }
+    serde_json::to_writer(out, text)
+}
+
+#[inline]
+fn write_u64(out: &mut Vec<u8>, mut value: u64) {
+    let mut buf = [0_u8; 20];
+    let mut pos = 20;
+    loop {
+        pos -= 1;
+        buf[pos] = b'0' + u8::try_from(value % 10).unwrap_or(0);
+        value /= 10;
+        if value == 0 {
+            break;
+        }
+    }
+    out.extend_from_slice(&buf[pos..]);
+}
+
+#[inline]
+fn write_i64(out: &mut Vec<u8>, value: i64) {
+    if value < 0 {
+        out.push(b'-');
+    }
+    write_u64(out, value.unsigned_abs());
+}
+
 /// An open object's distinct members, written into the output in arrival
 /// order and keyed by raw (unescaped) key.
 ///
@@ -72,18 +109,26 @@ struct Member {
 pub(super) struct Members {
     /// Where the object's `{` is.
     start: usize,
-    entries: BTreeMap<Cow<'static, str>, Member>,
-    /// Whether the members arrived in key order, so the text is in order too.
+    entries: Vec<(Cow<'static, str>, Member)>,
+    /// Populated only for objects with more than 24 keys to keep duplicate checks O(1).
+    seen: Option<HashSet<Cow<'static, str>>>,
+    /// Whether the members arrived in strictly increasing key order.
     in_order: bool,
 }
 
 impl Members {
     /// Close the object in `out`, rewriting its members in key order when they
     /// arrived in another order.
-    fn close(self, out: &mut Vec<u8>) {
+    fn close(mut self, out: &mut Vec<u8>) {
         if !self.in_order {
+            self.entries
+                .sort_unstable_by(|left, right| left.0.cmp(&right.0));
             let body = self.start + 1..out.len();
-            reorder(out, body, self.entries.values().map(|member| &member.text));
+            reorder(
+                out,
+                body,
+                self.entries.iter().map(|(_, member)| &member.text),
+            );
         }
         out.push(b'}');
     }
@@ -92,34 +137,51 @@ impl Members {
     /// text with `id` first and the other members in key order.
     pub(super) fn into_record(
         mut self,
-        out: Vec<u8>,
+        out: &mut Vec<u8>,
     ) -> Result<(crate::ids::Identity, Box<str>), NativeConvertError> {
-        let id_first = self.start == 0
-            && self.in_order
-            && self
-                .entries
-                .first_key_value()
-                .is_some_and(|(key, _)| key == "id");
-        let member = self
+        let id_pos = self
             .entries
-            .remove("id")
+            .iter()
+            .position(|(key, _)| key == "id")
             .ok_or(NativeConvertError::MissingId)?;
-        let id = serde_json::from_slice::<String>(&out[member.value..member.text.end])
-            .map_err(|_| NativeConvertError::MissingId)?;
-        let id = crate::ids::Identity::new(id)?;
-        let mut json = out;
-        if !id_first {
-            let body = self.start + 1..json.len();
-            let order = std::iter::once(&member.text)
-                .chain(self.entries.values().map(|member| &member.text));
-            reorder(&mut json, body, order);
-            json.drain(..self.start);
+        let member_range = self.entries[id_pos].1.text.clone();
+        let member_value = self.entries[id_pos].1.value;
+        let raw_id = &out[member_value..member_range.end];
+        let id = if raw_id.len() >= 2
+            && raw_id[0] == b'"'
+            && raw_id[raw_id.len() - 1] == b'"'
+            && raw_id[1..raw_id.len() - 1]
+                .iter()
+                .all(|&b| b >= 0x20 && b != b'\\' && b != b'"')
+        {
+            let text = std::str::from_utf8(&raw_id[1..raw_id.len() - 1])
+                .map_err(|_| NativeConvertError::MissingId)?;
+            crate::ids::Identity::new(text)?
+        } else {
+            let id = serde_json::from_slice::<String>(raw_id)
+                .map_err(|_| NativeConvertError::MissingId)?;
+            crate::ids::Identity::new(id)?
+        };
+        let already_canonical = self.start == 0
+            && id_pos == 0
+            && (self.in_order
+                || self.entries[1..]
+                    .windows(2)
+                    .all(|pair| pair[0].0 < pair[1].0));
+        if !already_canonical {
+            let (_, id_member) = self.entries.swap_remove(id_pos);
+            self.entries
+                .sort_unstable_by(|left, right| left.0.cmp(&right.0));
+            let body = self.start + 1..out.len();
+            let order = std::iter::once(&id_member.text)
+                .chain(self.entries.iter().map(|(_, member)| &member.text));
+            reorder(out, body, order);
         }
-        json.push(b'}');
-        let json = String::from_utf8(json).map_err(|_| {
+        out.push(b'}');
+        let slice = std::str::from_utf8(&out[self.start..]).map_err(|_| {
             NativeConvertError::ConversionMessage("canonical native text is not UTF-8".to_owned())
         })?;
-        Ok((id, json.into_boxed_str()))
+        Ok((id, Box::from(slice)))
     }
 }
 
@@ -343,6 +405,7 @@ fn open_map<'a, 'o>(
     depth: usize,
     out: &'o mut Vec<u8>,
     mut min_remaining: Option<&'o mut usize>,
+    len: Option<usize>,
 ) -> Result<CanonMap<'a, 'o>, Error> {
     let (depth, nested) = enter(ctx, depth, &mut min_remaining)?;
     let start = out.len();
@@ -354,7 +417,8 @@ fn open_map<'a, 'o>(
         min_remaining,
         members: Members {
             start,
-            entries: BTreeMap::new(),
+            entries: Vec::with_capacity(len.unwrap_or(0).min(32)),
+            seen: None,
             in_order: true,
         },
         key: None,
@@ -446,54 +510,67 @@ impl<'a, 'o> ser::Serializer for CanonText<'a, 'o> {
     type SerializeStructVariant = CanonVariantMap<'a, 'o>;
 
     fn serialize_bool(self, value: bool) -> Result<Written, Error> {
-        self.scalar(&value)
+        self.out
+            .extend_from_slice(if value { b"true" } else { b"false" });
+        Ok(Written::Text)
     }
 
     fn serialize_i8(self, value: i8) -> Result<Written, Error> {
-        self.scalar(&value)
+        write_i64(self.out, i64::from(value));
+        Ok(Written::Text)
     }
 
     fn serialize_i16(self, value: i16) -> Result<Written, Error> {
-        self.scalar(&value)
+        write_i64(self.out, i64::from(value));
+        Ok(Written::Text)
     }
 
     fn serialize_i32(self, value: i32) -> Result<Written, Error> {
-        self.scalar(&value)
+        write_i64(self.out, i64::from(value));
+        Ok(Written::Text)
     }
 
     fn serialize_i64(self, value: i64) -> Result<Written, Error> {
-        self.scalar(&value)
+        write_i64(self.out, value);
+        Ok(Written::Text)
     }
 
     fn serialize_i128(self, value: i128) -> Result<Written, Error> {
         if let Ok(value) = i64::try_from(value) {
-            return self.scalar(&value);
+            write_i64(self.out, value);
+            return Ok(Written::Text);
         }
         if let Ok(value) = u64::try_from(value) {
-            return self.scalar(&value);
+            write_u64(self.out, value);
+            return Ok(Written::Text);
         }
         Err(ser::Error::custom("number out of range"))
     }
 
     fn serialize_u8(self, value: u8) -> Result<Written, Error> {
-        self.scalar(&value)
+        write_u64(self.out, u64::from(value));
+        Ok(Written::Text)
     }
 
     fn serialize_u16(self, value: u16) -> Result<Written, Error> {
-        self.scalar(&value)
+        write_u64(self.out, u64::from(value));
+        Ok(Written::Text)
     }
 
     fn serialize_u32(self, value: u32) -> Result<Written, Error> {
-        self.scalar(&value)
+        write_u64(self.out, u64::from(value));
+        Ok(Written::Text)
     }
 
     fn serialize_u64(self, value: u64) -> Result<Written, Error> {
-        self.scalar(&value)
+        write_u64(self.out, value);
+        Ok(Written::Text)
     }
 
     fn serialize_u128(self, value: u128) -> Result<Written, Error> {
         if let Ok(value) = u64::try_from(value) {
-            return self.scalar(&value);
+            write_u64(self.out, value);
+            return Ok(Written::Text);
         }
         Err(ser::Error::custom("number out of range"))
     }
@@ -511,7 +588,8 @@ impl<'a, 'o> ser::Serializer for CanonText<'a, 'o> {
     }
 
     fn serialize_str(self, value: &str) -> Result<Written, Error> {
-        self.scalar(value)
+        write_json_str(self.out, value)?;
+        Ok(Written::Text)
     }
 
     /// Bytes render as the JSON array of their values, so they enter a
@@ -625,8 +703,8 @@ impl<'a, 'o> ser::Serializer for CanonText<'a, 'o> {
         })
     }
 
-    fn serialize_map(self, _len: Option<usize>) -> Result<CanonMap<'a, 'o>, Error> {
-        open_map(self.ctx, self.depth, self.out, self.min_remaining)
+    fn serialize_map(self, len: Option<usize>) -> Result<CanonMap<'a, 'o>, Error> {
+        open_map(self.ctx, self.depth, self.out, self.min_remaining, len)
     }
 
     /// `RawValue`'s struct protocol carries one JSON value and is no container
@@ -654,14 +732,14 @@ impl<'a, 'o> ser::Serializer for CanonText<'a, 'o> {
         _name: &'static str,
         _index: u32,
         variant: &'static str,
-        _len: usize,
+        len: usize,
     ) -> Result<CanonVariantMap<'a, 'o>, Error> {
         let (depth, nested) = enter(self.ctx, self.depth, &mut self.min_remaining)?;
         open_variant(self.out, variant)?;
         Ok(CanonVariantMap {
             _nested: nested,
             variant,
-            map: open_map(self.ctx, depth, self.out, self.min_remaining)?,
+            map: open_map(self.ctx, depth, self.out, self.min_remaining, Some(len))?,
         })
     }
 
@@ -832,8 +910,15 @@ impl<'o> CanonMap<'_, 'o> {
         value: &T,
     ) -> Result<(), Error> {
         let entries = &mut self.members.entries;
-        let after_last = entries.last_key_value().is_none_or(|(last, _)| key > *last);
-        if !after_last && entries.contains_key(&key) {
+        let after_last = entries.last().is_none_or(|(last, _)| key > *last);
+        let duplicate = if let Some(seen) = &self.members.seen {
+            seen.contains(&key)
+        } else if self.members.in_order && after_last {
+            false
+        } else {
+            entries.iter().any(|(existing, _)| *existing == key)
+        };
+        if duplicate {
             return Err(CanonError::Message(format!("duplicate key {key}")));
         }
         let out = &mut *self.out;
@@ -855,7 +940,17 @@ impl<'o> CanonMap<'_, 'o> {
                     text: text..out.len(),
                     value: value_start,
                 };
-                entries.insert(key, member);
+                if let Some(seen) = &mut self.members.seen {
+                    seen.insert(key.clone());
+                } else if entries.len() >= 24 {
+                    let mut seen = HashSet::with_capacity(entries.len() + 8);
+                    for (existing, _) in entries.iter() {
+                        seen.insert(existing.clone());
+                    }
+                    seen.insert(key.clone());
+                    self.members.seen = Some(seen);
+                }
+                entries.push((key, member));
                 self.members.in_order &= after_last;
                 Ok(())
             }
@@ -912,7 +1007,7 @@ fn write_member<'a, T: Serialize + ?Sized>(
     key: &str,
     value: &T,
 ) -> Result<usize, Error> {
-    serde_json::to_writer(&mut *out, key)?;
+    write_json_str(out, key)?;
     out.push(b':');
     let value_start = out.len();
     value

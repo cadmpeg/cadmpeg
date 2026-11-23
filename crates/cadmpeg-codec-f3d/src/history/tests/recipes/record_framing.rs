@@ -15,9 +15,9 @@ fn opaque_history_span_retains_the_precise_framing_error() {
         &bytes,
         0,
         None,
-        "stream",
-        "state",
+        ("stream", "state"),
         cadmpeg_asm::kernel_header::RefWidth::Eight,
+        &mut Vec::new(),
     )
     .expect("malformed history remains an opaque record");
     let [record] = records.as_slice() else {
@@ -55,9 +55,9 @@ fn wrapped_face_history_record_keeps_dispatch_references_and_bytes() {
         &bytes,
         0,
         None,
-        "stream",
-        "state",
+        ("stream", "state"),
         cadmpeg_asm::kernel_header::RefWidth::Eight,
+        &mut Vec::new(),
     )
     .unwrap();
     let [record] = records.as_slice() else {

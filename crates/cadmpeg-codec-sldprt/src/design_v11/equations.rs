@@ -555,6 +555,102 @@ pub(super) fn link(parameters: &mut Vec<DesignParameter>, linking: &Linking<'_>)
     unread.notes(&kept)
 }
 
+/// Restates the expression of each parameter of `bare`, whose dimension text
+/// is one reference to a parameter whose kind differs or is not read, as the
+/// tree the unit-blind rule of §5.13 gives the text, where that tree types
+/// and is one reference, which translates exactly, or the document's caches
+/// agree with its evaluation (Rule H1). Each other parameter keeps its text
+/// as one `Text` token; the returned notes name it by reason.
+pub(super) fn bare_references(
+    parameters: &mut [DesignParameter],
+    bare: &[ParameterId],
+    features: &[Feature],
+    length_unit: Option<UnitSymbol>,
+    tolerances: &Tolerances,
+) -> Vec<LossNote> {
+    let names = Names::new(parameters, features);
+    let mut kept = Losses::default();
+    for id in bare {
+        let Some(target) = parameters.iter().position(|parameter| parameter.id == *id) else {
+            continue;
+        };
+        let ParameterDefinition::Expression(Expression::Source { tokens, .. }) =
+            &parameters[target].definition
+        else {
+            continue;
+        };
+        let [ExpressionToken::Text(text)] = tokens.as_slice() else {
+            continue;
+        };
+        let text = text.clone();
+        match bare_tree(parameters, target, &text, &names, length_unit, tolerances) {
+            Ok(tree) => {
+                parameters[target].definition =
+                    ParameterDefinition::Expression(Expression::Neutral(Neutral(tree)));
+            }
+            Err(why) => kept.push(why, parameters[target].id.as_str()),
+        }
+    }
+    kept.by_reason
+        .iter()
+        .map(|(why, named)| {
+            SldprtLossCode::DesignParameterReferenceAsText.note(format!(
+                "{} parameters whose text is one reference to a parameter whose kind differs or \
+                 is not read hold the text as one `Text` token and state no dependency on the \
+                 parameter it names, because {}: {named}",
+                named.count(),
+                why.reason()
+            ))
+        })
+        .collect()
+}
+
+/// The tested unit-blind tree of the dimension text `text` of parameter
+/// `target`, or why it has none.
+fn bare_tree(
+    parameters: &[DesignParameter],
+    target: usize,
+    text: &str,
+    names: &Names,
+    length_unit: Option<UnitSymbol>,
+    tolerances: &Tolerances,
+) -> Result<Node<ParameterRef>, Kept> {
+    let tree = translate::tree(
+        text,
+        &translate::Typing {
+            parameters,
+            names,
+            target: &parameters[target].kind,
+            length_unit,
+        },
+    )
+    .filter(|tree| {
+        expr::print(tree)
+            .ok()
+            .and_then(|wire| expr::read(&wire).ok())
+            .as_ref()
+            == Some(tree)
+    })
+    .ok_or(Kept::Untranslated)?;
+    // One reference translates exactly and is stated whatever the caches
+    // hold, as an equation-manager line that is one reference is.
+    if matches!(&tree, Node::Reference(_)) {
+        return Ok(tree);
+    }
+    let read = text
+        .trim()
+        .strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+        .and_then(|name| names.resolve(name))
+        .ok_or(Kept::Untranslated)?;
+    match test(parameters, target, &tree, &[read], None, tolerances) {
+        Test::Agrees => Ok(tree),
+        Test::Untested => Err(Kept::Untested),
+        Test::Unconfirmed => Err(Kept::Unconfirmed),
+        Test::Disagrees => Err(Kept::Disagrees),
+    }
+}
+
 /// The loss note of the active configuration's lines, for a part that states
 /// no design.
 pub(super) fn without_design(managers: &Managers, active: Option<usize>) -> Vec<LossNote> {

@@ -36,6 +36,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 mod digest_partition;
 mod retention;
+pub(crate) mod retired_states;
 
 use crate::container::configuration_index;
 use crate::container::contains_ascii_case_insensitive;
@@ -182,11 +183,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     }
     // The root is stated once, after the assembly projection has added its
     // definitions, so an assembly states its own root and no bare part root.
-    // A scoped root lists only the bodies of its current states. The bodies
-    // of a configuration that is not active are stated by that
-    // configuration's evaluation (§5.4) and stay in the geometry unlisted,
-    // as a scoped CATIA or Rhino root leaves its own (interim, errata A1).
-    // Local digests are stamped after the root is complete.
+    // A scoped root lists only the bodies of its current states. A body of a
+    // configuration that is not active and whose state the design does not
+    // state stays in the geometry unlisted, as a scoped CATIA or Rhino root
+    // leaves its own (interim, errata A1). Local digests are stamped after
+    // the root is complete.
     let current = (!decoded.ir.design.scopes.is_empty()).then(|| {
         decoded
             .ir
@@ -700,7 +701,10 @@ pub(crate) fn append_design_losses(
         .model
         .configurations
         .iter()
-        .filter(|configuration| configuration.bodies.is_none())
+        .filter(|configuration| {
+            configuration.bodies.is_none()
+                && retired_states::stored_state(ir, configuration).is_none()
+        })
         .count();
     if unresolved_configuration_bodies > 0 || incoherent_configuration_bodies > 0 {
         report.losses.push(SldprtLossCode::ConfigIncoherentBodyRefs.note(format!(
@@ -2666,6 +2670,56 @@ fn merge_local_bodies(
     Ok(())
 }
 
+/// One loss for each configuration whose partition holds no body, or that
+/// has no partition, and whose `Config-N-FeatureBodies` streams the decode
+/// does not take. Only the selected partition's empty model takes its
+/// configuration's imported bodies (spec §3.3); what those streams state for
+/// any other configuration is open (DI-84). The loss is a warning for a
+/// configuration that is not active, and an error for the active one, whose
+/// bodies the model would then lack.
+fn untaken_local_bodies_losses(
+    scan: &ContainerScan<'_>,
+    taken: Option<usize>,
+    configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    let partitioned = configuration_bodies
+        .iter()
+        .map(|(index, _)| *index)
+        .collect::<BTreeSet<_>>();
+    let held = configuration_bodies
+        .iter()
+        .filter(|(_, bodies)| !bodies.is_empty())
+        .map(|(index, _)| *index)
+        .collect::<BTreeSet<_>>();
+    let active = container::active_configuration_index(scan);
+    let mut streams = BTreeMap::<usize, usize>::new();
+    for (_, stream) in all_local_body_streams(scan) {
+        if let Some(index) = configuration_index(stream.section.name().unwrap_or("")) {
+            *streams.entry(index).or_default() += 1;
+        }
+    }
+    streams
+        .into_iter()
+        .filter(|(index, _)| Some(*index) != taken && !held.contains(index))
+        .map(|(index, count)| {
+            let code = if Some(index) == active {
+                SldprtLossCode::GeometryImportedBodiesNotTransferred
+            } else {
+                SldprtLossCode::ConfigStateImportedBodiesNotTransferred
+            };
+            let partition = if partitioned.contains(&index) {
+                "its partition holds no body"
+            } else {
+                "the file stores no partition of it"
+            };
+            code.note(format!(
+                "configuration index {index}: {partition}, and the {count} imported body \
+                 stream(s) of its Config-{index}-FeatureBodies are not decoded."
+            ))
+        })
+        .collect()
+}
+
 /// The loss for `unreadable` of `total` imported body streams.
 fn imported_bodies_loss(
     unreadable: usize,
@@ -2809,10 +2863,14 @@ fn try_decode_brep(
         decoded.qualify_ids(&selected_site_key)?;
     }
     bind_opaque_geometry(&mut decoded, &streams[selected].section.native_id());
+    let taken = takes_local_bodies
+        .then(|| {
+            configuration_index(streams[selected].source_stream().as_str())
+                .or_else(|| container::active_configuration_index(scan))
+        })
+        .flatten();
     if takes_local_bodies {
-        let configuration = configuration_index(streams[selected].source_stream().as_str())
-            .or_else(|| container::active_configuration_index(scan));
-        merge_local_bodies(ctx, scan, configuration, &mut decoded)?;
+        merge_local_bodies(ctx, scan, taken, &mut decoded)?;
     }
     let mut configuration_bodies = Vec::new();
     if let Some(index) = configuration_index(streams[selected].source_stream().as_str()) {
@@ -2829,6 +2887,11 @@ fn try_decode_brep(
         // active SWIFT CadIdentifier lane.
         merge_brep(&mut decoded, alternate)?;
     }
+    decoded.losses.extend(untaken_local_bodies_losses(
+        scan,
+        taken,
+        &configuration_bodies,
+    ));
     merge_virtual_component_bodies(ctx, scan, placed_virtual, &mut decoded)?;
     let report = build_geometry_report(
         ctx,
@@ -3460,7 +3523,7 @@ fn build_geometry_ir(
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let (mut lanes, exact_profiles, mark_owners) =
+    let (mut lanes, exact_profiles, mark_owners, configuration_maps) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let rollback = part
         .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
@@ -3555,8 +3618,9 @@ fn build_geometry_ir(
         &mut ir,
         &supplemental_config_lanes,
     )?;
-    let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
-    held_handles.hold_assumed_planes(
+    let mut plane_bindings =
+        crate::resolved_features::compact_reference_planes::PlaneBindings::default();
+    plane_bindings.extend(
         crate::resolved_features::profiles::project_compact_sketch_profiles(
             ctx,
             &mut ir.model.features,
@@ -3582,26 +3646,29 @@ fn build_geometry_ir(
         );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
-    crate::resolved_features::profiles::project_marker_backed_sketches(
-        ctx,
-        &mut ir.model.features,
-        &mut sketches,
-        crate::resolved_features::profiles::MarkerSketchEntities {
-            projected: &mut sketch_entities,
-            held: &mut held_handles,
-        },
-        crate::resolved_features::profiles::MarkerSources {
-            histories: &histories,
-            lanes: sketch_lanes,
-            solid: &crate::resolved_features::stream_readings::SolidEdges::new(
-                &brep.edges,
-                &brep.vertices,
-                &brep.points,
-                &brep.curves,
-            ),
-        },
-        &mut pmi_losses,
-    )?;
+    let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
+    plane_bindings.extend(
+        crate::resolved_features::profiles::project_marker_backed_sketches(
+            ctx,
+            &mut ir.model.features,
+            &mut sketches,
+            crate::resolved_features::profiles::MarkerSketchEntities {
+                projected: &mut sketch_entities,
+                held: &mut held_handles,
+            },
+            crate::resolved_features::profiles::MarkerSources {
+                histories: &histories,
+                lanes: sketch_lanes,
+                solid: &crate::resolved_features::stream_readings::SolidEdges::new(
+                    &brep.edges,
+                    &brep.vertices,
+                    &brep.points,
+                    &brep.curves,
+                ),
+            },
+            &mut pmi_losses,
+        )?,
+    );
     crate::resolved_features::profiles::project_sketch_block_profiles(
         &mut ir.model.features,
         &mut sketches,
@@ -3670,8 +3737,10 @@ fn build_geometry_ir(
         &ir.model.parameters,
         sketch_lanes,
     )?;
-    let unbound_readings = crate::resolved_features::profiles::finalize_unread_marker_entities(
-        &sketches,
+    let crate::resolved_features::profiles::Finalized {
+        unbound_readings,
+        outside_profile,
+    } = crate::resolved_features::profiles::finalize_unread_marker_entities(
         &mut sketch_entities,
         held_handles,
         &mut pmi_losses,
@@ -3759,16 +3828,18 @@ fn build_geometry_ir(
                 .map(|target| (target, modifier.feature_source_id.value()))
         })
         .collect::<Vec<_>>();
+    let output_sources = crate::history::bind::FeatureOutputSources {
+        face_producers: &face_producers,
+        body_modifiers: &body_modifiers,
+    };
     crate::history::bind::derive_feature_outputs(
         &mut ir.model.features,
         &histories,
-        crate::history::bind::FeatureOutputSources {
-            face_producers: &face_producers,
-            body_modifiers: &body_modifiers,
-        },
+        output_sources,
         &ir.geometry.faces,
         &ir.geometry.shells,
         &ir.geometry.regions,
+        |_| true,
     )?;
     let topology_selection_inputs = crate::history::selections::TopologySelectionInputs {
         bodies: &ir.geometry.bodies,
@@ -3894,6 +3965,7 @@ fn build_geometry_ir(
     crate::history::bind::bind_bound_sketch_profiles(&mut ir.model.features, &ir.model.sketches);
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     let current_bodies = active_partition_bodies(&ir, &configuration_bodies);
+    let stored_bodies = stored_partition_bodies(&ir, &configuration_bodies);
     assign_configuration_bodies(&mut ir, configuration_bodies, Some(scan))?;
     let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
         ctx,
@@ -3902,6 +3974,7 @@ fn build_geometry_ir(
         &all_lanes,
         &exact_profiles,
         &mut annotations,
+        &mut plane_bindings,
     )?;
     pmi_losses.extend(configuration_losses);
     crate::resolved_features::stream_readings::note_stream_readings(
@@ -3914,6 +3987,7 @@ fn build_geometry_ir(
         &histories,
         &all_lanes,
         &face_identities,
+        output_sources,
     )?;
     mark_active_configuration(&mut ir);
     crate::resolved_features::projections::project_unbound_cosmetic_thread_faces(
@@ -4148,15 +4222,25 @@ fn build_geometry_ir(
     ) {
         pmi_losses.push(SldprtLossCode::AppearanceAssignmentUnresolved.note(message));
     }
-    let mut assigned_tessellations =
-        crate::tessellation::assign_face_key_owners(&mut ir, &brep.face_keys, &face_key_bindings);
+    // The display tables are the active configuration's faces (spec §8).
+    let mut assigned_tessellations = crate::tessellation::assign_face_key_owners(
+        &mut ir,
+        &brep.face_keys,
+        &face_key_bindings,
+        &stored_bodies,
+    );
     assigned_tessellations.extend(crate::tessellation::assign_persistent_owners(
         &mut ir,
         &face_identities,
         &persistent_face_bindings,
+        &stored_bodies,
     ));
-    let remaining_assignments =
-        crate::tessellation::assign_unique_surface_owners(ctx, &mut ir, &mut pmi_losses)?;
+    let remaining_assignments = crate::tessellation::assign_unique_surface_owners(
+        ctx,
+        &mut ir,
+        &stored_bodies,
+        &mut pmi_losses,
+    )?;
     assigned_tessellations.extend(remaining_assignments);
     if native_appearance_plan.unresolved > 0 {
         pmi_losses.push(
@@ -4230,21 +4314,12 @@ fn build_geometry_ir(
     }
     let mut annotations = annotation_builder.build();
     for source_block in &mut scan.blocks {
-        let id = UnknownId::compose(
-            &cadmpeg_ir::identity_namespace!("sldprt", "file", "block"),
-            source_block.offset,
-        );
+        let member = container::Section::Block(source_block);
+        let id = member.native_id();
         if unknowns.iter().any(|record| record.id() == &id) {
             continue;
         }
-        crate::annotations::note(
-            &mut annotations,
-            id.as_str(),
-            source_block.section.source_stream(),
-            u64_from_index(source_block.offset),
-            source_block.family.label(),
-            Exactness::ByteExact,
-        )?;
+        crate::annotations::note_member_record(&mut annotations, member)?;
         unknowns.push(UnknownRecord::retained(
             id,
             0,
@@ -4253,18 +4328,9 @@ fn build_geometry_ir(
         ));
     }
     for source_stream in &mut scan.compound_streams {
-        let id = UnknownId::compose(
-            &cadmpeg_ir::identity_namespace!("sldprt", "file", "compound-stream"),
-            source_stream.directory_id,
-        );
-        crate::annotations::note(
-            &mut annotations,
-            id.as_str(),
-            &source_stream.path,
-            0,
-            container::payload_family(&source_stream.payload).label(),
-            Exactness::ByteExact,
-        )?;
+        let member = container::Section::Compound(source_stream);
+        let id = member.native_id();
+        crate::annotations::note_member_record(&mut annotations, member)?;
         unknowns.push(UnknownRecord::retained(
             id,
             0,
@@ -4349,16 +4415,17 @@ fn build_geometry_ir(
     if retained.changed {
         stamp_feature_baseline(ctx, &mut ir)?;
     }
-    stamp_configuration_baseline(ctx, &mut ir)?;
-    snapshot_active_configuration(&mut ir);
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     if let Some(rollback) = rollback {
         project_design(
             ctx,
             &mut ir,
+            &mut annotations,
+            &mut unknowns,
             crate::design_v11::Part {
                 histories: &native.feature_histories,
                 lanes: &native.feature_input_lanes,
+                configuration_maps: &configuration_maps,
                 bodies: current_bodies,
                 persistent: crate::design_v11::Persistent {
                     faces: &brep.native_face_identities,
@@ -4368,10 +4435,26 @@ fn build_geometry_ir(
                 equations: equation_managers,
                 length_places,
                 rollback,
+                outside_profile: &outside_profile,
             },
             &mut pmi_losses,
         )?;
     }
+    stamp_configuration_baseline(ctx, &mut ir)?;
+    snapshot_active_configuration(&mut ir);
+    pmi_losses.extend(plane_bindings.note(&ir.model.sketches));
+    pmi_losses.extend(
+        crate::resolved_features::axes::revolution_axis_off_profile_plane_note(
+            &ir.model.features,
+            ir.model.configurations.iter().flat_map(|configuration| {
+                configuration
+                    .feature_states
+                    .iter()
+                    .map(|(id, state)| (id, &state.definition))
+            }),
+            &ir.model.sketches,
+        ),
+    );
     // Sort arenas for the order-sensitive loss scans that follow.
     ir.finalize();
     stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;
@@ -4379,15 +4462,27 @@ fn build_geometry_ir(
 }
 
 /// State the v11 design of a part document beside its v10 records, with the
-/// rollback position its stored marks give.
+/// rollback position its stored marks give, and remove from the model what
+/// it says of the records that moved into the states of configurations that
+/// are not active.
 fn project_design(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
+    annotations: &mut Annotations,
+    unknowns: &mut [UnknownRecord],
     part: crate::design_v11::Part<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
-    let added = crate::design_v11::project(ctx, ir, part, losses)?;
-    ctx.charge_entities(u64_from_index(added), "admit SLDPRT design records")
+    let projection = crate::design_v11::project(ctx, ir, part, losses)?;
+    ctx.charge_entities(
+        u64_from_index(projection.added),
+        "admit SLDPRT design records",
+    )?;
+    if projection.retired.is_empty() {
+        return Ok(());
+    }
+    retired_states::retire(ir, annotations, unknowns, &projection.retired, losses);
+    stamp_feature_baseline(ctx, ir)
 }
 
 /// The bodies of the active configuration: those of the active Parasolid
@@ -4396,28 +4491,62 @@ fn active_partition_bodies(
     ir: &CadIr,
     configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
 ) -> Vec<cadmpeg_ir::ids::BodyId> {
-    let decoded = || ir.geometry.bodies.iter().map(|body| body.id.clone());
+    let decoded = ir.geometry.bodies.iter().map(|body| body.id.clone());
+    let Some(active) = active_partition(ir, configuration_bodies) else {
+        return decoded.collect();
+    };
+    let held = partition_bodies(configuration_bodies, |index| index == active);
+    decoded.filter(|body| held.contains(body)).collect()
+}
+
+/// The bodies that only the partitions of configurations that are not active
+/// hold; none where the decode holds one partition or cannot tell the active
+/// one.
+fn stored_partition_bodies(
+    ir: &CadIr,
+    configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
+) -> HashSet<cadmpeg_ir::ids::BodyId> {
+    let Some(active) = active_partition(ir, configuration_bodies) else {
+        return HashSet::new();
+    };
+    let current = partition_bodies(configuration_bodies, |index| index == active);
+    partition_bodies(configuration_bodies, |index| index != active)
+        .into_iter()
+        .filter(|body| !current.contains(body))
+        .cloned()
+        .collect()
+}
+
+/// The index of the active Parasolid partition, where the decode holds
+/// several partitions and the active one among them.
+fn active_partition(
+    ir: &CadIr,
+    configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
+) -> Option<usize> {
     let partitions = configuration_bodies
         .iter()
         .map(|(index, _)| *index)
         .collect::<BTreeSet<_>>();
     if partitions.len() < 2 {
-        return decoded().collect();
+        return None;
     }
-    let active = ir
-        .source
+    ir.source
         .as_ref()
         .and_then(|source| source.attributes.get("active_parasolid_block"))
-        .and_then(|section| crate::container::configuration_index(section));
-    let Some(active) = active.filter(|index| partitions.contains(index)) else {
-        return decoded().collect();
-    };
-    let held = configuration_bodies
+        .and_then(|section| crate::container::configuration_index(section))
+        .filter(|index| partitions.contains(index))
+}
+
+/// The bodies of the partitions whose index `select` admits.
+fn partition_bodies(
+    configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
+    select: impl Fn(usize) -> bool,
+) -> HashSet<&cadmpeg_ir::ids::BodyId> {
+    configuration_bodies
         .iter()
-        .filter(|(index, _)| *index == active)
+        .filter(|(index, _)| select(*index))
         .flat_map(|(_, bodies)| bodies)
-        .collect::<HashSet<_>>();
-    decoded().filter(|body| held.contains(body)).collect()
+        .collect()
 }
 
 fn assign_native_configuration_indices(ir: &CadIr, native: &mut crate::native::SldprtNative) {
@@ -4794,7 +4923,7 @@ fn build_metadata_ir(
     let mut annotations = Annotations::default();
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let (mut lanes, exact_profiles, mark_owners) =
+    let (mut lanes, exact_profiles, mark_owners, configuration_maps) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let rollback = part
         .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
@@ -4949,8 +5078,9 @@ fn build_metadata_ir(
         &mut ir,
         &supplemental_config_lanes,
     )?;
-    let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
-    held_handles.hold_assumed_planes(
+    let mut plane_bindings =
+        crate::resolved_features::compact_reference_planes::PlaneBindings::default();
+    plane_bindings.extend(
         crate::resolved_features::profiles::project_compact_sketch_profiles(
             ctx,
             &mut ir.model.features,
@@ -4976,21 +5106,24 @@ fn build_metadata_ir(
         );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
-    crate::resolved_features::profiles::project_marker_backed_sketches(
-        ctx,
-        &mut ir.model.features,
-        &mut ir.model.sketches,
-        crate::resolved_features::profiles::MarkerSketchEntities {
-            projected: &mut ir.model.sketch_entities,
-            held: &mut held_handles,
-        },
-        crate::resolved_features::profiles::MarkerSources {
-            histories: &histories,
-            lanes: sketch_lanes,
-            solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
-        },
-        &mut pmi_losses,
-    )?;
+    let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
+    plane_bindings.extend(
+        crate::resolved_features::profiles::project_marker_backed_sketches(
+            ctx,
+            &mut ir.model.features,
+            &mut ir.model.sketches,
+            crate::resolved_features::profiles::MarkerSketchEntities {
+                projected: &mut ir.model.sketch_entities,
+                held: &mut held_handles,
+            },
+            crate::resolved_features::profiles::MarkerSources {
+                histories: &histories,
+                lanes: sketch_lanes,
+                solid: &crate::resolved_features::stream_readings::SolidEdges::default(),
+            },
+            &mut pmi_losses,
+        )?,
+    );
     crate::resolved_features::profiles::project_sketch_block_profiles(
         &mut ir.model.features,
         &mut ir.model.sketches,
@@ -5144,8 +5277,10 @@ fn build_metadata_ir(
         &histories,
         lanes,
     );
-    let unbound_readings = crate::resolved_features::profiles::finalize_unread_marker_entities(
-        &ir.model.sketches,
+    let crate::resolved_features::profiles::Finalized {
+        unbound_readings,
+        outside_profile,
+    } = crate::resolved_features::profiles::finalize_unread_marker_entities(
         &mut ir.model.sketch_entities,
         held_handles,
         &mut pmi_losses,
@@ -5193,6 +5328,7 @@ fn build_metadata_ir(
         lanes,
         &exact_profiles,
         &mut annotations,
+        &mut plane_bindings,
     )?;
     pmi_losses.extend(configuration_losses);
     crate::resolved_features::stream_readings::note_stream_readings(
@@ -5235,10 +5371,15 @@ fn build_metadata_ir(
             &mut ir,
             &[],
             &push.persistent_face_bindings,
+            &HashSet::new(),
         );
         let mut owner_losses = Vec::new();
-        let _assigned_unique =
-            crate::tessellation::assign_unique_surface_owners(ctx, &mut ir, &mut owner_losses)?;
+        let _assigned_unique = crate::tessellation::assign_unique_surface_owners(
+            ctx,
+            &mut ir,
+            &HashSet::new(),
+            &mut owner_losses,
+        )?;
         pmi_losses.append(&mut owner_losses);
         if push.mesh_count > 0 {
             pmi_losses.push(
@@ -5262,8 +5403,6 @@ fn build_metadata_ir(
     native.store(ctx, ir.native.namespace_mut("sldprt"))?;
     bind_active_configuration_partition(&mut ir);
     mark_active_configuration(&mut ir);
-    stamp_configuration_baseline(ctx, &mut ir)?;
-    snapshot_active_configuration(&mut ir);
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     if let Some(rollback) = rollback {
         let bodies = ir
@@ -5275,9 +5414,12 @@ fn build_metadata_ir(
         project_design(
             ctx,
             &mut ir,
+            &mut annotations,
+            &mut unknowns,
             crate::design_v11::Part {
                 histories: &native.feature_histories,
                 lanes: &native.feature_input_lanes,
+                configuration_maps: &configuration_maps,
                 bodies,
                 persistent: crate::design_v11::Persistent {
                     faces: &[],
@@ -5287,10 +5429,26 @@ fn build_metadata_ir(
                 equations: equation_managers,
                 length_places,
                 rollback,
+                outside_profile: &outside_profile,
             },
             &mut pmi_losses,
         )?;
     }
+    stamp_configuration_baseline(ctx, &mut ir)?;
+    snapshot_active_configuration(&mut ir);
+    pmi_losses.extend(plane_bindings.note(&ir.model.sketches));
+    pmi_losses.extend(
+        crate::resolved_features::axes::revolution_axis_off_profile_plane_note(
+            &ir.model.features,
+            ir.model.configurations.iter().flat_map(|configuration| {
+                configuration
+                    .feature_states
+                    .iter()
+                    .map(|(id, state)| (id, &state.definition))
+            }),
+            &ir.model.sketches,
+        ),
+    );
     // Sort arenas for the order-sensitive loss scans that follow.
     ir.finalize();
     stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;
@@ -5320,18 +5478,13 @@ fn project_design_history(
     let mut semantic_projection = histories.to_vec();
     let scene_feature_classes = crate::tessellation::scene_feature_classes(scan);
     crate::history::enrich_scene_classes(&mut semantic_projection, &scene_feature_classes);
-    let ambiguous_body_features = crate::history::configuration::enrich_history_semantic(
+    losses.extend(crate::history::configuration::enrich_history_semantic(
         ctx,
         &mut semantic_projection,
         lanes,
         pmi_dimensions,
         crate::history::configuration::HistoryEnrichment::Read,
-    )?;
-    if ambiguous_body_features > 0 {
-        losses.push(SldprtLossCode::FeatureBodyPathAmbiguous.note(format!(
-            "{ambiguous_body_features} feature(s) retain ambiguous compact body-path candidates because a local identifier also spells a complete tagged entry."
-        )));
-    }
+    )?);
     ir.model.semantic_annotations =
         crate::history::project::project_semantic_notes(&semantic_projection)?;
     crate::history::project::project_feature_model(&semantic_projection)?

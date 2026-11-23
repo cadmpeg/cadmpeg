@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::history::bind_feature_face_selections;
+use crate::history::face_selections::bind_feature_face_selections;
 use crate::history_records::{
     AsmDeltaState, AsmEntityVersion, AsmHistoricalCarrierBinding, AsmHistoricalPlane,
     AsmHistoricalTopology, AsmHistory,
@@ -183,7 +183,7 @@ fn bind_with_scope(
     bind_feature_face_selections(
         std::slice::from_mut(&mut feature),
         &mut input_topologies,
-        crate::history::FeatureFaceSelectionInputs {
+        crate::history::face_selections::FeatureFaceSelectionInputs {
             scopes: std::slice::from_ref(scope),
             groups,
             operands: &[],

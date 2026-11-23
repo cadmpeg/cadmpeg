@@ -19,8 +19,9 @@ mod names;
 mod operation;
 mod order;
 mod parameters;
+mod profile_check;
 mod sketch;
-mod states;
+pub(crate) mod states;
 #[cfg(test)]
 mod tests;
 mod tree;
@@ -41,12 +42,15 @@ use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::design::units::{UnitSymbol, UnitSystem};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::ConfigurationId;
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::sketches::SketchEntityId;
 
 use crate::loss::SldprtLossCode;
 use crate::records::{FeatureHistory, FeatureInputLane};
+use crate::resolved_features::assembly::ConfigurationMaps;
 use crate::rollback::{Reading, Unread};
 
 pub(crate) use equations::{managers as equation_managers, Managers as EquationManagers};
@@ -58,6 +62,8 @@ pub(crate) struct Part<'a> {
     pub(crate) histories: &'a [FeatureHistory],
     /// The `ResolvedFeatures` lanes whose scalars type the v10 parameters.
     pub(crate) lanes: &'a [FeatureInputLane],
+    /// The `Config-N` class map each lane continues, by lane id.
+    pub(crate) configuration_maps: &'a ConfigurationMaps,
     /// The bodies of the current geometry: those of the active
     /// configuration.
     pub(crate) bodies: Vec<BodyId>,
@@ -72,37 +78,54 @@ pub(crate) struct Part<'a> {
     pub(crate) length_places: Option<u32>,
     /// What the stored marks state of the rollback position.
     pub(crate) rollback: Reading,
+    /// The sketch entities read from a curve record of state `0`: curves
+    /// outside their sketch's profile.
+    pub(crate) outside_profile: &'a HashSet<SketchEntityId>,
+}
+
+/// What [`project`] stated.
+#[derive(Default)]
+pub(crate) struct Projection {
+    /// The number of records added.
+    pub(crate) added: usize,
+    /// The geometry records that the evaluations of the configurations that
+    /// are not active hold and no current body reaches, by id, with the
+    /// configuration whose state holds each. They are no part of the current
+    /// geometry (§5.5).
+    pub(crate) retired: BTreeMap<String, ConfigurationId>,
 }
 
 /// Project the design of a part document into `ir.design`, beside its v10
-/// records, and state the part's root definition. A rollback reading that
-/// does not fix the position, a configuration whose state cannot be stated, a
-/// sketch or extrude that cannot be typed, a parameter whose literal is a
-/// rounded display, and a dimension whose bare-number text has no value add
-/// their reasons to `losses`. A part whose timeline is empty states no design,
-/// and its equation-manager lines go to `losses`. Returns the number of records
-/// added.
+/// records, and state the part's root definition. Each configuration that is
+/// not active has its stored state as an evaluation of its own. A rollback
+/// reading that does not fix the position, a configuration whose state cannot
+/// be stated, a sketch or extrude that cannot be typed, a parameter whose
+/// literal is a rounded display, and a dimension whose bare-number text has
+/// no value add their reasons to `losses`. A part whose timeline is empty
+/// states no design, and its equation-manager lines go to `losses`.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     part: Part<'_>,
     losses: &mut Vec<LossNote>,
-) -> Result<usize, CodecError> {
+) -> Result<Projection, CodecError> {
     let Part {
         histories,
         lanes,
+        configuration_maps,
         bodies,
         persistent,
         length,
         equations: managers,
         length_places,
         rollback,
+        outside_profile,
     } = part;
     let active = equations::active_slot(histories, ir.source.as_ref());
     let mut timeline = tree::timeline(histories)?;
     if timeline.features.is_empty() {
         losses.extend(equations::without_design(&managers, active));
-        return Ok(0);
+        return Ok(Projection::default());
     }
     losses.extend(order::regeneration_order(&mut timeline, &ir.model));
     let definition = root_definition();
@@ -113,12 +136,21 @@ pub(crate) fn project(
         lanes,
         &mut timeline,
         &entries,
-        &definition,
+        &typed::Scope {
+            definition: &definition,
+            outside_profile,
+            surfaces: &ir.geometry.surfaces,
+        },
     );
     losses.extend(typed.loss);
     losses.extend(typed.assumed);
+    losses.extend(typed.state_construction);
+    losses.extend(typed.dimension_circles);
+    losses.extend(typed.profile_differs);
+    losses.extend(typed.sketch_empty);
+    losses.extend(typed.profile_unchecked);
     let mut readings = parameters::Readings {
-        decoded: parameters::Decoded::new(&ir.model.parameters, lanes),
+        decoded: parameters::Decoded::new(&ir.model.parameters, lanes, configuration_maps),
         length_unit: length,
         length_places,
         bound: typed.bound,
@@ -140,17 +172,24 @@ pub(crate) fn project(
         length_unit: length,
         tolerances: &ir.tolerances,
     };
-    let (mut parameters, mut notes) = entries.parameters(&definition, &readings);
+    let (mut parameters, mut notes, mut bare) = entries.parameters(&definition, &readings);
     let entered = parameters.len();
     let sketches = typed.sketches;
     parameters.extend(sketches.driven);
     readings.confirmed = equations::results(&parameters, &readings.manager, &linking);
     if !readings.confirmed.is_empty() {
         let driven = parameters.split_off(entered);
-        (parameters, notes) = entries.parameters(&definition, &readings);
+        (parameters, notes, bare) = entries.parameters(&definition, &readings);
         parameters.extend(driven);
     }
     losses.extend(notes);
+    losses.extend(equations::bare_references(
+        &mut parameters,
+        &bare,
+        &timeline.features,
+        length,
+        &ir.tolerances,
+    ));
     losses.extend(equations::link(&mut parameters, &linking));
     let configurations =
         configurations::configurations(histories, ir.source.as_ref(), &definition)?;
@@ -176,7 +215,7 @@ pub(crate) fn project(
         .collect();
     let names = names::Names::new(persistent, histories, &timeline.features_by_record);
     let table = names.entries(&ir.geometry, &bodies, |_| true);
-    let (evaluations, state_records) = states::configuration_states(
+    let states = states::configuration_states(
         ctx,
         ir,
         &states::Scope {
@@ -207,8 +246,8 @@ pub(crate) fn project(
         + parameters.len()
         + configurations.records.len()
         + table.len()
-        + evaluations.len()
-        + state_records;
+        + states.evaluations.len()
+        + states.records;
     let mut root = ProductDefinition::root(definition.clone(), ExternalDocument::default());
     root.kind = Some(ProductDefinitionKind::Part);
     root.units = length.map(|length| UnitSystem {
@@ -235,9 +274,12 @@ pub(crate) fn project(
     ir.design.sketch_constraints.extend(sketches.constraints);
     ir.design.parameters.extend(parameters);
     ir.design.configurations.extend(configurations.records);
-    ir.design.evaluations.extend(evaluations);
+    ir.design.evaluations.extend(states.evaluations);
     ir.design.names = NameTable::from(table);
-    Ok(added)
+    Ok(Projection {
+        added,
+        retired: states.retired,
+    })
 }
 
 /// The number of leading timeline features the stored marks state built:

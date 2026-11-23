@@ -385,7 +385,7 @@ fn validate_loaded(
     let ctx = Ctx::new(ir, native, decode);
     let mut findings = crate::scene::validate(&native.display_poses, &ir.model);
     let mut expected_face_operands = reload_native_arena(decode, ir, "design_face_operands")?;
-    let scope_histories = history::bind_scope_histories(
+    let scope_histories = history::scope_histories::bind_scope_histories(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
@@ -394,13 +394,13 @@ fn validate_loaded(
         &mut Vec::new(),
     );
     // discarded-value: the decoder reported these losses when it bound the operands.
-    let _ = history::bind_face_operand_history_candidates(
+    let _ = history::face_operand_history::bind_face_operand_history_candidates(
         decode,
         &mut expected_face_operands,
         &native.design_parameter_scopes,
         &native.design_construction_operand_groups,
         &native.construction_recipes,
-        history::BindingHistories::Shared(&native.asm_histories),
+        history::binding_histories::BindingHistories::Shared(&native.asm_histories),
         &scope_histories,
     )?;
     let decoded_profile_face_groups = native

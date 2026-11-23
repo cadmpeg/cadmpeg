@@ -1039,3 +1039,158 @@ fn explicit_offset_plane_reference_orders_a_later_derived_plane_first() {
     assert_eq!(projected[1].ordinal, 0);
     assert_eq!(projected[0].ordinal, 1);
 }
+
+fn front_and_offset(stored_origin: &str) -> Vec<cadmpeg_ir::features::Feature> {
+    let datum = |id: &str, ordinal, definition| cadmpeg_ir::features::Feature {
+        product_definition: None,
+        id: FeatureId::mint(id).expect("identity grammar"),
+        ordinal,
+        name: None,
+        suppressed: None,
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+        source_properties: BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            definition,
+        ),
+        native_ref: None,
+    };
+    let front = datum(
+        "synthetic:test:id#front",
+        0,
+        FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane {
+            plane: cadmpeg_ir::features::PrincipalPlane::Front,
+        }),
+    );
+    let mut offset = datum(
+        "synthetic:test:id#offset",
+        1,
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature {
+                feature: front.id.clone(),
+            }),
+            distance: Length::new(5.0).unwrap(),
+        }),
+    );
+    for (key, value) in [
+        (cadmpeg_core::nonblank_literal!("Reference"), "2"),
+        (cadmpeg_core::nonblank_literal!("Origin"), stored_origin),
+        (cadmpeg_core::nonblank_literal!("Normal"), "0,0,1"),
+        (cadmpeg_core::nonblank_literal!("UAxis"), "1,0,0"),
+    ] {
+        offset.source_properties.insert(key, value.into());
+    }
+    vec![front, offset]
+}
+
+fn offset_distance(feature: &cadmpeg_ir::features::Feature) -> f64 {
+    let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { distance, .. }) =
+        feature.evaluation.definition()
+    else {
+        panic!("offset plane");
+    };
+    distance.get()
+}
+
+/// `D1` is a magnitude: a stored frame at `-D1` from the source plane places
+/// the offset plane on the negative side of the source normal.
+#[test]
+fn offset_plane_takes_the_side_its_stored_frame_states() {
+    for (stored_origin, expected) in [("0mm,0mm,-5mm", -5.0), ("0mm,0mm,5mm", 5.0)] {
+        let mut features = front_and_offset(stored_origin);
+        let report = bind_offset_plane_references(&mut features);
+        assert_eq!(offset_distance(&features[1]), expected);
+        assert!(report.unstated.is_empty() && report.contradicted.is_empty());
+    }
+}
+
+/// A stored frame in the source plane states no side: the distance stays and
+/// the plane is reported.
+#[test]
+fn offset_plane_whose_frame_states_no_side_keeps_its_distance_and_is_reported() {
+    let mut features = front_and_offset("0mm,0mm,0mm");
+    let report = bind_offset_plane_references(&mut features);
+    assert_eq!(offset_distance(&features[1]), 5.0);
+    assert_eq!(report.unstated.count(), 1);
+    assert!(report.contradicted.is_empty());
+}
+
+/// A stored frame parallel to the source plane at another distance than `D1`
+/// is not the placed plane: the distance stays and the disagreement is named.
+#[test]
+fn offset_plane_whose_frame_lies_at_another_distance_is_reported_as_contradicted() {
+    let mut features = front_and_offset("0mm,0mm,8mm");
+    let report = bind_offset_plane_references(&mut features);
+    assert_eq!(offset_distance(&features[1]), 5.0);
+    assert!(report.unstated.is_empty());
+    assert_eq!(report.contradicted.count(), 1);
+    assert!(report
+        .contradicted
+        .to_string()
+        .contains("distance other than D1"));
+}
+
+/// An offset plane whose source is a resolved plane frame (no source feature)
+/// takes its side from its stored frame against that frame, and a stored
+/// frame whose normal is not parallel to it is named as a disagreement.
+#[test]
+fn resolved_plane_offset_takes_the_side_its_stored_frame_states() {
+    let resolved = |origin: &str, normal: &str| {
+        let mut features = front_and_offset("0mm,0mm,0mm");
+        let mut offset = features.remove(1);
+        offset.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                reference,
+                ..
+            }) = definition
+            {
+                *reference = None;
+            }
+        });
+        for (key, value) in [
+            (cadmpeg_core::nonblank_literal!("Origin"), origin),
+            (cadmpeg_core::nonblank_literal!("Normal"), normal),
+            (
+                cadmpeg_core::nonblank_literal!("ReferenceFaceOrigin"),
+                "0mm,0mm,10mm",
+            ),
+            (
+                cadmpeg_core::nonblank_literal!("ReferenceFaceNormal"),
+                "0,0,1",
+            ),
+            (
+                cadmpeg_core::nonblank_literal!("ReferenceFaceUAxis"),
+                "1,0,0",
+            ),
+        ] {
+            offset.source_properties.insert(key, value.into());
+        }
+        let mut features = vec![offset];
+        let report = bind_offset_plane_references(&mut features);
+        assert!(matches!(
+            features[0].evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                reference: Some(DatumPlaneReference::ResolvedPlane { .. }),
+                ..
+            })
+        ));
+        (offset_distance(&features[0]), report)
+    };
+    let (distance, report) = resolved("0mm,0mm,5mm", "0,0,1");
+    assert_eq!(distance, -5.0);
+    assert!(report.unstated.is_empty() && report.contradicted.is_empty());
+
+    let (distance, report) = resolved("0mm,0mm,10mm", "0,0,1");
+    assert_eq!(distance, 5.0);
+    assert_eq!(report.unstated.count(), 1);
+
+    let (distance, report) = resolved("0mm,0mm,5mm", "0,1,0");
+    assert_eq!(distance, 5.0);
+    assert!(report.unstated.is_empty());
+    assert!(report
+        .contradicted
+        .to_string()
+        .contains("normal not parallel to the source plane"));
+}

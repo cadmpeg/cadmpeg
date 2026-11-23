@@ -3,7 +3,7 @@
 use crate::design::feature_project::{
     project_parameter_design_with_edge_identities, ProjectInputs,
 };
-use crate::history::{bind_feature_face_selections, FeatureFaceSelectionInputs};
+use crate::history::face_selections::{bind_feature_face_selections, FeatureFaceSelectionInputs};
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::identity::ReferenceRun;

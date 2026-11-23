@@ -75,7 +75,7 @@ fn input_fixture() -> (
 
 fn project() -> Vec<cadmpeg_ir::features::evaluation::FeatureInputTopology> {
     let (feature, scope, mut history) = input_fixture();
-    super::super::project_feature_input_topologies(
+    super::super::input_topologies::project_feature_input_topologies(
         std::slice::from_ref(&feature),
         std::slice::from_ref(&scope),
         std::slice::from_mut(&mut history),
@@ -134,7 +134,7 @@ fn input_topology_uses_scope_binding_when_global_state_numbers_repeat() {
     });
     let mut histories = [history, other];
     let project = |histories: &mut [_], bindings: &std::collections::HashMap<String, String>| {
-        super::super::project_feature_input_topologies(
+        super::super::input_topologies::project_feature_input_topologies(
             std::slice::from_ref(&feature),
             std::slice::from_ref(&scope),
             histories,
@@ -160,14 +160,16 @@ fn input_topology_uses_scope_binding_when_global_state_numbers_repeat() {
     let bindings =
         std::collections::HashMap::from([(scope.id.clone(), "f3d:missing:history#0".into())]);
     assert!(project(&mut histories, &bindings).is_empty());
-    assert!(super::super::project_feature_input_topologies(
-        std::slice::from_ref(&feature),
-        std::slice::from_ref(&scope),
-        &mut histories[..1],
-        &[],
-        &bindings,
-    )
-    .is_empty());
+    assert!(
+        super::super::input_topologies::project_feature_input_topologies(
+            std::slice::from_ref(&feature),
+            std::slice::from_ref(&scope),
+            &mut histories[..1],
+            &[],
+            &bindings,
+        )
+        .is_empty()
+    );
 }
 
 #[test]
@@ -261,7 +263,7 @@ fn input_edge_geometry_carries_samples_endpoints_and_faces() {
     let feature: cadmpeg_ir::features::FeatureId =
         "f3d:model:feature#fillet".to_owned().try_into().unwrap();
     let prefix = crate::ids::feature_input_prefix(&feature, 4);
-    let geometry = super::super::project_input_edge_geometry(&topology, &prefix);
+    let geometry = super::super::input_topologies::project_input_edge_geometry(&topology, &prefix);
     let [edge] = geometry.as_slice() else {
         panic!("one sampled edge: {geometry:?}");
     };
@@ -347,7 +349,7 @@ fn input_edge_geometry_keeps_only_selected_edges() {
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::retain_selected_edge_geometry(
+    super::super::input_topologies::retain_selected_edge_geometry(
         &ctx,
         std::slice::from_ref(&feature),
         &mut topologies,
@@ -412,7 +414,7 @@ fn input_edge_geometry_keeps_the_edges_that_bound_a_selected_face() {
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::retain_selected_edge_geometry(
+    super::super::input_topologies::retain_selected_edge_geometry(
         &ctx,
         std::slice::from_ref(&feature),
         &mut topologies,
@@ -458,7 +460,7 @@ fn input_topology_states_the_body_that_holds_each_face() {
     crate::test_support::history::edit(&mut history, 0, |topology, _| {
         *topology = multi_body_topology();
     });
-    let projected = super::super::project_feature_input_topologies(
+    let projected = super::super::input_topologies::project_feature_input_topologies(
         std::slice::from_ref(&feature),
         std::slice::from_ref(&scope),
         std::slice::from_mut(&mut history),
@@ -494,7 +496,7 @@ fn input_topology_of_one_body_states_no_face_owner() {
             ..crate::history_records::AsmHistoricalTopology::default()
         };
     });
-    let projected = super::super::project_feature_input_topologies(
+    let projected = super::super::input_topologies::project_feature_input_topologies(
         std::slice::from_ref(&feature),
         std::slice::from_ref(&scope),
         std::slice::from_mut(&mut history),
@@ -547,7 +549,7 @@ fn input_face_owners_keep_only_the_faces_a_feature_selects() {
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::retain_selected_face_owners(
+    super::super::input_topologies::retain_selected_face_owners(
         &ctx,
         std::slice::from_ref(&feature),
         &mut topologies,

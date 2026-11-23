@@ -11,7 +11,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     use cadmpeg_ir::ids::BodyId;
 
     let (scope, group_id, group, operand, body, region, shell, face) = direct_body_fixture();
-    let inputs = crate::history::FeatureBodySelectionInputs {
+    let inputs = crate::history::body_selections::FeatureBodySelectionInputs {
         scopes: std::slice::from_ref(&scope),
         groups: std::slice::from_ref(&group),
         body_recipe_operands: std::slice::from_ref(&operand),
@@ -24,7 +24,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         faces: std::slice::from_ref(&face),
     };
     let mut selection = BodySelection::Native(group_id.into());
-    crate::history::bind_direct_body_recipe_body_selection(
+    crate::history::body_selections::bind_direct_body_recipe_body_selection(
         &mut selection,
         &scope,
         &inputs,
@@ -161,7 +161,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         crate::records::topology::body_recipe::DesignOperandOwner::ScopeReference {
             scope_reference_ordinal: 0,
         };
-    let direct_inputs = crate::history::FeatureBodySelectionInputs {
+    let direct_inputs = crate::history::body_selections::FeatureBodySelectionInputs {
         scopes: std::slice::from_ref(&scope),
         groups: &[],
         body_recipe_operands: std::slice::from_ref(&direct_operand),
@@ -178,7 +178,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         crate::ids::native_stream(&scope.id).expect("test scope stream")
     );
     let mut selection = BodySelection::NativeSet(vec![native.clone()].try_into().unwrap());
-    crate::history::bind_direct_body_recipe_body_selection(
+    crate::history::body_selections::bind_direct_body_recipe_body_selection(
         &mut selection,
         &scope,
         &direct_inputs,
@@ -220,7 +220,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         crate::records::topology::construction::DesignConstructionOperandRole::Other(
             DesignOperandRole::BODIES_A,
         );
-    let scale_inputs = crate::history::FeatureBodySelectionInputs {
+    let scale_inputs = crate::history::body_selections::FeatureBodySelectionInputs {
         scopes: std::slice::from_ref(&scale_scope),
         groups: std::slice::from_ref(&scale_group),
         body_recipe_operands: std::slice::from_ref(&operand),
@@ -281,7 +281,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         .unwrap();
     let move_history =
         crate::test_support::history::history("f3d:history".into(), 0, None, false, Vec::new());
-    let move_inputs = crate::history::FeatureBodySelectionInputs {
+    let move_inputs = crate::history::body_selections::FeatureBodySelectionInputs {
         scopes: std::slice::from_ref(&move_scope),
         groups: std::slice::from_ref(&scale_group),
         body_recipe_operands: std::slice::from_ref(&operand),
@@ -362,7 +362,7 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
         ),
         native_ref: Some("native:scope".into()),
     };
-    crate::history::bind_base_feature_output_selection(&mut feature).unwrap();
+    crate::history::feature_outputs::bind_base_feature_output_selection(&mut feature).unwrap();
     assert!(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {
@@ -400,7 +400,7 @@ fn direct_remove_case(slot: Option<i64>) -> cadmpeg_ir::features::selections::Bo
         ),
         native_ref: Some(scope.id.clone()),
     };
-    let inputs = crate::history::FeatureBodySelectionInputs {
+    let inputs = crate::history::body_selections::FeatureBodySelectionInputs {
         scopes: std::slice::from_ref(&scope),
         groups: std::slice::from_ref(&group),
         body_recipe_operands: std::slice::from_ref(&operand),
@@ -471,7 +471,7 @@ fn direct_pattern_seed_case(slot: Option<i64>) -> cadmpeg_ir::features::selectio
         ),
         native_ref: Some(scope.id.clone()),
     };
-    let inputs = crate::history::FeatureBodySelectionInputs {
+    let inputs = crate::history::body_selections::FeatureBodySelectionInputs {
         scopes: std::slice::from_ref(&scope),
         groups: std::slice::from_ref(&group),
         body_recipe_operands: std::slice::from_ref(&operand),
@@ -483,7 +483,7 @@ fn direct_pattern_seed_case(slot: Option<i64>) -> cadmpeg_ir::features::selectio
         shells: std::slice::from_ref(&shell),
         faces: std::slice::from_ref(&face),
     };
-    crate::history::bind_pattern_body_selections(
+    crate::history::pattern_bodies::bind_pattern_body_selections(
         std::slice::from_mut(&mut feature),
         &inputs,
         &mut crate::history::body_candidates::BodyCandidates::new(
@@ -579,14 +579,14 @@ fn a_combine_keeps_its_direct_binding_where_its_header_predecessor_binds_no_body
         vec![state(42, Some(41)), state(41, None)],
     );
     assert_eq!(
-        crate::history::effective_scope_previous_history_state_id(
+        crate::history::history_states::effective_scope_previous_history_state_id(
             &scope,
             std::slice::from_ref(&history)
         ),
         Some(41)
     );
     let combine = |histories: &[crate::history_records::AsmHistory]| {
-        let inputs = crate::history::FeatureBodySelectionInputs {
+        let inputs = crate::history::body_selections::FeatureBodySelectionInputs {
             scopes: std::slice::from_ref(&scope),
             groups: std::slice::from_ref(&group),
             body_recipe_operands: std::slice::from_ref(&operand),

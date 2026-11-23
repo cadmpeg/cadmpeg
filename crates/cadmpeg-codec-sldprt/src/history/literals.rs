@@ -358,7 +358,7 @@ pub(super) fn parse_neutral_parameter_literal(
     parse_parameter_literal(expression)
 }
 
-pub(super) fn format_parameter_value(value: &ParameterValue) -> String {
+pub(crate) fn format_parameter_value(value: &ParameterValue) -> String {
     match value {
         ParameterValue::Length(value) => format_length_mm(*value),
         ParameterValue::Angle(value) => format_angle_rad(*value),

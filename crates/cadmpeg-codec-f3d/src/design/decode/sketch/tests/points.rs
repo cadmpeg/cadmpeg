@@ -506,21 +506,15 @@ fn decode_group_stream(bytes: &[u8], meta: &crate::metastream::MetaStream) -> Gr
     (points, curves, losses)
 }
 
-fn group_stream_loss(bytes: &[u8], meta: &crate::metastream::MetaStream) -> String {
-    let mut losses = Vec::new();
-    crate::design::decode::sketch::decode_sketch_points_from_stream(
-        bytes,
-        meta,
-        "Design/BulkStream.dat",
-        &mut losses,
-    )
-    .unwrap();
+/// The group frame is unread: no group is admitted and one loss says so.
+fn assert_group_unread(bytes: &[u8], meta: &crate::metastream::MetaStream) {
+    let (groups, losses) = decode_group_records(bytes, meta);
+    assert!(groups.is_empty());
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].code,
         crate::loss::F3dLossCode::SketchGeometryGroupUndecoded.kind()
     );
-    losses.remove(0).message
 }
 
 #[test]
@@ -533,17 +527,17 @@ fn sketch_group_resolves_point_and_curve_owners() {
     assert_eq!(curves[0].geometry_group, Some(50));
     assert!(losses.is_empty());
     let (bytes, meta) = group_stream(&[41, 60], 43);
-    assert!(group_stream_loss(&bytes, &meta).contains("invalid member sequence"));
+    assert_group_unread(&bytes, &meta);
     for nested in [b"256".as_slice(), b"260".as_slice()] {
         let (mut bytes, meta) = group_stream(&[41, 60], OWNER);
         let group_start = usize::try_from(meta.records[2].bulk_offset).unwrap();
         bytes[group_start + 34..group_start + 37].copy_from_slice(nested);
-        assert!(group_stream_loss(&bytes, &meta).contains("invalid member sequence"));
+        assert_group_unread(&bytes, &meta);
     }
     let (mut bytes, meta) = group_stream(&[41, 60], OWNER);
     let group_start = usize::try_from(meta.records[2].bulk_offset).unwrap();
     bytes[group_start + 37..group_start + 41].copy_from_slice(&51u32.to_le_bytes());
-    assert!(group_stream_loss(&bytes, &meta).contains("invalid member sequence"));
+    assert_group_unread(&bytes, &meta);
 }
 
 #[test]
@@ -564,7 +558,10 @@ fn unreadable_group_keeps_point_and_curve_values_without_its_owner_join() {
     bytes.splice(owner_at..owner_at, geometry);
     let group_start = usize::try_from(meta.records[2].bulk_offset).unwrap();
     bytes[group_start + 34..group_start + 37].copy_from_slice(b"256");
-    let (points, curves, losses) = decode_group_stream(&bytes, &meta);
+    let (points, curves, stream_losses) = decode_group_stream(&bytes, &meta);
+    assert!(stream_losses.is_empty());
+    let (groups, losses) = decode_group_records(&bytes, &meta);
+    assert!(groups.is_empty());
     assert_eq!(points.len(), 1);
     assert_eq!(
         points[0].coordinates(),

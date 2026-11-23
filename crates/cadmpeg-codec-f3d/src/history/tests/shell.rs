@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::history::bind_feature_face_selections;
+use crate::history::face_selections::bind_feature_face_selections;
 use crate::history_records::{
     AsmDeltaState, AsmEntityVersion, AsmHistoricalCarrierBinding, AsmHistoricalPlane,
     AsmHistoricalTopology, AsmHistory,
@@ -226,7 +226,7 @@ fn bind_group(
     bind_feature_face_selections(
         std::slice::from_mut(&mut feature),
         &mut input_topologies,
-        crate::history::FeatureFaceSelectionInputs {
+        crate::history::face_selections::FeatureFaceSelectionInputs {
             scopes: std::slice::from_ref(scope),
             groups,
             operands: &[],
@@ -292,13 +292,15 @@ fn shell_recipe_reads_tags_before_later_face_deletion() {
     assert!(operand.candidate_faces.is_empty());
     let mut operands = vec![operand];
     crate::test_support::with_decode_context(|ctx| {
-        crate::history::bind_face_operand_history_candidates(
+        crate::history::face_operand_history::bind_face_operand_history_candidates(
             ctx,
             &mut operands,
             &[scope(42)],
             &[group(42, &[110])],
             &[],
-            crate::history::BindingHistories::Shared(std::slice::from_ref(&history)),
+            crate::history::binding_histories::BindingHistories::Shared(std::slice::from_ref(
+                &history,
+            )),
             &std::collections::HashMap::new(),
         )
     })
@@ -639,13 +641,15 @@ fn bind_bounded_shell_operand_with_aliases(
     );
     let mut operands = vec![operand];
     crate::test_support::with_decode_context(|ctx| {
-        crate::history::bind_face_operand_history_candidates(
+        crate::history::face_operand_history::bind_face_operand_history_candidates(
             ctx,
             &mut operands,
             &[scope(42)],
             &[group(42, &[110])],
             &[],
-            crate::history::BindingHistories::Shared(std::slice::from_ref(&history)),
+            crate::history::binding_histories::BindingHistories::Shared(std::slice::from_ref(
+                &history,
+            )),
             &std::collections::HashMap::new(),
         )
     })

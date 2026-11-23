@@ -162,6 +162,7 @@ impl Token {
     /// Positional field semantics in topology tables and serialized counts use
     /// value tokens. Payload identifiers name constructions; [`Record::chunk`]
     /// and [`Record::chunk_len`] skip them.
+    #[inline]
     pub fn is_payload_ident(&self) -> bool {
         matches!(self, Token::Ident(_) | Token::SubIdent(_))
     }
@@ -186,25 +187,31 @@ pub struct Record {
 
 impl Record {
     /// Leading name component used for dispatch, such as `cone` or `body`.
+    #[inline]
     #[must_use]
     pub fn head(&self) -> &str {
-        let end = self
-            .name
-            .bytes()
-            .position(|byte| byte == b'-')
-            .unwrap_or(self.name.len());
-        &self.name[..end]
+        let bytes = self.name.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b'-' {
+                return &self.name[..i];
+            }
+            i += 1;
+        }
+        &self.name
     }
 
     /// Returns the `i`th payload value token. Payload identifiers leave field
     /// positions unchanged, so `chunk[i]` has the same meaning in records with
     /// and without named subtypes.
+    #[inline]
     pub fn chunk(&self, i: usize) -> Option<&Token> {
         self.chunks().nth(i)
     }
 
     /// The `chunk[i]` as a non-null entity reference index. Returns `None` for a
     /// null reference (`-1`) or a non-reference token.
+    #[inline]
     pub fn ref_at(&self, i: usize) -> Option<i64> {
         match self.chunk(i) {
             Some(Token::Ref(v)) if *v >= 0 => Some(*v),
@@ -214,6 +221,7 @@ impl Record {
 
     /// The payload value tokens in order, payload identifiers skipped: the
     /// stream that `chunk[i]` indexes.
+    #[inline]
     pub fn chunks(&self) -> impl DoubleEndedIterator<Item = &Token> {
         self.tokens.iter().filter(|t| !t.is_payload_ident())
     }

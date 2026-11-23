@@ -857,7 +857,11 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
         &[],
         &mut timeline,
         &entries,
-        &definition,
+        &super::typed::Scope {
+            definition: &definition,
+            outside_profile: &std::collections::HashSet::new(),
+            surfaces: &ir.geometry.surfaces,
+        },
     );
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
     let sketches = typed.sketches;
@@ -947,10 +951,14 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
         assert_eq!(typed.bound.get(parameter), Some(&Quantity::LENGTH));
     }
 
-    let (parameters, _) = entries.parameters(
+    let (parameters, _, _) = entries.parameters(
         &definition,
         &super::parameters::Readings {
-            decoded: super::parameters::Decoded::new(&ir.model.parameters, &[]),
+            decoded: super::parameters::Decoded::new(
+                &ir.model.parameters,
+                &[],
+                &crate::resolved_features::assembly::ConfigurationMaps::new(),
+            ),
             length_unit: Some(UnitSymbol::Mm),
             length_places: None,
             bound: typed.bound,
@@ -1006,7 +1014,11 @@ fn typed_timeline<'a>(
         &[],
         &mut timeline,
         &entries,
-        &ir.design.scopes[0].definition,
+        &super::typed::Scope {
+            definition: &ir.design.scopes[0].definition,
+            outside_profile: &std::collections::HashSet::new(),
+            surfaces: &ir.geometry.surfaces,
+        },
     );
     (timeline, entries, typed)
 }
@@ -1151,10 +1163,14 @@ fn a_reference_dimension_makes_the_tree_parameter_it_binds_driven() {
         &constraint.relation,
         SketchRelation::Radial { value: Dimension::Parameter(parameter), .. } if parameter == &hole
     )));
-    let (parameters, _) = entries.parameters(
+    let (parameters, _, _) = entries.parameters(
         &ir.design.scopes[0].definition,
         &super::parameters::Readings {
-            decoded: super::parameters::Decoded::new(&ir.model.parameters, &[]),
+            decoded: super::parameters::Decoded::new(
+                &ir.model.parameters,
+                &[],
+                &crate::resolved_features::assembly::ConfigurationMaps::new(),
+            ),
             length_unit: Some(UnitSymbol::Mm),
             length_places: None,
             bound: typed.bound,
@@ -1394,7 +1410,11 @@ fn members_follow_the_features_they_depend_on() {
         &[],
         &mut timeline,
         &entries,
-        &definition,
+        &super::typed::Scope {
+            definition: &definition,
+            outside_profile: &std::collections::HashSet::new(),
+            surfaces: &ir.geometry.surfaces,
+        },
     );
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
     let boss = &timeline.features[member_position(&timeline, "Boss")];
@@ -1469,13 +1489,7 @@ fn a_configuration_whose_bodies_are_current_bodies_charges_a_loss() {
         "Contents/SolidWorks",
         br#"<swSolidWorks><swModel swConfigurationName="Second"/></swSolidWorks>"#,
     ));
-    let ir = decode(&source);
-    let [scope] = ir.design.scopes.as_slice() else {
-        panic!("one scope");
-    };
-    let [Container::Ordered { id: timeline, .. }] = ir.design.containers.as_slice() else {
-        panic!("one timeline: {:#?}", ir.design.containers);
-    };
+    let mut ir = decode(&source);
     // The current state as `active_partition_bodies` falls back to it when
     // the active partition is unresolved: every decoded body, so the other
     // configuration's stored bodies are among the current ones.
@@ -1485,6 +1499,18 @@ fn a_configuration_whose_bodies_are_current_bodies_charges_a_loss() {
         .iter()
         .map(|body| body.id.clone())
         .collect::<Vec<_>>();
+    ir.model
+        .configurations
+        .iter_mut()
+        .find(|configuration| configuration.name.as_deref() == Some("First"))
+        .unwrap()
+        .bodies = Some(every_body.clone().try_into().unwrap());
+    let [scope] = ir.design.scopes.as_slice() else {
+        panic!("one scope");
+    };
+    let [Container::Ordered { id: timeline, .. }] = ir.design.containers.as_slice() else {
+        panic!("one timeline: {:#?}", ir.design.containers);
+    };
     let features = HashMap::new();
     let names = super::names::Names::new(
         super::Persistent {
@@ -1498,7 +1524,7 @@ fn a_configuration_whose_bodies_are_current_bodies_charges_a_loss() {
     let policy = DecodePolicy::service();
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
     let mut losses = Vec::new();
-    let (evaluations, records) = super::states::configuration_states(
+    let states = super::states::configuration_states(
         &ctx,
         &ir,
         &super::states::Scope {
@@ -1513,8 +1539,9 @@ fn a_configuration_whose_bodies_are_current_bodies_charges_a_loss() {
         &mut losses,
     )
     .unwrap();
-    assert!(evaluations.is_empty(), "{evaluations:#?}");
-    assert_eq!(records, 0);
+    assert!(states.evaluations.is_empty(), "{:#?}", states.evaluations);
+    assert_eq!(states.records, 0);
+    assert!(states.retired.is_empty());
     let first = ir
         .design
         .configurations
@@ -1528,5 +1555,8 @@ fn a_configuration_whose_bodies_are_current_bodies_charges_a_loss() {
     assert!(note.message.contains(&first.id.to_string()), "{note:#?}");
 }
 
+mod configuration_states;
+mod dimension_curves;
 mod parameters;
 mod rollback;
+mod state_zero;

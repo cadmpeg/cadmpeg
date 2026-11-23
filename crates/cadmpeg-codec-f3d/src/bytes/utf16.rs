@@ -15,12 +15,70 @@ impl<'a> Utf16View<'a> {
         if !raw.len().is_multiple_of(2) {
             return None;
         }
-        let mut view = View::over_retained(raw);
-        let mut utf8_len = 0usize;
-        for character in char::decode_utf16(std::iter::from_fn(|| view.u16_le())) {
-            utf8_len = utf8_len.checked_add(character.ok()?.len_utf8())?;
+        let mut ascii_units = 0_usize;
+        for chunk in raw.chunks_exact(2) {
+            if chunk[1] == 0 && chunk[0] < 0x80 {
+                ascii_units += 1;
+            } else {
+                let mut view = View::over_retained(&raw[ascii_units * 2..]);
+                let mut utf8_len = ascii_units;
+                for character in char::decode_utf16(std::iter::from_fn(|| view.u16_le())) {
+                    utf8_len = utf8_len.checked_add(character.ok()?.len_utf8())?;
+                }
+                return Some(Self { raw, utf8_len });
+            }
         }
-        Some(Self { raw, utf8_len })
+        Some(Self {
+            raw,
+            utf8_len: ascii_units,
+        })
+    }
+
+    /// Validate UTF-16LE bytes while rejecting any Unicode control character
+    /// immediately during the single scan (avoids allocating or scanning past
+    /// random binary prefixes in speculative scans).
+    pub(crate) fn new_no_control(raw: &'a [u8]) -> Option<Self> {
+        if !raw.len().is_multiple_of(2) {
+            return None;
+        }
+        let mut ascii_units = 0_usize;
+        for chunk in raw.chunks_exact(2) {
+            if chunk[1] == 0 && chunk[0] < 0x80 {
+                if chunk[0] < 0x20 || chunk[0] == 0x7f {
+                    return None;
+                }
+                ascii_units += 1;
+            } else {
+                let mut view = View::over_retained(&raw[ascii_units * 2..]);
+                let mut utf8_len = ascii_units;
+                for character in char::decode_utf16(std::iter::from_fn(|| view.u16_le())) {
+                    let ch = character.ok()?;
+                    if ch.is_control() {
+                        return None;
+                    }
+                    utf8_len = utf8_len.checked_add(ch.len_utf8())?;
+                }
+                return Some(Self { raw, utf8_len });
+            }
+        }
+        Some(Self {
+            raw,
+            utf8_len: ascii_units,
+        })
+    }
+
+    pub(crate) fn to_owned_string(self) -> String {
+        let mut out = String::with_capacity(self.utf8_len);
+        if self.utf8_len * 2 == self.raw.len() {
+            for chunk in self.raw.chunks_exact(2) {
+                out.push(char::from(chunk[0]));
+            }
+            return out;
+        }
+        for character in self.chars() {
+            out.push(character);
+        }
+        out
     }
 
     pub(crate) fn chars(self) -> impl Iterator<Item = char> + 'a {
@@ -89,5 +147,24 @@ impl std::fmt::Debug for Utf16View<'_> {
             }
         }
         formatter.write_str("\"")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn utf16_view_no_control_rejects_control_and_accepts_text() {
+        let ok_bytes: Vec<u8> = "Scale_1\u{00e9}"
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect();
+        let view = super::Utf16View::new_no_control(&ok_bytes).unwrap();
+        assert_eq!(view.to_owned_string(), "Scale_1\u{00e9}");
+
+        let ctrl_bytes: Vec<u8> = "a\nb".encode_utf16().flat_map(u16::to_le_bytes).collect();
+        assert!(super::Utf16View::new_no_control(&ctrl_bytes).is_none());
+
+        let del_bytes: Vec<u8> = "a\x7fb".encode_utf16().flat_map(u16::to_le_bytes).collect();
+        assert!(super::Utf16View::new_no_control(&del_bytes).is_none());
     }
 }

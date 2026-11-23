@@ -95,7 +95,7 @@ fn histories_for_scope<'a>(
     histories: &'a [crate::history_records::AsmHistory],
 ) -> &'a [crate::history_records::AsmHistory] {
     if scope_histories.contains_key(scope_id) {
-        crate::history::bound_scope_history(scope_id, scope_histories, histories)
+        crate::history::history_states::bound_scope_history(scope_id, scope_histories, histories)
             .map_or(&[], std::slice::from_ref)
     } else {
         histories
@@ -506,11 +506,46 @@ pub(crate) fn bind_extrude_profile_selections(
     curve_resolution: &SketchCurveSelectionResolution<'_>,
     resolution: ExtrudeProfileResolution<'_>,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
-    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
-
+    let inputs = ExtrudeBindInputs {
+        scopes,
+        groups,
+        members,
+        sketches,
+        curve_resolution,
+        resolution,
+    };
     let mut losses = Vec::new();
     for feature in features {
+        bind_one_extrude_profile_selection(feature, &inputs, &mut losses)?;
+    }
+    Ok(losses)
+}
+
+struct ExtrudeBindInputs<'a> {
+    scopes: &'a [DesignParameterScope],
+    groups: &'a [DesignExtrudeSelectionGroup],
+    members: &'a [DesignExtrudeSelectionMember],
+    sketches: &'a [cadmpeg_ir::sketches::Sketch],
+    curve_resolution: &'a SketchCurveSelectionResolution<'a>,
+    resolution: ExtrudeProfileResolution<'a>,
+}
+
+fn bind_one_extrude_profile_selection(
+    feature: &mut cadmpeg_ir::features::Feature,
+    inputs: &ExtrudeBindInputs<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    let ExtrudeBindInputs {
+        scopes,
+        groups,
+        members,
+        sketches,
+        curve_resolution,
+        resolution,
+    } = *inputs;
+    {
         let mut edit_result = Ok(());
         let mut to_distance_info = None;
         let mut historical_face_sketch_info: Option<(String, String)> = None;
@@ -538,7 +573,7 @@ pub(crate) fn bind_extrude_profile_selections(
                     );
                     let scoped_resolution = resolution.scoped(scoped_histories);
                     let effective_previous_history_state_id =
-                        crate::history::effective_scope_previous_history_state_id(
+                        crate::history::history_states::effective_scope_previous_history_state_id(
                             scope,
                             scoped_histories,
                         );
@@ -1271,7 +1306,7 @@ pub(crate) fn bind_extrude_profile_selections(
                                 resolution.histories,
                             );
                             let effective_previous_history_state_id =
-                                crate::history::effective_scope_previous_history_state_id(
+                                crate::history::history_states::effective_scope_previous_history_state_id(
                                     scope,
                                     scoped_histories,
                                 );
@@ -1324,7 +1359,7 @@ pub(crate) fn bind_extrude_profile_selections(
         }
         resolution.profile_work.finish_selection();
     }
-    Ok(losses)
+    Ok(())
 }
 
 fn sorted(
@@ -3196,9 +3231,8 @@ fn transition_profile_selection_step(
             };
             let is_matched_circle = prof.len() == 1
                 && prof.iter().all(|use_| {
-                    entities
-                        .iter()
-                        .find(|e| e.id() == &use_.entity)
+                    profile_work
+                        .find_entity(entities, &use_.entity)
                         .is_some_and(|e| {
                             matches!(
                                 e.geometry.definition(),

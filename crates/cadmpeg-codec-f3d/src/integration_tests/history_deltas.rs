@@ -37,7 +37,7 @@ fn full_decode(
             let decoded =
                 crate::brep::decode_history_topology(ctx, &records, bytes, crate::ids::ID_FORMAT)
                     .unwrap();
-            let topology = crate::history::historical_topology_with_tags(&decoded)
+            let topology = crate::history::topology_rows::historical_topology_with_tags(&decoded)
                 .unwrap()
                 .unwrap();
             snapshots.push((ordinal, topology, versions.clone()));
