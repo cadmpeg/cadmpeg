@@ -134,7 +134,8 @@ pub(crate) fn prepare_configurations_for_write(
 /// The losses of a configuration sketch projection when each is a relation
 /// point charge. Such a charge falls on every projection of its sketch, the
 /// decode's as well, and leaves the configuration states as they are; any
-/// other loss refuses the write.
+/// other loss refuses the write. Each returned note says that the write
+/// carries the decode's omission.
 fn relation_point_charges(
     projection_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
@@ -146,7 +147,16 @@ fn relation_point_charges(
             "SLDPRT configuration sketch profiles cannot be projected without loss".into(),
         ));
     }
-    Ok(projection_losses)
+    Ok(projection_losses
+        .into_iter()
+        .map(|mut note| {
+            note.message = format!(
+                "the decode omits this relation point, and the configuration states this write projects carry the omission: {}",
+                note.message
+            );
+            note
+        })
+        .collect())
 }
 
 fn sync_configuration_design_state(

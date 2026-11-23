@@ -24,7 +24,7 @@ use super::relation_records::{
 use super::sketch_lists::curve_record_markers;
 use super::transforms::{
     feature_sketch_marker_transform, marker_entities, sketch_entity_locus_points,
-    MarkerEntityFilter, ProfileAxis,
+    MarkerEntityFilter, ProfileAxis, SketchLocusRole,
 };
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
@@ -421,9 +421,11 @@ fn close_over_links<'a>(
 }
 
 /// Whether `note` is the relation point pass's charge of a marker whose
-/// record reads a subnormal coordinate pair.
+/// record reads a subnormal coordinate pair, or whose place two readings
+/// leave unsettled.
 pub(crate) fn is_relation_point_note(note: &cadmpeg_ir::report::loss::LossNote) -> bool {
     note.code == crate::loss::SldprtLossCode::SketchPointCoordinatesSubnormal.kind()
+        || note.code == crate::loss::SldprtLossCode::SketchRelationPointPlaceUnsettled.kind()
 }
 
 /// Appends `notes` to `losses`, leaving out a relation point note that
@@ -449,6 +451,9 @@ pub(crate) fn project_relation_point_geometry(
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
+    // The distance at which a curve end or centre of the sketch marks a
+    // reading of a relation point's place.
+    const WITNESS_MM: f64 = 1.0e-5;
 
     let mut losses = Vec::new();
     let mut sketches_by_feature = HashMap::new();
@@ -468,6 +473,7 @@ pub(crate) fn project_relation_point_geometry(
         sketches_by_feature.insert(native_ref, sketch_id);
     }
     let transforms = marker_transform_candidates_by_feature(features, sketches, entities, lanes);
+    let mut frame_transforms = HashMap::new();
     let mut markers_by_id = HashMap::new();
     for marker in lanes.iter().flat_map(|lane| &lane.sketch_entities) {
         markers_by_id.insert(marker.id(), marker);
@@ -601,24 +607,21 @@ pub(crate) fn project_relation_point_geometry(
                     unique_position = Some(position);
                 }
             }
-            let position = if ambiguous || unique_position.is_none() {
-                sketches
-                    .iter()
-                    .find(|candidate| candidate.id == *sketch)
-                    .and_then(|sketch| feature_sketch_marker_transform(sketch, QUANTUM, features))
-                    .and_then(|transform| transform.apply(native))
-            } else {
-                unique_position
-            };
-            let Some(position) = position else {
+            let fitted = unique_position.filter(|_| !ambiguous);
+            let framed = frame_transforms
+                .entry(sketch)
+                .or_insert_with(|| {
+                    sketches
+                        .iter()
+                        .find(|candidate| candidate.id == *sketch)
+                        .and_then(|sketch| {
+                            feature_sketch_marker_transform(sketch, QUANTUM, features)
+                        })
+                })
+                .and_then(|transform| transform.apply(native));
+            if fitted.or(framed).is_none() {
                 continue;
-            };
-            let (Some(position_u), Some(position_v)) =
-                (f64_from_i64(position.0), f64_from_i64(position.1))
-            else {
-                continue;
-            };
-            let position = Point2::new(position_u * QUANTUM, position_v * QUANTUM);
+            }
             if [u, v]
                 .into_iter()
                 .any(|value| value != 0.0 && !value.is_normal())
@@ -631,6 +634,55 @@ pub(crate) fn project_relation_point_geometry(
                 );
                 continue;
             }
+            let to_point = |(position_u, position_v): (i64, i64)| {
+                Some(Point2::new(
+                    f64_from_i64(position_u)? * QUANTUM,
+                    f64_from_i64(position_v)? * QUANTUM,
+                ))
+            };
+            let position = match (fitted.and_then(to_point), framed.and_then(to_point)) {
+                (Some(fitted), Some(framed)) if fitted != framed => {
+                    let witnessed = |position: Point2| {
+                        entities
+                            .iter()
+                            .filter(|entity| entity.sketch == *sketch)
+                            .flat_map(|entity| {
+                                sketch_entity_locus_points(entity).into_iter().flatten()
+                            })
+                            .any(|(locus, role)| {
+                                role != SketchLocusRole::Entity
+                                    && (locus.u - position.u).hypot(locus.v - position.v)
+                                        <= WITNESS_MM
+                            })
+                    };
+                    match (witnessed(fitted), witnessed(framed)) {
+                        (true, false) => fitted,
+                        (false, true) => framed,
+                        (both, _) => {
+                            let witnesses = if both {
+                                "a curve end or centre of the sketch lies on each of them"
+                            } else {
+                                "no curve end or centre of the sketch lies on either of them"
+                            };
+                            losses.push(
+                                crate::loss::SldprtLossCode::SketchRelationPointPlaceUnsettled
+                                    .note(format!(
+                                        "sketch {} marker {}: the sketch's fitted marker transform places the relation point at ({}, {}) mm and the sketch frame places it at ({}, {}) mm; {witnesses}, so its place is not settled between the two readings and the point is not drawn",
+                                        sketch.as_str(),
+                                        marker.id(),
+                                        fitted.u,
+                                        fitted.v,
+                                        framed.u,
+                                        framed.v,
+                                    )),
+                            );
+                            continue;
+                        }
+                    }
+                }
+                (Some(position), _) | (None, Some(position)) => position,
+                (None, None) => continue,
+            };
             let id_text = format!(
                 "sldprt:model:sketch-entity#relation-point:{lane_key}:{}",
                 marker.offset()

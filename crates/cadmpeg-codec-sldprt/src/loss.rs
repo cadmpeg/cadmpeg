@@ -155,6 +155,10 @@ pub(crate) enum SldprtLossCode {
     /// A relation point marker whose record form reads a coordinate pair
     /// that holds a nonzero subnormal value gives no relation point.
     SketchPointCoordinatesSubnormal,
+    /// A relation point marker that the sketch's fitted marker transform and
+    /// its frame place apart, where no curve end or centre of the sketch
+    /// marks exactly one of the two places, gives no relation point.
+    SketchRelationPointPlaceUnsettled,
     /// A profile sketch lies on a plane the decoder assumes (open item
     /// DI-73): the plane that the preceding object's or the lane's plane
     /// reference names, the Top plane its feature-input reference names, the
@@ -590,6 +594,7 @@ impl SldprtLossCode {
         Self::SketchSecondReading,
         Self::SketchMarkerReadingUnbound,
         Self::SketchPointCoordinatesSubnormal,
+        Self::SketchRelationPointPlaceUnsettled,
         Self::SketchPlaneBindingAssumed,
         Self::SketchPointRecordIndexBasisAssumed,
         Self::SketchArcRecordOffChord,
@@ -796,6 +801,7 @@ impl SldprtLossCode {
             Self::SketchSecondReading => "sketch.second-reading",
             Self::SketchMarkerReadingUnbound => "sketch.marker-reading-unbound",
             Self::SketchPointCoordinatesSubnormal => "sketch.point-coordinates-subnormal",
+            Self::SketchRelationPointPlaceUnsettled => "sketch.relation-point-place-unsettled",
             Self::SketchPlaneBindingAssumed => "sketch.plane-binding-assumed",
             Self::SketchPointRecordIndexBasisAssumed => "sketch.point-record-index-basis-assumed",
             Self::SketchArcRecordOffChord => "sketch.arc-record-off-chord",
@@ -1067,6 +1073,7 @@ impl SldprtLossCode {
             | Self::SketchMarkerRecordUnread
             | Self::SketchMarkerReadingUnbound
             | Self::SketchPointCoordinatesSubnormal
+            | Self::SketchRelationPointPlaceUnsettled
             | Self::SketchPointRecordIndexBasisAssumed
             | Self::SketchArcRecordOffChord
             | Self::SketchPlaneBindingAssumed
@@ -1364,6 +1371,7 @@ impl SldprtLossCode {
             | Self::SketchSecondReading
             | Self::SketchMarkerReadingUnbound
             | Self::SketchPointCoordinatesSubnormal
+            | Self::SketchRelationPointPlaceUnsettled
             | Self::SketchPointRecordIndexBasisAssumed
             | Self::SketchArcRecordOffChord
             | Self::SketchPlaneBindingAssumed
@@ -1631,6 +1639,7 @@ mod tests {
                 "sketch.second-reading",
                 "sketch.marker-reading-unbound",
                 "sketch.point-coordinates-subnormal",
+                "sketch.relation-point-place-unsettled",
                 "sketch.plane-binding-assumed",
                 "sketch.point-record-index-basis-assumed",
                 "sketch.arc-record-off-chord",

@@ -409,3 +409,109 @@ fn a_configuration_write_with_a_subnormal_marker_goes_on_and_reports_the_point()
     );
     assert!(loss.message.contains(&marker), "{}", loss.message);
 }
+
+/// Projects the relation point of [`fixture`]'s marker stored at (3, 9) mm in
+/// a sketch whose three anchors fit the marker transform
+/// `(u, v) -> (v + 100, u + 200)`, which places the point at (109, 203), and
+/// whose unresolved frame reads the pair as it stands, at (3, 9). A circle is
+/// centred on each of `witnesses`.
+fn project_between_readings(witnesses: &[Point2]) -> (Vec<SketchEntity>, Vec<LossNote>, String) {
+    let (feature, entities, lane, marker) = fixture([0.003, 0.009]);
+    let sketch = entities[0].sketch.clone();
+    let mut entities = [(100.0, 200.0), (101.0, 202.0), (104.0, 207.0)]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (u, v))| {
+            SketchEntity::new(
+                SketchEntityId::mint(format!("synthetic:test:id#shifted-anchor-{index}")).unwrap(),
+                sketch.clone(),
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                    position: Point2::new(u, v),
+                })
+                .unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    for (index, center) in witnesses.iter().enumerate() {
+        entities.push(SketchEntity::new(
+            SketchEntityId::mint(format!("synthetic:test:id#witness-{index}")).unwrap(),
+            sketch.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                center: *center,
+                radius: Length::new(1.0).unwrap(),
+            })
+            .unwrap(),
+        ));
+    }
+    let frame = Sketch {
+        id: sketch,
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: SketchPlacement::Unresolved {},
+        profiles: SketchProfiles::default(),
+        native_ref: None,
+    };
+    let losses = project_relation_point_geometry(
+        &mut entities,
+        std::slice::from_ref(&frame),
+        std::slice::from_ref(&feature),
+        std::slice::from_ref(&lane),
+    );
+    (entities, losses, marker)
+}
+
+const FITTED: Point2 = Point2 { u: 109.0, v: 203.0 };
+const FRAMED: Point2 = Point2 { u: 3.0, v: 9.0 };
+
+fn drawn_at(entities: &[SketchEntity], marker: &str) -> Point2 {
+    let points = relation_points(entities, marker);
+    let [point] = points.as_slice() else {
+        panic!("one relation point: {points:?}");
+    };
+    let SketchGeometryDefinition::Point { position } = *point.geometry.definition() else {
+        panic!("a point");
+    };
+    position.get()
+}
+
+fn assert_near(actual: Point2, expected: Point2) {
+    assert!(
+        (actual.u - expected.u).abs() < 1.0e-9 && (actual.v - expected.v).abs() < 1.0e-9,
+        "{actual:?} against {expected:?}"
+    );
+}
+
+#[test]
+fn a_curve_centre_on_the_fitted_place_draws_the_relation_point_there() {
+    let (entities, losses, marker) = project_between_readings(&[FITTED]);
+    assert_near(drawn_at(&entities, &marker), FITTED);
+    assert!(losses.is_empty(), "{losses:?}");
+}
+
+#[test]
+fn a_curve_centre_on_the_frame_place_draws_the_relation_point_there() {
+    let (entities, losses, marker) = project_between_readings(&[FRAMED]);
+    assert_near(drawn_at(&entities, &marker), FRAMED);
+    assert!(losses.is_empty(), "{losses:?}");
+}
+
+#[test]
+fn two_readings_that_no_curve_or_both_curves_mark_draw_no_relation_point() {
+    for (witnesses, reason) in [
+        (&[][..], "no curve end or centre"),
+        (&[FITTED, FRAMED][..], "lies on each of them"),
+    ] {
+        let (entities, losses, marker) = project_between_readings(witnesses);
+        assert!(relation_points(&entities, &marker).is_empty());
+        let [loss] = losses.as_slice() else {
+            panic!("one loss for {witnesses:?}: {losses:?}");
+        };
+        assert_eq!(
+            loss.code,
+            SldprtLossCode::SketchRelationPointPlaceUnsettled.kind()
+        );
+        assert!(loss.message.contains(&marker), "{}", loss.message);
+        assert!(loss.message.contains(reason), "{}", loss.message);
+    }
+}
