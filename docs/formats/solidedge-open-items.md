@@ -64,14 +64,6 @@
 
 **Need.** A variable-radius round and a round with a setback or other non-constant section, each with a copy that differs in one value.
 
-### DR-1026. Occurrence visibility
-
-**Question.** Where does an assembly store that an occurrence is hidden?
-
-**Known.** Hiding an occurrence leaves its `CLSID_JAsmReference` object (§9.2), `JAsmRefAttr`, `JSitesList` and `PSMroots` unchanged. It changes the 512-byte `JVisibleData` stream throughout, and that stream does not read as plain records.
-
-**Need.** The encoding of `JVisibleData`, or an assembly saved with one occurrence hidden and its copy with the occurrence shown, plus copies with two and three hidden occurrences.
-
 ### DR-1027. Tapped hole with counterbore
 
 **Question.** Which stored value sizes the solid of a tapped hole that has a counterbore?
@@ -114,16 +106,8 @@
 
 ### DR-1043. Member record lists and member storage content
 
-**Question.** What do the first list of a member record (§9.4), the 12 bytes after it, the class identifiers of the two blocks, the bytes after the second list, and the last 3 bytes of a second-list entry state, and how does a member storage relate to its record when the storage holds an occurrence the record does not list?
+**Question.** What do the first list of a member record (§9.5), the 12 bytes after it, the class identifiers of the two blocks, the bytes after the second list, and the last 3 bytes of a second-list entry state, and how does a member storage relate to its record when the storage holds an occurrence the record does not list?
 
 **Known.** The first list is empty in the master member and holds one object identifier in another member. Each block starts with `u32` `1` and ends with `u32` `0`. A second-list entry holds the occurrence object identifier and the 13 `f64` words of its placement. The record trailer word is `1` or `3`. A member storage can hold occurrence objects that its record does not list.
 
 **Need.** Families whose members differ in suppressed, replaced, and moved components, with the stored members table of each.
-
-### DR-1035. Occurrence suppression
-
-**Question.** Where does an assembly store that an occurrence is suppressed?
-
-**Known.** The state word of a `CLSID_JAsmReference` object (§9.2) states grounding. It is `4` for a non-grounded occurrence whether or not the occurrence is suppressed.
-
-**Need.** An assembly saved with one occurrence suppressed and its copy with the occurrence active, and the same pair with the occurrence grounded.

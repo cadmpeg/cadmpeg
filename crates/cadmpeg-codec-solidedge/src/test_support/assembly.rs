@@ -104,7 +104,32 @@ pub(crate) fn assembly_document(
     occurrences: &[OccurrenceSpec],
     sites: &[SiteSpec<'_>],
 ) -> Vec<u8> {
-    let files = assembly_streams(listed, occurrences, sites);
+    assembly_document_with_structure(listed, occurrences, sites, None)
+}
+
+/// The stream of an occurrence structure list: a 20-byte header with the entry
+/// count at offset 16, then 20-byte entries of `(flags, object)`.
+pub(crate) fn structure_stream(entries: &[(u32, u32)]) -> Vec<u8> {
+    let mut bytes = vec![0_u8; 16];
+    bytes.extend_from_slice(&u32::try_from(entries.len()).unwrap().to_le_bytes());
+    for (flags, object) in entries {
+        bytes.extend_from_slice(&flags.to_le_bytes());
+        bytes.extend_from_slice(&[0; 4]);
+        bytes.extend_from_slice(&object.to_le_bytes());
+        bytes.extend_from_slice(&[0; 8]);
+    }
+    bytes
+}
+
+/// As [`assembly_document`], with the `Preview/Structure/IOT` stream `structure`
+/// where it is `Some`.
+pub(crate) fn assembly_document_with_structure(
+    listed: &[u32],
+    occurrences: &[OccurrenceSpec],
+    sites: &[SiteSpec<'_>],
+    structure: Option<Vec<u8>>,
+) -> Vec<u8> {
+    let files = assembly_streams(listed, occurrences, sites, structure);
     let borrowed: Vec<(&str, Vec<u8>)> = files
         .iter()
         .map(|(name, bytes)| (name.as_str(), bytes.clone()))
@@ -117,6 +142,7 @@ fn assembly_streams(
     listed: &[u32],
     occurrences: &[OccurrenceSpec],
     sites: &[SiteSpec<'_>],
+    structure: Option<Vec<u8>>,
 ) -> Vec<(String, Vec<u8>)> {
     let mut collection = vec![0_u8; 12];
     put_words(&mut collection, 16, &[u32::try_from(listed.len()).unwrap()]);
@@ -161,6 +187,9 @@ fn assembly_streams(
         ),
     ];
     files.extend(streams);
+    if let Some(structure) = structure {
+        files.push(("Preview/Structure/IOT".to_owned(), structure));
+    }
     files
 }
 
@@ -235,7 +264,7 @@ pub(crate) fn family_document(
     )];
     for member in members {
         let listed: Vec<u32> = member.occurrences.iter().map(|spec| spec.id).collect();
-        for (path, bytes) in assembly_streams(&listed, &member.occurrences, sites) {
+        for (path, bytes) in assembly_streams(&listed, &member.occurrences, sites, None) {
             files.push((format!("{}/{path}", member.name), bytes));
         }
         files.push((format!("{}/PSMroots", member.name), Vec::new()));
