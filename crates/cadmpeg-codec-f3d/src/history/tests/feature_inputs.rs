@@ -331,6 +331,7 @@ fn input_edge_geometry_keeps_only_selected_edges() {
         supports: Vec::new(),
     };
     let mut topologies = vec![cadmpeg_ir::features::evaluation::FeatureInputTopology {
+        face_owners: Vec::new(),
         id: crate::ids::history_input_state_id(&prefix),
         input_of: feature.id.clone(),
         bodies: Default::default(),
@@ -399,6 +400,7 @@ fn input_edge_geometry_keeps_the_edges_that_bound_a_selected_face() {
         supports: Vec::new(),
     };
     let mut topologies = vec![cadmpeg_ir::features::evaluation::FeatureInputTopology {
+        face_owners: Vec::new(),
         id: crate::ids::history_input_state_id(&prefix),
         input_of: feature.id.clone(),
         bodies: Default::default(),
@@ -419,4 +421,139 @@ fn input_edge_geometry_keeps_the_edges_that_bound_a_selected_face() {
     )
     .unwrap();
     assert_eq!(topologies[0].edge_geometry, vec![geometry(40, [10, 11])]);
+}
+
+fn relation(owner_ref: i64, member_refs: &[i64]) -> crate::history_records::AsmHistoricalRelation {
+    crate::history_records::AsmHistoricalRelation {
+        owner_ref,
+        member_refs: member_refs.to_vec(),
+    }
+}
+
+/// Two bodies. Body 1 holds faces 2 and 3 through region 11 and shell 21.
+/// Body 5 holds face 6 through region 15 and shell 25, and face 7 through
+/// region 16 and shell 26. Face 7 is also in shell 21. Face 8 is in no shell.
+fn multi_body_topology() -> crate::history_records::AsmHistoricalTopology {
+    crate::history_records::AsmHistoricalTopology {
+        bodies: vec![1, 5],
+        regions: vec![11, 15, 16],
+        shells: vec![21, 25, 26],
+        faces: vec![2, 3, 6, 7, 8],
+        body_regions: vec![relation(1, &[11]), relation(5, &[15, 16])],
+        region_shells: vec![
+            relation(11, &[21]),
+            relation(15, &[25]),
+            relation(16, &[26]),
+        ],
+        shell_faces: vec![
+            relation(21, &[2, 3, 7]),
+            relation(25, &[6]),
+            relation(26, &[7]),
+        ],
+        ..crate::history_records::AsmHistoricalTopology::default()
+    }
+}
+
+#[test]
+fn input_topology_states_the_body_that_holds_each_face() {
+    let (feature, scope, mut history) = input_fixture();
+    crate::test_support::history::edit(&mut history, 0, |topology, _| {
+        *topology = multi_body_topology();
+    });
+    let projected = super::super::input_topologies::project_feature_input_topologies(
+        std::slice::from_ref(&feature),
+        std::slice::from_ref(&scope),
+        std::slice::from_mut(&mut history),
+        &[],
+        &std::collections::HashMap::new(),
+    );
+    let prefix = crate::ids::feature_input_prefix(&feature.id, 4);
+    let owner = |face, body| cadmpeg_ir::features::evaluation::HistoricalFaceOwner {
+        face: crate::ids::history_input_face_id(&prefix, face),
+        body: crate::ids::history_input_body_id(&prefix, body),
+    };
+    assert_eq!(projected.len(), 1);
+    // Face 7 is listed by shells of both bodies and face 8 by none, so neither
+    // has an owner.
+    assert_eq!(
+        projected[0].face_owners,
+        vec![owner(2, 1), owner(3, 1), owner(6, 5)]
+    );
+}
+
+#[test]
+fn input_topology_of_one_body_states_no_face_owner() {
+    let (feature, scope, mut history) = input_fixture();
+    crate::test_support::history::edit(&mut history, 0, |topology, _| {
+        *topology = crate::history_records::AsmHistoricalTopology {
+            bodies: vec![1],
+            regions: vec![11],
+            shells: vec![21],
+            faces: vec![2],
+            body_regions: vec![relation(1, &[11])],
+            region_shells: vec![relation(11, &[21])],
+            shell_faces: vec![relation(21, &[2])],
+            ..crate::history_records::AsmHistoricalTopology::default()
+        };
+    });
+    let projected = super::super::input_topologies::project_feature_input_topologies(
+        std::slice::from_ref(&feature),
+        std::slice::from_ref(&scope),
+        std::slice::from_mut(&mut history),
+        &[],
+        &std::collections::HashMap::new(),
+    );
+    assert_eq!(projected.len(), 1);
+    assert!(projected[0].face_owners.is_empty());
+}
+
+#[test]
+fn input_face_owners_keep_only_the_faces_a_feature_selects() {
+    use cadmpeg_ir::features::direct_edit::FaceMotion;
+    use cadmpeg_ir::features::evaluation::{FeatureInputTopology, HistoricalFaceOwner};
+    use cadmpeg_ir::features::selections::{DistinctMembers, FaceSelection};
+
+    let (mut feature, _, _) = input_fixture();
+    let prefix = crate::ids::feature_input_prefix(&feature.id, 4);
+    let face = |slot| crate::ids::history_input_face_id(&prefix, slot);
+    let body = |slot| crate::ids::history_input_body_id(&prefix, slot);
+    feature.evaluation = cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+        FeatureDefinition::Operation(FeatureOperation::MoveFace {
+            faces: FaceSelection::historical(
+                crate::ids::history_input_state_id(&prefix),
+                vec![face(6)],
+                "f3d:test:offset-faces".to_owned(),
+            )
+            .unwrap(),
+            motion: FaceMotion::Offset {
+                distance: cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
+            },
+        }),
+    );
+    let owner = |slot, owner| HistoricalFaceOwner {
+        face: face(slot),
+        body: body(owner),
+    };
+    let mut topologies = vec![FeatureInputTopology {
+        face_owners: vec![owner(2, 1), owner(6, 5)],
+        id: crate::ids::history_input_state_id(&prefix),
+        input_of: feature.id.clone(),
+        bodies: DistinctMembers::try_from(vec![body(1), body(5)]).unwrap(),
+        faces: DistinctMembers::try_from(vec![face(2), face(6)]).unwrap(),
+        edges: Default::default(),
+        vertices: Default::default(),
+        edge_geometry: Vec::new(),
+        native_ref: None,
+    }];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    super::super::input_topologies::retain_selected_face_owners(
+        &ctx,
+        std::slice::from_ref(&feature),
+        &mut topologies,
+    )
+    .unwrap();
+    assert_eq!(topologies[0].face_owners, vec![owner(6, 5)]);
 }

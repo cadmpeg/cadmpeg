@@ -176,6 +176,51 @@ fn validate_input_edge_geometry(
     }
 }
 
+/// Each owner entry of an input state names a face and a body of that state,
+/// and a face has one entry.
+fn validate_input_face_owners(
+    findings: &mut Vec<Finding>,
+    state: &crate::features::evaluation::FeatureInputTopology,
+) {
+    if state.face_owners.is_empty() {
+        return;
+    }
+    let faces = state
+        .faces
+        .iter()
+        .map(crate::ids::HistoricalFaceId::as_str)
+        .collect::<std::collections::HashSet<_>>();
+    let bodies = state
+        .bodies
+        .iter()
+        .map(crate::ids::HistoricalBodyId::as_str)
+        .collect::<std::collections::HashSet<_>>();
+    let mut owned = std::collections::HashSet::new();
+    for owner in &state.face_owners {
+        let face = owner.face.as_str();
+        if !faces.contains(face) {
+            ref_error(findings, state.id.as_str(), "input-state face", face);
+        }
+        if !bodies.contains(owner.body.as_str()) {
+            ref_error(
+                findings,
+                state.id.as_str(),
+                "input-state body",
+                owner.body.as_str(),
+            );
+        }
+        if !owned.insert(face) {
+            super::record_finding(
+                findings,
+                Check::Counts,
+                Severity::Error,
+                Some(state.id.as_str()),
+                format_args!("input-state face `{face}` has more than one owner entry"),
+            );
+        }
+    }
+}
+
 fn check_law_curves<R, V, P>(
     ctx: &DecodeContext<'_>,
     expression: &crate::geometry::laws::LawExpression<R, V, P>,
@@ -2994,6 +3039,7 @@ fn check_feature_references(
             );
         }
         validate_input_edge_geometry(findings, state);
+        validate_input_face_owners(findings, state);
     }
     let mut result_owners = BorrowedIdentities::new();
     for state in &ir.model.feature_result_topologies {
