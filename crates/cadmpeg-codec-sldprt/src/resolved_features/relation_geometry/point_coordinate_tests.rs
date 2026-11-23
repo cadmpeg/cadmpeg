@@ -437,10 +437,12 @@ enum Mark {
 /// a sketch whose three anchors fit the marker transform
 /// `(u, v) -> (v + 100, u + 200)`, which places the point at (109, 203), and
 /// whose frame (origin 0, normal +z, u along +x) reads the pair as it
-/// stands, at (3, 9).
+/// stands, at (3, 9). A relation point drawn before the pass stands at each
+/// of `drawn`.
 fn project_between_readings(
     reach: Reach,
     marks: &[Mark],
+    drawn: &[Point2],
 ) -> (Vec<SketchEntity>, Vec<LossNote>, String) {
     let (feature, entities, mut lane, marker_id) = fixture([0.003, 0.009]);
     if let Reach::ListedRecord = reach {
@@ -477,6 +479,20 @@ fn project_between_readings(
             )
         })
         .collect::<Vec<_>>();
+    for (index, position) in drawn.iter().enumerate() {
+        entities.push(SketchEntity::new(
+            SketchEntityId::mint(format!(
+                "sldprt:model:sketch-entity#relation-point:lane:{}",
+                900 + index
+            ))
+            .unwrap(),
+            sketch.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                position: *position,
+            })
+            .unwrap(),
+        ));
+    }
     let mut points = Vec::new();
     let mut vertices = Vec::new();
     for (index, mark) in marks.iter().enumerate() {
@@ -556,7 +572,7 @@ fn assert_near(actual: Point2, expected: Point2) {
 
 #[test]
 fn a_relation_reached_marker_with_two_readings_is_drawn_at_the_fitted_place() {
-    let (entities, losses, marker) = project_between_readings(Reach::Relation, &[]);
+    let (entities, losses, marker) = project_between_readings(Reach::Relation, &[], &[]);
     assert_near(drawn_at(&entities, &marker), FITTED);
     assert!(losses.is_empty(), "{losses:?}");
 }
@@ -569,7 +585,8 @@ fn a_listed_record_marker_is_drawn_at_the_one_place_a_mark_witnesses() {
         (Mark::Curve(FITTED), FITTED),
         (Mark::Curve(FRAMED), FRAMED),
     ] {
-        let (entities, losses, marker) = project_between_readings(Reach::ListedRecord, &[mark]);
+        let (entities, losses, marker) =
+            project_between_readings(Reach::ListedRecord, &[mark], &[]);
         assert_near(drawn_at(&entities, &marker), expected);
         assert!(losses.is_empty(), "{mark:?}: {losses:?}");
     }
@@ -584,7 +601,7 @@ fn a_listed_record_marker_that_no_mark_or_both_marks_witness_is_named_and_not_dr
             "lies on each of them",
         ),
     ] {
-        let (entities, losses, marker) = project_between_readings(Reach::ListedRecord, marks);
+        let (entities, losses, marker) = project_between_readings(Reach::ListedRecord, marks, &[]);
         assert!(relation_points(&entities, &marker).is_empty());
         let [loss] = losses.as_slice() else {
             panic!("one loss for {marks:?}: {losses:?}");
@@ -596,4 +613,24 @@ fn a_listed_record_marker_that_no_mark_or_both_marks_witness_is_named_and_not_dr
         assert!(loss.message.contains(&marker), "{}", loss.message);
         assert!(loss.message.contains(reason), "{}", loss.message);
     }
+}
+
+#[test]
+fn relation_points_drawn_before_do_not_vote_in_the_fit_of_an_added_point() {
+    // Drawn at the frame's reading of the three anchor markers, these points
+    // alone would fit the unswapped identity, which agrees with the frame.
+    let drawn = [
+        Point2::new(0.0, 0.0),
+        Point2::new(2.0, 1.0),
+        Point2::new(7.0, 4.0),
+    ];
+    let (entities, losses, marker) = project_between_readings(Reach::ListedRecord, &[], &drawn);
+    assert!(relation_points(&entities, &marker).is_empty());
+    let [loss] = losses.as_slice() else {
+        panic!("one loss: {losses:?}");
+    };
+    assert_eq!(
+        loss.code,
+        SldprtLossCode::SketchRelationPointPlaceUnsettled.kind()
+    );
 }

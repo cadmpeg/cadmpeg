@@ -443,6 +443,10 @@ pub(crate) fn append_relation_point_notes(
     }
 }
 
+/// The id prefix of a relation point that [`project_relation_point_geometry`]
+/// draws.
+const RELATION_POINT_PREFIX: &str = "sldprt:model:sketch-entity#relation-point:";
+
 /// Materialize relation-addressed point geometry omitted from selected profile streams.
 ///
 /// A point marker that a relation reaches as on main (a relation operand, a
@@ -450,7 +454,8 @@ pub(crate) fn append_relation_point_notes(
 /// main: at the unique fitted marker-transform place, else at the sketch
 /// frame's reading. A point marker reached only through a list-read record
 /// whose stored code is a relation (DI-77) is placed where the two readings
-/// agree, or where only one exists; where they differ, at the one place that
+/// agree, or where only one exists, by a fit that leaves out the relation
+/// points already drawn; where they differ, at the one place that
 /// a curve end or centre of its sketch or a vertex or circular-edge centre of
 /// `solid` marks, and nowhere, with a note, where neither or both are marked.
 pub(crate) fn project_relation_point_geometry(
@@ -481,6 +486,19 @@ pub(crate) fn project_relation_point_geometry(
         sketches_by_feature.insert(native_ref, sketch_id);
     }
     let transforms = marker_transform_candidates_by_feature(features, sketches, entities, lanes);
+    // The fit of an added point leaves out the relation points this pass has
+    // drawn before, which come from the same markers.
+    let added_transforms = entities
+        .iter()
+        .any(|entity| entity.id().as_str().starts_with(RELATION_POINT_PREFIX))
+        .then(|| {
+            let independent = entities
+                .iter()
+                .filter(|entity| !entity.id().as_str().starts_with(RELATION_POINT_PREFIX))
+                .cloned()
+                .collect::<Vec<_>>();
+            marker_transform_candidates_by_feature(features, sketches, &independent, lanes)
+        });
     let mut frame_transforms = HashMap::new();
     let mut markers_by_id = HashMap::new();
     for marker in lanes.iter().flat_map(|lane| &lane.sketch_entities) {
@@ -603,9 +621,14 @@ pub(crate) fn project_relation_point_geometry(
                 continue;
             }
             let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
+            let main_reach = referenced.contains(marker.id());
+            let fit = match &added_transforms {
+                Some(added) if !main_reach => added,
+                _ => &transforms,
+            };
             let mut unique_position = None;
             let mut ambiguous = false;
-            for transform in transforms.get(feature).into_iter().flatten() {
+            for transform in fit.get(feature).into_iter().flatten() {
                 let Some(position) = transform.apply(native) else {
                     continue;
                 };
@@ -651,9 +674,7 @@ pub(crate) fn project_relation_point_geometry(
             let fitted = fitted.and_then(to_point);
             let framed = framed.and_then(to_point);
             let position = match (fitted, framed) {
-                (Some(fitted), Some(framed))
-                    if fitted != framed && !referenced.contains(marker.id()) =>
-                {
+                (Some(fitted), Some(framed)) if fitted != framed && !main_reach => {
                     let record = sketches.iter().find(|candidate| candidate.id == *sketch);
                     let witnessed = |position: Point2| {
                         entities
@@ -708,10 +729,7 @@ pub(crate) fn project_relation_point_geometry(
                 (Some(position), _) | (None, Some(position)) => position,
                 (None, None) => continue,
             };
-            let id_text = format!(
-                "sldprt:model:sketch-entity#relation-point:{lane_key}:{}",
-                marker.offset()
-            );
+            let id_text = format!("{RELATION_POINT_PREFIX}{lane_key}:{}", marker.offset());
             let Ok(id) = SketchEntityId::mint(id_text) else {
                 continue;
             };
