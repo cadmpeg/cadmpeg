@@ -47,6 +47,8 @@ const KEYPOINT_CLASS: &str = "CLSID_JKeyPoint2d";
 pub(crate) const PROFILE_AFTER_NAME: usize = 72;
 /// The same offset for a hole, a flange and a fast pattern.
 pub(crate) const PROFILE_AFTER_NAME_SHORT: usize = 68;
+/// The same offset for a helical protrusion.
+pub(crate) const PROFILE_AFTER_NAME_HELIX: usize = 128;
 /// Bytes from the end of a function name to the section profile identifier of
 /// a swept protrusion (§5.3). The profile at [`PROFILE_AFTER_NAME`] is its
 /// path.
@@ -75,6 +77,7 @@ fn profile_offsets(function: &str) -> &'static [usize] {
         | "JMLoftedProtrusionFunction"
         | "JMBaseTabFunction" => &[PROFILE_AFTER_NAME],
         "JMMultiSweepProtrusionFunction" => &[PROFILE_AFTER_NAME, SWEEP_SECTION_AFTER_NAME],
+        "JMHelixProtrusionFunction" => &[PROFILE_AFTER_NAME_HELIX],
         "JMHoleFunction" | "JMFlangeFunction" | "JMFastPatternFunction" => {
             &[PROFILE_AFTER_NAME_SHORT]
         }

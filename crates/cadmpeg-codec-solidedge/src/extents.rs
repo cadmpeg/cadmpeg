@@ -97,7 +97,7 @@ fn shape(function: &str) -> Option<Shape> {
 pub(crate) struct Profile {
     pub(crate) id: SketchId,
     frame: FrameValue,
-    points: Vec<Vector3>,
+    pub(crate) points: Vec<Vector3>,
 }
 
 pub(crate) fn is(value: f64, code: f64) -> bool {
@@ -295,7 +295,19 @@ fn axis(
     object: &Object<'_>,
     end: usize,
 ) -> Result<AxisValue, String> {
-    let id = slot(object, end, AXIS_AFTER_NAME)?;
+    axis_at(cluster, types, object, end, AXIS_AFTER_NAME)
+}
+
+/// The axis of the `CLSID_JMRefAxis` object stored `after` bytes past the
+/// function name ending at `end` (§6.4), in millimetres.
+pub(crate) fn axis_at(
+    cluster: &Cluster<'_>,
+    types: &TypeTable,
+    object: &Object<'_>,
+    end: usize,
+    after: usize,
+) -> Result<AxisValue, String> {
+    let id = slot(object, end, after)?;
     let (found, class) = named(cluster, types, id, "axis")?;
     if class != AXIS_CLASS {
         return Err(format!("the axis object is of class {class}"));

@@ -256,6 +256,7 @@ fn function_family(function: &str) -> Option<OperationFamily> {
         "JMProtrusionFunction" | "JMCutoutFunction" => OperationFamily::Extrude,
         "JMRevolvedProtrusionFunction" => OperationFamily::Revolve,
         "JMMultiSweepProtrusionFunction" => OperationFamily::Sweep,
+        "JMHelixProtrusionFunction" => OperationFamily::HelicalSweep,
         "JMLoftedProtrusionFunction" => OperationFamily::Loft,
         "JMHoleFunction" => OperationFamily::Hole,
         "JMRoundFunction" => OperationFamily::Fillet,
@@ -440,6 +441,7 @@ pub(crate) fn project<'a>(
     crate::sketches::project(ctx, &cluster, &types, &listed, ir, losses)?;
     crate::extents::project(&cluster, &types, &listed, ir, losses);
     crate::sweeps::project(&cluster, &types, &listed, ir, losses);
+    crate::helix::project(&cluster, &types, &listed, ir, losses);
     crate::sheet_metal::project_base_tabs(&cluster, &types, &listed, ir, losses);
     crate::sheet_metal::flange::project(&cluster, &types, &listed, ir, losses);
     crate::dressup::project(&cluster, &types, &listed, ir, losses);
