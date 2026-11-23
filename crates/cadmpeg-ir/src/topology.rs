@@ -2388,9 +2388,6 @@ mod tests {
         assert_eq!(point.position().get(), Point3::new(1.0, -2.0, 3.5));
     }
 
-    /// A positive scale keeps the endpoint order; endpoints that round to
-    /// one value stay admitted, and only an endpoint that overflows is
-    /// refused.
     #[test]
     fn a_topology_tolerance_is_a_positive_length() {
         let schema: serde_json::Value =
@@ -2404,6 +2401,9 @@ mod tests {
         }
     }
 
+    /// A positive scale keeps the endpoint order; endpoints that round to
+    /// one value stay admitted, and only an endpoint that overflows is
+    /// refused.
     #[test]
     fn a_scaled_interval_keeps_its_order_and_refuses_only_overflow() {
         use super::ParameterInterval;
