@@ -793,7 +793,7 @@
             "namespace": "sldprt"
           }
         },
-        "message": "0 sketch and 1 extrude features state their family without operands: sldprt:model:feature#350:0 (the extrude's profile is no whole sketch)",
+        "message": "0 sketch, 1 extrude and 0 revolve features state their family without operands: the extrude's profile is no whole sketch (1: sldprt:model:feature#350:0)",
         "severity": "info"
       },
       {

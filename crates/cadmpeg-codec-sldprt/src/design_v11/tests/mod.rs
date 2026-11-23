@@ -1298,7 +1298,7 @@ fn assert_sketch_unresolved(change: impl FnOnce(&mut CadIr), reason: &str) {
     let loss = typed.loss.expect("the sketch is reported");
     assert!(
         loss.message
-            .contains(&format!("{} ({reason})", sketch.id.as_str())),
+            .contains(&format!("{reason} (1: {})", sketch.id.as_str())),
         "{}",
         loss.message
     );
@@ -1331,7 +1331,8 @@ fn a_sketch_and_an_extrude_left_unresolved_are_reported() {
         panic!("one note: {:#?}", result.report().losses);
     };
     assert!(
-        note.message.starts_with("1 sketch and 1 extrude features"),
+        note.message
+            .starts_with("1 sketch, 1 extrude and 0 revolve features"),
         "{}",
         note.message
     );
@@ -1558,5 +1559,6 @@ fn a_configuration_whose_bodies_are_current_bodies_charges_a_loss() {
 mod configuration_states;
 mod dimension_curves;
 mod parameters;
+mod revolve;
 mod rollback;
 mod state_zero;
