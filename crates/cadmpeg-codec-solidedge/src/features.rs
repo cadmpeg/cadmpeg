@@ -9,7 +9,7 @@ use cadmpeg_container::compound::CompoundSnapshot;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
+use cadmpeg_ir::design::container::{Container, OrderedKind};
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::refs::Member;
@@ -412,7 +412,7 @@ pub(crate) fn project<'a>(
     ));
     losses.push(SolidEdgeLossCode::FeatureRollbackUnread.note(
         "the rollback position and suppressed state of the features are not read; the timeline \
-         is stated built through its last member",
+         states no rollback position",
     ));
     let id = container_id();
     let container = Container::Ordered {
@@ -423,7 +423,7 @@ pub(crate) fn project<'a>(
             .map(|feature| Member::Feature(feature.id.clone()))
             .collect(),
         folders: Vec::new(),
-        rollback: Rollback::End,
+        rollback: None,
         placement: None,
     };
     ir.design.scopes.push(DesignScope {
@@ -433,6 +433,7 @@ pub(crate) fn project<'a>(
         active_arrangements: BTreeSet::new(),
         occurrences: BTreeMap::new(),
         current: Vec::new(),
+        unproduced: BTreeSet::new(),
     });
     ir.design.containers.push(container);
     ir.design.features.extend(features);
