@@ -298,7 +298,7 @@ impl<'a> ScopeHistoryGraph<'a> {
         let binding = if histories.is_empty() {
             ScopeHistoryBinding::Absent
         } else {
-            ScopeHistoryBinding::Bound(crate::history::bind_scope_histories(
+            ScopeHistoryBinding::Bound(crate::history::scope_histories::bind_scope_histories(
                 scopes,
                 body_bindings,
                 body_recipe_operands,

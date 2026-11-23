@@ -256,15 +256,131 @@ fn derived_degenerate_sphere_seam_curve_has_counted_export_loss() {
 }
 
 #[test]
-fn opaque_carriers_require_a_retained_partition_before_generated_accounting() {
+fn a_body_on_an_opaque_carrier_without_a_retained_partition_is_omitted() {
     let mut ir = cube();
     ir.geometry.curves[0].geometry =
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None });
-    let error = SldprtCodec
+    let curve = ir.geometry.curves[0].id.as_str().to_owned();
+    let edge = ir
+        .geometry
+        .edges
+        .iter()
+        .find(|edge| edge.curve().is_some_and(|id| id.as_str() == curve))
+        .unwrap()
+        .id
+        .as_str()
+        .to_owned();
+    let plan = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .err()
         .unwrap();
-    assert!(error
-        .to_string()
-        .contains("without a retained native partition"));
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "writer.bodies-omitted"
+            && loss.message.contains(&format!("edge {edge}"))
+    }));
+}
+
+#[test]
+fn native_skeleton_losses_name_summarized_features_and_an_orphan_lane() {
+    let codes = |losses: &[cadmpeg_ir::report::loss::LossNote]| {
+        losses
+            .iter()
+            .map(|loss| loss.code.clone())
+            .collect::<Vec<_>>()
+    };
+    let bare = crate::writer::native_skeleton_losses(None, false);
+    assert_eq!(
+        codes(&bare),
+        [
+            SldprtLossCode::WriterNativeSkeletonUnlaidRuns.kind(),
+            SldprtLossCode::WriterNativeStreamsOmitted.kind(),
+        ]
+    );
+    let full = crate::writer::native_skeleton_losses(
+        Some((
+            "Contents/Keywords-0".to_owned(),
+            vec!["feature#a".to_owned(), "feature#b".to_owned()],
+        )),
+        true,
+    );
+    assert_eq!(
+        codes(&full),
+        [
+            SldprtLossCode::WriterNativeHistorySummary.kind(),
+            SldprtLossCode::WriterNativeSkeletonUnlaidRuns.kind(),
+            SldprtLossCode::WriterNativeStreamsOmitted.kind(),
+            SldprtLossCode::WriterNativeSketchLaneOrphan.kind(),
+        ]
+    );
+    assert!(full[0].message.starts_with(
+        "2 source feature(s) are written only in the cadmpeg history summary Contents/Keywords-0,"
+    ));
+    assert!(full[0].message.ends_with("feature#a, feature#b"));
+    let (runs, bytes) = crate::writer::native::detailing_zero_runs();
+    assert!(full[1].message.contains(&format!(
+        "{runs} runs ({bytes} bytes) of the moRelMgr_c detailing settings"
+    )));
+    assert!(full[2].message.contains("Contents/3DExperienceExchange2"));
+}
+
+/// A driven dimension of a generated sketch and its parameter, which no
+/// record of the write holds, are each charged.
+#[test]
+fn a_driven_dimension_of_a_generated_sketch_has_a_counted_export_loss() {
+    use cadmpeg_ir::sketches::{
+        SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput,
+        SketchConstraintId, SketchEntityId, SketchId, SketchLocus,
+    };
+    let mut ir = cube();
+    let point = |id: &str| SketchLocus::Entity(SketchEntityId::mint(id).unwrap());
+    ir.model
+        .parameters
+        .push(cadmpeg_ir::features::parameters::DesignParameter {
+            product_definition: None,
+            id: cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#width").unwrap(),
+            owner: None,
+            ordinal: 0,
+            name: "D1".to_owned(),
+            expression: "2mm".to_owned(),
+            display: None,
+            value: None,
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+    ir.model.sketch_constraints.push(SketchConstraint {
+        id: SketchConstraintId::mint("synthetic:test:id#reference-dimension").unwrap(),
+        sketch: SketchId::mint("synthetic:test:id#sketch").unwrap(),
+        definition: SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::DistanceLoci {
+                first: point("synthetic:test:id#first"),
+                second: point("synthetic:test:id#second"),
+                parameter: cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#width")
+                    .unwrap(),
+            },
+        )
+        .unwrap(),
+        name: None,
+        driving: Some(false),
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
+        native_ref: None,
+    });
+    let losses = super::super::accounting::losses(&ir, false);
+    for prefix in [
+        "1 driven (reference) sketch dimension record(s)",
+        "1 driven (reference) dimension parameter record(s)",
+    ] {
+        assert!(
+            losses.iter().any(|loss| loss.code
+                == SldprtLossCode::WriterDrivenDimensionsOmitted.kind()
+                && loss.message.starts_with(prefix)),
+            "{prefix}: {losses:?}"
+        );
+    }
 }

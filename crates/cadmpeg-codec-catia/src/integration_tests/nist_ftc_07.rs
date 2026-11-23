@@ -404,7 +404,7 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
                         .unwrap_or_else(|| panic!("{id}: {} has no source interval", pcurve.id))
                         .get()
                 },
-                cadmpeg_ir::geometry::DirectedParameterRange::endpoints,
+                cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints,
             );
             let mut lifted = Vec::new();
             for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {

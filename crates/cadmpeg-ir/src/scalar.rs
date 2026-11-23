@@ -1079,7 +1079,7 @@ impl crate::geometry::nurbs::KnotVector {
     }
 }
 
-impl crate::geometry::DirectedParameterRange {
+impl crate::geometry::procedural_curves::DirectedParameterRange {
     /// Return the directed endpoints as finite reals. The range admits only
     /// finite endpoints, so nothing is checked. The route lives beside
     /// [`FiniteReal`] because only this module constructs one.

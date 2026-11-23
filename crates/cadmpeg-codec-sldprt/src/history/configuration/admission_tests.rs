@@ -101,6 +101,7 @@ fn run(policy: &DecodePolicy) -> Result<(), CodecError> {
         &[feature_input_lane("lane", Some("0"))],
         &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
+        &mut crate::resolved_features::compact_reference_planes::TopReferenceSketches::default(),
     )?;
     assert!(losses.is_empty());
     assert_eq!(ir, expected);
@@ -348,6 +349,7 @@ fn run_unscoped_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
         &[],
         &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
+        &mut crate::resolved_features::compact_reference_planes::TopReferenceSketches::default(),
     )?;
     assert!(losses.is_empty());
     assert_eq!(ir, expected);
@@ -430,6 +432,7 @@ fn run_spatial_ownership(policy: &DecodePolicy) -> Result<(), CodecError> {
         &[feature_input_lane("lane", Some("0"))],
         &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
+        &mut crate::resolved_features::compact_reference_planes::TopReferenceSketches::default(),
     )?;
     assert!(losses.is_empty());
     assert_eq!(ir, expected);
@@ -540,6 +543,7 @@ fn run_hole_construction(policy: &DecodePolicy) -> Result<(), CodecError> {
         &[],
         &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
+        &mut crate::resolved_features::compact_reference_planes::TopReferenceSketches::default(),
     )?;
     assert!(losses.is_empty());
     assert_eq!(ir, expected);
@@ -631,6 +635,7 @@ fn run_hole_operands(policy: &DecodePolicy) -> Result<(), CodecError> {
         &[],
         &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
+        &mut crate::resolved_features::compact_reference_planes::TopReferenceSketches::default(),
     )?;
     assert!(losses.is_empty());
     assert_eq!(ir, expected);
@@ -656,7 +661,10 @@ fn profile_termination_operands() -> (
     let faces = vec![FaceId::mint("synthetic:test:id#profile-face").unwrap()];
     let boundary = SketchProfileBoundaryUse {
         entity: entity.clone(),
-        parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new([1.0, 0.0]).unwrap(),
+        parameter_range: cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new([
+            1.0, 0.0,
+        ])
+        .unwrap(),
         reversed: true,
     };
     let planar = vec![
@@ -838,6 +846,7 @@ fn run_hole_profile_termination(policy: &DecodePolicy) -> Result<(), CodecError>
         &[],
         &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
+        &mut crate::resolved_features::compact_reference_planes::TopReferenceSketches::default(),
     )?;
     assert!(losses.is_empty());
     assert_eq!(ir, expected);
@@ -930,6 +939,7 @@ fn run_parameter_overlay(policy: &DecodePolicy) -> Result<(), CodecError> {
         ],
         &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
+        &mut crate::resolved_features::compact_reference_planes::TopReferenceSketches::default(),
     );
     assert_eq!(ir.model.parameters, expected.model.parameters);
     let losses = result?;

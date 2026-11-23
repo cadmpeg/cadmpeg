@@ -735,7 +735,7 @@ fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
     assert_eq!(
         result.ir().geometry.pcurves[0]
             .fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.01)
     );
     assert_eq!(
@@ -893,7 +893,7 @@ fn decode_assigns_descending_pcurve_trim_to_the_coedge_use() {
     assert_eq!(
         result.ir().geometry.coedges[0].pcurves[0]
             .parameter_range
-            .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
+            .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints),
         Some([0.0, 1.0])
     );
     assert!(

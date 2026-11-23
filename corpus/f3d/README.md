@@ -244,3 +244,71 @@ reported the body count, volume, area and face count after each timeline item.
   1025.2187 mm², 1 cone face.
 - `reverse_normal_loft.f3d`: Loft1, then Reverse Normal of the Loft body.
   1 surface body, 0 mm³, 1025.2187 mm², 1 cone face.
+
+Suppressed instances. The same plate and hole, patterned with Compute
+Optimized at 6 mm. The API built each pattern and a person suppressed instances
+in the Fusion UI (Edit Pattern, Suppression). Fusion numbers the instances of
+direction one, then direction two, from zero.
+
+- `suppressed_two_instances.f3d`: quantity 5 along X, instances 1 and 3
+  suppressed. The copies are at 0, 12 and 24 mm. 7811.50 mm³, 9 faces.
+- `suppressed_grid_middle.f3d`: 3 × 3 along X and Y, instance (1, 1)
+  suppressed. 8 holes, 7497.35 mm³, 14 faces.
+- `suppressed_grid_corner.f3d`: as `suppressed_grid_middle.f3d` with instance
+  (2, 2) suppressed.
+
+Suppressed instances of symmetric directions. An 80 × 80 × 5 mm plate has a 4 mm hole at
+(40, 40) mm, patterned with Compute Optimized at 6 mm; a person suppressed instances in the
+Fusion UI. Each pattern leaves 1 body.
+
+- `suppressed_symmetric_even.f3d`: 4 along X, Symmetric. Holes at 0 and +12 mm
+  remain. 31874.34 mm³, 8 faces.
+- `suppressed_symmetric_direction_two.f3d`: 3 × 3, direction two Symmetric;
+  (+6, −6) and (0, +6) mm suppressed. 31560.18 mm³, 13 faces.
+- `suppressed_symmetric_both.f3d`: 3 × 3, both Symmetric; (−6, −6) and (+6, +6) mm
+  suppressed. 31560.18 mm³, 13 faces.
+- `suppressed_direction_two_only.f3d`: 4 along Y only; +6 and +18 mm suppressed.
+  31874.34 mm³, 8 faces.
+
+# Fusion API fixtures: circular-pattern Compute option
+
+These files are CC0. Each was written through the Fusion API in Autodesk Fusion
+2706.1.17 from a new design. A 40 × 40 × 5 mm plate has a 4 mm hole cut at
+(10, 20) mm, patterned around a construction axis normal to the top face at
+(20, 20, 5) mm with quantity 4. The API reported 1 body, 7748.67 mm³ and 10
+faces (four holes) for each.
+
+- `circular_compute_optimized.f3d`: 360°, Compute Optimized.
+- `circular_compute_identical.f3d`: 360°, Compute Identical.
+- `circular_symmetric_optimized.f3d`: 90° total, Symmetric, Compute Optimized.
+
+Suppressed circular instances. The same plate has a 4 mm hole at (55, 40) mm, patterned
+about an axis through (40, 40) mm normal to the top face, Compute Optimized.
+
+- `circular_suppressed.f3d`: 6 over 360°; the instances at 180° and 300° suppressed.
+  Holes at 0°, 60°, 120° and 240° remain. 31748.67 mm³, 10 faces.
+- `circular_suppressed_symmetric.f3d`: 5 over 90°, Symmetric; −22.5° and +45°
+  suppressed. Holes at −45°, 0° and +22.5° remain. 31811.50 mm³, 9 faces.
+
+# Fusion API fixtures: timeline state
+
+These files are CC0. Each was written through the Fusion API in Autodesk Fusion
+2706.1.17 from a new design, with the root component active. Sketch1 and
+Extrude1 make box T at x, y = −20..20 mm, z = 0..10 mm. Sketch2 and Extrude2
+make box B at x, y = −10..10 mm, z = 0..20 mm. Combine1 joins tool B to target
+T. Fillet1 rounds the four outer top edges of T by 2 mm, and Fillet2 the four
+top edges of B. The API reported isSuppressed and isRolledBack for each item
+and the saved marker position.
+
+- `timeline_rolled_after_edit.f3d`: marker 4 of 6. Combine1 and Fillet1 are
+  rolled back; Extrude1 changed from 10 to 12 mm while rolled back.
+- `timeline_suppressed_rolled.f3d`: marker 4 of 6. Combine1 is rolled back;
+  Fillet1 is suppressed and rolled back.
+- `timeline_combine_suppressed.f3d`: marker 6 of 7. Combine1 is suppressed,
+  Fillet1 is active, and Fillet2 is suppressed and rolled back.
+- `timeline_marker_after_occurrence.f3d`: Sketch1, Extrude1, an occurrence of
+  a new empty component, Sketch2, Extrude2. Marker 3 of 5, directly after the
+  occurrence item.
+- `timeline_group_suppressed.f3d`: Sketch3 and Extrude3 cut a 5 mm hole at
+  (15, 15) through T inside timeline group HoleGroup, which is suppressed.
+  The API reports both items suppressed.

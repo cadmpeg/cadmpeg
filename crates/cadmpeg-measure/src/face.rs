@@ -8,6 +8,7 @@ use cadmpeg_core::decode::ResourceLimit;
 use cadmpeg_ir::source_fidelity::SourceFidelity;
 use cadmpeg_ir::topology::Face;
 
+mod nurbs_box;
 mod pole;
 mod readings;
 
@@ -290,9 +291,10 @@ impl<'ir> FaceInput<'_, 'ir> {
             }),
         };
         let row_work = self.work == Work::Row;
+        let body_or_row = matches!(self.work, Work::Row | Work::Body);
         let box_work = self.work == Work::Box;
         let carrier_row = match &carrier {
-            Ok(carrier) if row_work => carrier.measures(Sources {
+            Ok(carrier) if body_or_row => carrier.measures(Sources {
                 fidelity: self.fidelity,
                 surface: carrier.id(),
                 depth: carrier.depth,
@@ -431,7 +433,7 @@ impl<'ir> FaceInput<'_, 'ir> {
         };
 
         let (area, verdict) = match (&chart, &boundary, &region) {
-            (Ok(_), Ok(_), Ok(region)) if !row_work && self.flux_origin.is_none() => (
+            (Ok(_), Ok(_), Ok(region)) if !body_or_row && self.flux_origin.is_none() => (
                 Readings::single(not_computed(id)),
                 if region.rule == RegionRule::DeclaredOrientation {
                     Verdict::Unconfirmed
@@ -468,7 +470,7 @@ impl<'ir> FaceInput<'_, 'ir> {
         };
 
         let (bbox, aabbs) = match (&chart, &region) {
-            _ if !row_work && !box_work => (Readings::single(not_computed(id)), [None, None]),
+            _ if !body_or_row && !box_work => (Readings::single(not_computed(id)), [None, None]),
             (Ok(chart @ (Chart::Sphere(_) | Chart::Torus(_))), Ok(region)) => self.closed_box(
                 face,
                 &coedges,
@@ -481,6 +483,37 @@ impl<'ir> FaceInput<'_, 'ir> {
                 },
             ),
             (chart, region) => {
+                let boundary_edges = self.boundary_aabb(&coedges, &boundary);
+                let mut samples = [None, None];
+                let mut dual = false;
+                if let (Ok(chart @ Chart::Nurbs(_)), Ok(region), Ok(boundary), Ok((edges, error))) =
+                    (chart, region, &boundary, boundary_edges)
+                {
+                    dual = region.rule == RegionRule::DeclaredOrientation;
+                    for (index, sampled) in
+                        samples
+                            .iter_mut()
+                            .enumerate()
+                            .take(if dual { 2 } else { 1 })
+                    {
+                        *sampled = settle(
+                            nurbs_box::bound(
+                                eval,
+                                chart,
+                                region,
+                                nurbs_box::Trims {
+                                    shapes: &boundary.shapes,
+                                    resolved: Some(&boundary.resolved),
+                                },
+                                edges,
+                                tau_b,
+                                index == 1,
+                            )
+                            .map(|(aabb, numeric)| (aabb, numeric.max(error))),
+                        )?
+                        .ok();
+                    }
+                }
                 let (bbox, aabb) = self.plain_box(
                     face,
                     &coedges,
@@ -491,9 +524,33 @@ impl<'ir> FaceInput<'_, 'ir> {
                         hull_without_region: box_work,
                         tau_b,
                         hull,
+                        sampled: samples[0],
                     },
                 );
-                (Readings::single(bbox), [aabb, None])
+                if dual {
+                    let (complement, other) = self.plain_box(
+                        face,
+                        &coedges,
+                        &boundary,
+                        PlainBox {
+                            chart,
+                            region,
+                            hull_without_region: box_work,
+                            tau_b,
+                            hull,
+                            sampled: samples[1],
+                        },
+                    );
+                    (
+                        Readings {
+                            declared: bbox,
+                            complement: Some(complement),
+                        },
+                        [aabb, other],
+                    )
+                } else {
+                    (Readings::single(bbox), [aabb, None])
+                }
             }
         };
 
@@ -633,7 +690,7 @@ impl<'ir> FaceInput<'_, 'ir> {
                     scale,
                     reach,
                     active: match self.work {
-                        Work::Row => MEASURE_COMPONENTS,
+                        Work::Row | Work::Body => MEASURE_COMPONENTS,
                         Work::Orientation | Work::Box => ORIENTATION_COMPONENTS,
                     },
                 };
@@ -783,7 +840,20 @@ impl<'ir> FaceInput<'_, 'ir> {
             hull_without_region,
             tau_b,
             hull,
+            sampled,
         } = basis;
+        if let Some((aabb, numeric)) = sampled {
+            return (
+                measured(
+                    box_value(aabb, BoxKind::Tight, None),
+                    Unit::Millimeter,
+                    Method::SurfaceSubdivision,
+                    Errors::new(numeric, tau_b),
+                    id,
+                ),
+                Some(aabb),
+            );
+        }
         match (chart, region) {
             (Ok(Chart::Plane(_) | Chart::Cylinder(_) | Chart::Extrusion(_)), Ok(_)) => self
                 .boundary_box(
@@ -1180,6 +1250,7 @@ struct PlainBox<'a, 'ir> {
     hull_without_region: bool,
     tau_b: f64,
     hull: Option<Result<Aabb, UnavailableReason>>,
+    sampled: Option<(Aabb, f64)>,
 }
 
 /// What the box of a face on a sphere or torus reads.

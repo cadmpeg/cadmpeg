@@ -69,11 +69,18 @@ pub(super) fn project(
     let (parameters, _) = entries.parameters(
         &definition,
         &super::super::parameters::Readings {
-            decoded: super::super::parameters::Decoded::new(&ir.model.parameters, &[]),
+            decoded: super::super::parameters::Decoded::new(
+                &ir.model.parameters,
+                &[],
+                &crate::resolved_features::assembly::ConfigurationMaps::new(),
+            ),
             length_unit: Some(UnitSymbol::Mm),
+            length_places: None,
             bound: std::mem::take(&mut typed.bound),
             measured: std::mem::take(&mut typed.measured),
             driven: std::mem::take(&mut typed.references),
+            manager: std::collections::HashMap::new(),
+            confirmed: HashSet::new(),
         },
     );
     ir.design.features = timeline.features;

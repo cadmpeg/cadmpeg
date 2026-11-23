@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Labeled (renamed) parameter-scope tails in the plain 78- and 77-byte forms
-//! and the typed form.
+//! and the typed form, and the state bytes and lane flags of each form.
 
 use cadmpeg_core::decode::u64_from_index;
 
@@ -11,9 +11,11 @@ use crate::test_support::typed_reference_scopes::{parse, typed_scope_frame};
 const LABEL: &str = "Renamed";
 
 struct PlainTail {
+    label: &'static str,
     long_form: bool,
     references: [u32; 3],
     epochs: (u32, u32),
+    state: [u8; 3],
     flags: (u8, u8),
     previous: u32,
 }
@@ -21,17 +23,19 @@ struct PlainTail {
 impl Default for PlainTail {
     fn default() -> Self {
         Self {
+            label: LABEL,
             long_form: true,
             references: [334, 333, 332],
             epochs: (252, 252),
+            state: [0; 3],
             flags: (0, 0),
             previous: 9,
         }
     }
 }
 
-/// A Draft scope with current state 7 and a labeled plain tail; returns the
-/// frame and the end of the feature-family name.
+/// A Draft scope with current state 7 and a plain tail, labeled unless the
+/// label is empty; returns the frame and the end of the feature-family name.
 fn plain_labeled_frame(tail: &PlainTail) -> (Vec<u8>, usize) {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -39,14 +43,17 @@ fn plain_labeled_frame(tail: &PlainTail) -> (Vec<u8>, usize) {
     bytes.extend_from_slice(&12u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 10]);
     bytes.extend_from_slice(&1u32.to_le_bytes());
-    push_reference_u64(&mut bytes, 55);
+    // Read as LP-UTF16 from the count, the reference's first code unit is a
+    // control character, so the reference table reads as no family name.
+    push_reference_u64(&mut bytes, 0x100);
     bytes.extend_from_slice(&7u32.to_le_bytes());
     lp_utf16(&mut bytes, "Draft");
     let kind_end = bytes.len();
     bytes.extend_from_slice(&1u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 4]);
-    lp_utf16(&mut bytes, LABEL);
-    bytes.extend_from_slice(&[0; 7]);
+    lp_utf16(&mut bytes, tail.label);
+    bytes.extend_from_slice(&[0; 4]);
+    bytes.extend_from_slice(&tail.state);
     push_reference_u64(&mut bytes, u64::from(tail.references[0]));
     bytes.push(0);
     bytes.extend_from_slice(&tail.previous.to_le_bytes());
@@ -120,21 +127,22 @@ fn labeled_77_byte_tail_reads_its_preceding_state() {
 }
 
 #[test]
-fn labeled_tail_admits_any_record_index_and_epoch_and_keeps_zero_flags() {
+fn labeled_tail_admits_any_record_index_epoch_and_flag_state() {
     for long_form in [true, false] {
         assert_labeled_with_previous(&PlainTail {
             long_form,
             references: [0x0001_0100, 0x0002_00ff, 0x0001_0000],
             epochs: (64, 89),
-            flags: (0, 0),
+            flags: (1, 1),
             previous: 70_000,
-        });
-        let (nonzero, _) = plain_labeled_frame(&PlainTail {
-            long_form,
-            flags: (1, 0),
             ..PlainTail::default()
         });
-        assert!(parse_plain(&nonzero).is_none());
+        let (out_of_range, _) = plain_labeled_frame(&PlainTail {
+            long_form,
+            flags: (2, 0),
+            ..PlainTail::default()
+        });
+        assert!(parse_plain(&out_of_range).is_none());
     }
 }
 
@@ -197,4 +205,330 @@ fn labeled_scope_admits_its_shifted_preceding_state_offset_or_none() {
         })
         .unwrap();
     assert_eq!(absent.previous_history_state_id_offset(), None);
+}
+
+/// The tail flags of state bytes `state` at `state_at` and lane flags
+/// `flags` at `flags_at`.
+fn tail_flags(
+    state: [u8; 3],
+    flags: [u8; 2],
+    state_at: usize,
+    flags_at: usize,
+) -> crate::records::feature::scope::DesignScopeTailFlags {
+    crate::records::feature::scope::DesignScopeTailFlags {
+        suppression: [state[0] == 1, state[1] == 1],
+        unevaluated: state[2] == 1,
+        state_offset: u64_from_index(state_at),
+        no_result: flags[0] == 1,
+        rolled_back: flags[1] == 1,
+        no_result_offset: u64_from_index(flags_at),
+        envelope_offset: None,
+    }
+}
+
+#[test]
+fn plain_tails_read_their_state_bytes_and_lane_flags() {
+    for label in [LABEL, ""] {
+        for long_form in [true, false] {
+            for (state, no_result, rolled_back) in [
+                ([0, 0, 0], 0, 0),
+                ([0, 0, 0], 1, 0),
+                ([0, 0, 0], 0, 1),
+                ([0, 0, 0], 1, 1),
+                ([1, 0, 0], 1, 0),
+                ([0, 1, 0], 1, 1),
+                ([0, 0, 1], 1, 0),
+            ] {
+                let tail = PlainTail {
+                    label,
+                    long_form,
+                    state,
+                    flags: (no_result, rolled_back),
+                    ..PlainTail::default()
+                };
+                let (bytes, kind_end) = plain_labeled_frame(&tail);
+                let scope = parse_plain(&bytes).unwrap_or_else(|| {
+                    panic!("plain scope: label {label:?}, long form {long_form}, state {state:?}, flags {no_result} {rolled_back}")
+                });
+                let state_at = kind_end + 16 + 2 * label.len();
+                let at = kind_end + 62 + usize::from(long_form) + 2 * label.len();
+                assert_eq!(bytes[state_at..state_at + 3], state);
+                assert_eq!(bytes[at..at + 2], [no_result, rolled_back]);
+                assert_eq!(
+                    scope.tail_flags,
+                    Some(tail_flags(state, [no_result, rolled_back], state_at, at)),
+                    "label {label:?}, long form {long_form}"
+                );
+                let wire = serde_json::to_value(&scope).unwrap();
+                assert_eq!(
+                    serde_json::from_value::<crate::records::feature::scope::DesignParameterScope>(
+                        wire
+                    )
+                    .unwrap(),
+                    scope
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn plain_tail_state_bytes_are_zero_unless_the_no_result_flag_is_set() {
+    for (no_result, admitted) in [(0, false), (1, true)] {
+        let (mut bytes, kind_end) = plain_labeled_frame(&PlainTail {
+            flags: (no_result, 0),
+            ..PlainTail::default()
+        });
+        bytes[kind_end + 17 + 2 * LABEL.len()] = 1;
+        assert_eq!(parse_plain(&bytes).is_some(), admitted, "s0 {no_result}");
+    }
+}
+
+/// A state byte above `1` beside a set no-result flag leaves the tail state
+/// unread; the scope still decodes.
+#[test]
+fn a_plain_tail_state_byte_above_one_leaves_the_tail_state_unread() {
+    for byte in 0..3 {
+        let mut state = [0; 3];
+        state[byte] = 2;
+        let (bytes, _) = plain_labeled_frame(&PlainTail {
+            state,
+            flags: (1, 0),
+            ..PlainTail::default()
+        });
+        let scope = parse_plain(&bytes).expect("plain scope");
+        assert_eq!(scope.tail_flags, None, "state {state:?}");
+    }
+}
+
+/// A typed Fillet frame with the flags at tail offset 141 and the state
+/// bytes, labeled when `labeled`; returns the frame and the end of the
+/// feature-family name.
+fn typed_flagged_frame(labeled: bool, flags: [u8; 2], state: [u8; 3]) -> (Vec<u8>, usize) {
+    let kind = "Fillet";
+    let mut bytes = typed_scope_frame(41, kind);
+    let kind_end = 11 + 10 + 4 + 2 * 51 + 4 + 4 + 2 * kind.len();
+    bytes[kind_end + 141..kind_end + 143].copy_from_slice(&flags);
+    bytes[kind_end + 16..kind_end + 19].copy_from_slice(&state);
+    if labeled {
+        let mut label = Vec::new();
+        lp_utf16(&mut label, LABEL);
+        bytes.splice(kind_end + 8..kind_end + 12, label);
+    }
+    (bytes, kind_end)
+}
+
+#[test]
+fn typed_tails_read_their_state_bytes_and_lane_flags() {
+    for labeled in [false, true] {
+        for (flags, state) in [
+            ([1, 0], [0; 3]),
+            ([0, 1], [0; 3]),
+            ([1, 1], [0; 3]),
+            ([1, 0], [1, 0, 0]),
+            ([1, 1], [0, 1, 0]),
+            ([1, 0], [0, 0, 1]),
+        ] {
+            let (bytes, kind_end) = typed_flagged_frame(labeled, flags, state);
+            let scope = parse(&bytes).expect("flagged typed scope");
+            let shift = if labeled { 2 * LABEL.len() } else { 0 };
+            assert_eq!(
+                scope.tail_flags,
+                Some(tail_flags(
+                    state,
+                    flags,
+                    kind_end + 16 + shift,
+                    kind_end + 141 + shift
+                )),
+                "labeled {labeled}, flags {flags:?}, state {state:?}"
+            );
+            assert_eq!(scope.previous_history_state_id(), Some(41));
+        }
+    }
+}
+
+#[test]
+fn typed_tail_state_bytes_are_zero_unless_the_no_result_flag_is_set() {
+    for labeled in [false, true] {
+        let shift = if labeled { 2 * LABEL.len() } else { 0 };
+        assert!(parse(&typed_flagged_frame(labeled, [0, 0], [0, 1, 0]).0).is_none());
+        assert!(parse(&typed_flagged_frame(labeled, [0, 1], [1, 0, 0]).0).is_none());
+        assert!(parse(&typed_flagged_frame(labeled, [2, 0], [0; 3]).0).is_none());
+        let (bytes, kind_end) = typed_flagged_frame(labeled, [1, 0], [0, 1, 0]);
+        assert_eq!(
+            parse(&bytes).and_then(|scope| scope.tail_flags),
+            Some(tail_flags(
+                [0, 1, 0],
+                [1, 0],
+                kind_end + 16 + shift,
+                kind_end + 141 + shift
+            ))
+        );
+    }
+}
+
+#[test]
+fn scope_wire_refuses_tail_flags_outside_the_tail_or_set_without_the_no_result_flag() {
+    let (bytes, _) = plain_labeled_frame(&PlainTail {
+        flags: (1, 1),
+        ..PlainTail::default()
+    });
+    let scope = parse_plain(&bytes).expect("flagged scope");
+    let wire = serde_json::to_value(&scope).unwrap();
+    for offset in [
+        scope.feature_ordinal_offset() - 1,
+        scope.paired_byte_offset() - 1,
+        u64::MAX - 1,
+        u64::MAX,
+    ] {
+        let mut moved = wire.clone();
+        moved["tail_flags"]["no_result_offset"] = offset.into();
+        assert!(
+            serde_json::from_value::<crate::records::feature::scope::DesignParameterScope>(moved)
+                .is_err(),
+            "offset {offset}"
+        );
+    }
+    let flags = scope.tail_flags.expect("flags");
+    for offset in [
+        scope.feature_ordinal_offset() - 1,
+        flags.no_result_offset - 2,
+    ] {
+        let mut moved = wire.clone();
+        moved["tail_flags"]["state_offset"] = offset.into();
+        assert!(
+            serde_json::from_value::<crate::records::feature::scope::DesignParameterScope>(moved)
+                .is_err(),
+            "state offset {offset}"
+        );
+    }
+    let mut current = wire;
+    current["tail_flags"]["no_result"] = false.into();
+    current["tail_flags"]["suppression"] = serde_json::json!([false, true]);
+    assert!(
+        serde_json::from_value::<crate::records::feature::scope::DesignParameterScope>(current)
+            .is_err()
+    );
+}
+
+/// A scope reads flags that an earlier envelope of its record stores when they
+/// lie after the start of that envelope and before its own start.
+#[test]
+fn scope_wire_admits_the_flags_of_an_earlier_envelope() {
+    use crate::records::feature::scope::{DesignParameterScope, DesignScopeTailFlags};
+
+    let (frame, _) = plain_labeled_frame(&PlainTail {
+        flags: (1, 1),
+        ..PlainTail::default()
+    });
+    let bytes = [frame.as_slice(), frame.as_slice()].concat();
+    let earlier = parse_plain(&bytes).expect("earlier envelope");
+    let later = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        12,
+        &crate::records::references::DesignClassTag::try_from("378".to_owned()).unwrap(),
+        u64_from_index(frame.len()),
+    )
+    .unwrap()
+    .expect("later envelope");
+    let flags = earlier.tail_flags.expect("earlier flags");
+    let carried = |envelope_offset: u64, no_result_offset: u64| {
+        let mut wire = serde_json::to_value(&later).unwrap();
+        wire["tail_flags"] = serde_json::to_value(DesignScopeTailFlags {
+            no_result_offset,
+            envelope_offset: Some(envelope_offset),
+            ..flags
+        })
+        .unwrap();
+        serde_json::from_value::<DesignParameterScope>(wire)
+    };
+    assert_eq!(
+        carried(earlier.byte_offset(), flags.no_result_offset)
+            .expect("flags of the earlier envelope")
+            .tail_flags,
+        Some(DesignScopeTailFlags {
+            envelope_offset: Some(earlier.byte_offset()),
+            ..flags
+        })
+    );
+    assert!(carried(earlier.byte_offset(), later.byte_offset() - 2).is_ok());
+    let own = later.tail_flags.expect("later flags").no_result_offset;
+    for (envelope_offset, no_result_offset) in [
+        (later.byte_offset(), flags.no_result_offset),
+        (flags.no_result_offset, flags.no_result_offset),
+        (earlier.byte_offset(), later.byte_offset() - 1),
+        (earlier.byte_offset(), own),
+        (earlier.byte_offset(), later.paired_byte_offset() - 1),
+        (earlier.byte_offset(), u64::MAX - 1),
+        (earlier.byte_offset(), u64::MAX),
+    ] {
+        assert!(
+            carried(envelope_offset, no_result_offset).is_err(),
+            "envelope {envelope_offset}, flags {no_result_offset}"
+        );
+    }
+}
+
+/// The decoder gives a later envelope that stores no flags the flags of the
+/// latest earlier envelope that stores them, located at those flag bytes, and
+/// the kept scope reloads unchanged.
+#[test]
+fn carried_flags_of_an_earlier_envelope_reload() {
+    use crate::design::decode::scopes::parameter_scope::{
+        admit_history_bound_scope_variants, parse_parameter_scope,
+    };
+    use crate::records::feature::scope::{DesignParameterScope, DesignScopeTailFlags};
+
+    let frames = [(1, 0), (0, 1), (1, 1)].map(|flags| {
+        plain_labeled_frame(&PlainTail {
+            flags,
+            ..PlainTail::default()
+        })
+        .0
+    });
+    let bytes = frames.concat();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let tag = crate::records::references::DesignClassTag::try_from("378".to_owned()).unwrap();
+    let scopes = [0, frames[0].len(), frames[0].len() + frames[1].len()].map(|start| {
+        parse_parameter_scope(&bytes, &records, 12, &tag, u64_from_index(start))
+            .unwrap()
+            .expect("envelope")
+    });
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
+    // The envelopes whose tails are left unread, and the one whose flags the
+    // last envelope takes.
+    for (unread, source) in [(&[2][..], 1), (&[1, 2][..], 0)] {
+        let mut variants = scopes.to_vec();
+        for index in unread {
+            variants[*index].tail_flags = None;
+        }
+        admit_history_bound_scope_variants(&ctx, &mut variants, &[], &Default::default())
+            .expect("the document decodes");
+        let [kept] = variants.as_slice() else {
+            panic!("one retained envelope")
+        };
+        let flags = scopes[source].tail_flags.expect("source flags");
+        assert_eq!(kept.byte_offset(), scopes[2].byte_offset());
+        assert_eq!(
+            kept.tail_flags,
+            Some(DesignScopeTailFlags {
+                envelope_offset: Some(scopes[source].byte_offset()),
+                ..flags
+            }),
+            "unread {unread:?}"
+        );
+        let at = usize::try_from(flags.no_result_offset).unwrap();
+        assert_eq!(
+            &bytes[at..at + 2],
+            &[u8::from(flags.no_result), u8::from(flags.rolled_back)]
+        );
+        let reloaded =
+            serde_json::from_value::<DesignParameterScope>(serde_json::to_value(kept).unwrap())
+                .expect("the kept scope reloads");
+        assert_eq!(&reloaded, kept, "unread {unread:?}");
+    }
 }

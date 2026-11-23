@@ -76,7 +76,7 @@ fn surface_patch_recipe_uses_the_unique_common_boundary_edge() {
         ..Default::default()
     };
     assert_eq!(
-        crate::history::surface_patch_edge_operand_slot(
+        crate::history::edge_operand_history::surface_patch_edge_operand_slot(
             Some(&structure),
             &references,
             &topology,
@@ -96,7 +96,7 @@ fn surface_patch_recipe_uses_the_unique_common_boundary_edge() {
         radial_next: 13,
     });
     assert_eq!(
-        crate::history::surface_patch_edge_operand_slot(
+        crate::history::edge_operand_history::surface_patch_edge_operand_slot(
             Some(&structure),
             &references,
             &ambiguous,
@@ -108,7 +108,7 @@ fn surface_patch_recipe_uses_the_unique_common_boundary_edge() {
 
 #[test]
 fn surface_patch_reference_roles_deduplicate_repeated_ordinals() {
-    let common = crate::history::common_surface_patch_reference;
+    let common = crate::history::edge_operand_history::common_surface_patch_reference;
     assert_eq!(common([1, 1], [3, 1]), Some(1));
     assert_eq!(common([0, 2], [0, 4]), Some(0));
     assert_eq!(common([0, 0], [0, 0]), Some(0));

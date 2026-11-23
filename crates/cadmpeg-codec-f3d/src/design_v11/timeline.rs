@@ -8,8 +8,9 @@
 //! projection did not resolve is a feature of the family its record type
 //! establishes, or a native feature named by that type.
 //!
-//! The decoder does not read the rollback marker of a timeline, so each
-//! timeline is stated built through its last item, and one loss names it.
+//! The rolled-back flags of the items' scope tails place the rollback marker
+//! of a timeline before its first rolled-back item. A timeline whose items
+//! carry no rolled-back flag is built through its last item.
 //!
 //! A Base Feature is stored geometry (§5.10) where the v10 projection names
 //! its bodies and each is a body of the current geometry, whose records the
@@ -37,6 +38,17 @@ use super::operation::{family, kind_family, Family};
 use crate::ids::native_stream;
 use crate::loss::F3dLossCode;
 use crate::records::entity_header::{DesignFeatureTimeline, SegmentType};
+use crate::records::feature::scope::DesignScopeTailFlags;
+
+/// The tail flags of the parameter scopes, keyed by stream and record index.
+pub(super) type TailFlags<'a> = HashMap<(&'a str, u64), DesignScopeTailFlags>;
+
+/// The parameter scopes of the decode: the scope records and the tail flags
+/// read from them.
+pub(super) struct ScopeInputs<'a> {
+    pub(super) records: &'a [crate::records::feature::scope::DesignParameterScope],
+    pub(super) tail_flags: &'a TailFlags<'a>,
+}
 
 /// The containers and features of one document's timelines.
 #[derive(Default)]
@@ -51,16 +63,23 @@ pub(super) struct Projected {
 /// The timeline containers and item features of every document of the
 /// decode, keyed by the document's identity prefix (empty for the root
 /// document, `xref/…/occurrence-N/` for a referenced design). `bodies` are
-/// the bodies of the current geometry. Each timeline charges one loss to
-/// `losses` for its unread rollback marker.
+/// the bodies of the current geometry. A timeline whose rollback marker the
+/// flags leave open charges a loss to `losses`.
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
     features: &[LegacyFeature],
     timelines: &[DesignFeatureTimeline],
     types: &[SegmentType],
+    scope_inputs: &ScopeInputs<'_>,
     bodies: &BTreeSet<&str>,
     losses: &mut Vec<LossNote>,
 ) -> Result<BTreeMap<String, Projected>, CodecError> {
+    let tail_flags = scope_inputs.tail_flags;
+    let scopes = scope_inputs
+        .records
+        .iter()
+        .map(|scope| (scope.id.as_str(), scope))
+        .collect::<HashMap<_, _>>();
     let mut streams = BTreeMap::<&str, Vec<&DesignFeatureTimeline>>::new();
     for timeline in timelines {
         if let Some(stream) = native_stream(timeline.id()) {
@@ -90,15 +109,20 @@ pub(super) fn project(
                 .entry(document_prefix(stream).to_owned())
                 .or_default();
             let mut members = Vec::with_capacity(items.len());
+            let mut rolled_back = Vec::with_capacity(items.len());
             for item in items {
                 ctx.charge_entities(1, "project F3D v11 timeline item")?;
-                let feature = positioned
+                let flags = tail_flags.get(&(stream, item.value)).copied();
+                rolled_back.push(flags.map(|flags| flags.rolled_back));
+                let feature = match positioned
                     .get(&(stream, ordinal))
                     .and_then(|candidates| item_feature(candidates, item.value))
-                    .map_or_else(
-                        || unprojected_item(stream, timeline, item.value, &item_types),
-                        |feature| resolved_item(feature, bodies),
-                    );
+                {
+                    Some(feature) => resolved_item(feature, bodies, &scopes, losses),
+                    None => {
+                        unprojected_item(stream, timeline, item.value, &item_types, flags, losses)
+                    }
+                };
                 members.push(Member::Feature(feature.id.clone()));
                 projected.features.push(feature);
                 ordinal = ordinal
@@ -107,20 +131,67 @@ pub(super) fn project(
             }
             ctx.charge_entities(1, "project F3D v11 timeline")?;
             let id = container_id(timeline.id());
-            losses.push(F3dLossCode::HistoryRollbackUnread.note(format!(
-                "timeline {id}: rollback marker not read; stated built through its last item"
-            )));
+            let rollback = rollback(&id, &members, &rolled_back, losses);
             projected.containers.push(Container::Ordered {
                 id,
                 kind: OrderedKind::Timeline,
                 members,
                 folders: Vec::new(),
-                rollback: Rollback::End,
+                rollback,
                 placement: None,
             });
         }
     }
     Ok(documents)
+}
+
+/// The rollback marker of the timeline `id` from the rolled-back flag of each
+/// of its `members` (`None` where the flags are unread): before the first
+/// rolled-back item when no later item is read as built, else after the last
+/// item. A loss names a marker the flags leave open: an unread item before the
+/// first rolled-back item, or after it.
+fn rollback(
+    id: &ContainerId,
+    members: &[Member],
+    rolled_back: &[Option<bool>],
+    losses: &mut Vec<LossNote>,
+) -> Rollback {
+    let Some(first) = rolled_back.iter().position(|flag| *flag == Some(true)) else {
+        if rolled_back.contains(&None) {
+            losses.push(F3dLossCode::HistoryRollbackUnread.note(format!(
+                "timeline {id}: rollback marker not read; stated built through its last item"
+            )));
+        }
+        return Rollback::End;
+    };
+    if rolled_back
+        .iter()
+        .skip(first)
+        .any(|flag| *flag == Some(false))
+    {
+        losses.push(F3dLossCode::HistoryRollbackUnread.note(format!(
+            "timeline {id}: a built item follows a rolled-back item; stated built through its last item"
+        )));
+        return Rollback::End;
+    }
+    if first
+        .checked_sub(1)
+        .and_then(|previous| rolled_back.get(previous))
+        == Some(&None)
+    {
+        losses.push(F3dLossCode::HistoryRollbackBoundUnread.note(format!(
+            "timeline {id}: the item before the first rolled-back item is unread; the rollback marker can stand before it"
+        )));
+    }
+    if rolled_back.iter().skip(first).any(Option::is_none) {
+        losses.push(F3dLossCode::HistoryRollbackUnread.note(format!(
+            "timeline {id}: an item after the first rolled-back item is unread; stated rolled back from the first rolled-back item"
+        )));
+    }
+    members
+        .get(first)
+        .cloned()
+        .map_or(Rollback::End, Rollback::Before)
 }
 
 /// The identity prefix of the document that holds `stream`: everything up to
@@ -149,12 +220,31 @@ fn item_feature<'a>(candidates: &[&'a LegacyFeature], record: u64) -> Option<&'a
         .copied()
 }
 
-fn resolved_item(feature: &LegacyFeature, bodies: &BTreeSet<&str>) -> Feature {
+fn resolved_item(
+    feature: &LegacyFeature,
+    bodies: &BTreeSet<&str>,
+    scopes: &HashMap<&str, &crate::records::feature::scope::DesignParameterScope>,
+    losses: &mut Vec<LossNote>,
+) -> Feature {
     let operation = feature.evaluation.definition().operation();
-    let operation = stored(operation, bodies).unwrap_or_else(|| match family(operation) {
-        Family::Typed(family) => FeatureOperation::Unresolved { family },
-        Family::Native(kind) => native(&kind),
-    });
+    let typed_pattern = |losses: &mut Vec<LossNote>| {
+        let scope = scopes.get(feature.native_ref.as_deref()?)?;
+        scope.rectangular_pattern_construction()?;
+        let projected = super::pattern::project(operation, scope, losses);
+        if projected.is_none() {
+            losses.push(F3dLossCode::FeatureRectangularPatternDesignNative.note(format!(
+                "feature {} retains its rectangular pattern in its native record: its direction, seeds, or run cannot be transferred to a v11 linear layout.", feature.id
+            )));
+        }
+        projected
+    };
+    let operation = super::datum::project(feature, losses)
+        .or_else(|| stored(operation, bodies))
+        .or_else(|| typed_pattern(losses))
+        .unwrap_or_else(|| match family(operation) {
+            Family::Typed(family) => FeatureOperation::Unresolved { family },
+            Family::Native(kind) => native(&kind),
+        });
     Feature {
         id: feature.id.clone(),
         name: feature.name.clone(),
@@ -191,22 +281,31 @@ fn stored(operation: &LegacyOperation, bodies: &BTreeSet<&str>) -> Option<Featur
 }
 
 /// The feature of an item the v10 projection did not resolve: its record
-/// type's family, or a native operation named by that type.
+/// type's family, or a native operation named by that type, suppressed as
+/// its scope tail `flags` state.
 fn unprojected_item(
     stream: &str,
     timeline: &DesignFeatureTimeline,
     record: u64,
     types: &ItemTypes<'_>,
+    flags: Option<DesignScopeTailFlags>,
+    losses: &mut Vec<LossNote>,
 ) -> Feature {
+    let id = item_feature_id(stream, record);
+    if let Some(code) = flags.and_then(|flags| flags.active_without_result()) {
+        losses.push(code.note(format!(
+            "feature {id} stores the no-result flag and no suppression state byte; it is read as an active feature with no current result"
+        )));
+    }
     let operation = match types.guid(record).map(kind_family) {
         Some(Family::Typed(family)) => FeatureOperation::Unresolved { family },
         Some(Family::Native(kind)) => native(&kind),
         None => native("timeline-item"),
     };
     Feature {
-        id: item_feature_id(stream, record),
+        id,
         name: None,
-        suppressed: None,
+        suppressed: flags.map(|flags| Dimension::Literal(flags.suppressed())),
         definition: FeatureDefinition {
             operation,
             refine: None,

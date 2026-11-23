@@ -22,12 +22,10 @@ fn only_a_role_0x21_group_of_a_loft_scope_is_a_loft_point_group() {
         DesignOperandRole::PROFILE,
     ));
     let loft = [scope(DesignFeatureKind::Loft, SCOPE)];
-    assert!(crate::design::decode::operands::is_loft_point_group(
-        &point, &loft
-    ));
-    assert!(!crate::design::decode::operands::is_loft_point_group(
-        &profile, &loft
-    ));
+    assert!(crate::design::decode::operands::entity_selections::is_loft_point_group(&point, &loft));
+    assert!(
+        !crate::design::decode::operands::entity_selections::is_loft_point_group(&profile, &loft)
+    );
     for scopes in [
         vec![scope(DesignFeatureKind::Hole, SCOPE)],
         vec![scope(DesignFeatureKind::Loft, SCOPE + 1)],
@@ -41,8 +39,10 @@ fn only_a_role_0x21_group_of_a_loft_scope_is_a_loft_point_group() {
             scope(DesignFeatureKind::Loft, SCOPE),
         ],
     ] {
-        assert!(!crate::design::decode::operands::is_loft_point_group(
-            &point, &scopes
-        ));
+        assert!(
+            !crate::design::decode::operands::entity_selections::is_loft_point_group(
+                &point, &scopes
+            )
+        );
     }
 }

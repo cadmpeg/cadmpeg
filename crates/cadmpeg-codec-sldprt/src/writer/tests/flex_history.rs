@@ -883,15 +883,19 @@ fn encoder_writes_authored_with_retained_native_envelope_curved_sketches() {
         .expect("source distance parameter");
     parameter.expression = "5mm".into();
     parameter.value = Some(ParameterValue::Length(Length::new(5.0).unwrap()));
-    let error = crate::test_support::plan_fixture_with_native_envelope(
+    let plan = crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
         TargetRequest::Inherit,
     )
-    .and_then(|plan| plan.write_to(&mut Vec::new()))
-    .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("not satisfied by measured geometry"));
+    .unwrap();
+    assert!(
+        plan.report().losses.iter().any(|loss| {
+            loss.code.local_code() == "writer.sketch-constraints-omitted"
+                && loss.message.contains("not satisfied by measured geometry")
+        }),
+        "{:#?}",
+        plan.report().losses
+    );
 }
 
 #[test]
@@ -1425,7 +1429,7 @@ fn semantic_writer_round_trips_flex_operations() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1494,7 +1498,7 @@ fn semantic_writer_round_trips_all_flex_modes() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1693,7 +1697,7 @@ fn semantic_writer_preserves_native_feature_leaf_text() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1763,7 +1767,7 @@ fn semantic_writer_removes_deleted_history_records() {
         .retain(|configuration| configuration.name.as_deref() == Some("Keep"));
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1807,7 +1811,7 @@ fn semantic_writer_reorders_nested_history_records() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,

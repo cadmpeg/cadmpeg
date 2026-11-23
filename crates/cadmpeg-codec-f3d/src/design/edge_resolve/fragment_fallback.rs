@@ -146,11 +146,13 @@ pub(super) fn apply_group(
         }
         unresolved.retain(|id| id != &operand.id);
         if edge.inferred {
-            notes.push(crate::history::inferred_edge_selection_note(
-                &operand.id,
-                state_id,
-                edge.slot,
-            ));
+            notes.push(
+                crate::history::edge_operand_history::inferred_edge_selection_note(
+                    &operand.id,
+                    state_id,
+                    edge.slot,
+                ),
+            );
         }
         selected = true;
     }

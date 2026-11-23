@@ -118,8 +118,12 @@ impl SketchRecordList {
 pub(super) enum ListedRecord<'a> {
     /// A point record.
     Point,
-    /// A curve record of `sketch`, in its first curve list or a later one.
-    Curve(&'a SketchRecordList),
+    /// A curve record of `sketch`; `later` when it follows the first curve
+    /// list.
+    Curve {
+        sketch: &'a SketchRecordList,
+        later: bool,
+    },
 }
 
 /// Where a record stands in its sketch.
@@ -224,7 +228,7 @@ impl SketchRecordLists {
     /// decided from the record's own shape ([`framed_curve`]).
     pub(super) fn listed_curve_kind(&self, payload: &[u8], offset: usize) -> Option<FramedCurve> {
         match self.record(offset)? {
-            ListedRecord::Curve(_) => framed_curve(payload, offset).map(|(_, kind)| kind),
+            ListedRecord::Curve { .. } => framed_curve(payload, offset).map(|(_, kind)| kind),
             ListedRecord::Point => None,
         }
     }
@@ -235,9 +239,14 @@ impl SketchRecordLists {
         let sketch = self.lists.get(list)?;
         Some(match place {
             RecordPlace::Point => ListedRecord::Point,
-            RecordPlace::FirstCurveList | RecordPlace::LaterCurveList => {
-                ListedRecord::Curve(sketch)
-            }
+            RecordPlace::FirstCurveList => ListedRecord::Curve {
+                sketch,
+                later: false,
+            },
+            RecordPlace::LaterCurveList => ListedRecord::Curve {
+                sketch,
+                later: true,
+            },
         })
     }
 }
@@ -505,6 +514,20 @@ pub(super) fn point_record_index_basis_loss(payload: &[u8], offset: usize) -> Op
     })
 }
 
+/// Whether the record at `offset` is a current-layout line that [`curve_form`]
+/// reads and that has an identifier trailer: u32 `1` at +84, or u32 `0` at
+/// +84 and an identity other than `0` and null at +88 (§2.3).
+pub(super) fn identifier_trailer_line(payload: &[u8], offset: usize) -> bool {
+    let word = |at: usize| View::u32_le_at(payload, offset.checked_add(at)?);
+    curve_fields(payload, offset) == offset.checked_add(CURRENT_FIELDS)
+        && matches!(curve_form(payload, offset), Some(CurveForm::Line { .. }))
+        && match (word(line::TRAILER), word(line::RECORD_ID)) {
+            (Some(1), Some(_)) => true,
+            (Some(0), Some(identity)) => identity != 0 && identity != u32::MAX,
+            _ => false,
+        }
+}
+
 /// Whether bit 3 of the selector of the record at `offset` is set: the
 /// record is construction geometry.
 pub(super) fn construction_record(payload: &[u8], offset: usize) -> bool {
@@ -649,7 +672,7 @@ fn read_listed_entity(
     project: &impl Fn([f64; 2]) -> Option<Point2>,
     chord: ChordTest,
 ) -> Option<Result<ListedEntity, ChordConflict>> {
-    let ListedRecord::Curve(sketch) = lists.record(offset)? else {
+    let ListedRecord::Curve { sketch, .. } = lists.record(offset)? else {
         let position = project(point_coordinates(payload, offset)?)?;
         return Some(Ok(ListedEntity {
             geometry: SketchGeometry::try_from(SketchGeometryDefinition::Point { position })
@@ -765,7 +788,7 @@ pub(super) fn unchecked_record_conflict(
     lists: &SketchRecordLists,
     offset: usize,
 ) -> Option<ChordConflict> {
-    let ListedRecord::Curve(_) = lists.record(offset)? else {
+    let ListedRecord::Curve { .. } = lists.record(offset)? else {
         return None;
     };
     match curve_form(payload, offset) {

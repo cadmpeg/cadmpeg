@@ -255,7 +255,7 @@ fn an_unread_curve_type_and_an_index_past_the_points_stay_unresolved() {
     let lists = SketchRecordLists::new(&payload);
     assert!(matches!(
         lists.record(reversed),
-        Some(ListedRecord::Curve(_))
+        Some(ListedRecord::Curve { .. })
     ));
     assert_eq!(listed_geometry(&payload, reversed, &millimetres), None);
     assert_eq!(listed_geometry(&payload, past, &millimetres), None);
@@ -322,7 +322,7 @@ fn a_curve_whose_selector_has_bit_zero_set_stays_unresolved() {
     let lists = SketchRecordLists::new(&sample.payload);
     assert!(matches!(
         lists.record(sample.circle),
-        Some(ListedRecord::Curve(_))
+        Some(ListedRecord::Curve { .. })
     ));
     assert_eq!(geometry(&sample, sample.line), None);
     assert_eq!(geometry(&sample, sample.circle), None);
@@ -338,7 +338,7 @@ fn put_u32(payload: &mut [u8], at: usize, value: u32) {
 /// geometry.
 fn curve_stays_unresolved(payload: &[u8], offset: usize) -> bool {
     let lists = SketchRecordLists::new(payload);
-    matches!(lists.record(offset), Some(ListedRecord::Curve(_)))
+    matches!(lists.record(offset), Some(ListedRecord::Curve { .. }))
         && listed_geometry(payload, offset, &millimetres).is_none()
 }
 
@@ -452,7 +452,7 @@ fn a_curve_after_a_projected_or_unread_record_belongs_to_the_preceding_sketch() 
         let later = curve(&mut payload, 1, 0, 0, None);
         let lists = SketchRecordLists::new(&payload);
         assert_eq!(
-            matches!(lists.record(separator), Some(ListedRecord::Curve(_))),
+            matches!(lists.record(separator), Some(ListedRecord::Curve { .. })),
             external
         );
         // After a projected record the curve stays in the first curve list;

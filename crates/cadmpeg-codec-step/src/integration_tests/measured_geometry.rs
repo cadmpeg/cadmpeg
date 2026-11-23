@@ -545,7 +545,9 @@ fn concave_dish_on_a_negative_radius_sphere_keeps_its_volume() {
 /// procedural surface `wrap` builds on that sphere.
 fn with_wrapped_sphere(
     mut ir: CadIr,
-    wrap: impl FnOnce(cadmpeg_ir::ids::SurfaceId) -> cadmpeg_ir::geometry::ProceduralSurfaceDefinition,
+    wrap: impl FnOnce(
+        cadmpeg_ir::ids::SurfaceId,
+    ) -> cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition,
 ) -> CadIr {
     use cadmpeg_ir::geometry::{
         ProceduralSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
@@ -596,7 +598,7 @@ fn with_wrapped_sphere(
 /// sphere itself does.
 #[test]
 fn a_replicated_negative_radius_sphere_reverses_its_face() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     for angles in WEDGE_WINDOWS {
         let ir = with_wrapped_sphere(dish_wedge(angles), |source| {
             ProceduralSurfaceDefinition::Replica {
@@ -614,8 +616,8 @@ fn a_replicated_negative_radius_sphere_reverses_its_face() {
 /// the face takes the reversed normal.
 #[test]
 fn an_offset_negative_radius_sphere_reverses_its_distance_and_face() {
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction;
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
     for angles in WEDGE_WINDOWS {
         let ir = with_wrapped_sphere(dish_wedge(angles), |support| {
             ProceduralSurfaceDefinition::ParallelOffset(

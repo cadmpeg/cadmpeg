@@ -326,7 +326,9 @@ macro_rules! define_model_index {
                 self.identities.slots.get(identity).is_some_and(|owner| owner.native)
             }
 
-            pub(crate) fn neutral_kind(&self, identity: &str) -> Option<EntityKind> {
+            /// The kind of the model record that owns `identity`; `None` where no
+            /// record or records of two kinds own it.
+            pub fn neutral_kind(&self, identity: &str) -> Option<EntityKind> {
                 self.identities.slots.get(identity).and_then(|owner| owner.kind)
             }
 
@@ -418,8 +420,9 @@ fn merge_curve_use<'a>(
 mod tests {
     use super::ModelIndex;
     use crate::document::CadIr;
+    use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use crate::geometry::{ProceduralSurface, Surface};
-    use crate::geometry::{ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
+    use crate::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
     use crate::{NativeNamespace, NativeRecord};
 
     use serde_json::Map;
@@ -485,7 +488,7 @@ mod tests {
             let mut definition = $definition;
             definition
                 .set_legacy_cache($cache_fit_tolerance.map(|value: f64| {
-                    crate::geometry::LegacyCache::try_new(value)
+                    crate::geometry::legacy_cache::LegacyCache::try_new(value)
                         .expect("admissible fit tolerance fixture")
                 }))
                 .expect("valid procedural surface cache fixture");

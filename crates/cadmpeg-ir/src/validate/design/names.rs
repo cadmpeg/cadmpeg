@@ -6,7 +6,7 @@
 //! evaluation's state. The rules on what an `Instance` name or a hole role
 //! names apply to every name, those of picks included.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -108,15 +108,20 @@ pub(super) fn derived_kinds(name: &TopoName) -> BTreeSet<NameKind> {
 }
 
 /// Checks the name tables and every name the design states.
-pub(super) fn check(
+pub(super) fn check<'a>(
     ctx: &DecodeContext<'_>,
-    index: &DesignIndex<'_>,
-    states: &States<'_>,
-    held: &[Held<'_>],
+    index: &DesignIndex<'a>,
+    states: &States<'a>,
+    held: &[Held<'a>],
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let _depth = ctx.enter_nested("IR design name validation")?;
     let ir = index.records.ir;
+    let extent_features: Vec<_> = states
+        .extents
+        .iter()
+        .map(|extent| index.state_features(StateAt::Position(&extent.state.at)))
+        .collect();
     for (entity, entry) in ir.design.names.entries() {
         let holds = states.geometry_holds(entity);
         check_entry(
@@ -127,13 +132,11 @@ pub(super) fn check(
             entity.id(),
             findings,
         );
-        for extent in states
-            .extents
-            .iter()
-            .filter(|extent| extent.records.contains(entity.id()))
-        {
-            if let Some(features) = index.state_features(StateAt::Position(&extent.state.at)) {
-                check_order(entry, &features, entity.id(), findings);
+        for (extent, features) in states.extents.iter().zip(&extent_features) {
+            if extent.records.contains(entity.id()) {
+                if let Some(features) = features {
+                    check_order(entry, features, entity.id(), findings);
+                }
             }
         }
     }
@@ -208,9 +211,9 @@ fn evaluation_features<'a>(
     index: &DesignIndex<'a>,
     states: &States<'a>,
     evaluation: &'a Evaluation,
-) -> Option<BTreeSet<&'a str>> {
+) -> Option<HashSet<&'a str>> {
     let mut features = match &evaluation.of {
-        Evaluated::State(position) => index.state_features(StateAt::Position(position))?,
+        Evaluated::State(position) => (*index.state_features(StateAt::Position(position))?).clone(),
         Evaluated::Tool(feature) => index.tool_features(feature.as_str())?,
     };
     for path in states.instance_paths(evaluation.id.as_str()) {
@@ -273,12 +276,7 @@ fn check_entry(
     }
 }
 
-fn check_order(
-    entry: &NameEntry,
-    features: &BTreeSet<&str>,
-    at: &str,
-    findings: &mut Vec<Finding>,
-) {
+fn check_order(entry: &NameEntry, features: &HashSet<&str>, at: &str, findings: &mut Vec<Finding>) {
     let Some(name) = &entry.name else {
         return;
     };

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::validate::{validate_body_bindings, Ctx};
+use crate::validate::design_records::validate_body_bindings;
+use crate::validate::Ctx;
 use cadmpeg_ir::{report::check::Check, CadIr};
 
 #[test]
