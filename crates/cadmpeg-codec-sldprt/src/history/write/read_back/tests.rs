@@ -607,6 +607,19 @@ fn a_record_an_edit_reaches_reads_back_with_the_edit_applied() {
         serde_json::json!("6.03937007874016[mm]")
     ));
     assert!(!agrees(serde_json::json!(100.0), serde_json::json!(101.0)));
+    let numbers = [(0.0, 1.0)];
+    assert!(super::substitutes(
+        &numbers,
+        &[],
+        &serde_json::json!("0mm,0mm,-209.55mm"),
+        &serde_json::json!("1mm,0mm,-209.55mm")
+    ));
+    assert!(!super::substitutes(
+        &numbers,
+        &[],
+        &serde_json::json!("0mm,0mm,-209.55mm"),
+        &serde_json::json!("1mm,1mm,-209.55mm")
+    ));
 }
 
 /// A written part that does not decode again holds each written edit back,

@@ -1218,8 +1218,9 @@ fn names_id(message: &str, id: &str) -> bool {
 /// Whether `written` is `stated` with one of the carried edits `numbers`
 /// (source and edited number) and `texts` (source and edited text) applied:
 /// the source number read back as the edited one, the source text read
-/// back as the edited one, or a text whose numbers each read back scaled as
-/// a number edit scales its value, with the rest of the text the same.
+/// back as the edited one, or a text with the rest of the text the same
+/// whose numbers each read back unchanged or as a number edit replaces
+/// them, or each scaled as one number edit scales its value.
 fn substitutes(
     numbers: &[(f64, f64)],
     texts: &[(String, String)],
@@ -1244,21 +1245,29 @@ fn substitutes(
             }
             let (stated_text, stated_numbers) = numbers_of(stated);
             let (written_text, written_numbers) = numbers_of(written);
+            let pairs = stated_numbers.iter().zip(&written_numbers);
+            // Each changed number takes a carried number edit of its own.
+            let mut unused = numbers.to_vec();
+            let substituted = pairs.clone().all(|(stated, written)| {
+                close(*stated, *written)
+                    || unused
+                        .iter()
+                        .position(|(old, new)| close(*stated, *old) && close(*written, *new))
+                        .map(|used| unused.swap_remove(used))
+                        .is_some()
+            });
             stated_text == written_text
                 && stated_numbers.len() == written_numbers.len()
-                && stated_numbers
-                    .iter()
-                    .zip(&written_numbers)
+                && pairs
+                    .clone()
                     .any(|(stated, written)| !close(*stated, *written))
-                && numbers.iter().any(|(old, new)| {
-                    *old != 0.0
-                        && stated_numbers
-                            .iter()
-                            .zip(&written_numbers)
-                            .all(|(stated, written)| {
+                && (substituted
+                    || numbers.iter().any(|(old, new)| {
+                        *old != 0.0
+                            && pairs.clone().all(|(stated, written)| {
                                 close(*stated, *written) || close(*written, stated * new / old)
                             })
-                })
+                    }))
         }
         _ => false,
     }
