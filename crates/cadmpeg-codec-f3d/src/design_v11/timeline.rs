@@ -257,6 +257,7 @@ fn resolved_item(
     let operation = super::datum::project(feature, losses)
         .or_else(|| stored(operation, bodies))
         .or_else(|| typed_pattern(losses))
+        .or_else(|| super::split::project(operation, feature.native_ref.as_deref()?))
         .unwrap_or_else(|| match family(operation) {
             Family::Typed(family) => FeatureOperation::Unresolved { family },
             Family::Native(kind) => native(&kind),

@@ -10,8 +10,8 @@ use crate::design::ops::body::{
     FlexKind, Graft, Heal, InstanceChange, InstanceOverride, Kept, MoveFaces, NewComponent,
     Pattern, PatternInstances, PatternMember, PatternMethod, PatternSeeds, PieceForm, ReplaceFaces,
     Retention, ScaleFactors, Split, SplitMethod, SplitMode, SplitTool, Template, TemplateInput,
-    TemplateInstance, TemplateParameter, TransformBodies, TransformMode, TransformStep,
-    Transformation,
+    TemplateInstance, TemplateParameter, ToolExtension, TransformBodies, TransformMode,
+    TransformStep, Transformation,
 };
 use crate::design::ops::shared::{
     Alignment, AxisLimits, Bounds, ChainLayout, ChainLink, ChainLinks, Coupling, DimensionRun,
@@ -75,6 +75,7 @@ fn every_template_and_body_operation_type_has_a_schema() {
     generates::<Split>(&mut generator);
     generates::<SplitMode>(&mut generator);
     generates::<SplitTool>(&mut generator);
+    generates::<ToolExtension>(&mut generator);
     generates::<SplitMethod>(&mut generator);
     generates::<Kept<Dimension<bool>>>(&mut generator);
     generates::<Kept<Vec<Option<Dimension<bool>>>>>(&mut generator);

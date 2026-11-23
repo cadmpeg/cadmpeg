@@ -18,9 +18,9 @@ use crate::design::ops::assembly::{
     PlaceSet,
 };
 use crate::design::ops::body::{
-    Combine, DeleteBodies, InstanceChange, InstanceOverride, NewComponent, Pattern,
-    PatternInstances, PatternSeeds, Split, SplitMode, TemplateInput, TemplateInstance,
-    TransformBodies, TransformMode, TransformStep, Transformation,
+    Combine, DeleteBodies, InstanceChange, InstanceOverride, Kept, NewComponent, Pattern,
+    PatternInstances, PatternSeeds, PieceForm, Split, SplitMethod, SplitMode, SplitTool,
+    TemplateInput, TemplateInstance, TransformBodies, TransformMode, TransformStep, Transformation,
 };
 use crate::design::ops::datum::{Datum, DatumElement};
 use crate::design::ops::dressup::{
@@ -1688,6 +1688,49 @@ fn a_composite_stage_is_a_linear_circular_mirror_scale_or_native_layout() {
     ]));
     assert_finding(&with(pattern(nested, Vec::new())), refused);
     assert_no_finding_containing(&with(pattern(stages(linear(None, 2)), Vec::new())), refused);
+}
+
+/// §10: a `ByTools` split whose tool is `Silhouette` has `method: None`, and
+/// its `kept`, where stated, is `All` or `Native`.
+#[test]
+fn a_silhouette_split_states_no_method_and_keeps_all_or_native() {
+    let silhouette = |method, kept| {
+        FeatureOperation::Split(Box::new(Split {
+            mode: SplitMode::ByTools {
+                targets: named(vec![entity(NameKind::Body, 1)]),
+                tools: SplitTool::Silhouette(Box::new(Construction {
+                    resolved: Some(UnitVector3::Z_AXIS),
+                    ..empty_construction()
+                })),
+                method,
+                kept,
+            },
+            native_options: BTreeMap::new(),
+            source_settings: BTreeMap::new(),
+        }))
+    };
+    let all = || {
+        Some(Kept::All {
+            form: Some(PieceForm::Faces),
+        })
+    };
+    let native = Some(Kept::Native(
+        NonBlankString::new("f3d:silhouette_split_solid_body").unwrap(),
+    ));
+    for kept in [all(), native, None] {
+        assert_no_finding_containing(&with(silhouette(None, kept)), "Silhouette split");
+    }
+    assert_finding(
+        &with(silhouette(Some(SplitMethod::Intersect), all())),
+        "a Silhouette split states a method",
+    );
+    let side = Some(Kept::Side {
+        side: Dimension::Literal(true),
+    });
+    assert_finding(
+        &with(silhouette(None, side)),
+        "a Silhouette split keeps a side or pieces",
+    );
 }
 
 #[test]

@@ -86651,38 +86651,105 @@
           ]
         },
         {
-          "description": "Faces, sheet or solid bodies, curves, or sketches.",
+          "description": "Faces, sheet or solid bodies, curves, or sketches, and datum or\norigin planes beside them, each plane cutting as its whole plane.",
           "type": "object",
           "properties": {
-            "at": {
-              "description": "The state the picks resolve in.",
-              "$ref": "#/$defs/Anchor"
-            },
-            "kind": {
-              "type": "string",
-              "const": "geometry"
-            },
-            "native": {
-              "description": "The source's group-level selection record, where it has one.",
+            "extend": {
+              "description": "Whether the cut continues past where a tool reaches until it\ndivides the targets. `None` where the source does not state it.",
               "anyOf": [
                 {
-                  "$ref": "#/$defs/NativeSelections"
+                  "$ref": "#/$defs/ToolExtension"
                 },
                 {
                   "type": "null"
                 }
               ]
             },
-            "picks": {
-              "description": "The picks, or the rule that gives them.",
-              "$ref": "#/$defs/Picks2"
+            "kind": {
+              "type": "string",
+              "const": "geometry"
+            },
+            "tools": {
+              "description": "The tools.",
+              "$ref": "#/$defs/Selection2"
             }
           },
           "additionalProperties": false,
           "required": [
             "kind",
-            "at",
-            "picks"
+            "tools"
+          ]
+        },
+        {
+          "description": "Each target's outline seen along the direction: on each target face,\nthe curves where the face's normal is perpendicular to the direction.",
+          "type": "object",
+          "properties": {
+            "after": {
+              "description": "The source's own steps on the result after the inputs, in the\nsource's order.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/PostStep"
+              }
+            },
+            "inputs": {
+              "description": "The constraints the source stores, in the source's priority order.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ConstructionInput"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "silhouette"
+            },
+            "mode": {
+              "description": "The source's name for its construction method, with the method\noptions the source stores beside it.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SourceMode"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "resolved": {
+              "description": "The construction's value in its anchored state, for the active\nconfiguration, after the steps of `after`.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/UnitVector3"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "resolved_in": {
+              "description": "The construction's value in each other configuration for which the\nsource stores one.",
+              "type": "object",
+              "additionalProperties": false,
+              "patternProperties": {
+                "^(?:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+:){2}[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+#[^#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])": {
+                  "$ref": "#/$defs/UnitVector3"
+                }
+              }
+            },
+            "solution": {
+              "description": "The selector the source stores for its choice among the solutions\nthat the inputs admit.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "inputs",
+            "after",
+            "resolved_in"
           ]
         }
       ]
@@ -95031,6 +95098,50 @@
           "description": "The tool body moves under the operation with its history editable.",
           "type": "string",
           "const": "absorbed"
+        }
+      ]
+    },
+    "ToolExtension": {
+      "description": "Whether a split's cut continues past where its tool reaches.",
+      "oneOf": [
+        {
+          "description": "The cut stops where the tool reaches.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "off"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "The cut continues until it divides the targets.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "extended"
+            },
+            "method": {
+              "description": "The law by which the cut continues. `None` where the source\nstores no law.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ExtendMethod"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
         }
       ]
     },
