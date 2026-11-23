@@ -341,11 +341,16 @@ fn an_item_of_an_unregistered_type_is_a_native_timeline_item() {
     ));
 }
 
-fn tail_flags(suppressed: bool, rolled_back: bool) -> DesignScopeTailFlags {
+/// Tail flags with state bytes 0 and 1 `suppression`, the no-result flag
+/// `no_result` and the rolled-back flag `rolled_back`.
+fn tail_flags(suppression: [bool; 2], no_result: bool, rolled_back: bool) -> DesignScopeTailFlags {
     DesignScopeTailFlags {
-        suppressed,
+        suppression,
+        unevaluated: false,
+        state_offset: 0,
+        no_result,
         rolled_back,
-        suppressed_offset: 0,
+        no_result_offset: 3,
         envelope_offset: None,
     }
 }
@@ -362,7 +367,9 @@ fn rollback_of(
 ) {
     let flags: super::timeline::TailFlags<'_> = flags
         .iter()
-        .map(|&(record, rolled_back)| ((STREAM, record), tail_flags(false, rolled_back)))
+        .map(|&(record, rolled_back)| {
+            ((STREAM, record), tail_flags([false; 2], false, rolled_back))
+        })
         .collect();
     let mut losses = Vec::new();
     let mut documents = crate::test_support::with_decode_context(|ctx| {
@@ -463,31 +470,55 @@ fn the_current_state_stands_at_the_rollback_marker() {
     );
 }
 
+/// An unprojected item is suppressed where state byte 0 or 1 of its scope
+/// tail is set. With the no-result flag and neither byte set, it is active
+/// with no current result and charges a loss.
 #[test]
-fn an_unprojected_item_takes_its_suppression_from_its_scope_tail() {
-    let flags: super::timeline::TailFlags<'_> = [((STREAM, 7), tail_flags(true, false))]
-        .into_iter()
-        .collect();
-    let documents = crate::test_support::with_decode_context(|ctx| {
-        super::timeline::project(
-            ctx,
-            &[],
-            &[timeline(STREAM, 0, &[7, 8])],
-            &[],
-            &super::timeline::ScopeInputs {
-                records: &[],
-                tail_flags: &flags,
-            },
-            &BTreeSet::new(),
-            &mut Vec::new(),
-        )
-    })
-    .unwrap();
-    let [flagged, unflagged] = documents[""].features.as_slice() else {
-        panic!("two features")
-    };
-    assert_eq!(flagged.suppressed, Some(Dimension::Literal(true)));
-    assert_eq!(unflagged.suppressed, None);
+fn an_unprojected_item_takes_its_suppression_from_its_scope_tail_state_bytes() {
+    for (suppression, no_result, suppressed, assumed) in [
+        ([true, false], true, true, false),
+        ([false, true], true, true, false),
+        ([false, false], true, false, true),
+        ([false, false], false, false, false),
+    ] {
+        let flags: super::timeline::TailFlags<'_> =
+            [((STREAM, 7), tail_flags(suppression, no_result, false))]
+                .into_iter()
+                .collect();
+        let mut losses = Vec::new();
+        let documents = crate::test_support::with_decode_context(|ctx| {
+            super::timeline::project(
+                ctx,
+                &[],
+                &[timeline(STREAM, 0, &[7, 8])],
+                &[],
+                &super::timeline::ScopeInputs {
+                    records: &[],
+                    tail_flags: &flags,
+                },
+                &BTreeSet::new(),
+                &mut losses,
+            )
+        })
+        .unwrap();
+        let [flagged, unflagged] = documents[""].features.as_slice() else {
+            panic!("two features")
+        };
+        let case = format!("{suppression:?} {no_result}");
+        assert_eq!(
+            flagged.suppressed,
+            Some(Dimension::Literal(suppressed)),
+            "{case}"
+        );
+        assert_eq!(unflagged.suppressed, None, "{case}");
+        assert_eq!(
+            losses.iter().any(|loss| {
+                loss.code == crate::loss::F3dLossCode::FeatureNoResultActiveAssumed.kind()
+            }),
+            assumed,
+            "{case}"
+        );
+    }
 }
 
 #[test]

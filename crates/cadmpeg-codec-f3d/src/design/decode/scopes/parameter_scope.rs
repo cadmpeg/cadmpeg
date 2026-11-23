@@ -3,6 +3,10 @@
 
 pub(crate) mod family;
 
+pub(crate) fn scan_kind(guid: &str) -> Option<crate::records::feature::scope::DesignFeatureKind> {
+    family::from_type_guid(guid)
+}
+
 use crate::bytes::lp_utf16_bounded;
 use cadmpeg_core::decode::u64_from_index;
 
@@ -1103,10 +1107,10 @@ pub(crate) fn design_primary_frame_offsets(
 /// index. An envelope is history-bound when it resolves to one ASM state pair
 /// through the history header links. Binding output is not read, so selection
 /// does not depend on whether history binding ran. Exactly one history-bound
-/// envelope is authoritative. Otherwise, the later envelope is authoritative
-/// when the envelopes are equivalent and none is history-bound; else the
-/// primary-indexed envelope; else, with none history-bound, the later envelope
-/// when the envelopes differ only in their tail flags. Where that later
+/// envelope is authoritative. Otherwise, with none history-bound, the later
+/// envelope is authoritative when the envelopes are equivalent or differ only
+/// in their tail state bytes; else the primary-indexed envelope; else the
+/// later envelope when the envelopes differ only in their tail flags. Where that later
 /// envelope stores no flags, it takes the flags of the latest earlier envelope
 /// that stores them before its own start. Groups are resolved in record order,
 /// so their notes and the first unresolved group are the same on every decode.
@@ -1203,6 +1207,12 @@ pub(crate) fn admit_history_bound_scope_variants(
         ) {
             (Some(keep), false, _, _) => keep,
             (None, false, _, EnvelopeComparison::Equivalent) => later,
+            (None, false, _, EnvelopeComparison::StateBytes) => {
+                superseded
+                    .tail_flags
+                    .push(flags_only_group(scopes, indices, later).1);
+                later
+            }
             // Several envelopes resolve to ASM transitions, so two copies of
             // one payload can be bound to different transitions.
             (Some(_), true, Some(keep), _) => {
@@ -1258,7 +1268,7 @@ pub(crate) fn admit_history_bound_scope_variants(
 }
 
 /// The flags that the `keep` envelope of a group that differs only in its tail
-/// flags takes from the latest earlier envelope that stores them before the
+/// state takes from the latest earlier envelope that stores them before the
 /// start of `keep`, where `keep` stores none, and the loss note of the group.
 fn flags_only_group(
     scopes: &[DesignParameterScope],
@@ -1283,23 +1293,36 @@ fn flags_only_group(
             .max_by_key(|(at, _)| *at),
     };
     let values = |flags: Option<scope::DesignScopeTailFlags>| {
-        flags.map(|flags| (flags.suppressed, flags.rolled_back))
+        flags.map(|flags| {
+            (
+                flags.suppression,
+                flags.unevaluated,
+                flags.no_result,
+                flags.rolled_back,
+            )
+        })
     };
-    let spell = |(suppressed, rolled_back): (bool, bool)| {
-        format!("suppressed={suppressed}, rolled-back={rolled_back}")
+    let spell = |flags: scope::DesignScopeTailFlags| {
+        let [first, second] = flags.suppression.map(u8::from);
+        format!(
+            "state={first}{second}{}, no-result={}, rolled-back={}",
+            u8::from(flags.unevaluated),
+            flags.no_result,
+            flags.rolled_back
+        )
     };
     let kept_flags = values(kept.tail_flags.or(carried.map(|(_, flags)| flags)));
     let kept_clause = match (kept.tail_flags, carried) {
         (Some(flags), _) => format!(
             "the decoder kept {} from its later envelope at byte {kept_at}",
-            spell((flags.suppressed, flags.rolled_back))
+            spell(flags)
         ),
         (None, Some((at, flags))) => format!(
-            "its later envelope at byte {kept_at} stores no suppressed or rolled-back flags, so the decoder kept {} from the earlier envelope at byte {at}",
-            spell((flags.suppressed, flags.rolled_back))
+            "its later envelope at byte {kept_at} stores no tail state, so the decoder kept {} from the earlier envelope at byte {at}",
+            spell(flags)
         ),
         (None, None) => format!(
-            "its later envelope at byte {kept_at} stores no suppressed or rolled-back flags, and no earlier envelope stores them before that byte"
+            "its later envelope at byte {kept_at} stores no tail state, and no earlier envelope stores it before that byte"
         ),
     };
     let differing = indices
@@ -1308,7 +1331,7 @@ fn flags_only_group(
         .map(|index| &scopes[*index])
         .filter(|scope| values(scope.tail_flags) != kept_flags)
         .map(|scope| {
-            let flags = values(scope.tail_flags).map_or_else(|| "none".to_owned(), spell);
+            let flags = scope.tail_flags.map_or_else(|| "none".to_owned(), spell);
             format!("at byte {}, {flags}", scope.byte_offset())
         })
         .collect::<Vec<_>>();
@@ -1335,8 +1358,8 @@ pub(crate) struct SupersededScopeEnvelopes {
     /// record was, and that differ from it in payload or, where several are
     /// history-bound, in their current or effective preceding history state.
     pub(crate) primary_indexed: usize,
-    /// One note for each record whose envelopes differ only in their
-    /// suppressed or rolled-back flags.
+    /// One note for each record whose envelopes differ only in their tail
+    /// state bytes or lane flags.
     pub(crate) tail_flags: Vec<String>,
 }
 
@@ -1360,7 +1383,10 @@ impl SupersededScopeEnvelopes {
 enum EnvelopeComparison {
     /// One serialization of the same logical scope.
     Equivalent,
-    /// The envelopes differ only in their suppressed or rolled-back flags.
+    /// The envelopes differ only in their tail state bytes.
+    StateBytes,
+    /// The envelopes differ only in their tail state bytes and lane flags,
+    /// or only some of them store tail state.
     TailFlags,
     Different,
 }
@@ -1418,6 +1444,15 @@ fn compare_scope_variant_payloads(
     strip_scope_variant_provenance(ctx, &mut right, true)?;
     if left == right {
         return Ok(EnvelopeComparison::Equivalent);
+    }
+    for value in [&mut left, &mut right] {
+        if let Some(serde_json::Value::Object(flags)) = value.get_mut("tail_flags") {
+            flags.remove("suppression");
+            flags.remove("unevaluated");
+        }
+    }
+    if left == right {
+        return Ok(EnvelopeComparison::StateBytes);
     }
     for value in [&mut left, &mut right] {
         if let serde_json::Value::Object(fields) = value {
@@ -1851,15 +1886,24 @@ fn unparsed_rigid_group_tail_length(
     paired.checked_sub(kind_end)
 }
 
-/// The tail offset of the suppressed flag of a typed-reference tail in the
-/// 196-byte form, or the Assemble form with one more typed reference.
+/// The tail offsets of the timeline state of a feature item tail.
+#[derive(Debug, Clone, Copy)]
+struct TailStateAt {
+    /// Tail offset of the three state bytes.
+    state: usize,
+    /// Tail offset of the no-result flag; the rolled-back flag follows it.
+    flags: usize,
+}
+
+/// The timeline state offsets of a typed-reference tail in the 196-byte form,
+/// or the Assemble form with one more typed reference.
 fn typed_scope_tail(
     bytes: &[u8],
     kind_end: usize,
     paired_at: usize,
     extended: bool,
     label_units: usize,
-) -> Option<usize> {
+) -> Option<TailStateAt> {
     use crate::bytes::typed_local_reference_target as target;
     let tail = bytes.get(kind_end..paired_at)?;
     let label = label_units.checked_mul(2)?;
@@ -1872,19 +1916,22 @@ fn typed_scope_tail(
             && tail.get(typed_tail::ZERO_COUNT + label..typed_tail::STATE_BYTES + label)? == [0; 4]
     };
     let state = tail.get(typed_tail::STATE_BYTES + label..first)?;
-    let suppressed = *tail.get(typed_tail::SUPPRESSED_FLAG + shift)?;
+    let no_result = *tail.get(typed_tail::NO_RESULT_FLAG + shift)?;
     let rolled_back = *tail.get(typed_tail::ROLLED_BACK_FLAG + shift)?;
     (tail.len() == typed_tail::LEN + shift
         && counts
-        && suppressed <= 1
+        && no_result <= 1
         && rolled_back <= 1
-        && (suppressed == 1 || state == [0; 3])
+        && (no_result == 1 || state == [0; 3])
         && target(tail, first).is_some()
         && (!extended || target(tail, typed_tail::PREVIOUS_HISTORY_STATE_ID + label).is_some())
         && target(tail, typed_tail::SECOND_REFERENCE + shift).is_some()
         && target(tail, typed_tail::THIRD_REFERENCE + shift).is_some()
         && tail.get(typed_tail::THIRD_ZERO_RUN_2 + shift..typed_tail::LEN + shift)? == [0; 2])
-        .then_some(typed_tail::SUPPRESSED_FLAG + shift)
+        .then_some(TailStateAt {
+            state: typed_tail::STATE_BYTES + label,
+            flags: typed_tail::NO_RESULT_FLAG + shift,
+        })
 }
 
 pub(crate) fn typed_scope_previous_history_offset(kind: &str, tail_length: usize) -> Option<usize> {
@@ -2263,7 +2310,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
             })
             .and_then(|offset| kind_end.checked_add(offset));
         let tail_flags = match tail_form {
-            ScopeTailForm::Named => named.as_ref().map(|named| named.flags),
+            ScopeTailForm::Named => named.as_ref().map(|named| named.state),
             ScopeTailForm::TypedFixed | ScopeTailForm::TypedExtended => typed_scope_tail(
                 bytes,
                 kind_end,
@@ -2272,15 +2319,24 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                 label_units,
             ),
             ScopeTailForm::Fixed => {
-                plain_scope_tail(bytes, kind_end, paired_at).map(|plain| plain.flags)
+                plain_scope_tail(bytes, kind_end, paired_at).map(|plain| plain.state)
             }
         }
         .and_then(|at| {
-            let at = kind_end.checked_add(at)?;
+            let state = kind_end.checked_add(at.state)?;
+            let flags = kind_end.checked_add(at.flags)?;
+            let bit = |at: usize| match bytes.get(at)? {
+                0 => Some(false),
+                1 => Some(true),
+                _ => None,
+            };
             Some(scope::DesignScopeTailFlags {
-                suppressed: *bytes.get(at)? == 1,
-                rolled_back: *bytes.get(at.checked_add(1)?)? == 1,
-                suppressed_offset: u64_from_index(at),
+                suppression: [bit(state)?, bit(state.checked_add(1)?)?],
+                unevaluated: bit(state.checked_add(2)?)?,
+                state_offset: u64_from_index(state),
+                no_result: bit(flags)?,
+                rolled_back: bit(flags.checked_add(1)?)?,
+                no_result_offset: u64_from_index(flags),
                 envelope_offset: None,
             })
         });
@@ -2762,8 +2818,8 @@ struct PlainScopeTail {
     references: scope::DesignNamedScopeReferences,
     /// Tail offset of the preceding history-state identity.
     previous_history_state_id: usize,
-    /// Tail offset of the suppressed flag; the rolled-back flag follows it.
-    flags: usize,
+    /// The timeline state offsets.
+    state: TailStateAt,
 }
 
 fn plain_scope_tail(bytes: &[u8], kind_end: usize, paired_at: usize) -> Option<PlainScopeTail> {
@@ -2792,6 +2848,7 @@ fn plain_scope_tail(bytes: &[u8], kind_end: usize, paired_at: usize) -> Option<P
     for _ in 0..count {
         associated.push(named_scope_reference(bytes, &mut cursor)?.into_local()?);
     }
+    let state_at = cursor;
     let state_end = cursor.checked_add(named_tail::FIRST_REFERENCE - named_tail::STATE_BYTES)?;
     let state = bytes.get(cursor..state_end)?;
     cursor = state_end;
@@ -2817,12 +2874,12 @@ fn plain_scope_tail(bytes: &[u8], kind_end: usize, paired_at: usize) -> Option<P
         let closing = named_scope_reference(bytes, &mut at)?.into_local();
         (bytes.get(at) == Some(&0) && at.checked_add(1)? == paired_at).then_some(closing)
     };
-    // The 78-byte form stores `01` before the suppressed and rolled-back
+    // The 78-byte form stores `01` before the no-result and rolled-back
     // flags; the 77-byte form omits it and has no extra references.
     let long_form = (bytes.get(cursor) == Some(&1) && flag(cursor + 1) && flag(cursor + 2))
         .then(|| close(cursor + flags))
         .flatten();
-    let (closing, suppressed_at) = match long_form {
+    let (closing, no_result_at) = match long_form {
         Some(closing) => (closing, cursor.checked_add(1)?),
         None => {
             let short_form =
@@ -2833,7 +2890,7 @@ fn plain_scope_tail(bytes: &[u8], kind_end: usize, paired_at: usize) -> Option<P
             (None, cursor)
         }
     };
-    if *bytes.get(suppressed_at)? == 0 && state != [0; 3] {
+    if *bytes.get(no_result_at)? == 0 && state != [0; 3] {
         return None;
     }
     Some(PlainScopeTail {
@@ -2843,7 +2900,10 @@ fn plain_scope_tail(bytes: &[u8], kind_end: usize, paired_at: usize) -> Option<P
             closing,
         },
         previous_history_state_id,
-        flags: suppressed_at.checked_sub(kind_end)?,
+        state: TailStateAt {
+            state: state_at.checked_sub(kind_end)?,
+            flags: no_result_at.checked_sub(kind_end)?,
+        },
     })
 }
 

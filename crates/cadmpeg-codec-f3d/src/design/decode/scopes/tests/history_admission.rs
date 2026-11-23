@@ -467,8 +467,8 @@ fn scope_variants_that_differ_in_a_payload_float_are_not_equivalent() {
     .is_err());
 }
 
-/// The suppressed and rolled-back flags of one envelope's tail, `None` where
-/// the tail stores none.
+/// The no-result and rolled-back flags of one envelope's tail, whose state
+/// bytes are `00 00 00`, `None` where the tail stores none.
 type CopyFlags = Option<(bool, bool)>;
 
 /// Equal Thicken envelopes as `thicken_variants` builds them, one per entry of
@@ -477,12 +477,15 @@ type CopyFlags = Option<(bool, bool)>;
 fn flagged_thicken_variants(flags: &[CopyFlags]) -> Vec<DesignParameterScope> {
     let mut scopes = thicken_variants(&vec![-1.0; flags.len()]);
     for (scope, flags) in scopes.iter_mut().zip(flags.iter().copied()) {
-        let suppressed_offset = scope.feature_ordinal_offset() + 1;
-        scope.tail_flags = flags.map(|(suppressed, rolled_back)| {
+        let state_offset = scope.feature_ordinal_offset() + 1;
+        scope.tail_flags = flags.map(|(no_result, rolled_back)| {
             crate::records::feature::scope::DesignScopeTailFlags {
-                suppressed,
+                suppression: [false; 2],
+                unevaluated: false,
+                state_offset,
+                no_result,
                 rolled_back,
-                suppressed_offset,
+                no_result_offset: state_offset + 3,
                 envelope_offset: None,
             }
         });
@@ -491,7 +494,7 @@ fn flagged_thicken_variants(flags: &[CopyFlags]) -> Vec<DesignParameterScope> {
 }
 
 /// Envelopes whose flags differ only in location are equivalent. Envelopes
-/// that differ in their suppressed or rolled-back flags, or of which only some
+/// that differ in their no-result or rolled-back flags, or of which only some
 /// store flags, with no history binding and no primary-indexed envelope, keep
 /// the later envelope with its flags. One note names the record, the kept
 /// flags and each envelope whose flags differ from them.
@@ -507,16 +510,16 @@ fn scope_variants_that_differ_in_their_flags_keep_the_later_and_charge_a_loss() 
             &[Some((true, true)), Some((false, true))],
             vec![kept(
                 200,
-                "suppressed=false, rolled-back=true",
-                "at byte 100, suppressed=true, rolled-back=true",
+                "state=000, no-result=false, rolled-back=true",
+                "at byte 100, state=000, no-result=true, rolled-back=true",
             )],
         ),
         (
             &[Some((false, true)), Some((false, false))],
             vec![kept(
                 200,
-                "suppressed=false, rolled-back=false",
-                "at byte 100, suppressed=false, rolled-back=true",
+                "state=000, no-result=false, rolled-back=false",
+                "at byte 100, state=000, no-result=false, rolled-back=true",
             )],
         ),
         (
@@ -527,15 +530,15 @@ fn scope_variants_that_differ_in_their_flags_keep_the_later_and_charge_a_loss() 
             ],
             vec![kept(
                 300,
-                "suppressed=false, rolled-back=false",
-                "at byte 100, suppressed=true, rolled-back=false",
+                "state=000, no-result=false, rolled-back=false",
+                "at byte 100, state=000, no-result=true, rolled-back=false",
             )],
         ),
         (
             &[None, Some((false, false))],
             vec![kept(
                 200,
-                "suppressed=false, rolled-back=false",
+                "state=000, no-result=false, rolled-back=false",
                 "at byte 100, none",
             )],
         ),
@@ -554,7 +557,7 @@ fn scope_variants_that_differ_in_their_flags_keep_the_later_and_charge_a_loss() 
         assert_eq!(
             retained
                 .tail_flags
-                .map(|flags| (flags.suppressed, flags.rolled_back)),
+                .map(|flags| (flags.no_result, flags.rolled_back)),
             flags.last().copied().flatten(),
             "flags {flags:?}"
         );
@@ -604,10 +607,7 @@ fn scope_variants_that_differ_in_their_flags_keep_the_later_and_charge_a_loss() 
         panic!("one retained envelope")
     };
     assert_eq!(retained.byte_offset(), 100);
-    assert_eq!(
-        retained.tail_flags.map(|flags| flags.suppressed),
-        Some(true)
-    );
+    assert_eq!(retained.tail_flags.map(|flags| flags.no_result), Some(true));
     assert_eq!(
         superseded,
         SupersededScopeEnvelopes {
@@ -615,6 +615,49 @@ fn scope_variants_that_differ_in_their_flags_keep_the_later_and_charge_a_loss() 
             tail_flags: Vec::new(),
         }
     );
+}
+
+/// Envelopes that differ only in their tail state bytes keep the later
+/// envelope, with or without a primary-indexed envelope, and one note names
+/// the record, the kept state and each envelope whose state differs.
+#[test]
+fn scope_variants_that_differ_only_in_their_state_bytes_keep_the_later_and_charge_a_loss() {
+    let id = "f3d:stream:design-parameter-scope";
+    let note = format!("Feature scope {id}#200 (record 42): the decoder kept state=000, no-result=true, rolled-back=false from its later envelope at byte 200 (open item DR-1005). 1 other envelope(s) store different flags, which were not decoded: at byte 100, state=010, no-result=true, rolled-back=false.");
+    for primary_at in [None, Some(100), Some(200)] {
+        let mut variants = flagged_thicken_variants(&[Some((true, false)), Some((true, false))]);
+        if let Some(flags) = variants[0].tail_flags.as_mut() {
+            flags.suppression = [false, true];
+        }
+        let stream = crate::ids::native_stream(&variants[0].id)
+            .expect("fixture stream")
+            .to_owned();
+        let primary = primary_at
+            .map(|at| (stream, at))
+            .into_iter()
+            .collect::<std::collections::HashSet<_>>();
+        let superseded = with_test_ctx(|ctx| {
+            admit_history_bound_scope_variants(ctx, &mut variants, &[], &primary)
+        })
+        .expect("the document decodes");
+        let [retained] = variants.as_slice() else {
+            panic!("one retained envelope")
+        };
+        assert_eq!(retained.byte_offset(), 200, "primary {primary_at:?}");
+        assert_eq!(
+            retained.tail_flags.map(|flags| flags.suppressed()),
+            Some(false),
+            "primary {primary_at:?}"
+        );
+        assert_eq!(
+            superseded,
+            SupersededScopeEnvelopes {
+                primary_indexed: 0,
+                tail_flags: vec![note.clone()],
+            },
+            "primary {primary_at:?}"
+        );
+    }
 }
 
 /// Where the later envelope stores no flags, the decoder keeps the flags of
@@ -629,22 +672,22 @@ fn a_later_envelope_without_flags_keeps_the_latest_stored_flags() {
         (
             &[Some((true, false)), None],
             0,
-            format!("Feature scope {id}#200 (record 42): its later envelope at byte 200 stores no suppressed or rolled-back flags, so the decoder kept suppressed=true, rolled-back=false from the earlier envelope at byte 100 (open item DR-1005)."),
+            format!("Feature scope {id}#200 (record 42): its later envelope at byte 200 stores no tail state, so the decoder kept state=000, no-result=true, rolled-back=false from the earlier envelope at byte 100 (open item DR-1005)."),
         ),
         (
             &[Some((false, true)), None],
             0,
-            format!("Feature scope {id}#200 (record 42): its later envelope at byte 200 stores no suppressed or rolled-back flags, so the decoder kept suppressed=false, rolled-back=true from the earlier envelope at byte 100 (open item DR-1005)."),
+            format!("Feature scope {id}#200 (record 42): its later envelope at byte 200 stores no tail state, so the decoder kept state=000, no-result=false, rolled-back=true from the earlier envelope at byte 100 (open item DR-1005)."),
         ),
         (
             &[Some((true, true)), None, None],
             0,
-            format!("Feature scope {id}#300 (record 42): its later envelope at byte 300 stores no suppressed or rolled-back flags, so the decoder kept suppressed=true, rolled-back=true from the earlier envelope at byte 100 (open item DR-1005). 1 other envelope(s) store different flags, which were not decoded: at byte 200, none."),
+            format!("Feature scope {id}#300 (record 42): its later envelope at byte 300 stores no tail state, so the decoder kept state=000, no-result=true, rolled-back=true from the earlier envelope at byte 100 (open item DR-1005). 1 other envelope(s) store different flags, which were not decoded: at byte 200, none."),
         ),
         (
             &[Some((true, false)), Some((false, true)), None],
             1,
-            format!("Feature scope {id}#300 (record 42): its later envelope at byte 300 stores no suppressed or rolled-back flags, so the decoder kept suppressed=false, rolled-back=true from the earlier envelope at byte 200 (open item DR-1005). 1 other envelope(s) store different flags, which were not decoded: at byte 100, suppressed=true, rolled-back=false."),
+            format!("Feature scope {id}#300 (record 42): its later envelope at byte 300 stores no tail state, so the decoder kept state=000, no-result=false, rolled-back=true from the earlier envelope at byte 200 (open item DR-1005). 1 other envelope(s) store different flags, which were not decoded: at byte 100, state=000, no-result=true, rolled-back=false."),
         ),
     ];
     for (flags, source, note) in cases {
@@ -693,7 +736,7 @@ fn flags_that_reach_the_later_envelope_are_not_carried() {
     let mut variants = flagged_thicken_variants(&[Some((true, false)), None]);
     let later = variants[1].byte_offset();
     if let Some(flags) = variants[0].tail_flags.as_mut() {
-        flags.suppressed_offset = later - 1;
+        flags.no_result_offset = later - 1;
     }
     let superseded = with_test_ctx(|ctx| {
         admit_history_bound_scope_variants(ctx, &mut variants, &[], &Default::default())
@@ -709,7 +752,7 @@ fn flags_that_reach_the_later_envelope_are_not_carried() {
             .losses()
             .map(|loss| loss.message)
             .collect::<Vec<_>>(),
-        [format!("Feature scope {id}#200 (record 42): its later envelope at byte 200 stores no suppressed or rolled-back flags, and no earlier envelope stores them before that byte (open item DR-1005). 1 other envelope(s) store different flags, which were not decoded: at byte 100, suppressed=true, rolled-back=false.")]
+        [format!("Feature scope {id}#200 (record 42): its later envelope at byte 200 stores no tail state, and no earlier envelope stores it before that byte (open item DR-1005). 1 other envelope(s) store different flags, which were not decoded: at byte 100, state=000, no-result=true, rolled-back=false.")]
     );
 }
 
@@ -719,7 +762,7 @@ fn flags_that_reach_the_later_envelope_are_not_carried() {
 #[test]
 fn flags_only_notes_follow_record_order() {
     let id = "f3d:stream:design-parameter-scope";
-    let notes = [42, 43].map(|record| format!("Feature scope {id}#200 (record {record}): its later envelope at byte 200 stores no suppressed or rolled-back flags, so the decoder kept suppressed=true, rolled-back=false from the earlier envelope at byte 100 (open item DR-1005)."));
+    let notes = [42, 43].map(|record| format!("Feature scope {id}#200 (record {record}): its later envelope at byte 200 stores no tail state, so the decoder kept state=000, no-result=true, rolled-back=false from the earlier envelope at byte 100 (open item DR-1005)."));
     for _ in 0..32 {
         let mut variants = Vec::new();
         for record in [43, 42] {
@@ -750,9 +793,12 @@ fn scope_variants_that_differ_in_suppression_and_payload_are_unresolved() {
     let mut variants = thicken_variants(&[-1.0, -2.0]);
     for (scope, suppressed) in variants.iter_mut().zip([true, false]) {
         scope.tail_flags = Some(crate::records::feature::scope::DesignScopeTailFlags {
-            suppressed,
+            suppression: [suppressed, false],
+            unevaluated: false,
+            state_offset: scope.feature_ordinal_offset() + 1,
+            no_result: true,
             rolled_back: true,
-            suppressed_offset: scope.feature_ordinal_offset() + 1,
+            no_result_offset: scope.feature_ordinal_offset() + 4,
             envelope_offset: None,
         });
     }
@@ -770,7 +816,7 @@ fn superseded_scope_envelopes_name_their_difference_in_the_loss() {
     assert_eq!(SupersededScopeEnvelopes::default().losses().count(), 0);
     let losses = SupersededScopeEnvelopes {
         primary_indexed: 2,
-        tail_flags: vec!["Feature scope f3d:stream:design-parameter-scope#200 (record 42): the decoder kept suppressed=false, rolled-back=false from its later envelope at byte 200 (open item DR-1005).".to_owned()],
+        tail_flags: vec!["Feature scope f3d:stream:design-parameter-scope#200 (record 42): the decoder kept state=000, no-result=false, rolled-back=false from its later envelope at byte 200 (open item DR-1005).".to_owned()],
     }
     .losses()
     .collect::<Vec<_>>();
@@ -783,7 +829,7 @@ fn superseded_scope_envelopes_name_their_difference_in_the_loss() {
             .collect::<Vec<_>>(),
         [
             "2 duplicate feature scope envelope(s) differ from the primary-indexed envelope of their record and were not decoded.",
-            "Feature scope f3d:stream:design-parameter-scope#200 (record 42): the decoder kept suppressed=false, rolled-back=false from its later envelope at byte 200 (open item DR-1005).",
+            "Feature scope f3d:stream:design-parameter-scope#200 (record 42): the decoder kept state=000, no-result=false, rolled-back=false from its later envelope at byte 200 (open item DR-1005).",
         ]
     );
 }
