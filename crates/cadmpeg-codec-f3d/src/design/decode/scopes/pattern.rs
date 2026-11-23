@@ -146,6 +146,28 @@ pub(super) fn exact_rectangular_pattern_construction(
     Ok(Some(construction))
 }
 
+pub(super) fn linked_direction_losses(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &str,
+    directions: &[patterns::DesignRectangularPatternDirection],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use crate::layout::rectangular_pattern_direction_record as frame;
+    use crate::layout::rectangular_pattern_linked_extent_direction_record as linked_extent;
+    use crate::layout::rectangular_pattern_linked_spacing_direction_record as linked;
+    directions.iter().filter_map(|direction| {
+        let (start, _) = records.frames(direction.record_index).find(|(start, end)| {
+            matches!(end.checked_sub(*start), Some(length) if length == linked::LEN || length == linked_extent::LEN)
+                && u64::try_from(start + frame::ORIGIN).ok() == Some(direction.origin_offset)
+        })?;
+        let one = marked_record_reference(bytes, start + linked::SELECTION_LINK_ONE)?;
+        let two = marked_record_reference(bytes, start + linked::SELECTION_LINK_TWO)?;
+        Some(crate::loss::F3dLossCode::FeatureRectangularPatternDirectionLinksNative.note(format!(
+            "scope {scope} retains auxiliary selection links {one} and {two} of direction record {} in its native bytes.", direction.record_index
+        )))
+    }).collect()
+}
+
 /// The direction records of the active directions. A scope that stores both
 /// direction slots, direction one first, keeps the record of an inactive
 /// direction; every other record list is returned whole.
@@ -228,6 +250,8 @@ fn exact_pattern_direction_frame(
     use crate::layout::rectangular_pattern_compact_extent_direction_record as compact_extent;
     use crate::layout::rectangular_pattern_compact_spacing_direction_record as compact;
     use crate::layout::rectangular_pattern_direction_record as frame;
+    use crate::layout::rectangular_pattern_linked_extent_direction_record as linked_extent;
+    use crate::layout::rectangular_pattern_linked_spacing_direction_record as linked;
     use crate::layout::rectangular_pattern_spacing_direction_record as spacing;
 
     let distance_type = View::u32_le_at(bytes, start + frame::FIXED_EIGHT)?;
@@ -236,14 +260,23 @@ fn exact_pattern_direction_frame(
         (frame::LEN, 8) => 0,
         (circular::LEN, circular::CONTROL_VALUE) if circular_axis => 0,
         (spacing::LEN, 7 | 10) if bytes.get(start + spacing::SPACING_FLAG) == Some(&0) => 1,
-        (compact::LEN, 7) | (compact_extent::LEN, 8 | 10) => 0,
+        (compact::LEN, 7 | 8)
+        | (compact_extent::LEN, 8 | 10)
+        | (linked::LEN, 7)
+        | (linked_extent::LEN, 8) => 0,
         _ => return None,
     };
     let compact_spacing = length == compact::LEN;
-    let extent_form = length == compact_extent::LEN;
+    let linked_unflagged = length == linked_extent::LEN;
+    let linked_record = length == linked::LEN || linked_unflagged;
+    let extent_form = length == compact_extent::LEN || linked_record;
     let at = |offset| {
         start
-            + if extent_form && offset >= frame::SELECTION_COUNT {
+            + if linked_unflagged && offset >= frame::INDEX_PLUS_ONE_REFERENCE {
+                offset - (frame::INDEX_PLUS_ONE_REFERENCE - linked_extent::INDEX_PLUS_ONE_REFERENCE)
+            } else if linked_record && offset >= frame::AUXILIARY_COUNT {
+                offset - (frame::AUXILIARY_COUNT - linked::AUXILIARY_COUNT)
+            } else if extent_form && offset >= frame::SELECTION_COUNT {
                 offset - (frame::SELECTION_COUNT - compact_extent::SELECTION_COUNT)
             } else if compact_spacing && offset >= frame::INDEX_PLUS_ONE_REFERENCE {
                 offset - (frame::INDEX_PLUS_ONE_REFERENCE - compact::INDEX_PLUS_ONE_REFERENCE)
@@ -272,7 +305,13 @@ fn exact_pattern_direction_frame(
         || View::u32_le_at(bytes, at(frame::SELECTION_COUNT)) != Some(1)
         || marked_record_reference(bytes, at(frame::SELECTION_REFERENCE))
             != Some(selection_record_index)
-        || bytes.get(at(frame::ZERO_RUN_2)..at(frame::AUXILIARY_COUNT)) != Some(&[0; 2])
+        || if linked_record {
+            [linked::SELECTION_LINK_ONE, linked::SELECTION_LINK_TWO]
+                .into_iter()
+                .any(|offset| marked_record_reference(bytes, start + offset).is_none())
+        } else {
+            bytes.get(at(frame::ZERO_RUN_2)..at(frame::AUXILIARY_COUNT)) != Some(&[0; 2])
+        }
         || View::u32_le_at(bytes, at(frame::AUXILIARY_COUNT)) != Some(1)
         || marked_record_reference(bytes, at(frame::AUXILIARY_REFERENCE)).is_none()
         || View::u64_le_at(bytes, at(frame::ROLE)) != Some(0x0000_0004_0000_0000)
@@ -286,10 +325,13 @@ fn exact_pattern_direction_frame(
         || View::u32_le_at(bytes, at(frame::OPAQUE_INDEX_REPEAT)) != Some(opaque_index)
         || marked_record_reference(bytes, at(frame::INDEX_PLUS_TWO_REFERENCE))
             != record_index.checked_add(2)
-        || (!compact_spacing && bytes.get(at(frame::SEPARATOR_FLAG)) != Some(&1))
+        || (!(compact_spacing || linked_unflagged)
+            && bytes.get(at(frame::SEPARATOR_FLAG)) != Some(&1))
         || bytes.get(
             if compact_spacing {
                 start + compact::SEPARATOR_ZERO_RUN
+            } else if linked_unflagged {
+                start + linked_extent::SEPARATOR_ZERO_RUN
             } else {
                 at(frame::SEPARATOR_ZERO_RUN)
             }..at(frame::INDEX_PLUS_ONE_REFERENCE),
@@ -564,10 +606,16 @@ fn exact_rectangular_pattern_distribution(
     {
         return None;
     }
+    // A symmetric byte other than 0 or 1 leaves the distribution unread.
     let flag = |offset: usize| {
         let at = start + offset;
+        let value = match bytes.get(at)? {
+            0 => false,
+            1 => true,
+            _ => return None,
+        };
         Some(crate::records::identity::Located {
-            value: bytes.get(at) == Some(&1),
+            value,
             offset: u64::try_from(at).ok()?,
         })
     };

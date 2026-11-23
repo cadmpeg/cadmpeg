@@ -456,6 +456,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     design.sketch_relations = crate::design::decode::sketch::decode_sketch_relations(
         scan,
         &prereqs.design_record_headers,
+        &mut losses,
     )?;
     let RelatedDesignOutcome {
         untyped_tracking_paths,
@@ -464,7 +465,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     } = extend_related_design_records(ctx, scan, prereqs, timelines, geometry, &mut design)?;
     losses.extend(profile_losses);
     losses.extend(
-        crate::design::decode::operands::body_recipe_serialization_form_losses(
+        crate::design::decode::operands::body_recipes::body_recipe_serialization_form_losses(
             &design.design_body_recipe_operands,
         ),
     );
@@ -481,10 +482,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         history.release_topologies();
     }
     design.sketch_points = crate::design::decode::sketch::decode_sketch_points(scan, &mut losses)?;
-    design.sketch_texts = crate::design::decode::sketch::decode_sketch_texts(scan)?;
+    design.sketch_texts = crate::design::decode::sketch::decode_sketch_texts(scan, &mut losses)?;
     design.sketch_curve_identities =
         crate::design::decode::sketch::decode_sketch_curve_identities(scan, &mut losses)?;
-    design.sketch_surfaces = crate::design::decode::sketch::decode_sketch_surfaces(scan)?;
+    design.sketch_surfaces =
+        crate::design::decode::sketch::decode_sketch_surfaces(scan, &mut losses)?;
     design.sketch_geometry_groups = crate::design::decode::sketch::decode_sketch_geometry_groups(
         scan,
         &design.sketch_points,
@@ -497,6 +499,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut design.sketch_curve_identities,
         &mut design.sketch_surfaces,
         &mut design.sketch_relations,
+        &mut losses,
     )?;
     let placements = crate::design::decode::placement_construction::decode(ctx, scan)?;
     design.design_placement_constructions = placements.records;
@@ -548,7 +551,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &design.design_placement_constructions,
         ),
     );
-    crate::design::decode::operands::bind_work_point_input_carriers(
+    crate::design::decode::operands::work_constructions::bind_work_point_input_carriers(
         scan,
         &mut design.design_parameter_scopes,
         &design.design_record_headers,
@@ -556,13 +559,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_edge_operands,
         &design.sketch_points,
     )?;
-    crate::design::decode::operands::bind_hole_location_sketch_points(
+    crate::design::decode::operands::work_constructions::bind_hole_location_sketch_points(
         scan,
         &mut design.design_parameter_scopes,
         &design.design_record_headers,
         &design.sketch_points,
     )?;
-    crate::design::decode::operands::bind_extrude_selection_geometry(
+    crate::design::decode::operands::extrude_selections::bind_extrude_selection_geometry(
         &mut design.design_extrude_selection_members,
         &design.design_extrude_selection_groups,
         &design.design_parameter_scopes,
@@ -625,17 +628,21 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut design.sketch_points,
         &mut design.sketch_curve_identities,
     )?;
-    design.design_body_bounds =
-        crate::design::decode::body::decode_body_bounds(scan, &prereqs.design_entity_headers)?;
+    design.design_body_bounds = crate::design::decode::body::decode_body_bounds(
+        scan,
+        &prereqs.design_entity_headers,
+        &mut losses,
+    )?;
     crate::design::decode::body::bind_body_bounds(
         &mut design.design_body_bounds,
         &prereqs.design_body_bindings,
     )?;
-    let configurations = crate::design::configurations::decode_configurations(ctx, scan)?;
+    let configurations =
+        crate::design::configurations::decode_configurations(ctx, scan, &mut losses)?;
     design.design_configurations = configurations.documents;
     design.configuration_roots_unbound = configurations.unbound_roots;
     design.design_sheet_metal_settings =
-        crate::design::decode::sheet_metal_settings::decode_settings(scan)?;
+        crate::design::decode::sheet_metal_settings::decode_settings(scan, &mut losses)?;
     let projection_parameters = crate::design::decode::parameters::parameters_for_projection(
         &prereqs.design_parameters,
         &prereqs.design_parameter_owner_unparsed,
@@ -685,24 +692,26 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         },
     )?;
     losses.extend(
-        crate::design::decode::operands::construction_closing_flag_losses(
+        crate::design::decode::operands::construction_groups::construction_closing_flag_losses(
             &design.design_construction_operand_groups,
         ),
     );
     losses.extend(projected.unruled_flange_thickness_loss());
     losses.extend(projected.projection_losses);
     losses.extend(
-        crate::design::decode::operands::fixed_fillet_assignment_losses(
+        crate::design::decode::operands::fillets::fixed_fillet_assignment_losses(
             &design.design_parameter_scopes,
             &design.design_construction_operand_groups,
         ),
     );
-    losses.extend(crate::design::decode::operands::fillet_set_list_losses(
-        &design.design_parameter_scopes,
-        &design.design_construction_operand_groups,
-        &design.design_fillet_radius_groups,
-        &prereqs.design_parameter_owners,
-    ));
+    losses.extend(
+        crate::design::decode::operands::fillets::fillet_set_list_losses(
+            &design.design_parameter_scopes,
+            &design.design_construction_operand_groups,
+            &design.design_fillet_radius_groups,
+            &prereqs.design_parameter_owners,
+        ),
+    );
     model.features = projected.features;
     model.parameters = projected.parameters;
     if projected.unordered_parameter_scopes != 0 {
@@ -933,14 +942,21 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         shells: geometry.shells,
         faces: geometry.faces,
     };
-    losses.extend(crate::history::bind_feature_body_selections(
-        &mut model.features,
-        &body_selection_inputs,
-    ));
-    losses.extend(crate::history::combine_history_tools::bind(
+    let (selection_losses, operand_refusals) =
+        crate::history::bind_feature_body_selections_with_refusals(
+            &mut model.features,
+            &body_selection_inputs,
+        );
+    losses.extend(selection_losses);
+    let (tool_losses, replaced_tools) = crate::history::combine_history_tools::bind(
         &mut model.features,
         &design.design_parameter_scopes,
         &prereqs.design_body_bindings,
+    );
+    losses.extend(tool_losses);
+    losses.extend(crate::history::native_combine_operand_refusal_notes(
+        &model.features,
+        operand_refusals,
     ));
     model
         .feature_result_topologies
@@ -951,6 +967,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             geometry.primary_brep,
             &mut losses,
         ));
+    losses.extend(
+        crate::history::combine_history_tools::align_with_result_states(
+            &mut model.features,
+            &model.feature_result_topologies,
+            replaced_tools,
+        ),
+    );
     // After the body selections: a Split names its input-state bodies there.
     let (history_bodies, remaining_work) = crate::history::history_bodies::fill(
         ctx,
@@ -1215,6 +1238,17 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_parameter_scopes,
         &mut losses,
     )?;
+    super::mesh_operations::tessellate::bind_features(
+        ctx,
+        scan,
+        &mut model.features,
+        &super::mesh_operations::tessellate::TessellateInputs {
+            scopes: &design.design_parameter_scopes,
+            owners: &prereqs.design_parameter_owners,
+            parameters: &prereqs.design_parameters,
+        },
+        &mut losses,
+    )?;
     super::mesh_operations::plane_cut::bind_features(
         ctx,
         scan,
@@ -1381,6 +1415,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         )
     };
     model.sketch_constraints.extend(dimension_constraints);
+    crate::design::dimensions::mark_driven_parameters(
+        &mut model.parameters,
+        &constraint_inputs,
+        &design.design_dimension_presentation_frames,
+    );
     let spatial_dimension_constraints =
         crate::design::dimensions::project_spatial_dimension_constraints(
             &constraint_inputs,
@@ -1505,7 +1544,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &model.features,
         &mut model.feature_input_topologies,
     )?;
-    model.configurations = crate::design::configurations::project_configurations(
+    model.configurations = crate::design::configurations::project_configurations_with_losses(
         &design.design_configurations,
         &crate::design::configurations::ConfigurationTargets {
             parameters: &prereqs.design_parameters,
@@ -1514,13 +1553,14 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             neutral_parameters: &model.parameters,
             neutral_features: &model.features,
         },
+        &mut losses,
     )?;
     crate::design::configurations::reconcile_active_configurations(
         &mut model.features,
         &mut model.configurations,
     )?;
     losses.extend(
-        crate::design::decode::operands::sketchless_profile_selection_losses(
+        crate::design::decode::operands::sketch_profiles::sketchless_profile_selection_losses(
             scan,
             &design.design_parameter_scopes,
             &design.design_construction_operand_groups,
@@ -1650,17 +1690,18 @@ fn extend_related_design_records(
             &prereqs.design_parameter_owners,
             &design.design_record_headers,
         )?;
-    design.design_face_source_groups = crate::design::decode::operands::decode_face_source_groups(
-        ctx,
-        scan,
-        &prereqs.design_types,
-        &design.design_parameter_scopes,
-    )?;
+    design.design_face_source_groups =
+        crate::design::decode::operands::face_sources::decode_face_source_groups(
+            ctx,
+            scan,
+            &prereqs.design_types,
+            &design.design_parameter_scopes,
+        )?;
     design.design_canvas_images =
         crate::design::decode::canvas::decode_canvas_images(scan, &design.design_parameter_scopes)?;
     design.design_decal_images =
         crate::design::decode::decal::decode_decal_images(scan, &design.design_parameter_scopes)?;
-    crate::design::decode::operands::disambiguate_fixed_fillet_parameters(
+    crate::design::decode::operands::fillets::disambiguate_fixed_fillet_parameters(
         &mut design.design_parameter_scopes,
         &prereqs.design_parameter_owners,
     );
@@ -1757,15 +1798,16 @@ fn extend_related_design_records(
         scan,
         &mut design.design_parameter_scopes,
     )?;
-    let mut profile_losses = crate::design::decode::operands::bind_sketch_profiles(
-        scan,
-        &mut design.design_parameter_scopes,
-        &design.design_record_headers,
-        &prereqs.design_entity_headers,
-        &mut design.sketch_text_extrude_candidates,
-    )?;
+    let mut profile_losses =
+        crate::design::decode::operands::sketch_profiles::bind_sketch_profiles(
+            scan,
+            &mut design.design_parameter_scopes,
+            &design.design_record_headers,
+            &prereqs.design_entity_headers,
+            &mut design.sketch_text_extrude_candidates,
+        )?;
     design.design_construction_operand_groups =
-        crate::design::decode::operands::decode_construction_operand_groups(
+        crate::design::decode::operands::construction_groups::decode_construction_operand_groups(
             scan,
             &mut design.design_parameter_scopes,
             &design.design_record_headers,
@@ -1781,7 +1823,7 @@ fn extend_related_design_records(
         &mut design.design_parameter_scopes,
     )?;
     design.design_loft_legacy_body_carriers =
-        crate::design::decode::operands::decode_loft_legacy_body_carriers(
+        crate::design::decode::operands::loft_carriers::decode_loft_legacy_body_carriers(
             scan,
             &design.design_parameter_scopes,
             &design.design_record_headers,
@@ -1796,7 +1838,7 @@ fn extend_related_design_records(
         &prereqs.construction_recipes,
     )?;
     design.design_extrude_selection_groups =
-        crate::design::decode::operands::decode_extrude_selection_groups(
+        crate::design::decode::operands::extrude_selections::decode_extrude_selection_groups(
             scan,
             &design.design_parameter_scopes,
             &design.design_record_headers,
@@ -1854,25 +1896,25 @@ fn extend_related_design_records(
             ),
     );
     append_related_record_headers(scan, &mut design.design_record_headers, &indices)?;
-    crate::design::decode::operands::bind_construction_operand_trailing_records(
+    crate::design::decode::operands::construction_groups::bind_construction_operand_trailing_records(
         scan,
         &mut design.design_construction_operand_groups,
         &design.design_record_headers,
     )?;
-    crate::design::decode::operands::bind_construction_operand_paths(
+    crate::design::decode::operands::construction_groups::bind_construction_operand_paths(
         scan,
         &mut design.design_construction_operand_groups,
         &design.design_record_headers,
     )?;
     let (identities, untyped_tracking_paths) =
-        crate::design::decode::operands::decode_construction_operand_identities(
+        crate::design::decode::operands::construction_groups::decode_construction_operand_identities(
             scan,
             &design.design_construction_operand_groups,
             &design.design_record_headers,
         )?;
     design.design_construction_operand_identities = identities;
     let indices = collect_related_indices(
-        crate::design::decode::operands::tracking_path_record_indices(
+        crate::design::decode::operands::entity_selections::tracking_path_record_indices(
             &design.design_construction_operand_identities,
         ),
     );
@@ -1898,7 +1940,7 @@ fn extend_related_design_records(
         })
         .collect::<std::collections::HashSet<_>>();
     design.design_edge_identity_operands =
-        crate::design::decode::operands::decode_edge_identity_operands(
+        crate::design::decode::operands::edge_operands::decode_edge_identity_operands(
             scan,
             &design.design_parameter_scopes,
             &design.design_construction_operand_groups,
@@ -1922,14 +1964,14 @@ fn extend_related_design_records(
             return true;
         };
         let scope = scopes.get(&(stream, group.scope_record_index)).copied();
-        crate::design::decode::operands::construction_operand_group_is_retained(
+        crate::design::decode::operands::face_operand_frames::construction_operand_group_is_retained(
             scope,
             identified_groups.contains(&(stream, group.record_index))
                 || identity_member_groups.contains(&(stream, group.record_index)),
         )
     });
     design.design_fillet_radius_groups =
-        crate::design::decode::operands::decode_fillet_radius_groups(
+        crate::design::decode::operands::fillets::decode_fillet_radius_groups(
             &design.design_parameter_scopes,
             &design.design_construction_operand_groups,
             &prereqs.design_parameter_owners,
@@ -1954,7 +1996,7 @@ fn extend_related_design_records(
     profile_losses.extend(
         crate::design::decode::scopes::fillet_set::fillet_set_conflict_loss(&fillet_set_conflicts),
     );
-    crate::design::decode::operands::bind_lost_edge_groups(
+    crate::design::decode::operands::construction_groups::bind_lost_edge_groups(
         &mut design.design_construction_operand_groups,
         &design.design_construction_operand_identities,
         &design.lost_edge_references,
@@ -1992,21 +2034,21 @@ fn extend_related_design_records(
     );
     append_related_record_headers(scan, &mut design.design_record_headers, &indices)?;
     design.design_extrude_selection_members =
-        crate::design::decode::operands::decode_extrude_selection_members(
+        crate::design::decode::operands::extrude_selections::decode_extrude_selection_members(
             scan,
             &design.design_parameter_scopes,
             &design.design_extrude_selection_groups,
             &design.design_record_headers,
         )?;
     design.design_entity_selection_operands =
-        crate::design::decode::operands::decode_entity_selection_operands(
+        crate::design::decode::operands::entity_selections::decode_entity_selection_operands(
             scan,
             &design.design_parameter_scopes,
             &design.design_construction_operand_groups,
             &design.design_record_headers,
         )?;
     design.design_profile_curve_selections =
-        crate::design::decode::operands::decode_profile_curve_selections(
+        crate::design::decode::operands::sketch_profiles::decode_profile_curve_selections(
             ctx,
             scan,
             &design.design_construction_operand_groups,
@@ -2022,18 +2064,18 @@ fn extend_related_design_records(
         &design.asm_histories,
     );
     design.design_body_recipe_operands =
-        crate::design::decode::operands::decode_body_recipe_operands(
+        crate::design::decode::operands::body_recipes::decode_body_recipe_operands(
             scan,
             &design.design_parameter_scopes,
             &design.design_construction_operand_groups,
             &design.design_record_headers,
             &prereqs.construction_recipes,
         )?;
-    crate::design::decode::operands::release_extrude_body_target_groups(
+    crate::design::decode::operands::extrude_roles::release_extrude_body_target_groups(
         &mut design.design_construction_operand_groups,
         &design.design_body_recipe_operands,
     );
-    crate::design::decode::operands::bind_body_recipe_operand_candidates(
+    crate::design::decode::operands::body_recipes::bind_body_recipe_operand_candidates(
         &mut design.design_body_recipe_operands,
         &prereqs.construction_recipes,
         geometry.persistent_subentity_tags,
@@ -2050,7 +2092,7 @@ fn extend_related_design_records(
         &design.design_parameter_scopes,
         crate::history::BindingHistories::Release(&mut design.asm_histories),
     )?;
-    crate::design::decode::operands::bind_extrude_selection_identities(
+    crate::design::decode::operands::extrude_selections::bind_extrude_selection_identities(
         &mut design.design_extrude_selection_members,
         &design.design_construction_operand_identities,
     );
@@ -2060,15 +2102,16 @@ fn extend_related_design_records(
         &prereqs.design_body_bindings,
         &design.asm_histories,
     );
-    design.design_edge_operands = crate::design::decode::operands::decode_edge_operands(
-        ctx,
-        scan,
-        &design.design_parameter_scopes,
-        &design.design_construction_operand_groups,
-        &design.design_record_headers,
-        &prereqs.construction_recipes,
-    )?;
-    crate::design::decode::operands::bind_edge_operand_candidates(
+    design.design_edge_operands =
+        crate::design::decode::operands::edge_operands::decode_edge_operands(
+            ctx,
+            scan,
+            &design.design_parameter_scopes,
+            &design.design_construction_operand_groups,
+            &design.design_record_headers,
+            &prereqs.construction_recipes,
+        )?;
+    crate::design::decode::operands::operand_candidates::bind_edge_operand_candidates(
         &mut design.design_edge_operands,
         &prereqs.construction_recipes,
         geometry.persistent_subentity_tags,
@@ -2126,14 +2169,14 @@ fn extend_related_design_records(
         )?;
     design.asm_face_boundaries = face_boundaries;
     design.design_edge_treatment_vertex_operands =
-        crate::design::decode::operands::decode_edge_treatment_vertex_operands(
+        crate::design::decode::operands::edge_operands::decode_edge_treatment_vertex_operands(
             scan,
             &design.design_parameter_scopes,
             &design.design_construction_operand_groups,
             &design.design_record_headers,
             &prereqs.construction_recipes,
         )?;
-    crate::design::decode::operands::bind_edge_treatment_vertex_candidates(
+    crate::design::decode::operands::edge_operands::bind_edge_treatment_vertex_candidates(
         &mut design.design_edge_treatment_vertex_operands,
         geometry.persistent_subentity_tags,
     );
@@ -2143,7 +2186,7 @@ fn extend_related_design_records(
         &design.asm_histories,
         &scope_histories,
     )?;
-    crate::design::decode::operands::bind_work_plane_constructions(
+    crate::design::decode::operands::work_constructions::bind_work_plane_constructions(
         scan,
         &mut design.design_parameter_scopes,
         &design.design_record_headers,
@@ -2151,7 +2194,7 @@ fn extend_related_design_records(
         &prereqs.design_parameter_owners,
         &prereqs.design_parameters,
     )?;
-    crate::design::decode::operands::bind_vertex_recipe_candidates(
+    crate::design::decode::operands::edge_operands::bind_vertex_recipe_candidates(
         &mut design.design_parameter_scopes,
         geometry.persistent_subentity_tags,
     );
@@ -2161,7 +2204,7 @@ fn extend_related_design_records(
         &design.asm_histories,
     )?;
     let (face_operands, face_operand_losses) =
-        crate::design::decode::operands::decode_face_operands(
+        crate::design::decode::operands::face_operands::decode_face_operands(
             ctx,
             scan,
             &design.design_parameter_scopes,
@@ -2172,7 +2215,7 @@ fn extend_related_design_records(
         )?;
     design.design_face_operands = face_operands;
     profile_losses.extend(face_operand_losses);
-    crate::design::decode::operands::bind_face_operand_candidates(
+    crate::design::decode::operands::operand_candidates::bind_face_operand_candidates(
         &mut design.design_face_operands,
         &prereqs.construction_recipes,
         geometry.persistent_subentity_tags,

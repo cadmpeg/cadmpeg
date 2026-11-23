@@ -50,7 +50,7 @@ fn extrude_member_valid_slot_has_no_finding() {
         let native = native(true);
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
-        super::super::validate_extrude_selection_members(&ctx, &mut findings);
+        super::super::extrude_selections::validate_extrude_selection_members(&ctx, &mut findings);
         assert!(findings.is_empty());
     })
 }
@@ -82,7 +82,7 @@ fn extrude_member_scope_tail_naming_the_group_scope_has_no_finding() {
         let native = native_with_scope_tail(7);
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
-        super::super::validate_extrude_selection_members(&ctx, &mut findings);
+        super::super::extrude_selections::validate_extrude_selection_members(&ctx, &mut findings);
         assert!(findings.is_empty());
     })
 }
@@ -94,7 +94,7 @@ fn extrude_member_scope_tail_naming_another_scope_is_reported() {
         let native = native_with_scope_tail(8);
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
-        super::super::validate_extrude_selection_members(&ctx, &mut findings);
+        super::super::extrude_selections::validate_extrude_selection_members(&ctx, &mut findings);
         assert_eq!(findings.len(), 1);
     })
 }

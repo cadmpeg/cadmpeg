@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::design::decode::operands::bind_extrude_selection_geometry;
-use crate::design::decode::operands::bind_extrude_selection_identities;
+use crate::design::decode::operands::extrude_selections::bind_extrude_selection_geometry;
+use crate::design::decode::operands::extrude_selections::bind_extrude_selection_identities;
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::design::decode::operands::parse_extrude_selection_group;
-use crate::design::decode::operands::parse_extrude_selection_member;
+use crate::design::decode::operands::extrude_selections::parse_extrude_selection_group;
+use crate::design::decode::operands::extrude_selections::parse_extrude_selection_member;
 
 use crate::design::geometry::ProfileGeometryWork;
 use crate::design::profile_select::resolved_extrude_profile_selection;
@@ -291,8 +291,11 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             "1d8b67fc-c638-4af3-b13d-776dce4f472d",
         );
         let edge_identity =
-            crate::design::decode::operands::parse_edge_identity_member(&edge_identity_bytes, 0)
-                .expect("fixed edge-treatment selection identity");
+            crate::design::decode::operands::extrude_selections::parse_edge_identity_member(
+                &edge_identity_bytes,
+                0,
+            )
+            .expect("fixed edge-treatment selection identity");
         assert_eq!(edge_identity.local_id, 5890);
         assert!(!edge_identity.layout.is_compact());
         assert_eq!(edge_identity.layout.local_id_offset(), 24);
@@ -301,8 +304,11 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
 
         edge_identity_bytes.remove(22);
         let compact_edge_identity =
-            crate::design::decode::operands::parse_edge_identity_member(&edge_identity_bytes, 0)
-                .expect("compact fixed edge-treatment selection identity");
+            crate::design::decode::operands::extrude_selections::parse_edge_identity_member(
+                &edge_identity_bytes,
+                0,
+            )
+            .expect("compact fixed edge-treatment selection identity");
         assert!(compact_edge_identity.layout.is_compact());
         assert_eq!(compact_edge_identity.local_id, 5890);
         assert_eq!(compact_edge_identity.layout.local_id_offset(), 23);
@@ -311,8 +317,11 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
 
         edge_identity_bytes.remove(21);
         let shortest_edge_identity =
-            crate::design::decode::operands::parse_edge_identity_member(&edge_identity_bytes, 0)
-                .expect("short compact edge-treatment selection identity");
+            crate::design::decode::operands::extrude_selections::parse_edge_identity_member(
+                &edge_identity_bytes,
+                0,
+            )
+            .expect("short compact edge-treatment selection identity");
         assert!(shortest_edge_identity.layout.is_compact());
         assert_eq!(shortest_edge_identity.local_id, 5890);
         assert_eq!(shortest_edge_identity.layout.local_id_offset(), 22);
@@ -848,7 +857,7 @@ fn scope_tail_member_bytes(scope: u32) -> Vec<u8> {
 
 #[test]
 fn extrude_selection_scope_tail_member_has_exact_240_byte_frame() {
-    use crate::design::decode::operands::parse_extrude_identity_member;
+    use crate::design::decode::operands::extrude_selections::parse_extrude_identity_member;
     let bytes = scope_tail_member_bytes(12);
     let member =
         parse_extrude_identity_member(&bytes, 0, Some(12)).expect("scope-tail selection member");
@@ -874,7 +883,7 @@ fn extrude_selection_scope_tail_member_has_exact_240_byte_frame() {
 
 #[test]
 fn extrude_selection_scope_tail_member_refuses_each_broken_condition() {
-    use crate::design::decode::operands::parse_extrude_identity_member;
+    use crate::design::decode::operands::extrude_selections::parse_extrude_identity_member;
     let bytes = scope_tail_member_bytes(12);
     // Every fixed byte of the tail: leading zero, word, separators, reference
     // markers and padding.

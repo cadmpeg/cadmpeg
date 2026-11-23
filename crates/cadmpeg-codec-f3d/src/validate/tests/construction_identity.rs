@@ -69,7 +69,10 @@ fn construction_identity_valid_group_has_no_finding() {
         let native = native(true);
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
-        let groups = super::super::validate_construction_operand_identities(&ctx, &mut findings);
+        let groups = super::super::construction_operands::validate_construction_operand_identities(
+            &ctx,
+            &mut findings,
+        );
         assert!(findings.is_empty());
         assert!(groups.contains(&("f3d:Design/BulkStream.dat", 100)));
     })
@@ -135,7 +138,10 @@ fn transform_findings(native: &crate::native::F3dNative, valid: bool) {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let ctx = super::super::Ctx::new(&ir, native, decode);
         let mut findings = Vec::new();
-        let groups = super::super::validate_construction_operand_identities(&ctx, &mut findings);
+        let groups = super::super::construction_operands::validate_construction_operand_identities(
+            &ctx,
+            &mut findings,
+        );
         assert_eq!(findings.is_empty(), valid, "{findings:?}");
         assert_eq!(groups.contains(&("f3d:Design/BulkStream.dat", 100)), valid);
         if !valid {
@@ -147,7 +153,7 @@ fn transform_findings(native: &crate::native::F3dNative, valid: bool) {
         }
         findings.clear();
         let empty = std::collections::HashSet::new();
-        super::super::validate_operand_group_carriers(
+        super::super::operand_groups::validate_operand_group_carriers(
             &ctx,
             &mut findings,
             &groups,

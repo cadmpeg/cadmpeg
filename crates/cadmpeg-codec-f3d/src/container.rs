@@ -585,6 +585,8 @@ fn scan_in<'a>(
                         | ContainerRole::Image
                         | ContainerRole::OgsCache
                         | ContainerRole::Other
+                        | ContainerRole::BrepSmb
+                        | ContainerRole::BrepSmbh
                 ) || matches!(
                     error,
                     CodecError::ResourceLimit(ResourceLimit {

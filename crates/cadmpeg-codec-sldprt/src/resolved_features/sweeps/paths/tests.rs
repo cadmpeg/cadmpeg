@@ -58,36 +58,8 @@ fn spatial_coordinate_mask_keeps_its_low_state_bit() {
 }
 
 fn unframed_spatial() -> crate::records::FeatureInputLane {
-    use crate::records::{SketchInputEntity, SketchInputKind};
     let mut lane = sketch(true);
-    let lists = SketchRecordLists::new(&lane.native_payload);
-    let offset = usize::try_from(lane.sketch_entities[0].offset()).unwrap();
-    let Some(ListedRecord::Curve { sketch, .. }) = lists.record(offset) else {
-        panic!("curve")
-    };
-    let points = (0..3)
-        .map(|index| sketch.point(index).unwrap())
-        .collect::<Vec<_>>();
-    lane.native_payload[32..36].fill(0);
-    for marker in &lane.sketch_entities {
-        let offset = usize::try_from(marker.offset()).unwrap();
-        for field in [64, 66] {
-            let index = View::u16_le_at(&lane.native_payload, offset + field).unwrap() + 1;
-            lane.native_payload[offset + field..offset + field + 2]
-                .copy_from_slice(&index.to_le_bytes());
-        }
-    }
-    for (ordinal, offset) in points.into_iter().enumerate() {
-        let mut marker = SketchInputEntity::new(
-            format!("point#{offset}"),
-            "lane#1",
-            u32::try_from(ordinal).unwrap(),
-            u64::try_from(offset).unwrap(),
-            SketchInputKind::Point,
-        );
-        marker.feature_ref = Some("source".into());
-        lane.sketch_entities.push(marker);
-    }
+    crate::resolved_features::sweeps::tests::unframe(&mut lane);
     lane
 }
 
