@@ -680,11 +680,11 @@ resolve a seed feature?
 
 **Need.** We must know the sign before a writer can store a negative value. Without it, the writer refuses one.
 
-### DI-79. Trailer +21 of a value-only scalar behind the 18-byte header
+### DI-79. Trailer of a value-only scalar behind the 18-byte header
 
-**Question.** What do the first byte at trailer +21 and the byte at trailer +27 of a value-only scalar behind the 18-byte header hold, where trailer +21 stores `xx 00 00 00 02 00` with a first byte other than `01`?
+**Question.** What do the bytes from trailer +7 of a value-only scalar behind the 18-byte header hold where they are not the compact layout's trailer, and what do the first byte at trailer +21 and the byte at trailer +27 hold where trailer +21 stores `xx 00 00 00 02 00` with a first byte other than `01`?
 
-**Known.** `sldprt.md` §2: in a part that writes the 18-byte header, a value-only scalar stores its f64 at the header's end and a trailer after it that opens with three zero bytes and the scalar object identifier. The compact layout's trailer stores `01 00 00 00 02 00` at +21 and the role at +27, `0` driving or `1` display. Other trailers of this form store `xx 00 00 00 02 00` at +21 with `xx` one of `02`, `03`, `0f`, `10`, `29`, `2b` and `2f`, and `0` or `1` at +27. A trailer of this form can also store `01 00 00 00 02 00` at +21 and nonzero bytes in +28 through +34, where the compact layout's trailer holds seven zero bytes. The decoder reads every scalar of these forms with the native role.
+**Known.** `sldprt.md` §2: in a part that writes the 18-byte header, a value-only scalar stores its f64 at the header's end and a trailer after it that opens with three zero bytes and the scalar object identifier. The compact layout's trailer stores `01 00 00 00 02 00` at +21 and the role at +27, `0` driving or `1` display. Other trailers of this form take these forms: `xx 00 00 00 02 00` at +21 with `xx` one of `02`, `03`, `0f`, `10`, `29`, `2b` and `2f`, and `0` or `1` at +27; `01 00 00 00 02 00` at +21 with nonzero bytes in +7 through +20 or in +28 through +34, where the compact layout's trailer holds zero bytes; `01 00 00 00 03 00` at +21; an f64 at +21; zero bytes from +7 through +34; a small little-endian u32 at +11. The decoder reads every scalar of these forms with the native role.
 
 **Need.** Scalars of each first byte compared with the dimensions their names give: whether the +27 byte separates a driving value from a display value as it does in the compact layout, and which record kind each first byte names.
 
