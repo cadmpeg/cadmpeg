@@ -254,12 +254,14 @@ fn project_brep(
         let mut edge_entities = HashMap::<&cadmpeg_ir::ids::EdgeId, (SketchEntityId, bool)>::new();
         let mut used_vertices = HashSet::<&cadmpeg_ir::ids::VertexId>::new();
         let mut profiles = Vec::new();
+        // Edge refusals and their loops. The face's profiles end before the
+        // first refused loop, so no later loop takes its position.
+        let mut refusals = Vec::new();
         for loop_id in &face.loops {
             let Some(loop_) = loops.get(loop_id) else {
                 continue;
             };
             let mut profile = Vec::new();
-            let mut profile_complete = true;
             for coedge_id in loop_.coedges() {
                 let Some(coedge) = coedges.get(coedge_id) else {
                     continue;
@@ -307,15 +309,7 @@ fn project_brep(
                     );
                     let edge_refusals = edge_refusal.take_records();
                     if !edge_refusals.is_empty() {
-                        for record in edge_refusals {
-                            losses.push(crate::loss::SldprtLossCode::SketchProfileRejected.note(
-                                format!(
-                                    "{record}; sketch {sketch_id} states no entity for the edge \
-                                     and no profile for loop {loop_id}"
-                                ),
-                            ));
-                        }
-                        profile_complete = false;
+                        refusals.extend(edge_refusals.into_iter().map(|record| (record, loop_id)));
                         continue;
                     }
                     let Some((geometry, start_aligned)) = projected else {
@@ -371,7 +365,7 @@ fn project_brep(
                     });
                 }
             }
-            if profile_complete && !profile.is_empty() {
+            if refusals.is_empty() && !profile.is_empty() {
                 orient_closed_profile_by_topology(&mut profile, &entities[first_entity..]);
                 profiles.push(profile);
             }
@@ -412,12 +406,29 @@ fn project_brep(
                     .with_endpoint_refs(endpoint_refs),
             );
         }
-        let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles) else {
+        let profiles = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles)
+            .ok()
+            .filter(|profiles| !profiles.is_empty() || entities.len() > first_entity);
+        for (record, loop_id) in refusals {
+            let consequence = match profiles {
+                Some(_) => format!(
+                    "sketch {sketch_id} states no entity for the edge and no profile for loop \
+                     {loop_id} or a later loop of face {}",
+                    face.id
+                ),
+                None => format!(
+                    "face {} of the feature-input stream states no sketch",
+                    face.id
+                ),
+            };
+            losses.push(
+                crate::loss::SldprtLossCode::SketchProfileRejected
+                    .note(format!("{record}; {consequence}")),
+            );
+        }
+        let Some(profiles) = profiles else {
             continue;
         };
-        if profiles.is_empty() && entities.len() == first_entity {
-            continue;
-        }
         crate::annotations::note(
             annotations,
             sketch_id.as_str(),

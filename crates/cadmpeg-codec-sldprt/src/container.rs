@@ -453,6 +453,13 @@ struct NativeMarkers {
     given_up: Vec<GivenUpPart>,
 }
 
+/// The part a CFB stream is: opened, retained and ZLB-unwrapped.
+pub(crate) const COMPOUND_STREAM_PART: &str = "compound-stream";
+/// The part a native block frame is: inflated and checked.
+pub(crate) const NATIVE_BLOCK_PART: &str = "native-block";
+/// The part the Parasolid streams of one owner are: extracted together.
+pub(crate) const PARASOLID_STREAMS_PART: &str = "parasolid-streams";
+
 /// The classes of content a `SolidWorks` section's bytes can hold.
 const SECTION_HOLDS: [ArenaClass; 2] = [ArenaClass::Model, ArenaClass::Design];
 
@@ -506,7 +513,13 @@ fn walk_native_markers(
         }
         i += 1;
     }
-    let tail_start = native_layout::validate(bytes, &mut blocks, &mut cache_cells, &mut directory)?;
+    let tail_start = native_layout::validate(
+        bytes,
+        &mut blocks,
+        &mut unreadable_frames,
+        &mut cache_cells,
+        &mut directory,
+    )?;
     let mut given_up_end = 0;
     for (offset, end) in unreadable_frames {
         if offset >= tail_start || offset < given_up_end {
@@ -539,7 +552,7 @@ fn walk_native_markers(
 fn native_block_part(bytes: &[u8], offset: usize, end: usize) -> Part<'_> {
     let part = Part::at(
         "sldprt",
-        "native-block",
+        NATIVE_BLOCK_PART,
         u64_from_index(offset),
         bytes.get(offset..end).unwrap_or_default(),
         SECTION_HOLDS,
@@ -586,7 +599,7 @@ fn compound_stream(
 ) -> Result<CompoundStream, CodecError> {
     let semantic_payload = decoded_bytes.as_deref().unwrap_or(&bytes);
     let stream = compound_stream_name(path, directory_id);
-    let part = Part::at("sldprt", "parasolid-streams", 0, &bytes, SECTION_HOLDS)
+    let part = Part::at("sldprt", PARASOLID_STREAMS_PART, 0, &bytes, SECTION_HOLDS)
         .named(path)
         .in_stream(stream.clone())
         .digest_only();
@@ -681,14 +694,23 @@ fn compound_streams(
         let (payload, decoded) = match opened {
             Ok(opened) => opened,
             Err(error) => {
-                let part = Part::at("sldprt", "compound-stream", 0, &[], SECTION_HOLDS)
+                let located = match snapshot.open_located(ctx, entry) {
+                    Ok(Some(located)) => Some(located),
+                    Ok(None) | Err(_) => snapshot.open(ctx, entry).ok(),
+                };
+                let bytes = located.as_ref().map_or(&[][..], |view| view.window());
+                let declared = entry.logical_size();
+                let mut part = Part::at("sldprt", COMPOUND_STREAM_PART, 0, bytes, SECTION_HOLDS)
                     .named(path)
                     .in_stream(compound_stream_name(path, directory_id))
-                    .costing(format!(
-                        "the stream's {} declared bytes are not read",
-                        entry.logical_size()
-                    ))
                     .digest_only();
+                if u64_from_index(bytes.len()) != declared {
+                    part = part.costing(format!(
+                        "the stream declares {declared} bytes; its length counts the {} bytes \
+                         its sector chain located",
+                        bytes.len()
+                    ));
+                }
                 compound.given_up.push(ctx.give_up_part(part, error)?);
                 continue;
             }
@@ -853,7 +875,7 @@ fn block_from_inflated(
     let payload_end = payload_start + index_from_u32(frame.comp_sz);
     let mut part = Part::at(
         "sldprt",
-        "parasolid-streams",
+        PARASOLID_STREAMS_PART,
         u64_from_index(off),
         bytes.get(off..payload_end).unwrap_or_default(),
         SECTION_HOLDS,

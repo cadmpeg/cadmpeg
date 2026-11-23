@@ -56,6 +56,8 @@ struct DecodedBrep {
     metadata_header: Option<StreamHeader>,
     brep: Brep,
     configuration_bodies: Vec<(usize, Vec<cadmpeg_ir::ids::BodyId>)>,
+    /// The configurations whose partition the decode gave up.
+    given_up_partitions: BTreeSet<usize>,
 }
 
 impl crate::SldprtCodec {
@@ -224,6 +226,14 @@ fn decode_scan(
 ) -> Result<Decoded, CodecError> {
     let decode_digest = Sha256Digest::digest(scan.source_image);
     let mut given_up = std::mem::take(&mut scan.given_up);
+    let parasolid_owner_unread = given_up.iter().any(|part| {
+        matches!(
+            part.kind(),
+            container::PARASOLID_STREAMS_PART
+                | container::COMPOUND_STREAM_PART
+                | container::NATIVE_BLOCK_PART
+        )
+    });
     let classification = crate::dialect::classify_layers(&scan)?;
     let form_padding = classification.host().form_code_padding();
     // Marker identities are admitted during scanning. Compound stream identities
@@ -243,8 +253,14 @@ fn decode_scan(
             false,
         )?;
         retention.give_up(given_up);
-        let mut report =
-            build_container_report(ctx, &scan, &classification, container::notes(&scan), 0)?;
+        let mut report = build_container_report(
+            ctx,
+            &scan,
+            &classification,
+            container::notes(&scan),
+            0,
+            parasolid_owner_unread,
+        )?;
         report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {};
         report.losses.append(&mut pmi_losses);
         return decode_result(
@@ -313,6 +329,7 @@ fn decode_scan(
         &classification,
         container::notes(&scan),
         display_meshes,
+        parasolid_owner_unread,
     )?;
     report.losses.append(&mut brep_fallback_losses);
     report.losses.append(&mut pmi_losses);
@@ -2694,6 +2711,7 @@ fn untaken_local_bodies_losses(
     scan: &ContainerScan<'_>,
     taken: Option<usize>,
     configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
+    given_up_partitions: &BTreeSet<usize>,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     let partitioned = configuration_bodies
         .iter()
@@ -2720,7 +2738,9 @@ fn untaken_local_bodies_losses(
             } else {
                 SldprtLossCode::ConfigStateImportedBodiesNotTransferred
             };
-            let partition = if partitioned.contains(&index) {
+            let partition = if given_up_partitions.contains(&index) {
+                "its partition is given up"
+            } else if partitioned.contains(&index) {
                 "its partition holds no body"
             } else {
                 "the file stores no partition of it"
@@ -2763,6 +2783,7 @@ fn try_decode_brep(
     for (index, stream) in streams.iter().enumerate() {
         sites.entry(stream.site_key()).or_default().push(index);
     }
+    let mut given_up_partitions = partitions_given_up(given_up);
     let mut decoded_sites = Vec::new();
     for (site, indices) in &sites {
         let first = indices[0];
@@ -2773,13 +2794,19 @@ fn try_decode_brep(
         match ctx.run_part(|| decode_bodies(ctx, &bodies, streams[first].source_stream()))? {
             Ok(decoded) => decoded_sites.push((site.clone(), first, decoded)),
             Err(error) => {
+                given_up_partitions.extend(
+                    streams[first]
+                        .section
+                        .name()
+                        .and_then(partition_configuration),
+                );
                 given_up.push(ctx.give_up_part(site_part(streams, indices), error)?);
             }
         }
     }
     if decoded_sites.is_empty() {
         let mut decoded = Brep::default();
-        merge_virtual_component_bodies(ctx, scan, placed_virtual, &mut decoded)?;
+        merge_virtual_component_bodies(ctx, scan, placed_virtual, &mut decoded, given_up)?;
         if decoded.bodies.is_empty() {
             return Ok(None);
         }
@@ -2795,6 +2822,7 @@ fn try_decode_brep(
                 metadata_header: None,
                 brep: decoded,
                 configuration_bodies: Vec::new(),
+                given_up_partitions,
             },
             report,
         )));
@@ -2909,8 +2937,9 @@ fn try_decode_brep(
         scan,
         taken,
         &configuration_bodies,
+        &given_up_partitions,
     ));
-    merge_virtual_component_bodies(ctx, scan, placed_virtual, &mut decoded)?;
+    merge_virtual_component_bodies(ctx, scan, placed_virtual, &mut decoded, given_up)?;
     let report = build_geometry_report(
         ctx,
         scan,
@@ -2923,9 +2952,38 @@ fn try_decode_brep(
             metadata_header,
             brep: decoded,
             configuration_bodies,
+            given_up_partitions,
         },
         report,
     )))
+}
+
+/// The configuration index of `section` where it holds a configuration's
+/// Parasolid partition.
+fn partition_configuration(section: &str) -> Option<usize> {
+    (contains_ascii_case_insensitive(section, "partition")
+        && !contains_ascii_case_insensitive(section, "deltas")
+        && !contains_ascii_case_insensitive(section, "ghost"))
+    .then(|| container::configuration_index(section))
+    .flatten()
+}
+
+/// The configurations whose partition section is a given-up container
+/// part: a stream, a block, or the Parasolid streams of an owner.
+fn partitions_given_up(parts: &[GivenUpPart]) -> BTreeSet<usize> {
+    parts
+        .iter()
+        .filter(|part| {
+            matches!(
+                part.kind(),
+                container::PARASOLID_STREAMS_PART
+                    | container::COMPOUND_STREAM_PART
+                    | container::NATIVE_BLOCK_PART
+            )
+        })
+        .filter_map(GivenUpPart::name)
+        .filter_map(partition_configuration)
+        .collect()
 }
 
 /// The Parasolid site whose body streams are `indices` of `streams`, as a
@@ -2967,13 +3025,15 @@ fn site_part<'a>(streams: &[ActiveParasolidSite<'a>], indices: &[usize]) -> Part
 /// Add the bodies of each placed virtual component document (spec §11.5).
 /// Each document is scanned as a container of its own; the bodies of its
 /// active partition site are qualified by the site key of its section. A
-/// document that does not decode adds no body, and the assembly reports it
-/// as a virtual component without a decoded body.
+/// part the scan gives up is given up in `given_up`, restated in the
+/// section's stream. A document that does not decode adds no body, and the
+/// assembly reports it as a virtual component without a decoded body.
 fn merge_virtual_component_bodies(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
     placed_virtual: &BTreeSet<String>,
     decoded: &mut Brep,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<(), CodecError> {
     for section in scan.sections() {
         let Some(name) = section.name() else {
@@ -2985,14 +3045,14 @@ fn merge_virtual_component_bodies(
             continue;
         }
         let _depth = ctx.enter_nested("decode SolidWorks virtual component document")?;
-        // A part given up in the nested document would take an id of the
-        // outer document's, so such a document adds no body.
-        let nested = match container::scan(ctx, View::over_retained(section.payload())) {
-            Ok(nested) if nested.given_up.is_empty() => nested,
-            Ok(_) => continue,
+        let mut nested = match container::scan(ctx, View::over_retained(section.payload())) {
+            Ok(nested) => nested,
             Err(limit @ CodecError::ResourceLimit(_)) => return Err(limit),
             Err(_) => continue,
         };
+        for part in std::mem::take(&mut nested.given_up) {
+            given_up.push(part.nested_in(ctx, section.source_stream())?);
+        }
         let streams = active_body_streams(&nested);
         let site = container::select_active_parasolid_site(&nested)
             .map(|site| site.site_key())
@@ -3543,6 +3603,7 @@ fn build_geometry_ir(
         metadata_header,
         mut brep,
         configuration_bodies,
+        given_up_partitions,
     } = decoded;
     let mut retention = retention::Retention::default();
     let stats = &brep.stats;
@@ -4024,8 +4085,10 @@ fn build_geometry_ir(
     );
     crate::history::bind::bind_bound_sketch_profiles(&mut ir.model.features, &ir.model.sketches);
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
-    let current_bodies = active_partition_bodies(&ir, &configuration_bodies);
-    let stored_bodies = stored_partition_bodies(&ir, &configuration_bodies);
+    let active_given_up = container::active_configuration_index(scan)
+        .is_some_and(|index| given_up_partitions.contains(&index));
+    let (current_bodies, stored_bodies) =
+        configuration_body_roles(&ir, &configuration_bodies, active_given_up);
     assign_configuration_bodies(&mut ir, configuration_bodies, Some(scan))?;
     let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
         ctx,
@@ -4543,6 +4606,27 @@ fn project_design(
     }
     retired_states::retire(ir, annotations, unknowns, &projection.retired, losses);
     stamp_feature_baseline(ctx, ir)
+}
+
+/// The bodies of the active configuration, and the bodies that only the
+/// partitions of other configurations hold. Where the active configuration's
+/// partition was given up, no decoded body is the active configuration's.
+fn configuration_body_roles(
+    ir: &CadIr,
+    configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
+    active_given_up: bool,
+) -> (
+    Vec<cadmpeg_ir::ids::BodyId>,
+    HashSet<cadmpeg_ir::ids::BodyId>,
+) {
+    if active_given_up {
+        let others = partition_bodies(configuration_bodies, |_| true);
+        return (Vec::new(), others.into_iter().cloned().collect());
+    }
+    (
+        active_partition_bodies(ir, configuration_bodies),
+        stored_partition_bodies(ir, configuration_bodies),
+    )
 }
 
 /// The bodies of the active configuration: those of the active Parasolid
@@ -6698,6 +6782,7 @@ fn build_container_report(
     classification: &crate::dialect::LayerClassification,
     notes: Vec<String>,
     display_meshes: usize,
+    parasolid_owner_unread: bool,
 ) -> Result<DecodeBody, CodecError> {
     let parasolid_sources = scan
         .blocks
@@ -6736,7 +6821,9 @@ fn build_container_report(
         },
     ];
 
-    if !container::has_parasolid_body_stream(scan) {
+    // A given-up part that holds or can hold a Parasolid stream carries its
+    // own loss; the container is not stated to lack one.
+    if !parasolid_owner_unread && !container::has_parasolid_body_stream(scan) {
         losses.push(
             SldprtLossCode::ContainerNoParasolidStream.note(
                 "no Parasolid partition/deltas stream was located in the container".to_string(),

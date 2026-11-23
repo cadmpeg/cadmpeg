@@ -507,6 +507,54 @@ fn placed_virtual_documents_decode_into_the_definitions_that_own_them() {
 }
 
 #[test]
+fn a_placed_virtual_document_with_an_unread_part_keeps_its_body() {
+    use crate::test_support::container::{make_block, outer_header, sldprt_with_body};
+    use cadmpeg_ir::codec::Codec as _;
+    let mut part = sldprt_with_body(&crate::test_support::parasolid::triangle_body());
+    let mut unread = make_block(0x43, "Contents/Config-1-Partition", b"payload bytes");
+    unread[crate::layout::block_frame_header::CRC32] ^= 0xff;
+    part.extend(&unread);
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x42,
+        "swXmlContents/COMPINSTANCETREE",
+        virtual_tree().as_bytes(),
+    ));
+    source.extend(make_block(0x42, "VirtualComp/Box-sldprt", &part));
+    let decoded = crate::SldprtCodec
+        .decode(
+            &mut std::io::Cursor::new(source),
+            &cadmpeg_ir::codec::DecodeOptions::default(),
+        )
+        .expect("decode");
+    let box_bodies = decoded
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.id.as_str() == "sldprt:assembly:model#8")
+        .map(|definition| definition.bodies.clone())
+        .unwrap_or_default();
+    assert_eq!(box_bodies.len(), 1);
+    let code = cadmpeg_ir::unknown::part::record_unreadable_kind();
+    let unreadable = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == code)
+        .collect::<Vec<_>>();
+    let [loss] = unreadable.as_slice() else {
+        panic!("one loss names the component's unread block");
+    };
+    assert!(loss.message.contains(
+        "part native-block \"Contents/Config-1-Partition\" stream=\"VirtualComp/Box-sldprt\" "
+    ));
+    assert!(decoded.ir().native.0["sldprt"].arenas()["unknowns"]
+        .iter()
+        .any(|stub| loss.message.contains(&format!(" record={}: ", stub.id()))));
+}
+
+#[test]
 fn a_virtual_component_section_without_a_body_is_reported() {
     let sections =
         std::collections::BTreeMap::from([("box-sldprt".to_string(), Some("block@7".to_string()))]);

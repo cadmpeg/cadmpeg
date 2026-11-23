@@ -162,19 +162,10 @@ impl<'a> Part<'a> {
     ///
     /// [`CodecError::Malformed`] when the codec name cannot open an id.
     pub fn id(&self) -> Result<UnknownId, CodecError> {
-        let stream = self.stream.as_ref().map_or("", StreamName::as_str);
-        let mut address = Vec::new();
-        for field in [self.kind.as_bytes(), stream.as_bytes()] {
-            address.extend_from_slice(&u64_from_index(field.len()).to_be_bytes());
-            address.extend_from_slice(field);
-        }
-        address.extend_from_slice(&self.offset().to_be_bytes());
-        UnknownId::mint(format!(
-            "{}:source:part#{}",
+        part_id(
             self.codec,
-            crate::hash::sha256_hex(&address)
-        ))
-        .map_err(CodecError::malformed)
+            &part_address(self.kind, self.stream.as_ref(), self.offset),
+        )
     }
 
     fn offset(&self) -> u64 {
@@ -182,10 +173,35 @@ impl<'a> Part<'a> {
     }
 }
 
+/// The address a part's stub id is minted from: its kind, stream, and
+/// offset, each length-prefixed.
+fn part_address(kind: &str, stream: Option<&StreamName>, offset: u64) -> Vec<u8> {
+    let stream = stream.map_or("", StreamName::as_str);
+    let mut address = Vec::new();
+    for field in [kind.as_bytes(), stream.as_bytes()] {
+        address.extend_from_slice(&u64_from_index(field.len()).to_be_bytes());
+        address.extend_from_slice(field);
+    }
+    address.extend_from_slice(&offset.to_be_bytes());
+    address
+}
+
+fn part_id(codec: &str, address: &[u8]) -> Result<UnknownId, CodecError> {
+    UnknownId::mint(format!(
+        "{codec}:source:part#{}",
+        crate::hash::sha256_hex(address)
+    ))
+    .map_err(CodecError::malformed)
+}
+
 /// A part its decoder gave up: the stub, the retained bytes, and the loss.
 #[derive(Debug, Clone)]
 pub struct GivenUpPart {
     codec: &'static str,
+    kind: &'static str,
+    name: Option<String>,
+    stream: Option<StreamName>,
+    offset: u64,
     stub: NativeUnknownRecord,
     retained: RetainedSourceRecord,
     loss: LossNote,
@@ -202,6 +218,9 @@ impl GivenUpPart {
                 return false;
             }
             if next.codec != previous.codec
+                || next.kind != previous.kind
+                || next.stream != previous.stream
+                || next.offset != previous.offset
                 || next.retained != previous.retained
                 || next.loss != previous.loss
             {
@@ -228,6 +247,88 @@ impl GivenUpPart {
     #[must_use]
     pub fn id(&self) -> &UnknownId {
         &self.stub.id
+    }
+
+    /// The part's kind, as its decoder named it.
+    #[must_use]
+    pub const fn kind(&self) -> &'static str {
+        self.kind
+    }
+
+    /// The name the source stores for the part, where its decoder read one.
+    #[must_use]
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    /// Restates a part of a document that the stream `container` of an
+    /// outer document holds, for a decoder that reads the nested document
+    /// into the outer one. The part's stream becomes `container`, followed
+    /// by `/` and the part's own stream where it has one; its offset stays
+    /// an offset in that stream. The stub id is minted from `container` and
+    /// the part's own address, so it equals no id a part of the outer
+    /// document takes. The loss is restated with the new stream and id.
+    ///
+    /// # Errors
+    ///
+    /// [`CodecError::Malformed`] when the stream name or the id cannot be
+    /// formed, or a resource refusal for the longer loss text.
+    pub fn nested_in(
+        self,
+        ctx: &DecodeContext<'_>,
+        container: &StreamName,
+    ) -> Result<Self, CodecError> {
+        let Self {
+            codec,
+            kind,
+            name,
+            stream,
+            offset,
+            mut stub,
+            retained,
+            mut loss,
+        } = self;
+        let nested = match &stream {
+            Some(inner) => {
+                StreamName::try_from(format!("{}/{}", container.as_str(), inner.as_str()))
+                    .map_err(CodecError::malformed)?
+            }
+            None => container.clone(),
+        };
+        let mut address = u64::MAX.to_be_bytes().to_vec();
+        address.extend_from_slice(&u64_from_index(container.as_str().len()).to_be_bytes());
+        address.extend_from_slice(container.as_str().as_bytes());
+        address.extend_from_slice(&part_address(kind, stream.as_ref(), offset));
+        let id = part_id(codec, &address)?;
+        let before = loss.message.len();
+        restate_loss(&mut loss, stub.id.as_str(), id.as_str());
+        let old_field = format!(
+            " stream={:?} offset=",
+            stream.as_ref().map_or("", StreamName::as_str)
+        );
+        if let Some(at) = loss.message.find(&old_field) {
+            loss.message.replace_range(
+                at..at + old_field.len(),
+                &format!(" stream={:?} offset=", nested.as_str()),
+            );
+        }
+        ctx.retain_bytes(
+            u64_from_index(loss.message.len().saturating_sub(before)),
+            "nested given-up part loss",
+        )?;
+        loss.provenance =
+            Some(SourceProvenance::in_stream(codec, nested.clone(), offset).with_tag(kind));
+        stub.id = id;
+        Ok(Self {
+            codec,
+            kind,
+            name,
+            stream: Some(nested.clone()),
+            offset,
+            stub,
+            retained: retained.with_owner(nested),
+            loss,
+        })
     }
 
     /// A copy of the `record.unreadable` loss that names the part, for a
@@ -264,6 +365,7 @@ impl GivenUpPart {
             stub,
             retained,
             loss,
+            ..
         } = self;
         let record = NativeRecord::from(&stub);
         let taken = ir.native.0.values().any(|namespace| {
@@ -423,6 +525,10 @@ impl DecodeParts for DecodeContext<'_> {
             .with_provenance(provenance);
         Ok(GivenUpPart {
             codec: part.codec,
+            kind: part.kind,
+            name: part.name,
+            stream: part.stream,
+            offset: part.offset,
             stub: NativeUnknownRecord {
                 id,
                 links: part.containing.into_iter().collect(),

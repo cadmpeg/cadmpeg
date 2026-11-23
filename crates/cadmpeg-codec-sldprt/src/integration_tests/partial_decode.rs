@@ -96,6 +96,51 @@ fn a_cfb_stream_whose_chain_cannot_be_followed_costs_that_stream() {
     assert!(loss.message.contains("part compound-stream \"Payload\""));
     assert!(loss.message.contains("cyclic"));
     assert!(names_a_stub(&decoded, loss));
+    // The chain locates sector 1 before it returns to it.
+    assert!(loss.message.contains(" offset=0 length=512 "));
+    assert!(loss.message.contains(
+        "the stream declares 4096 bytes; its length counts the 512 bytes its sector chain located"
+    ));
+    let stub = loss
+        .message
+        .split(" record=")
+        .nth(1)
+        .and_then(|rest| rest.split(": ").next())
+        .expect("the loss names its stub");
+    let retained = decoded
+        .source_fidelity()
+        .retained_record(stub)
+        .expect("the stream's located bytes are retained");
+    assert_eq!(retained.stream(), "Payload");
+    assert_eq!(retained.byte_len(), 512);
+    assert_eq!(
+        retained.untyped(),
+        &std::collections::BTreeSet::from([
+            cadmpeg_core::decode::ArenaClass::Model,
+            cadmpeg_core::decode::ArenaClass::Design
+        ])
+    );
+}
+
+#[test]
+fn an_unread_partition_stream_is_not_reported_as_absent() {
+    let mut file = compound_with_partition();
+    put_u32(sector_mut(&mut file, 9), 10 * 4, 10);
+    let decoded = decode(file);
+    assert!(decoded.ir().geometry.faces.is_empty());
+    let [loss] = unreadable(&decoded)[..] else {
+        panic!("one loss names the partition stream");
+    };
+    assert!(loss
+        .message
+        .contains(&format!("part compound-stream \"{PARTITION}\"")));
+    assert!(names_a_stub(&decoded, loss));
+    let absent = crate::loss::SldprtLossCode::ContainerNoParasolidStream.kind();
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == absent));
 }
 
 #[test]

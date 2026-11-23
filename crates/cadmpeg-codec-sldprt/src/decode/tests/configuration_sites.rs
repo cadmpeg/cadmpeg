@@ -623,6 +623,79 @@ fn imported_bodies_stay_out_while_another_site_has_geometry() {
     );
 }
 
+#[test]
+fn imported_bodies_of_a_given_up_partition_name_it_given_up() {
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x21,
+        "Contents/Config-0-Partition",
+        &parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body()),
+    ));
+    let mut damaged = make_block(
+        0x21,
+        "Contents/Config-1-Partition",
+        &parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body()),
+    );
+    damaged[crate::layout::block_frame_header::CRC32] ^= 0xff;
+    source.extend(damaged);
+    source.extend(local_bodies_block(1, &[triangle_body()]));
+
+    let decoded = decode(source);
+
+    assert_eq!(
+        untaken_imported_bodies(&decoded),
+        [(
+            "config.state-imported-bodies-not-transferred",
+            "configuration index 1: its partition is given up, and the 1 imported body \
+             stream(s) of its Config-1-FeatureBodies are not decoded."
+        )]
+    );
+}
+
+#[test]
+fn a_given_up_container_part_names_the_partition_of_its_configuration() {
+    use cadmpeg_ir::unknown::part::{DecodeParts, Part};
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let parts = [
+        (container::NATIVE_BLOCK_PART, "Contents/Config-2-Partition"),
+        (
+            container::PARASOLID_STREAMS_PART,
+            "Contents/Config-3-Deltas",
+        ),
+        (container::COMPOUND_STREAM_PART, "Config-4-Properties"),
+        ("parasolid-site", "Contents/Config-5-Partition"),
+    ]
+    .map(|(kind, name)| {
+        ctx.give_up_part(
+            Part::at(
+                "sldprt",
+                kind,
+                0,
+                b"bytes",
+                [cadmpeg_core::decode::ArenaClass::Model],
+            )
+            .named(name),
+            cadmpeg_core::CodecError::malformed("damaged"),
+        )
+        .unwrap()
+    });
+    assert_eq!(
+        super::super::partitions_given_up(&parts),
+        std::collections::BTreeSet::from([2])
+    );
+}
+
+#[test]
+fn a_given_up_active_partition_states_no_body_of_the_active_configuration() {
+    let a = cadmpeg_ir::ids::BodyId::mint("test:model:body#a").unwrap();
+    let b = cadmpeg_ir::ids::BodyId::mint("test:model:body#b").unwrap();
+    let ir = cadmpeg_ir::document::CadIr::empty();
+    let partitions = [(0, vec![a.clone()]), (2, vec![b.clone()])];
+    let (current, others) = super::super::configuration_body_roles(&ir, &partitions, true);
+    assert!(current.is_empty());
+    assert_eq!(others, std::collections::HashSet::from([a, b]));
+}
+
 /// The local code and message of each loss of imported bodies, of a
 /// configuration that is not active or of the active one.
 fn untaken_imported_bodies(decoded: &cadmpeg_ir::codec::DecodeResult) -> Vec<(&str, &str)> {
