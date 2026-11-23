@@ -656,7 +656,13 @@ fn a_thread_companion_tail_decodes_its_suppression_flag() {
             .unwrap(),
             scope
         );
-        for offset in [scope.feature_ordinal_offset(), scope.paired_byte_offset()] {
+        let flag_at = cadmpeg_core::decode::u64_from_index(kind_end + companion::FLAGS);
+        for offset in [
+            scope.feature_ordinal_offset(),
+            flag_at - 1,
+            flag_at + 1,
+            scope.paired_byte_offset(),
+        ] {
             let mut moved = wire.clone();
             moved["companion_suppressed"]["offset"] = offset.into();
             assert!(
@@ -677,6 +683,72 @@ fn a_thread_companion_tail_decodes_its_suppression_flag() {
                 .expect("reciprocal Hole tail");
             assert_eq!(scope.tail_flags, None, "{members:?} {further}");
             assert_eq!(scope.companion_suppressed, None, "{members:?} {further}");
+        }
+    }
+}
+
+/// Two envelopes of one Thread that differ only in the suppression flag of
+/// their companion tail keep the later envelope with its own flag,
+/// whichever envelope is primary-indexed, and one note names both flags.
+#[test]
+fn thread_envelopes_that_differ_only_in_the_companion_flag_keep_the_later() {
+    use super::{admit_history_bound_scope_variants, SupersededScopeEnvelopes};
+    use crate::design::test_support::indexed_record_offsets_for_test;
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
+    for flags in [[false, true], [true, false]] {
+        let frames =
+            flags.map(|suppressed| thread_scope_frame(&thread_companion_tail(suppressed)).0);
+        let bytes = frames.concat();
+        let records = indexed_record_offsets_for_test(&bytes);
+        let scopes = [0, frames[0].len()].map(|start| {
+            let mut scope = super::parse_parameter_scope(
+                &bytes,
+                &records,
+                12,
+                &"344".to_owned().try_into().unwrap(),
+                cadmpeg_core::decode::u64_from_index(start),
+            )
+            .unwrap()
+            .expect("Thread envelope");
+            scope.id = format!("f3d:stream:design-parameter-scope#{start}");
+            scope
+        });
+        let later_at = scopes[1].byte_offset();
+        let note = format!(
+            "Feature scope f3d:stream:design-parameter-scope#{later_at} (record 12): the decoder kept companion suppression flag={} from its later envelope at byte {later_at} (open item DR-1005). 1 other envelope(s) store different flags, which were not decoded: at byte 0, companion suppression flag={}.",
+            u8::from(flags[1]),
+            u8::from(flags[0]),
+        );
+        for primary_at in [None, Some(0), Some(later_at)] {
+            let mut variants = scopes.to_vec();
+            let primary = primary_at
+                .map(|at| ("f3d:stream".to_owned(), at))
+                .into_iter()
+                .collect::<std::collections::HashSet<_>>();
+            let superseded = admit_history_bound_scope_variants(&ctx, &mut variants, &[], &primary)
+                .expect("the document decodes");
+            let [kept] = variants.as_slice() else {
+                panic!("one retained envelope")
+            };
+            let case = format!("flags {flags:?}, primary {primary_at:?}");
+            assert_eq!(kept.byte_offset(), later_at, "{case}");
+            assert_eq!(
+                kept.companion_suppressed, scopes[1].companion_suppressed,
+                "{case}"
+            );
+            assert_eq!(kept.tail_flags, None, "{case}");
+            assert_eq!(
+                superseded,
+                SupersededScopeEnvelopes {
+                    primary_indexed: 0,
+                    tail_flags: vec![note.clone()],
+                },
+                "{case}"
+            );
         }
     }
 }
