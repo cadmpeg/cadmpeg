@@ -353,9 +353,35 @@ impl DirectoryName {
     }
 }
 
+/// The 16-byte class identifier of a directory entry, in stored order.
+///
+/// The stored order is the canonical GUID form with its first three fields
+/// little-endian.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CompoundClassId([u8; 16]);
+
+impl CompoundClassId {
+    /// Builds an identifier from the canonical GUID fields.
+    pub const fn from_guid(first: u32, second: u16, third: u16, rest: [u8; 8]) -> Self {
+        let a = first.to_le_bytes();
+        let b = second.to_le_bytes();
+        let c = third.to_le_bytes();
+        Self([
+            a[0], a[1], a[2], a[3], b[0], b[1], c[0], c[1], rest[0], rest[1], rest[2], rest[3],
+            rest[4], rest[5], rest[6], rest[7],
+        ])
+    }
+
+    /// Returns the identifier bytes in stored order.
+    pub const fn to_bytes(self) -> [u8; 16] {
+        self.0
+    }
+}
+
 #[derive(Debug, Clone)]
 struct LiveEntry {
     name: DirectoryName,
+    class: CompoundClassId,
     kind: DirectoryKind,
     color: DirectoryColor,
     left: u32,
@@ -454,6 +480,15 @@ impl<'a> CompoundSnapshot<'a> {
             by_path,
             streams_by_id,
         })
+    }
+
+    /// Returns the class identifier of the root storage.
+    pub fn root_class(&self) -> CompoundClassId {
+        self.parsed
+            .directory
+            .first()
+            .and_then(DirectorySlot::live)
+            .map_or(CompoundClassId([0; 16]), |root| root.class)
     }
 
     /// Returns the CFB major version.
@@ -1147,7 +1182,12 @@ pub enum CompoundPrefixProbe {
     /// The available CFB structure is invalid.
     Malformed(String),
     /// Directory paths were reached structurally from the root storage.
-    DirectoryEvidence(Vec<String>),
+    DirectoryEvidence {
+        /// Hierarchy paths with source spelling preserved.
+        paths: Vec<String>,
+        /// Class identifier of the root storage.
+        root_class: CompoundClassId,
+    },
 }
 
 impl CompoundPrefixProbe {
@@ -1429,13 +1469,16 @@ impl CompoundPrefixProbe {
                 ));
             }
         }
-        Ok(Self::DirectoryEvidence(names))
+        Ok(Self::DirectoryEvidence {
+            paths: names,
+            root_class: root.class,
+        })
     }
 
     /// Returns structurally reached paths when the prefix provides usable evidence.
     pub fn paths(&self) -> Option<&[String]> {
         match self {
-            Self::DirectoryEvidence(paths) => Some(paths),
+            Self::DirectoryEvidence { paths, .. } => Some(paths),
             _ => None,
         }
     }
@@ -1522,6 +1565,7 @@ const DIRECTORY_NAME_LENGTH: usize = 64;
 const DIRECTORY_LEFT: usize = 68;
 const DIRECTORY_RIGHT: usize = 72;
 const DIRECTORY_CHILD: usize = 76;
+const DIRECTORY_CLASS: usize = 80;
 const DIRECTORY_START_SECTOR: usize = 116;
 const DIRECTORY_SIZE: usize = 120;
 const _: () = assert!(DIRECTORY_NAME_LENGTH.is_multiple_of(2));
@@ -1576,8 +1620,10 @@ fn parse_directory(
         if version == CompoundVersion::V3 {
             size &= 0xffff_ffff;
         }
+        let class = CompoundClassId(raw.as_chunks::<16>().0[DIRECTORY_CLASS / 16].to_owned());
         entries.push(DirectorySlot::Live(LiveEntry {
             name,
+            class,
             kind,
             color,
             left: le_u32_array(raw.as_chunks::<4>().0[DIRECTORY_LEFT / 4]),
@@ -2491,9 +2537,34 @@ mod tests {
     }
 
     #[test]
+    fn root_class_is_read_from_the_root_directory_entry() {
+        let mut file = fixture();
+        let class = crate::compound::CompoundClassId::from_guid(
+            0x23c5_2e80,
+            0x4698,
+            0x11ce,
+            [0xb3, 0x07, 0x08, 0x00, 0x36, 0x3a, 0x1e, 0x02],
+        );
+        file[512 + 80..512 + 96].copy_from_slice(&class.to_bytes());
+        assert_eq!(
+            &class.to_bytes()[..8],
+            &[0x80, 0x2e, 0xc5, 0x23, 0x98, 0x46, 0xce, 0x11]
+        );
+        let CompoundPrefixProbe::DirectoryEvidence { root_class, .. } = probe(&file) else {
+            panic!("usable prefix")
+        };
+        assert_eq!(root_class, class);
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&file, &arena, &DecodePolicy::default()).expect("root");
+        let snapshot = CompoundSnapshot::new(&ctx, root).expect("snapshot");
+        assert_eq!(snapshot.root_class(), class);
+    }
+
+    #[test]
     fn prefix_probe_reaches_directory_names_without_scanning_bytes() {
         let file = fixture();
-        let CompoundPrefixProbe::DirectoryEvidence(paths) = probe(&file) else {
+        let CompoundPrefixProbe::DirectoryEvidence { paths, .. } = probe(&file) else {
             panic!("usable prefix")
         };
         assert!(paths.iter().any(|path| path == "Store/Large"));
@@ -2511,7 +2582,7 @@ mod tests {
         put_u32(sector_mut(&mut file, 12), SECTOR_SIZE - 4, END_OF_CHAIN);
         assert!(matches!(
             probe(&file),
-            CompoundPrefixProbe::DirectoryEvidence(_)
+            CompoundPrefixProbe::DirectoryEvidence { .. }
         ));
         assert_eq!(
             probe(&file[..SECTOR_SIZE * 13]),
@@ -2526,7 +2597,7 @@ mod tests {
         put_u32(&mut prefix, 80, 1_000);
         assert!(matches!(
             probe(&prefix),
-            CompoundPrefixProbe::DirectoryEvidence(_)
+            CompoundPrefixProbe::DirectoryEvidence { .. }
         ));
     }
 
@@ -2563,7 +2634,7 @@ mod tests {
         assert!(deviations(&file));
         assert!(matches!(
             probe(&file),
-            CompoundPrefixProbe::DirectoryEvidence(_)
+            CompoundPrefixProbe::DirectoryEvidence { .. }
         ));
         let mut canonical = file.clone();
         put_u32(
