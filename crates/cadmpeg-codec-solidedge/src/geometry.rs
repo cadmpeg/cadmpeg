@@ -62,6 +62,22 @@ fn referenced<'a>(nodes: &Nodes<'a>, node: Node<'_>, field: &str) -> Option<Node
     nodes.get(&node.pointer(field)?).copied()
 }
 
+/// The curve a trimmed-curve chain restricts: follows `basis_curve` links
+/// through nested trimmed curves and returns the first other node. A node that
+/// is not a trimmed curve is its own basis. A dangling link or a cycle ends at
+/// the last resolved node.
+pub(crate) fn trim_basis<'a>(nodes: &Nodes<'a>, node: Node<'a>) -> Node<'a> {
+    let mut current = node;
+    let mut seen = std::collections::BTreeSet::new();
+    while current.kind() == kind::TRIMMED_CURVE && seen.insert(current.index()) {
+        match referenced(nodes, current, "basis_curve") {
+            Some(basis) => current = basis,
+            None => break,
+        }
+    }
+    current
+}
+
 pub(crate) fn curve(nodes: &Nodes<'_>, node: Node<'_>) -> Option<CurveGeometry> {
     if let Some(Analytic::Curve(curve)) = analytic(node) {
         return Some(curve);
@@ -76,6 +92,15 @@ pub(crate) fn curve(nodes: &Nodes<'_>, node: Node<'_>) -> Option<CurveGeometry> 
         }
         return None;
     }
+    match b_curve(nodes, node)? {
+        BCurve::Spatial(curve) => Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))),
+        BCurve::Planar(_) => None,
+    }
+}
+
+/// The B-spline carried by a `B_CURVE` node: a model-space curve, or a curve
+/// in the parameter space of a support surface.
+pub(crate) fn b_curve(nodes: &Nodes<'_>, node: Node<'_>) -> Option<BCurve> {
     if node.kind() != kind::B_CURVE {
         return None;
     }
@@ -96,10 +121,7 @@ pub(crate) fn curve(nodes: &Nodes<'_>, node: Node<'_>) -> Option<CurveGeometry> 
             values: &knots,
         },
     };
-    match nurbs::b_curve(&fields).ok()? {
-        BCurve::Spatial(curve) => Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))),
-        BCurve::Planar(_) => None,
-    }
+    nurbs::b_curve(&fields).ok()
 }
 
 pub(crate) fn surface(nodes: &Nodes<'_>, node: Node<'_>) -> Option<SurfaceGeometry> {
@@ -144,4 +166,36 @@ pub(crate) fn surface(nodes: &Nodes<'_>, node: Node<'_>) -> Option<SurfaceGeomet
     nurbs::b_surface(&fields, false)
         .ok()
         .map(|surface| SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{trim_basis, Nodes};
+    use cadmpeg_parasolid::records::{node_type as kind, PrimaryRecords};
+
+    #[test]
+    fn trimmed_curve_chain_resolves_to_its_basis_curve() {
+        let bytes = crate::test_support::trimmed_chart_partition();
+        let records = PrimaryRecords::read(&bytes)
+            .expect("header")
+            .expect("partition");
+        assert!(records.is_terminated());
+        let nodes: Nodes<'_> = records.nodes().map(|node| (node.index(), node)).collect();
+        let chain = nodes[&9];
+        assert_eq!(chain.kind(), kind::TRIMMED_CURVE);
+        assert_eq!(trim_basis(&nodes, chain).kind(), kind::INTERSECTION);
+        assert_eq!(trim_basis(&nodes, nodes[&8]).index(), 2);
+        assert_eq!(trim_basis(&nodes, nodes[&2]).index(), 2);
+    }
+
+    #[test]
+    fn trimmed_curve_cycle_and_dangling_basis_stop_at_a_trimmed_curve() {
+        let bytes = crate::test_support::trimmed_chart_partition();
+        let records = PrimaryRecords::read(&bytes)
+            .expect("header")
+            .expect("partition");
+        let nodes: Nodes<'_> = records.nodes().map(|node| (node.index(), node)).collect();
+        assert_eq!(trim_basis(&nodes, nodes[&10]).kind(), kind::TRIMMED_CURVE);
+        assert_eq!(trim_basis(&nodes, nodes[&11]).kind(), kind::TRIMMED_CURVE);
+    }
 }
