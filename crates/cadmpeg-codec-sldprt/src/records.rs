@@ -1490,12 +1490,15 @@ pub(crate) struct SketchInputEntityWire {
     )]
     coordinates_m: Option<cadmpeg_ir::units::FiniteVector<2>>,
     /// The side words of a 92-byte profile line record.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_line_sides")]
     line_sides: Option<LineSides>,
     /// Resolved links and their selector from the reference-bearing layout.
     #[serde(flatten, with = "sketch_input_links_wire")]
     links: Option<SketchInputLinks>,
 }
+
+// The optional key names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_line_sides, LineSides, "line_sides");
 
 fn sketch_entities_from_wire(
     wire: Vec<SketchInputEntityWire>,

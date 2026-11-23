@@ -356,7 +356,7 @@ pub(crate) fn source_image_profiles(
         &cadmpeg_core::decode::DecodePolicy::desktop(),
     )?;
     let scan = crate::container::scan(&ctx, root)?;
-    let (source_lanes, mut exact, _, _) =
+    let (source_lanes, mut exact, _, _, _) =
         self::lanes(&ctx, &scan, &mut Annotations::default(), &mut Vec::new())?;
     exact.retain(|id| {
         let payload = |of: &[FeatureInputLane]| {
