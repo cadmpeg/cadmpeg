@@ -229,7 +229,7 @@ fn sync_configuration_design_state(
         &native.feature_input_lanes,
         profiles,
         &mut current_annotations,
-        &mut crate::resolved_features::compact_reference_planes::TopReferenceSketches::default(),
+        &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )?;
     if !projection_losses.is_empty() {
         return Err(CodecError::NotImplemented(
@@ -340,7 +340,7 @@ fn sync_configuration_design_state(
         &native.feature_input_lanes,
         profiles,
         &mut projected_annotations,
-        &mut crate::resolved_features::compact_reference_planes::TopReferenceSketches::default(),
+        &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )?;
     if !projection_losses.is_empty() {
         return Err(CodecError::NotImplemented(

@@ -2,9 +2,8 @@
 
 use super::assembly::is_supplemental_config_lane;
 use super::bindings::history_metadata_ids;
-use super::compact_reference_planes::{
-    CompactReferencePlaneIndex, PlaneAssumedCause, TopReferenceSketches,
-};
+use super::compact_reference_planes::CompactReferencePlaneIndex;
+use super::compact_reference_planes::{PlaneBinding, PlaneBindings};
 use super::curves::{
     closed_marker_profiles, closed_marker_profiles_allowing_shared_endpoints,
     compact_bounded_curve_tangent, compact_legacy_rectangle_line_endpoints,
@@ -37,8 +36,8 @@ use super::endpoints::{
 };
 use super::grid::quantize;
 use super::holes::{
-    feature_input_sketch_marker_transform, principal_component_profile_frame, profile_sketch_frame,
-    sketch_feature_frames, ProfileSketchFrame,
+    feature_input_sketch_marker_transform, feature_input_support_frame, reference_support_frame,
+    sketch_feature_frames, SupportFrame,
 };
 use super::markers::{
     compact_legacy_142_profile_curve_endpoints, inline_arc_coordinates,
@@ -59,8 +58,9 @@ use super::stream_readings::{
     UnboundMarkerReading,
 };
 use super::transforms::{
-    record_component_marker_coordinates, sketch_frame_marker_transform, COMPACT_SKETCH_KIND,
-    LEGACY_CONFIG_SKETCH_KIND, MARKER_SKETCH_KIND,
+    component_sketch_marker_transform, record_component_marker_coordinates,
+    sketch_frame_marker_transform, COMPACT_SKETCH_KIND, LEGACY_CONFIG_SKETCH_KIND,
+    MARKER_SKETCH_KIND,
 };
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
@@ -568,12 +568,11 @@ pub(crate) fn project_compact_sketch_profiles(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<(Vec<(SketchId, PlaneAssumedCause)>, TopReferenceSketches), CodecError> {
+) -> Result<PlaneBindings, CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
-    let mut top_references = TopReferenceSketches::default();
+    let mut plane_bindings = PlaneBindings::default();
     let metadata_ids = history_metadata_ids(histories);
-    let mut assumed_planes = Vec::new();
 
     let native_features = crate::records::HistoryFeatures::new(histories);
     let feature_positions = FeaturePositions::new(features);
@@ -709,28 +708,21 @@ pub(crate) fn project_compact_sketch_profiles(
                 .and_then(|index| objects.get(index))
                 .and_then(|(offset, _, _)| usize::try_from(*offset).ok())
                 .unwrap_or(0);
-            let component_frame = principal_component_profile_frame(
+            let Some(SupportFrame {
+                frame: (origin, normal, u_axis),
+                binding,
+            }) = feature_input_support_frame(
+                &lane.native_payload,
                 &plane_frames,
                 &plane_index,
                 context_start,
                 start,
                 end,
-            );
-            let Some(ProfileSketchFrame {
-                frame: (origin, normal, u_axis),
-                assumed,
-                top_reference,
-            }) = component_frame.map(ProfileSketchFrame::stored).or_else(|| {
-                profile_sketch_frame(
-                    &lane.native_payload,
-                    &plane_frames,
-                    &plane_index,
-                    [context_start, start, end],
-                )
-            })
+            )
             else {
                 continue;
             };
+            let component = binding.principal();
             let lane_key = lane
                 .id
                 .rsplit_once('#')
@@ -778,6 +770,7 @@ pub(crate) fn project_compact_sketch_profiles(
                 [context_start, start, end],
                 &sketch,
                 QUANTUM,
+                component.is_some(),
             ) else {
                 continue;
             };
@@ -855,11 +848,8 @@ pub(crate) fn project_compact_sketch_profiles(
                 let profiles = vec![profile];
                 sketch.profiles = profiles.try_into().map_err(CodecError::malformed)?;
                 sketches.push(sketch);
-                if let Some(cause) = assumed {
-                    assumed_planes.push((sketch_id.clone(), cause));
-                }
-                record_component_marker_coordinates(&mut features[feature_index], component_frame);
-                top_references.record(&sketch_id, top_reference);
+                record_component_marker_coordinates(&mut features[feature_index], component);
+                plane_bindings.record(&sketch_id, binding);
                 features[feature_index].evaluation.set_definition(
                     cadmpeg_ir::features::FeatureDefinition::Operation(
                         cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -999,11 +989,8 @@ pub(crate) fn project_compact_sketch_profiles(
                 let profiles = vec![profile];
                 sketch.profiles = profiles.try_into().map_err(CodecError::malformed)?;
                 sketches.push(sketch);
-                if let Some(cause) = assumed {
-                    assumed_planes.push((sketch_id.clone(), cause));
-                }
-                record_component_marker_coordinates(&mut features[feature_index], component_frame);
-                top_references.record(&sketch_id, top_reference);
+                record_component_marker_coordinates(&mut features[feature_index], component);
+                plane_bindings.record(&sketch_id, binding);
                 features[feature_index].evaluation.set_definition(
                     cadmpeg_ir::features::FeatureDefinition::Operation(
                         cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -1078,11 +1065,8 @@ pub(crate) fn project_compact_sketch_profiles(
             let profiles = vec![profile];
             sketch.profiles = profiles.try_into().map_err(CodecError::malformed)?;
             sketches.push(sketch);
-            if let Some(cause) = assumed {
-                assumed_planes.push((sketch_id.clone(), cause));
-            }
-            record_component_marker_coordinates(&mut features[feature_index], component_frame);
-            top_references.record(&sketch_id, top_reference);
+            record_component_marker_coordinates(&mut features[feature_index], component);
+            plane_bindings.record(&sketch_id, binding);
             features[feature_index].evaluation.set_definition(
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -1092,7 +1076,7 @@ pub(crate) fn project_compact_sketch_profiles(
             );
         }
     }
-    Ok((assumed_planes, top_references))
+    Ok(plane_bindings)
 }
 
 fn profile_entity(
@@ -1145,9 +1129,6 @@ pub(crate) struct HeldMarkerGeometry {
     unchecked: HashMap<String, ChordConflict>,
     /// The lines an earlier finalize pass examined.
     finalized: HashSet<SketchEntityId>,
-    /// The sketches that take the retained Front fallback frame; the
-    /// finalize pass charges each one that remains.
-    assumed_planes: Vec<(SketchId, PlaneAssumedCause)>,
     /// Each marker that the marker layouts skip and only its `sgSketch`
     /// record admits, whose record then gives no entity in its sketch, by
     /// sketch and marker reference, with the record's conflict where it
@@ -1164,12 +1145,6 @@ pub(crate) struct HeldMarkerGeometry {
 }
 
 impl HeldMarkerGeometry {
-    /// Holds `sketches`, which take the retained Front fallback frame, for
-    /// the finalize pass.
-    pub(crate) fn hold_assumed_planes(&mut self, sketches: Vec<(SketchId, PlaneAssumedCause)>) {
-        self.assumed_planes.extend(sketches);
-    }
-
     /// Held geometry for a projection over `sketch_entities` after an
     /// earlier finalize pass over them.
     pub(crate) fn after_finalized(sketch_entities: &[SketchEntity]) -> Self {
@@ -1198,7 +1173,6 @@ impl HeldMarkerGeometry {
 /// and whose record gives no entity. Returns the unbound marker readings,
 /// which the model pass notes once every binding is made.
 pub(crate) fn finalize_unread_marker_entities(
-    sketches: &[Sketch],
     sketch_entities: &mut Vec<SketchEntity>,
     held: HeldMarkerGeometry,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -1210,20 +1184,10 @@ pub(crate) fn finalize_unread_marker_entities(
         chord_conflicts,
         unchecked,
         finalized,
-        assumed_planes,
         unread_admitted,
         unbound_readings,
         mut index_basis_assumptions,
     } = held;
-    let mut causes = HashMap::<&SketchId, PlaneAssumedCause>::new();
-    for (sketch, cause) in &assumed_planes {
-        causes.entry(sketch).or_insert(*cause);
-    }
-    losses.extend(sketches.iter().filter_map(|sketch| {
-        causes
-            .get(&sketch.id)
-            .map(|cause| plane_assumed_note(&sketch.id, *cause))
-    }));
     sketch_entities.extend(handles);
     for entity in sketch_entities.iter_mut() {
         let SketchGeometryDefinition::Native { native_kind } = entity.geometry.definition() else {
@@ -1333,47 +1297,6 @@ fn finalizes_planar<'a>(
             }
             _ => true,
         })
-}
-
-/// The loss of a sketch that takes the retained Front fallback frame, with
-/// the reason `sldprt.md` §3.3 places its profile on no principal plane.
-fn plane_assumed_note(
-    sketch: &SketchId,
-    cause: PlaneAssumedCause,
-) -> cadmpeg_ir::report::loss::LossNote {
-    use cadmpeg_ir::features::PrincipalPlane;
-    let plane = |plane| match plane {
-        PrincipalPlane::Front => "Front",
-        PrincipalPlane::Top => "Top",
-        PrincipalPlane::Right => "Right",
-    };
-    let records = |named: Option<PrincipalPlane>| {
-        named.map_or_else(
-            || "its profile holds principal component records".to_owned(),
-            |named| {
-                format!(
-                    "its profile's principal component records name the {} plane",
-                    plane(named)
-                )
-            },
-        )
-    };
-    let cause = match cause {
-        PlaneAssumedCause::LaneDefault { named } => format!(
-            "{}, but neither the profile nor its context declares a plane: the Front declaration is the feature-input lane's default, and sldprt.md §3.3 places only a profile that declares Front itself",
-            records(named)
-        ),
-        PlaneAssumedCause::OtherDeclaration => "its profile holds principal component records, but the plane declarations of the profile and its context do not name the Front source alone, so sldprt.md §3.3 does not place it".to_owned(),
-        PlaneAssumedCause::CustomComponent => "its profile holds principal component records beside a custom component record, so sldprt.md §3.3 does not place it".to_owned(),
-        PlaneAssumedCause::MixedPrincipal => "the principal component records of its profile name more than one plane, so sldprt.md §3.3 does not place it".to_owned(),
-        PlaneAssumedCause::Unapplied(named) => format!(
-            "{}, which sldprt.md §3.3 places, but the reading that built this sketch does not apply the placement",
-            records(Some(named))
-        ),
-    };
-    crate::loss::SldprtLossCode::SketchPlaneAssumed.note(format!(
-        "sketch {sketch}: {cause}; the sketch keeps the retained Front frame (normal -Y, u-axis -Z)"
-    ))
 }
 
 impl From<CodecError> for MarkerGeometryFailure {
@@ -1523,9 +1446,10 @@ pub(crate) fn project_marker_backed_sketches(
     entities: MarkerSketchEntities<'_>,
     sources: MarkerSources<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<TopReferenceSketches, CodecError> {
+) -> Result<PlaneBindings, CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
+    let mut plane_bindings = PlaneBindings::default();
     let MarkerSketchEntities {
         projected: sketch_entities,
         held: held_geometry,
@@ -1547,14 +1471,14 @@ pub(crate) fn project_marker_backed_sketches(
         marker_owners.insert(owner);
     }
     let feature_frames = sketch_feature_frames(features, histories, lanes);
-    let mut top_references = project_detached_legacy_config_sketches(
+    project_detached_legacy_config_sketches(
         features,
         sketches,
         sketch_entities,
         &native_features,
         lanes,
         &feature_frames,
-        &mut held_geometry.assumed_planes,
+        &mut plane_bindings,
     );
     let feature_positions = FeaturePositions::new(features);
     for lane in lanes {
@@ -1661,38 +1585,29 @@ pub(crate) fn project_marker_backed_sketches(
             ) else {
                 continue;
             };
-            let component_frame = (!block_definition)
-                .then(|| {
-                    principal_component_profile_frame(
-                        &plane_frames,
-                        &plane_index,
-                        context_start,
-                        start,
-                        end,
-                    )
-                })
-                .flatten();
-            let frame = component_frame
-                .map(ProfileSketchFrame::stored)
-                .or_else(|| {
-                    profile_sketch_frame(
-                        &lane.native_payload,
-                        &plane_frames,
-                        &plane_index,
-                        [context_start, start, end],
-                    )
-                })
-                .or_else(|| feature_frames.get(native_feature.id.as_str()).copied())
-                .or_else(|| {
-                    block_definition.then_some(ProfileSketchFrame::stored((
-                        Point3::new(0.0, 0.0, 0.0),
-                        Vector3::new(0.0, 0.0, 1.0),
-                        Vector3::new(1.0, 0.0, 0.0),
-                    )))
-                });
-            let assumed = frame.and_then(|frame| frame.assumed);
-            let top_reference = frame.is_some_and(|frame| frame.top_reference);
-            let frame = frame.map(|frame| frame.frame);
+            let support_frame = if block_definition {
+                reference_support_frame
+            } else {
+                feature_input_support_frame
+            };
+            let support = support_frame(
+                &lane.native_payload,
+                &plane_frames,
+                &plane_index,
+                context_start,
+                start,
+                end,
+            )
+            .or_else(|| feature_frames.get(native_feature.id.as_str()).copied());
+            let binding = support.map_or(PlaneBinding::Stored, |support| support.binding);
+            let component = binding.principal();
+            let frame = support.map(|support| support.frame).or_else(|| {
+                block_definition.then_some((
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                ))
+            });
             let lane_key = lane
                 .id
                 .rsplit_once('#')
@@ -1756,16 +1671,11 @@ pub(crate) fn project_marker_backed_sketches(
                             native_ref: Some(lane.id.clone()),
                         };
                         sketches.push(sketch);
-                        if let Some(cause) = assumed {
-                            held_geometry
-                                .assumed_planes
-                                .push((sketch_id.clone(), cause));
-                        }
                         record_component_marker_coordinates(
                             &mut features[feature_index],
-                            component_frame,
+                            component,
                         );
-                        top_references.record(&sketch_id, top_reference);
+                        plane_bindings.record(&sketch_id, binding);
                     }
                     features[feature_index].evaluation.set_definition(
                         cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -1858,6 +1768,7 @@ pub(crate) fn project_marker_backed_sketches(
                 [context_start, start, end],
                 &sketch,
                 QUANTUM,
+                component.is_some(),
             ) else {
                 continue;
             };
@@ -3034,17 +2945,12 @@ pub(crate) fn project_marker_backed_sketches(
                     .map(|(marker, conflict)| ((sketch_id.clone(), marker), conflict)),
             );
             sketches.push(sketch);
-            if let Some(cause) = assumed {
-                held_geometry
-                    .assumed_planes
-                    .push((sketch_id.clone(), cause));
-            }
-            top_references.record(&sketch_id, top_reference);
+            plane_bindings.record(&sketch_id, binding);
             if let Some(unbound) = unbound {
                 held_geometry.unbound_readings.push(unbound);
                 continue;
             }
-            record_component_marker_coordinates(&mut features[feature_index], component_frame);
+            record_component_marker_coordinates(&mut features[feature_index], component);
             features[feature_index]
                 .evaluation
                 .set_definition(if block_definition {
@@ -3064,7 +2970,7 @@ pub(crate) fn project_marker_backed_sketches(
                 });
         }
     }
-    Ok(top_references)
+    Ok(plane_bindings)
 }
 
 /// The id of the sketch read from the compact records of feature `ordinal`
@@ -3743,12 +3649,11 @@ fn project_detached_legacy_config_sketches(
     sketch_entities: &mut Vec<SketchEntity>,
     native_features: &crate::records::HistoryFeatures<'_>,
     lanes: &[FeatureInputLane],
-    feature_frames: &HashMap<String, ProfileSketchFrame>,
-    assumed_planes: &mut Vec<(SketchId, PlaneAssumedCause)>,
-) -> TopReferenceSketches {
+    feature_frames: &HashMap<String, SupportFrame>,
+    plane_bindings: &mut PlaneBindings,
+) {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
-    let mut top_references = TopReferenceSketches::default();
 
     for lane in lanes
         .iter()
@@ -3768,17 +3673,15 @@ fn project_detached_legacy_config_sketches(
             frames.sort_unstable_by(|left, right| {
                 reference_plane_frame_key(&left.frame).cmp(&reference_plane_frame_key(&right.frame))
             });
-            frames.dedup_by(|duplicate, kept| {
-                let same = duplicate.frame == kept.frame;
-                if same {
-                    kept.top_reference &= duplicate.top_reference;
-                }
-                same
-            });
+            frames.dedup_by(|duplicate, kept| duplicate.frame == kept.frame);
             let [frame] = frames.as_slice() else {
                 continue;
             };
-            *frame
+            // A feature with no frame of its own takes the lane's only frame.
+            SupportFrame {
+                binding: PlaneBinding::LaneFrame,
+                ..*frame
+            }
         };
         let markers_by_feature = markers_by_owner(&lane.sketch_entities);
         for feature in features.iter_mut() {
@@ -3802,10 +3705,9 @@ fn project_detached_legacy_config_sketches(
                 let Some(markers) = markers_by_feature.get(native_ref) else {
                     break 'feature_edit;
                 };
-                let ProfileSketchFrame {
+                let SupportFrame {
                     frame: (origin, normal, u_axis),
-                    assumed,
-                    top_reference,
+                    binding,
                 } = feature_frames
                     .get(native_ref)
                     .copied()
@@ -3830,7 +3732,12 @@ fn project_detached_legacy_config_sketches(
                     profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
                     native_ref: Some(lane.id.clone()),
                 };
-                let Some(transform) = sketch_frame_marker_transform(&sketch, QUANTUM) else {
+                // The principal record that named the frame also names the
+                // reading of the marker pairs (`sldprt.md` §3.3).
+                let component = binding.principal();
+                let Some(transform) =
+                    component_sketch_marker_transform(&sketch, QUANTUM, component.is_some())
+                else {
                     break 'feature_edit;
                 };
                 let project = |coordinates: [f64; 2]| {
@@ -3870,10 +3777,8 @@ fn project_detached_legacy_config_sketches(
                 let sketch_id = sketch.id.clone();
                 sketch_entities.append(&mut entities);
                 sketches.push(sketch);
-                if let Some(cause) = assumed {
-                    assumed_planes.push((sketch_id.clone(), cause));
-                }
-                top_references.record(&sketch_id, top_reference);
+                plane_bindings.record(&sketch_id, binding);
+                record_component_marker_coordinates(feature, component);
                 feature
                     .evaluation
                     .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
@@ -3882,7 +3787,6 @@ fn project_detached_legacy_config_sketches(
             }
         }
     }
-    top_references
 }
 
 fn legacy_config_hex_sketch(
@@ -5358,8 +5262,9 @@ mod detached_legacy_sketch_tests {
         }
     }
 
-    #[test]
-    fn collinear_dimension_grammar_projects_four_lines_and_unique_points() {
+    /// A supplemental configuration lane holding one collinear dimension
+    /// sketch object of the feature `feature`.
+    fn collinear_lane() -> FeatureInputLane {
         let mut payload = vec![0; 400];
         payload[56..58].copy_from_slice(&[0x1e, 0x00]);
         payload[58..66].copy_from_slice(&(-1.0f64).to_le_bytes());
@@ -5381,7 +5286,7 @@ mod detached_legacy_sketch_tests {
                 Some([f64::from(ordinal), 1.0]),
             ));
         }
-        let lane = FeatureInputLane {
+        FeatureInputLane {
             id: "sldprt:feature-input:config-objects#1".into(),
             configuration: None,
             native_payload: payload.into(),
@@ -5396,7 +5301,12 @@ mod detached_legacy_sketch_tests {
             generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: markers,
-        };
+        }
+    }
+
+    #[test]
+    fn collinear_dimension_grammar_projects_four_lines_and_unique_points() {
+        let lane = collinear_lane();
         let refs = lane.sketch_entities.iter().collect::<Vec<_>>();
         let (_, entities) =
             legacy_config_collinear_sketch(&lane, &feature(), &sketch(), &refs, &|coordinates| {
@@ -5424,6 +5334,90 @@ mod detached_legacy_sketch_tests {
                 .count(),
             11
         );
+    }
+
+    /// A legacy configuration sketch whose frame the feature's principal Top
+    /// record gives reads its marker pairs as Top sketch coordinates
+    /// (`sldprt.md` §3.3), and its feature carries the coordinate tag that
+    /// later readers follow; a stored frame equal to the Top frame keeps the
+    /// model-component reading (open item DI-80).
+    #[test]
+    fn legacy_configuration_sketch_reads_markers_by_its_principal_top_binding() {
+        use super::super::compact_reference_planes::principal_sketch_frame;
+        use super::super::transforms::feature_sketch_marker_transform;
+        use super::SupportFrame;
+        use super::{project_detached_legacy_config_sketches, PlaneBinding, PlaneBindings};
+        use cadmpeg_ir::features::PrincipalPlane;
+
+        let histories = [FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![feature()],
+        }];
+        let lanes = [collinear_lane()];
+        for (binding, v) in [
+            (PlaneBinding::Principal(PrincipalPlane::Top), 1000.0),
+            (PlaneBinding::Stored, -1000.0),
+        ] {
+            let mut features = [cadmpeg_ir::features::Feature {
+                product_definition: None,
+                id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#legacy-profile")
+                    .unwrap(),
+                ordinal: 30,
+                name: Some("profile".into()),
+                suppressed: Some(false),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: cadmpeg_ir::features::FeatureContent::default(),
+                evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+                    FeatureDefinition::Operation(FeatureOperation::Sketch {
+                        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                    }),
+                ),
+                native_ref: Some("feature".into()),
+            }];
+            let frames = HashMap::from([(
+                "feature".to_owned(),
+                SupportFrame {
+                    frame: principal_sketch_frame(PrincipalPlane::Top),
+                    binding,
+                },
+            )]);
+            let mut sketches = Vec::new();
+            let mut entities = Vec::new();
+            project_detached_legacy_config_sketches(
+                &mut features,
+                &mut sketches,
+                &mut entities,
+                &crate::records::HistoryFeatures::new(&histories),
+                &lanes,
+                &frames,
+                &mut PlaneBindings::default(),
+            );
+            let [sketch] = sketches.as_slice() else {
+                panic!("one legacy sketch: {sketches:?}");
+            };
+            let points = entities
+                .iter()
+                .filter_map(|entity| match *entity.geometry.definition() {
+                    SketchGeometryDefinition::Point { position } => Some(position.get()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert!(points.contains(&Point2::new(8000.0, v)), "{points:?}");
+            assert!(!points.contains(&Point2::new(8000.0, -v)), "{points:?}");
+            let stored = crate::resolved_features::grid::quantize(Point2::new(8.0, 1.0), 1.0);
+            assert_eq!(
+                feature_sketch_marker_transform(sketch, 1.0, &features)
+                    .and_then(|transform| transform.apply(stored)),
+                Some((8, if v > 0.0 { 1 } else { -1 }))
+            );
+        }
     }
 
     #[test]
