@@ -117,7 +117,8 @@ fn closed_profile_boundary_requires_the_complete_cap_and_incident_pair() {
 
 #[test]
 fn extrude_history_binding_replaces_changed_wall_with_selected_cap() {
-    use crate::history::{bind_face_operand_history_candidates, BindingHistories};
+    use crate::history::binding_histories::BindingHistories;
+    use crate::history::face_operand_history::bind_face_operand_history_candidates;
     use crate::history_records::{
         AsmDeltaState, AsmEntityVersion, AsmHistoricalPersistentSubentityTag,
     };

@@ -2158,12 +2158,16 @@ fn project_face_selection(
     histories: &[crate::history_records::AsmHistory],
 ) -> Result<cadmpeg_ir::features::selections::FaceSelection, CodecError> {
     let historical = if let Some(previous_state_id) =
-        crate::history::effective_scope_previous_history_state_id(scope, histories)
+        crate::history::history_states::effective_scope_previous_history_state_id(scope, histories)
     {
         let updated_face_slots = scope
             .history_state_id()
             .and_then(|state_id| {
-                crate::history::unique_history_state_pair(histories, state_id, previous_state_id)
+                crate::history::history_states::unique_history_state_pair(
+                    histories,
+                    state_id,
+                    previous_state_id,
+                )
             })
             .and_then(|(_, state, _)| state.transition.as_ref())
             .map_or(&[][..], |transition| {

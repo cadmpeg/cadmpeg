@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Reverse Normal input-state selections read in the bound history.
 
-use crate::history::FeatureBodySelectionInputs;
+use crate::history::body_selections::FeatureBodySelectionInputs;
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
 use cadmpeg_ir::features::evaluation::{FeatureEvaluation, FeatureResultTopology};
 use cadmpeg_ir::features::selections::BodySelection;

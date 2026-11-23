@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{base_feature, scope_between, state};
-use crate::history::bind_feature_outputs;
+use crate::history::feature_outputs::bind_feature_outputs;
 
 fn midpoint_fillet(
     scope: &crate::records::feature::scope::DesignParameterScope,

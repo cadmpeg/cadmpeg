@@ -2,7 +2,7 @@
 
 use super::split_plane::{split_body_test_feature, two_solid_boxes_with_planes};
 use super::{scope_between, state};
-use crate::history::bind_feature_outputs;
+use crate::history::feature_outputs::bind_feature_outputs;
 use crate::history_records::AsmHistoricalTopology;
 use cadmpeg_ir::math::Point3;
 
