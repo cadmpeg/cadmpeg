@@ -1000,6 +1000,80 @@ fn a_historical_attachment_requires_preceding_projected_generators() {
     );
 }
 
+/// A pattern feature record at `ordinal`, with the header of a feature record.
+fn pattern_record(ordinal: u32, source_index: Option<u32>) -> crate::feature::PmDcPatternFeature {
+    let base = crate::test_support::sheet_metal::feature(ordinal, &[]);
+    let mut payload = serde_json::to_value(&*base).expect("payload");
+    let fields = payload.as_object_mut().expect("object");
+    if let Some(source_index) = source_index {
+        fields["header"]["source_index"] = source_index.into();
+    }
+    let participants = fields["properties"].clone();
+    fields.insert("participants".into(), participants);
+    fields.insert("family".into(), "rectangular".into());
+    fields.insert("property_slots".into(), serde_json::json!([]));
+    fields.insert("control".into(), 0.into());
+    fields.insert("extension_values".into(), serde_json::json!([]));
+    crate::record_identity::Located::new(
+        serde_json::from_value(payload).expect("pattern"),
+        crate::record_identity::RecordTypeId::from_bytes(
+            crate::feature::RECTANGULAR_PATTERN_FEATURE_TYPE,
+        ),
+        IdentityKey::try_new("fixture").expect("token"),
+        ordinal,
+    )
+}
+
+#[test]
+fn a_pattern_feature_generates_a_historical_attachment_edge() {
+    let fixture = selecting_fixture();
+    let pattern = pattern_record(91, None);
+    let feature = crate::test_support::sheet_metal::feature(90, &[]);
+    let mut plate = attached(&fixture);
+    plate.evaluation.edit(|definition, _| {
+        if let FeatureDefinition::Operation(FeatureOperation::SheetMetalAttachedPlate {
+            attachment,
+            ..
+        }) = definition
+        {
+            *attachment = EdgeSelection::historical(
+                historical::state_id(&fixture.plate).expect("state"),
+                vec![historical::edge_id("fixture", 61).expect("edge")],
+                "inventor:pmdc:feature-property#fixture-10".to_owned(),
+            )
+            .expect("historical");
+        }
+    });
+    let mut inventory = FeatureInventory {
+        features: vec![fixture.plate.clone(), feature.clone()],
+        pattern_features: vec![pattern.clone()],
+        properties: fixture.properties.clone(),
+        ..FeatureInventory::default()
+    };
+    let generators = &mut inventory.edge_inputs.historical_generators;
+    generators.insert(
+        ("fixture".to_owned(), 61),
+        vec![pattern.header.source_index],
+    );
+    assert_eq!(
+        historical_producers(&plate, &inventory).expect("producers"),
+        Some(vec![
+            crate::feature::history_feature_id(&pattern.identity).expect("id")
+        ])
+    );
+    // A source index shared by a feature record and a pattern feature record
+    // names no unique generator.
+    inventory.edge_inputs.historical_generators.insert(
+        ("fixture".to_owned(), 61),
+        vec![feature.header.source_index],
+    );
+    inventory.pattern_features = vec![pattern_record(91, Some(feature.header.source_index))];
+    assert_eq!(
+        historical_producers(&plate, &inventory).expect("producers"),
+        None
+    );
+}
+
 /// The 17-property plate of a plate-and-bend face record: slot 5 holds the
 /// joined-edge collection and slot 12 is null.
 fn joined_edge_fixture() -> Fixture {

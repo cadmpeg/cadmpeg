@@ -2834,12 +2834,6 @@ pub(crate) fn project(
                 )
         })
         .count();
-    neutral -= sheet_metal::projection::reject_unresolved_inputs(
-        ctx,
-        &mut projected,
-        inventory,
-        &mut plate_refusals,
-    )?;
     neutral += sheet_metal::projection::project_bends(ctx, &mut projected, &index, inventory)?;
     loop {
         let rejected = sheet_metal::projection::reject_incomplete_pairs(

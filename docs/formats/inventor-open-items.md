@@ -410,6 +410,14 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Need.** A design with such a bend and the stored members of both collections shows which result each collection holds and whether the scalar 0 form changes the bend construction.
 
+### DE-30. Joined edge of a plate without a stored attachment
+
+**Question.** What joins a plate with null slots 5 and 12 to the existing sheet?
+
+**Known.** The plate stores an attachment control in slot 4. The 15-property form stores its result body in slot 6. No record of the plate, its bend, or its face record names the joined edge. The generator array of the selector of a later plate's joined edge can name this plate record.
+
+**Need.** A design whose plate without a stored attachment joins an edge, with the stored records that select that edge.
+
 ## 5. Adjacent envelopes
 
 ### EN-01. Other CFB and RSe versions

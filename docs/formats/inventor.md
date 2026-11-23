@@ -1112,6 +1112,8 @@ The plate of a plate-and-bend face record joins the existing sheet at one edge. 
 
 The matching attributes of one selector source index and key can lie on several edge revisions of different geometry in the construction history. The edge that an attached plate selects is the revision of the matching owner that is live in the state before the plate, as section 13.10 defines the state before a feature. The selection resolves when exactly one owner is live in that state.
 
+The generator array of the selector of a joined edge lists source indexes of the records that produced the edge revision. Each value is the `source_index` of exactly one feature record or one pattern feature record of the plate's segment, and the record precedes the plate in the browser history. Plate, bend, extrusion, mirror, and rectangular pattern records occur as generators. A bend record generates edges of its plate, so a plate that joins an edge of an earlier bend follows the plate-and-bend pair of that bend. The joined edge has no producer when a generator value names no record, names more than one record, or names a record that is not part of the neutral history.
+
 Feature-label class `f258f74cd3114f24600047a99dccefb0` identifies a bend. Its 11-property form has these slots:
 
 | Slot | Operand |

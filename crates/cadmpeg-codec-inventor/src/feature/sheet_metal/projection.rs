@@ -495,8 +495,8 @@ pub(in crate::feature) fn reject_unresolved_inputs(
 }
 
 /// The features that generate the historical attachment edges of a plate:
-/// the generator array of each edge's direct selector, as feature records of
-/// the plate's segment.
+/// the generator array of each edge's direct selector, as feature and pattern
+/// feature records of the plate's segment.
 fn historical_producers(
     plate: &Feature,
     inventory: &FeatureInventory,
@@ -527,14 +527,25 @@ fn historical_producers(
             return Ok(None);
         };
         for generator in generators {
-            let mut records = inventory.features.iter().filter(|record| {
-                record.identity.segment_token.as_str() == token
-                    && record.header.source_index == *generator
-            });
-            let (Some(record), None) = (records.next(), records.next()) else {
+            let in_segment = |identity: &crate::record_identity::RecordIdentity, source: u32| {
+                identity.segment_token.as_str() == token && source == *generator
+            };
+            let mut records = inventory
+                .features
+                .iter()
+                .filter(|record| in_segment(&record.identity, record.header.source_index))
+                .map(|record| &record.identity)
+                .chain(
+                    inventory
+                        .pattern_features
+                        .iter()
+                        .filter(|record| in_segment(&record.identity, record.header.source_index))
+                        .map(|record| &record.identity),
+                );
+            let (Some(identity), None) = (records.next(), records.next()) else {
                 return Ok(None);
             };
-            features.push(crate::feature::history_feature_id(&record.identity)?);
+            features.push(crate::feature::history_feature_id(identity)?);
         }
     }
     Ok(Some(features))
