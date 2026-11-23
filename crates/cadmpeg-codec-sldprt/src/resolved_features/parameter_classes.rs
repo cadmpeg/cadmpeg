@@ -18,7 +18,7 @@ use crate::records::{
 
 /// The bytes of a class declaration before its name: the `ff ff 01 00`
 /// marker and the u16 name length.
-const DECLARATION_PREFIX: u64 = 6;
+pub(super) const DECLARATION_PREFIX: u64 = 6;
 
 /// The bytes of a count's i32 cell.
 const COUNT_LEN: usize = 4;

@@ -58,6 +58,8 @@ pub(crate) mod feature_input_operand_cell12 {
 pub(crate) mod feature_input_scalar_class_prefix {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 8;
+    /// Offset of `relation_class_token` (`u16`, little-endian). Spec §2.
+    pub(crate) const RELATION_CLASS_TOKEN: usize = 0;
     /// Offset of `zero` (`u32`, little-endian). Spec §2.
     pub(crate) const ZERO: usize = 2;
     /// Offset of `parameter_class_token` (`u16`, little-endian). Spec §2.
