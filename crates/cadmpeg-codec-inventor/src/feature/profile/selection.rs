@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Whole circular sections and complete selected path wires.
 
-use cadmpeg_ir::{
-    features::{PathRef, PlanarProfileRef},
-    math::Point3,
-    sketches::{Sketch, SketchGeometryDefinition},
-};
+use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef};
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::sketches::{Sketch, SketchGeometryDefinition};
 
 use super::{
     LoopCurve, Piece, ProfileEdge, ProfileIndex, ProfileWire, SketchFrame,
@@ -68,7 +66,7 @@ impl ProfileIndex<'_> {
         super::chain(&curves)?;
         PlanarProfileRef::sketch_regions(
             sketch.id.clone(),
-            vec![cadmpeg_ir::features::SketchProfileRegion::loops(0, Vec::new()).ok()?],
+            vec![cadmpeg_ir::features::profiles::SketchProfileRegion::loops(0, Vec::new()).ok()?],
         )
         .ok()
     }

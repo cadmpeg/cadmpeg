@@ -17,13 +17,13 @@ use cadmpeg_ir::codec::write::{
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::eval::model_surface_point;
 use cadmpeg_ir::eval::EvaluationFailure;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsError, NurbsSurface};
+use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::sampled::{GeometryLayoutError, PolylineCurve};
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsError, NurbsSurface},
-    pcurve::{Pcurve, PcurveGeometry},
-    sampled::{GeometryLayoutError, PolylineCurve},
-    CurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    Surface, SurfaceGeometry,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CoedgeId, CurveId, PointId, ShellId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -5459,8 +5459,11 @@ fn surface_entities_for_ir(
             });
             let ranges = construction.and_then(|row| match row.definition() {
                 ProceduralSurfaceDefinition::Exact(payload) => match payload.spline() {
-                    cadmpeg_ir::geometry::ExactSpline::Legacy { ranges, .. } => Some(*ranges),
-                    cadmpeg_ir::geometry::ExactSpline::Revision { .. } => None,
+                    cadmpeg_ir::geometry::procedural_surfaces::ExactSpline::Legacy {
+                        ranges,
+                        ..
+                    } => Some(*ranges),
+                    cadmpeg_ir::geometry::procedural_surfaces::ExactSpline::Revision { .. } => None,
                 },
                 _ => None,
             });
@@ -7751,8 +7754,8 @@ fn placement(origin: Point3, x_axis: Vector3, y_axis: Vector3) -> Result<Placeme
     let y_axis = divided(y_axis - x_axis.scale(x_axis.dot(y_axis)));
     let z_axis = divided(x_axis.cross(y_axis));
     let column = |axis: Vector3, field: &str| {
-        cadmpeg_ir::features::FiniteVector3::new(axis)
-            .map(cadmpeg_ir::features::FiniteVector3::components)
+        cadmpeg_ir::features::geometry::FiniteVector3::new(axis)
+            .map(cadmpeg_ir::features::geometry::FiniteVector3::components)
             .ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "IGES writer computed the non-finite placement {field} {axis:?}, which \

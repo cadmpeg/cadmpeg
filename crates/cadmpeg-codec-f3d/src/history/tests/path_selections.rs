@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Historical path selection binding.
 
-use cadmpeg_ir::features::{FeatureId, PathRef};
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::FeatureId;
 
 fn path_fixture() -> (
     crate::records::feature::scope::DesignParameterScope,
@@ -101,7 +102,9 @@ fn path_fixture() -> (
 fn bind() -> PathRef {
     let (scope, groups, operands, mut path) = path_fixture();
     let feature = FeatureId::mint("f3d:model:feature#path").unwrap();
-    super::super::bind_entity_selection_path(&mut path, &feature, 1, &scope, &groups, &operands);
+    super::super::path_selections::bind_entity_selection_path(
+        &mut path, &feature, 1, &scope, &groups, &operands,
+    );
     path
 }
 

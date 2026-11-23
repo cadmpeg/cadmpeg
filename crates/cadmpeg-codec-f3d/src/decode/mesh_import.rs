@@ -7,9 +7,8 @@ use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::{DecodeContext, ParseError, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::mesh::MeshSelection;
-use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureOperation, NativeSelections, SelectionReference,
-};
+use cadmpeg_ir::features::selections::{NativeSelections, SelectionReference};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 
 #[derive(Debug)]

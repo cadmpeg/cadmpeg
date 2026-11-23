@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::{thread_class_pair_holds, thread_designation_offset_holds};
+use super::super::links::{thread_class_pair_holds, thread_designation_offset_holds};
 use crate::records::feature::thread::DesignThreadForm;
 use crate::records::references::DesignClassTag;
 

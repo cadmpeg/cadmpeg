@@ -73,7 +73,7 @@ fn configuration_messages(documents: Vec<DesignConfiguration>) -> Vec<String> {
     crate::test_support::with_decode_context(|decode| {
         let ctx = super::super::Ctx::new(&ir, &native, decode);
         let mut findings = Vec::new();
-        super::super::validate_configurations(&ctx, &mut findings);
+        super::super::design_records::validate_configurations(&ctx, &mut findings);
         findings
             .into_iter()
             .map(|finding| finding.message)

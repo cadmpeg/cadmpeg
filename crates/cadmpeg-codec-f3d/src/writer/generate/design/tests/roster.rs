@@ -9,7 +9,7 @@ use std::io::{Cursor, Read};
 use super::{loss, scoped_cube, u32_at, u64_at, write_bytes};
 
 /// One segment's `MetaStream` fields and its `BulkStream`.
-struct Segment {
+pub(super) struct Segment {
     short_name: String,
     id: u32,
     words: [u32; 4],
@@ -20,7 +20,7 @@ struct Segment {
     /// `(type GUID, base GUID, version, add-in, entity IDs)` in table order.
     types: Vec<(String, String, u32, String, Vec<u64>)>,
     named: Vec<u64>,
-    primary: Vec<(u64, u64)>,
+    pub(super) primary: Vec<(u64, u64)>,
     secondary: Vec<(u64, u64)>,
     next: u64,
     bulk: Vec<u8>,
@@ -75,7 +75,7 @@ fn member(archive: &[u8], name: &str) -> Vec<u8> {
     bytes
 }
 
-fn segment(archive: &[u8], folder: &str) -> Segment {
+pub(super) fn segment(archive: &[u8], folder: &str) -> Segment {
     let meta = member(archive, &format!("{folder}/MetaStream.dat"));
     let mut reader = Reader {
         bytes: &meta,
@@ -121,7 +121,7 @@ fn segment(archive: &[u8], folder: &str) -> Segment {
 
 impl Segment {
     /// The bytes of record `index`, bounded by the next primary entry.
-    fn record(&self, index: u64) -> &[u8] {
+    pub(super) fn record(&self, index: u64) -> &[u8] {
         let position = self
             .primary
             .iter()
@@ -138,7 +138,7 @@ impl Segment {
     }
 
     /// The type GUID and version of record `index`.
-    fn type_of(&self, index: u64) -> (&str, u32) {
+    pub(super) fn type_of(&self, index: u64) -> (&str, u32) {
         self.types
             .iter()
             .find(|row| row.4.contains(&index))
@@ -146,6 +146,66 @@ impl Segment {
                 || panic!("record {index} has a type"),
                 |row| (row.0.as_str(), row.2),
             )
+    }
+
+    /// The record indices of the type `guid`, each with the type's version.
+    pub(super) fn records_of(&self, guid: &str) -> Vec<(u64, u32)> {
+        self.types
+            .iter()
+            .filter(|row| row.0.eq_ignore_ascii_case(guid))
+            .flat_map(|row| row.4.iter().map(|index| (*index, row.2)))
+            .collect()
+    }
+}
+
+/// Each user parameter record is framed by the version of the type the
+/// `MetaStream` registers for it (f3d.md §3.1): the eleven-byte header with
+/// its comment, the null owner, and the nine-byte expression trailer at
+/// version 7 or the ten-byte one at version 8, whose last byte is the
+/// document flag.
+#[test]
+fn every_parameter_record_closes_with_the_trailer_of_its_type_version() {
+    let mut ir = scoped_cube();
+    ir.design.parameters[0].comment = Some("overall width".into());
+    let (_, _, bytes) = write_bytes(&ir);
+    let design = segment(&bytes, "FusionDesignSegmentType1");
+    let mut written = Vec::new();
+    for (index, version) in design.records_of(super::super::types::PARAMETER.guid) {
+        let record = design.record(index);
+        let trailer = match version {
+            7 => 9,
+            8 => 10,
+            other => panic!("parameter type version {other}"),
+        };
+        assert_eq!(&record[11..22], &[0; 11], "record {index}");
+        assert!(u32_at(record, 22) <= 6, "record {index}");
+        assert_eq!(record[26], 0, "record {index}");
+        let mut reader = Reader {
+            bytes: record,
+            at: 27,
+        };
+        let comment = reader.utf16();
+        reader.u32();
+        assert_eq!(reader.take(1), [0], "record {index}: the null owner");
+        reader.utf16();
+        let mut expected = vec![0; trailer];
+        expected[trailer - 1] = 1;
+        assert_eq!(reader.take(trailer), expected, "record {index}");
+        let kind = reader.utf16();
+        assert_eq!(reader.u32(), 0, "record {index}: the text value");
+        written.push((kind, comment));
+    }
+    assert_eq!(
+        u64::try_from(written.len()).expect("count"),
+        parameters(&design)
+    );
+    for expected in [("User Parameter", "overall width"), ("User Parameter", "")] {
+        assert!(
+            written
+                .iter()
+                .any(|(kind, comment)| (kind.as_str(), comment.as_str()) == expected),
+            "{expected:?} in {written:?}"
+        );
     }
 }
 
@@ -764,6 +824,28 @@ fn the_snapshot_is_the_solved_part_of_the_history_stream() {
     assert!(!has(&snapshot, b"History"));
     assert!(snapshot.ends_with(b"data"));
     assert!(snapshot.len() < history.len());
+}
+
+/// The user parameters of a design whose timeline items own no parameter
+/// store family discriminator `6`, the value of every parameter record in a
+/// Design stream whose component naming space is record 6 (DR-911).
+#[test]
+fn user_parameters_without_an_owned_parameter_store_discriminator_six() {
+    let (report, _, bytes) = write_bytes(&scoped_cube());
+    let design = segment(&bytes, "FusionDesignSegmentType1");
+    let records = design.records_of(super::super::types::PARAMETER.guid);
+    assert!(!records.is_empty());
+    for (index, _) in records {
+        assert_eq!(u32_at(design.record(index), 22), 6, "record {index}");
+    }
+    assert!(
+        loss(&report, "export/record.residual-unavailable")
+            .iter()
+            .any(|message| message.contains("user parameter")
+                && message.contains("family discriminator 6")),
+        "{:#?}",
+        report.losses
+    );
 }
 
 #[test]

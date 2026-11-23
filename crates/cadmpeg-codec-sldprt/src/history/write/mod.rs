@@ -3,11 +3,13 @@
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    BodySelection, DesignParameter, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection,
-    FeatureDefinition, FeatureId, FeatureOperation, LinearTermination, PlanarProfileRef,
-    VertexSelection,
+use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+use cadmpeg_ir::features::parameters::DesignParameter;
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
+use cadmpeg_ir::features::selections::{
+    BodySelection, EdgeSelection, FaceSelection, VertexSelection,
 };
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 use std::collections::{HashMap, HashSet};
 
 use crate::history::configuration::{
@@ -129,7 +131,7 @@ pub(crate) fn apply_feature_name_changes(
 pub(crate) fn prepare_features_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
-) -> Result<Vec<features::FeatureInputRename>, CodecError> {
+) -> Result<features::PreparedFeatures, CodecError> {
     let hash_arena = cadmpeg_core::decode::DecodeArena::new();
     let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
@@ -166,7 +168,7 @@ pub(crate) fn prepare_features_for_write(
         return sync_neutral_features(ir, &ir.model.parameters, &ir.geometry.bodies, native);
     }
     match (neutral_changed, native_changed) {
-        (false, _) => Ok(Vec::new()),
+        (false, _) => Ok(features::PreparedFeatures::default()),
         (true, true) => {
             let projected_model = native
                 .as_ref()
@@ -176,7 +178,7 @@ pub(crate) fn prepare_features_for_write(
                 .transpose()?
                 .unwrap_or_default();
             if feature_hash(&hash_ctx, &projected_model)? == neutral_hash {
-                Ok(Vec::new())
+                Ok(features::PreparedFeatures::default())
             } else {
                 Err(CodecError::Malformed(
                     "conflicting neutral and native SLDPRT feature edits".into(),
@@ -248,7 +250,7 @@ fn validate_surface_sweep_profile_edits(
         .iter()
         .filter_map(|feature| {
             let FeatureDefinition::Operation(FeatureOperation::Sweep {
-                path: Some(path @ cadmpeg_ir::features::PathRef::Native(reference)),
+                path: Some(path @ cadmpeg_ir::features::profiles::PathRef::Native(reference)),
                 ..
             }) = feature.evaluation.definition()
             else {
@@ -498,7 +500,7 @@ fn validate_compact_edge_selection_edits(
                     .map(u32::to_string)
                     .collect::<Vec<_>>()
                     .join(",");
-                Ok(cadmpeg_ir::features::GeneratedEdgeRef::new(feature, local_id).ok())
+                Ok(cadmpeg_ir::features::selections::GeneratedEdgeRef::new(feature, local_id).ok())
             })
             .collect::<Result<Option<Vec<_>>, CodecError>>()?;
         let expected = match generated.filter(|edges| !edges.is_empty()) {
@@ -604,14 +606,16 @@ fn validate_compact_surface_selection_edits(
         let changed = match slot {
             SelectionSlot::Face(faces) => {
                 let expected = match generated {
-                    Some((feature, local_id)) => match cadmpeg_ir::features::GeneratedFaceRef::new(
-                        feature.clone(),
-                        local_id.to_string(),
-                    ) {
-                        Ok(face) => FaceSelection::generated(vec![face], native.clone())
-                            .unwrap_or(FaceSelection::Native(native)),
-                        Err(_) => FaceSelection::Native(native),
-                    },
+                    Some((feature, local_id)) => {
+                        match cadmpeg_ir::features::selections::GeneratedFaceRef::new(
+                            feature.clone(),
+                            local_id.to_string(),
+                        ) {
+                            Ok(face) => FaceSelection::generated(vec![face], native.clone())
+                                .unwrap_or(FaceSelection::Native(native)),
+                            Err(_) => FaceSelection::Native(native),
+                        }
+                    }
                     None => FaceSelection::Native(native),
                 };
                 faces != &expected
@@ -625,7 +629,7 @@ fn validate_compact_surface_selection_edits(
             SelectionSlot::Vertex(vertex) => {
                 let expected = match generated {
                     Some((feature, local_id)) => {
-                        match cadmpeg_ir::features::GeneratedVertexRef::new(
+                        match cadmpeg_ir::features::selections::GeneratedVertexRef::new(
                             feature.clone(),
                             local_id.to_string(),
                         ) {

@@ -201,10 +201,13 @@ fn bind_one(
     resolution: &FaceProfileSetResolution<'_>,
     limits: SearchLimits,
 ) -> Result<Vec<LossNote>, CodecError> {
-    use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection,
-        FeatureDefinition, FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
+    use cadmpeg_ir::features::extents::{
+        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
     };
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let FeatureDefinition::Operation(FeatureOperation::Extrude {
         profile,
@@ -274,7 +277,11 @@ fn bind_one(
     let histories =
         super::histories_for_scope(&scope.id, resolution.scope_histories, resolution.histories);
     let Some((history, state, previous_state)) =
-        crate::history::unique_history_state_pair(histories, state_id, previous_state_id)
+        crate::history::history_states::unique_history_state_pair(
+            histories,
+            state_id,
+            previous_state_id,
+        )
     else {
         return Ok(Vec::new());
     };

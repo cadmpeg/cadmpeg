@@ -3,14 +3,15 @@
 use crate::design::feature_project::{
     project_parameter_design_with_edge_identities, ProjectInputs,
 };
-use crate::history::{bind_feature_face_selections, FeatureFaceSelectionInputs};
+use crate::history::face_selections::{bind_feature_face_selections, FeatureFaceSelectionInputs};
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::identity::ReferenceRun;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
-use cadmpeg_ir::features::{
-    FaceSelection, FeatureDefinition, FeatureInputTopology, FeatureOperation, SplitFaceTool,
-};
+use cadmpeg_ir::features::direct_edit::SplitFaceTool;
+use cadmpeg_ir::features::evaluation::FeatureInputTopology;
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 fn group(record: u32, member: u32, ordinal: u32, role: u64) -> DesignConstructionOperandGroup {
     serde_json::from_value(serde_json::json!({

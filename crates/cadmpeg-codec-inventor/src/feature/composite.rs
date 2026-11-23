@@ -7,9 +7,8 @@ use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_core::decode::{unique_index, DecodeContext};
 use cadmpeg_core::CodecError;
 
-use cadmpeg_ir::features::{
-    FeatureDefinition, FeatureOperation, FeatureResultMembers, FeatureResultTopology,
-};
+use cadmpeg_ir::features::evaluation::{FeatureResultMembers, FeatureResultTopology};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::ids::{BodyId, FeatureResultTopologyId, IdentityKey};
 use cadmpeg_ir::report::loss::LossNote;
 use serde::{Deserialize, Serialize};

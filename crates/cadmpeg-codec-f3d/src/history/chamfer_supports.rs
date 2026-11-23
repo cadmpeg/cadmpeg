@@ -1,7 +1,7 @@
 //! Outward support faces for an unequal two-distance chamfer.
 //!
 //! Coedge sense and face sense exist on the live brep inside
-//! [`super::historical_topology`], then the replayed historical rows drop them.
+//! [`super::topology_rows::historical_topology`], then the replayed historical rows drop them.
 //! This map keeps that sense, keyed by the history stream and the edge and face
 //! slots, until feature-input projection reads it. A sense field on the coedge
 //! row would change every transition snapshot.
@@ -11,7 +11,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use cadmpeg_ir::features::edge_treatments::ChamferSpec;
-use cadmpeg_ir::features::{EdgeSelection, EdgeSupport, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::evaluation::EdgeSupport;
+use cadmpeg_ir::features::selections::EdgeSelection;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::units::UnitVector3;
@@ -73,7 +75,7 @@ pub(super) fn note(brep: &cadmpeg_asm::brep::AsmBrep) {
     }
     let mut face_of_loop = HashMap::new();
     for face in &brep.faces {
-        let Some(slot) = super::stable_ref(face.id.as_str()) else {
+        let Some(slot) = super::body_closures::stable_ref(face.id.as_str()) else {
             continue;
         };
         let face_forward = face.sense == Sense::Forward;
@@ -84,7 +86,7 @@ pub(super) fn note(brep: &cadmpeg_asm::brep::AsmBrep) {
     SENSES.with(|senses| {
         let mut senses = senses.borrow_mut();
         for coedge in &brep.coedges {
-            let Some(edge) = super::stable_ref(coedge.edge.as_str()) else {
+            let Some(edge) = super::body_closures::stable_ref(coedge.edge.as_str()) else {
                 continue;
             };
             let Some(&(face, face_forward)) = face_of_loop.get(coedge.owner_loop.as_str()) else {
@@ -116,7 +118,7 @@ pub(super) fn attach(
     history_id: &str,
     topology: &AsmHistoricalTopology,
     prefix: &cadmpeg_ir::ids::IdentityKey,
-    geometry: &mut [cadmpeg_ir::features::HistoricalEdgeGeometry],
+    geometry: &mut [cadmpeg_ir::features::evaluation::HistoricalEdgeGeometry],
 ) {
     let slots = unequal_edges(feature);
     if slots.is_empty() {

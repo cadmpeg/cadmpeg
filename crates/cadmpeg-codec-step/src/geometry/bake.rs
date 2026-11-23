@@ -8,7 +8,7 @@
 //! point, and a proper rigid motion keeps that of every analytic carrier. Any
 //! other placement is not made here, and the writer keeps the replica.
 
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{
     analytic::{
         CircleCurve, ConeSurface, CylinderSurface, DegenerateCurve, EllipseCurve, HyperbolaCurve,

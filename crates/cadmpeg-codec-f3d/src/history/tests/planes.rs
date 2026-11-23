@@ -174,9 +174,9 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
     assert_eq!(
         construction.plane,
         crate::records::feature::patterns::DesignPlane::from_parts(
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
                 .expect("finite plane origin"),
-            cadmpeg_ir::features::FiniteVector3::new(Vector3::new(0.0, 0.0, 1.0))
+            cadmpeg_ir::features::geometry::FiniteVector3::new(Vector3::new(0.0, 0.0, 1.0))
                 .expect("finite plane normal")
         )
     );
@@ -201,9 +201,9 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
     assert_eq!(
         construction.plane,
         crate::records::feature::patterns::DesignPlane::from_parts(
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                 .expect("finite plane origin"),
-            cadmpeg_ir::features::FiniteVector3::new(Vector3::new(1.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FiniteVector3::new(Vector3::new(1.0, 0.0, 0.0))
                 .expect("finite plane normal")
         )
     );
@@ -642,8 +642,9 @@ fn an_origin_plane_identity_keeps_its_plane_when_an_asm_face_shares_it() {
     use cadmpeg_ir::math::{Point3, Vector3};
     let plane = |origin, normal| {
         crate::records::feature::patterns::DesignPlane::from_parts(
-            cadmpeg_ir::features::FinitePoint3::new(origin).expect("finite plane origin"),
-            cadmpeg_ir::features::FiniteVector3::new(normal).expect("finite plane normal"),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(origin).expect("finite plane origin"),
+            cadmpeg_ir::features::geometry::FiniteVector3::new(normal)
+                .expect("finite plane normal"),
         )
     };
     let historical = plane(Point3::new(1.0, 2.0, 3.0), Vector3::new(0.0, 0.0, 1.0));

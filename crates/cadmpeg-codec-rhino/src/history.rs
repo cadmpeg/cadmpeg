@@ -945,8 +945,8 @@ struct CageJson<'a>(&'a crate::cage::Cage);
 
 struct MeshVertices<'a>(
     &'a cadmpeg_ir::tessellation::TessellationMesh<
-        cadmpeg_ir::features::FinitePoint3,
-        cadmpeg_ir::features::FiniteVector3,
+        cadmpeg_ir::features::geometry::FinitePoint3,
+        cadmpeg_ir::features::geometry::FiniteVector3,
     >,
 );
 
@@ -988,8 +988,8 @@ impl serde::Serialize for MeshVertices<'_> {
 
 struct MeshTriangles<'a>(
     &'a cadmpeg_ir::tessellation::TessellationMesh<
-        cadmpeg_ir::features::FinitePoint3,
-        cadmpeg_ir::features::FiniteVector3,
+        cadmpeg_ir::features::geometry::FinitePoint3,
+        cadmpeg_ir::features::geometry::FiniteVector3,
     >,
 );
 
@@ -1068,8 +1068,8 @@ impl serde::Serialize for MeshTriangles<'_> {
 
 struct MeshStripLengths<'a>(
     &'a cadmpeg_ir::tessellation::TessellationMesh<
-        cadmpeg_ir::features::FinitePoint3,
-        cadmpeg_ir::features::FiniteVector3,
+        cadmpeg_ir::features::geometry::FinitePoint3,
+        cadmpeg_ir::features::geometry::FiniteVector3,
     >,
 );
 
@@ -1093,8 +1093,8 @@ impl serde::Serialize for MeshStripLengths<'_> {
 
 struct MeshNormals<'a>(
     &'a cadmpeg_ir::tessellation::TessellationMesh<
-        cadmpeg_ir::features::FinitePoint3,
-        cadmpeg_ir::features::FiniteVector3,
+        cadmpeg_ir::features::geometry::FinitePoint3,
+        cadmpeg_ir::features::geometry::FiniteVector3,
     >,
 );
 
@@ -2099,8 +2099,9 @@ pub(crate) fn project(
         );
         let properties = named_properties(&native_ids[index], properties, sink.warnings);
         let parameters = named_properties(&native_ids[index], parameters, sink.warnings);
-        let dependencies = cadmpeg_ir::features::DistinctMembers::try_from(dependencies)
-            .map_err(|error| ProjectionError::Codec(error.into()))?;
+        let dependencies =
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(dependencies)
+                .map_err(|error| ProjectionError::Codec(error.into()))?;
 
         let feature_id_text = ids[index].as_str().to_owned();
         let feature_id = FeatureId::mint(feature_id_text).map_err(|error| error.to_string())?;
@@ -2118,7 +2119,7 @@ pub(crate) fn project(
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Native {
                     kind: kind.into(),
                     parameters,

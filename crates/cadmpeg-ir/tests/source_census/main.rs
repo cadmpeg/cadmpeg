@@ -105,24 +105,36 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
         "wire",
     ),
     ("crates/cadmpeg-ir/src/features.rs", "$name", "wire"),
-    ("crates/cadmpeg-ir/src/features.rs", "$name", "keyless"),
-    ("crates/cadmpeg-ir/src/features.rs", "BodyMember", "wire"),
     (
-        "crates/cadmpeg-ir/src/features.rs",
+        "crates/cadmpeg-ir/src/features/geometry.rs",
+        "$name",
+        "keyless",
+    ),
+    (
+        "crates/cadmpeg-ir/src/features/selections.rs",
+        "BodyMember",
+        "wire",
+    ),
+    (
+        "crates/cadmpeg-ir/src/features/selections.rs",
         "BodyMembers",
         "keyless",
     ),
     (
-        "crates/cadmpeg-ir/src/features.rs",
+        "crates/cadmpeg-ir/src/features/parameters.rs",
         "ConfigurationEvaluation",
         "wire",
     ),
     (
-        "crates/cadmpeg-ir/src/features.rs",
+        "crates/cadmpeg-ir/src/features/selections.rs",
         "DistinctMembers",
         "keyless",
     ),
-    ("crates/cadmpeg-ir/src/features.rs", "FaceMaker", "keyless"),
+    (
+        "crates/cadmpeg-ir/src/features/sweeps.rs",
+        "FaceMaker",
+        "keyless",
+    ),
     ("crates/cadmpeg-ir/src/features.rs", "Feature", "wire"),
     (
         "crates/cadmpeg-ir/src/features.rs",
@@ -130,7 +142,7 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
         "keyless",
     ),
     (
-        "crates/cadmpeg-ir/src/features.rs",
+        "crates/cadmpeg-ir/src/features/profiles.rs",
         "GeometryImportPath",
         "keyless",
     ),
@@ -140,27 +152,27 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
         "keyless",
     ),
     (
-        "crates/cadmpeg-ir/src/features.rs",
+        "crates/cadmpeg-ir/src/features/selections.rs",
         "NativeSelections",
         "keyless",
     ),
     (
-        "crates/cadmpeg-ir/src/features.rs",
+        "crates/cadmpeg-ir/src/features/selections.rs",
         "NonEmptyMembers",
         "keyless",
     ),
     (
-        "crates/cadmpeg-ir/src/features.rs",
+        "crates/cadmpeg-ir/src/features/parameters.rs",
         "PolygonSideCount",
         "keyless",
     ),
     (
-        "crates/cadmpeg-ir/src/features.rs",
+        "crates/cadmpeg-ir/src/features/selections.rs",
         "SelectionMembers",
         "keyless",
     ),
     (
-        "crates/cadmpeg-ir/src/features.rs",
+        "crates/cadmpeg-ir/src/features/selections.rs",
         "SelectionReference",
         "keyless",
     ),
@@ -170,31 +182,35 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
         "wire",
     ),
     (
-        "crates/cadmpeg-ir/src/features.rs",
+        "crates/cadmpeg-ir/src/features/sheet_metal_forms.rs",
         "SheetMetalFlangeEdgeWidths",
         "keyless",
     ),
     (
-        "crates/cadmpeg-ir/src/features.rs",
+        "crates/cadmpeg-ir/src/features/profiles.rs",
         "SketchProfileRegions",
         "keyless",
     ),
     (
-        "crates/cadmpeg-ir/src/features.rs",
+        "crates/cadmpeg-ir/src/features/direct_edit.rs",
         "SplitFacePlanes",
         "keyless",
     ),
     (
-        "crates/cadmpeg-ir/src/features.rs",
+        "crates/cadmpeg-ir/src/features/sweeps.rs",
         "SweepCircularRegion",
         "wire",
     ),
     (
-        "crates/cadmpeg-ir/src/features.rs",
+        "crates/cadmpeg-ir/src/features/profiles.rs",
         "ThreePointSelection",
         "keyless",
     ),
-    ("crates/cadmpeg-ir/src/features.rs", "TreeChildren", "wire"),
+    (
+        "crates/cadmpeg-ir/src/features/tree.rs",
+        "TreeChildren",
+        "wire",
+    ),
     (
         "crates/cadmpeg-ir/src/geometry/nurbs.rs",
         "BsplineSurface",
@@ -226,22 +242,22 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
         "wire",
     ),
     (
-        "crates/cadmpeg-ir/src/geometry.rs",
+        "crates/cadmpeg-ir/src/geometry/procedural_curves.rs",
         "DirectedParameterRange",
         "keyless",
     ),
     (
-        "crates/cadmpeg-ir/src/geometry.rs",
+        "crates/cadmpeg-ir/src/geometry/procedural_curves.rs",
         "ProceduralCurveDefinition",
         "wire",
     ),
     (
-        "crates/cadmpeg-ir/src/geometry.rs",
+        "crates/cadmpeg-ir/src/geometry/procedural_surfaces.rs",
         "ProceduralSurfaceDefinition",
         "wire",
     ),
     (
-        "crates/cadmpeg-ir/src/geometry.rs",
+        "crates/cadmpeg-ir/src/geometry/surface_curves.rs",
         "ProjectionRole",
         "keyless",
     ),
@@ -380,7 +396,7 @@ fn compiled_hand_readers_keep_their_admission_boundaries() {
     );
 
     let unknown_configuration = serde_json::from_value::<
-        cadmpeg_ir::features::ConfigurationEvaluation,
+        cadmpeg_ir::features::parameters::ConfigurationEvaluation,
     >(serde_json::json!({
         "kind": "suppressed",
         "unexpected": true,
@@ -402,13 +418,13 @@ fn compiled_hand_readers_keep_their_admission_boundaries() {
 /// there and must state a helper [`null_refusing_helpers`] derives.
 const HAND_IMPL_NULL_REFUSALS: &[(&str, &str, &str, &str)] = &[
     (
-        "crates/cadmpeg-ir/src/features.rs",
+        "crates/cadmpeg-ir/src/features/sweeps.rs",
         "SweepCircularRegion",
         "wall_thickness",
         "SweepCircularRegionWire",
     ),
     (
-        "crates/cadmpeg-ir/src/features.rs",
+        "crates/cadmpeg-ir/src/features/tree.rs",
         "TreeChildren",
         "active_child",
         "TreeChildrenWire",
@@ -432,7 +448,7 @@ const HAND_IMPL_NULL_REFUSALS: &[(&str, &str, &str, &str)] = &[
         "ReplaceFaceOperandsWire",
     ),
     (
-        "crates/cadmpeg-ir/src/geometry.rs",
+        "crates/cadmpeg-ir/src/geometry/procedural_curves.rs",
         "ProceduralCurveDefinition",
         "cache",
         "ProceduralCurveDefinitionWire::Exact",
@@ -444,73 +460,73 @@ const HAND_IMPL_NULL_REFUSALS: &[(&str, &str, &str, &str)] = &[
         "NurbsSurfaceWire",
     ),
     (
-        "crates/cadmpeg-ir/src/geometry.rs",
+        "crates/cadmpeg-ir/src/geometry/procedural_curves.rs",
         "ProceduralCurveDefinition",
         "version",
         "ProceduralCurveDefinitionWire::Law",
     ),
     (
-        "crates/cadmpeg-ir/src/geometry.rs",
+        "crates/cadmpeg-ir/src/geometry/procedural_curves.rs",
         "ProceduralCurveDefinition",
         "cache",
         "ProceduralCurveDefinitionWire::Law",
     ),
     (
-        "crates/cadmpeg-ir/src/geometry.rs",
+        "crates/cadmpeg-ir/src/geometry/procedural_curves.rs",
         "ProceduralCurveDefinition",
         "cache",
         "ProceduralCurveDefinitionWire::Intersection",
     ),
     (
-        "crates/cadmpeg-ir/src/geometry.rs",
+        "crates/cadmpeg-ir/src/geometry/procedural_curves.rs",
         "ProceduralCurveDefinition",
         "parameterization",
         "ProceduralCurveDefinitionWire::TolerantIntersection",
     ),
     (
-        "crates/cadmpeg-ir/src/geometry.rs",
+        "crates/cadmpeg-ir/src/geometry/procedural_curves.rs",
         "ProceduralCurveDefinition",
         "cache",
         "ProceduralCurveDefinitionWire::TolerantIntersection",
     ),
     (
-        "crates/cadmpeg-ir/src/geometry.rs",
+        "crates/cadmpeg-ir/src/geometry/procedural_curves.rs",
         "ProceduralCurveDefinition",
         "blend_surface",
         "ProceduralCurveDefinitionWire::BlendSpine",
     ),
     (
-        "crates/cadmpeg-ir/src/geometry.rs",
+        "crates/cadmpeg-ir/src/geometry/procedural_curves.rs",
         "ProceduralCurveDefinition",
         "native_kind",
         "ProceduralCurveDefinitionWire::Unknown",
     ),
     (
-        "crates/cadmpeg-ir/src/geometry.rs",
+        "crates/cadmpeg-ir/src/geometry/procedural_curves.rs",
         "ProceduralCurveDefinition",
         "record",
         "ProceduralCurveDefinitionWire::Unknown",
     ),
     (
-        "crates/cadmpeg-ir/src/geometry.rs",
+        "crates/cadmpeg-ir/src/geometry/procedural_curves.rs",
         "ProceduralCurveDefinition",
         "cache",
         "ProceduralCurveDefinitionWire::Unknown",
     ),
     (
-        "crates/cadmpeg-ir/src/geometry.rs",
+        "crates/cadmpeg-ir/src/geometry/procedural_surfaces.rs",
         "ProceduralSurfaceDefinition",
         "cache",
         "ProceduralSurfaceDefinitionWire::Ruled",
     ),
     (
-        "crates/cadmpeg-ir/src/geometry.rs",
+        "crates/cadmpeg-ir/src/geometry/procedural_surfaces.rs",
         "ProceduralSurfaceDefinition",
         "record",
         "ProceduralSurfaceDefinitionWire::Unknown",
     ),
     (
-        "crates/cadmpeg-ir/src/geometry.rs",
+        "crates/cadmpeg-ir/src/geometry/procedural_surfaces.rs",
         "ProceduralSurfaceDefinition",
         "cache",
         "ProceduralSurfaceDefinitionWire::Unknown",

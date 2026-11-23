@@ -270,7 +270,7 @@ fn align_sheet_edge_to_pcurve(
             .find(|point| point.id == point_id)
             .expect("sheet edge point")
             .set_position(
-                cadmpeg_ir::features::FinitePoint3::new(position)
+                cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                     .expect("a finite position is a point"),
             );
     }
@@ -1707,8 +1707,8 @@ fn exporting_a_salvaged_noncanonical_unit_repairs_partial_order() {
 /// largest finite `f64`.
 #[test]
 fn a_linear_sweep_whose_magnitude_overflows_is_refused() {
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use cadmpeg_ir::geometry::surface_payloads::LinearSweepSurfaceConstruction;
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 
     let source = StepCodec::default()
         .decode(
@@ -1786,7 +1786,8 @@ fn replica_written_with(
     records: &str,
     transform: Transform,
 ) -> Result<String, cadmpeg_core::CodecError> {
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, ProceduralSurfaceDefinition};
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let source = crate::test_support::exchange::decode_inline(records);
     let mut ir = source.ir().clone();

@@ -25,7 +25,9 @@ default = [
   "iges",
   "sat",
   "pvz",
+  "edrawings",
   "usd",
+  "onshape",
 ]
 fcstd = ["dep:cadmpeg-codec-freecad"]
 f3d = ["dep:cadmpeg-codec-f3d"]
@@ -39,6 +41,8 @@ step = ["dep:cadmpeg-codec-step"]
 iges = ["dep:cadmpeg-codec-iges"]
 sat = ["dep:cadmpeg-codec-sat"]
 pvz = ["dep:cadmpeg-codec-pvz"]
+edrawings = ["dep:cadmpeg-codec-edrawings"]
+onshape = ["dep:cadmpeg-codec-onshape", "step"]
 usd = ["dep:cadmpeg-codec-usd"]
 
 [dependencies]
@@ -59,6 +63,8 @@ cadmpeg-codec-iges = { workspace = true, optional = true }
 cadmpeg-codec-step = { workspace = true, optional = true }
 cadmpeg-codec-sat = { workspace = true, optional = true }
 cadmpeg-codec-pvz = { workspace = true, optional = true }
+cadmpeg-codec-edrawings = { workspace = true, optional = true }
+cadmpeg-codec-onshape = { workspace = true, optional = true }
 cadmpeg-codec-usd = { workspace = true, optional = true }
 serde.workspace = true
 thiserror.workspace = true
@@ -70,8 +76,6 @@ toml.workspace = true
 cadmpeg-ir = { workspace = true, features = ["examples"] }
 # Test-only byte-fixture writers shared with the codec crates.
 cadmpeg-test-support = { workspace = true }
-cadmpeg-codec-nx.workspace = true
-cadmpeg-codec-sldprt.workspace = true
 cadmpeg-parasolid.workspace = true
 zip.workspace = true
 

@@ -119,23 +119,17 @@ pub(crate) fn walk<'b>(
     })
 }
 
-/// Walk a configuration's `ResolvedFeatures` stream from its `Config-N`
-/// stream's class map: `None` when that map does not reconcile with the
-/// stream's count, or the stream carries no count. A decode-context refusal
-/// is an error, not a stop.
+/// Walk a configuration's `ResolvedFeatures` stream from `map`, the class
+/// map of its `Config-N` stream that reconciles with the stream's count
+/// ([`crate::archive::class_index_map`]). A decode-context refusal is an
+/// error, not a stop.
 pub(crate) fn walk_configuration(
     ctx: &DecodeContext<'_>,
-    config: &[u8],
+    map: &BTreeMap<u32, String>,
     resolved: &[u8],
     ver: Option<u32>,
 ) -> Result<Option<Walk>, cadmpeg_core::CodecError> {
-    let Some(count) = crate::archive::resolved_features_count(resolved) else {
-        return Ok(None);
-    };
-    let Some(map) = crate::archive::class_index_map(config, count, ctx)? else {
-        return Ok(None);
-    };
-    let walk = walk(ctx, &map, resolved, ver);
+    let walk = walk(ctx, map, resolved, ver);
     if let Some(Status::Stop(reader::Stop::Refused(limit))) = walk.as_ref().map(|walk| &walk.status)
     {
         return Err((*limit).into());

@@ -407,12 +407,12 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
         ordinal: 0,
         name: Some("3D Sketch".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: None }),
         ),
         native_ref: Some(native_ref.into()),
@@ -513,12 +513,12 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
         ordinal: 0,
         name: Some("3D Sketch".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: None }),
         ),
         native_ref: Some(native_ref.into()),
@@ -1374,7 +1374,7 @@ fn spatial_vertex_record_decodes_model_coordinates() {
     assert_eq!(
         crate::resolved_features::markers::spatial_vertex_coordinates(&payload),
         vec![
-            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
                 1.25, -2.5, 3.75
             ))
             .expect("finite spatial vertex")

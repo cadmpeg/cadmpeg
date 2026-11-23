@@ -192,7 +192,7 @@ fn source_instance_world_placement_is_applied_once() {
             let body = ir.geometry.bodies.first().unwrap();
             let world = body.transform.unwrap_or_default().apply_point(point);
             assert_eq!(
-                world.map(cadmpeg_ir::features::FinitePoint3::get),
+                world.map(cadmpeg_ir::features::geometry::FinitePoint3::get),
                 Some(expected)
             );
         }

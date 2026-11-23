@@ -8,12 +8,13 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::eval::{admission::EvaluationAdmission, model_surface_point_by_id};
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::geometry::analytic::{CircleCurve, LineCurve};
+use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry};
+use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    analytic::{CircleCurve, LineCurve},
-    pcurve::{LinePcurve, Pcurve, PcurveGeometry},
-    Curve, CurveGeometry, DirectedParameterRange, ProceduralSurface, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, SolvedCurveGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     CoedgeId, CurveId, EdgeId, PcurveId, PointId, ProceduralSurfaceId, VertexId,

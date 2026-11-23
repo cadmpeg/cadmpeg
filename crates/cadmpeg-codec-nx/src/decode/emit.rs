@@ -23,12 +23,16 @@ use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::finite_or_refusal;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+use cadmpeg_ir::geometry::legacy_cache::FitTolerance;
+use cadmpeg_ir::geometry::pcurve::Pcurve;
 use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveMetadata};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamily;
 use cadmpeg_ir::geometry::{
-    pcurve::Pcurve, Curve, CurveGeometry, FitTolerance, IntcurveSupportContext,
-    IntcurveSupportSide, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceCurveFamily, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::hash::{sha256, LowerHex};
 use cadmpeg_ir::ids::{
@@ -357,7 +361,7 @@ pub(super) fn emit_topology(
 
         if shell_faces.is_empty() {
             return Err(cadmpeg_core::CodecError::Malformed(
-                cadmpeg_ir::features::BodySelectionError::Empty.to_string(),
+                cadmpeg_ir::features::selections::BodySelectionError::Empty.to_string(),
             ));
         }
         ir.geometry
@@ -927,7 +931,7 @@ pub(super) fn emit_topology(
                     parameter_range,
                     carrier
                         .fit_tolerance()
-                        .map(cadmpeg_ir::geometry::FitTolerance::get),
+                        .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
                     adaptive_geometry_budget,
                 )?
                 else {
@@ -1023,7 +1027,7 @@ pub(super) fn emit_topology(
                     &support,
                     &geometry,
                     None,
-                    fit_tolerance.map(cadmpeg_ir::geometry::FitTolerance::get),
+                    fit_tolerance.map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
                     adaptive_geometry_budget,
                 )?
                 .then_some((
@@ -1152,7 +1156,7 @@ pub(super) fn emit_topology(
                 pcurve,
                 isoparametric: None,
                 parameter_range: attached_pcurve_use_range
-                    .map(cadmpeg_ir::geometry::DirectedParameterRange::new)
+                    .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new)
                     .transpose()
                     .map_err(CodecError::malformed)?,
             });
@@ -1625,12 +1629,12 @@ fn whole_sphere_pole_loops(
         )) else {
             return Ok(Vec::new());
         };
-        let label = format_args!("sphere-pole-{}-{name}", node.xmt());
+        let label = format!("sphere-pole-{}-{name}", node.xmt());
         let point: PointId =
-            scope.id_from_display(&cadmpeg_ir::identity_component!("point"), label)?;
+            scope.id_from_display(&cadmpeg_ir::identity_component!("point"), &label)?;
         let vertex: VertexId =
-            scope.id_from_display(&cadmpeg_ir::identity_component!("vertex"), label)?;
-        let id: LoopId = scope.id_from_display(&cadmpeg_ir::identity_component!("loop"), label)?;
+            scope.id_from_display(&cadmpeg_ir::identity_component!("vertex"), &label)?;
+        let id: LoopId = scope.id_from_display(&cadmpeg_ir::identity_component!("loop"), &label)?;
         let offset = cadmpeg_core::decode::u64_from_index(node.pos());
         annotations.note(
             point.as_str(),

@@ -2,7 +2,8 @@
 use super::*;
 use crate::test_support::root_part_ir;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-use cadmpeg_ir::features::{DistinctMembers, ParameterId};
+use cadmpeg_ir::features::selections::DistinctMembers;
+use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::scalar::Length;
 
 fn parameter(name: &str, text: &str, number: Option<f64>) -> LegacyParameter {

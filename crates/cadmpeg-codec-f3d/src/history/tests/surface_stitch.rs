@@ -11,7 +11,7 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use crate::history::bind_feature_face_selections;
+use crate::history::face_selections::bind_feature_face_selections;
 use crate::history_records::AsmHistory;
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
 use crate::records::topology::extrude_selection::DesignOperandRole;
@@ -24,7 +24,7 @@ struct StitchFixture {
     operands: Vec<crate::records::topology::entity_selection::DesignEntitySelectionOperand>,
     history: AsmHistory,
     feature: cadmpeg_ir::features::Feature,
-    input_topologies: Vec<cadmpeg_ir::features::FeatureInputTopology>,
+    input_topologies: Vec<cadmpeg_ir::features::evaluation::FeatureInputTopology>,
 }
 
 fn surface_stitch_fixture() -> StitchFixture {
@@ -37,10 +37,9 @@ fn surface_stitch_fixture() -> StitchFixture {
             entity_selection::DesignEntitySelectionOperand,
         },
     };
-    use cadmpeg_ir::features::{
-        FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureInputTopology,
-        FeatureOperation,
-    };
+    use cadmpeg_ir::features::evaluation::FeatureInputTopology;
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
     let stream = "f3d:Design/BulkStream.dat";
     let scope_id = format!("{stream}:design-parameter-scope#42");
@@ -205,7 +204,7 @@ fn surface_stitch_fixture() -> StitchFixture {
         source_tag: None,
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::KnitSurface {
                 faces: FaceSelection::Native(scope_id.clone()),
                 merge_entities: Some(true),
@@ -219,10 +218,10 @@ fn surface_stitch_fixture() -> StitchFixture {
     let input_topologies = vec![FeatureInputTopology {
         id: crate::ids::feature_input_topology_id(&feature_id, 1),
         input_of: feature_id.clone(),
-        bodies: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
-        faces: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
-        edges: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
-        vertices: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
+        faces: cadmpeg_ir::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
+        edges: cadmpeg_ir::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
+        vertices: cadmpeg_ir::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
         edge_geometry: Vec::new(),
         native_ref: None,
     }];
@@ -243,7 +242,8 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     use crate::records::topology::{
         body_recipe::AsmHistoricalEntityKind, entity_selection::DesignEntitySelectionFaceCandidate,
     };
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let StitchFixture {
         scope_id,
         feature_id,
@@ -272,7 +272,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     bind_feature_face_selections(
         std::slice::from_mut(&mut feature),
         &mut input_topologies,
-        crate::history::FeatureFaceSelectionInputs {
+        crate::history::face_selections::FeatureFaceSelectionInputs {
             scopes: std::slice::from_ref(&scope),
             groups: &groups,
             operands: &[],
@@ -313,7 +313,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     bind_feature_face_selections(
         std::slice::from_mut(&mut ambiguous_feature),
         &mut ambiguous_topologies,
-        crate::history::FeatureFaceSelectionInputs {
+        crate::history::face_selections::FeatureFaceSelectionInputs {
             scopes: std::slice::from_ref(&scope),
             groups: &groups,
             operands: &[],
@@ -335,7 +335,8 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
 
 #[test]
 fn a_selection_other_than_move_face_reads_one_transition() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let StitchFixture {
         scope_id,
         mut scope,
@@ -382,7 +383,7 @@ fn a_selection_other_than_move_face_reads_one_transition() {
     bind_feature_face_selections(
         std::slice::from_mut(&mut feature),
         &mut input_topologies,
-        crate::history::FeatureFaceSelectionInputs {
+        crate::history::face_selections::FeatureFaceSelectionInputs {
             scopes: std::slice::from_ref(&scope),
             groups: &groups,
             operands: &[],

@@ -10,14 +10,17 @@ use cadmpeg_core::decode::{u64_from_index, WorkBudget};
 
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamily;
+use cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction;
 use cadmpeg_ir::geometry::{
-    nurbs::NurbsCurve,
-    pcurve::{Pcurve, PcurveGeometry},
-    surface_payloads::RevolutionSurfaceConstruction,
-    Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
-    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, RecordBounds,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceCurveFamily, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, RecordBounds, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
@@ -3983,10 +3986,13 @@ mod tests {
         ConsolidatedCarrierChart, FreeformSurfacePool, RechartFailure,
     };
     use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::geometry::intersection_curves::{IntcurveSupportContext, IntcurveSupportSide};
+    use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+    use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
     use cadmpeg_ir::geometry::{
-        nurbs::NurbsCurve, pcurve::PcurveGeometry, Curve, CurveGeometry, IntcurveSupportContext,
-        IntcurveSupportSide, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
-        SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+        Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+        SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{
         CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, ProceduralCurveId, ShellId, SurfaceId,
@@ -4705,7 +4711,7 @@ mod tests {
             ir.geometry.points.push(Point::new(
                 PointId::mint(format!("catia:test:point#point%23{index}"))
                     .expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(position)
+                cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                     .expect("a finite position is a point"),
                 None,
             ));
@@ -5080,7 +5086,7 @@ mod tests {
             ir.geometry.points.push(Point::new(
                 PointId::mint(format!("catia:test:point#point%23{index}"))
                     .expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(position)
+                cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                     .expect("a finite position is a point"),
                 None,
             ));
@@ -5215,7 +5221,7 @@ mod tests {
             ir.geometry.points.push(Point::new(
                 PointId::mint(format!("catia:test:point#point%23{index}"))
                     .expect("identity grammar"),
-                cadmpeg_ir::features::FinitePoint3::new(position)
+                cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                     .expect("a finite position is a point"),
                 None,
             ));

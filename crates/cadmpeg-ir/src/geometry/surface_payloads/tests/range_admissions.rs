@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::assert_positive_revision_lane;
-use crate::geometry::ProceduralSurfaceDefinition;
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
 #[test]
 fn the_blend_admissions_hold_ordered_ranges_and_refuse_non_finite_scalars() {
@@ -8,10 +8,15 @@ fn the_blend_admissions_hold_ordered_ranges_and_refuse_non_finite_scalars() {
         BlendSurfacePayload, BlendSurfacePayloadWire, VariableBlendSurfacePayload,
         VariableBlendSurfacePayloadWire,
     };
-    use crate::geometry::{
-        BlendCrossSection, BlendRadiusLaw, CacheContract, RevisionCacheForm,
-        RevisionSurfaceParameterization, RollingBallConstruction, RollingBallRadiusSelector,
-        RollingBallSide, RollingBallSupportCurve, RollingBallSupportSurface, VariableBlendCache,
+    use crate::geometry::blends::{
+        BlendCrossSection, BlendRadiusLaw, RollingBallConstruction, RollingBallRadiusSelector,
+        RollingBallSide, RollingBallSupportCurve, RollingBallSupportSurface,
+    };
+    use crate::geometry::legacy_cache::CacheContract;
+    use crate::geometry::revision_forms::{
+        RevisionCacheForm, RevisionSurfaceParameterization, VariableBlendCache,
+    };
+    use crate::geometry::variable_blends::{
         VariableBlendConstruction, VariableBlendConvexity, VariableBlendRadii,
         VariableBlendRenderMode, VariableBlendSupportKind, VariableBlendSurfaceSubtype,
         VariableBlendValue, VariableBlendValuePayload,

@@ -11,7 +11,7 @@ use crate::bytes::is_guid_hyphenated;
 use crate::bytes::utf16::Utf16View;
 use crate::layout::manifest_lineage_suffix as lineage_suffix;
 
-const MAX_MANIFEST_STRING_UNITS: usize = 4 * 1024;
+pub(crate) const MAX_MANIFEST_STRING_UNITS: usize = 4 * 1024;
 const MAX_REGISTRY_ENTRIES: usize = 64;
 const MAX_ASSET_FOLDERS: usize = 64;
 const MAX_TOP_LEVEL_MANIFEST_BYTES: usize = 16 * 1024 * 1024;
@@ -30,7 +30,7 @@ pub(crate) const GENERATED_DESIGN_ASSET_FOLDER: &str = "FusionAssetName[Active]"
 
 const GENERATED_DOCUMENT_GUID: &str = "00000000-0000-4000-8000-000000000001";
 const GENERATED_DOCUMENT_ASSET_GUID: &str = "00000000-0000-4000-8000-000000000002";
-const GENERATED_ASSET_FOLDER_GUID: &str = "00000000-0000-4000-8000-000000000003";
+pub(crate) const GENERATED_ASSET_FOLDER_GUID: &str = "00000000-0000-4000-8000-000000000003";
 pub(crate) const GENERATED_ASSET_GUID: &str = "00000000-0000-4000-8000-000000000004";
 const GENERATED_PHYSICAL_CHANGE_GUID: &str = "00000000-0000-4000-8000-000000000005";
 
@@ -45,7 +45,14 @@ pub(crate) struct TopLevelManifest {
     /// beside the parse instead of re-derived at the report boundary.
     version: Option<String>,
     asset_folder_bases: Vec<String>,
+    pub(crate) reference_extension: std::ops::Range<usize>,
+    pub(crate) lineage_urn: Option<String>,
     pub(crate) diagnostics: Vec<MetadataDiagnostic>,
+}
+
+struct AssetTail<'a> {
+    folder_bases: Vec<Utf16View<'a>>,
+    lineage_urn: Option<Utf16View<'a>>,
 }
 
 impl TopLevelManifest {
@@ -285,7 +292,7 @@ pub(crate) fn parse_top_level(bytes: &[u8]) -> Result<TopLevelManifest, CodecErr
             .filter(|value| value.bytes().all(|byte| matches!(byte, 0x20..=0x7e)));
         let mut diagnostics = Vec::new();
         let parsed_body = parse_top_level_body(bytes, cursor, &mut diagnostics);
-        let asset_folder_bases = parsed_body.map_err(|error| {
+        let (tail, reference_extension) = parsed_body.map_err(|error| {
             if matches!(error, CodecError::ResourceLimit(_)) {
                 error
             } else {
@@ -306,13 +313,16 @@ pub(crate) fn parse_top_level(bytes: &[u8]) -> Result<TopLevelManifest, CodecErr
                 offset: 0,
             });
         }
-        let asset_folder_bases = asset_folder_bases
+        let asset_folder_bases = tail
+            .folder_bases
             .into_iter()
             .map(|base| base.to_string())
             .collect::<Vec<_>>();
         Ok(TopLevelManifest {
             version,
             asset_folder_bases,
+            reference_extension,
+            lineage_urn: tail.lineage_urn.map(|value| value.to_string()),
             diagnostics,
         })
     })();
@@ -324,7 +334,7 @@ fn parse_top_level_body<'a>(
     bytes: &'a [u8],
     mut cursor: Cursor<'a>,
     diagnostics: &mut Vec<MetadataDiagnostic>,
-) -> Result<Vec<Utf16View<'a>>, CodecError> {
+) -> Result<(AssetTail<'a>, std::ops::Range<usize>), CodecError> {
     cursor.expect_ascii("top-level manifest kind", "FusionDocType")?;
     cursor.expect_utf16("top-level manifest extension", ".f3d")?;
     cursor.metadata_utf16(
@@ -383,11 +393,13 @@ fn parse_top_level_body<'a>(
         let _value = cursor.u32(&field)?;
     }
 
-    parse_asset_tail(bytes, cursor.position())
+    let start = cursor.position();
+    let (bases, end) = parse_asset_tail(bytes, start)?;
+    Ok((bases, start..end))
 }
 
 /// The asset-folder base run of the one exact tail framing.
-fn parse_asset_tail(bytes: &[u8], start: usize) -> Result<Vec<Utf16View<'_>>, CodecError> {
+fn parse_asset_tail(bytes: &[u8], start: usize) -> Result<(AssetTail<'_>, usize), CodecError> {
     let mut selected = None;
     let mut deepest_error: Option<(usize, CodecError)> = None;
     for at in bytes
@@ -414,7 +426,7 @@ fn parse_asset_tail(bytes: &[u8], start: usize) -> Result<Vec<Utf16View<'_>>, Co
                 continue;
             }
         };
-        if selected.replace(candidate).is_some() {
+        if selected.replace((candidate, at)).is_some() {
             return Err(parse_malformed(
                 "top-level manifest asset-folder tail",
                 "more than one exact tail framing is valid",
@@ -476,7 +488,7 @@ fn take_asset_folder_bases<'a>(
     Ok(())
 }
 
-fn parse_asset_tail_at<'a>(cursor: &mut Cursor<'a>) -> Result<Vec<Utf16View<'a>>, CodecError> {
+fn parse_asset_tail_at<'a>(cursor: &mut Cursor<'a>) -> Result<AssetTail<'a>, CodecError> {
     let _active_asset_guid = cursor.guid("top-level manifest active-asset GUID")?;
     let asset_folder_count = bounded_nonzero_count(
         cursor.u32("top-level manifest asset-folder count")?,
@@ -491,8 +503,12 @@ fn parse_asset_tail_at<'a>(cursor: &mut Cursor<'a>) -> Result<Vec<Utf16View<'a>>
         "top-level manifest secondary asset-folder count",
     )?;
     take_asset_folder_bases(cursor, secondary_folder_count, &mut asset_folder_bases)?;
+    let mut tail = AssetTail {
+        folder_bases: asset_folder_bases,
+        lineage_urn: None,
+    };
     if cursor.exhausted() {
-        return Ok(asset_folder_bases);
+        return Ok(tail);
     }
     match cursor.u8("top-level manifest terminal byte")? {
         0 => {
@@ -509,6 +525,7 @@ fn parse_asset_tail_at<'a>(cursor: &mut Cursor<'a>) -> Result<Vec<Utf16View<'a>>
                     && !lineage.chars().eq("NA_OFFLINESAVE".chars())
                 {
                     expect_lineage_urn(lineage)?;
+                    tail.lineage_urn = Some(lineage);
                     if cursor.view.unread() == lineage_suffix::BYTES_VALUE {
                         cursor.view.seek_to_end();
                     }
@@ -516,13 +533,12 @@ fn parse_asset_tail_at<'a>(cursor: &mut Cursor<'a>) -> Result<Vec<Utf16View<'a>>
             }
         }
         1 if !cursor.exhausted() => {
-            // The export or offline-save marker, or the lineage URN of a
-            // referenced document.
-            let terminal = cursor.utf16("top-level manifest export marker")?;
+            let terminal = cursor.utf16("top-level manifest lineage or save marker")?;
             if !terminal.chars().eq("NA_EXPORT".chars())
                 && !terminal.chars().eq("NA_OFFLINESAVE".chars())
             {
                 expect_lineage_urn(terminal)?;
+                tail.lineage_urn = Some(terminal);
             }
         }
         1 => {}
@@ -535,7 +551,7 @@ fn parse_asset_tail_at<'a>(cursor: &mut Cursor<'a>) -> Result<Vec<Utf16View<'a>>
     }
     cursor.finish("top-level manifest terminal")?;
 
-    Ok(asset_folder_bases)
+    Ok(tail)
 }
 
 /// Resolve the unique Design archive folder through the top-level folder run

@@ -7,7 +7,8 @@ use crate::examples::unit_cube;
 use crate::geometry::pcurve::{
     LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs, PcurveNurbsPoles,
 };
-use crate::geometry::{DirectedParameterRange, SolvedSurfaceGeometry};
+use crate::geometry::procedural_curves::DirectedParameterRange;
+use crate::geometry::SolvedSurfaceGeometry;
 use crate::ids::PcurveId;
 use crate::math::{Point2, Point3, Vector3};
 use crate::topology::{CoedgeUseCurve, EdgeCarrier, ParameterInterval, PcurveUse};
@@ -300,9 +301,10 @@ fn cylinder_pcurve(direction: Point2, end: Point3) -> CadIr {
         )
         .unwrap(),
     ));
-    ir.geometry.points[0]
-        .set_position(crate::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).unwrap());
-    ir.geometry.points[1].set_position(crate::features::FinitePoint3::new(end).unwrap());
+    ir.geometry.points[0].set_position(
+        crate::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).unwrap(),
+    );
+    ir.geometry.points[1].set_position(crate::features::geometry::FinitePoint3::new(end).unwrap());
     let id = PcurveId::mint("test:recovery:pcurve#helix").unwrap();
     ir.geometry.pcurves.push(Pcurve {
         id: id.clone(),
@@ -447,8 +449,10 @@ fn planar_circles_recover_in_both_edge_directions() {
         } else {
             (Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0))
         };
-        ir.geometry.points[0].set_position(crate::features::FinitePoint3::new(first).unwrap());
-        ir.geometry.points[1].set_position(crate::features::FinitePoint3::new(last).unwrap());
+        ir.geometry.points[0]
+            .set_position(crate::features::geometry::FinitePoint3::new(first).unwrap());
+        ir.geometry.points[1]
+            .set_position(crate::features::geometry::FinitePoint3::new(last).unwrap());
         let id = PcurveId::mint("test:recovery:pcurve#circle").unwrap();
         ir.geometry.pcurves.push(Pcurve {
             id: id.clone(),

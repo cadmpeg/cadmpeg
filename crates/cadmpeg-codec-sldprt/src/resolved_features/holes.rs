@@ -1,6 +1,6 @@
 //! Hole construction, bore topology and hole axis projection.
 
-use super::compact_reference_planes::CompactReferencePlaneIndex;
+use super::compact_reference_planes::{CompactReferencePlaneIndex, PlaneAssumedCause};
 use super::curves::{lane_sketch_plane_frames, SketchPlaneFrame, SketchPlaneUAxisSource};
 use super::grid::{quantize, GridCoordinate};
 use super::helix::fit_helix_polyline;
@@ -21,20 +21,18 @@ use crate::records::{
 use cadmpeg_core::convert::f64_from_i64;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::extents::LinearTermination;
+use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
+use cadmpeg_ir::features::holes::{HoleBottom, HoleKind, HolePlacement};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
     SpatialSketch, SpatialSketchEntity, SpatialSketchGeometryDefinition,
 };
 use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
-use cadmpeg_ir::{
-    features::{
-        holes::{HoleBottom, HoleKind, HolePlacement},
-        FeatureDefinition, FeatureDirection3, FeatureOperation, FinitePoint3, LinearTermination,
-    },
-    scalar::Length,
-};
 use std::collections::{HashMap, HashSet};
 
 const EPS_HOLE_POSITION: f64 = 1.0e-8;
@@ -145,7 +143,7 @@ pub(crate) fn project_helix_axes(
                         "SolidWorks projected length must be finite".into(),
                     )
                 })?,
-                shape: cadmpeg_ir::features::HelixShape::Cylindrical { pitch },
+                shape: cadmpeg_ir::features::sweeps::HelixShape::Cylindrical { pitch },
                 revolutions: *revolutions,
                 start_angle: *start_angle,
                 clockwise: *clockwise,
@@ -4255,7 +4253,7 @@ pub(super) fn feature_input_sketch_marker_transform(
         component_sketch_marker_transform(
             sketch,
             quantum,
-            principal_top_profile_frame(
+            principal_component_profile_frame(
                 plane_frames,
                 plane_index,
                 interval[0],
@@ -4267,27 +4265,20 @@ pub(super) fn feature_input_sketch_marker_transform(
     }
 }
 
-pub(super) fn principal_top_profile_frame(
+pub(super) fn principal_component_profile_frame(
     plane_frames: &HashMap<u32, SketchPlaneFrame>,
     plane_index: &CompactReferencePlaneIndex,
     context_start: usize,
     start: usize,
     end: usize,
 ) -> Option<(Point3, Vector3, Vector3)> {
-    let source = plane_index.profile_source(context_start, start, end)?;
-    let reference = plane_frames.get(&source)?;
-    if plane_index.profile_declared_source(context_start, start, end) != Some(source)
-        || plane_index.has_component_frame(context_start.min(start), end)
-        || source != 2
-        || reference.u_axis_source != SketchPlaneUAxisSource::Native
-        || reference.as_tuple()
-            != super::compact_reference_planes::principal_sketch_frame(
-                cadmpeg_ir::features::PrincipalPlane::Front,
-            )
-    {
-        return None;
-    }
-    plane_index.principal_top_profile_frame(start, end)
+    use super::compact_reference_planes::{principal_sketch_frame, principal_source};
+    use cadmpeg_ir::features::PrincipalPlane;
+    let plane = plane_index.local_principal_component(context_start, start, end)?;
+    let reference = plane_frames.get(&principal_source(PrincipalPlane::Front))?;
+    (reference.u_axis_source == SketchPlaneUAxisSource::Native
+        && reference.as_tuple() == principal_sketch_frame(PrincipalPlane::Front))
+    .then(|| principal_sketch_frame(plane))
 }
 
 pub(super) fn feature_input_sketch_frame(
@@ -4298,11 +4289,53 @@ pub(super) fn feature_input_sketch_frame(
     start: usize,
     end: usize,
 ) -> Option<(Point3, Vector3, Vector3)> {
+    profile_sketch_frame(
+        payload,
+        plane_frames,
+        plane_index,
+        [context_start, start, end],
+    )
+    .map(|frame| frame.frame)
+}
+
+/// The sketch frame of a profile object.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct ProfileSketchFrame {
+    pub(super) frame: (Point3, Vector3, Vector3),
+    /// Why the frame is the retained Front fallback of a profile whose
+    /// principal component records the profile placement rule does not
+    /// place; `None` for any other frame.
+    pub(super) assumed: Option<PlaneAssumedCause>,
+    /// The frame is the principal Top plane's, taken from the plane the
+    /// profile's feature-input reference names rather than from a component
+    /// record or a stored frame (open item DI-73).
+    pub(super) top_reference: bool,
+}
+
+impl ProfileSketchFrame {
+    /// A frame the profile's records store.
+    pub(super) fn stored(frame: (Point3, Vector3, Vector3)) -> Self {
+        Self {
+            frame,
+            assumed: None,
+            top_reference: false,
+        }
+    }
+}
+
+pub(super) fn profile_sketch_frame(
+    payload: &[u8],
+    plane_frames: &HashMap<u32, SketchPlaneFrame>,
+    plane_index: &CompactReferencePlaneIndex,
+    [context_start, start, end]: [usize; 3],
+) -> Option<ProfileSketchFrame> {
+    let stored = ProfileSketchFrame::stored;
     if let Some(frame) =
         resolved_support_component_frame(plane_frames, plane_index, [context_start, start, end])
     {
-        return Some(frame);
+        return Some(stored(frame));
     }
+    let mut fallback = false;
     let reference = plane_index
         .profile_source(context_start, start, end)
         .and_then(|source| {
@@ -4315,6 +4348,7 @@ pub(super) fn feature_input_sketch_frame(
                         )
                 {
                     if let Some(frame) = plane_index.preserved_principal_fallback(start, end) {
+                        fallback = true;
                         return SketchPlaneFrame::from_frame(frame, reference.u_axis_source);
                     }
                 }
@@ -4358,18 +4392,28 @@ pub(super) fn feature_input_sketch_frame(
                 .filter(|component| coplanar_plane_frames(reference.as_tuple(), *component));
             if reference.u_axis_source == SketchPlaneUAxisSource::ConstructedMidPlane {
                 match component {
-                    Some(component) => Some(component),
+                    Some(component) => Some(stored(component)),
                     None => explicit()
-                        .filter(|frame| coplanar_plane_frames(reference.as_tuple(), *frame)),
+                        .filter(|frame| coplanar_plane_frames(reference.as_tuple(), *frame))
+                        .map(stored),
                 }
             } else {
-                component.or(Some(reference.as_tuple()))
+                Some(component.map_or(
+                    ProfileSketchFrame {
+                        frame: reference.as_tuple(),
+                        assumed: fallback.then(|| {
+                            plane_index
+                                .front_profile_principal_component(context_start, start, end)
+                                .map_or_else(|cause| cause, PlaneAssumedCause::Unapplied)
+                        }),
+                        top_reference: reference.principal
+                            == Some(cadmpeg_ir::features::PrincipalPlane::Top),
+                    },
+                    stored,
+                ))
             }
         }
-        None => match component {
-            Some(component) => Some(component),
-            None => explicit(),
-        },
+        None => component.or_else(explicit).map(stored),
     }
 }
 
@@ -4419,8 +4463,8 @@ pub(super) fn sketch_feature_frames(
     features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> HashMap<String, (Point3, Vector3, Vector3)> {
-    let mut candidates = HashMap::<String, Option<(Point3, Vector3, Vector3)>>::new();
+) -> HashMap<String, ProfileSketchFrame> {
+    let mut candidates = HashMap::<String, Option<ProfileSketchFrame>>::new();
     for lane in lanes {
         let ranges = feature_object_byte_ranges(histories, lane);
         let plane_frames = lane_sketch_plane_frames(features, histories, lane);
@@ -4433,19 +4477,18 @@ pub(super) fn sketch_feature_frames(
             let Some(&(context_start, start, end)) = ranges.get(feature.id.as_str()) else {
                 continue;
             };
-            let Some(frame) = feature_input_sketch_frame(
+            let Some(frame) = profile_sketch_frame(
                 &lane.native_payload,
                 &plane_frames,
                 &plane_index,
-                context_start,
-                start,
-                end,
+                [context_start, start, end],
             ) else {
                 continue;
             };
             if let Some(candidate) = candidates.get_mut(feature.id.as_str()) {
                 if candidate.as_ref().is_some_and(|current| {
-                    reference_plane_frame_key(current) != reference_plane_frame_key(&frame)
+                    reference_plane_frame_key(&current.frame)
+                        != reference_plane_frame_key(&frame.frame)
                 }) {
                     *candidate = None;
                 }

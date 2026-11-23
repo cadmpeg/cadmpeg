@@ -5,7 +5,7 @@
 fn expression_completeness_refuses_inexact_integer_value() {
     let mut ir = super::one_incomplete_expression_parameter();
     ir.model.parameters[0].expression = "9007199254740993".into();
-    ir.model.parameters[0].value = Some(cadmpeg_ir::features::ParameterValue::Integer(
+    ir.model.parameters[0].value = Some(cadmpeg_ir::features::parameters::ParameterValue::Integer(
         9_007_199_254_740_993,
     ));
     let incomplete =

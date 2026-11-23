@@ -20,6 +20,7 @@ impl Walk for AngleRange {
             to_inclusive: _,
             value,
         } = self;
+        into.push_expression(super::ExpressionPlace::BendAllowance, value);
         value.walk(into)?;
         Ok(())
     }

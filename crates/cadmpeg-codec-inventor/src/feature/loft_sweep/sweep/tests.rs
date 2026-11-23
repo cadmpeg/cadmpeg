@@ -143,12 +143,14 @@ fn definition() -> FeatureDefinition {
     FeatureDefinition::Operation(FeatureOperation::Sweep {
         shape: SweepShape::Solid {
             op: SolidSweepOperation::NewBody,
-            section: SweepSection::Profile(cadmpeg_ir::features::PlanarProfileRef::native(
-                "synthetic:profile#p".into(),
-            )),
+            section: SweepSection::Profile(
+                cadmpeg_ir::features::profiles::PlanarProfileRef::native(
+                    "synthetic:profile#p".into(),
+                ),
+            ),
             sections: Vec::new(),
         },
-        path: Some(cadmpeg_ir::features::PathRef::Native(
+        path: Some(cadmpeg_ir::features::profiles::PathRef::Native(
             "synthetic:path#p".into(),
         )),
         orientation: None,

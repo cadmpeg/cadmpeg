@@ -3,9 +3,8 @@
 
 use crate::ids::native_stream;
 use crate::records::sketch_geometry::SketchText;
-use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef,
-};
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::SketchEntity;
 
@@ -55,7 +54,7 @@ pub(crate) fn bind_sketch_text_extrude_profiles(
         else {
             if candidate.picks.len() > 1 {
                 losses.push(
-                    crate::design::decode::operands::unresolved_profile_group_loss(
+                    crate::design::decode::operands::sketch_profiles::unresolved_profile_group_loss(
                         candidate.picks.len(),
                     ),
                 );

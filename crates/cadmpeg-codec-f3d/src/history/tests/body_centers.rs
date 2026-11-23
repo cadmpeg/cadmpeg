@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::feature_outputs::{base_feature, scope_between, state};
-use crate::history::bind_feature_outputs;
+use crate::history::feature_outputs::bind_feature_outputs;
 use crate::history_records::{
     AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalPoint,
     AsmHistoricalRelation, AsmHistoricalTopology,
@@ -84,6 +84,7 @@ fn pillow(x: f64) -> AsmHistoricalTopology {
                 Point3::new(start.x.min(end.x), 0., start.z.min(end.z)),
                 Point3::new(start.x.max(end.x), 0., start.z.max(end.z)),
             ]),
+            carrier: None,
         },
     )
     .to_vec();
@@ -114,10 +115,10 @@ fn an_unbound_feature_reads_the_history_of_the_blob_that_holds_its_outputs() {
         feature.id = crate::ids::neutral_feature_id(scope);
         feature.native_ref = Some(scope.id.clone());
         feature.evaluation.set_outputs(
-            cadmpeg_ir::features::DistinctMembers::try_from(vec![cadmpeg_ir::ids::BodyId::mint(
-                format!("f3d:brep/{}/brep:entity#1", blob(guid)),
-            )
-            .unwrap()])
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+                cadmpeg_ir::ids::BodyId::mint(format!("f3d:brep/{}/brep:entity#1", blob(guid)))
+                    .unwrap(),
+            ])
             .unwrap(),
         );
         feature
@@ -241,7 +242,7 @@ fn spline_side_edge_extends_the_body_box_beyond_its_vertices() {
     use cadmpeg_ir::math::Point3;
     for cached in [false, true] {
         let topology = spline_pillow(cached);
-        let index = crate::history::HistoricalBodyIndex::new(&topology);
+        let index = crate::history::historical_index::HistoricalBodyIndex::new(&topology);
         let evidence = index.body_bounds(100, &[1000, 1001, 1002]);
         let bounds = evidence.bounds.unwrap();
         assert!(evidence.missing_evidence.is_empty());

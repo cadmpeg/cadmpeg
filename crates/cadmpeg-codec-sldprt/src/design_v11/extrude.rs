@@ -22,10 +22,10 @@ use cadmpeg_ir::design::options::{
 };
 use cadmpeg_ir::design::selection::PickTarget;
 use cadmpeg_ir::design::units::Quantity;
-use cadmpeg_ir::features::{
-    self as v10, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureId, LinearTermination,
-    ParameterId, PlanarProfileRef, ProfileRef,
-};
+use cadmpeg_ir::features as v10;
+use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, ParameterId};
 use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::SketchId;
 
@@ -165,12 +165,20 @@ fn extrude(
         _ => return Err("the extrude's profile is no whole sketch"),
     };
     let direction = match direction {
-        v10::ExtrudeDirection::ProfileNormal {} => {
+        cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {} => {
             ExtrudeDirection::ProfileNormal { reversed: None }
+        }
+        cadmpeg_ir::features::extents::ExtrudeDirection::ReversedProfileNormal {} => {
+            ExtrudeDirection::ProfileNormal {
+                reversed: Some(Dimension::Literal(true)),
+            }
         }
         _ => return Err("the extrude's direction is not the profile normal"),
     };
-    if !matches!(start, v10::ExtrudeStart::ProfilePlane {}) {
+    if !matches!(
+        start,
+        cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {}
+    ) {
         return Err("the extrude starts off the profile plane");
     }
     let depths = Depths::new(feature, context);
@@ -187,12 +195,16 @@ fn extrude(
         return Err("the extrude's sketch follows it in the timeline");
     }
     let boolean = match op {
-        v10::BooleanOp::Join if !body_before => Some(Boolean::NewBody),
-        v10::BooleanOp::Join => Some(apply(BooleanOp::Join)),
-        v10::BooleanOp::Cut => Some(apply(BooleanOp::Cut)),
-        v10::BooleanOp::Intersect => Some(apply(BooleanOp::Intersect)),
-        v10::BooleanOp::NewBody => Some(Boolean::NewBody),
-        v10::BooleanOp::Unresolved => None,
+        cadmpeg_ir::features::operation_settings::BooleanOp::Join if !body_before => {
+            Some(Boolean::NewBody)
+        }
+        cadmpeg_ir::features::operation_settings::BooleanOp::Join => Some(apply(BooleanOp::Join)),
+        cadmpeg_ir::features::operation_settings::BooleanOp::Cut => Some(apply(BooleanOp::Cut)),
+        cadmpeg_ir::features::operation_settings::BooleanOp::Intersect => {
+            Some(apply(BooleanOp::Intersect))
+        }
+        cadmpeg_ir::features::operation_settings::BooleanOp::NewBody => Some(Boolean::NewBody),
+        cadmpeg_ir::features::operation_settings::BooleanOp::Unresolved => None,
     };
     Ok(Extrude {
         profile: selection(vec![pick(PickTarget::Sketch(sketch.clone()))])?,

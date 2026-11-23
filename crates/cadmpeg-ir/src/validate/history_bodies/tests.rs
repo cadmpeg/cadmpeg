@@ -3,9 +3,10 @@
 use std::collections::BTreeMap;
 
 use crate::document::CadIr;
+use crate::features::evaluation::FeatureEvaluation;
+use crate::features::selections::DistinctMembers;
 use crate::features::{
-    DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
-    FeatureOperation, SketchFeatureBinding,
+    Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation, SketchFeatureBinding,
 };
 use crate::history_body::{BodyTopology, HistoryBody, HistoryStateRef};
 use crate::ids::HistoryBodyId;

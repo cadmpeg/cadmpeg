@@ -724,8 +724,22 @@ fn counted_linear_graph_projects_exact_auxiliary_relations() {
     assert!(exact_counted_dimension_relation(&[&outside_arc, &arc]).is_none());
 }
 
-#[test]
-fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
+/// One vertical two-point distance dimension `d4` of 2 mm in a sketch of
+/// stream `f3d:A`: its records and its projected point entities.
+struct ExactPair {
+    stream: &'static str,
+    placement: DesignSketchPlacement,
+    parameter: crate::records::parameters::DesignParameter,
+    owner: crate::records::parameters::DesignParameterOwner,
+    companion: DesignParameterCompanion,
+    pair: DesignDimensionLocusPair,
+    group: DesignDimensionLocusGroup,
+    points: [SketchPoint; 2],
+    sketch: SketchId,
+    entities: Vec<SketchEntity>,
+}
+
+fn exact_pair() -> ExactPair {
     let stream = "f3d:A";
     let placement = DesignSketchPlacement {
         display_name: None,
@@ -918,6 +932,34 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             .with_native_ref(Some(point.id.clone()))
         })
         .collect::<Vec<_>>();
+    ExactPair {
+        stream,
+        placement,
+        parameter,
+        owner,
+        companion,
+        pair,
+        group,
+        points,
+        sketch,
+        entities,
+    }
+}
+
+#[test]
+fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
+    let ExactPair {
+        stream,
+        placement,
+        parameter,
+        owner,
+        companion,
+        pair,
+        group,
+        points,
+        sketch,
+        entities,
+    } = exact_pair();
 
     let constraints = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
@@ -943,34 +985,6 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         SketchConstraintDefinitionInput::VerticalDistance { .. }
     ));
     assert_eq!(constraints[0].driving, None);
-
-    // The parameter of a driven dimension makes its constraint driven.
-    let driven = parameter
-        .clone()
-        .with_flags(crate::records::parameters::DesignParameterFlags {
-            driven: true,
-            favorite: false,
-        })
-        .unwrap();
-    let driven_constraints = project_dimension_constraints(
-        &crate::design::dimensions::DimensionConstraintInputs {
-            placements: std::slice::from_ref(&placement),
-            parameters: std::slice::from_ref(&driven),
-            owners: std::slice::from_ref(&owner),
-            pairs: std::slice::from_ref(&pair),
-            groups: std::slice::from_ref(&group),
-            annotation_frames: &[],
-            null_pairs: &[],
-            companions: std::slice::from_ref(&companion),
-            recipe_records: &[],
-            points: &points,
-            curves: &[],
-            entities: &entities,
-        },
-        &[],
-    );
-    assert_eq!(driven_constraints.len(), 1);
-    assert_eq!(driven_constraints[0].driving, Some(false));
 
     let spatial_sketch = SpatialSketch {
         id: neutral_spatial_sketch_id(&placement),
@@ -1426,6 +1440,8 @@ fn repeated_linear_dimension_requires_disjoint_measurement_pairs() {
 mod spatial_distance;
 
 mod presentation_frames;
+
+mod driven;
 
 #[test]
 fn diagonal_annotation_point_dimension_takes_its_payload_orientation() {

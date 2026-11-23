@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::first_marked_reference_offsets;
-use super::named_parameter_scope_tail_is_valid;
 use super::reference_table_ends_at;
 use crate::test_support::lp_utf16;
 
@@ -91,7 +90,7 @@ fn registered_boundary_fill_admits_a_named_tail_with_odd_associated_reference_co
     let tail = scope.boundary_fill().unwrap().named_tail.as_ref().unwrap();
     assert_eq!(tail.associated[0].value, 700);
     assert_eq!(tail.closing.as_ref().unwrap().value, 701);
-    assert_eq!(scope.previous_history_state_id(), None);
+    assert_eq!(scope.previous_history_state_id(), Some(4));
     let wire = serde_json::to_value(&scope).unwrap();
     assert_eq!(
         serde_json::from_value::<super::DesignParameterScope>(wire).unwrap(),
@@ -111,7 +110,7 @@ fn named_combine_preserves_middle_reference_and_scope_identity() {
     assert_eq!(scope.paired_byte_offset(), 272);
     assert_eq!(scope.label.as_ref().unwrap().value, "NewBody");
     assert_eq!(scope.label.as_ref().unwrap().offset, 182);
-    assert_eq!(scope.previous_history_state_id(), None);
+    assert_eq!(scope.previous_history_state_id(), Some(4));
     assert_eq!(
         scope
             .reference_members()
@@ -195,18 +194,25 @@ fn named_combine_rejects_incomplete_or_inconsistent_tail() {
         (203, 0),
         (214, 2),
         (220, 1),
-        (241, 2),
         (245, 0),
         (256, 0),
-        (258, 1),
         (259, 0),
         (270, 2),
         (271, 1),
+        (258, 2),
     ] {
         let mut broken = bytes.clone();
         broken[offset] = value;
         assert!(
             parse_marked_named_combine(&broken).is_none(),
+            "offset {offset}"
+        );
+    }
+    for (offset, value) in [(241, 2), (258, 1)] {
+        let mut admitted = bytes.clone();
+        admitted[offset] = value;
+        assert!(
+            parse_marked_named_combine(&admitted).is_some(),
             "offset {offset}"
         );
     }
@@ -222,112 +228,6 @@ fn named_combine_rejects_incomplete_or_inconsistent_tail() {
     let mut broken = bytes;
     broken.insert(272, 0);
     assert!(parse_marked_named_combine(&broken).is_none());
-}
-
-fn named_scope_tail(lane_value: u64) -> Vec<u8> {
-    named_scope_tail_with_class_word(lane_value, 0xfc)
-}
-
-fn named_scope_tail_with_class_word(lane_value: u64, class_word: u32) -> Vec<u8> {
-    named_scope_tail_with_label("Canvas", lane_value, class_word)
-}
-
-fn named_scope_tail_with_label(label: &str, lane_value: u64, class_word: u32) -> Vec<u8> {
-    let label_code_units = label.encode_utf16().count();
-    let marker = 19 + label_code_units * 2;
-    let mut bytes = vec![0; marker + 59];
-    bytes[0..4].copy_from_slice(&1u32.to_le_bytes());
-    let mut label_bytes = Vec::new();
-    lp_utf16(&mut label_bytes, label);
-    bytes[8..8 + label_bytes.len()].copy_from_slice(&label_bytes);
-    bytes[marker] = 1;
-    bytes[marker + 1] = 0xd5;
-    bytes[marker + 2..marker + 10].copy_from_slice(&lane_value.to_le_bytes());
-    bytes[marker + 12..marker + 16].copy_from_slice(&u32::MAX.to_le_bytes());
-    bytes[marker + 16..marker + 20].copy_from_slice(&class_word.to_le_bytes());
-    bytes[marker + 20..marker + 28].copy_from_slice(&0.25f64.to_le_bytes());
-    bytes[marker + 28..marker + 32].copy_from_slice(&class_word.to_le_bytes());
-    bytes[marker + 32] = 1;
-    bytes[marker + 33] = 0xd4;
-    bytes[marker + 34..marker + 42].copy_from_slice(&lane_value.to_le_bytes());
-    bytes[marker + 42..marker + 46].copy_from_slice(&[0, 1, 0, 0]);
-    bytes[marker + 46] = 1;
-    bytes[marker + 47] = 0xd3;
-    bytes[marker + 48..marker + 56].copy_from_slice(&lane_value.to_le_bytes());
-    bytes
-}
-
-#[test]
-fn named_scope_tail_requires_one_repeated_byte_lane_value() {
-    for lane_value in [0, 1, 8, 0xff] {
-        let bytes = named_scope_tail(lane_value);
-        assert_eq!(
-            named_parameter_scope_tail_is_valid(&bytes, 0, bytes.len(), bytes.len()),
-            Some(true)
-        );
-    }
-
-    let mut mismatched = named_scope_tail(0);
-    let marker = mismatched.len() - 59;
-    mismatched[marker + 34..marker + 42].copy_from_slice(&1u64.to_le_bytes());
-    assert_eq!(
-        named_parameter_scope_tail_is_valid(&mismatched, 0, mismatched.len(), mismatched.len()),
-        Some(false)
-    );
-
-    let outside_domain = named_scope_tail(0x100);
-    assert_eq!(
-        named_parameter_scope_tail_is_valid(
-            &outside_domain,
-            0,
-            outside_domain.len(),
-            outside_domain.len()
-        ),
-        Some(false)
-    );
-}
-
-#[test]
-fn empty_label_named_tail_keeps_the_binary_lane_and_class_252() {
-    for (lane_value, class_word, admitted) in [
-        (0, 0xfc, true),
-        (1, 0xfc, true),
-        (8, 0xfc, false),
-        (1, 0x101, false),
-        (8, 0x101, false),
-    ] {
-        let bytes = named_scope_tail_with_label("", lane_value, class_word);
-        assert_eq!(
-            named_parameter_scope_tail_is_valid(&bytes, 0, bytes.len(), bytes.len()),
-            Some(admitted),
-            "lane {lane_value} class {class_word}"
-        );
-    }
-}
-
-#[test]
-fn named_scope_tail_admits_equal_three_digit_class_words_only() {
-    for class_word in [100, 0xfc, 0x101, 999] {
-        let bytes = named_scope_tail_with_class_word(8, class_word);
-        assert_eq!(
-            named_parameter_scope_tail_is_valid(&bytes, 0, bytes.len(), bytes.len()),
-            Some(true)
-        );
-    }
-    for class_word in [0, 99, 1000] {
-        let bytes = named_scope_tail_with_class_word(8, class_word);
-        assert_eq!(
-            named_parameter_scope_tail_is_valid(&bytes, 0, bytes.len(), bytes.len()),
-            Some(false)
-        );
-    }
-    let mut unequal = named_scope_tail_with_class_word(8, 0x101);
-    let marker = unequal.len() - 59;
-    unequal[marker + 28..marker + 32].copy_from_slice(&0xfcu32.to_le_bytes());
-    assert_eq!(
-        named_parameter_scope_tail_is_valid(&unequal, 0, unequal.len(), unequal.len()),
-        Some(false)
-    );
 }
 
 #[test]
@@ -807,12 +707,15 @@ fn scope_class_type_selects_hole_and_preserves_the_display_name() {
                     .previous_history_state_id_offset
                     .map(|offset| offset - 6);
                 let english = DesignParameterScope::try_new(english).unwrap();
-                assert!(super::equivalent_scope_variant_payload(
-                    &cadmpeg_core::decode::test_support::service_decode_context(),
-                    scope,
-                    &english,
-                )
-                .unwrap());
+                assert_eq!(
+                    super::compare_scope_variant_payloads(
+                        &cadmpeg_core::decode::test_support::service_decode_context(),
+                        scope,
+                        &english,
+                    )
+                    .unwrap(),
+                    super::EnvelopeComparison::Equivalent
+                );
             }
             assert_eq!(scope.source_kind_name(), "Perçage");
             assert_eq!(
@@ -1000,4 +903,57 @@ fn sketch_scope_binding_selects_the_container_shared_with_its_placement() {
         assert_eq!(entity.entity_id.suffix(), 173);
         assert_eq!(at, 1);
     }
+}
+
+#[test]
+fn a_malformed_rectangular_pattern_is_a_local_loss() {
+    let mut losses = Vec::new();
+    let construction = super::rectangular_construction_or_native(
+        Err(cadmpeg_core::CodecError::malformed(
+            "direction records must use the same distance representation",
+        )),
+        "f3d:scope#10",
+        &mut losses,
+    )
+    .unwrap();
+    assert!(construction.is_none());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::FeatureRectangularPatternConstructionNative.kind()
+    );
+    assert!(
+        super::rectangular_construction_or_native(Ok(None), "f3d:scope#11", &mut losses).is_ok()
+    );
+    assert_eq!(losses.len(), 1);
+}
+
+#[test]
+fn rectangular_pattern_recovery_preserves_file_level_errors() {
+    let mut losses = Vec::new();
+    let error = super::rectangular_construction_or_native(
+        Err(cadmpeg_core::CodecError::WrongFormat("source".into())),
+        "f3d:scope#10",
+        &mut losses,
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::WrongFormat(reason) if reason == "source"));
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn integer_offsets_are_locations_and_float_offsets_stay_compared() {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let stripped = |mut value: serde_json::Value| {
+        super::strip_scope_variant_provenance(&ctx, &mut value, false).unwrap();
+        value
+    };
+    let standard = |offset: u64| {
+        serde_json::json!({"hole_extent": {"standard": {
+            "offset": offset, "standard": "ISO", "fit": "Normal",
+            "size": "M6", "fastener": "Socket head cap screw"}}})
+    };
+    assert_eq!(stripped(standard(120)), stripped(standard(480)));
+    let alignment = |x: f64| serde_json::json!({"alignment": {"offset": [x, 0.0, 0.0]}});
+    assert_ne!(stripped(alignment(1.0)), stripped(alignment(2.0)));
 }

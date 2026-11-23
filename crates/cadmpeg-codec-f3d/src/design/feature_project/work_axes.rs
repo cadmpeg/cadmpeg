@@ -11,7 +11,8 @@ use cadmpeg_ir::design::construction::{
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::options::{NativeOption, NativeOptions};
 use cadmpeg_ir::features::datums::DatumAxisDraft;
-use cadmpeg_ir::features::{FeatureDefinition, FeatureDirection3, FinitePoint3};
+use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
+use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, Length};

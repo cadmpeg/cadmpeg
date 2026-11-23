@@ -71,6 +71,10 @@ pub(crate) enum CatiaLossCode {
     TopologyAffineVertexReconciled,
     /// A planar shared-edge lift uses a native parameter-map fit tolerance.
     GeometryParameterMapAccuracyInferred,
+    /// Native local surface limits and affine chart maps remain outside the neutral carrier.
+    GeometrySurfaceParametersNotTransferred,
+    /// Native surface extrapolation controls remain outside the neutral carrier.
+    GeometrySurfaceExtrapolationNotTransferred,
     /// Bounded native plane charts emit neutral plane supports without their intervals.
     GeometryPlaneBoundsNotTransferred,
     /// Extended rational weight-row controls use an inferred expansion.
@@ -172,6 +176,9 @@ pub(crate) enum CatiaLossCode {
     /// Design parameters and `Range` nominals read stored `E7` and `E8` literals
     /// as the values one and zero.
     HistoryParameterLiteralAssumed,
+    /// Parameters that hold an input parameter the decoder resolved as text,
+    /// or omit it, and state no dependency on that parameter.
+    DesignParameterReferenceAsText,
     /// Materials, unbound NURBS caches, and document metadata were not transferred.
     AttributesMaterialsMetadataNotTransferred,
     /// Dimension scalars retain no admitted physical-quantity discriminator.
@@ -208,6 +215,8 @@ impl CatiaLossCode {
         Self::GeometryRollingSheetExtended,
         Self::TopologyAffineVertexReconciled,
         Self::GeometryParameterMapAccuracyInferred,
+        Self::GeometrySurfaceParametersNotTransferred,
+        Self::GeometrySurfaceExtrapolationNotTransferred,
         Self::GeometryPlaneBoundsNotTransferred,
         Self::GeometrySurfaceWeightsInferred,
         Self::GeometryPlanePcurveProjected,
@@ -258,6 +267,7 @@ impl CatiaLossCode {
         Self::HistoryRelationDependenciesBounded,
         Self::HistoryDefinitionChainsRetained,
         Self::HistoryParameterLiteralAssumed,
+        Self::DesignParameterReferenceAsText,
         Self::AttributesMaterialsMetadataNotTransferred,
         Self::AttributesDimensionQuantityUnresolved,
         Self::AttributesPmiToleranceUntransferred,
@@ -287,6 +297,12 @@ impl CatiaLossCode {
             Self::GeometryConicBranchBoundsInferred => "geometry.conic-branch-bounds-inferred",
             Self::GeometryParameterMapAccuracyInferred => {
                 "geometry.parameter-map-accuracy-inferred"
+            }
+            Self::GeometrySurfaceParametersNotTransferred => {
+                "geometry.surface-parameters-not-transferred"
+            }
+            Self::GeometrySurfaceExtrapolationNotTransferred => {
+                "geometry.surface-extrapolation-not-transferred"
             }
             Self::GeometryPlaneBoundsNotTransferred => "geometry.plane-bounds-not-transferred",
             Self::GeometrySurfaceWeightsInferred => "geometry.surface-weights-inferred",
@@ -343,6 +359,7 @@ impl CatiaLossCode {
             Self::HistoryRelationDependenciesBounded => "history.relation-dependencies-bounded",
             Self::HistoryDefinitionChainsRetained => "history.definition-chains-retained",
             Self::HistoryParameterLiteralAssumed => "history.parameter-literal-assumed",
+            Self::DesignParameterReferenceAsText => "design.parameter-reference-as-text",
             Self::AttributesMaterialsMetadataNotTransferred => {
                 "attributes.materials-metadata-not-transferred"
             }
@@ -407,7 +424,9 @@ impl CatiaLossCode {
             | Self::GeometryConicBranchBoundsInferred
             | Self::GeometrySheetSurfaceFitted
             | Self::GeometryRollingBallRailsAdjusted => LossTaxonomy::GeometryAgreementSampled,
-            Self::GeometryPlaneBoundsNotTransferred
+            Self::GeometrySurfaceParametersNotTransferred
+            | Self::GeometrySurfaceExtrapolationNotTransferred
+            | Self::GeometryPlaneBoundsNotTransferred
             | Self::GeometryUnresolvedCarriers
             | Self::GeometryBrepNotTransferred
             | Self::GeometryPlaneParametersInvalid
@@ -461,6 +480,7 @@ impl CatiaLossCode {
             | Self::HistoryRelationDependenciesBounded
             | Self::HistoryDefinitionChainsRetained => LossTaxonomy::FeatureHistoryRetained,
             Self::TopologyUnselectedBodiesRetained => LossTaxonomy::FeatureHistoryRetained,
+            Self::DesignParameterReferenceAsText => LossTaxonomy::ParametricRecordOmitted,
         }
     }
 
@@ -509,6 +529,8 @@ mod tests {
                 "geometry.rolling-sheet-extended",
                 "topology.affine-vertex-reconciled",
                 "geometry.parameter-map-accuracy-inferred",
+                "geometry.surface-parameters-not-transferred",
+                "geometry.surface-extrapolation-not-transferred",
                 "geometry.plane-bounds-not-transferred",
                 "geometry.surface-weights-inferred",
                 "geometry.plane-pcurve-projected",
@@ -559,6 +581,7 @@ mod tests {
                 "history.relation-dependencies-bounded",
                 "history.definition-chains-retained",
                 "history.parameter-literal-assumed",
+                "design.parameter-reference-as-text",
                 "attributes.materials-metadata-not-transferred",
                 "attributes.dimension-quantity-unresolved",
                 "attributes.pmi-tolerance-untransferred",
