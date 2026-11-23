@@ -6,7 +6,9 @@ use super::history_states::{
     bound_scope_history, effective_scope_previous_history_state_id, unique_history_state,
     unique_history_state_pair,
 };
-use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
+use crate::history_records::{
+    AsmDeltaState, AsmHistoricalRelation, AsmHistoricalTopology, AsmHistory,
+};
 use std::collections::{HashMap, HashSet};
 
 pub(crate) fn project_feature_input_topologies(
@@ -126,6 +128,7 @@ pub(super) fn project_input_topology(
     })?;
     let mut edge_geometry = project_input_edge_geometry(topology, &prefix);
     super::chamfer_supports::attach(feature, &history.id, topology, &prefix, &mut edge_geometry);
+    let face_owners = project_input_face_owners(topology, &prefix);
     let id = crate::ids::history_input_state_id(&prefix);
     let input_of = feature.id.clone();
     let native_ref = state.id.clone();
@@ -138,8 +141,110 @@ pub(super) fn project_input_topology(
         edges,
         vertices,
         edge_geometry,
+        face_owners,
         native_ref: Some(native_ref),
     })
+}
+
+/// The body that holds each face of a state with more than one body.
+///
+/// A body holds a face through its regions and their shells. A face that no
+/// shell lists, or that shells of two bodies list, has no entry. A state with
+/// one body gives every face the same owner, so it states none.
+fn project_input_face_owners(
+    topology: &AsmHistoricalTopology,
+    prefix: &cadmpeg_ir::ids::IdentityKey,
+) -> Vec<cadmpeg_ir::features::evaluation::HistoricalFaceOwner> {
+    fn members(relations: &[AsmHistoricalRelation]) -> HashMap<i64, &[i64]> {
+        relations
+            .iter()
+            .map(|relation| (relation.owner_ref, relation.member_refs.as_slice()))
+            .collect()
+    }
+    if topology.bodies.len() < 2 {
+        return Vec::new();
+    }
+    let region_shells = members(&topology.region_shells);
+    let shell_faces = members(&topology.shell_faces);
+    let state_faces = topology.faces.iter().copied().collect::<HashSet<_>>();
+    let mut owners = HashMap::<i64, Option<i64>>::new();
+    for relation in &topology.body_regions {
+        if !topology.bodies.contains(&relation.owner_ref) {
+            continue;
+        }
+        for shell in relation
+            .member_refs
+            .iter()
+            .filter_map(|region| region_shells.get(region))
+            .flat_map(|shells| shells.iter())
+        {
+            for face in shell_faces
+                .get(shell)
+                .into_iter()
+                .flat_map(|faces| faces.iter())
+            {
+                if !state_faces.contains(face) {
+                    continue;
+                }
+                let owner = owners.entry(*face).or_insert(Some(relation.owner_ref));
+                if *owner != Some(relation.owner_ref) {
+                    *owner = None;
+                }
+            }
+        }
+    }
+    let mut owned = owners
+        .into_iter()
+        .filter_map(|(face, body)| Some((face, body?)))
+        .collect::<Vec<_>>();
+    owned.sort_unstable();
+    owned
+        .into_iter()
+        .map(
+            |(face, body)| cadmpeg_ir::features::evaluation::HistoricalFaceOwner {
+                face: crate::ids::history_input_face_id(prefix, face),
+                body: crate::ids::history_input_body_id(prefix, body),
+            },
+        )
+        .collect()
+}
+
+/// Keep the owners of the faces that some feature definition selects. A
+/// consumer that rebuilds the state's bodies reads them to find the body a
+/// selected face belongs to.
+pub(crate) fn retain_selected_face_owners(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    features: &[cadmpeg_ir::features::Feature],
+    input_topologies: &mut [cadmpeg_ir::features::evaluation::FeatureInputTopology],
+) -> Result<(), cadmpeg_core::CodecError> {
+    use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
+    let owned = input_topologies
+        .iter()
+        .flat_map(|topology| &topology.face_owners)
+        .map(|owner| owner.face.as_str())
+        .collect::<HashSet<_>>();
+    if owned.is_empty() {
+        return Ok(());
+    }
+    let mut selected = HashSet::<String>::new();
+    for feature in features {
+        feature
+            .evaluation
+            .definition()
+            .visit_local_members(ctx, &mut |target| {
+                if owned.contains(target) && !selected.contains(target) {
+                    selected.insert(target.to_owned());
+                }
+                Ok(())
+            })?;
+    }
+    drop(owned);
+    for topology in input_topologies {
+        topology
+            .face_owners
+            .retain(|owner| selected.contains(owner.face.as_str()));
+    }
+    Ok(())
 }
 
 /// Keep the edge geometry of the historical edges that some feature

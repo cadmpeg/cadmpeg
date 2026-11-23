@@ -87,6 +87,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
     let historical_edge =
         HistoricalEdgeId::mint("test:model:historical-edge#local").expect("valid identity");
     let state = FeatureInputTopology {
+        face_owners: Vec::new(),
         id: state_id.clone(),
         input_of: feature_id.clone(),
         bodies: crate::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
