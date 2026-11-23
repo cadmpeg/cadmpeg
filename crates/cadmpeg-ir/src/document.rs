@@ -628,6 +628,26 @@ macro_rules! declare_home_arenas {
                 0 $(+ self.$field.len())*
             }
 
+            /// Whether every arena is in increasing order of id, as
+            /// [`Self::finalize`] leaves it.
+            pub(crate) fn is_finalized(&self) -> bool {
+                true $(&& arena_is_ordered(&self.$field))*
+            }
+
+            /// Keeps the first record of each id in each sorted arena and
+            /// drops the later ones, returning each repeated id whose copies
+            /// differ.
+            pub(crate) fn drop_repeated_ids(&mut self, home: &str) -> Vec<RepeatedId> {
+                let mut repeated = Vec::new();
+                $(keep_first_ids(
+                    &mut self.$field,
+                    crate::schema::ArenaRecord::record_identity,
+                    &format!("{home}.{}", stringify!($field)),
+                    &mut repeated,
+                );)*
+                repeated
+            }
+
             /// Sort each arena lexicographically by its entity identity.
             pub fn finalize(&mut self) {
                 $(if !arena_is_ordered(&self.$field) {
@@ -747,6 +767,11 @@ macro_rules! declare_topology {
             where
                 S: Serializer,
             {
+                if !self.is_finalized() {
+                    let mut sorted = self.clone();
+                    sorted.finalize();
+                    return sorted.serialize(serializer);
+                }
                 TopologyWriteWire {
                     $($field: model_write_value!(self, $field),)*
                 }
@@ -896,6 +921,11 @@ macro_rules! declare_model {
                 S: Serializer,
             {
                 feature_parents::validate(&[self]).map_err(serde::ser::Error::custom)?;
+                if !self.is_finalized() {
+                    let mut sorted = self.clone();
+                    sorted.finalize();
+                    return sorted.serialize(serializer);
+                }
                 ModelWriteWire {
                     $($field: model_write_value!(self, $field),)*
                 }
@@ -1196,6 +1226,56 @@ fn arena_is_ordered<T: crate::schema::ArenaRecord>(values: &[T]) -> bool {
     values
         .windows(2)
         .all(|pair| pair[0].record_identity() <= pair[1].record_identity())
+}
+
+/// An id a sorted arena held more than once.
+#[derive(Debug)]
+pub(crate) struct RepeatedId {
+    /// The arena, as `<home>.<field>` or `native.<codec>.<arena>`.
+    pub(crate) arena: String,
+    /// The repeated id.
+    pub(crate) id: String,
+    /// The number of later records dropped.
+    pub(crate) dropped: usize,
+    /// Whether a dropped record differs from the kept one.
+    pub(crate) differs: bool,
+}
+
+/// Drops each record of a sorted arena whose id equals the one before it, so
+/// the first record of each id stays, and records each repeated id whose
+/// copies differ from the first.
+///
+/// Copies that hold one value are one record, so dropping them loses
+/// nothing; they are not recorded.
+pub(crate) fn keep_first_ids<T: PartialEq>(
+    records: &mut Vec<T>,
+    id: impl Fn(&T) -> &str,
+    arena: &str,
+    repeated: &mut Vec<RepeatedId>,
+) {
+    let mut current: Option<RepeatedId> = None;
+    records.dedup_by(|later, earlier| {
+        if id(later) != id(earlier) {
+            return false;
+        }
+        match current.as_mut() {
+            Some(run) if run.id == id(later) => {
+                run.dropped += 1;
+                run.differs |= later != earlier;
+            }
+            _ => {
+                repeated.extend(current.take().filter(|run| run.differs));
+                current = Some(RepeatedId {
+                    arena: arena.to_owned(),
+                    id: id(later).to_owned(),
+                    dropped: 1,
+                    differs: later != earlier,
+                });
+            }
+        }
+        true
+    });
+    repeated.extend(current.filter(|run| run.differs));
 }
 
 fn sorted_rows<'a, T: crate::schema::ArenaRecord, U>(
@@ -2143,6 +2223,14 @@ struct CadIrReadWire {
 impl Serialize for CadIr {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.check_scope().map_err(serde::ser::Error::custom)?;
+        if !(self.design.is_finalized()
+            && self.process.is_finalized()
+            && self.native.is_finalized())
+        {
+            let mut sorted = self.clone();
+            sorted.finalize();
+            return sorted.serialize(serializer);
+        }
         CadIrWriteWire {
             ir_version: IrVersion,
             fragment: self.fragment,
@@ -2536,6 +2624,22 @@ impl CadIr {
         let probe = serde_json::from_str::<VersionProbe>(s)?;
         check_ir_version(probe.ir_version.as_ref())?;
         serde_json::from_str::<Self>(s)
+    }
+
+    /// Sorts every arena of the document's homes and native namespaces by
+    /// id, keeping records of one id in their present order, then keeps the
+    /// first record of each id and drops the later ones. Returns each
+    /// repeated id whose copies differ; copies that hold one value are one
+    /// record and are not returned. The arenas of a state's delta are left as
+    /// they are.
+    pub(crate) fn drop_repeated_ids(&mut self) -> Vec<RepeatedId> {
+        self.finalize();
+        let mut repeated = self.geometry.drop_repeated_ids("topology");
+        repeated.extend(self.model.drop_repeated_ids("model"));
+        repeated.extend(self.design.drop_repeated_ids("design"));
+        repeated.extend(self.process.drop_repeated_ids("process"));
+        repeated.extend(self.native.drop_repeated_ids());
+        repeated
     }
 
     /// Sort geometry, model, design, process, native, and unknown-record

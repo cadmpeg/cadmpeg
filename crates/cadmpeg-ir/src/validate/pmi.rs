@@ -10,7 +10,7 @@ mod tests;
 use super::record_finding;
 use crate::document::CadIr;
 use crate::index::identities::BorrowedIdentities;
-use crate::pmi::{PmiDefinition, PmiTarget};
+use crate::pmi::{DimensionModifier, PmiDefinition, PmiTarget};
 use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 use nominals::BoundParameters;
@@ -131,6 +131,18 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                         format_args!("inconsistent geometric tolerance-zone constraints"),
                     );
                 }
+                if zones
+                    .iter()
+                    .any(|zone| zone.form.other_names_a_typed_form())
+                {
+                    record_finding(
+                        findings,
+                        Check::Pmi,
+                        crate::report::Severity::Error,
+                        Some(annotation.id.as_str()),
+                        format_args!("tolerance zone's other form names a typed form"),
+                    );
+                }
                 if let Some(id) = datum_system {
                     if !matches!(
                         definitions.get(id.as_str()).copied(),
@@ -156,18 +168,17 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                         format_args!("dimension nominal quantity disagrees with its kind"),
                     );
                 }
-                let repeated = dimension
+                if dimension
                     .modifiers
                     .iter()
-                    .enumerate()
-                    .any(|(index, modifier)| dimension.modifiers[..index].contains(modifier));
-                if repeated {
+                    .any(DimensionModifier::other_names_a_typed_modifier)
+                {
                     record_finding(
                         findings,
                         Check::Pmi,
                         crate::report::Severity::Error,
                         Some(annotation.id.as_str()),
-                        format_args!("dimension states a modifier more than once"),
+                        format_args!("dimension's other modifier names a typed modifier"),
                     );
                 }
                 let id = annotation.id.as_str();

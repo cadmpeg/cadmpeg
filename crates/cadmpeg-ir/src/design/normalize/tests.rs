@@ -373,12 +373,13 @@ fn document() -> CadIr {
             designation("G6", FitZone::Hole, ""),
             Some(designation("h7", FitZone::Shaft, "")),
         )),
-        modifiers: vec![
-            DimensionModifier::Other("Auxiliary".to_owned()),
+        modifiers: [
+            DimensionModifier::Other(cadmpeg_core::nonblank_literal!("Auxiliary")),
             DimensionModifier::Reference,
-            DimensionModifier::Other("CONTROLLED RADIUS".to_owned()),
-            DimensionModifier::Other("flat".to_owned()),
-        ],
+            DimensionModifier::Other(cadmpeg_core::nonblank_literal!("CONTROLLED RADIUS")),
+            DimensionModifier::Other(cadmpeg_core::nonblank_literal!("flat")),
+        ]
+        .into(),
         ..PmiDimension::new(PmiDimensionKind::Size)
     };
     ir.model.pmi.push(PmiAnnotation::new(
@@ -561,8 +562,9 @@ fn fits_split_and_other_texts_take_their_arms() {
         [
             DimensionModifier::Reference,
             DimensionModifier::ControlledRadius,
-            DimensionModifier::Other("flat".to_owned()),
+            DimensionModifier::Other(cadmpeg_core::nonblank_literal!("flat")),
         ]
+        .into()
     );
     let PmiDefinition::GeometricTolerance { zones, .. } = &ir.model.pmi[1].definition else {
         panic!("a geometric tolerance");

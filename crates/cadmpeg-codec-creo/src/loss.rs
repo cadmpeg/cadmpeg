@@ -47,6 +47,8 @@ pub(crate) enum CreoLossCode {
     CompressedSectionUnexpanded,
     /// Geometry-looking bytes in a physical section have no visible-namespace ownership.
     PhysicalGeometryOwnerUnresolved,
+    /// A surface row restates the id of an earlier row and is not stated.
+    SurfaceRowRepeated,
     /// A positional ellipse flip is not a complete compact integer.
     ReferenceConicPrefixUnresolved,
     /// No persistence-layout discriminant matched, so no layout-specific
@@ -327,6 +329,7 @@ impl CreoLossCode {
             Self::ContainerCensus => "container.census",
             Self::CompressedSectionUnexpanded => "container.compressed-section-unexpanded",
             Self::PhysicalGeometryOwnerUnresolved => "container.physical-geometry-owner-unresolved",
+            Self::SurfaceRowRepeated => "container.surface-row-repeated",
             Self::ReferenceConicPrefixUnresolved => "reference.conic-prefix-unresolved",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::LegacyRealValueUnresolved => "legacy.real-value-unresolved",
@@ -549,6 +552,7 @@ impl CreoLossCode {
             | Self::SectionSplineUnresolved
             | Self::CompressedSectionUnexpanded
             | Self::PhysicalGeometryOwnerUnresolved
+            | Self::SurfaceRowRepeated
             | Self::ReferenceConicPrefixUnresolved
             | Self::SurfacePrototypeFieldRetained
             | Self::SweepEnvelopeReplayUnresolved
@@ -683,6 +687,7 @@ impl CreoLossCode {
             Self::LegacyRealValueUnresolved
             | Self::CompressedSectionUnexpanded
             | Self::PhysicalGeometryOwnerUnresolved
+            | Self::SurfaceRowRepeated
             | Self::ReferenceConicPrefixUnresolved
             | Self::TocScanCapped
             | Self::LegacyIntegerValueUnresolved
@@ -824,6 +829,7 @@ mod tests {
                 "container.census",
                 "container.compressed-section-unexpanded",
                 "container.physical-geometry-owner-unresolved",
+                "container.surface-row-repeated",
                 "reference.conic-prefix-unresolved",
                 "source.dialect-unverified",
                 "legacy.real-value-unresolved",
