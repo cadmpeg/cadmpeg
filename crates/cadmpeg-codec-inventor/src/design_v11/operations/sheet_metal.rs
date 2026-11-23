@@ -12,7 +12,10 @@ use cadmpeg_ir::design::ops::sheet_metal::{
 };
 use cadmpeg_ir::design::options::{Thickness, WallSide};
 use cadmpeg_ir::features as old;
-use cadmpeg_ir::features::sheet_metal_forms::SheetMetalThicknessSide;
+use cadmpeg_ir::features::profiles::PlanarProfileRef;
+use cadmpeg_ir::features::sheet_metal_forms::{
+    SheetMetalCornerEffect, SheetMetalReliefForm, SheetMetalThicknessSide, SheetMetalTransitionForm,
+};
 use cadmpeg_ir::features::FeatureOperation as LegacyOperation;
 use cadmpeg_ir::scalar::{Length, PositiveLength};
 use cadmpeg_ir::sketches::Sketch;
@@ -74,8 +77,8 @@ pub(super) fn operation(
             attachment,
         } => (|| {
             match profile {
-                old::PlanarProfileRef::Sketch(id)
-                | old::PlanarProfileRef::SketchRegions { sketch: id, .. }
+                PlanarProfileRef::Sketch(id)
+                | PlanarProfileRef::SketchRegions { sketch: id, .. }
                     if sketches
                         .iter()
                         .any(|sketch| &sketch.id == id && !sketch.profiles.is_empty()) => {}
@@ -129,7 +132,7 @@ pub(super) fn operation(
                 inside_radius: Dimension::Literal(*inside_radius),
                 relief: AttachedRelief {
                     form: match relief.form {
-                        old::SheetMetalReliefForm::StyleDefault => AttachedReliefForm::StyleDefault,
+                        SheetMetalReliefForm::StyleDefault => AttachedReliefForm::StyleDefault,
                     },
                     width: Dimension::Literal(relief.width),
                     depth: Dimension::Literal(relief.depth),
@@ -137,7 +140,7 @@ pub(super) fn operation(
                     seam_gap: Dimension::Literal(relief.seam_gap),
                 },
                 transition_form: match transition.form {
-                    old::SheetMetalTransitionForm::StyleDefault => TransitionForm::StyleDefault,
+                    SheetMetalTransitionForm::StyleDefault => TransitionForm::StyleDefault,
                 },
                 transition_radius: Dimension::Literal(transition.radius),
             })
@@ -153,7 +156,7 @@ pub(super) fn operation(
         }
         LegacyOperation::SheetMetalCorner {
             bend,
-            effect: old::SheetMetalCornerEffect::Unchanged,
+            effect: SheetMetalCornerEffect::Unchanged,
         } => (|| {
             let source = features
                 .iter()

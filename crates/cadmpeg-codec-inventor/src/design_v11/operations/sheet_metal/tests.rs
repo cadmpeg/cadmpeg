@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 use cadmpeg_ir::design::names::NativeNameValue;
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::{DistinctMembers, EdgeSelection};
+use cadmpeg_ir::features::sheet_metal_forms::SheetMetalCornerEffect;
 use serde_json::{json, Value};
 
 fn source(kind: &str, value: &Value) -> LegacyOperation {
@@ -77,14 +80,12 @@ fn feature(key: &str, value: LegacyOperation) -> old::Feature {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: old::DistinctMembers::default(),
+        dependencies: DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: old::FeatureContent::default(),
-        evaluation: old::FeatureEvaluation::from_definition(old::FeatureDefinition::Operation(
-            value,
-        )),
+        evaluation: FeatureEvaluation::from_definition(old::FeatureDefinition::Operation(value)),
         native_ref: None,
     }
 }
@@ -233,10 +234,10 @@ fn generated_attachments_keep_producer_and_local_name() {
         "base",
         LegacyOperation::SheetMetalCorner {
             bend: old::FeatureId::mint("inventor:design:feature#bend").expect("bend identity"),
-            effect: old::SheetMetalCornerEffect::Unchanged,
+            effect: SheetMetalCornerEffect::Unchanged,
         },
     );
-    let value: old::EdgeSelection = serde_json::from_value(json!({"kind":"generated","value":{
+    let value: EdgeSelection = serde_json::from_value(json!({"kind":"generated","value":{
         "edges":[{"feature":producer.id,"local_id":"edge-2"},{"feature":producer.id,"local_id":"edge-1"}],
         "native":"inventor:edges#attachment"
     }})).expect("generated edge operands");
