@@ -2736,7 +2736,9 @@ serialization order, record order, numeric entity identifiers, or equal
 transform values from different placement identities. `PLUS_MINUS_TOLERANCE` carries
 numeric lower and upper
 deviations, or the form variance, zone variance, grade, and source fields of
-`LIMITS_AND_FITS`.
+`LIMITS_AND_FITS`. A `TOLERANCE_VALUE` whose `lower_bound` exceeds its
+`upper_bound` holds the upper deviation in `lower_bound` and the lower
+deviation in `upper_bound`.
 
 An `APLL_POINT` or `APLL_POINT_WITH_SURFACE` referenced by an annotation
 placeholder, annotation-to-annotation, annotation-to-model, or auxiliary
