@@ -25,6 +25,7 @@ use cadmpeg_ir::units::UnitVector3;
 
 use cadmpeg_core::text::NonBlankString;
 
+use crate::construction;
 use crate::extents::{
     axis_at, double_slot, is, output, profile_of, profile_selection, Profile, KIND_FINITE,
     MM_PER_M, PART_CLASS,
@@ -188,7 +189,7 @@ fn helix(
         helix: Helix {
             placement: Construction::<kinds::Frame> {
                 resolved: Some(placement),
-                ..Construction::default()
+                ..construction::empty()
             },
             start: None,
             shape: HelixShape::Helix {
