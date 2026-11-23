@@ -600,3 +600,136 @@ fn breaks_at_carrier_knots_fit_each_quadratic_span_at_the_seed() {
     // of the 3 by 4 patches.
     assert_eq!(evaluations, 10 * 13 + 3 * 4 * 25);
 }
+
+/// Document with a unit cylinder about the Z axis and a bicubic spline surface `z = 0.3 x y`
+/// over `[-2, 2]²`, and a curve whose degree-one chart samples their intersection
+/// coarsely. Returns the document and the curve identity.
+fn cylinder_on_spline_intersection(linear: f64) -> (crate::CadIr, CurveId) {
+    use crate::geometry::analytic::CylinderSurface;
+    use crate::geometry::intersection_curves::IntcurveSupportSide;
+    use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    use crate::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+    use crate::ids::SurfaceId;
+
+    let mut ir = crate::examples::unit_cube().unwrap();
+    ir.tolerances.linear = crate::scalar::PositiveLength::new(linear).unwrap();
+    let grid = [-2.0, -2.0 / 3.0, 2.0 / 3.0, 2.0];
+    let spline = NurbsSurface::from_lanes(
+        NurbsSurfaceAxis::new(3, vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(3, vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
+            grid.iter()
+                .map(|&x| {
+                    grid.iter()
+                        .map(|&y| Point3::new(x, y, 0.3 * x * y))
+                        .collect()
+                })
+                .collect(),
+            None,
+        ),
+        false,
+    )
+    .unwrap();
+    let cylinder = CylinderSurface::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        crate::math::Vector3::new(0.0, 0.0, 1.0),
+        crate::math::Vector3::new(1.0, 0.0, 0.0),
+        1.0,
+    )
+    .unwrap();
+    let mut add = |name: &str, geometry: SolvedSurfaceGeometry| {
+        let id = SurfaceId::mint(name).unwrap();
+        ir.geometry.surfaces.push(Surface {
+            id: id.clone(),
+            geometry: SurfaceGeometry::Solved(geometry),
+            source_object: None,
+            native_ref: None,
+        });
+        id
+    };
+    let cylinder = add(
+        "test:approximation:surface#cylinder",
+        SolvedSurfaceGeometry::Cylinder(cylinder),
+    );
+    let spline = add(
+        "test:approximation:surface#free-form",
+        SolvedSurfaceGeometry::Nurbs(spline),
+    );
+    let segments = 8_u32;
+    let points: Vec<Point3> = (0..=segments)
+        .map(|i| {
+            let t = 0.3 + 1.6 * f64::from(i) / f64::from(segments);
+            Point3::new(t.cos(), t.sin(), 0.15 * (2.0 * t).sin())
+        })
+        .collect();
+    let mut knots = vec![0.0];
+    knots.extend((0..=segments).map(f64::from));
+    knots.push(f64::from(segments));
+    let chart = NurbsCurve::from_lanes(1, knots, points, None, false).unwrap();
+    let curve = CurveId::mint("test:approximation:curve#cylinder-on-spline").unwrap();
+    let construction =
+        ProceduralCurveId::mint("test:approximation:construction#cylinder-on-spline").unwrap();
+    let side = |surface| IntcurveSupportSide {
+        surface: Some(surface),
+        pcurve: None,
+    };
+    let context = IntcurveSupportContext::try_new(
+        [side(cylinder), side(spline)],
+        [0.0, f64::from(segments)],
+        [Vec::new(), Vec::new(), Vec::new()],
+    )
+    .unwrap();
+    ir.geometry.procedural_curves.push(ProceduralCurve::new(
+        construction.clone(),
+        ProceduralCurveDefinition::Intersection {
+            context,
+            discontinuity_flag: false,
+            cache: None,
+        },
+    ));
+    ir.geometry.curves.push(Curve {
+        id: curve.clone(),
+        geometry: CurveGeometry::Procedural {
+            construction,
+            cache: Some(SolvedCurveGeometry::Nurbs(chart)),
+        },
+        parameter_range: None,
+        source_object: None,
+        native_ref: None,
+    });
+    (ir, curve)
+}
+
+/// The largest departure of `fitted` from the cylinder and from the spline surface of
+/// [`cylinder_on_spline_intersection`], over the sampled parameters.
+fn departure_from_supports(fitted: &NurbsCurve, steps: u32) -> f64 {
+    let domain = crate::eval::nurbs_curve_parameter_domain(fitted)
+        .map(crate::topology::IncreasingParameterInterval::endpoints)
+        .unwrap();
+    (0..=steps)
+        .map(|i| {
+            let u = domain[0] + (domain[1] - domain[0]) * f64::from(i) / f64::from(steps);
+            let p =
+                crate::eval::decode::nurbs_curve_point_at(EvaluationAdmission::Standard, fitted, u)
+                    .unwrap()
+                    .get();
+            let on_cylinder = (p.x.hypot(p.y) - 1.0).abs();
+            let on_spline =
+                (p.z - 0.3 * p.x * p.y).abs() / (1.0 + 0.09 * (p.x * p.x + p.y * p.y)).sqrt();
+            on_cylinder.max(on_spline)
+        })
+        .fold(0.0, f64::max)
+}
+
+#[test]
+fn a_cylinder_spline_intersection_is_fitted_within_the_document_tolerance() {
+    let linear = 1.0e-5;
+    let (ir, curve) = cylinder_on_spline_intersection(linear);
+    let mut approximator = Approximator::new(&ir);
+    let Some(SolvedCurveGeometry::Nurbs(fitted)) = approximator.exact_intersection(curve.as_str())
+    else {
+        panic!("a cylinder and a spline surface meet in a fitted carrier");
+    };
+    assert!(departure_from_supports(&fitted, 4000) <= linear);
+    assert_eq!(approximator.free_form_curve_fits().0, 0);
+}

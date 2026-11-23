@@ -34,6 +34,9 @@ const MAX_SAMPLES: usize = 1 << 23;
 const MAX_EVALUATION_WORK: usize = 1 << 31;
 /// Model evaluation work one export may spend on exact curves, which can fall back to their charts.
 const MAX_EXACT_CURVE_WORK: usize = 1 << 26;
+/// Model evaluation work one export may spend on strict-limit attempts at exact curves on
+/// free-form surfaces. An exhausted attempt leaves the curve to the free-form limit.
+const MAX_STRICT_CURVE_WORK: usize = 1 << 26;
 /// Share of the model linear tolerance that one sampled carrier may use.
 const TOLERANCE_FRACTION: f64 = 0.25;
 /// Relative slack for a trim parameter at the end of a sampled domain.
@@ -62,6 +65,9 @@ struct FitEvaluation {
     // Separate from `work`, because an exact curve can fall back to its chart while a
     // surface that runs out of work drops its face from the shell.
     exact_curve_work: WorkBudget,
+    // Strict-limit attempts draw on their own counter, so an attempt that fails does not
+    // exhaust the work that the free-form limit needs.
+    strict_curve_work: WorkBudget,
     refusal: Cell<Option<ResourceLimit>>,
 }
 
@@ -94,6 +100,7 @@ impl<'a> Approximator<'a> {
             evaluation: FitEvaluation {
                 work: WorkBudget::new(MAX_EVALUATION_WORK),
                 exact_curve_work: WorkBudget::new(MAX_EXACT_CURVE_WORK),
+                strict_curve_work: WorkBudget::new(MAX_STRICT_CURVE_WORK),
                 refusal: Cell::new(None),
             },
             samples: MAX_SAMPLES,
@@ -124,8 +131,9 @@ impl<'a> Approximator<'a> {
         (self.analytic_blends, ANALYTIC_BLEND_RESIDUAL)
     }
 
-    /// The number of fitted curves that lie on a free-form surface, and their residual
-    /// limit in model length units, which differs from [`Self::residual_limit`].
+    /// The number of fitted curves that lie on a free-form surface and missed the strict
+    /// limit within the work caps, and the residual limit they keep in model length units,
+    /// which differs from [`Self::residual_limit`].
     pub fn free_form_curve_fits(&self) -> (usize, f64) {
         (self.free_form_curves, FREE_FORM_BLEND_RESIDUAL)
     }
@@ -310,52 +318,76 @@ impl<'a> Approximator<'a> {
         let chart = &chart_ending_on_edge_vertices(ir, index, owner, chart, cache.as_ref())?;
         let carrier = exact_carrier(index, context)?;
         let free_form = carrier.has_free_form_surface();
-        let tolerance = if free_form {
-            FREE_FORM_BLEND_RESIDUAL.max(strict_limit)
-        } else {
-            strict_limit
-        };
         let range = nurbs_curve_parameter_domain(chart)
             .map(crate::topology::IncreasingParameterInterval::endpoints)?;
         let evaluation = &self.evaluation;
-        let mut evaluate = |u: f64, _: f64| {
-            keep_refusal(
-                &evaluation.refusal,
-                EvaluationAdmission::Standard.within_work_slice(
+        // A curve on a free-form surface first tries the strict limit. A piecewise support can
+        // make that limit unreachable within the work caps, and the curve then keeps the
+        // free-form limit, which the export states.
+        let attempts: &[(f64, &WorkBudget)] = if free_form {
+            &[
+                (strict_limit, &evaluation.strict_curve_work),
+                (
+                    FREE_FORM_BLEND_RESIDUAL.max(strict_limit),
                     &evaluation.exact_curve_work,
-                    |admission| match carrier {
-                        ExactCarrier::Intersection(supports) => {
-                            exact_intersection_point(admission, supports, chart, u)
-                        }
-                        ExactCarrier::BlendRail {
-                            supports,
-                            side,
-                            radius,
-                        } => exact_blend_rail_point(admission, supports, side, radius, chart, u),
-                        ExactCarrier::BlendCap {
-                            supports,
-                            radius,
-                            other,
-                        } => exact_blend_cap_point(admission, supports, radius, other, chart, u),
-                    },
                 ),
-            )
-            .map(crate::features::geometry::FinitePoint3::get)
+            ]
+        } else {
+            &[(strict_limit, &evaluation.exact_curve_work)]
         };
-        let Grid {
-            rows,
-            knots: [knots, _],
-        } = sample(
-            [
-                Axis::new(range, &[], SEED_PATCHES)?,
-                Axis::new([0.0, 1.0], &[], 1)?,
-            ],
-            true,
-            tolerance,
-            &mut self.samples,
-            self.poles,
-            &mut evaluate,
-        )?;
+        let mut fit = None;
+        for (attempt, &(tolerance, work)) in attempts.iter().enumerate() {
+            let mut evaluate = |u: f64, _: f64| {
+                keep_refusal(
+                    &evaluation.refusal,
+                    EvaluationAdmission::Standard.within_work_slice(
+                        work,
+                        |admission| match carrier {
+                            ExactCarrier::Intersection(supports) => {
+                                exact_intersection_point(admission, supports, chart, u)
+                            }
+                            ExactCarrier::BlendRail {
+                                supports,
+                                side,
+                                radius,
+                            } => {
+                                exact_blend_rail_point(admission, supports, side, radius, chart, u)
+                            }
+                            ExactCarrier::BlendCap {
+                                supports,
+                                radius,
+                                other,
+                            } => {
+                                exact_blend_cap_point(admission, supports, radius, other, chart, u)
+                            }
+                        },
+                    ),
+                )
+                .map(crate::features::geometry::FinitePoint3::get)
+            };
+            let fitted = sample(
+                [
+                    Axis::new(range, &[], SEED_PATCHES)?,
+                    Axis::new([0.0, 1.0], &[], 1)?,
+                ],
+                true,
+                tolerance,
+                &mut self.samples,
+                self.poles,
+                &mut evaluate,
+            );
+            if let Some(grid) = fitted {
+                fit = Some((grid, free_form && attempt > 0));
+                break;
+            }
+        }
+        let (
+            Grid {
+                rows,
+                knots: [knots, _],
+            },
+            relaxed,
+        ) = fit?;
         let points: Vec<_> = rows
             .into_iter()
             .filter_map(|row| row.first().copied())
@@ -363,7 +395,7 @@ impl<'a> Approximator<'a> {
         let count = points.len();
         let fitted = NurbsCurve::new(3, knots, NurbsPoles3::Polynomial { points }, false).ok()?;
         self.poles = self.poles.checked_sub(count)?;
-        self.free_form_curves += usize::from(free_form);
+        self.free_form_curves += usize::from(relaxed);
         Some(SolvedCurveGeometry::Nurbs(fitted))
     }
 
