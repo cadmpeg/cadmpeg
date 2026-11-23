@@ -427,10 +427,13 @@ fn compact_boundary_advance_completes_a_two_edge_cycle() {
     );
     catia_test_context!(service_ctx);
     let choices = vec![vec![[0, 1]], vec![[0, 1]]];
-    let quotient =
-        crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [2, 3]])
-            .expect("build the initial mesh quotient")
-            .expect("initial quotient");
+    let quotient = crate::solve::mesh_quotient::quotient::initial_mesh_quotient(
+        &choices,
+        2,
+        &[[0, 1], [2, 3]],
+    )
+    .expect("build the initial mesh quotient")
+    .expect("initial quotient");
     let advance = |ctx: &DecodeContext<'_>| {
         let budget = WorkBudget::new(10_000);
         crate::solve::incidence::advance_compact_boundary_domains(

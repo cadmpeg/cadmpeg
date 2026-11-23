@@ -3,7 +3,8 @@
 
 use crate::test_support::test_archive::archive;
 use crate::FcstdCodec;
-use cadmpeg_ir::features::{ExtrudeExtent, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::extents::ExtrudeExtent;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 #[test]

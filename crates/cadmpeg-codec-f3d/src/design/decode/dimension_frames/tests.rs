@@ -86,6 +86,71 @@ fn standard_recipe_references_refuse_nested_items_and_token_text() {
 }
 
 #[test]
+fn counted_single_name_operands_keep_their_design_references_in_one_lane() {
+    let mut prefix = vec![0; 10];
+    for word in [1u32, 3, 2] {
+        prefix.extend_from_slice(&word.to_le_bytes());
+    }
+    let mut starts = Vec::new();
+    for (token, references) in [(b"2", &[301i32, 302, 303][..]), (b"4", &[401i32][..])] {
+        starts.push(1_000 + u64_from_index(prefix.len()));
+        prefix.extend_from_slice(&1u32.to_le_bytes());
+        prefix.extend_from_slice(&1u32.to_le_bytes());
+        prefix.extend_from_slice(token);
+        prefix.extend_from_slice(&0u32.to_le_bytes());
+        prefix.extend_from_slice(&u32::try_from(references.len()).unwrap().to_le_bytes());
+        for reference in references {
+            prefix.extend_from_slice(&reference.to_le_bytes());
+        }
+        prefix.extend_from_slice(&0u32.to_le_bytes());
+    }
+    prefix.extend_from_slice(&0u32.to_le_bytes());
+    let references = super::decode_recipe_references(&prefix, 1_000);
+    assert_eq!(
+        references
+            .iter()
+            .map(|reference| reference.design_reference)
+            .collect::<Vec<_>>(),
+        [301, 302, 303, 401]
+    );
+    assert_eq!(
+        references
+            .iter()
+            .map(|reference| reference.operand_offset)
+            .collect::<Vec<_>>(),
+        [
+            Some(starts[0]),
+            Some(starts[0]),
+            Some(starts[0]),
+            Some(starts[1])
+        ]
+    );
+    assert_eq!(
+        crate::records::dimensions::reference_lanes(&references)
+            .iter()
+            .map(|lane| lane.len())
+            .collect::<Vec<_>>(),
+        [3, 1]
+    );
+    assert_eq!(
+        crate::records::topology::face::prefix_operand_ordinals(&references),
+        Some(vec![0, 0, 0, 1])
+    );
+    prefix[18..22].copy_from_slice(&3u32.to_le_bytes());
+    let uncounted = super::decode_recipe_references(&prefix, 1_000);
+    assert_eq!(
+        uncounted
+            .iter()
+            .map(|reference| reference.design_reference)
+            .collect::<Vec<_>>(),
+        [301, 302, 303, 401]
+    );
+    assert!(uncounted
+        .iter()
+        .all(|reference| reference.operand_offset.is_none()));
+}
+
+#[test]
 fn counted_recipe_operands_keep_every_name_in_one_operand_lane() {
     // Two operands: the first names its face once, the second three times.
     let name = |prefix: &mut Vec<u8>, lead: u32, token: &[u8], reference: u32| {
@@ -748,6 +813,7 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
     let frame = parse_dimension_annotation_frame(
         &bytes,
         0,
+        bytes.len(),
         Some(383),
         &HashMap::from([(390, 391)]),
         &HashSet::from([354, 376]),
@@ -785,6 +851,7 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
     let leading = parse_dimension_annotation_frame(
         &bytes,
         0,
+        bytes.len(),
         None,
         &HashMap::from([(390, 391)]),
         &HashSet::from([354, 376]),
@@ -853,8 +920,13 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
     .is_none());
 }
 
-#[test]
-fn companion_interval_ends_before_a_foreign_scope_member() {
+/// A companion at offset 0 with payload at 58, owner record 10, a scope 12 at
+/// offset 80 that lists record 55, and the header of record 55 at offset 70.
+fn scope_member_fixture() -> (
+    crate::records::parameters::DesignParameterCompanion,
+    crate::records::feature::scope::DesignParameterScope,
+    crate::records::decal::DesignRecordHeader,
+) {
     let companion = crate::records::parameters::DesignParameterCompanion::unbound(
         "f3d:native:parameter-companion#11".into(),
         0,
@@ -906,15 +978,58 @@ fn companion_interval_ends_before_a_foreign_scope_member() {
         class_tag: crate::records::references::DesignClassTag::try_from("302".to_owned()).unwrap(),
         byte_offset: 70,
     };
-    let admitted = super::companion_owned_interval(
-        &companion,
-        std::iter::empty(),
-        &[],
-        &[scope],
-        &[header],
-        100,
-    );
+    (companion, scope, header)
+}
+
+#[test]
+fn companion_interval_ends_before_a_foreign_scope_member() {
+    let (companion, scope, header) = scope_member_fixture();
+    let scopes = [scope];
+    let headers = [header];
+    let admitted = super::CompanionBounds::new(std::iter::empty(), &[], &scopes, &headers)
+        .interval(&companion, 100);
     assert_eq!(admitted, Some((58, 70)));
+}
+
+#[test]
+fn companion_interval_ends_only_at_members_another_scope_lists() {
+    let (companion, scope, header) = scope_member_fixture();
+    let owner = crate::records::parameters::DesignParameterOwner::try_from(
+        crate::records::parameters::DesignParameterOwnerWire {
+            id: "f3d:native:design-parameter-owner#10".into(),
+            byte_offset: 0,
+            frame_length: 104,
+            class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned())
+                .unwrap(),
+            record_index: 10,
+            scope_record_index: 12,
+            local_ordinal: 0,
+            evaluated_value: 1.0,
+            evaluated_value_offset: 40,
+            parameter_record_index: 12,
+            owned_ordinal: 0,
+            variant: Some(0),
+            companion_record_index: 11,
+        },
+    )
+    .unwrap();
+    let owners = [owner];
+    let headers = [header];
+    let mut other = scope.clone();
+    other.id = "f3d:native:parameter-scope#13".into();
+    other.record_index = 13;
+    let shared = [scope.clone(), other];
+    let owned = [scope];
+    assert_eq!(
+        super::CompanionBounds::new(std::iter::empty(), &owners, &owned, &headers)
+            .interval(&companion, 100),
+        Some((58, 80))
+    );
+    assert_eq!(
+        super::CompanionBounds::new(std::iter::empty(), &owners, &shared, &headers)
+            .interval(&companion, 100),
+        Some((58, 70))
+    );
 }
 
 #[test]

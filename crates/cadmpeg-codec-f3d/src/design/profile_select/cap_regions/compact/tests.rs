@@ -64,14 +64,32 @@ fn lateral_ellipse_certificate_bounds_the_complete_carrier_and_its_projection() 
     };
     let outline = [Piece::Line(Point2::new(-2.0, 0.0), Point2::new(2.0, 0.0))];
     assert!(bounded_lateral_ellipse(
-        &topology, 1, 7, &frame, &outline, -4.0, TOLERANCE
+        &topology,
+        1,
+        7,
+        &frame,
+        &outline,
+        (-4.0, 0.0),
+        TOLERANCE
     ));
     assert!(!bounded_lateral_ellipse(
-        &topology, 1, 7, &frame, &outline, -2.5, TOLERANCE
+        &topology,
+        1,
+        7,
+        &frame,
+        &outline,
+        (-2.5, 0.0),
+        TOLERANCE
     ));
     let narrow = [Piece::Line(Point2::new(-0.5, 0.0), Point2::new(0.5, 0.0))];
     assert!(!bounded_lateral_ellipse(
-        &topology, 1, 7, &frame, &narrow, -4.0, TOLERANCE
+        &topology,
+        1,
+        7,
+        &frame,
+        &narrow,
+        (-4.0, 0.0),
+        TOLERANCE
     ));
 }
 
@@ -176,9 +194,10 @@ fn added_cap_certificate_requires_the_blind_distance_and_analytic_lateral_carrie
     use crate::design::geometry::ProfileGeometryWork;
     use crate::design::profile_select::ScopedExtrudeProfileResolution;
     use crate::history_records::AsmDeltaState;
-    use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
+    use cadmpeg_ir::features::extents::{
+        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
     };
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::scalar::NonZeroLength;
     use cadmpeg_ir::sketches::{
@@ -293,4 +312,94 @@ fn added_cap_certificate_requires_the_blind_distance_and_analytic_lateral_carrie
     let mut unsupported = prism_topology();
     unsupported.surface_planes[2].origin = Point3::new(0.0, 0.5, 0.0);
     assert!(run(unsupported, 2.0, BooleanOp::Join).is_none());
+}
+
+/// `prism_over(1.0)` moved by `offset`.
+fn prism_moved(offset: Vector3) -> AsmHistoricalTopology {
+    let mut topology = prism_topology();
+    for row in &mut topology.point_positions {
+        row.position = row.position.translated(offset, 1.0);
+    }
+    for row in &mut topology.surface_planes {
+        row.origin = row.origin.translated(offset, 1.0);
+    }
+    for row in &mut topology.curve_axes {
+        row.origin = row.origin.translated(offset, 1.0);
+    }
+    topology
+}
+
+#[test]
+fn lateral_face_beyond_the_sweep_continues_a_deleted_face_on_its_carrier() {
+    let frame = PlaneFrame {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u: Vector3::new(1.0, 0.0, 0.0),
+        v: Vector3::new(0.0, 1.0, 0.0),
+    };
+    // Face 2 of the prism lies on the plane y = 0 from height 0 to height 2.
+    let after = prism_topology();
+    let outline = [Piece::Line(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))];
+    let agrees = |before: &AsmHistoricalTopology, far: f64| {
+        let deleted = super::deleted_sides(before, &[2], &frame);
+        super::inserted_sides_agree(
+            &after,
+            &[2],
+            &deleted,
+            &frame,
+            &outline,
+            (far.min(0.0), far.max(0.0)),
+            TOLERANCE,
+        )
+    };
+    let none = AsmHistoricalTopology::default();
+    assert!(agrees(&none, 2.0));
+    assert!(!agrees(&none, 1.0));
+    // A deleted face on the same plane from height 1 to height 3 covers the
+    // part of the inserted face beyond the travel of 1.
+    assert!(agrees(&prism_moved(Vector3::new(0.0, 0.0, 1.0)), 1.0));
+    // A gap between the travel and the deleted face.
+    assert!(!agrees(&prism_moved(Vector3::new(0.0, 0.0, 1.5)), 1.0));
+    // A deleted face on a parallel plane.
+    assert!(!agrees(&prism_moved(Vector3::new(0.0, 0.5, 1.0)), 1.0));
+    // A deleted face that is parallel to the sketch plane.
+    let mut parallel = prism_moved(Vector3::new(0.0, 0.0, 1.0));
+    parallel.face_surfaces[2].carrier = parallel.face_surfaces[0].carrier;
+    assert!(!agrees(&parallel, 1.0));
+}
+
+#[test]
+fn two_sided_lateral_bounds_require_continuations_at_both_ends() {
+    let frame = PlaneFrame {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u: Vector3::new(1.0, 0.0, 0.0),
+        v: Vector3::new(0.0, 1.0, 0.0),
+    };
+    let after = prism_moved(Vector3::new(0.0, 0.0, -1.0));
+    let outline = [Piece::Line(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))];
+    let side = |low, high| super::DeletedSide {
+        carrier: super::SideCarrier::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 1.0, 0.0),
+        },
+        low,
+        high,
+    };
+    let agrees = |deleted: &[super::DeletedSide]| {
+        super::inserted_sides_agree(
+            &after,
+            &[2],
+            deleted,
+            &frame,
+            &outline,
+            (-0.5, 0.5),
+            TOLERANCE,
+        )
+    };
+    assert!(agrees(&[side(-1.0, -0.5), side(0.5, 1.0)]));
+    assert!(!agrees(&[side(-1.0, -0.6), side(0.5, 1.0)]));
+    assert!(!agrees(&[side(-1.0, -0.5), side(0.6, 1.0)]));
+    assert!(!agrees(&[side(-1.0, -0.5)]));
+    assert!(!agrees(&[side(0.5, 1.0)]));
 }

@@ -2,9 +2,8 @@
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
-use cadmpeg_ir::features::{
-    FeatureDefinition, FeatureOperation, FeatureResultMembers, FeatureResultTopology,
-};
+use cadmpeg_ir::features::evaluation::{FeatureResultMembers, FeatureResultTopology};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 
 use super::super::composite::{evaluate, valid};

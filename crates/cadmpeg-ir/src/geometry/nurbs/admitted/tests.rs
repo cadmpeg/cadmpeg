@@ -71,7 +71,8 @@ fn raw_curve_constructor_converts_rational_poles() {
 
 #[test]
 fn admitted_curve_constructor_keeps_polynomial_pole_storage() {
-    let points = vec![crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(); 2];
+    let points =
+        vec![crate::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(); 2];
     let address = points.as_ptr();
     let curve = NurbsCurve::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0], points, None, false).unwrap();
     let super::super::NurbsPoles3::Polynomial { points } = curve.into_parts().2 else {

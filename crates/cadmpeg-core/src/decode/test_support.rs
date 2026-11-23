@@ -1,9 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Test-only charge probes. Normal builds contain no probe state or calls.
+//! Test-only charge probes and decode contexts. Normal builds contain no
+//! probe state or calls.
 
 use std::cell::{Cell, RefCell};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
-use super::{ResourceDimension, ResourceLimits};
+use super::{
+    DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, ResourceDimension, ResourceLimits,
+};
+
+/// A service-policy decode context for a test that creates native records
+/// without reading a source file.
+#[must_use]
+pub fn service_decode_context() -> DecodeContext<'static> {
+    let arena = Box::leak(Box::new(DecodeArena::new()));
+    DecodeContext::new(arena, &DecodePolicy::service(), DecodeDepth::Full)
+}
 
 #[derive(Debug)]
 struct Target {
@@ -20,6 +32,10 @@ struct Recording {
     charged: u64,
 }
 
+static TARGET_ACTIVE: AtomicUsize = AtomicUsize::new(0);
+static RECORDING_ACTIVE: AtomicUsize = AtomicUsize::new(0);
+static WORK_ACTIVE: AtomicUsize = AtomicUsize::new(0);
+
 thread_local! {
     static TARGET: RefCell<Option<Target>> = const { RefCell::new(None) };
     static RECORDING: RefCell<Option<Recording>> = const { RefCell::new(None) };
@@ -32,6 +48,7 @@ struct RestoreTarget(Option<Target>);
 impl Drop for RestoreTarget {
     fn drop(&mut self) {
         TARGET.with(|target| *target.borrow_mut() = self.0.take());
+        TARGET_ACTIVE.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
@@ -74,6 +91,7 @@ pub fn charged_at<T>(
     operation: &str,
     run: impl FnOnce() -> T,
 ) -> (T, u64) {
+    RECORDING_ACTIVE.fetch_add(1, Ordering::Relaxed);
     let previous = RECORDING.with(|recording| {
         recording.replace(Some(Recording {
             dimension,
@@ -99,10 +117,14 @@ struct RestoreRecording(Option<Recording>);
 impl Drop for RestoreRecording {
     fn drop(&mut self) {
         RECORDING.with(|recording| *recording.borrow_mut() = self.0.take());
+        RECORDING_ACTIVE.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
 pub(super) fn record_charge(dimension: ResourceDimension, operation: &str, amount: u64) {
+    if RECORDING_ACTIVE.load(Ordering::Relaxed) == 0 {
+        return;
+    }
     RECORDING.with(|recording| {
         if let Some(recording) = recording.borrow_mut().as_mut() {
             if recording.dimension == dimension && recording.operation == operation {
@@ -122,6 +144,7 @@ pub(super) fn record_charge(dimension: ResourceDimension, operation: &str, amoun
 /// slice also debits its ancestors; [`WorkBudget::consume_child`](super::WorkBudget::consume_child)
 /// transfers count nothing. Nested recordings add to the outer recording.
 pub fn work_charged<T>(run: impl FnOnce() -> T) -> (T, u64) {
+    WORK_ACTIVE.fetch_add(1, Ordering::Relaxed);
     let outer = WORK.with(|work| work.replace(Some(0)));
     let guard = RestoreWork(outer);
     let result = run();
@@ -138,10 +161,14 @@ impl Drop for RestoreWork {
         let inner = WORK.with(|work| work.get().unwrap_or(0));
         let outer = self.0.map(|outer| outer.saturating_add(inner));
         WORK.with(|work| work.set(outer));
+        WORK_ACTIVE.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
 pub(super) fn record_work(work: usize) {
+    if WORK_ACTIVE.load(Ordering::Relaxed) == 0 {
+        return;
+    }
     WORK.with(|recorded| {
         if let Some(total) = recorded.get() {
             let work = u64::try_from(work).unwrap_or(u64::MAX);
@@ -157,6 +184,7 @@ pub fn without_probe<T>(run: impl FnOnce() -> T) -> T {
 }
 
 fn with_target<T>(replacement: Option<Target>, run: impl FnOnce() -> T) -> T {
+    TARGET_ACTIVE.fetch_add(1, Ordering::Relaxed);
     let previous = TARGET.with(|target| target.replace(replacement));
     let guard = RestoreTarget(previous);
     let result = run();
@@ -171,7 +199,7 @@ pub(super) fn charge_limit(
     used: u64,
     additional: u64,
 ) -> Option<u64> {
-    if additional == 0 {
+    if additional == 0 || TARGET_ACTIVE.load(Ordering::Relaxed) == 0 {
         return None;
     }
     TARGET.with(|target| {

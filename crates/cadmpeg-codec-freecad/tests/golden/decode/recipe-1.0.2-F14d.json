@@ -286,7 +286,8 @@
           "occurrences": {},
           "roots": [
             "fcstd:design:container#Body"
-          ]
+          ],
+          "unproduced": []
         }
       ],
       "sheet_metal_rules": [],
@@ -2525,7 +2526,7 @@
               "operation": {
                 "kind": "primitive",
                 "value": {
-                  "op": "join",
+                  "op": "new_body",
                   "placement": [
                     [
                       1.0,

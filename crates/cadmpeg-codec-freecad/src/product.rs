@@ -728,6 +728,15 @@ pub(crate) fn transfer_neutral(
     })
 }
 
+/// Whether `body` is an object's `Shape`, which a definition owns, and not
+/// another payload such as a `PartDesign` feature's `AddSubShape`.
+pub(crate) fn is_shape_body(body: &cadmpeg_ir::ids::BodyId) -> bool {
+    body.as_str()
+        .split_once('#')
+        .and_then(|(_, key)| key.split(':').nth(1))
+        == Some("Shape")
+}
+
 /// The root definition: the document, which places the objects no container
 /// holds.
 pub(crate) fn document_definition_id() -> Result<ProductDefinitionId, CodecError> {

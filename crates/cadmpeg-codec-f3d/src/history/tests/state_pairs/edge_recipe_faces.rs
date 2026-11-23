@@ -2,7 +2,7 @@
 //! Scope history binding through the faces of a scope's edge recipes.
 #![allow(clippy::unwrap_used)]
 
-use crate::history::bind_scope_histories;
+use crate::history::scope_histories::bind_scope_histories;
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
 #[test]
 fn scope_binding_reads_the_blob_of_its_edge_recipe_faces() {

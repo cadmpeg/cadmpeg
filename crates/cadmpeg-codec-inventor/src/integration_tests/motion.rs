@@ -6,10 +6,10 @@ use crate::test_support::test_fixtures::{
 use crate::InventorCodec;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::features::{
-    BodySelection, FaceMotion, FaceSelection, FeatureDefinition, FeatureEvaluation,
-    FeatureOperation,
-};
+use cadmpeg_ir::features::direct_edit::FaceMotion;
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::{BodySelection, FaceSelection};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::Vector3;
 
 fn guid(value: &str) -> [u8; 16] {

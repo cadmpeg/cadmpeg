@@ -5,7 +5,7 @@ use std::io::Cursor;
 use cadmpeg_ir::design::expr::{Expression, ExpressionDialect, ExpressionToken, Neutral};
 use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition};
 use cadmpeg_ir::design::units::{Quantity, ValueKind};
-use cadmpeg_ir::features::ParameterValue as LegacyValue;
+use cadmpeg_ir::features::parameters::ParameterValue as LegacyValue;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
 

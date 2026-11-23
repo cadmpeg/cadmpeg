@@ -25,9 +25,11 @@ fn edge_partial_extent_inputs_keep_each_known_member() {
                 .expect_err("null width")
                 .to_string()
         } else {
-            serde_json::from_value::<crate::features::SheetMetalFlangeTwoSidedWidth>(value)
-                .expect_err("null distance")
-                .to_string()
+            serde_json::from_value::<
+                crate::features::sheet_metal_forms::SheetMetalFlangeTwoSidedWidth,
+            >(value)
+            .expect_err("null distance")
+            .to_string()
         };
         assert!(error.contains(field), "{error}");
     }
@@ -42,7 +44,7 @@ fn edge_partial_extent_inputs_keep_each_known_member() {
         );
     }
     assert!(
-        serde_json::from_value::<crate::features::SheetMetalFlangeWidth>(
+        serde_json::from_value::<crate::features::sheet_metal_forms::SheetMetalFlangeWidth>(
             json!({"kind":"two_sides_per_edge","widths":[]})
         )
         .is_err()
@@ -51,7 +53,7 @@ fn edge_partial_extent_inputs_keep_each_known_member() {
 
 #[test]
 fn edge_complete_extent_laws_keep_their_existing_wire() {
-    use crate::features::{SheetMetalFlangeHeight, SheetMetalFlangeWidth};
+    use crate::features::sheet_metal_forms::{SheetMetalFlangeHeight, SheetMetalFlangeWidth};
     for wire in [
         json!({"kind":"symmetric","width":3.0}),
         json!({"kind":"two_sides","first":4.0,"second":2.0}),
@@ -127,7 +129,7 @@ fn edge_construction_keeps_complete_flat_wire_and_accepts_sparse_inputs() {
 #[test]
 fn edge_offset_rows_keep_signed_and_missing_members() {
     use super::SheetMetalFlangeOffset;
-    use crate::features::SheetMetalFlangeWidth;
+    use crate::features::sheet_metal_forms::SheetMetalFlangeWidth;
     let wire = json!({"kind": "two_offsets_per_edge", "offsets": [
         {"first": 0.0, "second": -7.5, "first_reference": "test:boundary#first", "second_reference": "test:boundary#second"},
         {"first": -5.0}
@@ -178,7 +180,7 @@ fn edge_construction_schema_admits_absence_and_excludes_null() {
         serde_json::to_value(schemars::schema_for!(super::SheetMetalFlangeSymmetricWidth))
             .expect("width schema"),
         serde_json::to_value(schemars::schema_for!(
-            crate::features::SheetMetalFlangeTwoSidedWidth
+            crate::features::sheet_metal_forms::SheetMetalFlangeTwoSidedWidth
         ))
         .expect("side schema"),
         serde_json::to_value(schemars::schema_for!(
@@ -200,11 +202,12 @@ fn edge_construction_schema_admits_absence_and_excludes_null() {
 #[test]
 fn edge_construction_rewrite_visits_optional_height_feature() {
     use super::SheetMetalEdgeFlangeConstruction;
-    use crate::{
-        features::{FeatureId, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget},
-        scalar::Length,
-        schema::rewrite::typed::{IdentityMap, RewriteIdentities},
+    use crate::features::sheet_metal_forms::{
+        SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
     };
+    use crate::features::FeatureId;
+    use crate::scalar::Length;
+    use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let construction = SheetMetalEdgeFlangeConstruction {
         height: Some(SheetMetalFlangeHeight::to_object(
@@ -394,10 +397,9 @@ fn contour_schema_declares_absence_and_rejects_explicit_nulls() {
 #[test]
 fn contour_identity_rewrite_traverses_its_profile_reference() {
     use super::SheetMetalContourFlangeConstruction;
-    use crate::{
-        features::{FeatureId, PlanarProfileRef},
-        schema::rewrite::typed::{IdentityMap, RewriteIdentities},
-    };
+    use crate::features::profiles::PlanarProfileRef;
+    use crate::features::FeatureId;
+    use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let construction = SheetMetalContourFlangeConstruction {
         profile: Some(PlanarProfileRef::Feature(

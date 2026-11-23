@@ -175,7 +175,7 @@ fn generated_f3d_rewrites_fixed_width_decimal_color_text() {
 }
 
 #[test]
-fn generated_f3d_rejects_lossy_truecolor_edit() {
+fn generated_f3d_regenerates_on_lossy_truecolor_edit() {
     let source = f3d_with_smbh(&synthetic_geometry_with_body_truecolor_chain_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -186,13 +186,18 @@ fn generated_f3d_rejects_lossy_truecolor_edit() {
             .expect("valid color"),
     );
 
-    let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
-        .expect_err("nonrepresentable truecolor edit must be rejected");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    crate::test_support::assert_written_with_loss(
+        &edited,
+        Some(&fidelity),
+        &crate::loss::F3dLossCode::WriterPatchDeclined
+            .kind()
+            .to_string(),
+        "",
+    );
 }
 
 #[test]
-fn generated_f3d_rejects_decimal_color_text_growth() {
+fn generated_f3d_regenerates_on_decimal_color_text_growth() {
     let source = f3d_with_smbh(&synthetic_geometry_with_body_decimal_color_chain_smbh(
         "255",
     ));
@@ -203,9 +208,14 @@ fn generated_f3d_rejects_decimal_color_text_growth() {
     edited.geometry.bodies[0].color =
         Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("valid color"));
 
-    let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
-        .expect_err("wider decimal-color text must be rejected");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    crate::test_support::assert_written_with_loss(
+        &edited,
+        Some(&fidelity),
+        &crate::loss::F3dLossCode::WriterPatchDeclined
+            .kind()
+            .to_string(),
+        "",
+    );
 }
 
 #[test]
@@ -362,7 +372,7 @@ fn generated_f3d_rewrites_a_subset_edge_range_on_its_local_parameter() {
         .find(|procedural| {
             matches!(
                 procedural.definition(),
-                cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(_)
+                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(_)
             )
         })
         .and_then(|procedural| edited.geometry.procedural_curve_owner(&procedural.id))

@@ -334,13 +334,19 @@ fn emboss_auxiliary_members_require_record_headers_without_contour_frames() {
         let mut findings = Vec::new();
         {
             let ctx = super::super::Ctx::new(&ir, &native, decode);
-            super::super::validate_extrude_selection_groups(&ctx, &mut findings);
-            super::super::validate_extrude_selection_group_members(&ctx, &mut findings);
+            super::super::extrude_selections::validate_extrude_selection_groups(
+                &ctx,
+                &mut findings,
+            );
+            super::super::extrude_selections::validate_extrude_selection_group_members(
+                &ctx,
+                &mut findings,
+            );
         }
         assert!(findings.is_empty());
         native.design_record_headers.pop();
         let ctx = super::super::Ctx::new(&ir, &native, decode);
-        super::super::validate_extrude_selection_groups(&ctx, &mut findings);
+        super::super::extrude_selections::validate_extrude_selection_groups(&ctx, &mut findings);
         assert_eq!(findings.len(), 1);
     });
 }

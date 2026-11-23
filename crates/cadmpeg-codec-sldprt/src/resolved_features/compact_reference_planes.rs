@@ -15,28 +15,38 @@ type PlaneFrame = (Point3, Vector3, Vector3);
 
 pub(super) struct CompactReferencePlaneIndex {
     payload_len: usize,
-    class_offsets: Vec<usize>,
+    /// The end of the lane's first `moCompRefPlane_c` class name.
+    class_end: Option<usize>,
     declared: Vec<(usize, u32)>,
     components: Vec<(usize, u32)>,
     component_frames: Vec<(usize, PlaneFrame)>,
-    deferred_principal_components: Vec<usize>,
-    top_components: Vec<usize>,
+    principal_components: Vec<(usize, cadmpeg_ir::features::PrincipalPlane)>,
+}
+
+/// Where a profile's plane reference source came from (`profile_source`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum SourceRoute {
+    /// A record inside the profile object.
+    Profile,
+    /// A record spanning the immediately preceding object through the profile.
+    Context,
+    /// The lane default.
+    Lane,
 }
 
 impl CompactReferencePlaneIndex {
     pub(super) fn new(payload: &[u8]) -> Self {
-        let mut class_offsets = Vec::new();
+        let mut class_end = None;
         let mut declared = Vec::new();
         let mut components = Vec::new();
         let mut component_frames = Vec::new();
-        let mut deferred_principal_components = Vec::new();
-        let mut top_components = Vec::new();
+        let mut principal_components = Vec::new();
         for (offset, byte) in payload.iter().enumerate() {
             if *byte == COMPACT_REFERENCE_PLANE_CLASS[0]
                 && payload.get(offset..offset + COMPACT_REFERENCE_PLANE_CLASS.len())
                     == Some(COMPACT_REFERENCE_PLANE_CLASS)
             {
-                class_offsets.push(offset);
+                class_end.get_or_insert(offset + COMPACT_REFERENCE_PLANE_CLASS.len());
             }
             if *byte == 0x3f {
                 if let Some(start) = offset.checked_sub(46) {
@@ -49,18 +59,16 @@ impl CompactReferencePlaneIndex {
                     }
                 }
             }
-            if *byte == 4
-                && payload.get(offset..offset + 8) == Some(&[4, 0, 0, 0, 0xff, 0xff, 0xff, 0xff])
+            // The trailer count word (2 to 4) and the sentinel of a 138-byte record.
+            if matches!(*byte, 2..=4)
+                && payload.get(offset + 1..offset + 8) == Some(&[0, 0, 0, 0xff, 0xff, 0xff, 0xff])
             {
                 if let Some(start) = offset.checked_sub(122) {
                     if let Some(bytes) =
                         payload.get(start..start + COMPACT_COMPONENT_PLANE_RECORD_LEN)
                     {
                         if let Some(plane) = compact_principal_reference_plane_record(bytes) {
-                            deferred_principal_components.push(start);
-                            if plane == cadmpeg_ir::features::PrincipalPlane::Top {
-                                top_components.push(start);
-                            }
+                            principal_components.push((start, plane));
                         }
                         if let Some(source) = compact_component_reference_plane_record(bytes) {
                             components.push((start, source));
@@ -74,34 +82,22 @@ impl CompactReferencePlaneIndex {
         }
         Self {
             payload_len: payload.len(),
-            class_offsets,
+            class_end,
             declared,
             components,
             component_frames,
-            deferred_principal_components,
-            top_components,
+            principal_components,
         }
     }
 
-    pub(super) fn principal_top_profile_frame(
+    /// The principal plane that every principal-plane component record of
+    /// `[start, end)` names, when the interval holds at least one and no custom
+    /// component frame (`sldprt.md` §2).
+    pub(super) fn principal_profile_plane(
         &self,
         start: usize,
         end: usize,
-    ) -> Option<PlaneFrame> {
-        let top = records_in_range(
-            &self.top_components,
-            start,
-            end,
-            COMPACT_COMPONENT_PLANE_RECORD_LEN,
-            |offset| *offset,
-        );
-        let principal = records_in_range(
-            &self.deferred_principal_components,
-            start,
-            end,
-            COMPACT_COMPONENT_PLANE_RECORD_LEN,
-            |offset| *offset,
-        );
+    ) -> Option<cadmpeg_ir::features::PrincipalPlane> {
         let custom = records_in_range(
             &self.component_frames,
             start,
@@ -109,8 +105,16 @@ impl CompactReferencePlaneIndex {
             COMPACT_COMPONENT_PLANE_RECORD_LEN,
             |(offset, _)| *offset,
         );
-        (!top.is_empty() && top.len() == principal.len() && custom.is_empty())
-            .then(principal_top_component_frame)
+        if !custom.is_empty() {
+            return None;
+        }
+        unique_indexed_value(records_in_range(
+            &self.principal_components,
+            start,
+            end,
+            COMPACT_COMPONENT_PLANE_RECORD_LEN,
+            |(offset, _)| *offset,
+        ))
     }
 
     pub(super) fn has_component_frame(&self, start: usize, end: usize) -> bool {
@@ -130,40 +134,59 @@ impl CompactReferencePlaneIndex {
         end: usize,
     ) -> Option<PlaneFrame> {
         let records = records_in_range(
-            &self.deferred_principal_components,
+            &self.principal_components,
             start,
             end,
             COMPACT_COMPONENT_PLANE_RECORD_LEN,
-            |offset| *offset,
+            |(offset, _)| *offset,
         );
-        (!records.is_empty()).then_some((
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, -1.0, 0.0),
-            Vector3::new(0.0, 0.0, -1.0),
-        ))
+        (!records.is_empty()).then(front_lane_fallback_frame)
     }
 
-    fn declared_source(&self, start: usize, end: usize) -> Option<u32> {
-        let classes = records_in_range(
-            &self.class_offsets,
-            start,
-            end,
-            COMPACT_REFERENCE_PLANE_CLASS.len(),
-            |offset| *offset,
-        );
-        if classes.len() != 1 {
-            return None;
-        }
-        unique_indexed_value(records_in_range(
+    /// The declared records of `[start, end)` that follow the lane's class
+    /// name. A lane that writes the class name writes it once, ahead of its
+    /// records of the class, so a record need not hold the name in its own
+    /// object (`sldprt.md` §2). A lane without the name yields none (DI-73).
+    fn declared_in(&self, start: usize, end: usize) -> &[(usize, u32)] {
+        let Some(class_end) = self.class_end else {
+            return &self.declared[..0];
+        };
+        records_in_range(
             &self.declared,
-            start,
+            start.max(class_end),
             end,
             COMPACT_REFERENCE_PLANE_RECORD_LEN,
             |(offset, _)| *offset,
-        ))
+        )
     }
 
-    fn reference_source(&self, start: usize, end: usize) -> Option<u32> {
+    fn declared_source(&self, start: usize, end: usize) -> Option<u32> {
+        unique_indexed_value(self.declared_in(start, end))
+    }
+
+    /// Whether `[start, end)` holds a plane record of any form read here: a
+    /// declared record, a component reference or frame, or a principal-plane
+    /// component record.
+    pub(super) fn holds_plane_record(&self, start: usize, end: usize) -> bool {
+        let width = COMPACT_COMPONENT_PLANE_RECORD_LEN;
+        !self.declared_in(start, end).is_empty()
+            || !records_in_range(&self.components, start, end, width, |(offset, _)| *offset)
+                .is_empty()
+            || !records_in_range(&self.component_frames, start, end, width, |(offset, _)| {
+                *offset
+            })
+            .is_empty()
+            || !records_in_range(
+                &self.principal_components,
+                start,
+                end,
+                width,
+                |(offset, _)| *offset,
+            )
+            .is_empty()
+    }
+
+    pub(super) fn reference_source(&self, start: usize, end: usize) -> Option<u32> {
         if start > end || end > self.payload_len {
             return None;
         }
@@ -198,13 +221,24 @@ impl CompactReferencePlaneIndex {
         profile_start: usize,
         profile_end: usize,
     ) -> Option<u32> {
+        self.profile_source_route(context_start, profile_start, profile_end)
+            .map(|(source, _)| source)
+    }
+
+    /// The reference plane source for a profile and the interval it came from.
+    pub(super) fn profile_source_route(
+        &self,
+        context_start: usize,
+        profile_start: usize,
+        profile_end: usize,
+    ) -> Option<(u32, SourceRoute)> {
         if let Some(source) = self.reference_source(profile_start, profile_end) {
-            return Some(source);
+            return Some((source, SourceRoute::Profile));
         }
         if let Some(source) = self.reference_source(context_start, profile_end) {
-            return Some(source);
+            return Some((source, SourceRoute::Context));
         }
-        self.lane_source()
+        self.lane_source().map(|source| (source, SourceRoute::Lane))
     }
 
     pub(super) fn profile_model_space_component_frame(
@@ -233,15 +267,7 @@ impl CompactReferencePlaneIndex {
         profile_start: usize,
         profile_end: usize,
     ) -> Option<u32> {
-        let source_in = |start| {
-            unique_indexed_value(records_in_range(
-                &self.declared,
-                start,
-                profile_end,
-                COMPACT_REFERENCE_PLANE_RECORD_LEN,
-                |(offset, _)| *offset,
-            ))
-        };
+        let source_in = |start| unique_indexed_value(self.declared_in(start, profile_end));
         source_in(profile_start).or_else(|| source_in(context_start))
     }
 
@@ -309,41 +335,41 @@ fn compact_principal_reference_plane_record(
 ) -> Option<cadmpeg_ir::features::PrincipalPlane> {
     let source = View::u32_le_at(bytes, principal_component::SOURCE)?;
     let selector = View::u32_le_at(bytes, principal_component::SELECTOR)?;
-    if !matches!((source, selector), (4, 1) | (3, 2))
+    if source == 0
+        || !matches!(selector, 1 | 2)
         || bytes.get(principal_component::RESERVED..principal_component::SELECTOR) != Some(&[0; 2])
         || bytes.get(principal_component::MATRIX_PRESENT) != Some(&1)
         || bytes.get(principal_component::TRAILER_RESERVED..principal_component::TRAILER_KIND)
             != Some(&[0; 3])
-        || View::u32_le_at(bytes, principal_component::TRAILER_KIND) != Some(4)
+        || !matches!(
+            View::u32_le_at(bytes, principal_component::TRAILER_KIND),
+            Some(2..=4)
+        )
         || View::u32_le_at(bytes, principal_component::TRAILER_SENTINEL) != Some(u32::MAX)
     {
         return None;
     }
-    let (origin, normal, u_axis) =
-        principal_sketch_frame(cadmpeg_ir::features::PrincipalPlane::Right);
-    let v_axis = normal.cross(u_axis);
-    let expected = if source == 4 {
-        [
-            u_axis.x, v_axis.x, normal.x, u_axis.y, v_axis.y, normal.y, u_axis.z, v_axis.z,
-            normal.z, origin.x, origin.y, origin.z, 1.0,
-        ]
+    // The selector names the plane. The nonzero u32 at +0 is the plane's
+    // feature number, which differs between parts, or the time stamp of the
+    // padded form (`sldprt.md` §2).
+    let plane = if selector == 2 {
+        cadmpeg_ir::features::PrincipalPlane::Top
     } else {
-        [
-            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-        ]
+        cadmpeg_ir::features::PrincipalPlane::Right
     };
-    expected
-        .into_iter()
-        .enumerate()
-        .all(|(index, expected)| {
-            View::f64_le_at(bytes, principal_component::BASIS + index * 8)
-                .is_some_and(|value| value == expected)
-        })
-        .then_some(if source == 3 {
-            cadmpeg_ir::features::PrincipalPlane::Top
-        } else {
-            cadmpeg_ir::features::PrincipalPlane::Right
-        })
+    let (origin, normal, u_axis) = principal_sketch_frame(plane);
+    let v_axis = normal.cross(u_axis);
+    [
+        u_axis.x, v_axis.x, normal.x, u_axis.y, v_axis.y, normal.y, u_axis.z, v_axis.z, normal.z,
+        origin.x, origin.y, origin.z, 1.0,
+    ]
+    .into_iter()
+    .enumerate()
+    .all(|(index, expected)| {
+        View::f64_le_at(bytes, principal_component::BASIS + index * 8)
+            .is_some_and(|value| value == expected)
+    })
+    .then_some(plane)
 }
 
 fn compact_component_reference_plane_record(bytes: &[u8]) -> Option<u32> {
@@ -466,14 +492,21 @@ fn compact_component_plane_frame_record(bytes: &[u8]) -> Option<PlaneFrame> {
     ))
 }
 
-pub(super) fn principal_top_component_frame() -> PlaneFrame {
+/// The frame the decoder keeps for a Front reference whose profile holds
+/// principal-plane component records that `principal_profile_frame` does not
+/// bind, and for a sketch block definition whose own object holds such
+/// records (`sldprt-open-items.md` SF-01). No support plane stores it.
+fn front_lane_fallback_frame() -> PlaneFrame {
     (
         Point3::new(0.0, 0.0, 0.0),
-        Vector3::new(0.0, 1.0, 0.0),
-        Vector3::new(1.0, 0.0, 0.0),
+        Vector3::new(0.0, -1.0, 0.0),
+        Vector3::new(0.0, 0.0, -1.0),
     )
 }
 
+/// The model-space `(origin, normal, u-axis)` frame of a principal plane
+/// (`sldprt.md` §2): the Top frame is the frame its principal-plane component
+/// record stores.
 pub(crate) fn principal_sketch_frame(
     plane: cadmpeg_ir::features::PrincipalPlane,
 ) -> (Point3, Vector3, Vector3) {
@@ -486,7 +519,7 @@ pub(crate) fn principal_sketch_frame(
         ),
         PrincipalPlane::Top => (
             Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(0.0, 1.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
         ),
         PrincipalPlane::Right => (
@@ -494,6 +527,207 @@ pub(crate) fn principal_sketch_frame(
             Vector3::new(1.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, -1.0),
         ),
+    }
+}
+
+/// How a profile sketch's support frame was chosen (open items DI-73 and
+/// SF-01).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PlaneBinding {
+    /// A record of the profile's own object, or a stored plane frame, gives
+    /// the frame.
+    Stored,
+    /// A principal-plane component record of the profile's own object names
+    /// the plane (`sldprt.md` §2).
+    Principal(cadmpeg_ir::features::PrincipalPlane),
+    /// The frame is the principal Top plane that the profile's feature-input
+    /// plane reference names.
+    TopReference,
+    /// The frame is the plane that the reference of the preceding object or
+    /// the lane's default reference names. `own_records` is whether the
+    /// profile's own object holds plane records, which then give no single
+    /// plane.
+    Borrowed { own_records: bool },
+    /// A legacy configuration sketch with no frame of its own takes the only
+    /// frame of the other sketches of its lane.
+    LaneFrame,
+    /// The Front lane fallback frame (SF-01): a Front reference whose
+    /// profile's principal-plane component records `principal_profile_frame`
+    /// does not bind, or that a sketch block definition holds.
+    FrontFallback,
+}
+
+impl PlaneBinding {
+    /// The principal plane whose own component record gave the frame.
+    pub(crate) fn principal(self) -> Option<cadmpeg_ir::features::PrincipalPlane> {
+        match self {
+            Self::Principal(plane) => Some(plane),
+            _ => None,
+        }
+    }
+}
+
+/// The binding route of each profile sketch whose route is not
+/// [`PlaneBinding::Stored`], recorded where its frame was chosen.
+#[derive(Debug, Default)]
+pub(crate) struct PlaneBindings(
+    std::collections::HashMap<cadmpeg_ir::sketches::SketchId, PlaneBinding>,
+);
+
+/// Named sketches grouped by the principal plane they lie on.
+#[derive(Default)]
+struct PlaneGroups(Vec<(&'static str, crate::loss::NamedCount)>);
+
+impl PlaneGroups {
+    fn push(&mut self, placement: PlaneFrame, name: &str) {
+        let plane = [
+            (
+                cadmpeg_ir::features::PrincipalPlane::Front,
+                "the Front plane",
+            ),
+            (cadmpeg_ir::features::PrincipalPlane::Top, "the Top plane"),
+            (
+                cadmpeg_ir::features::PrincipalPlane::Right,
+                "the Right plane",
+            ),
+        ]
+        .into_iter()
+        .find(|(plane, _)| principal_sketch_frame(*plane) == placement)
+        .map_or("another plane", |(_, label)| label);
+        if let Some((_, named)) = self.0.iter_mut().find(|(label, _)| *label == plane) {
+            named.push(name);
+        } else {
+            let mut named = crate::loss::NamedCount::default();
+            named.push(name);
+            self.0.push((plane, named));
+        }
+    }
+
+    fn count(&self) -> usize {
+        self.0.iter().map(|(_, named)| named.count()).sum()
+    }
+}
+
+impl std::fmt::Display for PlaneGroups {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, (plane, named)) in self.0.iter().enumerate() {
+            if index > 0 {
+                f.write_str(", ")?;
+            }
+            write!(f, "{} on {plane} ({named})", named.count())?;
+        }
+        Ok(())
+    }
+}
+
+impl PlaneBindings {
+    pub(super) fn record(
+        &mut self,
+        sketch: &cadmpeg_ir::sketches::SketchId,
+        binding: PlaneBinding,
+    ) {
+        if matches!(binding, PlaneBinding::Stored | PlaneBinding::Principal(_)) {
+            self.0.remove(sketch);
+        } else {
+            self.0.insert(sketch.clone(), binding);
+        }
+    }
+
+    pub(crate) fn extend(&mut self, other: Self) {
+        self.0.extend(other.0);
+    }
+
+    /// The loss naming the recorded sketches by the route that gave each its
+    /// plane. Which plane these sketches lie on is open item DI-73.
+    pub(crate) fn note(
+        &self,
+        sketches: &[cadmpeg_ir::sketches::Sketch],
+    ) -> Option<cadmpeg_ir::report::loss::LossNote> {
+        let top = principal_sketch_frame(cadmpeg_ir::features::PrincipalPlane::Top);
+        let mut top_reference = crate::loss::NamedCount::default();
+        let mut borrowed = PlaneGroups::default();
+        let mut borrowed_over_own = PlaneGroups::default();
+        let mut lane_frame = PlaneGroups::default();
+        let mut front_fallback = crate::loss::NamedCount::default();
+        for sketch in sketches {
+            let Some(placement) = sketch
+                .resolved_placement()
+                .map(|(origin, normal, u_axis)| (origin.get(), normal.get(), u_axis.get()))
+            else {
+                continue;
+            };
+            let name = sketch.name.as_deref().unwrap_or(sketch.id.as_str());
+            match self.0.get(&sketch.id) {
+                Some(PlaneBinding::TopReference) if placement == top => top_reference.push(name),
+                Some(PlaneBinding::Borrowed { own_records: false }) => {
+                    borrowed.push(placement, name);
+                }
+                Some(PlaneBinding::Borrowed { own_records: true }) => {
+                    borrowed_over_own.push(placement, name);
+                }
+                Some(PlaneBinding::LaneFrame) => lane_frame.push(placement, name),
+                Some(PlaneBinding::FrontFallback) => front_fallback.push(name),
+                _ => {}
+            }
+        }
+        let mut routes = Vec::new();
+        if borrowed.count() > 0 {
+            routes.push(format!(
+                "{} take the plane that the plane reference of the preceding feature object or \
+                 the lane's default reference names, and their own object holds no plane record \
+                 the decoder reads ({borrowed})",
+                borrowed.count(),
+            ));
+        }
+        if borrowed_over_own.count() > 0 {
+            routes.push(format!(
+                "{} take the plane that the plane reference of the preceding feature object or \
+                 the lane's default reference names, because the plane records of their own \
+                 object give no single plane ({borrowed_over_own})",
+                borrowed_over_own.count(),
+            ));
+        }
+        if !top_reference.is_empty() {
+            routes.push(format!(
+                "{} lie on the Top plane (origin 0,0,0, normal +Y, u-axis +X) that their \
+                 feature-input plane reference names, and the B-rep of some sketches bound this \
+                 way lies on another principal plane ({top_reference})",
+                top_reference.count(),
+            ));
+        }
+        if lane_frame.count() > 0 {
+            routes.push(format!(
+                "{} are legacy configuration sketches with no frame of their own that take the \
+                 only frame of the other sketches of their configuration lane ({lane_frame})",
+                lane_frame.count(),
+            ));
+        }
+        if !front_fallback.is_empty() {
+            routes.push(format!(
+                "{} lie on the Front lane fallback frame (origin 0,0,0, normal -Y, u-axis -Z), \
+                 which no plane of the part stores, because their reference names the Front \
+                 plane, their own object holds principal-plane component records, and the \
+                 decoder binds them to no plane by those records (sldprt.md §2): the records \
+                 name two planes, a component frame record lies from the preceding object \
+                 through the profile, their own object holds a plane reference other than a \
+                 declared Front record, or the sketch is a sketch block definition, whose \
+                 frame the decoder takes from its plane reference, open item SF-01 \
+                 ({front_fallback})",
+                front_fallback.count(),
+            ));
+        }
+        let total = borrowed.count()
+            + borrowed_over_own.count()
+            + top_reference.count()
+            + lane_frame.count()
+            + front_fallback.count();
+        (total > 0).then(|| {
+            crate::loss::SldprtLossCode::SketchPlaneBindingAssumed.note(format!(
+                "{total} profile sketch(es) lie on a plane the decoder assumes \
+                 (sldprt-open-items.md DI-73): {}.",
+                routes.join("; "),
+            ))
+        })
     }
 }
 

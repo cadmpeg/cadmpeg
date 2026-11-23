@@ -374,7 +374,7 @@ fn a_parameter_with_an_empty_expression_is_stated_with_its_stored_value() {
 }
 
 #[test]
-fn a_scoped_root_owns_only_its_current_states_at_every_depth() {
+fn a_scoped_root_owns_its_current_states_and_unproduced_shapes_at_every_depth() {
     let design = decode(CORE_OPERATIONS, DecodeDepth::Design);
     let [scope] = design.design.scopes.as_slice() else {
         panic!("{:?}", design.design.scopes);
@@ -385,10 +385,27 @@ fn a_scoped_root_owns_only_its_current_states_at_every_depth() {
         .flat_map(|state| &state.bodies)
         .map(|body| body.as_str().to_owned())
         .collect::<BTreeSet<_>>();
-    assert_eq!(root_bodies(&design), current);
+    let unproduced = scope
+        .unproduced
+        .iter()
+        .map(|body| body.as_str().to_owned())
+        .collect::<BTreeSet<_>>();
+    assert!(!unproduced.is_empty());
+    assert!(current.is_disjoint(&unproduced));
+    let root = root_bodies(&design);
+    assert_eq!(root, &current | &unproduced);
+    // A Body member's shape is a state of its Body: no definition owns it.
+    assert!(root
+        .iter()
+        .all(|body| !body.starts_with("fcstd:model:body#Hole:Shape:")));
+    assert!(design
+        .geometry
+        .bodies
+        .iter()
+        .any(|body| body.id.as_str().starts_with("fcstd:model:body#Hole:Shape:")));
     assert_eq!(
         root_bodies(&decode(CORE_OPERATIONS, DecodeDepth::Geometry)),
-        current
+        root
     );
 }
 

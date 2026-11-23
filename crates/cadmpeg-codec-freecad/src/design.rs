@@ -8,8 +8,44 @@ use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::binders::{
+    BinderConstruction, BinderCopyOnChange, BinderLifecycle, BinderOffset, BinderOffsetJoin,
+    BinderPlacement, BinderSource, BinderTarget,
+};
+use cadmpeg_ir::features::direct_edit::{ScaleCenter, ScaleFactors};
+use cadmpeg_ir::features::edge_treatments::{ChamferSpec, RadiusSpec};
+use cadmpeg_ir::features::extents::{
+    AngularTermination, ExtrudeExtent, ExtrudeSide, ExtrusionDirectionSource, LinearTermination,
+};
+use cadmpeg_ir::features::holes::{
+    HoleBottom, HoleConstruction, HoleKind, HoleProfileFilter, HoleSpecification, HoleThreadDepth,
+    ThreadHand,
+};
+use cadmpeg_ir::features::operation_settings::{
+    BooleanOp, FuzzyTolerance, GeometryImportFormat, RuledCurveOrientation, ShellJoin, ShellMode,
+};
+use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+use cadmpeg_ir::features::patterns::{
+    PatternKind, PatternScaleCenter, PatternSeed, PatternStage, PatternTransform,
+};
+use cadmpeg_ir::features::primitives::{PrimitiveSolid, PrimitiveSolidKind};
+use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::revolve::{
+    RevolutionAxis, RevolutionFuseOrder, RevolveConstruction, RevolveExtent,
+};
+use cadmpeg_ir::features::selections::{BodySelection, DistinctMembers, EdgeSelection};
+use cadmpeg_ir::features::surface_inputs::SurfaceProjectionMode;
+use cadmpeg_ir::features::sweeps::{
+    FaceMaker, HelicalSweepConstruction, HelicalSweepLaw, HelixConstructionStyle, InnerWireTaper,
+    SweepOrientation, SweepTransformation, SweepTransition,
+};
+use cadmpeg_ir::features::tree::{FeatureTreeNodeRole, TreeChildren};
+use cadmpeg_ir::features::{
+    Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
+};
 use cadmpeg_ir::geometry::nurbs::KnotVector;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::{FiniteReal, Length, NonZeroReal, PositiveLength, PositiveReal};
 use cadmpeg_ir::sketches::{
     Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinitionInput, SketchConstraintId,
     SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
@@ -20,34 +56,13 @@ use cadmpeg_ir::spreadsheets::{
     SpreadsheetRange,
 };
 use cadmpeg_ir::units::FinitePoint2;
-use cadmpeg_ir::{
-    features::{
-        edge_treatments::{ChamferSpec, RadiusSpec},
-        holes::{
-            HoleBottom, HoleConstruction, HoleKind, HoleProfileFilter, HoleSpecification,
-            HoleThreadDepth, ThreadHand,
-        },
-        patterns::{PatternKind, PatternScaleCenter, PatternSeed, PatternStage, PatternTransform},
-        AngularTermination, BinderConstruction, BinderCopyOnChange, BinderLifecycle, BinderOffset,
-        BinderOffsetJoin, BinderPlacement, BinderSource, BinderTarget, BodySelection, BooleanOp,
-        DesignParameter, DistinctMembers, EdgeSelection, ExtrudeExtent, ExtrudeSide,
-        ExtrusionDirectionSource, FaceMaker, Feature, FeatureContent, FeatureDefinition, FeatureId,
-        FeatureOperation, FeatureTreeNodeRole, FuzzyTolerance, GeometryImportFormat,
-        HelicalSweepConstruction, HelicalSweepLaw, HelixConstructionStyle, InnerWireTaper,
-        LinearTermination, ParameterId, ParameterValue, PathRef, PlanarProfileRef, PrimitiveSolid,
-        PrimitiveSolidKind, ProfileRef, RevolutionAxis, RevolutionFuseOrder, RevolveConstruction,
-        RevolveExtent, RuledCurveOrientation, ScaleCenter, ScaleFactors, ShellJoin, ShellMode,
-        SurfaceProjectionMode, SweepOrientation, SweepTransformation, SweepTransition,
-        TreeChildren,
-    },
-    scalar::{FiniteReal, Length, NonZeroReal, PositiveLength, PositiveReal},
-};
 
 use crate::layout::fillet_edge_item;
 
 use crate::brep::ShapePayloadRecord;
 use crate::native::{malformed, EntryRecord, ObjectRecord, PropertyRecord};
 
+mod first_feature;
 pub(crate) mod primitive_placement;
 mod sketch_cache;
 pub(crate) mod v11;
@@ -155,6 +170,19 @@ pub(crate) fn transfer(
     let mut body_ids = Vec::new();
     for body in &ir.geometry.bodies {
         body_ids.push(body.id.clone());
+    }
+    let mut sorted_body_ids = body_ids
+        .iter()
+        .enumerate()
+        .map(|(index, body)| (body.as_str(), index))
+        .collect::<Vec<_>>();
+    sorted_body_ids.sort_unstable();
+    let mut payloads_by_property = HashMap::<&str, Vec<usize>>::new();
+    for (index, payload) in payloads.iter().enumerate() {
+        payloads_by_property
+            .entry(payload.property.as_str())
+            .or_default()
+            .push(index);
     }
     let (feature_ordinals, mut cycle_affected) = feature_ordinals(
         objects,
@@ -445,19 +473,26 @@ pub(crate) fn transfer(
         }
         let definition = post_processed_definition(ctx, definition, &object.type_name, &owned)?;
         append_operation_parameters(ctx, &mut ir.model.parameters, object, &owned)?;
+        let mut shape_payloads = owned
+            .iter()
+            .filter(|property| property.name == "Shape")
+            .filter_map(|property| payloads_by_property.get(property.id.as_str()))
+            .flatten()
+            .copied()
+            .collect::<Vec<_>>();
+        shape_payloads.sort_unstable();
+        shape_payloads.dedup();
         let mut outputs = Vec::new();
-        for payload in payloads.iter().filter(|payload| {
-            owned
+        for payload in shape_payloads {
+            let prefix = crate::native::model_id("body", &payloads[payload].id, "");
+            let start = sorted_body_ids.partition_point(|(body, _)| *body < prefix.as_str());
+            let mut matched = sorted_body_ids[start..]
                 .iter()
-                .any(|property| property.name == "Shape" && property.id == payload.property)
-        }) {
-            let prefix = crate::native::model_id("body", &payload.id, "");
-            for body in body_ids
-                .iter()
-                .filter(|body| body.as_str().starts_with(&prefix))
-            {
-                outputs.push(body.clone());
-            }
+                .take_while(|(body, _)| body.starts_with(&prefix))
+                .map(|(_, index)| *index)
+                .collect::<Vec<_>>();
+            matched.sort_unstable();
+            outputs.extend(matched.into_iter().map(|index| body_ids[index].clone()));
         }
         let cycle_affected = cycle_affected.contains(object.id().as_str());
         let dependencies = if cycle_affected {
@@ -516,14 +551,15 @@ pub(crate) fn transfer(
             source_tag: Some(object.type_name.clone()),
             source_text: None,
             source_content: FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
                 definition,
-                cadmpeg_ir::features::DistinctMembers::try_from(outputs)
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(outputs)
                     .map_err(cadmpeg_core::CodecError::from)?,
             ),
             native_ref: Some(object.id().to_owned()),
         });
     }
+    first_feature::bind_first_features(ir, objects, &properties_by_owner, &mut losses);
     let mut initial_cycle_affected_features = BTreeSet::new();
     for object in objects
         .iter()
@@ -608,7 +644,7 @@ fn body_definition(
         BodyTipResolution::Invalid => return Ok(None),
     };
     Ok(
-        cadmpeg_ir::features::TreeChildren::new(children, active_child)
+        cadmpeg_ir::features::tree::TreeChildren::new(children, active_child)
             .ok()
             .map(|children| {
                 FeatureDefinition::Operation(FeatureOperation::TreeNode {
@@ -4643,9 +4679,9 @@ fn revolution_axis(
         origin: if property(properties, "Base").is_some() {
             required!(vector_property(ctx, properties, "Base")?).as_point()
         } else {
-            cadmpeg_ir::features::FinitePoint3::ZERO
+            cadmpeg_ir::features::geometry::FinitePoint3::ZERO
         },
-        direction: required!(cadmpeg_ir::features::FeatureDirection3::new(
+        direction: required!(cadmpeg_ir::features::geometry::FeatureDirection3::new(
             required!(vector_property(ctx, properties, "Axis")?).get(),
         )),
         reference: None,
@@ -4678,7 +4714,7 @@ fn revolution_definition(
     let Some(direction) = cadmpeg_ir::units::UnitVector3::normalized(*axis.direction) else {
         return Ok(None);
     };
-    axis.direction = cadmpeg_ir::features::FeatureDirection3::from(direction);
+    axis.direction = cadmpeg_ir::features::geometry::FeatureDirection3::from(direction);
     let angle = || -> Result<_, CodecError> {
         Ok(scalar_named(ctx, properties, "Angle")?
             .filter(|angle| angle.get() > 0.0)
@@ -4746,7 +4782,9 @@ fn revolution_definition(
                 };
                 RevolveExtent::OneSided {
                     termination: AngularTermination::ToFace {
-                        face: cadmpeg_ir::features::FaceSelection::Native(face.id.clone()),
+                        face: cadmpeg_ir::features::selections::FaceSelection::Native(
+                            face.id.clone(),
+                        ),
                         offset: None,
                     },
                 }
@@ -4863,7 +4901,7 @@ fn revolution_definition(
                     allow_multi_profile_faces,
                 },
                 None => RevolveConstruction::Unresolved(
-                    cadmpeg_ir::features::PartialRevolveConstruction::Profile {
+                    cadmpeg_ir::features::revolve::PartialRevolveConstruction::Profile {
                         axis: Some(axis),
                         extent: Some(extent),
                         solid,
@@ -4888,7 +4926,7 @@ fn vector_property(
     ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     name: &str,
-) -> Result<Option<cadmpeg_ir::features::FiniteVector3>, CodecError> {
+) -> Result<Option<cadmpeg_ir::features::geometry::FiniteVector3>, CodecError> {
     let property = required!(property(properties, name));
     if !is_vector_property_type(&property.type_name) {
         return Ok(None);
@@ -4904,11 +4942,13 @@ fn vector_property(
                     .ok()
                     .and_then(FiniteReal::new)
             };
-            Some(cadmpeg_ir::features::FiniteVector3::from_components(
-                component("valueX")?,
-                component("valueY")?,
-                component("valueZ")?,
-            ))
+            Some(
+                cadmpeg_ir::features::geometry::FiniteVector3::from_components(
+                    component("valueX")?,
+                    component("valueY")?,
+                    component("valueZ")?,
+                ),
+            )
         }
     )?))
 }
@@ -4918,7 +4958,7 @@ fn vector_list_property(
     properties: &[&PropertyRecord],
     name: &str,
     entries: &[EntryRecord],
-) -> Result<Option<Vec<cadmpeg_ir::features::FinitePoint3>>, CodecError> {
+) -> Result<Option<Vec<cadmpeg_ir::features::geometry::FinitePoint3>>, CodecError> {
     let Some(property) = property(properties, name) else {
         return Ok(None);
     };
@@ -4960,7 +5000,7 @@ fn vector_list_property(
             let mut points = Vec::new();
             for _ in 0..count {
                 let Some(point) = (|| {
-                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                    cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                         view.f64_le()?,
                         view.f64_le()?,
                         view.f64_le()?,
@@ -5016,11 +5056,13 @@ fn part_construction_geometry_definition(
         )));
     }
     let point = |x: &str, y: &str, z: &str| -> Result<_, CodecError> {
-        Ok(Some(cadmpeg_ir::features::FinitePoint3::from_coordinates(
-            required!(scalar_named(ctx, properties, x)?),
-            required!(scalar_named(ctx, properties, y)?),
-            required!(scalar_named(ctx, properties, z)?),
-        )))
+        Ok(Some(
+            cadmpeg_ir::features::geometry::FinitePoint3::from_coordinates(
+                required!(scalar_named(ctx, properties, x)?),
+                required!(scalar_named(ctx, properties, y)?),
+                required!(scalar_named(ctx, properties, z)?),
+            ),
+        ))
     };
     let angle = |name: &str| -> Result<_, CodecError> {
         Ok(scalar_named(ctx, properties, name)?
@@ -5034,24 +5076,26 @@ fn part_construction_geometry_definition(
         )),
         "Part::Line" => Some(FeatureDefinition::Operation(
             FeatureOperation::LineSegment {
-                segment: required!(cadmpeg_ir::features::FeatureLineSegment::from_parts(
-                    required!(point("X1", "Y1", "Z1")?),
-                    required!(point("X2", "Y2", "Z2")?),
-                )),
+                segment: required!(
+                    cadmpeg_ir::features::geometry::FeatureLineSegment::from_parts(
+                        required!(point("X1", "Y1", "Z1")?),
+                        required!(point("X2", "Y2", "Z2")?),
+                    )
+                ),
             },
         )),
         "Part::Circle" => {
             let legacy_angles = property(properties, "Angle0").is_some();
             Some(FeatureDefinition::Operation(
                 FeatureOperation::CircularArc {
-                    arc: cadmpeg_ir::features::FeatureCircularArc::from_parts(
-                        cadmpeg_ir::features::FinitePoint3::ZERO,
-                        cadmpeg_ir::features::FeatureDirection3::Z_AXIS,
+                    arc: cadmpeg_ir::features::geometry::FeatureCircularArc::from_parts(
+                        cadmpeg_ir::features::geometry::FinitePoint3::ZERO,
+                        cadmpeg_ir::features::geometry::FeatureDirection3::Z_AXIS,
                         required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(
                             required!(scalar_named(ctx, properties, "Radius",)?)
                         )),
                         required!(
-                            cadmpeg_ir::geometry::DirectedParameterRange::from_angle_endpoints([
+                            cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::from_angle_endpoints([
                                 required!(angle(if legacy_angles { "Angle0" } else { "Angle1" })?),
                                 required!(angle(if legacy_angles { "Angle1" } else { "Angle2" })?),
                             ])
@@ -5063,7 +5107,7 @@ fn part_construction_geometry_definition(
         }
         "Part::Ellipse" => Some(FeatureDefinition::Operation(
             FeatureOperation::EllipticArc {
-                arc: required!(cadmpeg_ir::features::FeatureEllipticArc::new(
+                arc: required!(cadmpeg_ir::features::geometry::FeatureEllipticArc::new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -5076,7 +5120,7 @@ fn part_construction_geometry_definition(
                         )),
                     ],
                     required!(
-                        cadmpeg_ir::geometry::DirectedParameterRange::from_angle_endpoints([
+                        cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::from_angle_endpoints([
                             required!(angle("Angle1")?),
                             required!(angle("Angle2")?),
                         ])
@@ -5089,16 +5133,19 @@ fn part_construction_geometry_definition(
             let points = required!(polygon_points);
             let closed = bool_property(ctx, properties, "Close")?.unwrap_or(false);
             Some(FeatureDefinition::Operation(FeatureOperation::Polyline {
-                chain: required!(cadmpeg_ir::features::FeaturePolyline::from_parts(
+                chain: required!(cadmpeg_ir::features::geometry::FeaturePolyline::from_parts(
                     points, closed
                 )),
             }))
         }
         "Part::RegularPolygon" => Some(FeatureDefinition::Operation(
             FeatureOperation::RegularPolygonCurve {
-                sides: required!(cadmpeg_ir::features::PolygonSideCount::new(required!(
-                    u32::try_from(required!(integer_property(ctx, properties, "Polygon")?)).ok()
-                ),)),
+                sides: required!(cadmpeg_ir::features::parameters::PolygonSideCount::new(
+                    required!(u32::try_from(required!(integer_property(
+                        ctx, properties, "Polygon"
+                    )?))
+                    .ok()),
+                )),
                 circumradius: required!(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(
                     required!(scalar_named(ctx, properties, "Circumradius")?),
                 )),
@@ -5168,11 +5215,11 @@ fn parametric_helix_definition(
             _ => return Ok(None),
         };
         let shape = if angle == 0.0 {
-            cadmpeg_ir::features::HelixShape::Cylindrical {
+            cadmpeg_ir::features::sweeps::HelixShape::Cylindrical {
                 pitch: pitch.into(),
             }
         } else {
-            cadmpeg_ir::features::HelixShape::Conical {
+            cadmpeg_ir::features::sweeps::HelixShape::Conical {
                 pitch: pitch.into(),
                 cone_angle: required!(cadmpeg_ir::scalar::SlopeAngle::new(angle.to_radians())),
             }
@@ -5195,7 +5242,7 @@ fn parametric_helix_definition(
             scalar_named(ctx, properties, "Rotations")?
         )));
         (
-            cadmpeg_ir::features::HelixShape::Spiral {
+            cadmpeg_ir::features::sweeps::HelixShape::Spiral {
                 radial_growth: growth.into(),
             },
             revolutions,
@@ -5205,8 +5252,8 @@ fn parametric_helix_definition(
     };
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Helix {
-            axis_origin: cadmpeg_ir::features::FinitePoint3::ZERO,
-            axis_direction: cadmpeg_ir::features::FeatureDirection3::Z_AXIS,
+            axis_origin: cadmpeg_ir::features::geometry::FinitePoint3::ZERO,
+            axis_direction: cadmpeg_ir::features::geometry::FeatureDirection3::Z_AXIS,
             radius,
             shape,
             revolutions,
@@ -5501,11 +5548,11 @@ fn extrusion_shape(
         return Ok(Some(FeatureDefinition::Operation(
             FeatureOperation::Extrude {
                 profile,
-                direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
-                    vector: cadmpeg_ir::features::FeatureDirection3::from(direction),
+                direction: cadmpeg_ir::features::extents::ExtrudeDirection::Explicit {
+                    vector: cadmpeg_ir::features::geometry::FeatureDirection3::from(direction),
                     source: Some(direction_source),
                 },
-                start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
+                start: cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {},
                 extent,
                 op: BooleanOp::NewBody,
                 solid: Some(required!(bool_selector(ctx, properties, "Solid", false)?)),
@@ -5548,7 +5595,7 @@ fn extrusion_shape(
             1 => Some(LinearTermination::ToLast {}),
             2 => Some(LinearTermination::ToFirst {}),
             3 => Some(LinearTermination::ToFace {
-                face: cadmpeg_ir::features::FaceSelection::Native(
+                face: cadmpeg_ir::features::selections::FaceSelection::Native(
                     required!(singular_operand(properties, &face_name))
                         .id
                         .clone(),
@@ -5556,7 +5603,7 @@ fn extrusion_shape(
                 offset,
             }),
             5 => Some(LinearTermination::ToShape {
-                target: cadmpeg_ir::features::FaceSelection::Native(
+                target: cadmpeg_ir::features::selections::FaceSelection::Native(
                     required!(singular_operand(properties, &shape_name))
                         .id
                         .clone(),
@@ -5616,8 +5663,8 @@ fn extrusion_shape(
         return Ok(None);
     }
     let mut direction = if use_custom {
-        cadmpeg_ir::features::ExtrudeDirection::Explicit {
-            vector: cadmpeg_ir::features::FeatureDirection3::from(required!(
+        cadmpeg_ir::features::extents::ExtrudeDirection::Explicit {
+            vector: cadmpeg_ir::features::geometry::FeatureDirection3::from(required!(
                 cadmpeg_ir::units::UnitVector3::normalized(
                     required!(vector_property(ctx, properties, "Direction")?).get(),
                 )
@@ -5625,8 +5672,8 @@ fn extrusion_shape(
             source: Some(ExtrusionDirectionSource::Custom {}),
         }
     } else if let Some(reference_axis) = reference_axis {
-        cadmpeg_ir::features::ExtrudeDirection::Explicit {
-            vector: cadmpeg_ir::features::FeatureDirection3::from(required!(
+        cadmpeg_ir::features::extents::ExtrudeDirection::Explicit {
+            vector: cadmpeg_ir::features::geometry::FeatureDirection3::from(required!(
                 cadmpeg_ir::units::UnitVector3::normalized(
                     required!(vector_property(ctx, properties, "Direction")?).get(),
                 )
@@ -5648,15 +5695,17 @@ fn extrusion_shape(
         }
         .and_then(cadmpeg_ir::units::UnitVector3::normalized);
         match normal {
-            Some(vector) => cadmpeg_ir::features::ExtrudeDirection::Explicit {
-                vector: cadmpeg_ir::features::FeatureDirection3::from(vector),
+            Some(vector) => cadmpeg_ir::features::extents::ExtrudeDirection::Explicit {
+                vector: cadmpeg_ir::features::geometry::FeatureDirection3::from(vector),
                 source: Some(ExtrusionDirectionSource::ProfileNormal {}),
             },
-            None => cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
+            None => cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {},
         }
     };
     if required!(bool_selector(ctx, properties, "Reversed", false)?) {
-        let cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. } = &mut direction else {
+        let cadmpeg_ir::features::extents::ExtrudeDirection::Explicit { vector, .. } =
+            &mut direction
+        else {
             return Ok(None);
         };
         *vector = vector.reversed();
@@ -5677,7 +5726,7 @@ fn extrusion_shape(
         FeatureOperation::Extrude {
             profile,
             direction,
-            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
+            start: cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {},
             extent,
             op: if kind.contains("Pocket") {
                 BooleanOp::Cut
@@ -5716,7 +5765,7 @@ pub(crate) fn resolve_operation_selections(
             } => {
                 face_selection |= matches!(
                     removed_faces,
-                    cadmpeg_ir::features::FaceSelection::Native(_)
+                    cadmpeg_ir::features::selections::FaceSelection::Native(_)
                 );
             }
             FeatureOperation::MirrorShape { source, .. } => {
@@ -5872,8 +5921,8 @@ pub(crate) fn resolve_operation_selections(
         .iter()
         .map(|edge| edge.id.as_str().to_owned())
         .collect::<HashSet<_>>();
-    let faces = |selection: &mut cadmpeg_ir::features::FaceSelection| {
-        let cadmpeg_ir::features::FaceSelection::Native(native) = selection else {
+    let faces = |selection: &mut cadmpeg_ir::features::selections::FaceSelection| {
+        let cadmpeg_ir::features::selections::FaceSelection::Native(native) = selection else {
             return;
         };
         let Some(faces) = resolve(native, "Face")
@@ -5886,7 +5935,7 @@ pub(crate) fn resolve_operation_selections(
         else {
             return;
         };
-        *selection = cadmpeg_ir::features::FaceSelection::Resolved {
+        *selection = cadmpeg_ir::features::selections::FaceSelection::Resolved {
             faces,
             native: native.clone(),
         };
@@ -6170,7 +6219,7 @@ fn fillet_definition(
     };
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Fillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(
+            groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(
                 cadmpeg_ir::features::edge_treatments::FilletGroup {
                     edges,
                     radius: RadiusSpec::Constant { radius },
@@ -6232,7 +6281,7 @@ fn chamfer_definition(
             .is_some_and(|value| value.get() == 1.0 || value.get() == 2.0);
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Chamfer {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(
+            groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(
                 cadmpeg_ir::features::edge_treatments::ChamferGroup { edges, spec },
             ),
             flip_direction: if legacy_flip {
@@ -6378,7 +6427,9 @@ fn thickness_definition(
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Shell {
             bodies: None,
-            removed_faces: cadmpeg_ir::features::FaceSelection::Native(selection.id.clone()),
+            removed_faces: cadmpeg_ir::features::selections::FaceSelection::Native(
+                selection.id.clone(),
+            ),
             thickness: Some(thickness),
             outward: Some(if kind == "Part::Thickness" {
                 outward
@@ -6554,8 +6605,9 @@ fn mirror_shape_definition(
     else {
         return Ok(None);
     };
-    let plane_reference = plane_reference
-        .map(|property| cadmpeg_ir::features::FaceSelection::Native(property.id.clone()));
+    let plane_reference = plane_reference.map(|property| {
+        cadmpeg_ir::features::selections::FaceSelection::Native(property.id.clone())
+    });
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::MirrorShape {
             source: BodySelection::Native(source.id.clone()),
@@ -6617,7 +6669,9 @@ fn project_on_surface_definition(
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::ProjectOnSurface {
             sources: PathRef::Native(sources.id.clone()),
-            support_face: cadmpeg_ir::features::FaceSelection::Native(support.id.clone()),
+            support_face: cadmpeg_ir::features::selections::FaceSelection::Native(
+                support.id.clone(),
+            ),
             direction,
             mode,
             height,
@@ -6668,12 +6722,14 @@ fn draft_definition(
     };
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Draft {
-            faces: cadmpeg_ir::features::FaceSelection::Native(faces.id.clone()),
-            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
-                plane: cadmpeg_ir::features::FaceSelection::Native(neutral_plane.id.clone()),
+            faces: cadmpeg_ir::features::selections::FaceSelection::Native(faces.id.clone()),
+            anchor: cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane {
+                plane: cadmpeg_ir::features::selections::FaceSelection::Native(
+                    neutral_plane.id.clone(),
+                ),
                 pull: pull_direction.map(|direction| {
-                    cadmpeg_ir::features::DraftPull::new(
-                        cadmpeg_ir::features::FeatureDirection3::from(direction),
+                    cadmpeg_ir::features::direct_edit::DraftPull::new(
+                        cadmpeg_ir::features::geometry::FeatureDirection3::from(direction),
                         None,
                     )
                 }),
@@ -7067,19 +7123,21 @@ fn datum_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Featur
     let (origin, z_axis, x_axis, y_axis) = placement_frame(properties)?;
     Some(match kind {
         "PartDesign::Plane" => FeatureDefinition::Operation(FeatureOperation::DatumPlane {
-            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(origin, z_axis, x_axis)?,
+            frame: cadmpeg_ir::features::geometry::FeatureDatumPlaneFrame::new(
+                origin, z_axis, x_axis,
+            )?,
         }),
         "PartDesign::Line" => FeatureDefinition::Operation(FeatureOperation::datum_axis(
-            cadmpeg_ir::features::FinitePoint3::new(origin)?,
-            cadmpeg_ir::features::FeatureDirection3::new(z_axis)?,
+            cadmpeg_ir::features::geometry::FinitePoint3::new(origin)?,
+            cadmpeg_ir::features::geometry::FeatureDirection3::new(z_axis)?,
         )),
         "PartDesign::Point" => FeatureDefinition::Operation(FeatureOperation::DatumPoint {
-            position: cadmpeg_ir::features::FinitePoint3::new(origin)?,
+            position: cadmpeg_ir::features::geometry::FinitePoint3::new(origin)?,
             construction: None,
         }),
         "PartDesign::CoordinateSystem" => {
             FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem {
-                frame: cadmpeg_ir::features::FeatureCoordinateFrame::new(
+                frame: cadmpeg_ir::features::geometry::FeatureCoordinateFrame::new(
                     origin, x_axis, y_axis, z_axis,
                 )?,
             })
@@ -7098,17 +7156,17 @@ fn boolean_definition(
             return Ok(None);
         };
         match selector {
-            0 => cadmpeg_ir::features::BooleanKind::Join,
-            1 => cadmpeg_ir::features::BooleanKind::Cut,
-            2 => cadmpeg_ir::features::BooleanKind::Intersect,
+            0 => cadmpeg_ir::features::operation_settings::BooleanKind::Join,
+            1 => cadmpeg_ir::features::operation_settings::BooleanKind::Cut,
+            2 => cadmpeg_ir::features::operation_settings::BooleanKind::Intersect,
             _ => return Ok(None),
         }
     } else if kind.ends_with("Cut") {
-        cadmpeg_ir::features::BooleanKind::Cut
+        cadmpeg_ir::features::operation_settings::BooleanKind::Cut
     } else if kind.ends_with("Common") || kind.ends_with("MultiCommon") {
-        cadmpeg_ir::features::BooleanKind::Intersect
+        cadmpeg_ir::features::operation_settings::BooleanKind::Intersect
     } else if kind.ends_with("Fuse") || kind.ends_with("MultiFuse") {
-        cadmpeg_ir::features::BooleanKind::Join
+        cadmpeg_ir::features::operation_settings::BooleanKind::Join
     } else {
         return Ok(None);
     };
@@ -7171,7 +7229,7 @@ fn boolean_definition(
             op,
             keep_tools: false,
 
-            destination: cadmpeg_ir::features::CombineDestination::default(),
+            destination: cadmpeg_ir::features::operation_settings::CombineDestination::default(),
         },
     )))
 }
@@ -7237,7 +7295,7 @@ fn loft_definition(
     sections.extend(
         profiles
             .into_iter()
-            .map(cadmpeg_ir::features::LoftSection::Profile),
+            .map(cadmpeg_ir::features::profiles::LoftSection::Profile),
     );
     Ok(Some(FeatureDefinition::Operation(FeatureOperation::Loft {
         sections,
@@ -7386,28 +7444,28 @@ fn sweep_definition(
         let Some(op) = operation_boolean(kind).try_into().ok() else {
             return Ok(None);
         };
-        let mut sections: Vec<cadmpeg_ir::features::SweepSection> = Vec::new();
+        let mut sections: Vec<cadmpeg_ir::features::sweeps::SweepSection> = Vec::new();
         for profile in profiles {
             let ProfileRef::Planar(planar) = profile else {
                 return Ok(None);
             };
-            sections.push(cadmpeg_ir::features::SweepSection::Profile(planar));
+            sections.push(cadmpeg_ir::features::sweeps::SweepSection::Profile(planar));
         }
-        cadmpeg_ir::features::SweepShape::Solid {
+        cadmpeg_ir::features::sweeps::SweepShape::Solid {
             op,
-            section: cadmpeg_ir::features::SweepSection::Profile(primary),
+            section: cadmpeg_ir::features::sweeps::SweepSection::Profile(primary),
             sections,
         }
     } else {
-        let mut sections: Vec<cadmpeg_ir::features::SheetSweepSection> = Vec::new();
+        let mut sections: Vec<cadmpeg_ir::features::sweeps::SheetSweepSection> = Vec::new();
         for profile in profiles {
             let ProfileRef::Planar(planar) = profile else {
                 return Ok(None);
             };
-            sections.push(cadmpeg_ir::features::SweepSection::Profile(planar));
+            sections.push(cadmpeg_ir::features::sweeps::SweepSection::Profile(planar));
         }
-        cadmpeg_ir::features::SweepShape::Surface {
-            section: cadmpeg_ir::features::SweepSection::Profile(primary),
+        cadmpeg_ir::features::sweeps::SweepShape::Surface {
+            section: cadmpeg_ir::features::sweeps::SweepSection::Profile(primary),
             sections,
         }
     };
@@ -7688,7 +7746,7 @@ fn hole_definition(
         references.properties_by_owner,
     )?
     .map(|(_, direction)| {
-        let normal = cadmpeg_ir::features::FeatureDirection3::from(direction);
+        let normal = cadmpeg_ir::features::geometry::FeatureDirection3::from(direction);
         if reversed {
             normal
         } else {
@@ -7800,7 +7858,9 @@ fn helical_sweep_definition(
     }
     let construction = HelicalSweepConstruction {
         profile: planar_profile,
-        axis_origin: required!(cadmpeg_ir::features::FinitePoint3::new(axis_origin)),
+        axis_origin: required!(cadmpeg_ir::features::geometry::FinitePoint3::new(
+            axis_origin
+        )),
         axis_direction,
         law,
         pitch: required!(
@@ -7808,7 +7868,7 @@ fn helical_sweep_definition(
                 scalar_named(ctx, properties, "Pitch",)?
             ))
         ),
-        travel: required!(cadmpeg_ir::features::HelicalSweepTravel::new(
+        travel: required!(cadmpeg_ir::features::sweeps::HelicalSweepTravel::new(
             Length::from_assigned_real(required!(scalar_named(ctx, properties, "Height")?)),
             Length::from_assigned_real(required!(scalar_named(ctx, properties, "Growth")?)),
         )),
@@ -8348,12 +8408,14 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
         if let Some((plane_origin, plane_normal)) =
             plane_reference(properties, "MirrorPlane", objects, properties_by_owner)
         {
-            let Some(plane_origin) = cadmpeg_ir::features::FinitePoint3::new(plane_origin) else {
+            let Some(plane_origin) =
+                cadmpeg_ir::features::geometry::FinitePoint3::new(plane_origin)
+            else {
                 return Ok(None);
             };
             return Ok(PatternKind::new(PatternTransform::Mirror {
                 plane_origin,
-                plane_normal: cadmpeg_ir::features::FeatureDirection3::from(plane_normal),
+                plane_normal: cadmpeg_ir::features::geometry::FeatureDirection3::from(plane_normal),
             })
             .ok());
         }
@@ -8361,7 +8423,7 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
             return Ok(None);
         };
         return Ok(PatternKind::new(PatternTransform::MirrorReference {
-            plane: cadmpeg_ir::features::FaceSelection::Native(plane.id.clone()),
+            plane: cadmpeg_ir::features::selections::FaceSelection::Native(plane.id.clone()),
         })
         .ok());
     }
@@ -8456,7 +8518,8 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
         if reversed {
             axis_dir = axis_dir.reversed();
         }
-        let Some(axis_origin) = cadmpeg_ir::features::FinitePoint3::new(axis_origin) else {
+        let Some(axis_origin) = cadmpeg_ir::features::geometry::FinitePoint3::new(axis_origin)
+        else {
             return Ok(None);
         };
         let Some(angles) = pattern_locations(
@@ -8479,7 +8542,7 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
             };
             let Some(pattern) = PatternKind::new(PatternTransform::Circular {
                 axis_origin,
-                axis_dir: cadmpeg_ir::features::FeatureDirection3::from(axis_dir),
+                axis_dir: cadmpeg_ir::features::geometry::FeatureDirection3::from(axis_dir),
                 angle,
                 count,
             })
@@ -8539,7 +8602,7 @@ fn linear_pattern_axis(
     if reversed {
         direction = direction.map(cadmpeg_ir::units::UnitVector3::reversed);
     }
-    let direction = direction.map(cadmpeg_ir::features::FeatureDirection3::from);
+    let direction = direction.map(cadmpeg_ir::features::geometry::FeatureDirection3::from);
     let Some(offsets) = pattern_locations(
         ctx,
         properties,
@@ -9206,161 +9269,6 @@ fn is_fillet(kind: &str) -> bool {
 fn is_chamfer(kind: &str) -> bool {
     matches!(kind, "Part::Chamfer" | "PartDesign::Chamfer")
 }
-/// The objects a `PartDesign::Body` lists as its members.
-fn body_members(objects: &[ObjectRecord], properties: &[PropertyRecord]) -> HashSet<String> {
-    let mut members = HashSet::new();
-    for object in objects.iter().filter(|object| is_body(&object.type_name)) {
-        let owned = properties
-            .iter()
-            .filter(|property| property.owner == *object.id())
-            .collect::<Vec<_>>();
-        if let Some(group) = body_membership_property(&owned) {
-            members.extend(
-                group
-                    .links()
-                    .iter()
-                    .filter_map(|link| link.as_ref()?.object())
-                    .map(str::to_owned),
-            );
-        }
-    }
-    members
-}
-
-/// The `Shape` bodies of the objects outside every `PartDesign::Body` other
-/// than the Bodies, which no definition owns.
-pub(crate) struct TopLevelShapes {
-    pub(crate) bodies: Vec<cadmpeg_ir::ids::BodyId>,
-    /// Whether a Body outside every other Body lists a member that is a
-    /// feature of the v11 design, so that the document states a scope.
-    pub(crate) has_design_member: bool,
-}
-
-/// State the document's root definition where the decoder holds none, and
-/// give it the `Shape` of each `PartDesign::Body` outside every other Body
-/// that no definition owns.
-///
-/// Returns the shapes of the other objects outside every Body, which the
-/// root owns where the document states no design scope ([`own_at_root`]).
-/// In a scoped document they are no current state's and the scope has no
-/// `unproduced` list to hold them yet: interim, errata A1. Whether a Body's
-/// members state a scope is read from the objects, so a geometry decode owns
-/// what a full decode owns.
-pub(crate) fn state_root_definition(
-    ir: &mut cadmpeg_ir::CadIr,
-    objects: &[ObjectRecord],
-    properties: &[PropertyRecord],
-    payloads: &[ShapePayloadRecord],
-) -> Result<TopLevelShapes, CodecError> {
-    let members = body_members(objects, properties);
-    let mut feature_ids = HashMap::new();
-    for object in objects
-        .iter()
-        .filter(|object| is_design_object(&object.type_name))
-    {
-        if let Ok(id) = feature_id(object) {
-            feature_ids.insert(object.id().as_str(), id);
-        }
-    }
-    let not_features = multi_transform_stages(objects, properties)
-        .into_iter()
-        .chain(
-            objects
-                .iter()
-                .filter(|object| is_body(&object.type_name))
-                .map(|object| object.id().as_str()),
-        )
-        .collect::<HashSet<_>>();
-    let mut bodies = HashSet::new();
-    let mut others = HashSet::new();
-    let mut has_design_member = false;
-    for object in objects
-        .iter()
-        .filter(|object| !members.contains(object.id().as_str()))
-    {
-        let owned = properties
-            .iter()
-            .filter(|property| property.owner == *object.id())
-            .collect::<Vec<_>>();
-        if is_body(&object.type_name) && body_definition(&owned, &feature_ids)?.is_some() {
-            bodies.insert(object.id().as_str());
-            has_design_member |= body_membership_property(&owned).is_some_and(|group| {
-                group
-                    .links()
-                    .iter()
-                    .filter_map(|link| link.as_ref()?.object())
-                    .any(|member| {
-                        feature_ids.contains_key(member) && !not_features.contains(member)
-                    })
-            });
-        } else {
-            others.insert(object.id().as_str());
-        }
-    }
-    let shape_bodies = |owners: &HashSet<&str>| {
-        let shapes = properties
-            .iter()
-            .filter(|property| property.name == "Shape" && owners.contains(property.owner.as_str()))
-            .map(|property| property.id.as_str())
-            .collect::<HashSet<_>>();
-        crate::gui::select_shape_bodies(
-            ir,
-            payloads
-                .iter()
-                .filter(|payload| shapes.contains(payload.property.as_str()))
-                .map(|payload| payload.id.as_str()),
-        )
-    };
-    let candidates = shape_bodies(&bodies);
-    let other_candidates = shape_bodies(&others);
-    let mut owned = ir
-        .model
-        .product_definitions
-        .iter()
-        .flat_map(|definition| {
-            definition.bodies.iter().chain(
-                definition
-                    .instance_bodies
-                    .iter()
-                    .flat_map(|instance| &instance.bodies),
-            )
-        })
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    let bodies = candidates
-        .into_iter()
-        .filter(|body| owned.insert(body.clone()))
-        .collect::<Vec<_>>();
-    let others = other_candidates
-        .into_iter()
-        .filter(|body| owned.insert(body.clone()))
-        .collect::<Vec<_>>();
-    let definitions = &mut ir.model.product_definitions;
-    let index = match definitions
-        .iter()
-        .position(cadmpeg_ir::products::ProductDefinition::is_root)
-    {
-        Some(index) => index,
-        None => {
-            let id = crate::product::document_definition_id()?;
-            let at = definitions.partition_point(|definition| definition.id < id);
-            definitions.insert(
-                at,
-                cadmpeg_ir::products::ProductDefinition::root(
-                    id,
-                    cadmpeg_ir::products::ExternalDocument::default(),
-                ),
-            );
-            at
-        }
-    };
-    definitions[index].bodies.extend(bodies);
-    Ok(TopLevelShapes {
-        bodies: others,
-        has_design_member,
-    })
-}
-
 /// The objects a `PartDesign::MultiTransform` lists in `Transformations`: the
 /// stages of its layout, which are no features of their own (§6.5).
 pub(crate) fn multi_transform_stages<'a>(
@@ -9382,45 +9290,59 @@ pub(crate) fn multi_transform_stages<'a>(
         .collect()
 }
 
-/// Give the document's root definition `bodies`.
-pub(crate) fn own_at_root(ir: &mut cadmpeg_ir::CadIr, bodies: Vec<cadmpeg_ir::ids::BodyId>) {
-    if let Some(root) = ir
-        .model
-        .product_definitions
-        .iter_mut()
-        .find(|definition| definition.is_root())
-    {
-        root.bodies.extend(bodies);
-    }
-}
-
 /// Mark the bodies a document keeps only as intermediate shapes as not
-/// displayed: a feature's tool shape (any shape property other than `Shape`)
-/// and the shape of every member of a `PartDesign::Body`, including its `Tip`.
-/// A body shows its `Tip` result through its own `Shape`. This runs after GUI
-/// transfer, so these structural roles win over stored member visibility.
+/// displayed, and return them: a feature's tool shape (any shape property
+/// other than `Shape`) and the shape of every member of a `PartDesign::Body`,
+/// including its `Tip`. A body shows its `Tip` result through its own `Shape`.
+/// This runs after GUI transfer, so these structural roles win over stored
+/// member visibility. No definition owns an intermediate body: a member's
+/// shape is a state of its Body, not a body of the current model (§5.4).
 pub(crate) fn hide_intermediate_bodies(
     ir: &mut cadmpeg_ir::CadIr,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
-) {
-    let members = body_members(objects, properties);
+) -> HashSet<cadmpeg_ir::ids::BodyId> {
+    let mut properties_by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
+    let mut property_by_id = HashMap::<&str, &PropertyRecord>::new();
+    for property in properties {
+        properties_by_owner
+            .entry(property.owner.as_str())
+            .or_default()
+            .push(property);
+        property_by_id
+            .entry(property.id.as_str())
+            .or_insert(property);
+    }
+    let mut members = HashSet::new();
+    for object in objects.iter().filter(|object| is_body(&object.type_name)) {
+        let owned = properties_by_owner
+            .get(object.id().as_str())
+            .map_or(&[][..], Vec::as_slice);
+        if let Some(group) = body_membership_property(owned) {
+            members.extend(
+                group
+                    .links()
+                    .iter()
+                    .filter_map(|link| link.as_ref()?.object())
+                    .map(str::to_owned),
+            );
+        }
+    }
     let hidden = payloads.iter().filter_map(|payload| {
-        let property = properties
-            .iter()
-            .find(|property| property.id == payload.property)?;
+        let property = property_by_id.get(payload.property.as_str())?;
         (property.name != "Shape" || members.contains(&property.owner))
             .then_some(payload.id.as_str())
     });
     let hidden = crate::gui::select_shape_bodies(ir, hidden)
         .into_iter()
-        .collect::<std::collections::HashSet<_>>();
+        .collect::<HashSet<_>>();
     for body in &mut ir.geometry.bodies {
         if hidden.contains(&body.id) {
             body.visible = Some(false);
         }
     }
+    hidden
 }
 
 fn is_body(kind: &str) -> bool {
@@ -9489,7 +9411,7 @@ pub(crate) fn census(
             FeatureDefinition::PostProcess { operation, .. } => (operation, true),
             FeatureDefinition::Operation(operation) => (operation, false),
         };
-        let value = serde_json::to_value(definition).map_err(|error| {
+        let value = cadmpeg_ir::hash::finite_json::to_json_value(definition).map_err(|error| {
             CodecError::malformed(format_args!(
                 "cannot classify design feature {}: {error}",
                 feature.id

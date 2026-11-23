@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::document::CadIr;
-use crate::features::{
-    DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
-    FeatureOperation,
-};
+use crate::features::evaluation::FeatureEvaluation;
+use crate::features::selections::DistinctMembers;
+use crate::features::{Feature, FeatureContent, FeatureDefinition, FeatureOperation};
 use crate::report::check::Finding;
 
 fn model() -> CadIr {
@@ -52,7 +51,7 @@ fn model() -> CadIr {
 fn findings(ir: &CadIr) -> Vec<Finding> {
     let mut findings = Vec::new();
     super::super::check_products(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         ir,
         &mut findings,
     )
@@ -102,20 +101,22 @@ fn product_history_owner_rejects_inconsistent_output_owner() {
 #[test]
 fn product_history_owner_validates_parameter_definition() {
     let mut ir = model();
-    ir.model.parameters.push(crate::features::DesignParameter {
-        id: "test:model:parameter#distance".try_into().unwrap(),
-        product_definition: Some(ir.model.product_definitions[0].id.clone()),
-        owner: None,
-        ordinal: 0,
-        name: "distance".into(),
-        expression: "2".into(),
-        display: None,
-        value: None,
-        dependencies: crate::features::DistinctMembers::default(),
-        properties: std::collections::BTreeMap::default(),
-        pmi: None,
-        native_ref: None,
-    });
+    ir.model
+        .parameters
+        .push(crate::features::parameters::DesignParameter {
+            id: "test:model:parameter#distance".try_into().unwrap(),
+            product_definition: Some(ir.model.product_definitions[0].id.clone()),
+            owner: None,
+            ordinal: 0,
+            name: "distance".into(),
+            expression: "2".into(),
+            display: None,
+            value: None,
+            dependencies: crate::features::selections::DistinctMembers::default(),
+            properties: std::collections::BTreeMap::default(),
+            pmi: None,
+            native_ref: None,
+        });
     assert!(findings(&ir).is_empty());
     ir.model.parameters[0].product_definition =
         Some("test:model:product#missing".try_into().unwrap());

@@ -27,7 +27,8 @@ use crate::design::read;
 use crate::design::selection::{
     Anchor, MemberOrder, Members, PickTarget, Picked, Picks, Selection,
 };
-use crate::features::{FinitePoint3, ParameterId};
+use crate::features::geometry::FinitePoint3;
+use crate::features::ParameterId;
 use crate::math::{Point2, Point3};
 use crate::scalar::{Angle, FiniteReal, Length, PositiveLength, PositiveReal};
 use crate::units::FinitePoint2;

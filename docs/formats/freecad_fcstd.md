@@ -1,6 +1,6 @@
 # FreeCAD `.FCStd`
 
-Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/freecad.md`](../layouts/freecad.md), generated from `docs/layouts/freecad.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
+Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/freecad.md`](../layouts/freecad.md), generated from `docs/layouts/freecad.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg-layout-tables` proves the two agree.
 
 ## 1. Support envelope
 
@@ -1895,7 +1895,18 @@ both taper angles and offsets, whether length follows the profile normal, and wh
 profile faces are allowed. Direction provenance distinguishes the profile normal, an explicit
 custom vector, and a selected reference axis while also retaining the normalized resolved
 direction. A non-sketch planar profile supplies its profile normal from its persisted placement
-frame. Reversal inverts the direction. A pad joins and a pocket cuts. Missing required lengths
+frame. Reversal inverts the direction.
+
+A body's `Group` list orders its solid features. Its first solid feature creates a new body
+when it adds material and both the body's `BaseFeature` link and the feature's `BaseFeature` link
+are empty.
+An absent `BaseFeature` property also denotes an empty link. Later features add to or remove from
+the result of the same body. A body with a `BaseFeature` link starts from that base. These rules
+apply to PartDesign pads, revolutions, primitives, lofts, pipes, and helices. Pockets, grooves,
+holes, and subtractive primitives, lofts, pipes, and helices remove material. A subtractive first
+solid feature with empty body and feature `BaseFeature` links has an empty input solid.
+
+Missing required lengths
 or selections and invalid directions remain attributable native operations instead of being
 rewritten as zero-length or blind features.
 
@@ -1918,7 +1929,8 @@ at most one turn. The sum of two fixed side magnitudes is at most one turn.
 Revolution `Type=1` selects last-intersection termination; Groove `Type=1` selects through-all
 termination. `Type=2` selects first-intersection termination, and `Type=3` selects the face in
 `UpToFace`. These terminations have no fixed angular endpoint.
-Standalone Part revolutions create a new body, PartDesign revolutions join, and grooves cut.
+Standalone Part revolutions create a new body, PartDesign revolutions join, and grooves cut,
+subject to the first-feature rule of the extrusion section.
 
 Part and PartDesign fillets distinguish an explicit edge selection from the persisted all-edges
 mode and require a finite positive constant radius. Chamfers retain equal-distance,

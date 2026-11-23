@@ -66,7 +66,11 @@ pub fn canonical_json_sha256<T: Serialize + ?Sized>(
 ) -> Result<String, DigestError> {
     let mut buffered =
         std::io::BufWriter::with_capacity(DIGEST_BUFFER_BYTES, DigestWriter(Sha256::new()));
-    write_canonical_json(CanonicalAdmission::limited(ctx), &mut buffered, value)?;
+    write_canonical_json(
+        CanonicalAdmission::limited(ctx, "walk document digest"),
+        &mut buffered,
+        value,
+    )?;
     let writer = buffered
         .into_inner()
         .map_err(|error| DigestError::Write(error.into_error()))?;
@@ -163,10 +167,19 @@ pub fn document_local_sha256_without_carried(
             model: ir.model.sorted()?,
             design: ir.design.sorted(),
             process: ir.process.sorted(),
-            native: normalized_native(&ir.native, format, &unknowns, carried),
+            native: normalized_native(ctx, &ir.native, format, &unknowns, carried),
         })
     })()?;
-    canonical_json_sha256(ctx, &document).map_err(Into::into)
+    match canonical_json_sha256(ctx, &document) {
+        Ok(digest) => Ok(digest),
+        Err(error) => {
+            if let Some(limit) = ctx.resource_refusal() {
+                Err(limit.into())
+            } else {
+                Err(error.into())
+            }
+        }
+    }
 }
 
 fn reduced_unknowns(
@@ -198,7 +211,7 @@ fn reduced_unknowns(
 /// except `scope`: decoders take this digest before the decode wrapper
 /// records the scope.
 #[derive(Serialize)]
-struct NormalizedDocument<'a> {
+struct NormalizedDocument<'a, 'input> {
     ir_version: &'a str,
     fragment: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -209,18 +222,188 @@ struct NormalizedDocument<'a> {
     model: SortedModel<'a>,
     design: SortedDesign<'a>,
     process: SortedProcess<'a>,
-    native: BTreeMap<&'a str, BTreeMap<&'a str, Vec<&'a NativeRecord>>>,
+    native: BTreeMap<&'a str, BTreeMap<&'a str, Vec<DigestNativeRecord<'a, 'input>>>>,
+}
+
+/// Serializes a stored canonical compact [`NativeRecord`] as pretty JSON at
+/// indent level 4 (inside `NormalizedDocument.native.<format>.<arena>[i]`),
+/// avoiding `serde_json::Deserializer` round-tripping while keeping the exact
+/// bytes `serde_json::Serializer::pretty` + `FiniteSerializer` produce.
+struct DigestNativeRecord<'a, 'input> {
+    ctx: &'a DecodeContext<'input>,
+    record: &'a NativeRecord,
+}
+
+/// Depth of `NormalizedDocument.native.<format>.<arena>[i]` in pretty JSON.
+const NATIVE_RECORD_INDENT_LEVEL: usize = 4;
+
+fn push_indent(out: &mut Vec<u8>, level: usize) {
+    const SPACES: &[u8] = b"                                                                ";
+    let mut remaining = level * 2;
+    while remaining >= SPACES.len() {
+        out.extend_from_slice(SPACES);
+        remaining -= SPACES.len();
+    }
+    out.extend_from_slice(&SPACES[..remaining]);
+}
+
+/// Format canonical compact JSON text into `serde_json::ser::PrettyFormatter`
+/// bytes starting at `base_indent`, normalizing `-0.0` outside strings to
+/// `0.0`. Returns the maximum serializer depth reached inside the value
+/// (containers plus scalar leaves).
+fn pretty_format_compact_json(compact: &str, base_indent: usize, out: &mut Vec<u8>) -> usize {
+    let bytes = compact.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    let mut depth = 0_usize;
+    let mut max_depth = 1_usize;
+    while i < len {
+        match bytes[i] {
+            b'"' => {
+                let start = i;
+                i += 1;
+                while i < len {
+                    let b = bytes[i];
+                    i += 1;
+                    if b == b'\\' {
+                        if i < len {
+                            i += 1;
+                        }
+                    } else if b == b'"' {
+                        break;
+                    }
+                }
+                out.extend_from_slice(&bytes[start..i]);
+                max_depth = max_depth.max(depth + 1);
+            }
+            b'{' => {
+                if bytes.get(i + 1) == Some(&b'}') {
+                    out.extend_from_slice(b"{}");
+                    max_depth = max_depth.max(depth + 1);
+                    i += 2;
+                } else {
+                    depth += 1;
+                    max_depth = max_depth.max(depth);
+                    out.push(b'{');
+                    out.push(b'\n');
+                    push_indent(out, base_indent + depth);
+                    i += 1;
+                }
+            }
+            b'[' => {
+                if bytes.get(i + 1) == Some(&b']') {
+                    out.extend_from_slice(b"[]");
+                    max_depth = max_depth.max(depth + 1);
+                    i += 2;
+                } else {
+                    depth += 1;
+                    max_depth = max_depth.max(depth);
+                    out.push(b'[');
+                    out.push(b'\n');
+                    push_indent(out, base_indent + depth);
+                    i += 1;
+                }
+            }
+            b'}' | b']' => {
+                let closing = bytes[i];
+                depth = depth.max(1) - 1;
+                out.push(b'\n');
+                push_indent(out, base_indent + depth);
+                out.push(closing);
+                i += 1;
+            }
+            b',' => {
+                out.push(b',');
+                out.push(b'\n');
+                push_indent(out, base_indent + depth);
+                i += 1;
+            }
+            b':' => {
+                out.extend_from_slice(b": ");
+                i += 1;
+            }
+            b'-' if bytes.get(i..i + 4) == Some(b"-0.0")
+                && matches!(bytes.get(i + 4), None | Some(b',' | b'}' | b']')) =>
+            {
+                out.extend_from_slice(b"0.0");
+                max_depth = max_depth.max(depth + 1);
+                i += 4;
+            }
+            _ => {
+                let start = i;
+                i += 1;
+                while i < len && !matches!(bytes[i], b'"' | b'{' | b'}' | b'[' | b']' | b',' | b':')
+                {
+                    i += 1;
+                }
+                out.extend_from_slice(&bytes[start..i]);
+                max_depth = max_depth.max(depth + 1);
+            }
+        }
+    }
+    max_depth
+}
+
+impl Serialize for DigestNativeRecord<'_, '_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        use std::cell::RefCell;
+
+        thread_local! {
+            static PRETTY_SCRATCH: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+        }
+
+        // `RawValue` serialization itself enters 2 levels (`serialize_struct` +
+        // `serialize_str`); enter any remaining levels on `ctx` to enforce the
+        // exact same recursion-depth ceiling.
+        PRETTY_SCRATCH.with(|scratch| {
+            let mut buf = scratch.borrow_mut();
+            buf.clear();
+            let text = self.record.json_text();
+            let reserve = text.len().min(usize::MAX / 2) * 2;
+            if buf.capacity() < reserve {
+                buf.reserve(reserve);
+            }
+            let max_depth = pretty_format_compact_json(text, NATIVE_RECORD_INDENT_LEVEL, &mut buf);
+            if max_depth > 2 {
+                let extra = max_depth - 2;
+                let mut guards = Vec::with_capacity(extra);
+                for _ in 0..extra {
+                    match self.ctx.enter_nested("walk document digest") {
+                        Ok(guard) => guards.push(guard),
+                        Err(_) => {
+                            return Err(serde::ser::Error::custom(
+                                "canonical JSON resource admission refused",
+                            ));
+                        }
+                    }
+                }
+            }
+            let raw = std::str::from_utf8(&buf)
+                .map_err(|_| serde::ser::Error::custom("canonical native text is not UTF-8"))?;
+            let mut state = serializer.serialize_struct("$serde_json::private::RawValue", 1)?;
+            state.serialize_field("$serde_json::private::RawValue", raw)?;
+            state.end()
+        })
+    }
 }
 
 /// Borrow every native namespace in canonical order, replacing the `format`
 /// unknown arena with `unknowns`, leaving out the `format` arenas named in
 /// `carried`, and creating that namespace when the document has none.
-fn normalized_native<'a>(
+fn normalized_native<'a, 'input>(
+    ctx: &'a DecodeContext<'input>,
     native: &'a Native,
     format: &'a str,
     unknowns: &'a [NativeRecord],
     carried: &[&str],
-) -> BTreeMap<&'a str, BTreeMap<&'a str, Vec<&'a NativeRecord>>> {
+) -> BTreeMap<&'a str, BTreeMap<&'a str, Vec<DigestNativeRecord<'a, 'input>>>> {
+    let wrap = |records: &'a [NativeRecord]| -> Vec<DigestNativeRecord<'a, 'input>> {
+        sorted_records(records)
+            .into_iter()
+            .map(|record| DigestNativeRecord { ctx, record })
+            .collect()
+    };
     let mut namespaces = BTreeMap::new();
     for (name, namespace) in &native.0 {
         let mut arenas = BTreeMap::new();
@@ -228,17 +411,23 @@ fn normalized_native<'a>(
             if name == format && (arena == "unknowns" || carried.contains(&arena.as_str())) {
                 continue;
             }
-            arenas.insert(arena.as_str(), sorted_records(records));
+            arenas.insert(arena.as_str(), wrap(records));
         }
         if name == format {
-            let refs = unknowns.iter().collect::<Vec<_>>();
+            let refs = unknowns
+                .iter()
+                .map(|record| DigestNativeRecord { ctx, record })
+                .collect::<Vec<_>>();
             arenas.insert("unknowns", refs);
         }
         namespaces.insert(name.as_str(), arenas);
     }
     if !namespaces.contains_key(format) {
         let mut arenas = BTreeMap::new();
-        let refs = unknowns.iter().collect::<Vec<_>>();
+        let refs = unknowns
+            .iter()
+            .map(|record| DigestNativeRecord { ctx, record })
+            .collect::<Vec<_>>();
         arenas.insert("unknowns", refs);
         namespaces.insert(format, arenas);
     }
@@ -300,22 +489,28 @@ mod tests {
 
     #[test]
     fn canonical_json_sha256_matches_json_larger_than_the_buffer() {
-        let value: Vec<String> = (0..20_000).map(|index| format!("entry-{index}")).collect();
+        let value: Vec<String> = (0..6_000).map(|index| format!("entry-{index}")).collect();
         let json = crate::hash::finite_json::to_canonical_json_string(&value).unwrap();
         assert!(json.len() > super::DIGEST_BUFFER_BYTES);
         assert_eq!(
-            canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &value).unwrap(),
+            canonical_json_sha256(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                &value
+            )
+            .unwrap(),
             crate::hash::sha256_hex(json.as_bytes())
         );
     }
 
     #[test]
     fn a_finite_float_digests() {
-        assert!(
-            canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &1.0f64).is_ok()
-        );
         assert!(canonical_json_sha256(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &1.0f64
+        )
+        .is_ok());
+        assert!(canonical_json_sha256(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &vec![1.0f64, -2.5]
         )
         .is_ok());
@@ -325,7 +520,10 @@ mod tests {
     fn a_non_finite_float_has_no_digest() {
         for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             let Err(DigestError::CanonicalJson(CanonicalJsonError::NonFinite { value: refused })) =
-                canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &value)
+                canonical_json_sha256(
+                    &cadmpeg_core::decode::test_support::service_decode_context(),
+                    &value,
+                )
             else {
                 panic!("a non-finite float must have no canonical JSON");
             };
@@ -352,12 +550,17 @@ mod tests {
     #[test]
     fn a_nested_non_finite_float_has_no_digest() {
         let nested = serde_json::json!({ "outer": [{ "inner": 1.0 }] });
-        assert!(
-            canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &nested).is_ok()
-        );
+        assert!(canonical_json_sha256(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &nested
+        )
+        .is_ok());
         let nested = vec![Some(vec![(1.0f64, f64::NAN)])];
         assert!(matches!(
-            canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &nested),
+            canonical_json_sha256(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                &nested
+            ),
             Err(DigestError::CanonicalJson(
                 CanonicalJsonError::NonFinite { .. }
             ))
@@ -484,7 +687,7 @@ mod tests {
     fn pins_native_arena_digest() {
         assert_eq!(
             canonical_json_sha256(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &pinned_native()
             )
             .unwrap(),
@@ -543,7 +746,7 @@ mod tests {
     fn an_unreadable_unknown_arena_has_no_digest() {
         let source_image = "pin:test:source-image#0";
         let absent = document_local_sha256(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &pinned_document(),
             pinned_document().source.as_ref(),
             "pin",
@@ -555,7 +758,7 @@ mod tests {
         readable_fields.insert("links".into(), serde_json::json!([]));
         let readable_ir = pinned_document_with_unknown(readable_fields);
         let readable = document_local_sha256(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &readable_ir,
             readable_ir.source.as_ref(),
             "pin",
@@ -568,7 +771,7 @@ mod tests {
         unreadable_fields.insert("links".into(), serde_json::json!(7));
         let unreadable = pinned_document_with_unknown(unreadable_fields);
         assert!(document_local_sha256(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &unreadable,
             unreadable.source.as_ref(),
             "pin",
@@ -576,7 +779,7 @@ mod tests {
         )
         .is_err());
         assert!(document_local_sha256(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &unreadable,
             unreadable.source.as_ref(),
             "pin",
@@ -595,7 +798,7 @@ mod tests {
         };
         let raw_source = pinned_document_with_unknown(source_fields);
         assert!(document_local_sha256(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &raw_source,
             raw_source.source.as_ref(),
             "pin",
@@ -610,12 +813,16 @@ mod tests {
     fn pins_document_digests() {
         let ir = pinned_document();
         assert_eq!(
-            canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &ir).unwrap(),
+            canonical_json_sha256(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                &ir
+            )
+            .unwrap(),
             "ed973e3fccbfe465c1ce26ee06372ac3151356fcdaeba850c5bd028009a61e02"
         );
         assert_eq!(
             document_local_sha256(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &ir,
                 ir.source.as_ref(),
                 "pin",
@@ -713,7 +920,7 @@ mod tests {
         );
         assert_eq!(
             document_local_sha256(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &ir,
                 ir.source.as_ref(),
                 "pin",
@@ -731,7 +938,7 @@ mod tests {
 
         assert_eq!(
             document_local_sha256(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &ir,
                 Some(&source),
                 "pin",
@@ -739,7 +946,7 @@ mod tests {
             )
             .unwrap(),
             document_local_sha256(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &pinned_document_with_source(),
                 pinned_document_with_source().source.as_ref(),
                 "pin",
@@ -759,9 +966,16 @@ mod tests {
         let mut reparsed = CadIr::from_json(&json).unwrap();
         reparsed.finalize();
         assert_eq!(
-            canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &ir).unwrap(),
-            canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &reparsed)
-                .unwrap()
+            canonical_json_sha256(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                &ir
+            )
+            .unwrap(),
+            canonical_json_sha256(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                &reparsed
+            )
+            .unwrap()
         );
         assert_eq!(ir.to_canonical_json().unwrap(), json);
     }
@@ -784,7 +998,7 @@ mod tests {
             .collect::<Vec<_>>();
         normalized
             .set_native_unknowns(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 format,
                 &unknowns,
             )
@@ -879,7 +1093,7 @@ mod tests {
         let source_image = "synthetic:file:source-image#0";
         assert_eq!(
             document_local_sha256(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &ir,
                 ir.source.as_ref(),
                 "synthetic",
@@ -890,7 +1104,7 @@ mod tests {
         );
         assert_eq!(
             document_local_sha256(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &ir,
                 ir.source.as_ref(),
                 "absent",
@@ -906,7 +1120,7 @@ mod tests {
         let source_image = "synthetic:file:source-image#0";
         let (ir, _source_fidelity) = local_digest_fixture();
         let hash = document_local_sha256(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &ir,
             ir.source.as_ref(),
             "synthetic",
@@ -921,7 +1135,7 @@ mod tests {
         );
         assert_eq!(
             document_local_sha256(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &recorded,
                 recorded.source.as_ref(),
                 "synthetic",
@@ -940,7 +1154,7 @@ mod tests {
             ));
         assert_eq!(
             document_local_sha256(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &repacked,
                 repacked.source.as_ref(),
                 "synthetic",
@@ -952,7 +1166,8 @@ mod tests {
     }
     #[test]
     fn procedural_digest_indexes_thousands_of_owners_with_linear_work() {
-        use crate::geometry::{Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition};
+        use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+        use crate::geometry::{Curve, CurveGeometry, ProceduralCurve};
         use crate::ids::{CurveId, ProceduralCurveId};
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         let mut ir = CadIr::empty();
@@ -992,7 +1207,8 @@ mod tests {
 
     #[test]
     fn procedural_digest_still_rejects_orphan_and_ambiguous_owners() {
-        use crate::geometry::{Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition};
+        use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+        use crate::geometry::{Curve, CurveGeometry, ProceduralCurve};
         use crate::ids::{CurveId, ProceduralCurveId};
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         for count in [0, 2, 3] {
@@ -1046,6 +1262,38 @@ mod tests {
         assert!(
             matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(limit)) if limit == original)
         );
+    }
+
+    #[test]
+    fn pretty_format_compact_json_matches_canonical_pretty_printer() {
+        let samples = [
+            serde_json::json!({
+                "id": "test:scope:kind#0",
+                "empty_obj": {},
+                "empty_arr": [],
+                "neg_zero": -0.0,
+                "neg_zero_str": "-0.0",
+                "neg_zero_arr": [-0.0, -0.05, 0.0, -0.0],
+                "escaped": "a\"b\\c\n\t\"{}",
+                "nested": { "k": [1, true, null, { "x": -0.0 }] }
+            }),
+            serde_json::json!({
+                "id": "test:scope:kind#1",
+                "payload": [[-0.0], [[[]]], {"a": {"b": {}}}]
+            }),
+        ];
+        for sample in &samples {
+            let compact = serde_json::to_string(sample).unwrap();
+            let mut formatted = Vec::new();
+            let max_depth = super::pretty_format_compact_json(&compact, 0, &mut formatted);
+            assert!(max_depth >= 2);
+            let canonical = crate::hash::finite_json::to_canonical_json_string(sample).unwrap();
+            assert_eq!(
+                String::from_utf8(formatted).unwrap(),
+                canonical,
+                "mismatch for {compact}"
+            );
+        }
     }
 }
 

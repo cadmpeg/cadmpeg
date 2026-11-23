@@ -2,7 +2,7 @@
 //! Endpoint frames and fitted offset distance for sketch NURBS curves.
 
 use super::nurbs_pcurve_parameter_domain;
-use crate::features::FiniteVector3;
+use crate::features::geometry::FiniteVector3;
 use crate::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles};
 use crate::math::portable::Portable;
 use crate::math::{Point2, Vector3};
@@ -150,7 +150,7 @@ mod tests {
     fn fitted_sketch_nurbs_offset_measures_the_frame_distance() {
         let source = crate::sketches::SketchGeometry::nurbs(curve(0.0, Some(vec![1.0, 2.0, 1.0])));
         let result = crate::sketches::SketchGeometry::nurbs(curve(1.0, None));
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let distance =
             super::super::fitted_nurbs_offset_frame_distance(&source, &result, 0.0).unwrap();
         assert_eq!(distance.get(), 1.0);

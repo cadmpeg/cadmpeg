@@ -316,7 +316,9 @@ fn the_encoder_targets_each_usda_version_a_package_and_a_crate_layer() {
 mod intrinsics;
 mod layers;
 mod losses;
+mod patches;
 mod physics;
+mod scene;
 mod subsets;
 mod textures;
 mod usdc;

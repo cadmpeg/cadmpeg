@@ -3,7 +3,7 @@
 
 use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::CurveGeometry;
 
@@ -75,7 +75,12 @@ pub(crate) fn nurbs_surface_partials(
     u: f64,
     v: f64,
 ) -> Result<
-    Option<cadmpeg_ir::eval::SurfacePartials<FinitePoint3, cadmpeg_ir::features::FiniteVector3>>,
+    Option<
+        cadmpeg_ir::eval::SurfacePartials<
+            FinitePoint3,
+            cadmpeg_ir::features::geometry::FiniteVector3,
+        >,
+    >,
     CodecError,
 > {
     Ok(cadmpeg_ir::eval::finite_or_refusal(
@@ -95,7 +100,12 @@ pub(super) fn surface_partials(
     u: f64,
     v: f64,
 ) -> Result<
-    Option<cadmpeg_ir::eval::SurfacePartials<FinitePoint3, cadmpeg_ir::features::FiniteVector3>>,
+    Option<
+        cadmpeg_ir::eval::SurfacePartials<
+            FinitePoint3,
+            cadmpeg_ir::features::geometry::FiniteVector3,
+        >,
+    >,
     cadmpeg_core::decode::ResourceLimit,
 > {
     cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::surface_partials(
@@ -112,7 +122,9 @@ fn analytic_first_partials(
     surface: &cadmpeg_ir::geometry::SolvedSurfaceGeometry,
     u: f64,
     v: f64,
-) -> Option<cadmpeg_ir::eval::SurfacePartials<FinitePoint3, cadmpeg_ir::features::FiniteVector3>> {
+) -> Option<
+    cadmpeg_ir::eval::SurfacePartials<FinitePoint3, cadmpeg_ir::features::geometry::FiniteVector3>,
+> {
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry as S;
     use cadmpeg_ir::math::{Point3, Vector3};
     let combine = |terms: &[(f64, Vector3)]| {
@@ -234,8 +246,8 @@ fn analytic_first_partials(
     let point = Point3::new(base.x + point.x, base.y + point.y, base.z + point.z);
     Some(cadmpeg_ir::eval::SurfacePartials {
         point: FinitePoint3::new(point)?,
-        du: cadmpeg_ir::features::FiniteVector3::new(du)?,
-        dv: cadmpeg_ir::features::FiniteVector3::new(dv)?,
+        du: cadmpeg_ir::features::geometry::FiniteVector3::new(du)?,
+        dv: cadmpeg_ir::features::geometry::FiniteVector3::new(dv)?,
     })
 }
 

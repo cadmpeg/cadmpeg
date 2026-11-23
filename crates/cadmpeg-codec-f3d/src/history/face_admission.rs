@@ -2,10 +2,10 @@
 //! Admit historical face references against the input topologies that were emitted.
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::edge_treatments::{FullRoundFilletGroup, FullRoundSideSelection};
-use cadmpeg_ir::features::{
-    ExtrudeExtent, ExtrudeStart, FaceSelection, Feature, FeatureDefinition, FeatureId,
-    FeatureInputTopology, FeatureOperation, LinearTermination,
-};
+use cadmpeg_ir::features::evaluation::FeatureInputTopology;
+use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeStart, LinearTermination};
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::ids::{FaceId, FeatureInputTopologyId, HistoricalFaceId};
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::{HashMap, HashSet};
@@ -127,10 +127,10 @@ impl<'a> FaceInputs<'a> {
         &mut self,
         feature: &FeatureId,
         scope: Option<&str>,
-        profile: &mut cadmpeg_ir::features::PlanarProfileRef,
+        profile: &mut cadmpeg_ir::features::profiles::PlanarProfileRef,
         losses: &mut Vec<LossNote>,
     ) -> Result<(), CodecError> {
-        let cadmpeg_ir::features::PlanarProfileRef::HistoricalFaces {
+        let cadmpeg_ir::features::profiles::PlanarProfileRef::HistoricalFaces {
             state,
             faces,
             native,
@@ -146,7 +146,7 @@ impl<'a> FaceInputs<'a> {
                 })?;
             let source = source.to_owned();
             record_loss(feature, losses);
-            *profile = cadmpeg_ir::features::PlanarProfileRef::Native(source);
+            *profile = cadmpeg_ir::features::profiles::PlanarProfileRef::Native(source);
         }
         Ok(())
     }
@@ -175,7 +175,7 @@ impl<'a> FaceInputs<'a> {
                     let source = topology
                         .native_ref
                         .as_deref()
-                        .and_then(super::historical_brep_source);
+                        .and_then(super::face_resolution::historical_brep_source);
                     let state = topology
                         .id
                         .as_str()
@@ -190,12 +190,14 @@ impl<'a> FaceInputs<'a> {
                     for face in faces.iter() {
                         if !face.as_str().starts_with("f3d:brep:entity#")
                             && !source.is_some_and(|source| {
-                                super::active_brep_face_matches_source(face, source)
+                                super::face_resolution::active_brep_face_matches_source(
+                                    face, source,
+                                )
                             })
                         {
                             return None;
                         }
-                        let slot = super::stable_ref(face.as_str())?;
+                        let slot = super::body_closures::stable_ref(face.as_str())?;
                         let id = crate::ids::history_input_face_id(&prefix, slot);
                         if !members.contains(&id) {
                             return None;
@@ -240,7 +242,7 @@ impl FaceAdmission<'_, '_> {
         let inputs = &mut self.inputs;
         let losses = &mut *self.losses;
         if let FeatureOperation::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Planar(profile),
+            profile: cadmpeg_ir::features::profiles::ProfileRef::Planar(profile),
             ..
         } = operation
         {
@@ -289,7 +291,7 @@ impl FaceAdmission<'_, '_> {
                 if let ExtrudeStart::FromFace { face, .. } = start {
                     admit(face, false)?;
                 }
-                let mut side = |side: &mut cadmpeg_ir::features::ExtrudeSide| {
+                let mut side = |side: &mut cadmpeg_ir::features::extents::ExtrudeSide| {
                     if let LinearTermination::ToFace { face, .. } = &mut side.termination {
                         admit(face, false)?;
                     }
@@ -330,7 +332,7 @@ impl FaceAdmission<'_, '_> {
                             .map_err(CodecError::malformed)?,
                     );
                 }
-                *groups = cadmpeg_ir::features::NonEmptyMembers::try_from(admitted)
+                *groups = cadmpeg_ir::features::selections::NonEmptyMembers::try_from(admitted)
                     .map_err(CodecError::malformed)?;
             }
             FeatureOperation::FaceBlend { operands, .. } if edit_pair => {
@@ -367,12 +369,12 @@ impl FaceAdmission<'_, '_> {
             | FeatureOperation::RuledSurface { support_faces, .. } => admit(support_faces, false)?,
             FeatureOperation::SplitFace { targets, tool, .. } => {
                 admit(targets, false)?;
-                if let cadmpeg_ir::features::SplitFaceTool::Faces(faces) = tool {
+                if let cadmpeg_ir::features::direct_edit::SplitFaceTool::Faces(faces) = tool {
                     admit(faces, true)?;
                 }
             }
             FeatureOperation::SplitBody {
-                tool: cadmpeg_ir::features::SplitBodyTool::Faces(tools),
+                tool: cadmpeg_ir::features::direct_edit::SplitBodyTool::Faces(tools),
                 ..
             }
             | FeatureOperation::CutWithSurface { tools, .. } => admit(tools, false)?,
@@ -390,14 +392,21 @@ impl FaceAdmission<'_, '_> {
             }
             FeatureOperation::Draft { faces, anchor, .. } => {
                 admit(faces, false)?;
-                let (cadmpeg_ir::features::DraftAnchor::NeutralPlane { plane: anchor, .. }
-                | cadmpeg_ir::features::DraftAnchor::PartingLine { tool: anchor, .. }) = anchor;
+                let (cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane {
+                    plane: anchor,
+                    ..
+                }
+                | cadmpeg_ir::features::direct_edit::DraftAnchor::PartingLine {
+                    tool: anchor,
+                    ..
+                }) = anchor;
                 admit(anchor, false)?;
             }
             _ => {}
         }
         if let FeatureOperation::SplitFace { targets, tool, .. } = operation {
-            use cadmpeg_ir::features::{PathRef, SplitFaceTool};
+            use cadmpeg_ir::features::direct_edit::SplitFaceTool;
+            use cadmpeg_ir::features::profiles::PathRef;
             let unresolved_faces = |selection: &FaceSelection| {
                 matches!(
                     selection,

@@ -16,9 +16,10 @@ use cadmpeg_ir::design::parameter::{
 };
 use cadmpeg_ir::design::units::{Quantity, ValueKind};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{
-    DesignParameter as LegacyParameter, FeatureId, ParameterId, ParameterValue as LegacyValue,
+use cadmpeg_ir::features::parameters::{
+    DesignParameter as LegacyParameter, ParameterValue as LegacyValue,
 };
+use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;

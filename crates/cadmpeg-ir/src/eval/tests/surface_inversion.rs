@@ -20,7 +20,7 @@ fn nurbs_surface_inverse_distinguishes_closest_and_tolerance_contracts() {
     let surface = bilinear_surface();
     let point = Point3::new(0.3, 0.7, 0.2);
     let closest = crate::eval::nurbs_surface_closest_parameter_with_budget(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         point,
         None,
@@ -31,7 +31,7 @@ fn nurbs_surface_inverse_distinguishes_closest_and_tolerance_contracts() {
     assert!((closest.u - 0.3).abs() < 1.0e-12);
     assert!((closest.v - 0.7).abs() < 1.0e-12);
     assert!(nurbs_surface_parameter_within_tolerance(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         point,
         None,
@@ -40,7 +40,7 @@ fn nurbs_surface_inverse_distinguishes_closest_and_tolerance_contracts() {
     .expect("find the NURBS surface parameters within tolerance")
     .is_none());
     assert!(nurbs_surface_parameter_within_tolerance(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         point,
         None,
@@ -67,7 +67,7 @@ fn a_surface_inverse_keeps_searching_when_the_distance_gap_crosses_its_tolerance
     )
     .expect("skew bilinear patch");
     let point = Point3::new(1.5, 1.05, 0.0);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let fitting = nurbs_surface_parameter_within_tolerance(&ctx, &surface, point, None, 0.06)
         .expect("solve within tolerance")
         .expect("the point at u=0.5,v=1 is only 0.05 away");
@@ -104,7 +104,7 @@ fn a_fit_below_the_numeric_floor_is_found_or_exhausts_its_work() {
     )
     .expect("quadratic patch S(u,v)=(u squared,v,0)");
     let point = Point3::new(0.0, 0.5, 0.0);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let budget = WorkBudget::new(1 << 14);
     let result = nurbs_surface_parameter_within_tolerance_with_budget(
         &ctx,
@@ -155,7 +155,7 @@ fn a_fit_search_splits_the_axis_that_still_has_representable_midpoints() {
         let surface = NurbsSurface::from_lanes(u, v, NurbsSurfaceLanes::new(rows, None), false)
             .expect("patch with one indivisible parameter span");
         let point = Point3::new(0.0, 0.0, 0.0);
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let parameters =
             nurbs_surface_parameter_within_tolerance(&ctx, &surface, point, None, FIT_TOLERANCE)
                 .expect("inverse")
@@ -191,7 +191,7 @@ fn a_fit_search_tests_the_corners_of_an_indivisible_patch() {
         )
         .expect("patch with indivisible parameter spans");
         let point = Point3::new(scale, 0.0, 0.0);
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let parameters =
             nurbs_surface_parameter_within_tolerance(&ctx, &surface, point, None, FIT_TOLERANCE)
                 .expect("inverse")
@@ -246,7 +246,7 @@ fn rounded_patch_midpoints_keep_their_control_bounds() {
     )
     .expect("quartic strip on a short parameter domain");
     let point = Point3::new(0.0, 0.0, 0.0);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let known = crate::eval::decode::nurbs_surface_point(
         crate::eval::admission::EvaluationAdmission::Standard,
         &surface,
@@ -276,7 +276,7 @@ fn nurbs_surface_inverse_admits_its_tolerance_before_the_search() {
     let budget = || WorkBudget::new(crate::eval::DEFAULT_NURBS_SURFACE_INVERSION_WORK);
     for tolerance in [-1.0e-12, f64::NAN, f64::INFINITY] {
         assert!(nurbs_surface_parameter_within_tolerance_with_budget(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &surface,
             point,
             None,
@@ -288,7 +288,7 @@ fn nurbs_surface_inverse_admits_its_tolerance_before_the_search() {
     }
     let tolerance = crate::scalar::NonNegativeReal::new(0.2 + 1.0e-12).unwrap();
     let parameters = crate::eval::nurbs_surface_parameter_within_nonnegative_tolerance_with_budget(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         point,
         None,
@@ -300,7 +300,7 @@ fn nurbs_surface_inverse_admits_its_tolerance_before_the_search() {
     assert_eq!(
         parameters,
         nurbs_surface_parameter_within_tolerance_with_budget(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &surface,
             point,
             None,
@@ -318,7 +318,7 @@ fn budgeted_nurbs_surface_inverse_stops_before_unbounded_patch_work() {
     let budget = WorkBudget::new(0);
 
     assert!(nurbs_surface_parameter_within_tolerance_with_budget(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         point,
         None,
@@ -331,7 +331,7 @@ fn budgeted_nurbs_surface_inverse_stops_before_unbounded_patch_work() {
 
     let budget = WorkBudget::new(10_000);
     let parameters = nurbs_surface_parameter_within_tolerance_with_budget(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         point,
         None,
@@ -351,7 +351,7 @@ fn budgeted_nurbs_surface_inverse_accepts_a_fit_qualified_seed_first() {
 
     let surface = bilinear_surface();
     let point = Point3::new(0.3, 0.7, 0.0);
-    let exhausted_ctx = cadmpeg_test_support::service_decode_context();
+    let exhausted_ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let exhausted_budget = WorkBudget::new(12);
     let exhausted = nurbs_surface_parameter_within_tolerance_with_budget(
         &exhausted_ctx,
@@ -376,7 +376,7 @@ fn budgeted_nurbs_surface_inverse_accepts_a_fit_qualified_seed_first() {
     assert!(exhausted_ctx.finish_session().is_ok());
     let budget = WorkBudget::new(20);
     let parameters = nurbs_surface_parameter_within_tolerance_with_budget(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         point,
         Some(Point2::new(0.3, 0.7)),
@@ -398,8 +398,8 @@ fn budgeted_nurbs_surface_inverse_refines_an_approximate_seed_before_global_sear
 
     let surface = bilinear_surface();
     let point = Point3::new(0.3, 0.7, 0.0);
-    let exhausted_ctx = cadmpeg_test_support::service_decode_context();
-    let exhausted_budget = WorkBudget::new(256);
+    let exhausted_ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let exhausted_budget = WorkBudget::new(64);
     let exhausted = nurbs_surface_parameter_within_tolerance_with_budget(
         &exhausted_ctx,
         &surface,
@@ -423,7 +423,7 @@ fn budgeted_nurbs_surface_inverse_refines_an_approximate_seed_before_global_sear
     assert!(exhausted_ctx.finish_session().is_ok());
     let budget = WorkBudget::new(32768);
     let parameters = nurbs_surface_parameter_within_tolerance_with_budget(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         point,
         Some(Point2::new(0.29, 0.69)),
@@ -487,7 +487,7 @@ fn nurbs_surface_inverse_handles_rational_internal_spans() {
     )
     .expect("surface point");
     let parameters = nurbs_surface_parameter_within_tolerance(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         point.get(),
         None,

@@ -5,8 +5,8 @@
 //! is an ordered `Body` container, a root of the scope, whose `Tip` is its
 //! rollback, and each of its members is one feature, except the stages a
 //! `MultiTransform` lists, which are its layout (§6.5). An object outside
-//! every Body has no design record, and a document whose Bodies hold no
-//! member and no parameter has no scope (§5.1).
+//! every Body has no design record: its shape is unproduced (§5.5). A
+//! document whose Bodies hold no member and no parameter has no scope (§5.1).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -20,40 +20,36 @@ use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::operation_settings::FuzzyTolerance as LegacyFuzzyTolerance;
+use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
 use cadmpeg_ir::features::{
     Feature as LegacyFeature, FeatureDefinition as LegacyDefinition, FeatureId,
-    FeatureOperation as LegacyOperation, FeatureTreeNodeRole,
-    FuzzyTolerance as LegacyFuzzyTolerance, UnresolvedFamily,
+    FeatureOperation as LegacyOperation, UnresolvedFamily,
 };
-use cadmpeg_ir::ids::{BodyId, Identity};
+use cadmpeg_ir::ids::{BodyId, Identity, ProductDefinitionId};
+use cadmpeg_ir::products::{ProductDefinition, Storage};
 use cadmpeg_ir::report::loss::LossNote;
 
 use crate::native::{ObjectRecord, PropertyRecord};
 
 mod parameters;
 
-/// Project the decoded design of `ir` into its v11 design layer, and say
-/// whether it states a scope. A record the projection cannot state in full is
-/// stated as far as it is read, with a loss in `losses` (§3.3).
+/// Project the decoded design of `ir` into its v11 design layer, a scope of
+/// the root definition `definition`. A record the projection cannot state in
+/// full is stated as far as it is read, with a loss in `losses` (§3.3). The
+/// scope's `unproduced` bodies are stated once the root owns its bodies
+/// ([`state_unproduced`]).
 pub(crate) fn project(
     ir: &mut CadIr,
+    definition: ProductDefinitionId,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
     losses: &mut Vec<LossNote>,
-) -> bool {
-    let Some(definition) = ir
-        .model
-        .product_definitions
-        .iter()
-        .find(|definition| definition.is_root())
-        .map(|definition| definition.id.clone())
-    else {
-        return false;
-    };
+) {
     let source = Source::of(objects, properties);
     let history = History::of(&ir.model.features, &source);
     if history.bodies.is_empty() {
-        return false;
+        return;
     }
     let mut features = Vec::new();
     for member in &history.contained {
@@ -133,7 +129,7 @@ pub(crate) fn project(
         losses,
     );
     if features.is_empty() && parameters.is_empty() {
-        return false;
+        return;
     }
     ir.design.containers = containers;
     ir.design.features = features;
@@ -145,8 +141,98 @@ pub(crate) fn project(
         active_arrangements: BTreeSet::default(),
         occurrences: BTreeMap::default(),
         current,
+        unproduced: BTreeSet::new(),
     });
-    true
+}
+
+/// List as unproduced each body that a definition the scope spans owns and
+/// no current state holds (§5.5): the shape of an object outside every Body,
+/// whose producing member the document does not hold, and of a Body that
+/// states no container.
+pub(crate) fn state_unproduced(ir: &mut CadIr) {
+    let Some(scope) = ir.design.scopes.first() else {
+        return;
+    };
+    let spanned = spanned_definitions(
+        &ir.model.product_definitions,
+        &ir.model.occurrences,
+        &scope.definition,
+    );
+    let current = scope
+        .current
+        .iter()
+        .flat_map(|state| &state.bodies)
+        .collect::<BTreeSet<_>>();
+    let bodies = ir
+        .geometry
+        .bodies
+        .iter()
+        .map(|body| &body.id)
+        .collect::<BTreeSet<_>>();
+    let unproduced = ir
+        .model
+        .product_definitions
+        .iter()
+        .filter(|definition| spanned.contains(&definition.id))
+        .flat_map(|definition| {
+            definition.bodies.iter().chain(
+                definition
+                    .instance_bodies
+                    .iter()
+                    .flat_map(|instance| &instance.bodies),
+            )
+        })
+        .filter(|body| bodies.contains(body) && !current.contains(body))
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    ir.design.scopes[0].unproduced = unproduced;
+}
+
+/// The root definition `root` and the definitions its scope spans (§5.1):
+/// each `Embedded` definition that no occurrence places, and each `Embedded`
+/// definition an occurrence of a spanned definition places.
+fn spanned_definitions<'a>(
+    definitions: &'a [ProductDefinition],
+    occurrences: &[cadmpeg_ir::products::Occurrence],
+    root: &'a ProductDefinitionId,
+) -> BTreeSet<&'a ProductDefinitionId> {
+    let embedded = |definition: &ProductDefinition| matches!(definition.storage, Storage::Embedded);
+    let placed = occurrences
+        .iter()
+        .map(|occurrence| &occurrence.prototype)
+        .collect::<BTreeSet<_>>();
+    let prototypes = occurrences
+        .iter()
+        .map(|occurrence| (&occurrence.id, &occurrence.prototype))
+        .collect::<BTreeMap<_, _>>();
+    let mut spanned = BTreeSet::from([root]);
+    let mut pending = vec![root];
+    for definition in definitions {
+        if embedded(definition)
+            && !placed.contains(&definition.id)
+            && spanned.insert(&definition.id)
+        {
+            pending.push(&definition.id);
+        }
+    }
+    while let Some(id) = pending.pop() {
+        let Some(definition) = definitions.iter().find(|definition| &definition.id == id) else {
+            continue;
+        };
+        for occurrence in &definition.occurrences {
+            let Some(prototype) = prototypes.get(occurrence).and_then(|prototype| {
+                definitions
+                    .iter()
+                    .find(|definition| &definition.id == *prototype)
+            }) else {
+                continue;
+            };
+            if embedded(prototype) && spanned.insert(&prototype.id) {
+                pending.push(&prototype.id);
+            }
+        }
+    }
+    spanned
 }
 
 /// What the projection reads from the document's object records beside the
@@ -356,10 +442,13 @@ fn operation(legacy: &LegacyFeature, operation: &LegacyOperation) -> FeatureOper
             OperationFamily::HelicalSweep
         }
         LegacyOperation::Loft { .. }
+        | LegacyOperation::RuledSurface { .. }
+        | LegacyOperation::RuledBetweenCurves { .. }
         | LegacyOperation::Unresolved {
             family: UnresolvedFamily::Loft,
         } => OperationFamily::Loft,
         LegacyOperation::Primitive { .. }
+        | LegacyOperation::PlanarPatch { .. }
         | LegacyOperation::Block { .. }
         | LegacyOperation::Sphere { .. }
         | LegacyOperation::Torus { .. } => OperationFamily::Primitive,
@@ -388,9 +477,6 @@ fn operation(legacy: &LegacyFeature, operation: &LegacyOperation) -> FeatureOper
         LegacyOperation::Scale { .. } | LegacyOperation::MoveBody { .. } => {
             OperationFamily::TransformBodies
         }
-        LegacyOperation::RuledSurface { .. } | LegacyOperation::RuledBetweenCurves { .. } => {
-            OperationFamily::ImplicitSweep
-        }
         LegacyOperation::Helix { .. }
         | LegacyOperation::HelixNativeAxis { .. }
         | LegacyOperation::SectionShape { .. }
@@ -404,9 +490,9 @@ fn operation(legacy: &LegacyFeature, operation: &LegacyOperation) -> FeatureOper
         | LegacyOperation::EquationCurve { .. }
         | LegacyOperation::CompositeCurve { .. }
         | LegacyOperation::PointGeometry { .. } => OperationFamily::Curve,
-        LegacyOperation::PlanarPatch { .. }
-        | LegacyOperation::FaceFromShapes { .. }
-        | LegacyOperation::FilledSurface { .. } => OperationFamily::Patch,
+        LegacyOperation::FaceFromShapes { .. } | LegacyOperation::FilledSurface { .. } => {
+            OperationFamily::Patch
+        }
         _ => return native(kind),
     };
     FeatureOperation::Unresolved { family }

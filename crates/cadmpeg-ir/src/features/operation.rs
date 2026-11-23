@@ -1,4 +1,5 @@
-use super::{ComponentTransferMode, FeatureOperation, UnresolvedFamily};
+use super::{FeatureOperation, UnresolvedFamily};
+use crate::features::tree::ComponentTransferMode;
 use crate::ids::{OccurrenceId, ProductDefinitionId};
 use crate::transform::Transform;
 

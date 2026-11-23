@@ -25,7 +25,9 @@ use crate::test_support::test_deltas::deltas_point_partition_stream;
 use crate::test_support::test_deltas::deltas_shell_partition_stream;
 use crate::test_support::test_deltas::ellipse_topology_partition_stream;
 use crate::test_support::test_deltas::sphere_topology_partition_stream;
+use crate::test_support::test_deltas::swept_surface_topology_partition_stream;
 use crate::test_support::test_deltas::torus_topology_partition_stream;
+use crate::test_support::test_deltas::whole_sphere_partition_stream;
 use crate::test_support::test_prt::boolean_target_body_lineage_prt;
 use crate::test_support::test_prt::composed_feature_history_prt;
 use crate::test_support::test_prt::extract_body_feature_history_prt;
@@ -348,6 +350,74 @@ fn analytic_topology_pipeline_covers_every_supported_quadric_and_conic_family() 
 }
 
 #[test]
+fn loopless_sphere_face_is_bounded_by_a_vertex_loop_at_each_pole() {
+    let result = decode(prt_with_partition(&whole_sphere_partition_stream()));
+    let geometry = &result.ir().geometry;
+    assert_eq!(geometry.faces.len(), 1);
+    assert_eq!(geometry.faces[0].loops.iter().count(), 2);
+    let mut heights = geometry
+        .loops
+        .iter()
+        .map(|candidate| {
+            let cadmpeg_ir::topology::LoopBoundary::Vertex { vertex, .. } = &candidate.boundary
+            else {
+                panic!("a whole sphere is bounded by vertex loops");
+            };
+            let vertex = geometry.vertices.iter().find(|v| &v.id == vertex).unwrap();
+            let point = geometry
+                .points
+                .iter()
+                .find(|p| p.id == vertex.point)
+                .unwrap();
+            let position = point.position().get();
+            assert_eq!((position.x, position.y), (0.0, 0.0));
+            position.z
+        })
+        .collect::<Vec<_>>();
+    heights.sort_by(f64::total_cmp);
+    assert_eq!(heights, [-10.0, 10.0]);
+    assert_valid(&result);
+}
+
+#[test]
+fn swept_surface_face_rests_on_a_linear_sweep_of_its_section() {
+    let result = decode(prt_with_partition(
+        &swept_surface_topology_partition_stream(),
+    ));
+    let geometry = &result.ir().geometry;
+    let surface = geometry
+        .surfaces
+        .iter()
+        .find(|candidate| candidate.id == geometry.faces[0].surface)
+        .unwrap();
+    let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction, .. } = &surface.geometry
+    else {
+        panic!("a swept surface is a procedural surface");
+    };
+    let procedural = geometry
+        .procedural_surfaces
+        .iter()
+        .find(|candidate| &candidate.id == construction)
+        .unwrap();
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::LinearSweep(sweep) =
+        procedural.definition()
+    else {
+        panic!("a swept surface is a linear sweep");
+    };
+    let direction = sweep.direction().get();
+    assert_eq!((direction.x, direction.y, direction.z), (0.0, 0.0, 20.0));
+    let section = geometry
+        .curves
+        .iter()
+        .find(|candidate| &candidate.id == sweep.directrix())
+        .unwrap();
+    assert!(matches!(
+        section.geometry.solved(),
+        Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Line(_))
+    ));
+}
+
+#[test]
 fn freeform_pipeline_binds_nurbs_pcurves_offsets_blends_and_intersections() {
     let fixtures = [
         bspline_partition_stream(),
@@ -552,7 +622,7 @@ fn object_model_pipeline_projects_extract_body_source_from_offset_store() {
     assert!(matches!(
         feature.evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::ExtractBody {
-            source: cadmpeg_ir::features::BodySelection::Local { bodies, native },
+            source: cadmpeg_ir::features::selections::BodySelection::Local { bodies, native },
         }) if bodies.len() == 1
             && bodies[0].ends_with(":block#1")
             && native == "nx:om-object-index#1"

@@ -119,7 +119,9 @@
             "document": {},
             "kind": "file"
           },
-          "tessellations": []
+          "tessellations": [
+            "fcstd:native:property#Mesh:Mesh:mesh"
+          ]
         }
       ],
       "rigid_bodies": [],

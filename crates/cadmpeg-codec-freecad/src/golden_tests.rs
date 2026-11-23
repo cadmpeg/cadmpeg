@@ -182,7 +182,7 @@ fn elided_native(native: &cadmpeg_ir::Native) -> serde_json::Value {
             namespace_digests.insert(
                 arena.clone(),
                 serde_json::json!(cadmpeg_ir::hash::canonical_json_sha256(
-                    &cadmpeg_test_support::service_decode_context(),
+                    &cadmpeg_core::decode::test_support::service_decode_context(),
                     records
                 )
                 .expect("the native records state canonical JSON")),
@@ -293,8 +293,36 @@ fn golden_snapshots_hold() {
 
 /// Putting the same bytes through a branch twice produces identical text.
 #[test]
-fn golden_output_is_deterministic() {
-    harness().check_determinism(&branches());
+fn golden_inspect_is_deterministic() {
+    harness().check_determinism(&[Branch::named("inspect", inspect_snapshot)]);
+}
+
+macro_rules! golden_determinism {
+    ($($name:ident: $partition:expr, $kind:literal, $snapshot:ident),+ $(,)?) => {
+        $(#[test] fn $name() { check_determinism_partition($partition, Branch::named($kind, $snapshot)); })+
+    };
+}
+
+golden_determinism! {
+    golden_decode_is_deterministic_0: 0, "decode", decode_snapshot,
+    golden_decode_is_deterministic_1: 1, "decode", decode_snapshot,
+    golden_decode_is_deterministic_2: 2, "decode", decode_snapshot,
+    golden_decode_is_deterministic_3: 3, "decode", decode_snapshot,
+    golden_encode_is_deterministic_0: 0, "encode", encode_snapshot,
+    golden_encode_is_deterministic_1: 1, "encode", encode_snapshot,
+    golden_encode_is_deterministic_2: 2, "encode", encode_snapshot,
+    golden_encode_is_deterministic_3: 3, "encode", encode_snapshot,
+}
+
+fn check_determinism_partition(partition: usize, branch: Branch) {
+    let harness = harness();
+    let inputs: Vec<_> = harness
+        .fixture_inputs()
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, input)| (index % 4 == partition).then_some(input))
+        .collect();
+    harness.check_determinism_inputs(&inputs, &[branch]);
 }
 
 /// Serializes what one fixture exports as, or the refusal the export reports.
@@ -588,7 +616,7 @@ mod native_elision {
             assert_eq!(
                 arena_digest(&block, arena),
                 serde_json::json!(cadmpeg_ir::hash::canonical_json_sha256(
-                    &cadmpeg_test_support::service_decode_context(),
+                    &cadmpeg_core::decode::test_support::service_decode_context(),
                     records
                 )
                 .expect("the native records state canonical JSON")),

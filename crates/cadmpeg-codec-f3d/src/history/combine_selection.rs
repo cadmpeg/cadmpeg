@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admit Combine selection refinements while retaining source operands on refusal.
 
-use cadmpeg_ir::features::{BodySelection, CombineOperands, FeatureId};
+use cadmpeg_ir::features::selections::BodySelection;
+use cadmpeg_ir::features::{CombineOperands, FeatureId};
 use cadmpeg_ir::report::loss::LossNote;
 
 use crate::loss::F3dLossCode;
@@ -32,7 +33,7 @@ mod tests {
         .unwrap();
         let selected = |name| {
             BodySelection::Bodies(
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
                     cadmpeg_ir::ids::BodyId::mint(format!("f3d:test:body#{name}")).unwrap(),
                 ])
                 .unwrap(),

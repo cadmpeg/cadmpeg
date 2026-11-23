@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::history::{bind_direct_body_recipe_body_selection, FeatureBodySelectionInputs};
+use crate::history::body_selections::{
+    bind_direct_body_recipe_body_selection, FeatureBodySelectionInputs,
+};
 
 #[test]
 fn form33_without_unique_body_proof_remains_unresolved() {
-    use cadmpeg_ir::features::BodySelection;
+    use cadmpeg_ir::features::selections::BodySelection;
     use cadmpeg_ir::ids::{BodyId, FaceId, RegionId, ShellId};
     use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
 

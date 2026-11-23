@@ -27,12 +27,15 @@ use crate::nurbs::subtypes::subtype_span;
 use crate::nurbs::support_chart::SupportChart;
 use crate::nurbs::toks::{self, Cur, SubtypeTable};
 use crate::sab::Token;
-use cadmpeg_ir::features::FiniteVector3;
+use cadmpeg_ir::features::geometry::FiniteVector3;
+use cadmpeg_ir::geometry::blends::{
+    BlendCrossSection, RollingBallSide, RollingBallSideExtension, RollingBallSupportCurve,
+    RollingBallSupportSurface,
+};
+use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
+use cadmpeg_ir::geometry::revision_forms::VariableBlendCache;
 use cadmpeg_ir::geometry::{
-    pcurve::{PcurveGeometry, PcurveNurbs},
-    BlendCrossSection, CurveGeometry, RollingBallSide, RollingBallSideExtension,
-    RollingBallSupportCurve, RollingBallSupportSurface, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    SurfaceGeometry, VariableBlendCache,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveI64;
@@ -102,7 +105,7 @@ pub(super) fn cyl_spl_sur(
                     native_position[1] * LEN_TO_MM,
                     native_position[2] * LEN_TO_MM,
                 ),
-                revision_form: Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
+                revision_form: Some(cadmpeg_ir::geometry::revision_forms::RevisionSurfaceForm {
                     revision,
                     support_bounds: [None; 4],
                     reference_endpoints: [None; 2],
@@ -163,7 +166,7 @@ pub(super) fn decode_rolling_ball_side(
         cadmpeg_core::decode::ResourceLimit,
     >,
 > {
-    use cadmpeg_ir::geometry::VariableBlendSupportKind;
+    use cadmpeg_ir::geometry::variable_blends::VariableBlendSupportKind;
     let support_kind = match take_native_string(bytes, position, int_width)?.as_str() {
         "blend_support_cos_curve" | "blendsupcos" => VariableBlendSupportKind::CosineCurve,
         "blend_support_curve" | "blendsupcur" => VariableBlendSupportKind::Curve,
@@ -446,7 +449,7 @@ fn read_rolling_ball_side(
     reference_context: Option<&SubtypeTable>,
     supports: SupportCaches,
 ) -> Option<Result<SideRead, cadmpeg_core::CodecError>> {
-    use cadmpeg_ir::geometry::VariableBlendSupportKind;
+    use cadmpeg_ir::geometry::variable_blends::VariableBlendSupportKind;
     let support_kind = match cur.take_str()? {
         "blend_support_cos_curve" | "blendsupcos" => VariableBlendSupportKind::CosineCurve,
         "blend_support_curve" | "blendsupcur" => VariableBlendSupportKind::Curve,
@@ -820,8 +823,10 @@ fn variable_blend_value(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     depth: usize,
-) -> Option<Result<cadmpeg_ir::geometry::VariableBlendValue, cadmpeg_core::CodecError>> {
-    use cadmpeg_ir::geometry::{
+) -> Option<
+    Result<cadmpeg_ir::geometry::variable_blends::VariableBlendValue, cadmpeg_core::CodecError>,
+> {
+    use cadmpeg_ir::geometry::variable_blends::{
         EdgeOffsetDiscriminator, VariableBlendInterpolationPoint, VariableBlendTerminal,
         VariableBlendValue, VariableBlendValuePayload,
     };
@@ -972,23 +977,23 @@ pub(super) fn var_blend_spl_sur(
     reference_context: Option<&SubtypeTable>,
     supports: SupportCaches,
 ) -> Option<Result<ParsedVariableBlend, cadmpeg_core::CodecError>> {
-    use cadmpeg_ir::geometry::VariableBlendCrossSection;
+    use cadmpeg_ir::geometry::variable_blends::VariableBlendCrossSection;
     let (start, name) = toks::find_owned_subtype_marker(toks, VARIABLE_BLEND_NAMES)?;
     let subtype = match name {
         "var_blend_spl_sur" | "varblendsplsur" => {
-            cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::VariableBlend
+            cadmpeg_ir::geometry::variable_blends::VariableBlendSurfaceSubtype::VariableBlend
         }
         "srf_srf_v_bl_spl_sur" | "srfsrfblndsur" => {
-            cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::SurfaceSurface
+            cadmpeg_ir::geometry::variable_blends::VariableBlendSurfaceSubtype::SurfaceSurface
         }
         "crv_crv_v_bl_spl_sur" | "crvcrvblndsur" => {
-            cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::CurveCurve
+            cadmpeg_ir::geometry::variable_blends::VariableBlendSurfaceSubtype::CurveCurve
         }
         "crv_srf_v_bl_spl_sur" | "crvsrfblndsur" => {
-            cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::CurveSurface
+            cadmpeg_ir::geometry::variable_blends::VariableBlendSurfaceSubtype::CurveSurface
         }
         "sfcv_free_bl_spl_sur" | "sfcvfreeblndsur" => {
-            cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::SurfaceCurveFree
+            cadmpeg_ir::geometry::variable_blends::VariableBlendSurfaceSubtype::SurfaceCurveFree
         }
         _ => return None,
     };
@@ -1026,7 +1031,7 @@ pub(super) fn var_blend_spl_sur(
         Err(error) => return Some(Err(error)),
     };
     let radii = if two_radii {
-        cadmpeg_ir::geometry::VariableBlendRadii::Two {
+        cadmpeg_ir::geometry::variable_blends::VariableBlendRadii::Two {
             first: first_value,
             second: match variable_blend_value(ctx, &mut cur, 0)? {
                 Ok(value) => value,
@@ -1034,7 +1039,7 @@ pub(super) fn var_blend_spl_sur(
             },
         }
     } else {
-        cadmpeg_ir::geometry::VariableBlendRadii::Single { value: first_value }
+        cadmpeg_ir::geometry::variable_blends::VariableBlendRadii::Single { value: first_value }
     };
     // The cross-section clause follows the complete one- or two-radius law
     // sequence. An absent enum is the elided circular default.
@@ -1100,14 +1105,14 @@ pub(super) fn var_blend_spl_sur(
         }
     };
     let convexity = if cur.take_bool()? {
-        cadmpeg_ir::geometry::VariableBlendConvexity::Convex
+        cadmpeg_ir::geometry::variable_blends::VariableBlendConvexity::Convex
     } else {
-        cadmpeg_ir::geometry::VariableBlendConvexity::Concave
+        cadmpeg_ir::geometry::variable_blends::VariableBlendConvexity::Concave
     };
     let render_mode = if cur.take_bool()? {
-        cadmpeg_ir::geometry::VariableBlendRenderMode::RollingBallEnvelope
+        cadmpeg_ir::geometry::variable_blends::VariableBlendRenderMode::RollingBallEnvelope
     } else {
-        cadmpeg_ir::geometry::VariableBlendRenderMode::RollingBallSnapshot
+        cadmpeg_ir::geometry::variable_blends::VariableBlendRenderMode::RollingBallSnapshot
     };
     let post_range = [
         cur.take_optional_range_value()?.value(),
@@ -1125,7 +1130,7 @@ pub(super) fn var_blend_spl_sur(
     };
     cur.at_scope_end().then_some(())?;
     let cache = match cache.into_form()? {
-        cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache { fit_tolerance } => {
+        cadmpeg_ir::geometry::revision_forms::RevisionCacheForm::SolvedCache { fit_tolerance } => {
             match std::num::NonZeroI64::new(shape_prefix) {
                 Some(shape_prefix) => VariableBlendCache::Current {
                     shape_prefix,
@@ -1134,12 +1139,12 @@ pub(super) fn var_blend_spl_sur(
                 None => VariableBlendCache::Stale {},
             }
         }
-        cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(parameterization) => {
-            VariableBlendCache::Parameterization {
-                shape_prefix,
-                parameterization,
-            }
-        }
+        cadmpeg_ir::geometry::revision_forms::RevisionCacheForm::Parameterization(
+            parameterization,
+        ) => VariableBlendCache::Parameterization {
+            shape_prefix,
+            parameterization,
+        },
     };
     let current_cache_marker =
         matches!(cache, VariableBlendCache::Current { .. }).then_some(cache_marker);
@@ -1198,11 +1203,11 @@ fn vertex_blend_boundary(cur: &mut Cur<'_>) -> Option<EmbeddedVertexBlendBoundar
                 ))
             };
             let twists = match form {
-                0 => cadmpeg_ir::geometry::VertexBlendTwists::None {},
-                1 => cadmpeg_ir::geometry::VertexBlendTwists::One {
+                0 => cadmpeg_ir::geometry::blends::VertexBlendTwists::None {},
+                1 => cadmpeg_ir::geometry::blends::VertexBlendTwists::One {
                     twist: read_twist()?,
                 },
-                3 => cadmpeg_ir::geometry::VertexBlendTwists::Two {
+                3 => cadmpeg_ir::geometry::blends::VertexBlendTwists::Two {
                     twists: [read_twist()?, read_twist()?],
                 },
                 _ => return None,
@@ -1241,7 +1246,7 @@ fn vertex_blend_boundary(cur: &mut Cur<'_>) -> Option<EmbeddedVertexBlendBoundar
             }
             let sense = cur.take_bool()?;
             let fit_tolerance =
-                cadmpeg_ir::geometry::FitTolerance::try_new(cur.take_f64()?).ok()?;
+                cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(cur.take_f64()?).ok()?;
             EmbeddedVertexBlendBoundaryGeometry::Pcurve {
                 surface,
                 support_bounds: [None; 4],
@@ -1309,11 +1314,11 @@ fn revision_vertex_blend_boundary(
                 ))
             };
             let twists = match form {
-                0 => cadmpeg_ir::geometry::VertexBlendTwists::None {},
-                1 => cadmpeg_ir::geometry::VertexBlendTwists::One {
+                0 => cadmpeg_ir::geometry::blends::VertexBlendTwists::None {},
+                1 => cadmpeg_ir::geometry::blends::VertexBlendTwists::One {
                     twist: read_twist()?,
                 },
-                3 => cadmpeg_ir::geometry::VertexBlendTwists::Two {
+                3 => cadmpeg_ir::geometry::blends::VertexBlendTwists::Two {
                     twists: [read_twist()?, read_twist()?],
                 },
                 _ => return None,
@@ -1360,7 +1365,7 @@ fn revision_vertex_blend_boundary(
             }
             let sense = cur.take_bool()?;
             let fit_tolerance =
-                cadmpeg_ir::geometry::FitTolerance::try_new(cur.take_f64()?).ok()?;
+                cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(cur.take_f64()?).ok()?;
             EmbeddedVertexBlendBoundaryGeometry::Pcurve {
                 surface: surface.into_surface()?,
                 support_bounds,
@@ -1440,7 +1445,8 @@ pub(super) fn vertex_blend_spl_sur(
     }
     let grid_size = cur.take_long()?;
     let fit_tolerance =
-        cadmpeg_ir::geometry::FitTolerance::try_new(cur.take_f64()? * LEN_TO_MM).ok()?;
+        cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(cur.take_f64()? * LEN_TO_MM)
+            .ok()?;
     Some(Ok(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::VertexBlend(Box::new(EmbeddedVertexBlend {
             revision,
@@ -1617,7 +1623,7 @@ mod variable_blend_value_tests {
     use crate::nurbs::toks::Cur;
     use crate::sab::Token;
     use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
-    use cadmpeg_ir::geometry::VariableBlendValuePayload;
+    use cadmpeg_ir::geometry::variable_blends::VariableBlendValuePayload;
 
     #[test]
     fn variable_blend_value_refuses_recursion_limit() {

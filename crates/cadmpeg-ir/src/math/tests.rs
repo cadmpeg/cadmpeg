@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{Point2, Point3, Vector3};
-use crate::features::FiniteVector3;
+use crate::features::geometry::FiniteVector3;
 use crate::scalar::FiniteReal;
 
 const EPS_UNIT_RESULT: f64 = 8.0 * f64::EPSILON;

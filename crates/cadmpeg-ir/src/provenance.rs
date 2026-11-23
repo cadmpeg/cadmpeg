@@ -628,7 +628,7 @@ mod tests {
     #[cfg(feature = "schema")]
     use super::StreamName;
     use super::{CodecFormat, SourceObjectAssociation, SourceProvenance};
-    use cadmpeg_test_support::wire;
+    use crate::test_support::wire;
 
     #[cfg(feature = "schema")]
     #[test]

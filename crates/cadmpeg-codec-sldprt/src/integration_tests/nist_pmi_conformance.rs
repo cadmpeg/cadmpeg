@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! NIST FTC specimen PMI against the definition workbook and STEP source.
 
-use std::io::Cursor;
-use std::path::Path;
-
-use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::design::parameter::{Deviations, Tolerance as DimensionTolerance};
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -14,7 +10,7 @@ use cadmpeg_ir::pmi::{
 };
 use cadmpeg_ir::CadIr;
 
-use crate::SldprtCodec;
+use crate::test_support::nist::{ftc_06, ftc_08};
 
 mod ftc06;
 mod ftc08;
@@ -23,17 +19,6 @@ const MM_PER_INCH: f64 = 25.4;
 const VALUE_TOLERANCE: f64 = 1.0e-8;
 const CYLINDER_AXIS_DIRECTION_TOLERANCE: f64 = 1.0e-8;
 const CYLINDER_AXIS_ORIGIN_TOLERANCE_MM: f64 = 1.0e-6;
-
-fn specimen(name: &str) -> DecodeResult {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/sldprt")
-        .join(name);
-    let bytes =
-        std::fs::read(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
-    SldprtCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap_or_else(|error| panic!("decode {}: {error}", path.display()))
-}
 
 /// Each presentation's text and the sorted names of the annotations it depicts.
 fn depicted_names(ir: &CadIr) -> Vec<(Option<String>, Vec<String>)> {
@@ -363,7 +348,7 @@ fn assert_spherical_position(ir: &CadIr) {
 
 #[test]
 fn ftc_06_0812_nominal_and_counterbore_parameter_remain_distinct_source_values() {
-    let result = specimen("nist_ftc_06_asme1_rd_sw1802.SLDPRT");
+    let result = ftc_06();
     let ir = result.ir();
     let diameter = ir
         .model
@@ -380,7 +365,7 @@ fn ftc_06_0812_nominal_and_counterbore_parameter_remain_distinct_source_values()
     assert!(ir.model.parameters.iter().any(|parameter| {
         parameter.name == "C'Bore Dia."
             && parameter.value.as_ref().is_some_and(|value| {
-                let cadmpeg_ir::features::ParameterValue::Length(value) = value else {
+                let cadmpeg_ir::features::parameters::ParameterValue::Length(value) = value else {
                     return false;
                 };
                 (value.get() - 0.8125 * MM_PER_INCH).abs() < VALUE_TOLERANCE
@@ -390,7 +375,7 @@ fn ftc_06_0812_nominal_and_counterbore_parameter_remain_distinct_source_values()
 
 #[test]
 fn ftc_06_hole_dimensions_match_nist_and_step() {
-    let result = specimen("nist_ftc_06_asme1_rd_sw1802.SLDPRT");
+    let result = ftc_06();
     let ir = result.ir();
     assert_dimension(ir, &DimensionKind::Diameter, 0.415, 0.008);
     assert_dimension(ir, &DimensionKind::Diameter, 0.625, 0.020);
@@ -456,7 +441,7 @@ fn ftc_06_hole_dimensions_match_nist_and_step() {
 
 #[test]
 fn ftc_08_tangent_and_free_state_tolerances_match_nist() {
-    let result = specimen("nist_ftc_08_asme1_rc_sw1802.SLDPRT");
+    let result = ftc_08();
     let ir = result.ir();
     assert_tolerance(
         ir,
@@ -476,7 +461,7 @@ fn ftc_08_tangent_and_free_state_tolerances_match_nist() {
 
 #[test]
 fn ftc_08_common_datum_compartments_match_nist() {
-    let result = specimen("nist_ftc_08_asme1_rc_sw1802.SLDPRT");
+    let result = ftc_08();
     let ir = result.ir();
     for (magnitude, expected, modifier) in [
         (0.04, ["D", "E", "F"], None),
