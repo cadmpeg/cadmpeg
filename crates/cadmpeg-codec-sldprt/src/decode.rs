@@ -3674,7 +3674,10 @@ fn build_geometry_ir(
         &ir.model.parameters,
         sketch_lanes,
     )?;
-    let unbound_readings = crate::resolved_features::profiles::finalize_unread_marker_entities(
+    let crate::resolved_features::profiles::Finalized {
+        unbound_readings,
+        outside_profile,
+    } = crate::resolved_features::profiles::finalize_unread_marker_entities(
         &mut sketch_entities,
         held_handles,
         &mut pmi_losses,
@@ -4355,6 +4358,7 @@ fn build_geometry_ir(
                 equations: equation_managers,
                 length_places,
                 rollback,
+                outside_profile: &outside_profile,
             },
             &mut pmi_losses,
         )?;
@@ -5136,7 +5140,10 @@ fn build_metadata_ir(
         &histories,
         lanes,
     );
-    let unbound_readings = crate::resolved_features::profiles::finalize_unread_marker_entities(
+    let crate::resolved_features::profiles::Finalized {
+        unbound_readings,
+        outside_profile,
+    } = crate::resolved_features::profiles::finalize_unread_marker_entities(
         &mut ir.model.sketch_entities,
         held_handles,
         &mut pmi_losses,
@@ -5280,6 +5287,7 @@ fn build_metadata_ir(
                 equations: equation_managers,
                 length_places,
                 rollback,
+                outside_profile: &outside_profile,
             },
             &mut pmi_losses,
         )?;
