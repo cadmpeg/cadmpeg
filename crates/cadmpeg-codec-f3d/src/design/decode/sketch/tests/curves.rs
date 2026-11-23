@@ -23,7 +23,6 @@ fn tested_decode_sketch_curve_geometry(
         record_index,
         class,
         record_at,
-        &mut 0,
     )
 }
 

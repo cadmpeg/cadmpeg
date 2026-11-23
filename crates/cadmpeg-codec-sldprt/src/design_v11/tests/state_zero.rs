@@ -66,7 +66,7 @@ pub(super) fn project(
         panic!("the extrude is typed");
     };
     let extrude = extrude.as_ref().clone();
-    let (parameters, _) = entries.parameters(
+    let (parameters, _, _) = entries.parameters(
         &definition,
         &super::super::parameters::Readings {
             decoded: super::super::parameters::Decoded::new(
