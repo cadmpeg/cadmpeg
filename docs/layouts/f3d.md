@@ -5727,6 +5727,37 @@ Offsets are relative to the axis selection's primary indexed header in a plain-r
 | 269 | 1 | `zero` | `u8` | little | spec | a reference to its record-timestamp table `A + 1`, a zero byte, and a reference to the `Revolve` scope · value `0` |
 | 270 | 11 | `revolve_scope` | `bytes[11]` | little | spec | a reference to its record-timestamp table `A + 1`, a zero byte, and a reference to the `Revolve` scope |
 
+## `sketch_revolve_axis_selection_magic_1234`
+
+Spec §Records of a sketch-driven Revolve · layout: byte offsets · size: 282 B
+
+Offsets are relative to the axis selection's primary indexed header in a stream with serializer magic 1234. The paired indexed header starts at offset 282.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | After ten zero bytes it stores a reference to record `A + 3`, u32 `1` |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | After ten zero bytes it stores a reference to record `A + 3`, u32 `1` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 11 | `curve_identity` | `bytes[11]` | little | spec | After ten zero bytes it stores a reference to record `A + 3`, u32 `1` |
+| 32 | 4 | `one` | `u32` | little | spec | After ten zero bytes it stores a reference to record `A + 3`, u32 `1` · value `1` |
+| 36 | 4 | `asset_guid_length` | `u32` | little | spec | the LP-UTF16 asset GUID of 36 code units · value `36` |
+| 40 | 72 | `asset_guid_utf16` | `bytes[72]` | little | spec | the LP-UTF16 asset GUID of 36 code units |
+| 112 | 4 | `context_guid_length` | `u32` | little | spec | the LP-UTF16 context GUID of 36 code units · value `36` |
+| 116 | 72 | `context_guid_utf16` | `bytes[72]` | little | spec | the LP-UTF16 context GUID of 36 code units |
+| 188 | 4 | `two` | `u32` | little | spec | u32 `2`, u32 `0`, u32 `1`, a reference to the axis tracking carrier · value `2` |
+| 192 | 4 | `zero_word` | `u32` | little | spec | u32 `2`, u32 `0`, u32 `1`, a reference to the axis tracking carrier · value `0` |
+| 196 | 4 | `one_second` | `u32` | little | spec | u32 `2`, u32 `0`, u32 `1`, a reference to the axis tracking carrier · value `1` |
+| 200 | 11 | `tracking_carrier` | `bytes[11]` | little | spec | u32 `2`, u32 `0`, u32 `1`, a reference to the axis tracking carrier |
+| 211 | 8 | `operand_role` | `u64` | little | spec | the u64 operand role `0x0000002100000000`, ten zero bytes · value `141733920768` |
+| 219 | 10 | `zero_run_10_after_role` | `bytes[10]` | little | spec | the u64 operand role `0x0000002100000000`, ten zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 229 | 4 | `epoch` | `u32` | little | spec | the evaluation epoch, the f64 evaluation duration, the second evaluation epoch |
+| 233 | 8 | `duration` | `f64` | little | spec | the evaluation epoch, the f64 evaluation duration, the second evaluation epoch |
+| 241 | 4 | `second_epoch` | `u32` | little | spec | the second evaluation epoch, which equals the first |
+| 245 | 11 | `companion` | `bytes[11]` | little | spec | a reference to its item-tail companion `A + 2` |
+| 256 | 3 | `flags` | `bytes[3]` | little | spec | the flag bytes are `01 00 00` in a stream whose MetaStream header stores serializer magic `1234` · value `[1, 0, 0]` |
+| 259 | 11 | `timestamp_table` | `bytes[11]` | little | spec | a reference to its record-timestamp table `A + 1` |
+| 270 | 1 | `zero` | `u8` | little | spec | a reference to its record-timestamp table `A + 1`, a zero byte, and a reference to the `Revolve` scope · value `0` |
+| 271 | 11 | `revolve_scope` | `bytes[11]` | little | spec | a reference to its record-timestamp table `A + 1`, a zero byte, and a reference to the `Revolve` scope |
+
 ## `revolve_axis_curve_identity`
 
 Spec §Records of a sketch-driven Revolve · layout: byte offsets · size: 45 B
@@ -9021,7 +9052,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 40 B
 
-The entry kind is 2 with typed references and 3 with compact references. The traversal flag is the first of the three operands; DR-124 tracks its reading in typed entries.
+The entry kind is 2 with typed references, and 3 or 2 with compact references. The traversal flag is the first of the three operands; DR-124 tracks its reading in typed entries.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
