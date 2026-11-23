@@ -146,7 +146,8 @@ impl<'a> Cursor<'a> {
                 Some(b'/') if self.bytes.get(self.at + 1) == Some(&b'*') => {
                     self.at += 2;
                     while self.at < self.bytes.len()
-                        && !(self.bytes[self.at] == b'*' && self.bytes.get(self.at + 1) == Some(&b'/'))
+                        && !(self.bytes[self.at] == b'*'
+                            && self.bytes.get(self.at + 1) == Some(&b'/'))
                     {
                         self.at += 1;
                     }
@@ -206,14 +207,16 @@ impl<'a> Cursor<'a> {
 
     fn number(&mut self) -> Result<Value, CodecError> {
         let start = self.at;
-        while self
-            .peek()
-            .is_some_and(|byte| byte.is_ascii_digit() || matches!(byte, b'+' | b'-' | b'.' | b'E' | b'e'))
-        {
+        while self.peek().is_some_and(|byte| {
+            byte.is_ascii_digit() || matches!(byte, b'+' | b'-' | b'.' | b'E' | b'e')
+        }) {
             self.at += 1;
         }
         let text = std::str::from_utf8(&self.bytes[start..self.at]).unwrap_or("");
-        if text.bytes().all(|byte| byte.is_ascii_digit() || byte == b'-' || byte == b'+') {
+        if text
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || byte == b'-' || byte == b'+')
+        {
             if let Ok(value) = text.parse::<i64>() {
                 return Ok(Value::Int(value));
             }
@@ -356,7 +359,11 @@ pub(crate) fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Part21, Cod
                 let args = cursor.list(0)?;
                 cursor.expect(b';', "';' after an instance")?;
                 ctx.charge_entities(1, "admit STEP_DATA instance")?;
-                if part.instances.insert(id, Instance { id, name, args }).is_some() {
+                if part
+                    .instances
+                    .insert(id, Instance { id, name, args })
+                    .is_some()
+                {
                     return Err(CodecError::malformed(format_args!(
                         "STEP_DATA repeats instance #{id}"
                     )));

@@ -138,9 +138,18 @@ pub(crate) enum End {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Operation {
     Origin(Vec3),
-    Axis { origin: Vec3, direction: Vec3 },
-    Plane { frame: Frame },
-    OffsetPlane { base: usize, offset: usize, frame: Frame },
+    Axis {
+        origin: Vec3,
+        direction: Vec3,
+    },
+    Plane {
+        frame: Frame,
+    },
+    OffsetPlane {
+        base: usize,
+        offset: usize,
+        frame: Frame,
+    },
     Sketch(Box<Sketch>),
     Extrude {
         sketch: usize,
@@ -154,13 +163,18 @@ pub(crate) enum Operation {
         axis_feature: Option<usize>,
         angle: usize,
     },
-    Fillet { radius: usize, edge_signature: Option<String> },
+    Fillet {
+        radius: usize,
+        edge_signature: Option<String>,
+    },
     Hole {
         sketch: usize,
         diameter: usize,
         end: End,
     },
-    Loft { sections: Vec<usize> },
+    Loft {
+        sections: Vec<usize>,
+    },
     /// An operation record the history does not map.
     Unmapped(String),
 }
@@ -344,9 +358,11 @@ impl<'a> Reader<'a> {
     }
 
     fn unmapped(&mut self, name: &str, state: &str) -> Operation {
-        self.history.losses.push(AlibreLossCode::HistoryOperationUnmapped.note(
-            format!("state {state} holds the operation record {name}, which the history does not map"),
-        ));
+        self.history
+            .losses
+            .push(AlibreLossCode::HistoryOperationUnmapped.note(format!(
+                "state {state} holds the operation record {name}, which the history does not map"
+            )));
         Operation::Unmapped(name.to_owned())
     }
 
@@ -396,7 +412,10 @@ impl<'a> Reader<'a> {
         )?;
         let axes = [
             (reference(block, 9, "a block has no x axis")?, SketchAxis::X),
-            (reference(block, 10, "a block has no y axis")?, SketchAxis::Y),
+            (
+                reference(block, 10, "a block has no y axis")?,
+                SketchAxis::Y,
+            ),
         ];
         let mut out = Sketch {
             record: sketch.id,
@@ -507,12 +526,12 @@ impl<'a> Reader<'a> {
                 2,
             )?)),
             other => {
-                self.history.losses.push(
-                    AlibreLossCode::HistorySketchGeometryUnmapped.note(format!(
-                        "sketch {} holds the geometry record {other}, which the history does not map",
-                        sketch.name
-                    )),
-                );
+                self.history
+                    .losses
+                    .push(AlibreLossCode::HistorySketchGeometryUnmapped.note(format!(
+                    "sketch {} holds the geometry record {other}, which the history does not map",
+                    sketch.name
+                )));
                 return Ok(());
             }
         };
@@ -539,7 +558,10 @@ impl<'a> Reader<'a> {
                 if self::reference(dependent, 0, "a dependent has no owner")? != geometry.id {
                     continue;
                 }
-                owner = match (geometry.name.as_str(), dependent.arg(1).and_then(Value::as_int)) {
+                owner = match (
+                    geometry.name.as_str(),
+                    dependent.arg(1).and_then(Value::as_int),
+                ) {
                     ("LINE", Some(0)) => Some((primitive.id, PointRole::Start)),
                     ("LINE", Some(1)) => Some((primitive.id, PointRole::End)),
                     ("CIRCLE", Some(0)) => Some((primitive.id, PointRole::Center)),
@@ -588,11 +610,13 @@ impl<'a> Reader<'a> {
                 .is_some_and(|(owner, _)| owner_of.get(&q) == Some(&owner))
         };
         Ok(match kind {
-            6 if point(*a).is_some() && point(*b).is_some() => Read::Mapped(Constraint::Coincident {
-                record,
-                a: *a,
-                b: *b,
-            }),
+            6 if point(*a).is_some() && point(*b).is_some() => {
+                Read::Mapped(Constraint::Coincident {
+                    record,
+                    a: *a,
+                    b: *b,
+                })
+            }
             2 | 6 if binds(*a, *b) || binds(*b, *a) => Read::Implied,
             4 => match (axis_of(*a), axis_of(*b)) {
                 (Some(axis), None) => owner_of.get(b).map_or(Read::Unmapped, |line| {
@@ -699,11 +723,7 @@ impl<'a> Reader<'a> {
             .ok_or_else(|| bad("an operation names a sketch that no state defines"))
     }
 
-    fn feature(
-        &mut self,
-        state: &Instance,
-        operation: &Instance,
-    ) -> Result<Feature, CodecError> {
+    fn feature(&mut self, state: &Instance, operation: &Instance) -> Result<Feature, CodecError> {
         let name = state
             .arg(0)
             .and_then(Value::as_str)
@@ -735,7 +755,8 @@ impl<'a> Reader<'a> {
                     "DESIGNPRIMARYAXIS",
                     "an axis operation names another record",
                 )?;
-                let (origin, direction) = self.axis1(reference(axis, 2, "an axis has no placement")?)?;
+                let (origin, direction) =
+                    self.axis1(reference(axis, 2, "an axis has no placement")?)?;
                 Operation::Axis { origin, direction }
             }
             "DESIGNPLANEOPERATION" => {
@@ -756,12 +777,16 @@ impl<'a> Reader<'a> {
                             "a producer base is not an OPERATIONTARGETPROXY",
                         )?;
                         let base_plane = reference(base, 1, "a proxy has no target")?;
-                        let base = *self
-                            .plane_at
-                            .get(&base_plane)
-                            .ok_or_else(|| bad("an offset plane lies on a plane that no state defines"))?;
-                        let offset = self.parameter(reference(producer, 1, "a producer has no offset")?)?;
-                        Operation::OffsetPlane { base, offset, frame }
+                        let base = *self.plane_at.get(&base_plane).ok_or_else(|| {
+                            bad("an offset plane lies on a plane that no state defines")
+                        })?;
+                        let offset =
+                            self.parameter(reference(producer, 1, "a producer has no offset")?)?;
+                        Operation::OffsetPlane {
+                            base,
+                            offset,
+                            frame,
+                        }
                     }
                     other => self.unmapped(other, &name),
                 }
@@ -787,7 +812,11 @@ impl<'a> Reader<'a> {
                     .arg(2)
                     .and_then(Value::as_logical)
                     .ok_or_else(|| bad("an end condition has no direction flag"))?;
-                if operation.arg(0).and_then(Value::as_list).is_some_and(|dims| !dims.is_empty()) {
+                if operation
+                    .arg(0)
+                    .and_then(Value::as_list)
+                    .is_some_and(|dims| !dims.is_empty())
+                {
                     self.history.losses.push(AlibreLossCode::HistoryDimensionAnnotationUnmapped.note(
                         format!("state {name} holds a dimension annotation, which the history does not map"),
                     ));
@@ -816,7 +845,8 @@ impl<'a> Reader<'a> {
                     "BLINDANGLEENDCONDITION",
                     "a revolution end condition is not a BLINDANGLEENDCONDITION",
                 )?;
-                let angle = self.parameter(reference(condition, 1, "an end condition has no angle")?)?;
+                let angle =
+                    self.parameter(reference(condition, 1, "an end condition has no angle")?)?;
                 Operation::Revolve {
                     sketch,
                     axis_origin,
@@ -893,7 +923,11 @@ impl<'a> Reader<'a> {
     }
 
     fn axis1(&self, id: u32) -> Result<(Vec3, Vec3), CodecError> {
-        let placement = self.get(id, "AXIS1_PLACEMENT", "an axis placement is not an AXIS1_PLACEMENT")?;
+        let placement = self.get(
+            id,
+            "AXIS1_PLACEMENT",
+            "an axis placement is not an AXIS1_PLACEMENT",
+        )?;
         Ok((
             mm3(&point(
                 self.part,

@@ -16,8 +16,8 @@ use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::report::loss::LossNote;
 
 use crate::container::{AlibreContainer, SAB_STREAM, STEP_STREAM};
-use crate::history::History;
 use crate::dialect::{classify, kernel_stream, Classification, KernelStream};
+use crate::history::History;
 use crate::loss::AlibreLossCode;
 use crate::FORMAT;
 
@@ -59,11 +59,20 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     let step = container.stream(ctx, STEP_STREAM)?;
     let history = crate::history::read(&crate::part21::parse(ctx, step.window())?)?;
     if history.is_none() {
-        losses.push(AlibreLossCode::HistoryStreamUnread.note(
-            "the STEP_DATA stream names another schema or holds no part state context",
-        ));
+        losses.push(
+            AlibreLossCode::HistoryStreamUnread
+                .note("the STEP_DATA stream names another schema or holds no part state context"),
+        );
     }
-    from_kernel(ctx, classification, &kernel, brep, losses, digest, history)
+    from_kernel(
+        ctx,
+        classification,
+        &kernel,
+        brep,
+        losses,
+        digest,
+        history.as_ref(),
+    )
 }
 
 fn decode_kernel_stream(
@@ -137,7 +146,7 @@ fn from_kernel(
     brep: AsmBrep,
     mut losses: Vec<LossNote>,
     digest: Sha256Digest,
-    history: Option<History>,
+    history: Option<&History>,
 ) -> Result<Decoded, CodecError> {
     let header = &kernel.header.metadata;
     losses.extend(classification.kernel_loss());
@@ -266,7 +275,7 @@ fn from_kernel(
         root.clone(),
         cadmpeg_ir::products::ExternalDocument::default(),
     )?;
-    if let Some(history) = &history {
+    if let Some(history) = history {
         crate::design::project(ctx, &mut ir, history, &root, &mut body.losses)?;
     }
     Ok(Decoded {

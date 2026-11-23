@@ -140,6 +140,8 @@ fn signature_text(signature: &str) -> String {
     format!("alibre:topology-signature:{signature}")
 }
 
+type SketchRecords = (Vec<SketchEntity<Planar>>, Vec<SketchConstraint<Planar>>);
+
 struct Projection<'a> {
     history: &'a History,
     features: Vec<FeatureId>,
@@ -161,7 +163,10 @@ impl Projection<'_> {
         named(PickTarget::Sketch(sketch.clone()))
     }
 
-    fn datum_pick(&self, feature: usize) -> Result<Selection<cadmpeg_ir::design::selection::Ordered>, CodecError> {
+    fn datum_pick(
+        &self,
+        feature: usize,
+    ) -> Result<Selection<cadmpeg_ir::design::selection::Ordered>, CodecError> {
         named(PickTarget::Datum {
             feature: self.features[feature].clone(),
             part: None,
@@ -169,7 +174,6 @@ impl Projection<'_> {
     }
 
     fn input(
-        &self,
         relation: Relation,
         reference: Selection<cadmpeg_ir::design::selection::Ordered>,
         value: Option<ScalarDimension>,
@@ -185,7 +189,12 @@ impl Projection<'_> {
         }
     }
 
-    fn sketch(&self, sketch: &HistorySketch, id: &SketchId, owner: &FeatureId) -> Result<Sketch, CodecError> {
+    fn sketch(
+        &self,
+        sketch: &HistorySketch,
+        id: &SketchId,
+        owner: &FeatureId,
+    ) -> Result<Sketch, CodecError> {
         let reference = match &sketch.support {
             Support::Plane(feature) => self.datum_pick(*feature)?,
             Support::Face(signature) => unread(Some(signature_text(signature)))?,
@@ -195,7 +204,7 @@ impl Projection<'_> {
             owner: owner.clone(),
             name: Some(sketch.name.clone()),
             plane: SketchPlane::Placed(Box::new(Construction::<kinds::Frame> {
-                inputs: vec![self.input(Relation::Coincident, reference, None)],
+                inputs: vec![Self::input(Relation::Coincident, reference, None)],
                 resolved: Some(frame_value(&sketch.frame)?),
                 ..Construction::default()
             })),
@@ -209,11 +218,7 @@ impl Projection<'_> {
         })
     }
 
-    fn entities(
-        &self,
-        sketch: &HistorySketch,
-        id: &SketchId,
-    ) -> Result<(Vec<SketchEntity<Planar>>, Vec<SketchConstraint<Planar>>), CodecError> {
+    fn entities(sketch: &HistorySketch, id: &SketchId) -> Result<SketchRecords, CodecError> {
         let entity = |record: u32, definition, roles| -> Result<SketchEntity<Planar>, CodecError> {
             Ok(SketchEntity {
                 id: mint::<SketchEntityId>("sketch-entity", record)?,
@@ -242,7 +247,11 @@ impl Projection<'_> {
                         .ok_or_else(|| invalid("a circle radius is not positive"))?,
                 },
             };
-            entities.push(entity(primitive.record, EntityDefinition::Free(curve), Vec::new())?);
+            entities.push(entity(
+                primitive.record,
+                EntityDefinition::Free(curve),
+                Vec::new(),
+            )?);
         }
         for point in &sketch.points {
             let roles = match point.owner {
@@ -297,47 +306,56 @@ impl Projection<'_> {
         Ok((entities, constraints))
     }
 
-    fn operation(&self, at: usize, feature: &HistoryFeature) -> Result<FeatureOperation, CodecError> {
+    fn operation(
+        &self,
+        at: usize,
+        feature: &HistoryFeature,
+    ) -> Result<FeatureOperation, CodecError> {
         let output = || SolidOutput {
             body: None,
             boolean: None,
         };
         Ok(match &feature.operation {
-            Operation::Origin(position) => datum(DatumElement::Points(vec![Construction::<
-                kinds::Point,
-            > {
-                resolved: Some(point3(*position)?),
-                ..Construction::default()
-            }])),
-            Operation::Axis { origin, direction } => datum(DatumElement::Axis(Construction::<
-                kinds::Axis,
-            > {
-                resolved: Some(AxisValue {
-                    origin: point3(*origin)?,
-                    direction: unit3(*direction)?,
-                }),
-                ..Construction::default()
-            })),
-            Operation::Plane { frame } => datum(DatumElement::Plane(Construction::<kinds::Plane> {
-                resolved: Some(plane_value(frame)?),
-                ..Construction::default()
-            })),
-            Operation::OffsetPlane { base, offset, frame } => {
+            Operation::Origin(position) => {
+                datum(DatumElement::Points(vec![Construction::<kinds::Point> {
+                    resolved: Some(point3(*position)?),
+                    ..Construction::default()
+                }]))
+            }
+            Operation::Axis { origin, direction } => {
+                datum(DatumElement::Axis(Construction::<kinds::Axis> {
+                    resolved: Some(AxisValue {
+                        origin: point3(*origin)?,
+                        direction: unit3(*direction)?,
+                    }),
+                    ..Construction::default()
+                }))
+            }
+            Operation::Plane { frame } => {
                 datum(DatumElement::Plane(Construction::<kinds::Plane> {
-                    inputs: vec![self.input(
-                        Relation::Offset,
-                        self.datum_pick(*base)?,
-                        Some(ScalarDimension::Length(self.dimension(*offset))),
-                    )],
                     resolved: Some(plane_value(frame)?),
                     ..Construction::default()
                 }))
             }
-            Operation::Sketch(_) => {
-                FeatureOperation::Sketch(self.sketches.get(&at).cloned().ok_or_else(|| {
-                    invalid("a sketch state has no sketch identity")
-                })?)
-            }
+            Operation::OffsetPlane {
+                base,
+                offset,
+                frame,
+            } => datum(DatumElement::Plane(Construction::<kinds::Plane> {
+                inputs: vec![Self::input(
+                    Relation::Offset,
+                    self.datum_pick(*base)?,
+                    Some(ScalarDimension::Length(self.dimension(*offset))),
+                )],
+                resolved: Some(plane_value(frame)?),
+                ..Construction::default()
+            })),
+            Operation::Sketch(_) => FeatureOperation::Sketch(
+                self.sketches
+                    .get(&at)
+                    .cloned()
+                    .ok_or_else(|| invalid("a sketch state has no sketch identity"))?,
+            ),
             Operation::Extrude {
                 sketch,
                 end,
@@ -369,7 +387,7 @@ impl Projection<'_> {
                 angle,
             } => {
                 let inputs = match axis_feature {
-                    Some(axis) => vec![self.input(
+                    Some(axis) => vec![Self::input(
                         Relation::Coincident,
                         self.datum_pick(*axis)?,
                         None,
@@ -429,7 +447,8 @@ impl Projection<'_> {
                 diameter,
                 end,
             } => {
-                let Operation::Sketch(hole_sketch) = &self.history.features[*sketch].operation else {
+                let Operation::Sketch(hole_sketch) = &self.history.features[*sketch].operation
+                else {
                     return Err(invalid("a hole names a state that holds no sketch"));
                 };
                 let center = hole_sketch
@@ -642,11 +661,15 @@ pub(crate) fn project(
         projection.features.push(mint("feature", feature.record)?);
     }
     for parameter in &history.parameters {
-        projection.parameters.push(mint("parameter", parameter.record)?);
+        projection
+            .parameters
+            .push(mint("parameter", parameter.record)?);
     }
     for (at, feature) in history.features.iter().enumerate() {
         if let Operation::Sketch(sketch) = &feature.operation {
-            projection.sketches.insert(at, mint("sketch", sketch.record)?);
+            projection
+                .sketches
+                .insert(at, mint("sketch", sketch.record)?);
         }
     }
     ctx.charge_entities(
@@ -660,7 +683,7 @@ pub(crate) fn project(
             ir.design
                 .sketches
                 .push(projection.sketch(sketch, id, &projection.features[at])?);
-            let (entities, constraints) = projection.entities(sketch, id)?;
+            let (entities, constraints) = Projection::entities(sketch, id)?;
             ctx.charge_entities(
                 cadmpeg_core::decode::u64_from_index(entities.len() + constraints.len()),
                 "project Alibre sketch records",
@@ -684,7 +707,9 @@ pub(crate) fn project(
         });
     }
     for (at, parameter) in history.parameters.iter().enumerate() {
-        ir.design.parameters.push(projection.parameter(at, parameter)?);
+        ir.design
+            .parameters
+            .push(projection.parameter(at, parameter)?);
     }
     let timeline: ContainerId = mint("container", "timeline")?;
     let members = features

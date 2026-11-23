@@ -80,7 +80,7 @@ fn amount(ir: &CadIr, dimension: &Dimension<impl Copy + Into<f64>>) -> f64 {
     }
 }
 
-fn blind_end(ir: &CadIr, span: &Option<Span<cadmpeg_ir::scalar::Length>>) -> f64 {
+fn blind_end(ir: &CadIr, span: Option<&Span<cadmpeg_ir::scalar::Length>>) -> f64 {
     let Some(Span::Between { start, end }) = span else {
         panic!("between span");
     };
@@ -131,10 +131,9 @@ fn lines(curves: &[PlanarCurve]) -> Vec<([f64; 2], [f64; 2])> {
     curves
         .iter()
         .filter_map(|curve| match curve {
-            PlanarCurve::Line { start, end } => Some((
-                [start.get().u, start.get().v],
-                [end.get().u, end.get().v],
-            )),
+            PlanarCurve::Line { start, end } => {
+                Some(([start.get().u, start.get().v], [end.get().u, end.get().v]))
+            }
             _ => None,
         })
         .collect()
@@ -181,7 +180,7 @@ fn extrude_depth(ir: &CadIr, name: &str) -> f64 {
     let FeatureOperation::Extrude(extrude) = operation(ir, name) else {
         panic!("extrude");
     };
-    blind_end(ir, &extrude.span)
+    blind_end(ir, extrude.span.as_ref())
 }
 
 fn profile_sketch(selection: &cadmpeg_ir::design::selection::OrderedSelection) -> String {
@@ -212,9 +211,18 @@ fn every_specimen_checks_with_a_design() {
             .iter()
             .map(|loss| loss.code.clone())
             .collect();
-        assert!(!kinds.contains(&AlibreLossCode::HistoryStreamUnread.kind()), "{name}");
-        assert!(!kinds.contains(&AlibreLossCode::HistoryOperationUnmapped.kind()), "{name}");
-        assert!(!kinds.contains(&AlibreLossCode::HistoryConstraintUnmapped.kind()), "{name}");
+        assert!(
+            !kinds.contains(&AlibreLossCode::HistoryStreamUnread.kind()),
+            "{name}"
+        );
+        assert!(
+            !kinds.contains(&AlibreLossCode::HistoryOperationUnmapped.kind()),
+            "{name}"
+        );
+        assert!(
+            !kinds.contains(&AlibreLossCode::HistoryConstraintUnmapped.kind()),
+            "{name}"
+        );
     }
 }
 
@@ -262,13 +270,16 @@ fn fillet_history_adds_a_constant_radius() {
     close(amount(ir, &dimension_length(radius)), 2.0);
     assert!(matches!(edges.picks, Picks::Unread));
     assert!(edges.native.is_some());
-    let kinds: Vec<_> = result.report().losses.iter().map(|l| l.code.clone()).collect();
+    let kinds: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .map(|l| l.code.clone())
+        .collect();
     assert!(kinds.contains(&AlibreLossCode::HistoryEdgeSelectionUnresolved.kind()));
 }
 
-fn dimension_length(
-    dimension: &Dimension<cadmpeg_ir::scalar::PositiveLength>,
-) -> Dimension<f64> {
+fn dimension_length(dimension: &Dimension<cadmpeg_ir::scalar::PositiveLength>) -> Dimension<f64> {
     match dimension {
         Dimension::Parameter(id) => Dimension::Parameter(id.clone()),
         other => panic!("{:?}", std::mem::discriminant(other)),
@@ -326,7 +337,7 @@ fn box_hole_history_adds_a_through_hole_sketch_on_the_top_face() {
     assert!(matches!(hole.extent, Some(Limit::ThroughAll)));
     let Picks::Named(points) = (match &hole.positions {
         cadmpeg_ir::design::ops::dressup::HolePositions::Points { points, .. } => &points.picks,
-        other => panic!("{other:?}"),
+        other @ cadmpeg_ir::design::ops::dressup::HolePositions::Placed(_) => panic!("{other:?}"),
     }) else {
         panic!("named position");
     };

@@ -55,7 +55,7 @@ pub(crate) enum AlibreLossCode {
     HistoryLoftSettingsUnmapped,
     /// An end condition holds a logical that the history reads as the reversal of the sketch normal.
     HistoryDirectionFlagAssumed,
-    /// The STEP_DATA stream holds no Alibre feature history.
+    /// The `STEP_DATA` stream holds no Alibre feature history.
     HistoryStreamUnread,
     /// The document profile and presentation records of the stream carry no decoded content in the IR.
     HistoryPresentationUnmapped,
