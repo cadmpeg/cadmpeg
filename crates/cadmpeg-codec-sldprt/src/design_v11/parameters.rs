@@ -1062,8 +1062,8 @@ fn read(
 ///
 /// Where the kinds differ or are `Native`, the expression is one `Text`
 /// token, the whole text, until `equations::bare_references` tests the
-/// text's unit-blind tree (§5.13). Interim, gap 20261121-IR-BARE-PARAM-REF-1:
-/// a `Source` expression of the reference token alone is refused by part 10.
+/// text's unit-blind tree (§5.13). Interim: part 10 refuses a `Source`
+/// expression that is the reference token alone.
 fn link_bare_references(
     entries: &[Entry<'_>],
     readings: &mut [Reading],
