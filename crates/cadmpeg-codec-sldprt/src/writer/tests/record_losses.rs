@@ -410,23 +410,34 @@ fn a_driven_dimension_of_a_generated_sketch_has_a_counted_export_loss() {
     }
 
     // A parameter whose expression reads the driven one is written with its
-    // value. A write that reduces a foreign history names that where it
-    // writes every expression so; a write that keeps the source's history
-    // charges it here.
-    let mut dependent = ir.model.parameters[0].clone();
-    dependent.id = cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#twice").unwrap();
-    dependent.name = "D2".to_owned();
-    dependent.expression = "\"D1\" * 2".to_owned();
-    dependent.dependencies = [ir.model.parameters[0].id.clone()].into_iter().collect();
-    ir.model.parameters.push(dependent);
-    let expressions = |ir: &CadIr| {
+    // value, and one with no value is left out. A write that reduces a
+    // foreign history names those where it writes every expression so; a
+    // write that keeps the source's history names them here.
+    let reader = |key: &str, name: &str, value: Option<f64>| {
+        let mut reader = ir.model.parameters[0].clone();
+        reader.id =
+            cadmpeg_ir::features::ParameterId::mint(format!("synthetic:test:id#{key}")).unwrap();
+        reader.name = name.to_owned();
+        reader.expression = "\"D1\" * 2".to_owned();
+        reader.value = value.map(|millimetres| {
+            cadmpeg_ir::features::parameters::ParameterValue::Length(
+                cadmpeg_ir::scalar::Length::new(millimetres).unwrap(),
+            )
+        });
+        reader.dependencies = [ir.model.parameters[0].id.clone()].into_iter().collect();
+        reader
+    };
+    let twice = reader("twice", "D2", Some(4.0));
+    let unknown = reader("unknown", "D3", None);
+    ir.model.parameters.extend([twice, unknown]);
+    let named = |ir: &CadIr| {
         super::super::accounting::losses(ir, false)
             .into_iter()
-            .filter(|loss| loss.code == SldprtLossCode::WriterParameterExpressionsOmitted.kind())
-            .map(|loss| loss.message)
+            .filter(|loss| loss.message.contains("reads an omitted"))
+            .map(|loss| (loss.code, loss.message))
             .collect::<Vec<_>>()
     };
-    assert!(expressions(&ir).is_empty());
+    assert!(named(&ir).is_empty());
     ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
             cadmpeg_core::dialect_id!("sldprt:test"),
@@ -436,11 +447,18 @@ fn a_driven_dimension_of_a_generated_sketch_has_a_counted_export_loss() {
             "0".into(),
         )]),
     ));
-    let charged = expressions(&ir);
+    let named = named(&ir);
     assert!(
-        matches!(charged.as_slice(), [message] if message.starts_with(
-            "1 parameter expression reading an omitted driven (reference) dimension parameter record(s)"
-        )),
-        "{charged:?}"
+        named.iter().any(|(code, message)| *code
+            == SldprtLossCode::WriterParameterExpressionsOmitted.kind()
+            && message.ends_with("dimension parameter: synthetic:test:id#twice")),
+        "{named:?}"
+    );
+    assert!(
+        named.iter().any(
+            |(code, message)| *code == SldprtLossCode::WriterFeaturesOmitted.kind()
+                && message.ends_with("write in its place: synthetic:test:id#unknown")
+        ),
+        "{named:?}"
     );
 }
