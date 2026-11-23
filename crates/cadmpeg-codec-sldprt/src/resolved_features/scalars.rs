@@ -3,7 +3,10 @@
 use super::relation_records::{
     compact_scalar_layout, legacy_scalar_layout, scalar_role, shifted_value_only_scalar_trailer,
 };
-use super::{COMPACT_SCALAR_HEADER, NAME_MARKER, SCALAR_HEADER, VALUE_ONLY_SCALAR_HEADER};
+use super::{
+    is_class_token, CLASS_MARKER, COMPACT_SCALAR_HEADER, NAME_MARKER, SCALAR_HEADER,
+    VALUE_ONLY_SCALAR_HEADER,
+};
 use crate::records::{
     FeatureInputLane, FeatureInputName, FeatureInputOperand, FeatureInputOperandKind,
     FeatureInputScalar,
@@ -93,6 +96,92 @@ fn scalar_value_offset(payload: &[u8], name_offset: usize) -> Option<usize> {
     }
     (payload.get(header_offset..value_only_offset) == Some(VALUE_ONLY_SCALAR_HEADER))
         .then_some(value_only_offset)
+}
+
+/// The 22-byte named-object header whose empty `CString` is written as four
+/// zero bytes.
+const BLANK_SCALAR_HEADER: &[u8] = &[
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+];
+
+/// The offset of the object identifier in a parameter trailer, after three
+/// zero bytes.
+const TRAILER_OBJECT_ID: usize = 3;
+
+/// The bound below which a parameter trailer's object identifier lies.
+const TRAILER_OBJECT_ID_BOUND: u32 = 1 << 24;
+
+/// Whether a parameter object's trailer begins at `at`: three zero bytes and
+/// the nonzero object identifier below 2^24 (`sldprt.md` §2).
+pub(super) fn identified_trailer(payload: &[u8], at: usize) -> bool {
+    let Some(id_at) = at.checked_add(TRAILER_OBJECT_ID) else {
+        return false;
+    };
+    payload.get(at..id_at) == Some(&[0, 0, 0])
+        && View::u32_le_at(payload, id_at).is_some_and(|id| id != 0 && id < TRAILER_OBJECT_ID_BOUND)
+}
+
+/// The f64 a parameter object stores, for the name record at `name_offset`
+/// (`sldprt.md` §2): the cell after the named-object header behind which an
+/// identified trailer begins, or, where no header form frames one, a trailer
+/// that opens with a zero byte and a class token or declaration. `None` where
+/// no header form, or more than one cell, has such a trailer.
+pub(crate) fn parameter_value(payload: &[u8], name_offset: usize) -> Option<f64> {
+    let units = usize::from(*payload.get(name_offset.checked_add(NAME_MARKER.len())?)?);
+    let header = name_offset
+        .checked_add(NAME_MARKER.len() + 1)?
+        .checked_add(units.checked_mul(2)?)?;
+    let classed_trailer = |at: usize| {
+        payload.get(at) == Some(&0)
+            && (View::u16_le_at(payload, at + 1).is_some_and(is_class_token)
+                || payload.get(at + 1..at + 1 + CLASS_MARKER.len()) == Some(CLASS_MARKER))
+    };
+    match framed_value(payload, header, &|at| identified_trailer(payload, at)) {
+        FramedCell::One(value) => Some(value),
+        FramedCell::Several => None,
+        FramedCell::Absent => match framed_value(payload, header, &classed_trailer) {
+            FramedCell::One(value) => Some(value),
+            FramedCell::Absent | FramedCell::Several => None,
+        },
+    }
+}
+
+/// How many value cells behind the named-object header forms a trailer rule
+/// frames.
+enum FramedCell {
+    Absent,
+    One(f64),
+    Several,
+}
+
+/// The finite f64 cell behind each named-object header form at `header`
+/// whose trailer `framed` accepts.
+fn framed_value(payload: &[u8], header: usize, framed: &impl Fn(usize) -> bool) -> FramedCell {
+    let mut cells = [
+        VALUE_ONLY_SCALAR_HEADER,
+        COMPACT_SCALAR_HEADER,
+        SCALAR_HEADER,
+        BLANK_SCALAR_HEADER,
+    ]
+    .into_iter()
+    .filter_map(|form| {
+        let cell = header.checked_add(form.len())?;
+        (payload.get(header..cell) == Some(form) && framed(cell.checked_add(8)?)).then_some(cell)
+    })
+    .filter_map(|cell| {
+        View::f64_le_at(payload, cell)
+            .filter(|value| value.is_finite())
+            .map(|value| (cell, value))
+    });
+    let Some((cell, value)) = cells.next() else {
+        return FramedCell::Absent;
+    };
+    if cells.all(|(other, _)| other == cell) {
+        FramedCell::One(value)
+    } else {
+        FramedCell::Several
+    }
 }
 
 pub(crate) fn scalar_indices_match(

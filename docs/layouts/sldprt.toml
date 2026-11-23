@@ -10438,6 +10438,37 @@ source = "spec"
 anchor = "In the pairwise-orthogonal form, unit in-plane u- and v-axes occupy the unaligned f64 triples at `+49`, `+57`, `+65` and `+73`, `+81`, `+89`"
 
 [[record]]
+name = "reference_plane_data_head"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
+kind = "byte"
+section = "2"
+anchor = "Its head is the plane's point (three f64, metres), its unit normal (three f64) and a flag byte"
+size = 49
+endianness = "little"
+note = "Offsets begin after the plane-data object's class token or class declaration. With flag `1` the head is the first 49 bytes of the 97-byte `constructed_reference_plane_fixed_frame`."
+
+[[record.field]]
+name = "point"
+offset = 0
+type = "f64[3]"
+source = "spec"
+anchor = "Its head is the plane's point (three f64, metres)"
+
+[[record.field]]
+name = "normal"
+offset = 24
+type = "f64[3]"
+source = "spec"
+anchor = "its unit normal (three f64)"
+
+[[record.field]]
+name = "flag"
+offset = 48
+type = "u8"
+source = "spec"
+anchor = "With flag `1` the head continues as the 97-byte frame"
+
+[[record]]
 name = "constructed_reference_plane_matrix_frame"
 kind = "byte"
 section = "2"

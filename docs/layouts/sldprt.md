@@ -2624,6 +2624,21 @@ Offsets begin immediately after the data-class name. The pairwise-orthogonal for
 | 49 | 24 | `u_axis` | `f64[3]` | little | spec | In the pairwise-orthogonal form, unit in-plane u- and v-axes occupy the unaligned f64 triples at `+49`, `+57`, `+65` and `+73`, `+81`, `+89` |
 | 73 | 24 | `v_axis` | `f64[3]` | little | spec | In the pairwise-orthogonal form, unit in-plane u- and v-axes occupy the unaligned f64 triples at `+49`, `+57`, `+65` and `+73`, `+81`, `+89` |
 
+## `reference_plane_data_head`
+
+Spec §2 · layout: byte offsets · size: 49 B
+
+Offsets begin after the plane-data object's class token or class declaration. With flag `1` the head is the first 49 bytes of the 97-byte `constructed_reference_plane_fixed_frame`.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 24 | `point` | `f64[3]` | little | spec | Its head is the plane's point (three f64, metres) |
+| 24 | 24 | `normal` | `f64[3]` | little | spec | its unit normal (three f64) |
+| 48 | 1 | `flag` | `u8` | little | spec | With flag `1` the head continues as the 97-byte frame |
+
 ## `constructed_reference_plane_matrix_frame`
 
 Spec §2 · layout: byte offsets · size: 121 B

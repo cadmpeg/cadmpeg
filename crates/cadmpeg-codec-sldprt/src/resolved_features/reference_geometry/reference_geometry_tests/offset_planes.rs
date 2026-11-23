@@ -2,7 +2,7 @@ use super::super::{
     classed_offset_plane_sources, legacy_offset_plane_face_alias, offset_plane_reference_source,
     select_reference_plane_frame_source, structured_offset_plane_sources,
 };
-use crate::records::{Feature, FeatureSource};
+use crate::records::{Feature, FeatureInputLane, FeatureInputName, FeatureSource, ObjectId};
 use crate::resolved_features::curves::{sketch_plane_frames, SketchPlaneUAxisSource};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation, PrincipalPlane};
 use cadmpeg_ir::math::Point3;
@@ -298,4 +298,165 @@ fn offset_plane_frame_keeps_the_source_u_axis_for_an_opposite_or_tilted_stored_f
             ))
         );
     }
+}
+
+/// A name record with `token`, the UTF-16 `name`, and its object identifier
+/// field left to the caller.
+fn name_record(token: u16, name: &str) -> Vec<u8> {
+    let mut record = token.to_le_bytes().to_vec();
+    record.extend_from_slice(&[0xff, 0xfe, 0xff]);
+    record.push(u8::try_from(name.encode_utf16().count()).unwrap());
+    for unit in name.encode_utf16() {
+        record.extend_from_slice(&unit.to_le_bytes());
+    }
+    record
+}
+
+/// An offset reference-plane object named `Plane9`: the plane's own bytes
+/// end with ten zero bytes, a plane-data class token and the data head with
+/// `point` (metres), the Front normal and flag `0`; the plane's `D1`
+/// parameter object stores `stored` metres behind the 18-byte header, where
+/// `stored` is given.
+fn offset_plane_lane(point: [f64; 3], stored: Option<f64>) -> FeatureInputLane {
+    let mut payload = name_record(0x8040, "Plane9");
+    payload.extend_from_slice(&[0x11; 40]);
+    payload.extend_from_slice(&[0; 10]);
+    payload.extend_from_slice(&0x8123_u16.to_le_bytes());
+    for value in point.into_iter().chain([0.0, 0.0, 1.0]) {
+        payload.extend_from_slice(&value.to_le_bytes());
+    }
+    payload.push(0);
+    payload.extend_from_slice(&[0x22; 64]);
+    let d1 = payload.len();
+    let mut names = vec![FeatureInputName {
+        id: "plane".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 0,
+        object_id: ObjectId::from_value(9),
+        value: "Plane9".into(),
+    }];
+    if let Some(stored) = stored {
+        payload.extend_from_slice(&name_record(0x8041, "D1"));
+        payload.extend_from_slice(crate::resolved_features::COMPACT_SCALAR_HEADER);
+        payload.extend_from_slice(&stored.to_le_bytes());
+        payload.extend_from_slice(&[0, 0, 0, 0x37, 0x01, 0, 0]);
+        names.push(FeatureInputName {
+            id: "d1".into(),
+            parent: "lane".into(),
+            ordinal: 1,
+            offset: u64::try_from(d1).unwrap(),
+            object_id: None,
+            value: "D1".into(),
+        });
+    }
+    payload.extend_from_slice(&[0; 32]);
+    FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload.into(),
+        classes: Vec::new(),
+        names,
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    }
+}
+
+/// Enriches one `Plane9` record whose `D1` displays `display`, and returns
+/// its parameters and properties.
+fn enriched_offset_plane(
+    lane: FeatureInputLane,
+    display: &str,
+    unit: Option<cadmpeg_ir::design::units::UnitSymbol>,
+) -> (
+    BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+) {
+    let mut plane = Feature {
+        id: "plane".into(),
+        parent: "history".into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: FeatureSource::from_value(9),
+        ordinal: 4,
+        name: "Plane9".into(),
+        kind: "Plane".into(),
+        input_class: Some("moRefPlane_c".into()),
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    plane
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), display.into());
+    let mut histories = vec![crate::records::FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![plane],
+    }];
+    super::super::enrich_history_reference_planes(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &mut histories,
+        &[lane],
+        unit,
+    )
+    .unwrap();
+    let plane = histories.remove(0).features.remove(0);
+    (plane.parameters, plane.properties)
+}
+
+fn distance_mm(parameters: &BTreeMap<cadmpeg_core::text::NonBlankString, String>) -> f64 {
+    crate::history::literals::parse_dimension_length_mm(&parameters["D1"])
+        .unwrap()
+        .get()
+}
+
+/// The stored metres of the `D1` parameter object give the distance in an
+/// inch document, whose display is an inch number, and in a millimetre
+/// document whose display is rounded; the data head's point and normal are
+/// kept.
+#[test]
+fn offset_plane_takes_the_distance_its_d1_object_stores() {
+    use cadmpeg_ir::design::units::UnitSymbol;
+    for (display, unit) in [("0.49", UnitSymbol::In), ("12.35", UnitSymbol::Mm)] {
+        let lane = offset_plane_lane([0.001, 0.002, -0.012_345], Some(0.012_345));
+        let (parameters, properties) = enriched_offset_plane(lane, display, Some(unit));
+        assert!(
+            (distance_mm(&parameters) - 12.345).abs() <= 1e-9,
+            "{display}"
+        );
+        assert!(!properties.contains_key("DistanceDisplayed"));
+        let point = crate::history::literals::parse_point3_mm(&properties["PlanePoint"])
+            .unwrap()
+            .get();
+        assert!((point.z + 12.345).abs() <= 1e-9 && (point.x - 1.0).abs() <= 1e-9);
+        assert_eq!(properties.get("PlaneNormal"), Some(&"0,0,1".to_string()));
+    }
+}
+
+/// Without a `D1` parameter object the bare display is read in the
+/// document's length unit, and the plane keeps the display it was read from.
+#[test]
+fn offset_plane_without_a_stored_distance_reads_its_display_in_the_document_unit() {
+    let lane = offset_plane_lane([0.0, 0.0, 0.0127], None);
+    let (parameters, properties) =
+        enriched_offset_plane(lane, "0.5", Some(cadmpeg_ir::design::units::UnitSymbol::In));
+    assert!((distance_mm(&parameters) - 12.7).abs() <= 1e-9);
+    assert_eq!(
+        properties.get("DistanceDisplayed"),
+        Some(&"0.5".to_string())
+    );
 }

@@ -343,6 +343,7 @@ fn project_feature_model_with_native_inputs(
         &native.feature_input_lanes,
         &native.pmi_dimensions,
         HistoryEnrichment::Write,
+        None,
     )?;
     let mut projection = project_feature_model(&histories)?;
     let features = &mut projection.features;

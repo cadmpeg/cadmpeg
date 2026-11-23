@@ -205,6 +205,7 @@ fn sync_configuration_design_state(
         &native.feature_input_lanes,
         &native.pmi_dimensions,
         form_padding,
+        None,
     )?;
     if unprojected > 0 {
         return Err(CodecError::NotImplemented(
@@ -316,6 +317,7 @@ fn sync_configuration_design_state(
         &native.feature_input_lanes,
         &native.pmi_dimensions,
         form_padding,
+        None,
     )?;
     if unprojected > 0 {
         return Err(CodecError::NotImplemented(
