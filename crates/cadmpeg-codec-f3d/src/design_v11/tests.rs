@@ -347,6 +347,7 @@ fn tail_flags(suppression: [bool; 2], no_result: bool, rolled_back: bool) -> Des
     DesignScopeTailFlags {
         suppression,
         unevaluated: false,
+        wide_state: None,
         state_offset: 0,
         no_result,
         rolled_back,
