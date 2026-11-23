@@ -4,6 +4,7 @@
 
 use std::f64::consts::{PI, TAU};
 
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::construction::{AxisValue, InputReference, InputRole, Relation, Subject};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
@@ -92,13 +93,13 @@ fn derived(mut revolution: Value) -> Value {
     revolution
 }
 
-/// The `AxisOrigin` and `AxisDirection` attributes of a revolution whose
-/// record stores its axis, and none where `"stored"` is `false` or the
-/// construction holds no axis.
-fn axis_attributes(revolution: &Value) -> String {
+/// The `AxisOrigin` and `AxisDirection` properties the decoder gives a
+/// revolution whose record stores its axis, and none where `"stored"` is
+/// `false` or the construction holds no axis.
+fn axis_properties(revolution: &Value) -> Vec<(&'static str, String)> {
     let axis = &revolution["value"]["axis"];
     if revolution["stored"] == json!(false) || axis.is_null() {
-        return String::new();
+        return Vec::new();
     }
     let triple = |value: &Value, unit: &str| {
         ["x", "y", "z"]
@@ -107,11 +108,10 @@ fn axis_attributes(revolution: &Value) -> String {
             .collect::<Vec<_>>()
             .join(",")
     };
-    format!(
-        r#" AxisOrigin="{}" AxisDirection="{}""#,
-        triple(&axis["origin"], "mm"),
-        triple(&axis["direction"], "")
-    )
+    vec![
+        ("AxisOrigin", triple(&axis["origin"], "mm")),
+        ("AxisDirection", triple(&axis["direction"], "")),
+    ]
 }
 
 /// A part whose history holds the built-in planes, the origin, a sketch
@@ -132,15 +132,12 @@ fn part_in_order(
     revolves: &[Value],
     sketch_first: bool,
 ) -> (CadIr, SldprtNative) {
-    let revolve_records = revolves
-        .iter()
-        .enumerate()
-        .map(|(index, revolution)| {
+    let revolve_records = (0..revolves.len())
+        .map(|index| {
             format!(
-                r#"<Revolve Name="Revolve{}" Type="Revolve" id="{}"{}>{dimensions}</Revolve>"#,
+                r#"<Revolve Name="Revolve{}" Type="Revolve" id="{}">{dimensions}</Revolve>"#,
                 index + 1,
-                20 + index,
-                axis_attributes(revolution)
+                20 + index
             )
         })
         .collect::<Vec<_>>()
@@ -223,6 +220,11 @@ fn part_in_order(
             let mut revolve = revolves[index].clone();
             if revolve["value"]["profile"]["kind"] == json!("feature") {
                 revolve["value"]["profile"]["value"] = json!(sketch_feature.as_str());
+            }
+            for (key, value) in axis_properties(&revolve) {
+                feature
+                    .source_properties
+                    .insert(NonBlankString::new(key).unwrap(), value);
             }
             json!({"kind": "operation", "value": {"kind": "revolve", "value": {
                 "construction": {"kind": revolve["kind"], "value": revolve["value"]},

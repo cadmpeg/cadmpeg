@@ -215,10 +215,8 @@ fn revolve(
             .flat_map(|history| &history.features)
             .find(|record| record.id == native)
     });
-    let stored = record.is_some_and(|record| {
-        record.properties.contains_key("AxisOrigin")
-            && record.properties.contains_key("AxisDirection")
-    });
+    let stored = source.source_properties.contains_key("AxisOrigin")
+        && source.source_properties.contains_key("AxisDirection");
     let (axis, line) = axis_construction(axis, sketch, context)?;
     if !stored && line.is_none() {
         return Err(
