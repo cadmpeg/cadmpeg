@@ -59,16 +59,16 @@ pub(super) fn validate(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
         let expected_pair = header.and_then(|header| {
             let header_width =
                 cadmpeg_core::decode::u64_from_index(header.class_tag.as_str().len()) + 8;
-            let optional_width: u64 = settings
-                .inputs
-                .slots()
-                .iter()
-                .map(|slot| if slot.is_some() { 11 } else { 1 })
-                .sum();
+            // The leading-reference form has no mask word.
+            let prefix = if settings.inputs.leading_reference().is_some() {
+                settings_prefix::OVERRIDE_MASK
+            } else {
+                settings_prefix::LEN
+            };
             let version_flags = settings.inputs.rule_reference_tail_width();
             let delta = header_width
-                + cadmpeg_core::decode::u64_from_index(settings_prefix::LEN)
-                + optional_width
+                + cadmpeg_core::decode::u64_from_index(prefix)
+                + settings.inputs.optional_width()
                 + 33
                 + version_flags
                 + 1;

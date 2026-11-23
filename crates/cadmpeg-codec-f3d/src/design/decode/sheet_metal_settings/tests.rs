@@ -81,7 +81,7 @@ fn settings_frames_require_exact_boundary_version_flags_and_typed_links() {
                 .collect();
         let fields =
             parse_settings(&bytes, frame, version, &primary, &types, &registrations).unwrap();
-        assert_eq!(fields.mask, 4);
+        assert_eq!(fields.mask, Some(4));
         assert_eq!(fields.inputs.version(), version);
         assert_eq!(
             fields.inputs.rule_reference_tail_width(),
@@ -180,6 +180,115 @@ fn settings_frames_require_exact_boundary_version_flags_and_typed_links() {
         .is_none());
         assert!(parse_settings(&bytes, frame, 4, &primary, &types, &registrations).is_none());
     }
+}
+
+fn registrations(version: u32) -> Vec<crate::records::entity_header::SegmentTypeData> {
+    [(SETTINGS_GUID, version), (PAIRED_GUID, 0)]
+        .into_iter()
+        .enumerate()
+        .map(
+            |(index, (guid, version))| crate::records::entity_header::SegmentTypeData {
+                byte_offset: u64_from_index(index),
+                type_guid: guid.to_owned().try_into().unwrap(),
+                type_guid_offset: 4,
+                base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
+                version,
+                version_offset: 44,
+                module: "Fusion".into(),
+                entities: crate::records::identity::ReferenceRun::unlocated(if index == 0 {
+                    vec![50]
+                } else {
+                    Vec::new()
+                }),
+            },
+        )
+        .collect()
+}
+
+/// A version-3 frame whose first byte after the ten zero bytes is `01`: a
+/// present reference to record 55, twelve zero bytes, then the rule reference.
+fn leading_reference_fixture(rule_reference_tail: &[u8]) -> (Vec<u8>, PrimaryRecordFrame) {
+    let (mut bytes, mut frame) = fixture(3, rule_reference_tail);
+    let start = crate::layout::indexed_design_record_header::LEN + settings_prefix::OVERRIDE_MASK;
+    let mut prefix = vec![1];
+    prefix.extend_from_slice(&55u64.to_le_bytes());
+    prefix.extend_from_slice(&[0; 2 + V3_LEADING_ZERO_RUN]);
+    let replaced = 4 + 9;
+    let added = prefix.len() - replaced;
+    bytes.splice(start..start + replaced, prefix);
+    frame.member_end += added;
+    frame.end += added;
+    (bytes, frame)
+}
+
+#[test]
+fn leading_reference_frames_keep_the_reference_in_place_of_the_mask() {
+    let primary = HashSet::from([50, 51, 52, 53, 54, 55]);
+    let types = HashMap::from([(51, (RULE_GUID, 0)), (52, (PRESENTATION_GUID, 0))]);
+    let registrations = registrations(3);
+    for tail in [&[0, 0][..], &[1, 0, 0][..]] {
+        let (bytes, frame) = leading_reference_fixture(tail);
+        let fields = parse_settings(&bytes, frame, 3, &primary, &types, &registrations).unwrap();
+        assert_eq!(fields.mask, None);
+        assert_eq!(
+            fields.inputs,
+            DesignSheetMetalSettingsInputs::V3LeadingReference {
+                first: 55,
+                rule_reference_tail: if tail == [0, 0] {
+                    V3RuleReferenceTail::ZeroPair
+                } else {
+                    V3RuleReferenceTail::OneZeroPair
+                },
+            }
+        );
+        assert_eq!(fields.inputs.leading_reference(), Some(55));
+        assert_eq!(
+            (
+                fields.rule,
+                fields.presentation,
+                fields.owner,
+                fields.context
+            ),
+            (51, 52, 53, 54)
+        );
+        let prefix = crate::layout::indexed_design_record_header::LEN;
+        let zero_run = prefix + settings_prefix::OVERRIDE_MASK + 11;
+        for offset in [
+            prefix + settings_prefix::OVERRIDE_MASK + 9,
+            zero_run,
+            zero_run + V3_LEADING_ZERO_RUN - 1,
+        ] {
+            let mut invalid = bytes.clone();
+            invalid[offset] = 1;
+            assert!(parse_settings(&invalid, frame, 3, &primary, &types, &registrations).is_none());
+        }
+        assert!(parse_settings(
+            &bytes,
+            frame,
+            3,
+            &HashSet::from([50, 51, 52, 53, 54]),
+            &types,
+            &registrations
+        )
+        .is_none());
+        let mut short_run = bytes.clone();
+        short_run.remove(zero_run);
+        assert!(parse_settings(
+            &short_run,
+            PrimaryRecordFrame {
+                member_end: frame.member_end - 1,
+                end: frame.end - 1,
+                ..frame
+            },
+            3,
+            &primary,
+            &types,
+            &registrations
+        )
+        .is_none());
+    }
+    let (bytes, frame) = leading_reference_fixture(&[0, 0]);
+    assert!(parse_settings(&bytes, frame, 2, &primary, &types, &registrations).is_none());
 }
 
 #[test]
@@ -281,7 +390,7 @@ fn unreadable_settings_keep_the_sibling_settings() {
         if reference_prefix {
             let mut prefix = vec![1];
             prefix.extend_from_slice(&51u64.to_le_bytes());
-            prefix.extend_from_slice(&[0; 14]);
+            prefix.extend_from_slice(&[0; 15]);
             prefix.push(1);
             prefix.extend_from_slice(&55u64.to_le_bytes());
             prefix.extend_from_slice(&[0; 4]);

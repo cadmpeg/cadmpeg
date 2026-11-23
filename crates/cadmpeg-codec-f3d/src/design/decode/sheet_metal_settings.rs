@@ -8,6 +8,7 @@ use crate::metastream::{primary_record_frames, PrimaryRecordFrame};
 use crate::records::sheet_metal_settings::{
     DesignSheetMetalSettings, DesignSheetMetalSettingsInputs, DesignSheetMetalSettingsWire,
     V3RuleReferenceTail, PAIRED_GUID, PRESENTATION_GUID, RULE_GUID, SETTINGS_GUID,
+    V3_LEADING_ZERO_RUN,
 };
 use cadmpeg_core::container::{ContainerEntry, ContainerRole};
 use cadmpeg_core::decode::{u64_from_index, View};
@@ -188,7 +189,7 @@ fn rule_thickness(
 }
 
 struct SettingsFields {
-    mask: u32,
+    mask: Option<u32>,
     inputs: DesignSheetMetalSettingsInputs,
     rule: u64,
     presentation: u64,
@@ -236,7 +237,8 @@ fn parse_settings(
     if view.take(settings_prefix::OVERRIDE_MASK)? != [0; settings_prefix::OVERRIDE_MASK] {
         return None;
     }
-    let mask = view.u32_le()?;
+    let leading = version == 3 && view.unread().first() == Some(&1);
+    let mask = if leading { None } else { Some(view.u32_le()?) };
     let (inputs, rule) = match version {
         2 => {
             let mut slots = [None; 7];
@@ -251,8 +253,16 @@ fn parse_settings(
         }
         3 => {
             let mut slots = [None; 9];
-            for slot in &mut slots {
-                *slot = local(&mut view).ok()?;
+            let mut first = None;
+            if leading {
+                first = Some(local(&mut view).ok()??);
+                if view.take(V3_LEADING_ZERO_RUN)? != [0; V3_LEADING_ZERO_RUN] {
+                    return None;
+                }
+            } else {
+                for slot in &mut slots {
+                    *slot = local(&mut view).ok()?;
+                }
             }
             let rule = local(&mut view).ok()??;
             let rule_reference_tail = match view.u8()? {
@@ -260,20 +270,24 @@ fn parse_settings(
                 1 if view.take(2)? == [0, 0] => V3RuleReferenceTail::OneZeroPair,
                 _ => return None,
             };
-            (
-                DesignSheetMetalSettingsInputs::V3 {
+            let inputs = match first {
+                Some(first) => DesignSheetMetalSettingsInputs::V3LeadingReference {
+                    first,
+                    rule_reference_tail,
+                },
+                None => DesignSheetMetalSettingsInputs::V3 {
                     slots,
                     rule_reference_tail,
                 },
-                rule,
-            )
+            };
+            (inputs, rule)
         }
         _ => return None,
     };
     if inputs
-        .slots()
+        .leading_reference()
         .iter()
-        .flatten()
+        .chain(inputs.slots().iter().flatten())
         .any(|id| !primary.contains(id))
     {
         return None;

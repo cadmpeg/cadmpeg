@@ -4059,15 +4059,15 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 ### DR-1029. Version-3 settings reference prefix
 
-**Question.** Where are the override mask and optional inputs in the version-3 sheet-metal settings reference prefix, and which control does its first reference supply?
+**Question.** What control does the leading reference of the version-3 sheet-metal settings frame supply, and are the override mask and the optional inputs of the mask-and-slots form positions of the same frame?
 
-**Known.** The settings type GUID is `E75C86D6-76D8-4F1F-BC16-AB8CB74958B0`, version 3. After the primary indexed header and ten zero bytes, the primary frame contains a present local reference, twelve zero bytes, a second present local reference, two zero bytes, a third present local reference, one zero byte, and a fourth present local reference. The first reference targets type `ACE707B5-1490-4837-A69A-724A92CEB69F`, version 0. The second targets rule type `B42ED662-8999-4C1B-A744-759D1D446D55`, version 1. The third targets presentation type `6CCF41D5-40BE-48ED-A834-18F3EAED6C57`, version 1. The fourth targets the owning `Bend` scope. Its same-index paired header is followed by eight zero bytes and a present local reference. The mask-and-slots form in `f3d.md` §3.1 places a u32 mask before the optional inputs and rule reference.
+**Known.** The settings type GUID is `E75C86D6-76D8-4F1F-BC16-AB8CB74958B0`, version 3. In a Design segment of one public design, four settings frames follow the primary indexed header and ten zero bytes with a present local reference, twelve zero bytes, a second present local reference, two zero bytes, a third present local reference, one zero byte, and a fourth present local reference. The first byte after the ten zero bytes is `01`; the mask-and-slots form stores a u32 mask there. The first reference targets type `ACE707B5-1490-4837-A69A-724A92CEB69F`, version 0, which is the `ConvertToSheetMetal` scope of that design. The second targets rule type `B42ED662-8999-4C1B-A744-759D1D446D55`, version 1. The third targets presentation type `6CCF41D5-40BE-48ED-A834-18F3EAED6C57`, version 1. The fourth targets the owning `Bend` scope, and each of the four `Bend` scopes owns one such frame. The four frames have equal first and second references. Each same-index paired header is followed by eight zero bytes and a present local reference. A version-3 frame in `FlatPatternAssetSubType/Design1` stores 23 zero bytes between the ten zero bytes and the rule reference, which the mask-and-slots form reads as a zero mask and nine absent slots.
 
-**Need.** Controlled saves must vary the rule, mask controls, and each optional input independently. Their typed links, indexed frame bounds, and final sheet geometry must establish the field order and input roles.
+**Need.** Controlled saves must vary the rule, mask controls, and each optional input independently. Their typed links, indexed frame bounds, and final sheet geometry must establish the field order and input roles. A second save of a `Bend` after `ConvertToSheetMetal` must show whether the leading reference always names the conversion scope.
 
 **Conflict.** None.
 
-**Note.** The decoder preserves each unread frame in the source archive with `sheet-metal.settings-undecoded` and retains other Design records.
+**Note.** The decoder reads the leading-reference form as a settings frame without a mask, retains the first reference natively, and keeps the other frames of a stream when one frame fails. It does not read the leading reference as a control. The edge-flange radius derivation uses only frames with mask zero.
 
 ### DR-889. Extrude selection members in sketch text
 
