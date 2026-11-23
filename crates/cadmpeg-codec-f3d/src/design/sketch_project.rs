@@ -3,7 +3,8 @@
 
 use crate::design::dimensions::{planar_point, sketch_normal_sign};
 use crate::design::face_resolve::{placement_origin_scale, sketch_curve_is_spatial};
-use crate::design::feature_project::{closed_spatial_sketch_profiles, SPATIAL_PROFILE_SEARCH_WORK};
+use crate::design::feature_project::sweep_loft::closed_spatial_sketch_profiles;
+use crate::design::feature_project::SpatialProfileSearch;
 use crate::design::geometry::closed_sketch_profiles;
 use crate::ids::native_stream;
 use crate::records::{
@@ -96,32 +97,8 @@ pub(crate) fn scan_construction_curve_identities(
         if !is_analytic_shape {
             continue;
         }
-        let Some(tail_start) = g_off.checked_add(96) else {
-            continue;
-        };
-        let Some(tail_end) = tail_start.checked_add(80).map(|e| e.min(bytes.len())) else {
-            continue;
-        };
-        let Some(tail) = bytes.get(tail_start..tail_end) else {
-            continue;
-        };
-        let mut n_refs = 0usize;
-        let mut cur = 0usize;
-        while cur + 11 <= tail.len() && tail[cur] == 1 && tail[cur + 5..cur + 11] == [0; 6] {
-            n_refs += 1;
-            cur += 11;
-        }
-        if !(1..=3).contains(&n_refs) {
-            continue;
-        }
-        let pad = if n_refs == 1 { 5 } else { 3 };
-        let flag_off = cur + pad + 4;
-        if tail
-            .get(cur..cur + pad)
-            .is_some_and(|s| s.iter().all(|&b| b == 0))
-            && flag_off + 5 <= tail.len()
-            && View::u32_le_at(tail, flag_off) == Some(1)
-            && tail[flag_off + 4] == 1
+        if crate::design::decode::sketch::planar_curve_tail(bytes, g_off)
+            .is_some_and(|tail| tail.construction)
         {
             construction_ids.insert(curve.id.clone());
         }
@@ -669,7 +646,7 @@ pub(crate) fn project_spatial_sketch_design(
     curves: &[SketchCurveIdentity],
     surfaces: &[SketchSurface],
     relations: &[SketchRelation],
-    linear_tolerance: f64,
+    search: SpatialProfileSearch,
 ) -> Result<SpatialSketchDesign, cadmpeg_core::CodecError> {
     use cadmpeg_ir::scalar::Length;
     use cadmpeg_ir::sketches::{
@@ -1048,9 +1025,9 @@ pub(crate) fn project_spatial_sketch_design(
         let Some(sketch_entities) = entities_by_sketch.get(&id) else {
             continue;
         };
-        let budget = cadmpeg_core::decode::WorkBudget::new(SPATIAL_PROFILE_SEARCH_WORK);
+        let budget = cadmpeg_core::decode::WorkBudget::new(search.work);
         let profiles = if let Some(profiles) =
-            closed_spatial_sketch_profiles(ctx, sketch_entities, linear_tolerance, &budget)?
+            closed_spatial_sketch_profiles(ctx, sketch_entities, search.linear_tolerance, &budget)?
         {
             profiles
         } else {
@@ -1077,8 +1054,9 @@ pub(crate) fn project_spatial_sketch_design(
     sketches.sort_by(|a, b| a.id.cmp(&b.id));
     let mut losses = Vec::new();
     if capped_profile_searches != 0 {
+        let work = search.work;
         losses.push(crate::loss::F3dLossCode::SketchProfileSearchCapped.note(format!(
-            "{capped_profile_searches} spatial sketch(es) have no closed profiles because their profile search exceeded the local work cap SPATIAL_PROFILE_SEARCH_WORK ({SPATIAL_PROFILE_SEARCH_WORK})."
+            "{capped_profile_searches} spatial sketch(es) have no closed profiles because their profile search exceeded the local work cap SPATIAL_PROFILE_SEARCH_WORK ({work})."
         )));
     }
     Ok(SpatialSketchDesign {

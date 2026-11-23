@@ -9,7 +9,8 @@ use crate::design::edge_resolve::{
     unique_deleted_reference_assignment, unique_edge_group_assignment, EdgeGroupMember,
 };
 use crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext;
-use cadmpeg_ir::features::{EdgeSelection, FeatureId};
+use cadmpeg_ir::features::selections::EdgeSelection;
+use cadmpeg_ir::features::FeatureId;
 
 fn transition_complete_group() -> (
     [crate::records::topology::edge_identity::DesignEdgeOperand; 3],
@@ -307,8 +308,8 @@ fn fragment_transition_group() -> (
         -1, -1, 2, 0, -1, 1, -1, 2, -1, 3, 1, -1, 0, -1, 2, -1, 0, 0, -1, 3, 0, -1, 0, -1, 0, -1,
         0, 0, -1,
     ];
-    let structure = crate::design::decode::operands::edge_recipe_structure(
-        &cadmpeg_test_support::service_decode_context(),
+    let structure = crate::design::decode::operands::recipe_structure::edge_recipe_structure(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &program,
     )
     .unwrap()

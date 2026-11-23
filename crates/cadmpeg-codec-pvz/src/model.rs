@@ -12,7 +12,7 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::products::{
@@ -30,8 +30,6 @@ use crate::loss::PvzLossCode;
 use crate::ol::{MemberGeometry, Mesh};
 use crate::pvs::{DefinitionRole, Placement, Structure};
 
-/// Most occurrences one package decodes to.
-const MAX_OCCURRENCES: usize = 100_000;
 /// Relative tolerance on the perpendicularity and the common length of the
 /// three placement basis vectors (§3.10).
 const EPS_BASIS_SIMILARITY: f64 = 1e-5;
@@ -144,10 +142,12 @@ enum Reached {
 /// Adds the occurrences each definition places, walking the definition graph
 /// from its roots (§3.11). A definition reached from a root lists its child
 /// occurrences once, in stored order; a child occurrence of a definition on
-/// the path to it closes a cycle and is left out.
+/// the path to it closes a cycle and is left out. The walk stops after
+/// `max_occurrences` occurrences.
 pub(crate) fn occurrences(
     ctx: &DecodeContext<'_>,
     structure: &Structure,
+    max_occurrences: usize,
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
@@ -181,7 +181,7 @@ pub(crate) fn occurrences(
             let mut document =
                 ProductDefinition::root(crate::ids::document(), ExternalDocument::default());
             for root in roots.iter().copied() {
-                if emitted >= MAX_OCCURRENCES {
+                if emitted >= max_occurrences {
                     stopped = true;
                     break;
                 }
@@ -202,6 +202,11 @@ pub(crate) fn occurrences(
                 )?;
             }
             ir.model.product_definitions.push(document);
+            ctx.admit_entities(
+                u64_from_index(ir.entity_count()),
+                &mut admitted,
+                "pvz_document",
+            )?;
         }
     }
     let mut reached = vec![Reached::No; definitions.len()];
@@ -230,7 +235,7 @@ pub(crate) fn occurrences(
                 continue;
             };
             frame.2 += 1;
-            if emitted >= MAX_OCCURRENCES {
+            if emitted >= max_occurrences {
                 stopped = true;
                 break 'roots;
             }
@@ -278,14 +283,13 @@ pub(crate) fn occurrences(
             }
         }
     }
-    for (index, occurrences) in owned.into_iter().enumerate() {
-        let id = crate::ids::definition(index);
-        if let Some(definition) = ir
-            .model
-            .product_definitions
-            .iter_mut()
-            .find(|definition| definition.id == id)
-        {
+    let mut owned: BTreeMap<_, _> = owned
+        .into_iter()
+        .enumerate()
+        .map(|(index, occurrences)| (crate::ids::definition(index), occurrences))
+        .collect();
+    for definition in &mut ir.model.product_definitions {
+        if let Some(occurrences) = owned.remove(&definition.id) {
             definition.occurrences = occurrences;
         }
     }
@@ -297,7 +301,7 @@ pub(crate) fn occurrences(
     let mut truncation = Vec::new();
     if stopped {
         truncation.push(format!(
-            "decoding stopped at the limit of {MAX_OCCURRENCES} occurrences"
+            "decoding stopped at the limit of {max_occurrences} occurrences"
         ));
     }
     if past_depth > 0 {
@@ -481,6 +485,7 @@ pub(crate) fn display_geometry(
                         object_type: None,
                         visible: None,
                         channels: BTreeMap::new(),
+                        native_ref: None,
                     });
                 }
             }
@@ -559,9 +564,8 @@ fn tessellation(
     let groups = mesh
         .patches
         .iter()
-        .map(|(patch, triangles)| TessellationTriangleGroup {
-            source_id: Some(format!("patch {patch}")),
-            triangles: triangles.clone(),
+        .map(|(patch, triangles)| {
+            TessellationTriangleGroup::new(Some(format!("patch {patch}")), triangles.clone())
         })
         .collect();
     Tessellation::from_parts(id, lanes, Vec::new())
@@ -620,6 +624,7 @@ fn appearance(member: &str, base: u32, defined: &crate::ol::Appearance) -> (Appe
         base_color,
         properties,
         textures: Vec::new(),
+        native_ref: None,
     };
     (appearance, rejected)
 }

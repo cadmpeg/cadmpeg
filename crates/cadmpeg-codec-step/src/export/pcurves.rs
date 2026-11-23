@@ -8,7 +8,8 @@ use std::f64::consts::{FRAC_PI_2, TAU};
 use cadmpeg_ir::geometry::pcurve::{
     LinePcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, WeightedPole2,
 };
-use cadmpeg_ir::geometry::{DirectedParameterRange, SolvedSurfaceGeometry};
+use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::topology::Edge;
 use cadmpeg_ir::transform::Transform2;

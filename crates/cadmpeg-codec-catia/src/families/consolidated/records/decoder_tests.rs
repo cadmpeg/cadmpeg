@@ -485,6 +485,23 @@ fn a5_edge_binding_resolves_sphere_by_endpoint_lifts() {
 }
 
 #[test]
+fn a5_edge_binding_reads_sphere_jets_as_radius_scaled_angles() {
+    use crate::families::consolidated::records::ConsolidatedSupportBinding;
+
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(
+        &crate::test_support::test_a5_bound::a5_sphere_bound_sixth_turn_stream(),
+    )
+    .expect("evaluator allocation succeeds");
+    assert!(blocks[0]
+        .supports
+        .iter()
+        .all(|support| matches!(support, Some(ConsolidatedSupportBinding::Sphere { .. }))));
+    let endpoints = blocks[0].endpoint_loci.expect("lifted sphere endpoints");
+    let end = cadmpeg_ir::math::Point3::new(3.5, 2.0 + 2.5 * 3.0_f64.sqrt(), 3.0);
+    assert!(endpoints[1].distance(end) < 1e-6);
+}
+
+#[test]
 fn a5_edge_binding_rejects_duplicate_sphere_endpoint_lifts() {
     let mut bytes = crate::test_support::test_a5_bound::a5_sphere_bound_edge_stream();
     bytes.extend_from_slice(&crate::test_support::test_b2::b2_sphere_stream());
@@ -1525,7 +1542,9 @@ fn decode_routes_a_resolved_revolution_only_nested_stream_to_freeform() {
         .find(|surface| surface.id.as_str() == "catia:consolidated:surface-revolution#0")
         .expect("transferred freeform revolution");
     assert!(match revolution.definition() {
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(matched_payload) => matches!(
+        cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Revolution(
+            matched_payload,
+        ) => matches!(
             (&matched_payload
                 .parameter_interval()
                 .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints),),

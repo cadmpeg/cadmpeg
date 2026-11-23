@@ -6,11 +6,10 @@ use super::super::{
 };
 use super::law_operand;
 use crate::eval::sweep_law::{scalar_sweep_law_differential, scalar_unary_sweep_law_differential};
+use crate::geometry::laws::LawExpression;
+use crate::geometry::nurbs::{NurbsCurve, NurbsSurface};
 use crate::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
-use crate::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface},
-    LawExpression, SolvedCurveGeometry,
-};
+use crate::geometry::SolvedCurveGeometry;
 use crate::math::{Point2, Point3, Vector3};
 
 #[test]
@@ -56,7 +55,7 @@ fn numerical_followup_curve_search_rejects_a_nonzero_zero_tolerance_residual() {
     .unwrap();
     assert_eq!(
         nurbs_curve_parameter_near_point(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &curve,
             Point3::new(0., 1e-200, 0.),
             0.,
@@ -81,7 +80,7 @@ fn curve_search_admits_its_tolerance_before_the_search() {
     for tolerance in [-1e-3, f64::NAN, f64::INFINITY] {
         assert_eq!(
             nurbs_curve_parameter_near_point(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &curve,
                 point,
                 tolerance,
@@ -94,7 +93,7 @@ fn curve_search_admits_its_tolerance_before_the_search() {
     let tolerance = crate::scalar::NonNegativeLength::new(2e-3).unwrap();
     let seed = crate::scalar::FiniteReal::new(0.5).unwrap();
     let parameter = nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &curve,
         point,
         tolerance,
@@ -105,7 +104,7 @@ fn curve_search_admits_its_tolerance_before_the_search() {
     assert_eq!(
         parameter,
         nurbs_curve_parameter_near_point(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &curve,
             point,
             tolerance.get(),
@@ -134,7 +133,7 @@ fn numerical_followup_rational_search_retains_common_weight_scaling() {
         );
         assert_eq!(
             nurbs_curve_parameter_near_point(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &curve,
                 poles[0],
                 0.,
@@ -177,7 +176,7 @@ fn implicit_unit_weights_match_explicit_unit_weights_in_curve_search() {
     );
     assert_eq!(
         nurbs_curve_parameter_near_point(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &implicit,
             Point3::new(0.25, 0.0, 0.0),
             0.0,
@@ -185,7 +184,7 @@ fn implicit_unit_weights_match_explicit_unit_weights_in_curve_search() {
         )
         .expect("find the NURBS curve parameter near the point"),
         nurbs_curve_parameter_near_point(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &explicit,
             Point3::new(0.25, 0.0, 0.0),
             0.0,
@@ -279,7 +278,7 @@ fn analytic_line_search_preserves_subnormal_scale_residuals() {
     );
     assert_eq!(
         direct_curve_parameter_near_point(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &line,
             Point3::new(0., 1e-200, 0.),
             crate::scalar::FiniteReal::ZERO,

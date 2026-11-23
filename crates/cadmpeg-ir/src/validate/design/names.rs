@@ -6,7 +6,7 @@
 //! evaluation's state. The rules on what an `Instance` name or a hole role
 //! names apply to every name, those of picks included.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -108,15 +108,20 @@ pub(super) fn derived_kinds(name: &TopoName) -> BTreeSet<NameKind> {
 }
 
 /// Checks the name tables and every name the design states.
-pub(super) fn check(
+pub(super) fn check<'a>(
     ctx: &DecodeContext<'_>,
-    index: &DesignIndex<'_>,
-    states: &States<'_>,
-    held: &[Held<'_>],
+    index: &DesignIndex<'a>,
+    states: &States<'a>,
+    held: &[Held<'a>],
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let _depth = ctx.enter_nested("IR design name validation")?;
     let ir = index.records.ir;
+    let extent_features: Vec<_> = states
+        .extents
+        .iter()
+        .map(|extent| index.state_features(StateAt::Position(&extent.state.at)))
+        .collect();
     for (entity, entry) in ir.design.names.entries() {
         let holds = states.geometry_holds(entity);
         check_entry(
@@ -127,13 +132,11 @@ pub(super) fn check(
             entity.id(),
             findings,
         );
-        for extent in states
-            .extents
-            .iter()
-            .filter(|extent| extent.records.contains(entity.id()))
-        {
-            if let Some(features) = index.state_features(StateAt::Position(&extent.state.at)) {
-                check_order(entry, &features, entity.id(), findings);
+        for (extent, features) in states.extents.iter().zip(&extent_features) {
+            if extent.records.contains(entity.id()) {
+                if let Some(features) = features {
+                    check_order(entry, features, entity.id(), findings);
+                }
             }
         }
     }
@@ -208,9 +211,9 @@ fn evaluation_features<'a>(
     index: &DesignIndex<'a>,
     states: &States<'a>,
     evaluation: &'a Evaluation,
-) -> Option<BTreeSet<&'a str>> {
+) -> Option<HashSet<&'a str>> {
     let mut features = match &evaluation.of {
-        Evaluated::State(position) => index.state_features(StateAt::Position(position))?,
+        Evaluated::State(position) => (*index.state_features(StateAt::Position(position))?).clone(),
         Evaluated::Tool(feature) => index.tool_features(feature.as_str())?,
     };
     for path in states.instance_paths(evaluation.id.as_str()) {
@@ -273,12 +276,7 @@ fn check_entry(
     }
 }
 
-fn check_order(
-    entry: &NameEntry,
-    features: &BTreeSet<&str>,
-    at: &str,
-    findings: &mut Vec<Finding>,
-) {
+fn check_order(entry: &NameEntry, features: &HashSet<&str>, at: &str, findings: &mut Vec<Finding>) {
     let Some(name) = &entry.name else {
         return;
     };
@@ -428,16 +426,20 @@ fn layout_coordinates(layout: &PatternLayout) -> Option<LayoutCoordinates<'_>> {
                 if second.is_some() && matches!(seed_only, Some(Dimension::Literal(true))) {
                     found.seed_only.push(coordinates.len());
                 }
-                coordinates.push(run_coordinate(&first.run));
-                coordinates.extend(second.iter().map(|second| run_coordinate(&second.run)));
+                coordinates.push(run_coordinate(&first.run, false));
+                coordinates.extend(
+                    second
+                        .iter()
+                        .map(|second| run_coordinate(&second.run, false)),
+                );
             }
             PatternLayout::Circular {
                 angular, radial, ..
             } => {
-                coordinates.push(run_coordinate(angular));
-                coordinates.extend(radial.iter().map(run_coordinate));
+                coordinates.push(run_coordinate(angular, false));
+                coordinates.extend(radial.iter().map(|radial| run_coordinate(radial, false)));
             }
-            PatternLayout::Path { run, .. } => coordinates.push(run_coordinate(run)),
+            PatternLayout::Path { run, .. } => coordinates.push(run_coordinate(run, true)),
             PatternLayout::Points { points, .. } => {
                 let last = match &points.picks {
                     Picks::Named(picks) => i64::try_from(picks.as_slice().len()).ok(),
@@ -468,9 +470,14 @@ fn layout_coordinates(layout: &PatternLayout) -> Option<LayoutCoordinates<'_>> {
 }
 
 /// The coordinate range of a run whose count, and seed where `sides` reads
-/// it, are literal. A run whose `sides` is not stated may lie on either side
-/// of the seed.
-fn run_coordinate<'a, Q>(run: &PatternRun<Q>) -> Coordinate<'a> {
+/// it, are literal (§6.5, Coordinate range). A run whose `sides` is not
+/// stated reaches at most `last` and has no lower bound: an unread side may
+/// be a `Reverse` arm whose count the run does not state. In a `Path` run
+/// (`on_path`) an unread side may also be `Against`, which reaches the seed,
+/// so the bound is the greater of `last` and the seed, and there is none for
+/// a seed that is not literal. That carve-out is interim, gap
+/// 20261119-ERR1-C-H6-2: §6.5 does not yet state it.
+fn run_coordinate<'a, Q>(run: &PatternRun<Q>, on_path: bool) -> Coordinate<'a> {
     let Some(last) = spacing_count(&run.spacing).map(|count| i64::from(count) - 1) else {
         return Coordinate::ANY;
     };
@@ -497,9 +504,8 @@ fn run_coordinate<'a, Q>(run: &PatternRun<Q>) -> Coordinate<'a> {
             let low = spacing_count(reverse).map(|count| (1 - i64::from(count)).min(-seed));
             Coordinate::Range(low, Some(last - seed))
         }),
-        None => seed.map_or(Coordinate::ANY, |seed| {
-            Coordinate::between(-last.max(seed), last.max(seed))
-        }),
+        None if on_path => Coordinate::Range(None, seed.map(|seed| last.max(seed))),
+        None => Coordinate::Range(None, Some(last)),
     }
 }
 

@@ -671,7 +671,7 @@ pub(in crate::decode) fn simple_drilled_axis_placement_from_frames(
         })
         .then_some(cadmpeg_ir::features::holes::HolePlacement::Axis {
             origin: first.frame().finite_origin(),
-            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::from(axis))?,
+            axis: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::from(axis))?,
         })
 }
 
@@ -1280,10 +1280,12 @@ mod tests {
     #[test]
     fn reflected_directed_placements_do_not_gain_an_axis_binding() {
         let axis = cadmpeg_ir::features::holes::HolePlacement::Axis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, -1.0, 9.5))
+            origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, -1.0, 9.5))
                 .expect("finite"),
-            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
-                .expect("unit"),
+            axis: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                1.0, 0.0, 0.0,
+            ))
+            .expect("unit"),
         };
         assert!(directed_placement_matches_axis(
             (Point3::new(-3.5, -1.0, 9.5), Vector3::new(1.0, 0.0, 0.0)),

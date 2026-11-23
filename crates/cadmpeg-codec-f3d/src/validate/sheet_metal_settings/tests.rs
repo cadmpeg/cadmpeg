@@ -57,6 +57,36 @@ fn settings_native_links_require_the_retained_v3_tail_width() {
 }
 
 #[test]
+fn settings_native_links_size_the_leading_reference_form() {
+    use crate::records::sheet_metal_settings::{
+        DesignSheetMetalSettingsInputs, V3RuleReferenceTail,
+    };
+    for (tail, paired_offset) in [
+        (V3RuleReferenceTail::ZeroPair, 100),
+        (V3RuleReferenceTail::OneZeroPair, 101),
+    ] {
+        for offset_delta in [0, 1] {
+            let mut native = native();
+            native.design_types[0].set_version(3);
+            native.design_sheet_metal_settings[0].mask = None;
+            native.design_sheet_metal_settings[0].inputs =
+                DesignSheetMetalSettingsInputs::V3LeadingReference {
+                    first: 54,
+                    rule_reference_tail: tail,
+                };
+            native.design_sheet_metal_settings[0].paired_byte_offset = paired_offset + offset_delta;
+            crate::test_support::with_decode_context(|decode| {
+                let ir = cadmpeg_ir::CadIr::empty();
+                let ctx = crate::validate::Ctx::new(&ir, &native, decode);
+                let mut findings = Vec::new();
+                super::validate(&ctx, &mut findings);
+                assert_eq!(findings.len(), usize::from(offset_delta != 0));
+            });
+        }
+    }
+}
+
+#[test]
 fn settings_native_links_reject_missing_references_wrong_types_and_duplicate_carriers() {
     for case in 0..10 {
         let mut native = native();

@@ -15,17 +15,13 @@ use crate::resolved_features::typed_relations::line_endpoint_markers;
 use crate::resolved_features::typed_relations::marker_relation_is_inactive;
 use crate::resolved_features::typed_relations::typed_marker_relation_definition;
 use crate::resolved_features::typed_relations::typed_marker_relation_definition_in_sketch;
+use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntity, SketchEntityId,
     SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus,
-};
-use cadmpeg_ir::{
-    features::{
-        DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
-        ParameterValue,
-    },
-    scalar::Length,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -71,7 +67,7 @@ fn unary_relation_uses_one_resolved_reverse_curve_owner() {
 
     assert_eq!(
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &markers,
             &loci
@@ -93,7 +89,7 @@ fn unary_relation_uses_one_resolved_reverse_curve_owner() {
     )
     .with_construction(true);
     let definition = typed_marker_relation_definition_in_sketch(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &relation,
         &sketch,
         std::slice::from_ref(&projected),
@@ -116,7 +112,7 @@ fn unary_relation_uses_one_resolved_reverse_curve_owner() {
     })
     .unwrap();
     let definition = typed_marker_relation_definition_in_sketch(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &relation,
         &sketch,
         std::slice::from_ref(&projected),
@@ -183,7 +179,7 @@ fn point_relation_ignores_auxiliary_relation_links() {
 
     assert_eq!(
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &markers,
             &loci
@@ -281,7 +277,7 @@ fn axis_relation_expands_intermediate_relation_handle() {
 
     assert_eq!(
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &horizontal,
             &markers,
             &loci
@@ -324,7 +320,7 @@ fn axis_relation_expands_intermediate_relation_handle() {
     ];
     assert_eq!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &horizontal,
             &sketch,
             &entities,
@@ -360,7 +356,7 @@ fn axis_relation_expands_intermediate_relation_handle() {
     );
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &horizontal,
             &sketch,
             &ambiguous_entities,
@@ -449,7 +445,7 @@ fn axis_relation_prefers_forward_points_over_reverse_owners() {
 
     assert_eq!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &horizontal,
             &sketch,
             &entities,
@@ -519,7 +515,7 @@ fn axis_relation_resolves_a_point_proxy_despite_an_index_collision() {
     ];
 
     let definition = typed_marker_relation_definition_in_sketch(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &relation,
         &sketch,
         &entities,
@@ -581,7 +577,7 @@ fn binary_relation_uses_two_resolved_reverse_curve_owners() {
 
     assert_eq!(
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &markers,
             &loci
@@ -604,7 +600,7 @@ fn binary_relation_uses_two_resolved_reverse_curve_owners() {
     let mut second_line = line(second, Point2::new(0.0, 2.0), Point2::new(4.0, 2.0));
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &sketch,
             &[first_line.clone(), second_line.clone()],
@@ -621,7 +617,7 @@ fn binary_relation_uses_two_resolved_reverse_curve_owners() {
     .unwrap();
     let entities = [first_line, second_line];
     let definition = typed_marker_relation_definition_in_sketch(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &relation,
         &sketch,
         &entities,
@@ -696,12 +692,12 @@ fn endpoint_incidence_binds_an_existing_profile_line() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
             }),
@@ -786,12 +782,12 @@ fn point_marker_materializing_a_circle_binds_its_center() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
             }),
@@ -865,12 +861,12 @@ fn point_operand_canonicalizes_shared_endpoint_loci() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id.clone())),
             }),
@@ -984,7 +980,7 @@ fn distance_fallback_requires_one_locus_in_the_complete_sketch() {
         expression: "5mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1052,7 +1048,7 @@ fn line_operand_rejects_a_circular_geometry_alias() {
 
     assert_eq!(
         single_marker_line_entity(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "circle-marker",
             &HashMap::new(),
             &loci,
@@ -1063,7 +1059,7 @@ fn line_operand_rejects_a_circular_geometry_alias() {
     );
     assert_eq!(
         single_marker_line_entity(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "line-marker",
             &HashMap::new(),
             &loci,
@@ -1183,7 +1179,7 @@ fn line_operand_uses_linked_endpoint_incidence_beside_a_direct_point_locus() {
 
     assert_eq!(
         single_marker_line_entity(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "handle",
             &markers,
             &loci,
@@ -1226,7 +1222,7 @@ fn line_operand_uses_the_unique_profile_line_through_a_point_handle() {
 
     assert_eq!(
         single_marker_line_entity(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "point-handle",
             &markers,
             &loci,
@@ -1291,7 +1287,7 @@ fn axis_relation_preserves_native_kind_and_reports_unsatisfied_geometry() {
     ]);
 
     let definition = typed_marker_relation_definition_in_sketch(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &relation,
         &sketch,
         &entities,
@@ -1323,7 +1319,7 @@ fn axis_relation_preserves_native_kind_and_reports_unsatisfied_geometry() {
         ),
     ]);
     let definition = typed_marker_relation_definition_in_sketch(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &swapped_relation,
         &sketch,
         &entities,
@@ -1382,7 +1378,7 @@ fn axis_relation_preserves_native_kind_and_reports_unsatisfied_geometry() {
         ),
     ]);
     let definition = typed_marker_relation_definition_in_sketch(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &owner_relation,
         &sketch,
         &owner_entities,
@@ -1449,7 +1445,7 @@ fn axis_relation_uses_unique_point_native_identity_when_loci_are_ambiguous() {
     .with_native_ref(Some(second.id().to_string()));
     let entities = vec![first_entity.clone(), second_entity.clone()];
     let definition = typed_marker_relation_definition_in_sketch(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &relation,
         &sketch,
         &entities,
@@ -1475,7 +1471,7 @@ fn axis_relation_uses_unique_point_native_identity_when_loci_are_ambiguous() {
     ambiguous_entities.push(first_entity);
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &sketch,
             &ambiguous_entities,
@@ -1558,14 +1554,14 @@ fn dimension_preserves_structurally_typed_operands_when_geometry_disagrees() {
         expression: "4mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(4.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
     };
 
     let definition = typed_relation_definition(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &relation,
         Some(&parameter),
         &sketch,
@@ -1585,7 +1581,7 @@ fn dimension_preserves_structurally_typed_operands_when_geometry_disagrees() {
     exact_entities[0].native_ref = Some(first.id().to_string());
     exact_entities[1].native_ref = Some(second.id().to_string());
     assert!(matches!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(&cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
@@ -1660,14 +1656,14 @@ fn line_distance_repairs_distinct_operands_collapsed_to_one_marker() {
         expression: "5mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
     };
 
     assert!(matches!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(&cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
@@ -1764,7 +1760,7 @@ fn line_distance_uses_an_addressed_point_to_select_the_missing_line() {
         expression: "5mm".into(),
         display: None,
         value: Some(ParameterValue::Length(Length::new(5.0).unwrap())),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: Some("scalar".into()),
@@ -1772,7 +1768,7 @@ fn line_distance_uses_an_addressed_point_to_select_the_missing_line() {
     let entities = [known.clone(), intended.clone(), distractor, point];
 
     assert!(matches!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(&cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,

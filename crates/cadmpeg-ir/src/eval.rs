@@ -16,16 +16,17 @@ use crate::math::portable::Portable;
 use cadmpeg_core::convert::f64_from_index;
 use std::cmp::Ordering;
 
-use crate::features::{FinitePoint3, FiniteVector3};
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
+use crate::geometry::helix::HelixCurveConstruction;
+use crate::geometry::laws::{LawExpression, LawFormula};
 use crate::geometry::nurbs::bezier::{homogeneous_spans, positive_controls};
 use crate::geometry::nurbs::bounds::speed_bound_by;
-use crate::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface, SurfaceParameterAxis},
-    pcurve::PcurveGeometry,
-    CurveGeometry, HelixCurveConstruction, LawExpression, LawFormula, ProceduralCurveDefinition,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
-    SweepSurfaceLayout,
-};
+use crate::geometry::nurbs::{NurbsCurve, NurbsSurface, SurfaceParameterAxis};
+use crate::geometry::pcurve::PcurveGeometry;
+use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use crate::geometry::sweep_surfaces::SweepSurfaceLayout;
+use crate::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::math::solve::least_squares_step;
 use crate::math::sum::{scaled_ratio_products, ExactSignedSum};
 use crate::math::{product_quotient, scaled_sinh_cosh};
@@ -64,6 +65,11 @@ mod model_surface_point;
 mod polyline;
 mod rational;
 mod sketch_offset;
+mod spine_rolling_ball;
+pub use spine_rolling_ball::{
+    exact_blend_cap_point, exact_blend_rail_point, exact_intersection_point,
+    spine_rolling_ball_domain,
+};
 mod sweep_law;
 #[cfg(test)]
 mod test_support;
@@ -687,35 +693,15 @@ fn refine_nurbs_surface_parameters(
     u_domain: ParameterInterval,
     v_domain: ParameterInterval,
     budget: &WorkBudget,
-) -> Result<Option<FinitePoint2>, ResourceLimit> {
+) -> Result<Option<(FinitePoint2, FinitePoint3)>, ResourceLimit> {
     let distance = |position: Point3| position.distance(point);
     let [start_u, start_v] = start.coordinates();
     let mut parameters = FinitePoint2::from_coordinates(
         u_domain.project(ExtendedReal::from_finite(start_u)),
         v_domain.project(ExtendedReal::from_finite(start_v)),
     );
+    let mut last_position: Option<FinitePoint3> = None;
     for _ in 0..32 {
-        let Some(position) = finite_or_refusal(
-            crate::eval::admission::EvaluationAdmission::Decode(ctx).within_work_slice(
-                budget,
-                |admission| {
-                    crate::eval::decode::nurbs_surface_point(
-                        admission,
-                        surface,
-                        parameters.u,
-                        parameters.v,
-                    )
-                },
-            ),
-        )?
-        else {
-            return Ok(None);
-        };
-        let residual = Vector3::new(
-            position.x - point.x,
-            position.y - point.y,
-            position.z - point.z,
-        );
         let Some(partials) = finite_or_refusal(
             crate::eval::admission::EvaluationAdmission::Decode(ctx).within_work_slice(
                 budget,
@@ -732,6 +718,13 @@ fn refine_nurbs_surface_parameters(
         else {
             return Ok(None);
         };
+        let position = partials.point;
+        last_position = Some(position);
+        let residual = Vector3::new(
+            position.x - point.x,
+            position.y - point.y,
+            position.z - point.z,
+        );
         let Some((step_u, step_v)) = least_squares_step(partials.du, partials.dv, residual) else {
             break;
         };
@@ -761,16 +754,17 @@ fn refine_nurbs_surface_parameters(
                 return Ok(None);
             };
             if distance(candidate_position.get()) <= current_distance {
-                accepted = Some(candidate);
+                accepted = Some((candidate, candidate_position));
                 break;
             }
             scale = scale.halved();
         }
-        let Some(candidate) = accepted else {
+        let Some((candidate, candidate_position)) = accepted else {
             break;
         };
         let (moved_u, moved_v) = (candidate.u - parameters.u, candidate.v - parameters.v);
         parameters = candidate;
+        last_position = Some(candidate_position);
         if moved_u.abs()
             <= EPS_EVAL_REFINE_NURBS_SURFACE_PARAMETERS_E12 * (1.0 + parameters.u.abs())
             && moved_v.abs()
@@ -779,7 +773,7 @@ fn refine_nurbs_surface_parameters(
             break;
         }
     }
-    Ok(Some(parameters))
+    Ok(last_position.map(|position| (parameters, position)))
 }
 
 fn nurbs_surface_evaluation_cost(surface: &NurbsSurface) -> Option<usize> {
@@ -870,7 +864,7 @@ fn complete_nurbs_surface_starts(
             let parameters = refine_nurbs_surface_parameters(
                 ctx, surface, point, start, u_domain, v_domain, budget,
             )?
-            .unwrap_or(start);
+            .map_or(start, |(parameters, _)| parameters);
             Ok(distance_at(parameters)?.map(|distance| (parameters, distance)))
         };
     let mut best_distance = f64::INFINITY;
@@ -1120,22 +1114,9 @@ fn solve_nurbs_surface_parameter(
         if distance.is_finite() && distance <= tolerance {
             return Ok(Some((parameters, distance)));
         }
-        if let Some(refined) = refine_nurbs_surface_parameters(
+        if let Some((refined, position)) = refine_nurbs_surface_parameters(
             ctx, surface, point, parameters, u_domain, v_domain, budget,
         )? {
-            let Some(position) = finite_or_refusal(
-                crate::eval::admission::EvaluationAdmission::Decode(ctx).within_work_slice(
-                    budget,
-                    |admission| {
-                        crate::eval::decode::nurbs_surface_point(
-                            admission, surface, refined.u, refined.v,
-                        )
-                    },
-                ),
-            )?
-            else {
-                return Ok(None);
-            };
             let distance = (position.x - point.x)
                 .portable_hypot(position.y - point.y)
                 .portable_hypot(position.z - point.z);
@@ -1154,24 +1135,8 @@ fn solve_nurbs_surface_parameter(
     let mut best_seed_distance = f64::INFINITY;
     let mut best_fits = false;
     for &start in &starts {
-        let Some(parameters) = refine_nurbs_surface_parameters(
+        let Some((parameters, position)) = refine_nurbs_surface_parameters(
             ctx, surface, point, start, u_domain, v_domain, budget,
-        )?
-        else {
-            continue;
-        };
-        let Some(position) = finite_or_refusal(
-            crate::eval::admission::EvaluationAdmission::Decode(ctx).within_work_slice(
-                budget,
-                |admission| {
-                    crate::eval::decode::nurbs_surface_point(
-                        admission,
-                        surface,
-                        parameters.u,
-                        parameters.v,
-                    )
-                },
-            ),
         )?
         else {
             continue;
@@ -1568,6 +1533,22 @@ fn homogeneous_curve_sum(
             ))
         }),
     ))?
+}
+
+/// The bounded domain of a curve that an edge with no range runs over: its
+/// stored interval, or the effective knot domain of a clamped NURBS curve.
+/// Validation checks such an edge's vertices at its ends, and a writer that
+/// states the edge's range seeds its inversions from them.
+pub fn bounded_curve_domain(curve: &crate::geometry::Curve) -> Option<[f64; 2]> {
+    if let Some(range) = curve.parameter_range {
+        return Some(range.endpoints());
+    }
+    match curve.geometry.solved() {
+        Some(crate::geometry::SolvedCurveGeometry::Nurbs(nurbs)) if !nurbs.periodic() => {
+            nurbs_curve_parameter_domain(nurbs).map(IncreasingParameterInterval::endpoints)
+        }
+        _ => None,
+    }
 }
 
 /// Effective knot domain of a structurally evaluable NURBS curve.
@@ -2315,8 +2296,10 @@ fn nurbs_pcurve_differential_unsettled(
             let derivative = |second| {
                 linear_nurbs_derivative(
                     &basis,
-                    &poles,
-                    local_weights.as_ref().map(<[f64; 2]>::as_slice),
+                    CurvePoles::Slice {
+                        points: &poles,
+                        weights: local_weights.as_ref().map(<[f64; 2]>::as_slice),
+                    },
                     1,
                     scale.get(),
                     second,
@@ -3587,27 +3570,15 @@ fn curve_derivative_unsettled(
         SolvedCurveGeometry::Nurbs(nurbs) => {
             let parameter =
                 map_nurbs_curve_parameter(nurbs, parameter).ok_or(EvaluationFailure::NoValue)?;
-            let poles = nurbs.pole_rows();
-            let points = scratch
-                .collect((0..poles.count()).map(|index| poles.point_at(index)))
-                .ok_or(EvaluationFailure::NoValue)?;
-            let weights = match poles {
-                crate::geometry::nurbs::NurbsPoles3::Polynomial { .. } => None,
-                crate::geometry::nurbs::NurbsPoles3::Rational { points } => Some(
-                    scratch
-                        .collect(points.iter().map(|pole| Some(pole.weight.get())))
-                        .ok_or(EvaluationFailure::NoValue)?,
-                ),
-            };
-            nurbs_curve_derivative(
+            let poles = CurvePoles::Rows(nurbs.pole_rows());
+            scratch.settle(nurbs_curve_poles_derivative_unsettled(
                 scratch,
                 nurbs.degree(),
                 nurbs.knots(),
-                &points,
-                weights.as_deref(),
+                poles,
                 parameter,
                 order,
-            )
+            ))
         }
         SolvedCurveGeometry::Polyline(polyline) => {
             let points = scratch
@@ -3660,6 +3631,38 @@ fn sinh_cosh_lanes(
 /// left the finite range, as did a point or derivative projection that
 /// overflows. A knot vector or pole list that states no span at `t`, a zero
 /// weight sum, and a span of zero width have no value.
+#[derive(Clone, Copy)]
+enum CurvePoles<'a> {
+    Slice {
+        points: &'a [FinitePoint3],
+        weights: Option<&'a [f64]>,
+    },
+    Rows(&'a crate::geometry::nurbs::NurbsPoles3<FinitePoint3>),
+}
+
+impl CurvePoles<'_> {
+    fn len(self) -> usize {
+        match self {
+            Self::Slice { points, .. } => points.len(),
+            Self::Rows(rows) => rows.count(),
+        }
+    }
+
+    fn point_at(self, index: usize) -> Option<FinitePoint3> {
+        match self {
+            Self::Slice { points, .. } => points.get(index).copied(),
+            Self::Rows(rows) => rows.point_at(index),
+        }
+    }
+
+    fn weight_at(self, index: usize) -> Option<f64> {
+        match self {
+            Self::Slice { weights, .. } => weights.and_then(|weights| weights.get(index).copied()),
+            Self::Rows(rows) => rows.weight_at(index),
+        }
+    }
+}
+
 fn nurbs_curve_derivative(
     scratch: &decode::Scratch<'_, '_>,
     degree: u32,
@@ -3669,23 +3672,24 @@ fn nurbs_curve_derivative(
     t: FiniteReal,
     order: CurveDerivative,
 ) -> Result<FiniteVector3, EvaluationFailure<()>> {
-    scratch.settle(nurbs_curve_derivative_unsettled(
+    scratch.settle(nurbs_curve_poles_derivative_unsettled(
         scratch,
         degree,
         knots,
-        control_points,
-        weights,
+        CurvePoles::Slice {
+            points: control_points,
+            weights,
+        },
         t,
         order,
     ))
 }
 
-fn nurbs_curve_derivative_unsettled(
+fn nurbs_curve_poles_derivative_unsettled(
     scratch: &decode::Scratch<'_, '_>,
     degree: u32,
     knots: &[f64],
-    control_points: &[FinitePoint3],
-    weights: Option<&[f64]>,
+    poles: CurvePoles<'_>,
     t: FiniteReal,
     order: CurveDerivative,
 ) -> Result<FiniteVector3, EvaluationFailure<()>> {
@@ -3699,7 +3703,7 @@ fn nurbs_curve_derivative_unsettled(
             scratch.admission,
             knots,
             degree,
-            control_points.len(),
+            poles.len(),
             t,
         ))
         .flatten()
@@ -3732,7 +3736,7 @@ fn nurbs_curve_derivative_unsettled(
         })?;
         if degree == 1 {
             let [x, y, z] = finite_lanes(
-                linear_nurbs_derivative(&basis, control_points, weights, span, scale.get(), second)
+                linear_nurbs_derivative(&basis, poles, span, scale.get(), second)
                     .ok_or(no_value)?,
             )
             .map_err(|_| non_finite)?;
@@ -3753,8 +3757,8 @@ fn nurbs_curve_derivative_unsettled(
         homogeneous_curve_sum(
             scratch,
             values,
-            |index| control_points.get(index).copied(),
-            |index| weights.and_then(|weights| weights.get(index).copied()),
+            |index| poles.point_at(index),
+            |index| poles.weight_at(index),
             span - degree,
         )
         .ok_or(non_finite)
@@ -3810,24 +3814,17 @@ fn nurbs_curve_derivative_unsettled(
 /// coordinate whose quotient overflows.
 fn linear_nurbs_derivative(
     basis: &[f64],
-    control_points: &[FinitePoint3],
-    weights: Option<&[f64]>,
+    poles: CurvePoles<'_>,
     span: usize,
     width: f64,
     second: bool,
 ) -> Option<[Result<FiniteReal, f64>; 3]> {
     use crate::math::sum::{product_sum, scaled_finite, ProductSum};
     let start = span.checked_sub(1)?;
-    let first = *control_points.get(start)?;
-    let last = *control_points.get(span)?;
-    let weight0 = weights
-        .and_then(|weights| weights.get(start))
-        .copied()
-        .unwrap_or(1.0);
-    let weight1 = weights
-        .and_then(|weights| weights.get(span))
-        .copied()
-        .unwrap_or(1.0);
+    let first = poles.point_at(start)?;
+    let last = poles.point_at(span)?;
+    let weight0 = poles.weight_at(start).unwrap_or(1.0);
+    let weight1 = poles.weight_at(span).unwrap_or(1.0);
     let ProductSum::Value(base_weight) =
         product_sum([Some([basis[0], weight0]), Some([basis[1], weight1])].into_iter())
     else {
@@ -4084,6 +4081,72 @@ fn model_curve_differential_by_id_inner(
             || curve_derivative_evaluation(&scratch, solved, parameter, CurveDerivative::First),
             || curve_derivative_evaluation(&scratch, solved, parameter, CurveDerivative::Second),
         )
+    })();
+    scratch.settle(result)
+}
+
+/// The point of [`model_curve_differential_by_id_inner`], evaluated without
+/// its derivatives.
+fn model_curve_differential_point_by_id_inner(
+    admission: admission::EvaluationAdmission<'_, '_>,
+    index: &crate::index::ModelIndex<'_>,
+    curve_id: &crate::ids::CurveId,
+    parameter: f64,
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    let scratch = decode::Scratch::new(admission);
+    let result = (|| {
+        let depth_guard = ModelEvaluationDepthGuard::enter(admission)
+            .map_err(EvaluationFailure::ResourceLimit)?;
+        if !parameter.is_finite() {
+            return Err(EvaluationFailure::NoValue);
+        }
+        let curve = index
+            .curves(curve_id.as_str(), admission)
+            .map_err(EvaluationFailure::from)?
+            .ok_or(EvaluationFailure::NoValue)?;
+        admission.model_step()?;
+        if !depth_guard.bind(
+            ModelEvaluationIdentity::Curve(std::ptr::from_ref(curve)),
+            admission,
+        ) {
+            return Err(EvaluationFailure::NoValue);
+        }
+        if let Some(procedural) = index
+            .procedural_curves_for_curve(curve_id.as_str(), admission)
+            .map_err(EvaluationFailure::from)?
+            .and_then(|procedurals| procedurals.first().copied())
+        {
+            match procedural.definition() {
+                ProceduralCurveDefinition::Replica { source, transform } => {
+                    return placed_point(
+                        *transform,
+                        model_curve_differential_point_by_id_inner(
+                            admission, index, source, parameter,
+                        ),
+                    );
+                }
+                ProceduralCurveDefinition::Subset(definition_payload) => {
+                    let source_parameter = subset_source_parameter(
+                        *definition_payload.parameter_range(),
+                        *definition_payload.sense(),
+                        parameter,
+                    )?;
+                    return model_curve_differential_point_by_id_inner(
+                        admission,
+                        index,
+                        definition_payload.source(),
+                        source_parameter,
+                    );
+                }
+                ProceduralCurveDefinition::Helix(helix) => {
+                    return helix_differential(helix, parameter)
+                        .map(|differential| differential.point);
+                }
+                _ => {}
+            }
+        }
+        let solved = curve.geometry.solved().ok_or(EvaluationFailure::NoValue)?;
+        crate::eval::decode::curve_point_solved(admission, solved, parameter)
     })();
     scratch.settle(result)
 }
@@ -4403,10 +4466,13 @@ fn model_native_extrusion_point(
         extrusion_directrix_reversed(construction.revision_form()),
     )
     .map_err(|failure| failure.map(|()| UNREACHED_POINT))?;
-    let point =
-        model_curve_differential_by_id_inner(admission, index, directrix, carrier.parameter.get())
-            .map_err(|failure| failure.map(|point| offset(point, &[(v, direction)])))?
-            .point;
+    let point = model_curve_differential_point_by_id_inner(
+        admission,
+        index,
+        directrix,
+        carrier.parameter.get(),
+    )
+    .map_err(|failure| failure.map(|point| offset(point, &[(v, direction)])))?;
     admit_point(offset(point.get(), &[(v, direction)]))
 }
 
@@ -4481,7 +4547,9 @@ fn model_native_extrusion_jet(
 }
 
 fn extrusion_directrix_reversed(
-    revision_form: Option<&crate::geometry::RevisionSurfaceForm<Vec<bool>, FiniteReal>>,
+    revision_form: Option<
+        &crate::geometry::revision_forms::RevisionSurfaceForm<Vec<bool>, FiniteReal>,
+    >,
 ) -> bool {
     revision_form
         .and_then(|form| form.flags.first())
@@ -4556,6 +4624,111 @@ fn native_revolution_carrier(
     .map_err(|failure| failure.map(|()| UNREACHED_POINT))
 }
 
+/// The surface parameters strictly inside `ranges` at which the procedural
+/// construction of `surface` meets a knot of its NURBS directrix, rail or
+/// summand curve, along each surface parameter, in increasing order.
+pub(crate) fn procedural_surface_breaks(
+    index: &crate::index::ModelIndex<'_>,
+    surface: &crate::ids::SurfaceId,
+    ranges: [[f64; 2]; 2],
+) -> Result<[Vec<f64>; 2], ResourceLimit> {
+    let admission = admission::EvaluationAdmission::Standard;
+    let mut breaks = [Vec::new(), Vec::new()];
+    let Some(procedural) =
+        index.procedural_surface_for_surface(surface.as_str(), crate::index::StandardIndex)
+    else {
+        return Ok(breaks);
+    };
+    let carrier_interval = record_u_interval(procedural.record_bounds());
+    let identity = |parameter: f64| -> Result<Option<f64>, ResourceLimit> { Ok(Some(parameter)) };
+    match procedural.definition() {
+        ProceduralSurfaceDefinition::Extrusion(construction) => {
+            breaks[0] = knots_along(index, construction.directrix(), ranges[0], |u| {
+                finite_or_refusal(construction_curve_parameter(
+                    admission,
+                    index,
+                    construction.directrix(),
+                    u,
+                    construction
+                        .parameter_interval()
+                        .map(FiniteVector::finite_components),
+                    carrier_interval,
+                    extrusion_directrix_reversed(construction.revision_form()),
+                ))
+                .map(|carrier| carrier.map(|carrier| carrier.parameter.get()))
+            })?;
+        }
+        ProceduralSurfaceDefinition::Revolution(construction) => {
+            let axis = usize::from(*construction.transposed());
+            breaks[axis] =
+                knots_along(index, construction.directrix(), ranges[axis], |parameter| {
+                    finite_or_refusal(native_revolution_carrier(
+                        admission,
+                        index,
+                        construction,
+                        carrier_interval,
+                        parameter,
+                    ))
+                    .map(|carrier| carrier.map(|carrier| carrier.parameter.get()))
+                })?;
+        }
+        ProceduralSurfaceDefinition::LinearSweep(construction) => {
+            breaks[0] = knots_along(index, construction.directrix(), ranges[0], identity)?;
+        }
+        ProceduralSurfaceDefinition::AxisRevolution(construction) => {
+            breaks[1] = knots_along(index, construction.directrix(), ranges[1], identity)?;
+        }
+        ProceduralSurfaceDefinition::Ruled { first, second, .. } => {
+            breaks[0] = knots_along(index, first, ranges[0], identity)?;
+            breaks[0].extend(knots_along(index, second, ranges[0], identity)?);
+        }
+        ProceduralSurfaceDefinition::Sum(construction) => {
+            breaks[0] = knots_along(index, construction.first(), ranges[0], identity)?;
+            breaks[1] = knots_along(index, construction.second(), ranges[1], identity)?;
+        }
+        _ => {}
+    }
+    for axis in &mut breaks {
+        axis.sort_by(f64::total_cmp);
+        axis.dedup();
+    }
+    Ok(breaks)
+}
+
+/// The knots of a solved NURBS `curve` that lie strictly between the carrier
+/// parameters `carrier` maps the ends of `range` to, mapped affinely back
+/// into `range`.
+fn knots_along(
+    index: &crate::index::ModelIndex<'_>,
+    curve: &crate::ids::CurveId,
+    range: [f64; 2],
+    carrier: impl Fn(f64) -> Result<Option<f64>, ResourceLimit>,
+) -> Result<Vec<f64>, ResourceLimit> {
+    if index
+        .procedural_curves_for_curve(curve.as_str(), crate::index::StandardIndex)
+        .is_some_and(|constructions| !constructions.is_empty())
+    {
+        return Ok(Vec::new());
+    }
+    let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))) = index
+        .curves(curve.as_str(), crate::index::StandardIndex)
+        .map(|curve| &curve.geometry)
+    else {
+        return Ok(Vec::new());
+    };
+    let (Some(start), Some(end)) = (carrier(range[0])?, carrier(range[1])?) else {
+        return Ok(Vec::new());
+    };
+    let (low, high) = (start.min(end), start.max(end));
+    Ok(nurbs
+        .knots()
+        .iter()
+        .filter(|knot| low < **knot && **knot < high)
+        .map(|knot| range[0] + (knot - start) / (end - start) * (range[1] - range[0]))
+        .filter(|parameter| range[0] < *parameter && *parameter < range[1])
+        .collect())
+}
+
 /// The point of a native revolution, or why it has none: the directrix point
 /// at the carrier parameter revolved by the mapped angle. The point fails on
 /// no derivative.
@@ -4579,14 +4752,13 @@ fn model_native_revolution_point(
     let (angle, _) = native_revolution_angle(construction, angular_parameter)?;
     let axis_origin = construction.axis_origin().get();
     let axis = unit_length_axis(construction.axis_direction());
-    let point = model_curve_differential_by_id_inner(
+    let point = model_curve_differential_point_by_id_inner(
         admission,
         index,
         construction.directrix(),
         carrier.parameter.get(),
     )
-    .map_err(|failure| failure.map(|point| revolved_point(point, axis_origin, axis, angle)))?
-    .point;
+    .map_err(|failure| failure.map(|point| revolved_point(point, axis_origin, axis, angle)))?;
     admit_point(revolved_point(point.get(), axis_origin, axis, angle))
 }
 
@@ -4699,7 +4871,7 @@ fn model_curve_point_by_id_inner(
             helix_differential(helix, parameter).map(|differential| differential.point)
         }
         ProceduralCurveDefinition::SurfaceCurve {
-            family: crate::geometry::SurfaceCurveFamily::Parametric { context, .. },
+            family: crate::geometry::surface_curves::SurfaceCurveFamily::Parametric { context, .. },
         } if curve.geometry.solved_cache().is_none() => {
             let mut sides = context
                 .sides()
@@ -4974,7 +5146,7 @@ fn model_curve_parameter_near_point_with_tolerance(
     else {
         return Ok(None);
     };
-    let crate::geometry::ProceduralCurveDefinition::TolerantIntersection {
+    let crate::geometry::procedural_curves::ProceduralCurveDefinition::TolerantIntersection {
         construction: intersection,
         parameterization: Some(parameterization),
         ..
@@ -5760,10 +5932,33 @@ pub fn rolling_ball_jet_point(
     t: f64,
     s: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    if !(0.0..=1.0).contains(&s) {
+    rolling_ball_jet_point_on_span(definition, t, s, 1.0)
+}
+
+/// Evaluate a rolling-ball jet over a declared normalized transverse span.
+pub fn rolling_ball_jet_point_on_span(
+    definition: &ProceduralSurfaceDefinition,
+    t: f64,
+    s: f64,
+    end: f64,
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    if !end.is_finite() || end <= 0.0 || !(0.0..=end).contains(&s) {
         return Err(EvaluationFailure::NoValue);
     }
-    rolling_ball_jet_transverse_point(definition, t, s)
+    rolling_ball_jet_transverse_point(definition, t, s, false)
+}
+
+/// Evaluate a varying-radius jet with the local radius of its first rail.
+pub fn variable_rolling_ball_jet_point_on_span(
+    definition: &ProceduralSurfaceDefinition,
+    t: f64,
+    s: f64,
+    end: f64,
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    if !end.is_finite() || end <= 0.0 || !(0.0..=end).contains(&s) {
+        return Err(EvaluationFailure::NoValue);
+    }
+    rolling_ball_jet_transverse_point(definition, t, s, true)
 }
 
 /// Measure the gap from an out-of-range transverse station to its nearest
@@ -5773,7 +5968,7 @@ pub fn rolling_ball_jet_boundary_gap(
     t: f64,
     s: f64,
 ) -> Result<f64, EvaluationFailure<Point3>> {
-    let outside = rolling_ball_jet_transverse_point(definition, t, s)?;
+    let outside = rolling_ball_jet_transverse_point(definition, t, s, false)?;
     let boundary = rolling_ball_jet_point(definition, t, s.clamp(0.0, 1.0))?;
     Ok(outside.distance(boundary.get()))
 }
@@ -5796,7 +5991,7 @@ pub fn rolling_ball_jet_extended_point(
     if (0.0..=1.0).contains(&s) {
         return rolling_ball_jet_point(definition, t, s);
     }
-    let outside = rolling_ball_jet_transverse_point(definition, t, s)?;
+    let outside = rolling_ball_jet_transverse_point(definition, t, s, false)?;
     let boundary = rolling_ball_jet_point(definition, t, s.clamp(0.0, 1.0))?;
     if outside.distance(boundary.get()) <= max_gap_mm {
         Ok(outside)
@@ -5809,6 +6004,7 @@ fn rolling_ball_jet_transverse_point(
     definition: &ProceduralSurfaceDefinition,
     t: f64,
     s: f64,
+    variable_radius: bool,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
     let no_value = EvaluationFailure::NoValue;
     let unreached = EvaluationFailure::NonFinite(UNREACHED_POINT);
@@ -5837,8 +6033,10 @@ fn rolling_ball_jet_transverse_point(
         let first_radius = site.first_limit.distance(site.center.get());
         let second_radius = site.second_limit.distance(site.center.get());
         second_radius <= 0.0
-            || (first_radius - radius).abs()
-                > ROLLING_BALL_JET_RADIUS_TOLERANCE * first_radius.abs().max(radius.abs()).max(1.0)
+            || (!variable_radius
+                && (first_radius - radius).abs()
+                    > ROLLING_BALL_JET_RADIUS_TOLERANCE
+                        * first_radius.abs().max(radius.abs()).max(1.0))
     }) {
         return Err(no_value);
     }
@@ -5917,6 +6115,14 @@ fn rolling_ball_jet_transverse_point(
         return Err(unreached);
     }
     let first_radius = first_limit.vector_from(center);
+    let radius = if variable_radius {
+        first_limit.distance(center)
+    } else {
+        radius
+    };
+    if radius <= 0.0 || !radius.is_finite() {
+        return Err(no_value);
+    }
     let first_direction = first_radius.scale(1.0 / radius);
     let first_direction_squared = first_direction.dot(first_direction);
     if !first_direction_squared.is_finite() {
@@ -6836,7 +7042,7 @@ fn cacheless_law_sweep_differentials(
     index: &crate::index::ModelIndex<'_>,
     profile: &crate::ids::CurveId,
     spine: &crate::ids::CurveId,
-    construction: &crate::geometry::SweepSurfaceConstruction<
+    construction: &crate::geometry::sweep_surfaces::SweepSurfaceConstruction<
         FiniteReal,
         FiniteVector3,
         FinitePoint3,
@@ -6924,7 +7130,7 @@ fn cacheless_law_sweep_point(
     index: &crate::index::ModelIndex<'_>,
     profile: &crate::ids::CurveId,
     spine: &crate::ids::CurveId,
-    construction: &crate::geometry::SweepSurfaceConstruction<
+    construction: &crate::geometry::sweep_surfaces::SweepSurfaceConstruction<
         FiniteReal,
         FiniteVector3,
         FinitePoint3,
@@ -6961,7 +7167,7 @@ fn cacheless_law_sweep_first_order(
     index: &crate::index::ModelIndex<'_>,
     profile: &crate::ids::CurveId,
     spine: &crate::ids::CurveId,
-    construction: &crate::geometry::SweepSurfaceConstruction<
+    construction: &crate::geometry::sweep_surfaces::SweepSurfaceConstruction<
         FiniteReal,
         FiniteVector3,
         FinitePoint3,
@@ -7065,7 +7271,7 @@ impl ContactTrack {
 fn variable_blend_contact_track(
     admission: admission::EvaluationAdmission<'_, '_>,
     index: &crate::index::ModelIndex<'_>,
-    side: &crate::geometry::RollingBallSide<
+    side: &crate::geometry::blends::RollingBallSide<
         crate::ids::SurfaceId,
         crate::ids::CurveId,
         PcurveGeometry,
@@ -7131,8 +7337,8 @@ fn cacheless_variable_blend_domain_contains(
     let construction = payload.construction();
     let exact_construction = matches!(
         construction.cache,
-        crate::geometry::VariableBlendCache::Parameterization { .. }
-            | crate::geometry::VariableBlendCache::Stale {}
+        crate::geometry::revision_forms::VariableBlendCache::Parameterization { .. }
+            | crate::geometry::revision_forms::VariableBlendCache::Stale {}
     );
     exact_construction
         && (0.0..=1.0).contains(&u.get())
@@ -7153,7 +7359,7 @@ fn blend_parameters(u: f64, v: f64) -> Result<(FiniteReal, FiniteReal), Evaluati
 }
 
 fn variable_blend_has_current_cache(
-    construction: &crate::geometry::VariableBlendConstruction<
+    construction: &crate::geometry::variable_blends::VariableBlendConstruction<
         FiniteReal,
         FiniteVector3,
         FinitePoint3,
@@ -7162,12 +7368,12 @@ fn variable_blend_has_current_cache(
     construction.cache.shape_prefix() > 0
         && matches!(
             construction.cache,
-            crate::geometry::VariableBlendCache::Current { .. }
+            crate::geometry::revision_forms::VariableBlendCache::Current { .. }
         )
 }
 
 fn sweep_has_current_cache(
-    construction: &crate::geometry::SweepSurfaceConstruction<
+    construction: &crate::geometry::sweep_surfaces::SweepSurfaceConstruction<
         FiniteReal,
         FiniteVector3,
         FinitePoint3,
@@ -7180,24 +7386,28 @@ fn sweep_has_current_cache(
 }
 
 fn revision_surface_tail_has_current_cache<P>(
-    cache: &crate::geometry::RevisionCacheForm<P>,
+    cache: &crate::geometry::revision_forms::RevisionCacheForm<P>,
 ) -> bool {
     matches!(
         cache,
-        crate::geometry::RevisionCacheForm::SolvedCache { .. }
+        crate::geometry::revision_forms::RevisionCacheForm::SolvedCache { .. }
     )
 }
 
 fn variable_blend_is_zero_radius(
     admission: admission::EvaluationAdmission<'_, '_>,
-    value: &crate::geometry::VariableBlendValue<FiniteReal, FiniteVector3, FinitePoint3>,
+    value: &crate::geometry::variable_blends::VariableBlendValue<
+        FiniteReal,
+        FiniteVector3,
+        FinitePoint3,
+    >,
 ) -> Result<bool, EvaluationFailure<()>> {
     admission.within_model(|admission| {
         let _depth = ModelEvaluationDepthGuard::enter(admission)
             .map_err(EvaluationFailure::ResourceLimit)?;
         admission.model_step()?;
         let zero = match &value.payload {
-            crate::geometry::VariableBlendValuePayload::TwoEnds {
+            crate::geometry::variable_blends::VariableBlendValuePayload::TwoEnds {
                 parameters: [first_parameter, second_parameter],
                 radii: [first_radius, second_radius],
                 ..
@@ -7206,9 +7416,11 @@ fn variable_blend_is_zero_radius(
                     && first_radius.get() == 0.0
                     && second_radius.get() == 0.0
             }
-            crate::geometry::VariableBlendValuePayload::Constant { radius, nested, .. } => {
-                radius.get() == 0.0 && variable_blend_is_zero_radius(admission, nested)?
-            }
+            crate::geometry::variable_blends::VariableBlendValuePayload::Constant {
+                radius,
+                nested,
+                ..
+            } => radius.get() == 0.0 && variable_blend_is_zero_radius(admission, nested)?,
             _ => false,
         };
         Ok(zero)
@@ -7227,8 +7439,9 @@ fn cacheless_ruled_variable_blend_tracks(
 ) -> Result<[ContactTrack; 2], EvaluationFailure<()>> {
     let construction = payload.construction();
     let no_value = EvaluationFailure::NoValue;
-    let Some(crate::geometry::VariableBlendCrossSection::RoundedChamfer { radius }) =
-        construction.cross_section.as_ref()
+    let Some(crate::geometry::variable_blends::VariableBlendCrossSection::RoundedChamfer {
+        radius,
+    }) = construction.cross_section.as_ref()
     else {
         return Err(no_value);
     };
@@ -7293,15 +7506,21 @@ fn cacheless_ruled_variable_blend_first_order(
 /// function that overflows leaves the evaluation outside the finite range.
 fn variable_blend_radius(
     admission: admission::EvaluationAdmission<'_, '_>,
-    value: &crate::geometry::VariableBlendValue<FiniteReal, FiniteVector3, FinitePoint3>,
+    value: &crate::geometry::variable_blends::VariableBlendValue<
+        FiniteReal,
+        FiniteVector3,
+        FinitePoint3,
+    >,
     parameter: f64,
 ) -> Result<FiniteReal, EvaluationFailure<()>> {
     let _depth =
         ModelEvaluationDepthGuard::enter(admission).map_err(EvaluationFailure::ResourceLimit)?;
     admission.model_step()?;
     match &value.payload {
-        crate::geometry::VariableBlendValuePayload::TwoEnds {
-            parameters, radii, ..
+        crate::geometry::variable_blends::VariableBlendValuePayload::TwoEnds {
+            parameters,
+            radii,
+            ..
         } => {
             let [first_parameter, second_parameter] = FiniteReal::raw_array(*parameters);
             let [first_radius, second_radius] = FiniteReal::raw_array(*radii);
@@ -7313,11 +7532,17 @@ fn variable_blend_radius(
             FiniteReal::new(first_radius + fraction * (second_radius - first_radius))
                 .ok_or(EvaluationFailure::NonFinite(()))
         }
-        crate::geometry::VariableBlendValuePayload::Constant { nested, .. } => {
-            variable_blend_radius(admission, nested, parameter)
+        crate::geometry::variable_blends::VariableBlendValuePayload::Constant {
+            nested, ..
+        } => variable_blend_radius(admission, nested, parameter),
+        crate::geometry::variable_blends::VariableBlendValuePayload::Functional {
+            function,
+            ..
         }
-        crate::geometry::VariableBlendValuePayload::Functional { function, .. }
-        | crate::geometry::VariableBlendValuePayload::Interpolated { function, .. } => {
+        | crate::geometry::variable_blends::VariableBlendValuePayload::Interpolated {
+            function,
+            ..
+        } => {
             let [radius, _] = crate::eval::decode::pcurve_uv(admission, function, parameter)
                 .map_err(|failure| failure.map(|_| ()))?
                 .coordinates();
@@ -7331,15 +7556,21 @@ fn variable_blend_radius(
 /// none, in the terms of [`variable_blend_radius`].
 fn variable_blend_radius_derivative(
     admission: admission::EvaluationAdmission<'_, '_>,
-    value: &crate::geometry::VariableBlendValue<FiniteReal, FiniteVector3, FinitePoint3>,
+    value: &crate::geometry::variable_blends::VariableBlendValue<
+        FiniteReal,
+        FiniteVector3,
+        FinitePoint3,
+    >,
     parameter: f64,
 ) -> Result<FiniteReal, EvaluationFailure<()>> {
     let _depth =
         ModelEvaluationDepthGuard::enter(admission).map_err(EvaluationFailure::ResourceLimit)?;
     admission.model_step()?;
     match &value.payload {
-        crate::geometry::VariableBlendValuePayload::TwoEnds {
-            parameters, radii, ..
+        crate::geometry::variable_blends::VariableBlendValuePayload::TwoEnds {
+            parameters,
+            radii,
+            ..
         } => {
             let [first_parameter, second_parameter] = FiniteReal::raw_array(*parameters);
             let [first_radius, second_radius] = FiniteReal::raw_array(*radii);
@@ -7349,11 +7580,17 @@ fn variable_blend_radius_derivative(
             }
             sweep_law::law_real((second_radius - first_radius) / width)
         }
-        crate::geometry::VariableBlendValuePayload::Constant { nested, .. } => {
-            variable_blend_radius_derivative(admission, nested, parameter)
+        crate::geometry::variable_blends::VariableBlendValuePayload::Constant {
+            nested, ..
+        } => variable_blend_radius_derivative(admission, nested, parameter),
+        crate::geometry::variable_blends::VariableBlendValuePayload::Functional {
+            function,
+            ..
         }
-        crate::geometry::VariableBlendValuePayload::Functional { function, .. }
-        | crate::geometry::VariableBlendValuePayload::Interpolated { function, .. } => {
+        | crate::geometry::variable_blends::VariableBlendValuePayload::Interpolated {
+            function,
+            ..
+        } => {
             let [derivative, _] = pcurve_tangent(admission, function, parameter)
                 .map_err(|failure| failure.map(|_| ()))?
                 .coordinates();
@@ -7415,7 +7652,7 @@ fn circular_variable_blend_applies(
         && construction.radii.is_single()
         && matches!(
             construction.cross_section,
-            None | Some(crate::geometry::VariableBlendCrossSection::Circular {})
+            None | Some(crate::geometry::variable_blends::VariableBlendCrossSection::Circular {})
         )
 }
 
@@ -7487,7 +7724,7 @@ struct CircularVariableBlendSection {
 fn cacheless_circular_variable_blend_section(
     admission: admission::EvaluationAdmission<'_, '_>,
     index: &crate::index::ModelIndex<'_>,
-    construction: &crate::geometry::VariableBlendConstruction<
+    construction: &crate::geometry::variable_blends::VariableBlendConstruction<
         FiniteReal,
         FiniteVector3,
         FinitePoint3,
@@ -7609,16 +7846,17 @@ fn cacheless_constant_rolling_ball_section(
     let no_value = EvaluationFailure::NoValue;
     let native = payload.native().ok_or(no_value)?;
     let native_ranges = payload.native_ranges().ok_or(no_value)?;
-    let crate::geometry::BlendRadiusLaw::Constant { signed_radius } = payload.radius() else {
+    let crate::geometry::blends::BlendRadiusLaw::Constant { signed_radius } = payload.radius()
+    else {
         return Err(no_value);
     };
     let signed_radius = signed_radius.get();
     let (finite_u, finite_v) = blend_parameters(u, v)?;
     if !matches!(
         native.cache,
-        crate::geometry::RevisionCacheForm::Parameterization(_)
+        crate::geometry::revision_forms::RevisionCacheForm::Parameterization(_)
     ) || native.third.is_some()
-        || *payload.cross_section() != crate::geometry::BlendCrossSection::Circular
+        || *payload.cross_section() != crate::geometry::blends::BlendCrossSection::Circular
         || !(0.0..=1.0).contains(&u)
         || !sweep_tail_interval_contains(native.slice_range, finite_v)
         || !sweep_tail_interval_contains(native_ranges[0].endpoints(), finite_u)
@@ -8314,7 +8552,7 @@ fn model_surface_mapping(
             let support = definition_payload.support();
             let parameter_ranges = definition_payload
                 .parameter_ranges()
-                .map(crate::geometry::DirectedParameterRange::finite_endpoints);
+                .map(crate::geometry::procedural_curves::DirectedParameterRange::finite_endpoints);
             let u_sense = definition_payload.u_sense();
             let v_sense = definition_payload.v_sense();
             subset_support_parameters_with_derivatives(u, v, parameter_ranges, *u_sense, *v_sense)

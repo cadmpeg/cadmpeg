@@ -8,8 +8,10 @@ Every value is measured within its reported error under its stated method,
 or unavailable with a pinned reason and a closed category. The output
 contract is in `docs/measurement.md` of the repository.
 
-Measurement is an oracle on decoded output. No decoder or encoder depends on
-this crate outside its tests.
+Measurement is an oracle on decoded output. A decoder or encoder selects its
+layout, carrier and interpretation from format semantics. The source policy
+admits one production use in a codec: the Fusion writer may call `body_boxes`
+for the boxes it writes.
 
 ```rust
 use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection};
@@ -35,5 +37,6 @@ comparison as `cadmpeg diff A B --geometry`.
 Writer tests take `cadmpeg_measure::test_support::round_trip` through the
 `test-support` feature in `[dev-dependencies]`: `measures_agree` compares a
 document with its written and decoded copy, and `measures_decide` selects the
-fixtures whose self-comparison agrees. Each returns a `RoundTripError` whose
-text names no decoded value; the test calls `expect`.
+fixtures whose self-comparison agrees and returns their report, which
+`measures_agree_with` takes in place of a second measurement. Each returns a
+`RoundTripError` whose text names no decoded value; the test calls `expect`.

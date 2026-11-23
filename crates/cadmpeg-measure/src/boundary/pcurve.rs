@@ -209,7 +209,7 @@ impl<'ir> UseFrame<'_, 'ir> {
         let pcurve = self.pcurve(use_)?;
         let fit = pcurve
             .fit_tolerance()
-            .map_or(0.0, cadmpeg_ir::geometry::FitTolerance::get);
+            .map_or(0.0, cadmpeg_ir::geometry::legacy_cache::FitTolerance::get);
         let span = |[t0, t1]: [f64; 2]| Span {
             geometry: &pcurve.geometry,
             t0,
@@ -477,7 +477,7 @@ impl<'ir> UseFrame<'_, 'ir> {
             let pcurve = self.pcurve(use_)?;
             let range = match use_
                 .parameter_range
-                .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints)
+                .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints)
                 .or_else(|| {
                     pcurve
                         .parameter_range()
@@ -504,7 +504,7 @@ impl<'ir> UseFrame<'_, 'ir> {
                 t1: range[1],
                 fit: pcurve
                     .fit_tolerance()
-                    .map_or(0.0, cadmpeg_ir::geometry::FitTolerance::get),
+                    .map_or(0.0, cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
             });
         }
         let reversed: Vec<Span<'ir>> = spans
@@ -565,6 +565,7 @@ impl<'ir> UseFrame<'_, 'ir> {
         let Some((curve, [c0, c1])) = self.curve else {
             return Ok(0.0);
         };
+        let mut inverter = curve.inverter();
         let delta = spans.iter().map(|span| span.fit).fold(self.alpha, f64::max);
         let (Some(first), Some((last_index, last))) =
             (spans.first(), spans.iter().enumerate().next_back())
@@ -597,7 +598,8 @@ impl<'ir> UseFrame<'_, 'ir> {
         let mut farthest: f64 = 0.0;
         for (position, (index, t)) in nodes.iter().enumerate() {
             let point = self.map(eval, spans[*index].uv(eval, *t)?)?;
-            let Some(found) = curve.parameter(eval, point, previous, delta)? else {
+            let Some(found) = curve.parameter(eval, point, previous, delta, inverter.as_mut())?
+            else {
                 return Err(mismatch("the pcurve image leaves the edge's 3D curve"));
             };
             let lifted = match period {

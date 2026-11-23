@@ -1,8 +1,11 @@
-use super::{
-    project_face_selection, resolved_split_face_path, selected_historical_face_selection,
-    selected_work_planes, DesignConstructionOperandGroup, DesignFaceOperand, DesignOperandRole,
-    DesignParameterScope,
-};
+use super::project_face_selection;
+use super::selected_work_planes;
+use super::DesignConstructionOperandGroup;
+use super::DesignFaceOperand;
+use super::DesignOperandRole;
+use super::DesignParameterScope;
+use crate::design::feature_project::direct_face::resolved_split_face_path;
+use crate::design::feature_project::draft::selected_historical_face_selection;
 use cadmpeg_ir::features::surfaces::SplitFaceMethod;
 
 pub(super) struct ProjectedSplitFace {
@@ -22,9 +25,10 @@ pub(super) fn project_split_face(
     use crate::records::feature::split_face::{
         DesignSplitFaceDirectionReference, DesignSplitFaceMethod,
     };
-    use cadmpeg_ir::features::{
-        FaceSelection, FeatureDefinition, FeatureOperation, FiniteVector3, SplitFaceTool,
-    };
+    use cadmpeg_ir::features::direct_edit::SplitFaceTool;
+    use cadmpeg_ir::features::geometry::FiniteVector3;
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut losses = Vec::new();
     if scope.split_face_operation().is_some_and(

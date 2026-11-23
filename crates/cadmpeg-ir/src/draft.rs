@@ -13,9 +13,9 @@ use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
 use crate::document::{CadIr, Model, Topology};
 use crate::drawings::Drawing;
-use crate::features::{
-    DesignConfiguration, DesignParameter, Feature, FeatureInputTopology, FeatureResultTopology,
-};
+use crate::features::evaluation::{FeatureInputTopology, FeatureResultTopology};
+use crate::features::parameters::{DesignConfiguration, DesignParameter};
+use crate::features::Feature;
 use crate::geometry::{pcurve::Pcurve, Curve, ProceduralCurve, ProceduralSurface, Surface};
 use crate::presentation::{PresentationDocument, ViewPresentation};
 use crate::products::{AssemblyJoint, Occurrence, ProductDefinition};
@@ -1261,7 +1261,7 @@ mod tests {
     fn point(id: &str) -> Point {
         Point::new(
             PointId::mint(id).expect("valid identity"),
-            crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+            crate::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         )
@@ -1366,12 +1366,12 @@ mod tests {
                 ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
                 name: None,
                 suppressed: None,
-                dependencies: crate::features::DistinctMembers::default(),
+                dependencies: crate::features::selections::DistinctMembers::default(),
                 source_properties: std::collections::BTreeMap::default(),
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
-                evaluation: crate::features::FeatureEvaluation::from_definition(
+                evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                 ),
                 native_ref: None,
@@ -1414,12 +1414,12 @@ mod tests {
                     ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
                     name: None,
                     suppressed: None,
-                    dependencies: crate::features::DistinctMembers::default(),
+                    dependencies: crate::features::selections::DistinctMembers::default(),
                     source_properties: std::collections::BTreeMap::default(),
                     source_tag: None,
                     source_text: None,
                     source_content: crate::features::FeatureContent::default(),
-                    evaluation: crate::features::FeatureEvaluation::from_definition(
+                    evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
                         FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                     ),
                     native_ref: None,
@@ -1435,7 +1435,10 @@ mod tests {
         let expected = draft.model().clone();
         let mut ir = CadIr::empty();
         draft
-            .commit_model(&mut ir, &cadmpeg_test_support::service_decode_context())
+            .commit_model(
+                &mut ir,
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+            )
             .unwrap()
             .unwrap();
         assert_eq!(ir.model, expected);
@@ -1463,7 +1466,7 @@ mod tests {
                 .commit(
                     &mut ir,
                     &mut annotations,
-                    &cadmpeg_test_support::service_decode_context()
+                    &cadmpeg_core::decode::test_support::service_decode_context()
                 )
                 .unwrap(),
             Err(DraftError::IdentityCollision(_))
@@ -1482,7 +1485,10 @@ mod tests {
 
         assert_eq!(
             draft
-                .commit_model(&mut ir, &cadmpeg_test_support::service_decode_context())
+                .commit_model(
+                    &mut ir,
+                    &cadmpeg_core::decode::test_support::service_decode_context()
+                )
                 .unwrap(),
             Err(DraftError::IdentityCollision(identity.into()))
         );
@@ -1504,7 +1510,10 @@ mod tests {
 
         assert_eq!(
             draft
-                .commit_model(&mut ir, &cadmpeg_test_support::service_decode_context())
+                .commit_model(
+                    &mut ir,
+                    &cadmpeg_core::decode::test_support::service_decode_context()
+                )
                 .unwrap(),
             Err(DraftError::UnresolvedReference {
                 owner: owner.into(),
@@ -1517,7 +1526,7 @@ mod tests {
     #[test]
     fn commit_session_matches_sequential_model_commits() {
         let mut session_ir = CadIr::empty();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut session = CommitSession::new(&mut session_ir, &ctx, None).unwrap();
         session
             .commit_model(point_draft("test:model:point#1"))
@@ -1532,14 +1541,14 @@ mod tests {
         point_draft("test:model:point#1")
             .commit_model(
                 &mut sequential_ir,
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
             )
             .unwrap()
             .expect("first sequential commit");
         point_draft("test:model:point#2")
             .commit_model(
                 &mut sequential_ir,
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
             )
             .unwrap()
             .expect("second sequential commit");
@@ -1551,7 +1560,7 @@ mod tests {
     #[test]
     fn commit_session_rejects_cross_draft_identity_collision() {
         let mut ir = CadIr::empty();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
         let identity = "test:model:point#cross-draft";
         session
@@ -1572,7 +1581,7 @@ mod tests {
         let identity = "test:model:point#existing";
         let mut ir = CadIr::empty();
         ir.geometry.points.push(point(identity));
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
         assert_eq!(
@@ -1595,7 +1604,7 @@ mod tests {
             )
             .expect("valid native identity")],
         );
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
         assert_eq!(
@@ -1611,7 +1620,7 @@ mod tests {
         let owner = "test:model:vertex#missing";
         let target = "test:model:point#missing";
         let mut ir = CadIr::empty();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
         assert_eq!(
@@ -1629,7 +1638,7 @@ mod tests {
     fn commit_session_resolves_reference_into_earlier_draft() {
         let point_id = "test:model:point#earlier";
         let mut ir = CadIr::empty();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
         session
             .commit_model(point_draft(point_id))
@@ -1650,7 +1659,7 @@ mod tests {
         let rejected_identity = "test:model:vertex#rejected";
         let mut ir = CadIr::empty();
         let before = ir.clone();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
         assert!(session
@@ -1675,7 +1684,7 @@ mod tests {
         let committed_identity = "test:model:point#committed";
         let rejected_identity = "test:model:point#rejected";
         let mut ir = CadIr::empty();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
         assert!(!session.contains(committed_identity).unwrap());

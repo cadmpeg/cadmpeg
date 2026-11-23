@@ -140,7 +140,7 @@ fn project(stream: &[u8], metadata: Option<&[u8]>, scoped: bool) -> (Feature, Ve
         source_tag: Some("Convert Mesh".into()),
         source_text: None,
         source_content: Default::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Convert Mesh".into(),
                 parameters: [(

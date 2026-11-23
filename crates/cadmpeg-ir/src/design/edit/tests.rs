@@ -8,7 +8,7 @@ use cadmpeg_core::text::NonBlankString;
 use serde_json::json;
 
 use super::eval::{check_types, ExpressionSite, Type};
-use super::wire::{clear_transformations, exchange_constructions, positions, re_anchor, retarget};
+use super::wire::{positions, retarget};
 use super::{evaluate, EditError, EvalError, Literal, ParameterDrivers, Value};
 use crate::design::configuration::{
     Arrangement, ArrangementKind, ArrangementRef, DesignConfiguration, FeatureStateOverride,
@@ -36,7 +36,8 @@ use crate::design::refs::{ConfigurationRef, EntityRef, Evaluated, Member, Positi
 use crate::design::scope::{DesignScope, OccurrenceDesign};
 use crate::design::selection::{Anchor, Members, PickTarget, Picked, Picks, Selection};
 use crate::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
-use crate::features::{ConfigurationId, FeatureId, FinitePoint3, ParameterId};
+use crate::features::geometry::FinitePoint3;
+use crate::features::{ConfigurationId, FeatureId, ParameterId};
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use crate::pmi::LimitsAndFits;
 use crate::scalar::{FiniteReal, Length};
@@ -276,6 +277,7 @@ fn timeline() -> CadIr {
             status: EvaluationStatus::Current,
             native_ref: None,
         }],
+        unproduced: BTreeSet::default(),
     });
     document.design.features = vec![
         operation(1, FeatureOperation::Spreadsheet(id("spreadsheet", 1))),
@@ -984,6 +986,7 @@ fn an_occurrence_value_resolves_through_the_arrangement_in_force() {
         active_arrangements: BTreeSet::new(),
         occurrences: BTreeMap::new(),
         current: Vec::new(),
+        unproduced: BTreeSet::new(),
     });
     document.design.scopes[1].occurrences = BTreeMap::from([
         (
@@ -1547,6 +1550,7 @@ fn removing_an_unordered_member_removes_its_own_result() {
         target: body_target(2),
         name: "on two".to_owned(),
         values: Vec::new(),
+        native_ref: None,
     }];
     document.model.presentation_layers = vec![crate::presentation::PresentationLayer {
         id: id("layer", 1),
@@ -1877,122 +1881,6 @@ fn switching_to_a_configuration_with_no_state_keeps_the_geometry() {
     );
 }
 
-/// A point datum on one coincident input, at (1, 0, 0) in the active
-/// configuration and at (2, 0, 0) in configuration 2.
-fn point_datum(key: u32) -> Feature {
-    let point = |x: f64| FinitePoint3::from_coordinates(real(x), real(0.0), real(0.0));
-    operation(
-        key,
-        FeatureOperation::Datum(Box::new(Datum {
-            element: DatumElement::Points(vec![Construction {
-                inputs: vec![ConstructionInput {
-                    role: Some(InputRole {
-                        subject: Subject::Whole,
-                        relation: Relation::Coincident,
-                    }),
-                    reference: None,
-                    value: None,
-                    reversed: None,
-                }],
-                after: Vec::new(),
-                solution: None,
-                mode: None,
-                resolved: Some(point(1.0)),
-                resolved_in: BTreeMap::from([(configuration(2), point(2.0))]),
-            }]),
-            link: None,
-            native_options: NativeOptions::new(),
-            source_settings: NativeOptions::new(),
-        })),
-    )
-}
-
-#[test]
-fn switching_exchanges_the_constructions_of_feature_overrides() {
-    let mut document = configured();
-    document.design.features[0] = point_datum(1);
-    document.design.spreadsheets.clear();
-    let state = FeatureStateOverride {
-        suppressed: None,
-        definition: Some(document.design.features[0].definition.clone()),
-    };
-    document.design.configurations[1].overrides.features =
-        BTreeMap::from([(feature(1), state.clone())]);
-    let mut arranged = arrangement(1, BTreeMap::new());
-    arranged.overrides.features = BTreeMap::from([(feature(1), state)]);
-    document.design.arrangements.push(arranged);
-
-    document
-        .edit()
-        .unwrap()
-        .set_active_configuration(&definition(), &configuration(2))
-        .unwrap();
-
-    let construction = |definition: &FeatureDefinition| {
-        let FeatureOperation::Datum(datum) = &definition.operation else {
-            panic!("{definition:?} is a datum");
-        };
-        let DatumElement::Points(points) = &datum.element else {
-            panic!("{datum:?} holds points");
-        };
-        (
-            points[0].resolved.map(|point| point.get().x),
-            points[0].resolved_in.keys().cloned().collect::<Vec<_>>(),
-        )
-    };
-    let expected = (Some(2.0), vec![configuration(1)]);
-    assert_eq!(
-        construction(&document.design.features[0].definition),
-        expected
-    );
-    let overridden = |overrides: &Overrides| {
-        construction(overrides.features[&feature(1)].definition.as_ref().unwrap())
-    };
-    assert_eq!(
-        overridden(&document.design.configurations[1].overrides),
-        expected,
-        "a configuration's feature override"
-    );
-    assert_eq!(
-        overridden(&document.design.arrangements[0].overrides),
-        expected,
-        "an arrangement's feature override"
-    );
-}
-
-#[test]
-fn positions_and_constructions_rewrite_in_the_wire_form() {
-    let from = positions(&[after(2)]).unwrap();
-    let to = serde_json::to_value(after(1)).unwrap();
-    let mut value = json!({"at": {"kind": "pinned", "value": {"kind": "after", "value": {"kind": "feature", "value": feature(2).as_str()}}}, "picks": {"kind": "unread"}});
-    let mut anchored = value.clone();
-    assert!(retarget(&mut value, &from, &to));
-    assert_eq!(
-        value["at"]["value"]["value"]["value"],
-        json!(feature(1).as_str())
-    );
-    assert!(re_anchor(&mut anchored, &from));
-    assert_eq!(anchored["at"], json!({"kind": "current"}));
-
-    let mut moved = json!({"steps": [{"kind": "translate", "value": {"kind": "parameter", "value": parameter_id(1).as_str()}}], "resolved": [1.0]});
-    let mut unbound = moved.clone();
-    unbound["steps"][0]["value"]["value"] = json!(parameter_id(2).as_str());
-    let bound = BTreeSet::from([parameter_id(1).as_str().to_owned()]);
-    assert!(clear_transformations(&mut moved, &bound));
-    assert!(moved.get("resolved").is_none());
-    assert!(!clear_transformations(&mut unbound, &bound));
-
-    let mut construction = json!({
-        "inputs": [{"kind": "x"}], "after": [],
-        "resolved": [1.0], "resolved_in": {"c2": [2.0]},
-        "nested": {"inputs": [], "after": [], "resolved": [3.0], "resolved_in": {}},
-    });
-    assert!(exchange_constructions(&mut construction, "c1", "c2"));
-    assert_eq!(construction["resolved"], json!([2.0]));
-    assert_eq!(construction["resolved_in"], json!({"c1": [1.0]}));
-    assert_eq!(
-        construction["nested"]["resolved"],
-        json!([3.0]),
-        "a construction with no inputs or steps keeps its value"
-    );
-}
+mod feature_overrides;
+mod unproduced;
+mod wire_form;

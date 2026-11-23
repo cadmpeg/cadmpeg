@@ -8,9 +8,11 @@ mod body_recipe;
 mod body_recipe_selections;
 mod body_selection;
 mod budgets;
+mod combine_producer_bodies;
 mod component_spaces;
 mod delete_face;
 mod draft;
+mod edge_loops;
 mod edge_operands;
 mod face_boundaries;
 mod fallback_faces;
@@ -23,6 +25,7 @@ mod path_selections;
 mod planes;
 mod recipe_projection;
 mod recipes;
+mod reverse_normal_bodies;
 mod selections;
 mod shell;
 mod state_pairs;
@@ -34,3 +37,13 @@ mod recipe_transitions;
 mod projection_reuse;
 
 mod topology_projection;
+
+pub(super) fn bind_feature_body_selections(
+    features: &mut [cadmpeg_ir::features::Feature],
+    inputs: &super::body_selections::FeatureBodySelectionInputs<'_>,
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    let (mut losses, refusals) =
+        super::body_selections::bind_feature_body_selections_with_refusals(features, inputs);
+    losses.extend(super::body_selections::native_combine_operand_refusal_notes(features, refusals));
+    losses
+}

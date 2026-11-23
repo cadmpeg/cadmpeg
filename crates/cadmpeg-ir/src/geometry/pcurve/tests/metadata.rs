@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_test_support::edit;
+use crate::test_support::edit;
 
+use crate::geometry::legacy_cache::FitTolerance;
 use crate::geometry::pcurve::{
     admit_pcurve_fit_tolerance, admit_pcurve_parameter_range, PcurveGeneralForm, PcurveInlineForm,
     PcurveMetadata,
 };
-use crate::geometry::FitTolerance;
 use crate::units::FiniteVector;
 
 #[test]
@@ -123,7 +123,7 @@ fn pcurve_range_admission_and_mutation_reject_nonfinite_endpoints() {
                     replacement,
                     previous
                         .fit_tolerance()
-                        .map(crate::geometry::FitTolerance::get),
+                        .map(crate::geometry::legacy_cache::FitTolerance::get),
                 )
             })
         }
@@ -150,7 +150,7 @@ fn pcurve_range_admission_and_mutation_reject_nonfinite_endpoints() {
                 replacement,
                 previous
                     .fit_tolerance()
-                    .map(crate::geometry::FitTolerance::get),
+                    .map(crate::geometry::legacy_cache::FitTolerance::get),
             )
         })
     }
@@ -170,7 +170,7 @@ fn pcurve_range_admission_and_mutation_reject_nonfinite_endpoints() {
                 replacement,
                 previous
                     .fit_tolerance()
-                    .map(crate::geometry::FitTolerance::get),
+                    .map(crate::geometry::legacy_cache::FitTolerance::get),
             )
         })
     }
@@ -214,7 +214,7 @@ fn pcurve_fit_tolerance_admission_and_mutation_preserve_valid_values() {
         assert_eq!(
             general
                 .fit_tolerance()
-                .map(crate::geometry::FitTolerance::get),
+                .map(crate::geometry::legacy_cache::FitTolerance::get),
             Some(2.0)
         );
     }
@@ -224,7 +224,7 @@ fn pcurve_fit_tolerance_admission_and_mutation_preserve_valid_values() {
     assert_eq!(
         general
             .fit_tolerance()
-            .map(crate::geometry::FitTolerance::get),
+            .map(crate::geometry::legacy_cache::FitTolerance::get),
         Some(0.0)
     );
     general.set_fit_tolerance(None);
@@ -251,7 +251,7 @@ fn pcurve_fit_tolerance_wire_rejects_negative_values_and_keeps_numeric_tokens() 
             assert_eq!(
                 metadata
                     .fit_tolerance()
-                    .map(crate::geometry::FitTolerance::get),
+                    .map(crate::geometry::legacy_cache::FitTolerance::get),
                 Some(value)
             );
             assert_eq!(serde_json::to_value(metadata).unwrap(), wire);

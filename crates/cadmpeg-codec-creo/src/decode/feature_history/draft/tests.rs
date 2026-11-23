@@ -44,7 +44,7 @@ fn hole_resolved_face_keeps_its_native_reference() {
     )
     .expect("resolved hole face");
     assert!(
-        matches!(selection, cadmpeg_ir::features::FaceSelection::Resolved { faces, native }
+        matches!(selection, cadmpeg_ir::features::selections::FaceSelection::Resolved { faces, native }
         if faces == vec![resolved_hole_face().id]
             && native == "creo:visibgeom:surface#11")
     );
@@ -69,7 +69,7 @@ fn hole_generated_face_keeps_its_native_reference() {
     )
     .expect("generated hole face");
     assert!(
-        matches!(selection, cadmpeg_ir::features::FaceSelection::Generated { native, .. }
+        matches!(selection, cadmpeg_ir::features::selections::FaceSelection::Generated { native, .. }
         if native == "creo:visibgeom:surface#11")
     );
 }
@@ -130,7 +130,7 @@ fn thicken_fixture_generates_a_face() {
     assert!(matches!(
         definition,
         IrFeatureDefinition::Operation(IrFeatureOperation::Thicken {
-            faces: cadmpeg_ir::features::FaceSelection::Generated { .. },
+            faces: cadmpeg_ir::features::selections::FaceSelection::Generated { .. },
             ..
         })
     ));
@@ -270,7 +270,7 @@ fn unbounded_plane_uses_its_placed_carrier_without_model_surface() {
         .expect("unbounded plane admitted"),
         Some(IrFeatureDefinition::Operation(
             IrFeatureOperation::DatumPlane {
-                frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+                frame: cadmpeg_ir::features::geometry::FeatureDatumPlaneFrame::new(
                     Point3::new(0.0, 1.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0)
@@ -297,7 +297,7 @@ fn unbounded_plane_uses_its_model_carrier_without_placed_surface() {
         .expect("unbounded plane admitted"),
         Some(IrFeatureDefinition::Operation(
             IrFeatureOperation::DatumPlane {
-                frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+                frame: cadmpeg_ir::features::geometry::FeatureDatumPlaneFrame::new(
                     Point3::new(0.0, 1.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0)

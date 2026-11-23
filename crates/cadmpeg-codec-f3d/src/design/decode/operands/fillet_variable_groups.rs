@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Assign ordered variable-radius parameter runs to Fillet groups.
 
-use super::{
-    push_fillet_radius_group, DesignConstructionOperandGroup, DesignFilletRadiusGroup,
-    DesignFilletRadiusLaw, DesignParameter,
-};
+use super::fillets::push_fillet_radius_group;
+use crate::records::parameters::DesignParameter;
+use crate::records::topology::construction::DesignConstructionOperandGroup;
+use crate::records::topology::fillet::{DesignFilletRadiusGroup, DesignFilletRadiusLaw};
 
 pub(super) fn assign(
     stream: &str,

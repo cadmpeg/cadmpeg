@@ -1121,6 +1121,22 @@ fn features(name: &str, source: &str, extra: &[(&str, &str)]) -> Fixture {
     Fixture::new(name, &files)
 }
 
+/// A fixture whose `crates/cadmpeg-ir/src/features/<module>.rs` holds
+/// `source`: the module in which the repository declares the shim the
+/// fixture reads through.
+fn feature_module(name: &str, module: &str, source: &str) -> Fixture {
+    let path = format!("crates/cadmpeg-ir/src/features/{module}.rs");
+    let parent = format!("mod {module};");
+    Fixture::new(
+        name,
+        &[
+            ("crates/cadmpeg-ir/src/lib.rs", "mod features;"),
+            ("crates/cadmpeg-ir/src/features.rs", parent.as_str()),
+            (path.as_str(), source),
+        ],
+    )
+}
+
 const CONTINUITY_STATE: &str = r#"
         cadmpeg_core::named_optional_field!(deserialize_continuity, Continuity, "continuity");
         #[derive(Serialize, Deserialize)]
@@ -1132,35 +1148,35 @@ const CONTINUITY_STATE: &str = r#"
 #[test]
 fn a_newtype_struct_leaves_the_absence_of_its_option_to_its_holders() {
     let read = r#"#[serde(deserialize_with = "deserialize_continuity")] Option<Continuity>"#;
-    let offenders = features(
+    let offenders = feature_module(
         "newtype-holder",
+        "surface_inputs",
         &CONTINUITY_STATE.replace("FIELDS", read),
-        &[],
     )
     .offenders();
     assert!(offenders.is_empty(), "{offenders:#?}");
 
-    let pair = features(
+    let pair = feature_module(
         "newtype-holder-pair",
+        "surface_inputs",
         &CONTINUITY_STATE.replace("FIELDS", &format!("{read}, u8")),
-        &[],
     )
     .offenders();
     assert_eq!(pair.len(), 2, "{pair:#?}");
     assert!(
         pair[0].contains("ContinuityState.<tuple field> reads the absent key as its one spelling of None but states no default")
-            && pair[1].contains("ContinuityState.<tuple field> refuses null, but cadmpeg_ir::features::ContinuityState states no skip_serializing_if and writes null for None"),
+            && pair[1].contains("ContinuityState.<tuple field> refuses null, but cadmpeg_ir::features::surface_inputs::ContinuityState states no skip_serializing_if and writes null for None"),
         "{pair:#?}"
     );
 
     let nullable = r#"#[serde(skip_serializing_if = "Option::is_none", deserialize_with = "cadmpeg_core::absent_key::nullable")] Option<Continuity>"#;
     assert_one_offender(
-        &features(
+        &feature_module(
             "newtype-holder-nullable",
+            "surface_inputs",
             &CONTINUITY_STATE.replace("FIELDS", nullable),
-            &[],
         ),
-        "ContinuityState.<tuple field> admits null, but cadmpeg_ir::features::ContinuityState skips the key for None",
+        "ContinuityState.<tuple field> admits null, but cadmpeg_ir::features::surface_inputs::ContinuityState skips the key for None",
     );
 }
 
@@ -1176,12 +1192,12 @@ const SWEEP_SECTION: &str = r#"
     "#;
 
 fn sweep_section(name: &str, tagging: &str, variant: &str) -> Fixture {
-    features(
+    feature_module(
         name,
+        "sweeps",
         &SWEEP_SECTION
             .replace("TAGGING", tagging)
             .replace("VARIANT", variant),
-        &[],
     )
 }
 
@@ -1213,8 +1229,8 @@ fn a_hand_written_key_names_its_own_reading_type() {
         .replace("VARIANT", "")
         .replace("SweepSection", "OtherSection");
     assert_one_offender(
-        &features("unlisted-hand-written-key", &source, &[]),
-        "OtherSection.<tuple field> cadmpeg_ir::features::OtherSection writes no keys of its own and no single container attribute routes a read through it",
+        &feature_module("unlisted-hand-written-key", "sweeps", &source),
+        "OtherSection.<tuple field> cadmpeg_ir::features::sweeps::OtherSection writes no keys of its own and no single container attribute routes a read through it",
     );
 }
 

@@ -5,17 +5,15 @@ use crate::brep::feature_source::FeatureSourceId;
 use crate::records::{FeatureHistory, FeatureInputSurfaceSelection};
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::datums::DatumPlaneReference;
+use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::selections::{BodySelection, EdgeSelection, FaceSelection};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::geometry::{Curve, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::topology::{Body, Edge, Face};
-use cadmpeg_ir::{
-    features::{
-        BodySelection, DatumPlaneReference, EdgeSelection, ExtrudeExtent, ExtrudeSide,
-        FaceSelection, FeatureDefinition, FeatureOperation, LinearTermination, PathRef,
-        PlanarProfileRef, ProfileRef,
-    },
-    scalar::Length,
-};
 use std::collections::{BTreeMap, HashMap};
 
 use crate::history::literals::{parse_point3_mm, parse_vector3};
@@ -60,14 +58,17 @@ fn offset_plane_support_origin(
     if let Some(origin) = source_properties
         .get("ReferenceFaceOrigin")
         .and_then(|value| parse_point3_mm(value))
-        .map(cadmpeg_ir::features::FinitePoint3::get)
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get)
     {
         return origin;
     }
     let origin = source_properties
         .get("Origin")
         .and_then(|value| parse_point3_mm(value))
-        .map_or(fallback_origin, cadmpeg_ir::features::FinitePoint3::get);
+        .map_or(
+            fallback_origin,
+            cadmpeg_ir::features::geometry::FinitePoint3::get,
+        );
     if native.is_some_and(|native| native.starts_with(SURFACE_COMPONENT_SELECTION_PREFIX)) {
         return Point3::new(
             origin.x + normal.x * distance.get(),
@@ -185,9 +186,9 @@ pub(crate) fn bind_topology_selections(
             .and_then(|record| record.properties.get("Scope"))
         {
             if let Some(outputs) = resolve_ids(scope, &body_ids) {
-                feature
-                    .evaluation
-                    .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(outputs)?);
+                feature.evaluation.set_outputs(
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(outputs)?,
+                );
             }
         }
         let source_properties = &feature.source_properties;
@@ -245,7 +246,7 @@ pub(crate) fn bind_topology_selections(
                                 let Some(origin) = source_properties
                                     .get("Origin")
                                     .and_then(|value| parse_point3_mm(value))
-                                    .map(cadmpeg_ir::features::FinitePoint3::get)
+                                    .map(cadmpeg_ir::features::geometry::FinitePoint3::get)
                                 else {
                                     break 'feature_edit;
                                 };
@@ -318,7 +319,9 @@ pub(crate) fn bind_topology_selections(
                             ..
                         }) => {
                             for section in sections {
-                                if let cadmpeg_ir::features::LoftSection::Profile(profile) = section
+                                if let cadmpeg_ir::features::profiles::LoftSection::Profile(
+                                    profile,
+                                ) = section
                                 {
                                     resolve_profile_ref(profile, &face_ids);
                                 }
@@ -374,7 +377,10 @@ pub(crate) fn bind_topology_selections(
                             support_faces,
                             ..
                         }) => {
-                            if let cadmpeg_ir::features::SurfaceBoundary::Edges(edges) = boundary {
+                            if let cadmpeg_ir::features::surface_inputs::SurfaceBoundary::Edges(
+                                edges,
+                            ) = boundary
+                            {
                                 resolve_edge_selection(edges, &edge_ids);
                             }
                             resolve_face(support_faces);
@@ -408,12 +414,16 @@ pub(crate) fn bind_topology_selections(
                         }) => {
                             resolve_face(faces);
                             match anchor {
-                                cadmpeg_ir::features::DraftAnchor::NeutralPlane {
-                                    plane, ..
+                                cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane {
+                                    plane,
+                                    ..
                                 } => {
                                     resolve_face(plane);
                                 }
-                                cadmpeg_ir::features::DraftAnchor::PartingLine { tool, .. } => {
+                                cadmpeg_ir::features::direct_edit::DraftAnchor::PartingLine {
+                                    tool,
+                                    ..
+                                } => {
                                     resolve_face(tool);
                                 }
                             }
@@ -750,8 +760,9 @@ fn resolve_body_selection(
     ids: &HashMap<&str, Option<&cadmpeg_ir::ids::BodyId>>,
 ) {
     if let BodySelection::Native(native) = selection {
-        let bodies = resolve_ids(native, ids)
-            .and_then(|bodies| cadmpeg_ir::features::DistinctMembers::try_from(bodies).ok());
+        let bodies = resolve_ids(native, ids).and_then(|bodies| {
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(bodies).ok()
+        });
         if let Some(bodies) = bodies {
             let old = std::mem::replace(selection, BodySelection::Unresolved);
             if let BodySelection::Native(native) = old {

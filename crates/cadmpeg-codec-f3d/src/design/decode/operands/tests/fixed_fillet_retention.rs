@@ -26,7 +26,7 @@ fn fixed_fillet_unassigned_groups_emit_one_scope_loss() {
             "opaque_scalar_offset": 62, "variant": false}
     }))
     .unwrap();
-    assert!(super::super::fixed_fillet_assignment_losses(
+    assert!(super::super::fillets::fixed_fillet_assignment_losses(
         std::slice::from_ref(&scope),
         std::slice::from_ref(&first),
     )
@@ -34,7 +34,7 @@ fn fixed_fillet_unassigned_groups_emit_one_scope_loss() {
     let mut second = first.clone();
     second.record_index = 102;
     second.id = "f3d:test:group#102".into();
-    let losses = super::super::fixed_fillet_assignment_losses(&[scope], &[first, second]);
+    let losses = super::super::fillets::fixed_fillet_assignment_losses(&[scope], &[first, second]);
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].code.local_code(),

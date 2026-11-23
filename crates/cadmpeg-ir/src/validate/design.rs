@@ -17,21 +17,26 @@ mod configurations;
 mod constructions;
 mod containers;
 mod dimensions;
-mod evaluations;
+pub(super) mod evaluations;
 mod expressions;
+mod fit;
 #[cfg(test)]
-mod fixture;
+pub(super) mod fixture;
+mod folds;
 mod index;
 mod linkage;
+mod matching;
+mod materials;
 mod names;
+mod overrides;
 mod parameter_records;
 #[cfg(test)]
 mod parameter_tests;
 mod parameters;
 mod programs;
-mod records;
-mod resolved;
-mod selections;
+pub(super) mod records;
+pub(super) mod resolved;
+pub(super) mod selections;
 mod states;
 mod tolerances;
 mod walk;
@@ -136,6 +141,15 @@ pub(super) fn check_design(
     ids: &ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
+    if ir.design.is_empty() {
+        linkage::check_scope(ir, findings);
+        tolerances::check_definition_general_tolerances(ir, findings);
+        if !ir.process.parameters.is_empty() {
+            let records = records::DesignRecords::new(ir);
+            expressions::check_process_parameters(&records, findings);
+        }
+        return Ok(());
+    }
     let mut index = DesignIndex::new(ir);
     let records = &index.records;
     linkage::check_linkage(records, ids, findings);
@@ -144,9 +158,10 @@ pub(super) fn check_design(
     evaluations::check_current_geometry(records, findings);
     resolved::check_resolved_states(ctx, records, ids, findings)?;
     configurations::check_configurations(records, findings);
+    overrides::check(records, findings);
     parameter_records::check_parameter_records(records, findings);
     programs::check_programs(records, findings);
-    expressions::check_expressions(records, findings);
+    expressions::check_expressions(ctx, records, findings)?;
     dimensions::check_dimensions(records, findings);
     tolerances::check_tolerances(records, findings);
     caches::check_caches(records, findings);
@@ -155,9 +170,12 @@ pub(super) fn check_design(
     let held = collect(ctx, ir, &index)?;
     index.add_dependencies(&held);
     let states = states::States::new(ir);
+    let matchers = matching::Matchers::new(&states);
     names::check(ctx, &index, &states, &held, findings)?;
-    selections::check(ctx, &index, &states, &held, findings)?;
+    selections::check(ctx, &index, &matchers, &held, findings)?;
     constructions::check(&index, &held, findings);
+    folds::check(&index, &matchers, &held, findings);
+    materials::check(&index, &matchers, findings);
     Ok(())
 }
 

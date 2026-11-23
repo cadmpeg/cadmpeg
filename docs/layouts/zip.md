@@ -1,6 +1,6 @@
 <!-- Generated from docs/layouts/zip.toml by
-     crates/cadmpeg/tests/layout_tables.rs. Do not edit by hand;
-     run `UPDATE_LAYOUT_DOCS=1 cargo test -p cadmpeg --test layout_tables`. -->
+     crates/cadmpeg-layout-tables/tests/layout_tables/generate.rs. Do not edit by hand;
+     run `UPDATE_LAYOUT_DOCS=1 cargo test -p cadmpeg-layout-tables`. -->
 
 # `zip` record layouts
 
@@ -73,6 +73,7 @@ Spec §3 · layout: byte offsets · size: 22 B
 
 Parsed by:
 - `crates/cadmpeg-container/src/archive/probe.rs`
+- `crates/cadmpeg-container/src/archive/admission.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -91,6 +92,7 @@ Spec §3 · layout: byte offsets · size: 56 B
 
 Parsed by:
 - `crates/cadmpeg-container/src/archive/probe.rs`
+- `crates/cadmpeg-container/src/archive/admission.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -111,6 +113,7 @@ Spec §3 · layout: byte offsets · size: 20 B
 
 Parsed by:
 - `crates/cadmpeg-container/src/archive/probe.rs`
+- `crates/cadmpeg-container/src/archive/admission.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |

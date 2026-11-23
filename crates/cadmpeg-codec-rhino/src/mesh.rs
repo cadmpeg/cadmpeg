@@ -15,7 +15,7 @@ use cadmpeg_core::decode::{
     u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, View,
 };
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::FiniteBinary32;
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};

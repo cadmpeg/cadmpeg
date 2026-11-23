@@ -83,7 +83,7 @@ fn path_findings(native: &crate::native::F3dNative) -> usize {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let ctx = super::super::Ctx::new(&ir, native, decode);
         let mut findings = Vec::new();
-        super::super::validate_path_feature_operand_roles(&ctx, &mut findings);
+        super::super::path_features::validate_path_feature_operand_roles(&ctx, &mut findings);
         findings.len()
     })
 }
@@ -99,7 +99,10 @@ fn a_to_object_revolve_admits_its_target_group_role() {
                 DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
             let ctx = super::super::Ctx::new(&ir, &native, decode);
             let mut findings = Vec::new();
-            super::super::validate_construction_operand_groups(&ctx, &mut findings);
+            super::super::construction_operands::validate_construction_operand_groups(
+                &ctx,
+                &mut findings,
+            );
             assert_eq!(findings.len(), finding_count, "{findings:?}");
         }
     });

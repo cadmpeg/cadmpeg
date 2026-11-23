@@ -237,7 +237,14 @@ pub(crate) struct ResolvedGlobal {
     sender_product: Option<String>,
     receiver_product: Option<String>,
     native_file_name: Option<String>,
+    native_system: Option<String>,
+    preprocessor_version: Option<String>,
+    model_scale: Option<PositiveReal>,
+    units_flag: Option<i64>,
     units_name: Option<String>,
+    author: Option<String>,
+    organization: Option<String>,
+    drafting_standard: i64,
     numeric: NumericDeclarations,
     minimum_resolution: NonNegativeReal,
     length_factor_mm: Option<PositiveReal>,
@@ -306,6 +313,8 @@ pub(crate) struct NumericLimits {
     pub(crate) double_magnitude: Option<i64>,
 }
 
+/// Field 24 value that names no drafting standard.
+const DEFAULT_DRAFTING_STANDARD: i64 = 0;
 const FIELD_SENDER_PRODUCT: usize = 2;
 const FIELD_FILE_NAME: usize = 3;
 const FIELD_NATIVE_SYSTEM: usize = 4;
@@ -1165,17 +1174,6 @@ impl Resolution {
         supplied
     }
 
-    /// Charges a metadata integer field whose value the model does not carry.
-    fn charge_metadata_integer(
-        &mut self,
-        index: usize,
-        global_table: GlobalTable,
-        admits: fn(i64) -> bool,
-    ) {
-        let supplied = self.admitted_integer(index, admits);
-        self.charge_metadata(index, &supplied, global_table);
-    }
-
     /// Charges the maximum-coordinate field.
     ///
     /// The coordinate is not carried into the model, so the charge the
@@ -1347,7 +1345,7 @@ impl Resolution {
         Some(LineWeightScale { gradations, mode })
     }
 
-    fn length_unit(&mut self, global_table: GlobalTable) -> (Option<String>, Option<PositiveReal>) {
+    fn length_unit(&mut self, global_table: GlobalTable) -> LengthUnit {
         let (scale, scale_defect) = match self.supplied_real(FIELD_MODEL_SCALE) {
             SuppliedReal::Absent => (global_table.default_model_scale(), None),
             SuppliedReal::Value(value) => match PositiveReal::try_from(value) {
@@ -1437,8 +1435,21 @@ impl Resolution {
                 }
             }
         }
-        (units_name, length_factor_mm)
+        LengthUnit {
+            model_scale: scale,
+            units_flag,
+            units_name,
+            length_factor_mm,
+        }
     }
+}
+
+/// Global fields 13 through 15 and the millimetre factor they resolve to.
+struct LengthUnit {
+    model_scale: Option<PositiveReal>,
+    units_flag: Option<i64>,
+    units_name: Option<String>,
+    length_factor_mm: Option<PositiveReal>,
 }
 
 fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
@@ -1461,6 +1472,7 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         let note = admitted_global_loss(IgesLossCode::GlobalNoncanonicalFraming, message);
         resolution.losses.push(note);
     }
+    let unreadable_suffix_start = unreadable_suffix.as_ref().map(|_| field_count);
     if let Some((offset, error)) = unreadable_suffix {
         let message = format!(
             "IGES Global field {} ({}) at Global byte {offset} has an unreadable \
@@ -1498,8 +1510,8 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
 
     let sender_product = resolution.metadata_string(FIELD_SENDER_PRODUCT, global_table);
     let native_file_name = resolution.metadata_string(FIELD_FILE_NAME, global_table);
-    resolution.charge_metadata_string(FIELD_NATIVE_SYSTEM, global_table);
-    resolution.charge_metadata_string(FIELD_PREPROCESSOR_VERSION, global_table);
+    let native_system = resolution.metadata_string(FIELD_NATIVE_SYSTEM, global_table);
+    let preprocessor_version = resolution.metadata_string(FIELD_PREPROCESSOR_VERSION, global_table);
     let integer_bits = resolution
         .metadata_integer_value(FIELD_INTEGER_BITS, global_table, |value| {
             value > 0 && u32::try_from(value).is_ok()
@@ -1544,16 +1556,36 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
             None
         }
     };
-    let (units_name, length_factor_mm) = resolution.length_unit(global_table);
+    let LengthUnit {
+        model_scale,
+        units_flag,
+        units_name,
+        length_factor_mm,
+    } = resolution.length_unit(global_table);
     let line_weight_scale = resolution.line_weight_scale(global_table);
     resolution.metadata_date(FIELD_GENERATION_DATE, global_table);
     let minimum_resolution = resolution.minimum_resolution(global_table);
     resolution.charge_maximum_coordinate(global_table);
-    resolution.charge_metadata_string(FIELD_AUTHOR, global_table);
-    resolution.charge_metadata_string(FIELD_ORGANIZATION, global_table);
-    resolution.charge_metadata_integer(FIELD_DRAFTING_STANDARD, global_table, |value| {
-        (0..=7).contains(&value)
-    });
+    let author = resolution.metadata_string(FIELD_AUTHOR, global_table);
+    let organization = resolution.metadata_string(FIELD_ORGANIZATION, global_table);
+    // The unreadable suffix starts at field index `field_count`. A field 24
+    // inside it is malformed, and its fallback is charged as such.
+    let drafting_standard =
+        if unreadable_suffix_start.is_some_and(|start| start <= FIELD_DRAFTING_STANDARD) {
+            resolution.charge(
+                IgesLossCode::GlobalMetadataFieldUnusable,
+                FIELD_DRAFTING_STANDARD,
+                Defect::Malformed,
+                METADATA_CONSEQUENCE,
+            );
+            DEFAULT_DRAFTING_STANDARD
+        } else {
+            resolution
+                .metadata_integer_value(FIELD_DRAFTING_STANDARD, global_table, |value| {
+                    (0..=7).contains(&value)
+                })
+                .unwrap_or(DEFAULT_DRAFTING_STANDARD)
+        };
     if global_table.has_model_date() {
         resolution.metadata_date(FIELD_MODEL_DATE, global_table);
     }
@@ -1567,7 +1599,14 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         sender_product,
         receiver_product,
         native_file_name,
+        native_system,
+        preprocessor_version,
+        model_scale,
+        units_flag,
         units_name,
+        author,
+        organization,
+        drafting_standard,
         numeric: NumericDeclarations {
             integer_bits,
             single_magnitude,
@@ -1618,6 +1657,37 @@ impl ResolvedGlobal {
 
     pub(crate) fn units_name(&self) -> Option<&str> {
         self.units_name.as_deref()
+    }
+
+    pub(crate) fn native_system(&self) -> Option<&str> {
+        self.native_system.as_deref()
+    }
+
+    pub(crate) fn preprocessor_version(&self) -> Option<&str> {
+        self.preprocessor_version.as_deref()
+    }
+
+    /// Field 13 with the table default for an empty field.
+    pub(crate) fn model_scale(&self) -> Option<PositiveReal> {
+        self.model_scale
+    }
+
+    /// Field 14 with the table default for an empty field.
+    pub(crate) fn units_flag(&self) -> Option<i64> {
+        self.units_flag
+    }
+
+    pub(crate) fn author(&self) -> Option<&str> {
+        self.author.as_deref()
+    }
+
+    pub(crate) fn organization(&self) -> Option<&str> {
+        self.organization.as_deref()
+    }
+
+    /// Field 24, with no standard for an empty or malformed field.
+    pub(crate) fn drafting_standard(&self) -> i64 {
+        self.drafting_standard
     }
 
     /// The version flag as declared, with the specification default for an absent field.

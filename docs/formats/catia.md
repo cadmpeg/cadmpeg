@@ -6,7 +6,7 @@ All multi-byte integers are little-endian unless explicitly marked **BE**. Float
 
 ---
 
-Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/catia.md`](../layouts/catia.md), generated from `docs/layouts/catia.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
+Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/catia.md`](../layouts/catia.md), generated from `docs/layouts/catia.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg-layout-tables` proves the two agree.
 
 ## 1. Variant families
 
@@ -602,16 +602,37 @@ Object-stream `05 08 01` coordinate rows are unframed allocations outside the co
 
 ### 6.1 `a5 03 34` freeform surface (consolidated class)
 
-Payload: `degU` and `K_U` (`4n+1` codes), array marker (`0x0c`, `0x08 0x05`, `0x08 0x09`, `0x08 0x0d`, `0x08 0x11`, or `0x08 0x15`), `K_U` distinct finite U knots (f64le), then `degV`/`K_V`/marker/V-knots, a mode byte (`0x01` non-rational / `0x05` rational), the pole grid (nu×nv×3 f64le, 24-byte stride), an optional weight payload, and a limit/parameterization tail. **Only strictly increasing distinct knots are stored.** A direction with exactly two distinct knots is a single Bézier span for every positive stored degree: both endpoint multiplicities are `degree+1`, and the pole count is `degree+1`. Degree-1 and degree-3 directions use clamped multiplicities `[degree+1,1,…,1,degree+1]`. Degree 5 uses the clamped C2 policy `[6,3,…,3,6]`, so `n_control = Σmult − degree − 1 = 3·K`. Poles and `05 08 01` vertex coordinates share the identity world frame. Rational weights (mode `0x05`) are either `00` followed by a complete `nu×nv` f64le grid or a row program. A row begins `01 03 00` or `01 07 00`, followed by `ceil(nv/2)` f64le values reflected around the row center; `02` copies the preceding expanded row. The tail carries current-limits + original parameterization (`param_after = coef·param_before + shift`) and extrapolation flags/data.
+Payload: `degU` and `K_U` (`4n+1` codes), array marker (`0x0c`, `0x08 0x05`, `0x08 0x09`, `0x08 0x0d`, `0x08 0x11`, or `0x08 0x15`), `K_U` distinct finite U knots (f64le), then `degV`/`K_V`/marker/V-knots, a mode byte (`0x01` non-rational / `0x05` rational), the pole grid (nu×nv×3 f64le, 24-byte stride), an optional weight payload, and a limit/parameterization tail. **Only strictly increasing distinct knots are stored.** A direction with exactly two distinct knots is a single Bézier span for every positive stored degree: both endpoint multiplicities are `degree+1`, and the pole count is `degree+1`. Degree-1 and degree-3 directions use clamped multiplicities `[degree+1,1,…,1,degree+1]`. Degree 5 uses the clamped C2 policy `[6,3,…,3,6]`, so `n_control = Σmult − degree − 1 = 3·K`. Poles and `05 08 01` vertex coordinates share the identity world frame. Rational weights (mode `0x05`) are either `00` followed by a complete `nu×nv` f64le grid or a row program. A row command is `01` or `05` followed by a row control; `05` also stores a count. Command `02` copies the preceding expanded row. The tail carries current-limits + original parameterization (`param_after = coef·param_before + shift`) and extrapolation flags/data.
+
+The three-byte weight-row prefix stores its command and row control:
+
+| Weight-row offset | Type | Meaning |
+| --- | --- | --- |
+| `+0` | `u8` | row command `01` or `05` |
+| `+1` | `u16le` | row control |
+
+The five-byte repeated weight-row prefix adds one field:
+
+| Weight-row offset | Type | Meaning |
+| --- | --- | --- |
+| `+3` | `u16le` | leading-repeat count for command `05` |
+
+Command `01` with row control `0003` or `0007` stores `ceil(nv/2)` finite nonzero f64le seeds. Append the first `floor(nv/2)` seeds in reverse order to complete the row.
+
+
 
 The frame carries no inline persistent object id. Its byte offset in the object stream identifies the consolidated surface carrier.
 
-The A5 surface tail is length-closed and has one of three forms. Each begins with `05 <u_code:4n+1> 05 <v_code:4n+1>`, eight finite f64 values `<u_min,u_max,v_min,v_max,coef_u,shift_u,coef_v,shift_v>` with `u_min<u_max`, `v_min<v_max`, and nonzero `coef_u` and `coef_v`, then three flags. The 133-byte form uses flags `01 01 01`, seven continuation f64 values that are all zero, and suffix `01 00 01 00 07 07`. The 141-byte form uses flags `01 01 01` or `05 05 01`, eight finite continuation f64 values, and suffix `01 00 01 00 07 07`, `01 00 09 00 07 07`, or `09 00 09 00 07 07`. The flag lane and suffix choice are independent. The 142-byte form uses either flag lane, eight finite continuation f64 values, and suffix `<4n+1> 00 (01|05|09|0d|11|15|19) 01 <4n+1> 07 07`. The frame ends after the suffix.
+A non-owned A5 surface tail is length-closed and has one of three forms. Each begins with `05 <u_code:4n+1> 05 <v_code:4n+1>`, eight finite f64 values `<u_min,u_max,v_min,v_max,coef_u,shift_u,coef_v,shift_v>` with `u_min<u_max`, `v_min<v_max`, and nonzero `coef_u` and `coef_v`, then three flags. The 133-byte form uses flags `01 01 01`, seven continuation f64 values that are all zero, and suffix `01 00 01 00 07 07`. The 141-byte form uses flags `01 01 01` or `05 05 01`, eight finite continuation f64 values, and suffix `01 00 01 00 07 07`, `01 00 09 00 07 07`, or `09 00 09 00 07 07`. The flag lane and suffix choice are independent. The 142-byte form uses either flag lane, eight finite continuation f64 values, and suffix `<4n+1> 00 (01|05|09|0d|11|15|19) 01 <4n+1> 07 07`. The frame ends after the suffix.
 
-In an A5 sheet-owned surface, the distinct-knot counts use compact unsigned
-integers. The four terminal patch identifiers also use compact unsigned integers. The eight parameter values follow the fourth identifier. The continuation and suffix lengths are independent of the identifier widths. Its array marker also admits `0x08 0x19`. The 141-byte tail also admits suffixes `05 00 05 00 07 07`,
+In an A5 sheet-owned surface, a degree-one axis with two distinct knots also admits the one-byte array marker `0e`. Two increasing f64 knot values follow that marker, and the axis has two poles. The distinct-knot counts use compact unsigned
+integers. The four terminal patch identifiers also use compact unsigned integers. The eight parameter values follow the fourth identifier. The continuation and suffix lengths are independent of the identifier widths. Its two-byte array marker also admits `08 19`. The 141-byte tail also admits suffixes `05 00 05 00 07 07`,
 `05 00 09 00 07 07`, and `09 00 01 00 07 07`. In the 142-byte tail
 the second control pair can begin with `01` and the V limits can descend.
+
+Sheet-owned tails are length-closed by their descriptor suffix. Their total length follows the compact identifier widths, continuation count, and descriptor widths. The continuation has seven zero f64 values in the 133-byte form and eight finite f64 values in the other forms. The flags are `01 01 01` or `05 05 01`; the seven-value continuation uses `01 01 01`. The lengths 133, 141, and 142 count one byte per identifier; wider identifiers shift every following field by their additional byte count.
+
+The sheet-owned tail suffix stores one extrapolation descriptor per axis in U, V order, followed by `07 07`. Each descriptor contains one compact unsigned count, one presence byte, and a second compact unsigned count when presence is `01`. Presence `00` ends the descriptor after the first count. The presence bytes and compact widths determine the suffix length. Both descriptors can contain a second count.
 The pole grid and its increasing knot vectors define the carrier chart.
 
 The 6-byte `b2 03 2e 01 05 05` record following an `a5 03 34` core is a standalone object.
@@ -636,9 +657,9 @@ integer occupies more than one byte. The 57-byte tail prefix is:
 | `+41` | `f64le[2]` | maximal V limits |
 
 Every scalar is finite. Current U and V limits are ordered. The reference
-scalar is positive and bit-identical to the current V upper limit. Maximal V
-contains current V. The reference scalar does not replace a station's ball
-radius.
+scalar is positive. In the 79-byte, 87-byte, and `87 + 24*K`-byte forms, it
+is bit-identical to the current V upper limit. Maximal V contains current V.
+The station rails and center define the ball radius.
 
 The 79-byte form has this 22-byte suffix after the prefix:
 
@@ -659,6 +680,13 @@ The 89-byte form has a six-byte branch `05 00 a b 00 00`, where `a` and `b` are 
 | `+22` | `f64le` | reference-scalar copy |
 | `+30` | `bytes[2]` | zero terminal |
 
+The 89-byte form with branch `01 00 a b 00 00` uses the same suffix field
+offsets. Current V runs from zero to twice the reference scalar. Divide
+native V by the reference scalar to obtain the multiplier of the stored
+opening angle. The terminal scalar equals the reference scalar.
+For a variable-radius section, evaluate the first rail and center at the
+section's U parameter. Their distance is the section radius.
+
 The explicit scalar-jet form is `87 + 24*K` bytes. After the prefix it stores
 `01 01`, then three finite `f64le[K]` lanes in value, first-derivative, and
 second-derivative order. The derivatives use the rolling-ball U parameter.
@@ -666,10 +694,16 @@ The lanes define a scalar quintic Hermite jet on the same knots as the surface
 jet. A `u32le` terminal in `{0,1}` follows the lanes, then maximal U limits and
 one bit-identical reference-scalar copy. The tail carries no curve identity.
 
+The sheet-owned scalar-jet form has length `89 + 24*K`. Its suffix ends
+with a scalar equal to the current V upper limit, then two zero bytes.
+Current V starts at zero. Divide native V by the terminal scalar to obtain
+the multiplier of the stored opening angle.
+
 Maximal U is ordered and lies inside the knot domain. In the 89-byte branch with `b=1`, its upper limit may be below the current U upper limit; its lower limit remains at or below the current U lower limit. In the other branches, maximal U contains current U.
 In the sheet-owned 89-byte form, `a=1` also permits the maximal U
-lower limit to exceed the current U lower limit. The terminal transverse
-chart extent is positive and independent of the current V interval.
+lower limit to exceed the current U lower limit. In branch `05 00 a b 00 00`,
+the terminal transverse chart extent is positive and independent of the
+current V interval.
 Current and maximal U limits are separate from the knot extremes. Each tail
 production exhausts its declared logical frame. Retain the control, scalar
 jet, terminal, and both limit pairs in the source record independently of the
@@ -680,7 +714,7 @@ transferred geometric jet.
 A 2D spline in a support surface's parameter space. Its payload stores `degU`, `K` definition points, one global curve parameter, one `(U,V)` pair per point, and 2D tangent and second derivative values. The leading operand `op1` is the underlying support's persistent CGM tag within its geometry factory. Explicit and implicit factories have separate tag namespaces. A tag remains stable through object creation, removal of other objects, and factory streaming. The array marker is `0x0c` or `0x08` followed by a one-byte `4q+1` or `4q+3` value. Both compact forms encode the leading-extrapolation count `q`. A sheet-owned
 pcurve can instead use `08 06 <q:u8>` for counts from 64 through 255. This form
 repeats the same count as `06 <q:u8>` after the knot array and the repeated
-definition-point count.
+definition-point count. With a one-byte extrapolation control, the sheet-owned channel header after the knots can instead be `14 <K:u16le>`. This three-byte header repeats the definition-point count `K`.
 
 The compact tag is separate from a physical file offset, record ordinal, allocation reference, and framed header token. Numeric equality supplies a candidate for an admitted typed identity relation; uniqueness and that relation's chart and endpoint invariants must also hold. Tags in separate factories or documents do not define a common identity.
 
@@ -700,7 +734,7 @@ Before this standard-carrier lookup, a class-`0x20` `op1` identity is canonicali
 
 For a validated class-`2b` torus chart, stored pcurve coordinates map to neutral torus angles as `u = U/major_scale` and `v = V/minor_scale`. The torus is the pcurve's support when both endpoint lifts match stored object-stream vertices within `2e-3` mm and exactly one class-`2b` chart satisfies that relation. Multiple matching torus charts leave the support unresolved.
 
-For a validated class-`2a` sphere chart, stored pcurve coordinates are neutral azimuth and latitude angles. The sphere is the pcurve's support when both endpoint lifts match stored object-stream vertices within `2e-3` mm and exactly one class-`2a` chart satisfies that relation. Multiple matching sphere charts leave the support unresolved.
+For a validated class-`2a` sphere chart, stored pcurve coordinates are the neutral azimuth and latitude angles multiplied by the sphere radius; divide both coordinates and both derivative lanes by the radius to obtain the neutral chart. The sphere is the pcurve's support when both endpoint lifts match stored object-stream vertices within `2e-3` mm and exactly one class-`2a` chart satisfies that relation. Multiple matching sphere charts leave the support unresolved.
 
 For a co-parametric edge block, each uniquely bound analytic carrier lifts every pcurve definition site into the common edge parameterization. A NURBS carrier with signed normal offset `d` lifts a site as `S(u,v) + d·normalize(Su(u,v)×Sv(u,v))`; a degenerate tangent pair has no lift. When neither side has an analytic binding, the ordered pair of zero-offset NURBS carriers is bound only when exactly one ordered carrier pair gives equal site counts and index-aligned 3D sites agreeing within `2e-3` mm. A repeated or alternate agreeing carrier pair leaves both sides unresolved. A nonzero NURBS offset requires a previously bound side to provide the shared 3D sites. All liftable sides have equal site counts and their index-aligned 3D sites agree within `2e-3` mm. Disagreement invalidates the shared locus sequence rather than selecting one side. Its first and last sites are the shared 3D endpoint loci.
 
@@ -764,7 +798,9 @@ representation identity and geometric placement.
 
 A compact class-`24` definition has payload `81 <compact operand d> 0f 87` and no scalar lane. A source-closed edge-use production has use vectors `(1,d+1)` and `(2,d+2)` and senses `88` and `84`. The contiguous sequence is either `24,06,06,5e`, with node parameter selectors `(2,1)`, or `5e,24,06,06`, with selectors `(1,2)`. The compact operand supplies an edge-use relation.
 
-A scalar class-`24` domain relation begins with marker `82`, two compact operands in source-then-target order, and `0a <selector:u16le>` or `0b <selector:u16le>`:
+A sheet-owned class-`24` map retains allocation-reference operands in target-then-source order. Its source relation maps the second representation to the first.
+
+A scalar class-`24` domain relation begins with marker `82`, two representation operands, and `0a <selector:u16le>` or `0b <selector:u16le>`. The generic compact-operand production uses source-then-target order:
 
 | Offset | Type | Meaning |
 | --- | --- | --- |
@@ -875,16 +911,21 @@ A consolidated `b2/b3/b4 <flag> 27` plane carrier has a width-coded frame with f
 
 The one-component layout stores `+18` direction component (`f64le`): X for `e4` and Y for `d4`. The 50-byte implicit-axis payload has bounds at `+18`; the 58-byte one-component direction payload has bounds at `+26`; the 58-byte spatial-origin payload has bounds at `+26`; the 66-byte two-component direction payload has bounds at `+34`. Each bounds lane is `u_min,u_max,v_min,v_max` (`4×f64le`) and exhausts the payload. Both intervals are strictly increasing. All scalars are finite. U is horizontal and its hypot length differs from one by at most `1e-12`; no bound supplies a direction component. For selectors `ec`, `e4`, `c4`, `dc`, and `d4`, `origin=(point_x,point_y,0)`. For selectors `d8` and `d0`, `origin=(origin_x,origin_y,origin_z)`. Selector `d0` stores a Y component of magnitude one. In all selectors, `v_axis=(0,0,1)`, `normal=unit(u_axis×v_axis)`, and `P(U,V)=origin+U·u_axis+V·v_axis`. Header width and frame flag do not change the scalar layout. An unknown selector retains its complete nonempty finite lane without a neutral plane frame. A known selector with a different lane length, non-unit direction, or unordered bounds is invalid.
 
+Sheet-owned class-`27` plane selectors retain their axis components and signs. Selector `08 68 1d` stores origin XYZ and V's signed Y component, with U=(1,0,0) and V=(0,v_y,0). Selector `08 e8 1d` has the same axes with v_y=1 and omits the direction scalar. These unrestricted payloads end after the frame scalars.
+
+Selector `d4 a0` stores origin XYZ, U's X and Z components, and four bounds, with U=(u_x,0,u_z) and V=(0,1,0). This implicit-V form is 74 bytes. The 82-byte `d4 a0` form stores V's signed Y component between U and the four bounds. Its V axis is (0,v_y,0), with v_y equal to -1 or +1. Selector `d4 20` adds V's signed Y component before those bounds. Each axis is a unit vector and the completed frame is orthonormal. The bounds are ordered U and V intervals. The [CATIA record layouts](../layouts/catia.md) give their field offsets and lengths.
+
 A packed consolidated class-`27` plane chart has packed marker `08`, a two-byte little-endian control word, origin `(x,y,z)`, and a scalar lane. The control word selects the chart axes and the scalar order after the origin:
 
 | Control word | U axis | V axis | Scalars after the origin | Payload bytes |
 |---|---|---|---|---:|
+| `1900` | `(u_x,u_y,u_z)` | `(0,v_y,v_z)` | `u_x,u_y,u_z,v_y,v_z` | 67 |
 | `1968` | `(1,0,0)` | `(0,v_y,v_z)` | `v_y,v_z` | 43 |
 | `1960` | `(u_x,0,0)` | `(0,v_y,v_z)` | `u_x,v_y,v_z` | 51 |
 | `1c38` | `(0,0,1)` | `(v_x,v_y,0)` | `v_x,v_y` | 43 |
 | `1c30` | `(0,0,u_z)` | `(v_x,v_y,0)` | `u_z,v_x,v_y` | 51 |
 
-An implicit U component gives a 43-byte payload. Its two V components follow the origin. An explicit U component gives a 51-byte payload. Its U component follows the origin, then its two V components exhaust the payload. Every coordinate and direction component is finite. Each axis has hypot length within `1e-12` of one. The chart is `P(U,V)=origin+U·u_axis+V·v_axis`, with normal `u_axis×v_axis`. The [CATIA record layouts](../layouts/catia.md) give both fixed payload layouts. The B-family frame bounds the complete packed payload.
+An implicit U component gives a 43-byte payload. Its two V components follow the origin. An explicit U component gives a 51-byte payload. Its U component follows the origin, then its two V components exhaust the payload. Control `1900` stores all three U components and two V components in a 67-byte payload. Every coordinate and direction component is finite. Each axis has hypot length within `1e-12` of one. The chart is `P(U,V)=origin+U·u_axis+V·v_axis`, with normal `u_axis×v_axis`. The [CATIA record layouts](../layouts/catia.md) give the fixed payload layouts. The B-family frame bounds the complete packed payload.
 
 A consolidated pcurve side binds to a known plane chart only when both endpoint lifts reach serialized object-stream vertices within `2e-3` mm and exactly one carrier wins all support candidates. Every definition site lifts through the same chart, and the neutral pcurve chart is identity. Multiple matching carriers leave the side unresolved.
 
@@ -925,6 +966,19 @@ the owned loop and its endpoint incidences. Control `0e` on a cylinder
 stores a constant V value and uses the cylinder's U limits. A line record
 defines the locus through its stored origin. An exact incidence can select
 a station beyond its stored interval.
+A consolidated class-`5d` vertex selects its class-`05` incidence roster with
+one allocation reference followed by terminal `00`. Its wide forward-reference
+production is five bytes:
+
+| Offset | Type | Meaning |
+| --- | --- | --- |
+| `+0` | `u8` | wide roster-reference marker `0e` |
+| `+1` | `u24le` | forward allocation ordinal |
+| `+4` | `u8` | roster-reference terminal `00` |
+
+The ordinal starts at the allocation end of the vertex record. The selected
+class-`05` record belongs to the same bounded source.
+
 The owned vertex's class-`05` incidence roster supplies the active endpoint
 when a class-`06` member names the occurrence curve. A two-reference
 incidence with tail `80 <t:f64le>` assigns `t` to the second reference.
@@ -939,10 +993,11 @@ knot span and the scalar is measured from that span's first knot. The
 station can select a point inside the knot domain beyond the curve's active
 interval. A four-reference incidence with lead `80` stores three scalar
 lanes. The second and third scalars address its third and fourth
-references when the first tag is compact and the second tag is zero.
+references when the first tag is compact and the second tag is zero. The 28-byte four-reference form is `80 a:f64le tag0:u8 b:f64le tag1:u8 00 c:f64le`; both tags have the inline compact form `4n+1`, lane 2 uses compact-tagged `b`, and lane 3 uses absolute `c`.
 An edge's class-`25` sampled relation also carries separate active ranges
 for its two curve representations. A line incidence can supply a spline
 station through an exact sample pair or a sampled identity relation.
+Each paired coordinate of an identity relation agrees within the greater of `1e-9` and `4·epsilon·max(|target|,|source|)`, where `epsilon` is binary64 machine epsilon.
 
 An extended spline-span tag is `04 <span:u8>`. The span byte is
 `44 + i`, where `i` is the zero-based index in the complete distinct-knot
@@ -974,14 +1029,30 @@ A parameter-map companion spline uses its own knot array and extrapolation
 count before its station is mapped through the affine or sampled relation.
 
 The sheet class-`21` pcurve stores a compact operand, a chart prefix,
-degree and distinct-knot count as inline compact integers, `0c`,
+degree and distinct-knot count as inline compact integers, an array marker,
 the increasing f64 knots, and the UV pole pairs. Prefix
-`1e <span:f64le>` selects one span of degree one or five.
+`1e <span:f64le>` selects one span of degree one, four, or five.
 Prefix `1a <spans:compact> <last_span:f64le>` selects a degree-five
 spline with threefold interior knots. Prefix
 `16 <scalar:f64le> <span:f64le>` selects one degree-eleven span with a
 finite positive scalar. End knots have multiplicity degree plus one.
-The stored span equals the difference between the last two knots.
+The stored span equals the difference between the last two active knots.
+
+Prefixes `3a <spans:compact> <last_span:f64le>`, `3e <span:f64le>`, and
+`7e <span:f64le>` select extended degree-five splines. Prefixes `3e` and
+`7e` have one active span. The array marker `0c` sets the leading count to zero;
+`08 <leading:compact>` stores a leading count, including zero. A compact
+trailing extrapolation count follows the poles. Prefix `7e` then ends with
+control `05`. The leading, active, and trailing span counts sum to one less
+than the distinct-knot count. The active interval starts at the leading
+span count and covers the declared active spans. The NURBS keeps all poles
+and knots, including both extrapolation regions.
+
+Prefix `0e` selects an explicit-domain cubic. Its payload after that prefix
+is `<span:f64le> <upper:f64le> <lower:f64le> 0d 09 0e
+<lower:f64le> <upper:f64le> <UV poles:4*(2*f64le)>`. The limits repeat
+exactly, `lower<upper`, and `span=upper-lower`. Both endpoint knots have
+multiplicity four. The fourth pole exhausts the payload.
 The sheet circle form adds `05 05` between the two center coordinates
 and the radius, followed by the two arc-length limits and the usual chart
 shift trailer.
@@ -1019,6 +1090,13 @@ An A-family class-`34` carrier followed by four contiguous B-family class-`18` r
 - **Owner carrier chart:** the contiguous source-closed production `<carrier:B:28|B:2b|A:32> <bridge:B:37> B:18[1] B:18[2] B:18[3] B:18[4] B:62` binds the fixed-nine owner to the carrier chart. The bridge begins with compact header byte `05` (value `1`), then `0x80+n` and exactly `n` allocation references. Retain each reference's decoded value and addressing form. The `n=5` form is the allocation-reference dialect of the class-`0x37` supported-surface construction: its references are `<carrier_surface> <support_surface[2]> <support_pcurve[2]>`, and its 22-byte tail is `<controls[0..2]> <construction_radius:f64le> <controls[2..4]> <zero:f64le> <controls[4..6]>`. A width-coded support-surface or support-pcurve value selects an outer alias row only when exactly one alias row has that persistent tag. Other addressing forms remain allocation-local and do not enter the outer alias namespace. The selected alias row supplies the canonical surface tag defined in §7.5. In this production the controls serialize as `<carrier_selector> 05 <middle:u8[2]> <terminal:u8> 05`; both middle controls are `03` or `05`, the terminal is `01` or `05`, the zero is exact, and the construction radius is positive. For `n=8`, the unassigned tail is `11 09 05 05 00^8 01 05`. The carrier selector is `05` for `B:28`, `09` for `B:2b`, and `11` for `A:32`; the eight-reference form therefore belongs to `A:32`. The first counted reference is the backward-distance token `05`, whose decoded distance is `1` and selects the immediately preceding carrier. The remaining eight-reference fields retain no higher-level role. The bracketed value after `B:18` is the decoded compact operand. For `B:28`, operands 1 and 2 are the two constant-first-parameter sides. For `B:2b` and `A:32`, they are the two constant-second-parameter sides. Let the constant-side coordinate be `a` and the orthogonal interval be `[b0,b1]`. The two records store the tuples `(a0,b0,b1)` and `(a1,b0,b1)` in either side order, where `[a0,a1]` and `[b0,b1]` are the owner `lower` and `upper` coordinates under that axis assignment. Each constant-side record has the axis control and zero-elision bits defined above, and its lane equals the ordered nonzero tuple subsequence. Operands 3 and 4 are the orthogonal sides at `b0` and `b1` respectively. An orthogonal tuple has the other axis control and stores `(b,a0,a1)` with the same zero elision. An implicit-axis line has `t0=−(a1−a0)/2` and its varying coordinate origin is `(a0+a1)/2`; its constant coordinate origin is `b`. For `B:28` it uses control `88` and `(t0,midpoint,b)`. For `B:2b` and `A:32` it uses control `48` and `(t0,b,midpoint)`. The tuple relation requires exact finite scalar equality. The implicit-line relation allows `1e-12` relative or absolute rounding error. The relation also requires the exact operand order, complete framed adjacency, and one bounded record source.
 
 A five-reference B-family class-`37` rolling-ball construction has payload `85 <allocation_ref[5]> 11 05 <radius:f64le> <middle0:u8> <middle1:u8> <zero:f64le> 01 05`. The radius is positive and the zero lane is exact zero. In the backward-distance form the middle controls are `03` or `05`. The five references select, in order, an `A:32` rolling-ball carrier, two support records of class `B:30` or `B:2e`, and two class-`20` A- or B-family support pcurves in the same contiguous logical record source. The two pcurves correspond by index to the two supports. The sheet-group allocation form also admits `01` in the first middle control.
+
+The seven-reference B-family class-`37` rolling-ball construction has payload
+`87 <allocation_ref[7]> 11 0d <controls:u8[3]> <zero:bytes[8]> 01 05`.
+Each control is `03` or `05`. The first reference selects an extended
+`A:32` carrier. The remaining references select B-family classes
+`(2e|38)`, `(27|30)`, `(18|20)`, `(18|20)`, `(2e|37|38)`, and `(18|20)`,
+in that order. The complete terminal exhausts the payload.
 
 An eight-reference B-family class-`37` construction payload is `88 <allocation_ref[8]> <tail:14B>`. Its complete tail is:
 
@@ -1160,7 +1238,7 @@ A unique fixed-nine dialect takes precedence over the generic counted grammar. A
 - **Owned-child `5f,62` relation:** for a counted owner packet, an owned-child face target selects a source-contiguous class-`37` construction record by `face_index + 1 + target`. An owned-child first terminal byte selects a class-`62` loop by the same rule. The second terminal byte is `03`. The loop's final backward-distance reference resolves to that construction record. Retain the face node with the counted owner when both targets remain in the same bounded source. The construction record's carrier reference resolves separately.
 
 - **Fixed-nine boundary-prelude `5f` relation:** a structurally complete `5f` face node is retained on a closed owner-boundary cycle when it immediately precedes the first resolved `5e` target, the node-to-owner source span is contiguous, the span contains only `5d` and `5e` records with exactly four `5e` records, the node terminal pair is `27 03` or `27 05`, and `5f.target` equals the owner packet's ninth identity plus `10`. Retain the node target encoding, target, terminal, and source span with the owner-boundary cycle. The relation is allocation-scoped and does not assign a standard face ordinal or a global edge identity.
-- **`b2/b3/b4 03 3b`** has width-coded header token `5` and a two-support chamfer payload `85 05 support0_ref support1_ref pcurve0_ref pcurve1_ref <controls:6u8> <scalar0:f64le> <scalar1:f64le>`. Literal `05` selects the preceding result carrier by backward frame distance one. Support references are width-coded compact unsigned integers; the two pcurve references are both inline or both width-coded. The references and the 22-byte tail exhaust the payload. The six controls and scalar modes follow the shared chamfer definition below. Result kind `05` requires a class-`29` cone, and `09` a class-`27` plane. Complete nested frames retain their own construction identity. Two immediately following source-contiguous class-`18` points with operands `1,2` supply the ordered support contacts when they have the same constant axis, increasing shared interval, and the control-selected lower/upper order. A further pair with operands `3,4` belongs to the construction only when its endpoint sets close the two remaining sides of that rectangle. Additional records do not extend the construction's contact list.
+- **`b2/b3/b4 03 3b`** has width-coded header token `5` and a two-support chamfer payload `85 05 support0_ref support1_ref pcurve0_ref pcurve1_ref <controls:6u8> <scalar0:f64le> <scalar1:f64le>`. Literal `05` selects the preceding result carrier by backward frame distance one. Support references are width-coded compact unsigned integers; the two pcurve references are both inline or both width-coded. The references and the 22-byte tail exhaust the payload. The six controls and scalar modes follow the shared chamfer definition below. Result kind `05` requires a class-`29` cone, and `09` a class-`27` plane. Sheet-owned support references also admit B-family class-`30` offset surfaces. The result kind selects the result carrier independently of the support types. Complete nested frames retain their own construction identity. Two immediately following source-contiguous class-`18` points with operands `1,2` supply the ordered support contacts when they have the same constant axis, increasing shared interval, and the control-selected lower/upper order. A further pair with operands `3,4` belongs to the construction only when its endpoint sets close the two remaining sides of that rectangle. Additional records do not extend the construction's contact list.
 - **`b2 03 23`** stores `[lo,hi,eps, lo,hi,1.0, lo,hi,eps]` as nine finite f64 values with `lo<hi`. The repeated range is the native parameter interval shared by the two preceding pcurves.
 
 - A fixed-nine packet has a closed owner-boundary cycle only when its complete resolved target set contains exactly four class-`0x5e` records, every target endpoint resolves to a distinct class-`0x5d` record pair, and those four pairs form one simple four-vertex cycle. The derived relation retains the fixed-nine slots, edge-record offsets, and endpoint-record offsets in slot order. It is owner-local evidence and does not assign a standard face ordinal; packets with another target class, an incomplete endpoint walk, a repeated edge, or a non-cycle graph remain unclassified.
@@ -1319,7 +1397,7 @@ payload after the five object references.
 | `2a` | 10 | selector2 |
 
 Distinct edge objects can have identical ordered curve, vertex, and parameter
-references with different terminals. In ssd-crucial-mx500-carter-inf, edge
+references with different terminals. In one part, edge
 objects 4425557, 4469071, and 4527226 all reference
 `(4425502,3978457,3978459,4425503,4425504)`; their terminals are `21`, `29`, and
 `29`, respectively. Keep their object identities distinct.
@@ -1449,6 +1527,8 @@ with unresolved references, endpoint lifts, or chain sense remain outside the
 connected graph.
 
 ---
+
+- An equator-reflected sphere class-`1d` pcurve stores the same four chart bounds, followed by two coordinate expressions. Each expression begins with the 27-byte coordinate selector `41 11 82 a:f64le b:f64le c:f64le`. The U selector is `(a,b,c)=(1,0,0)`, and the V selector is `(0,-1,0)`. Each selector is followed by the complete `41 05 81` affine expression and `41 1d` circle expression of the principal-branch form. The two copies of these inner expressions are byte-identical. The affine expression maps intrinsic station `t` to chart coordinate `U = chart_shift + direction·t`. Incidence stations and parameter-map intervals use `t`; the first stored bound pair uses `U`. Inverting the affine expression gives the intrinsic interval, with endpoint order reversed when `direction = -1`. The latitude is `−atan(slope·cos(reciprocal_scale·t + phase))`, and the length-valued V coordinate is that latitude times `chart_scale`. The complete second expression exhausts the payload.
 
 ### 6.8 Reference-closed object-stream graphs
 
@@ -1656,6 +1736,38 @@ A repeated-reference suffix is `<48:atom> <count:atom> <references[count]> <coun
 The payload prefix can bind this suffix to a source-schema ordinal in either of two productions: `<59-byte blob> <5:atom> <46:atom> <schema-ref:atom>` or `<schema-ref:atom> <34:atom> <59-byte blob> <5:atom>`. The production can occur after earlier fields. Preserve the schema ordinal, its payload offset, which field order was serialized, and the exact selected entry and name from the graph's schema catalog. Assign no preamble when neither production occurs or when more than one production occurs before the suffix.
 
 The following `7C02` schema catalog stores UTF-8 strings. A nonzero first byte is the inclusive one-byte-header-plus-string length. A zero first byte selects a following `u32le` string-byte length after the five-byte header. It either immediately follows the `7C08` graph or follows the graph's intervening `7C0B` value block. Preserve the graph's exact catalog link and the catalog's framing offset. String values may contain line feeds and non-ASCII unit symbols. For a head class slot whose value is in range, retain the associated catalog entry identity and string value on the field record. An out-of-range value remains unresolved. The second head slot in compact lead-`12` and lead-`52` forms is not universally a catalog selector. A resolved catalog lookup does not change the separate entity namespace of an inline incidence.
+
+#### 7.3.1 Geometric tolerance records
+
+A tolerance-family entity has an inline body `03 <schema0> <schema1> EA <entity_id:u32le> <declarations>`. Schemas use the compact form `34..FF`, which selects ordinal `byte − 0x34`, or the fixed form `32 <ordinal+1:u32le>`. The catalog entry of `schema1` is the entity type: `CATTPSToleranceWithDRF`, `CATTPSToleranceWithoutDRF`, `CATTPSReferenceFrame`, `CATTPSDatum`, or `CATMmrTTRS`.
+
+The entity's paired object record has the inline field body `10 <identity> <field_count:identity> <field>{field_count}`. A field is `<schema0> <schema1> <references> <parameters> <roles:u8>`. Each group is `<0x81+count:u8>` followed by `count` items. An item is `FE` for a null slot, `E5 <length:u32le> <bytes[length]> 81` for an opaque slot, or one identity. `roles` is `0`, `2`, `4`, or `6`; bit `2` admits a nonempty reference group and bit `4` admits a nonempty parameter group. The field count equals the number of fields, and the selected schema pair names exactly one field. The named fields are `TolBloc`/`CATTPSToleranceData`, `TolWiDRF`/`CATTPSToleranceWiDRFData`, `FrameBloc`/`CATTPSFrameData`, `LabelBloc`/`CATTPSCkeData`, and `TTRSBloc`/`CATTPSTTRSData`.
+
+A scalar declaration for a selected field is `<schema0> <schema1> <0x81+n> <identity>{n} 81 81 <0x81+a> <identity>{a} 81 81 <02|12> D5 00 82 82 <key>`, where the schema pair equals the field's pair and `key` is `81` for no key or `80 <key:u32le>`. The declaration ends the body or precedes the schema pair of the field that follows the selected field in the field body.
+
+Read the declarations as a token walk that starts at the byte after the entity identity. At each token start, `8E <c:E8..EF> 84` opens a paged operand of `3 + (c − E7)` bytes. Every other token start is a declaration candidate, and the token then has one of these widths: the width of a schema pair that names a field of the paired object record; `5` for `32 <u32le>` and `80 <u32le>`; `9` for `E6 <f64le>`; `5 + length` for `E5 <length:u32le> <bytes[length]>`; `18` for `FE F6 <payload[16]>`; `2` for a paged atom `D1..E4 <low>`; and `1` for every other byte. A schema pair that names a field takes its pair width even when its first byte also begins one of the other tokens. The walk tests each candidate before it advances by that token's width, so a candidate that begins inside an earlier completed candidate is still tested. The declaration of a field is the unique token-aligned candidate that completes. A token or paged operand that extends past the end of the body leaves the body with no declaration, and so does a second completed candidate.
+
+A `TolBloc` declaration has five scalars. Its first scalar and the entity type give the characteristic:
+
+| Entity type | First scalar | Characteristic |
+| --- | --- | --- |
+| `CATTPSToleranceWithDRF` | `0` | angularity |
+| `CATTPSToleranceWithDRF` | `3` | perpendicularity |
+| `CATTPSToleranceWithDRF` | `6` | parallelism |
+| `CATTPSToleranceWithDRF` | `9`, `11`, `12` | position |
+| `CATTPSToleranceWithDRF` | `21`, `22` | surface profile |
+| `CATTPSToleranceWithoutDRF` | `6` | flatness |
+| `CATTPSToleranceWithoutDRF` | `16` | surface profile |
+
+The `TolBloc` parameter group holds a `TolNumValue` magnitude and a `TolTabValue` tabulation. A parameter entity has lead `2`, a definition prefix of two lead bytes (`00`/`10` then `00`, `04`, `08`, or `0C`; or `01 04`; or `08 08`) and two selectors that name the value type (`LENGTH` for a magnitude, `String` for a tabulation or label) and the role, and a paired object frame `14 01 <class:compact> <owner:identity> 7C 0A 07 00 00 00 FE` whose owner is the tolerance entity. Its definition suffix ends with `03 <class:compact>` exactly once. When the declaration stores a key, the magnitude's definition suffix holds `80 <key:u32le> 80 <u32le> 81` or `80 <key:u32le> 80 <u32le> 80 <u32le>` immediately before that ending, exactly once.
+
+A magnitude record suffix is `<atom>{3} <schema=LENGTH> <value> 81 <trailer>`, with `trailer` in `92`, `93`, `9B`, and `DB`. `E6 <bits:u64le>` is a finite length in millimetres. An unset magnitude, `E7`, is `1` mm, and the control `E8` is `0` mm. A tabulation has the value payload `FE` and the suffix `<atom>{3} <schema=String> <37 | 32 <entry:u32le>> 81 <trailer>`.
+
+A `TolWiDRF` field selects the datum frame with a one-item reference group naming a `CATTPSReferenceFrame` entity. The frame's `FrameBloc` references are distinct `CATTPSDatum` entities in precedence order, and its parameter group is empty. Its declaration has one scalar fewer than the datum count. Scalar `i` relates datums `i` and `i+1`: `1` starts the next precedence and `2` places both in one common compartment. Each datum's `LabelBloc` has one parameter, a `Label` `String` entity whose suffix is `84 93 82 <schema=String> <label-entry> 81 <trailer>`. The label is the nonblank catalog entry.
+
+A `TolWiDRF` declaration has four scalars. Scalar `1` is the number of leading frame datums that a secondary tolerance uses; `0` leaves the secondary values inactive. The `TolWiDRF` parameter group holds a `RefTolNumValue` magnitude and a `RefTolTabValue` tabulation with the productions above, and the secondary takes the characteristic of its owner. When the `TolWiDRF` declaration stores a key, one member of the field's reference or parameter group carries it: an inline entity whose body continues `EA <entity_id:u32le> 81 80 <key:u32le>`, or a parameter entity whose definition suffix holds the key production of the magnitude. Every entity member of the field must resolve before the carrier is known. The secondary value transfers in each case. Open item DI-28 records a key that zero or several distinct members carry, or a field with a member that fails to resolve.
+
+A `TTRSBloc` field references the `CATMmrTTRS` roots of a tolerance or datum. Each root is a source shape aspect. Open item DI-28 records its face and edge relation.
 
 ### 7.4 `7C0B` visualization value blocks
 

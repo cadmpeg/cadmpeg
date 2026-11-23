@@ -181,6 +181,12 @@ pub(crate) enum CreoLossCode {
     NurbsBoundaryCarrierUnresolved,
     /// `VisibGeom` surface rows share a non-unique identity.
     VisibGeomSurfaceAmbiguous,
+    /// The packed `c0..df XX YY` reading of surface rows replaces rows that
+    /// the one- and two-byte reading keeps.
+    SurfaceRowPackedReading,
+    /// The one- and two-byte reading of surface rows replaces rows that the
+    /// packed `c0..df XX YY` reading keeps.
+    SurfaceRowCompactReading,
     /// `VisibGeom` curve-topology rows share a non-unique identity.
     VisibGeomCurveAmbiguous,
     /// Decoded section segments retain source-native geometry.
@@ -256,6 +262,9 @@ pub(crate) enum CreoLossCode {
     FeatureRegenerationParentDropped,
     /// Typed history features retain an explicitly unresolved construction.
     FeatureConstructionUnresolved,
+    /// Parameters that hold a parameter the decoder resolved as their
+    /// dependency as text, or omit it, and state no dependency on it.
+    DesignParameterReferenceAsText,
     /// Declared section segment rows did not decode.
     SectionSegmentMissing,
     /// Declared section relation rows did not decode.
@@ -406,6 +415,8 @@ impl CreoLossCode {
             Self::LegacySurfaceCarrierUnresolved => "geometry.legacy-surface-carrier-unresolved",
             Self::NurbsBoundaryCarrierUnresolved => "geometry.nurbs-boundary-carrier-unresolved",
             Self::VisibGeomSurfaceAmbiguous => "geometry.visibgeom-surface-ambiguous",
+            Self::SurfaceRowPackedReading => "geometry.surface-row-packed-reading",
+            Self::SurfaceRowCompactReading => "geometry.surface-row-compact-reading",
             Self::VisibGeomCurveAmbiguous => "geometry.visibgeom-curve-ambiguous",
             Self::SectionSegmentGeometryUnresolved => "geometry.section-segment-unresolved",
             Self::CarrierVisibGeomPlanes => "carrier.visibgeom-planes",
@@ -443,6 +454,7 @@ impl CreoLossCode {
             Self::FeatureStateSelectionUnresolved => "feature.state-selection-unresolved",
             Self::FeatureRegenerationParentDropped => "feature.regeneration-parent-dropped",
             Self::FeatureConstructionUnresolved => "feature.construction-unresolved",
+            Self::DesignParameterReferenceAsText => "design.parameter-reference-as-text",
             Self::SectionSegmentMissing => "section.segment-missing",
             Self::SectionRelationMissing => "section.relation-missing",
             Self::SectionRelationTableMalformed => "section.relation-table-malformed",
@@ -479,6 +491,8 @@ impl CreoLossCode {
         match self {
             Self::ContainerCensus
             | Self::VisibGeomSurfaceAmbiguous
+            | Self::SurfaceRowPackedReading
+            | Self::SurfaceRowCompactReading
             | Self::VisibGeomCurveAmbiguous
             | Self::CarrierVisibGeomPlanes
             | Self::CarrierTopologyBoundPlanes
@@ -613,7 +627,8 @@ impl CreoLossCode {
             | Self::AssemblyMemberTableIncomplete
             | Self::AssemblyPlacementUnresolved
             | Self::AssemblyMemberReferenceUnresolved
-            | Self::AssemblyConstraintsNotTransferred => Severity::Warning,
+            | Self::AssemblyConstraintsNotTransferred
+            | Self::DesignParameterReferenceAsText => Severity::Warning,
         }
     }
 
@@ -662,7 +677,9 @@ impl CreoLossCode {
             | Self::PmiDatumTagBoundaryAssumed
             | Self::PmiDatumDefinitionSlotAssumed
             | Self::PmiDimensionKindInferred
-            | Self::PmiAngularUnitAssumed => LossTaxonomy::DecodeDiagnostic,
+            | Self::PmiAngularUnitAssumed
+            | Self::SurfaceRowPackedReading
+            | Self::SurfaceRowCompactReading => LossTaxonomy::DecodeDiagnostic,
             Self::LegacyRealValueUnresolved
             | Self::CompressedSectionUnexpanded
             | Self::PhysicalGeometryOwnerUnresolved
@@ -755,6 +772,7 @@ impl CreoLossCode {
             Self::AssemblyComponentsExternal | Self::AssemblyMemberReferenceUnresolved => {
                 LossTaxonomy::AssemblyComponentsExternal
             }
+            Self::DesignParameterReferenceAsText => LossTaxonomy::ParametricRecordOmitted,
             Self::AssemblyMemberTableIncomplete
             | Self::AssemblyPlacementUnresolved
             | Self::AssemblyConstraintsNotTransferred => {
@@ -787,6 +805,9 @@ impl CreoLossCode {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
 }
+
+/// Instances an aggregated loss note names before it only counts the rest.
+pub(crate) const NAMED_INSTANCES_PER_NOTE: usize = 8;
 
 #[cfg(test)]
 mod tests {
@@ -875,6 +896,8 @@ mod tests {
                 "geometry.legacy-surface-carrier-unresolved",
                 "geometry.nurbs-boundary-carrier-unresolved",
                 "geometry.visibgeom-surface-ambiguous",
+                "geometry.surface-row-packed-reading",
+                "geometry.surface-row-compact-reading",
                 "geometry.visibgeom-curve-ambiguous",
                 "geometry.section-segment-unresolved",
                 "carrier.visibgeom-planes",
@@ -912,6 +935,7 @@ mod tests {
                 "feature.state-selection-unresolved",
                 "feature.regeneration-parent-dropped",
                 "feature.construction-unresolved",
+                "design.parameter-reference-as-text",
                 "section.segment-missing",
                 "section.relation-missing",
                 "section.relation-table-malformed",

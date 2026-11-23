@@ -19,12 +19,88 @@ use crate::design::ops::surface::MeshKind;
 use crate::design::parameter::{DesignParameter, ParameterValue};
 use crate::design::refs::ConfigurationRef;
 use crate::design::scope::DesignScope;
+use crate::design::selection::{OccurrencePath, StepRef};
+use crate::document::Design;
 use crate::features::{ConfigurationId, FeatureId, ParameterId};
 use crate::ids::{OccurrenceId, ProductDefinitionId};
 use crate::CadIr;
 
 /// The parameter overrides of one configuration, arrangement, or occurrence.
 pub(super) type ParameterOverrides = BTreeMap<ParameterId, ParameterOverride>;
+
+impl Design {
+    pub(super) fn design_scope(&self, definition: &ProductDefinitionId) -> Option<&DesignScope> {
+        self.scopes
+            .iter()
+            .find(|scope| &scope.definition == definition)
+    }
+
+    /// The configuration and its ancestors, nearest first.
+    pub(crate) fn configuration_chain(
+        &self,
+        configuration: &ConfigurationId,
+    ) -> Result<Vec<&DesignConfiguration>, EditError> {
+        let mut chain: Vec<&DesignConfiguration> = Vec::new();
+        let mut next = Some(configuration);
+        while let Some(id) = next {
+            if chain.iter().any(|seen| &seen.id == id) {
+                return Err(EditError::ConfigurationCycle(id.clone()));
+            }
+            let found = self
+                .configurations
+                .iter()
+                .find(|candidate| &candidate.id == id)
+                .ok_or_else(|| EditError::UnknownConfiguration(id.clone()))?;
+            chain.push(found);
+            next = found.parent.as_ref();
+        }
+        Ok(chain)
+    }
+
+    /// The arrangements in force in a configuration of a scope, at most one
+    /// of each kind: per kind, the one the configuration names, else its
+    /// parent's resolved one, else the one the scope's base names. `None` in
+    /// `configuration` reads the base.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EditError::UnknownConfiguration`] for a configuration the
+    /// design does not hold, and [`EditError::ConfigurationCycle`] where the
+    /// configuration's parents form a cycle.
+    pub(super) fn arrangements_in_force(
+        &self,
+        scope: &ProductDefinitionId,
+        configuration: Option<&ConfigurationId>,
+    ) -> Result<Vec<&Arrangement>, EditError> {
+        let chain = match configuration {
+            Some(configuration) => self.configuration_chain(configuration)?,
+            None => Vec::new(),
+        };
+        let base = self
+            .design_scope(scope)
+            .map(|record| &record.active_arrangements);
+        let mut in_force: Vec<&Arrangement> = Vec::new();
+        for named in chain
+            .iter()
+            .map(|level| &level.active_arrangements)
+            .chain(base)
+        {
+            for id in named {
+                let Some(arrangement) = self
+                    .arrangements
+                    .iter()
+                    .find(|candidate| &candidate.id == id)
+                else {
+                    continue;
+                };
+                if !in_force.iter().any(|held| held.kind == arrangement.kind) {
+                    in_force.push(arrangement);
+                }
+            }
+        }
+        Ok(in_force)
+    }
+}
 
 impl CadIr {
     pub(super) fn design_feature(&self, id: &FeatureId) -> Result<&Feature, EditError> {
@@ -41,36 +117,6 @@ impl CadIr {
             .iter()
             .find(|parameter| &parameter.id == id)
             .ok_or_else(|| EditError::UnknownParameter(id.clone()))
-    }
-
-    pub(super) fn design_scope(&self, definition: &ProductDefinitionId) -> Option<&DesignScope> {
-        self.design
-            .scopes
-            .iter()
-            .find(|scope| &scope.definition == definition)
-    }
-
-    /// The configuration and its ancestors, nearest first.
-    pub(super) fn configuration_chain(
-        &self,
-        configuration: &ConfigurationId,
-    ) -> Result<Vec<&DesignConfiguration>, EditError> {
-        let mut chain: Vec<&DesignConfiguration> = Vec::new();
-        let mut next = Some(configuration);
-        while let Some(id) = next {
-            if chain.iter().any(|seen| &seen.id == id) {
-                return Err(EditError::ConfigurationCycle(id.clone()));
-            }
-            let found = self
-                .design
-                .configurations
-                .iter()
-                .find(|candidate| &candidate.id == id)
-                .ok_or_else(|| EditError::UnknownConfiguration(id.clone()))?;
-            chain.push(found);
-            next = found.parent.as_ref();
-        }
-        Ok(chain)
     }
 
     /// A parameter's cache in a configuration (§5.13): the value of the
@@ -93,7 +139,7 @@ impl CadIr {
     ) -> Result<Option<&ParameterValue>, EditError> {
         let record = self.design_parameter(parameter)?;
         let chain = match configuration {
-            Some(configuration) => self.configuration_chain(configuration)?,
+            Some(configuration) => self.design.configuration_chain(configuration)?,
             None => Vec::new(),
         };
         let levels: Vec<&ParameterOverrides> = chain
@@ -139,53 +185,9 @@ impl CadIr {
         &self,
         definition: &ProductDefinitionId,
     ) -> Option<&ConfigurationId> {
-        self.design_scope(definition)
+        self.design
+            .design_scope(definition)
             .and_then(|scope| scope.active_configuration.as_ref())
-    }
-
-    /// The arrangements in force in a configuration of a scope, at most one
-    /// of each kind: per kind, the one the configuration names, else its
-    /// parent's resolved one, else the one the scope's base names. `None` in
-    /// `configuration` reads the base.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`EditError::UnknownConfiguration`] for a configuration the
-    /// design does not hold, and [`EditError::ConfigurationCycle`] where the
-    /// configuration's parents form a cycle.
-    pub(super) fn arrangements_in_force(
-        &self,
-        scope: &ProductDefinitionId,
-        configuration: Option<&ConfigurationId>,
-    ) -> Result<Vec<&Arrangement>, EditError> {
-        let chain = match configuration {
-            Some(configuration) => self.configuration_chain(configuration)?,
-            None => Vec::new(),
-        };
-        let base = self
-            .design_scope(scope)
-            .map(|record| &record.active_arrangements);
-        let mut in_force: Vec<&Arrangement> = Vec::new();
-        for named in chain
-            .iter()
-            .map(|level| &level.active_arrangements)
-            .chain(base)
-        {
-            for id in named {
-                let Some(arrangement) = self
-                    .design
-                    .arrangements
-                    .iter()
-                    .find(|candidate| &candidate.id == id)
-                else {
-                    continue;
-                };
-                if !in_force.iter().any(|held| held.kind == arrangement.kind) {
-                    in_force.push(arrangement);
-                }
-            }
-        }
-        Ok(in_force)
     }
 
     /// The configuration of its prototype that an occurrence of `scope` uses:
@@ -195,15 +197,26 @@ impl CadIr {
     ///
     /// # Errors
     ///
-    /// As [`CadIr::arrangements_in_force`].
+    /// As [`Design::arrangements_in_force`].
     pub(super) fn occurrence_configuration(
         &self,
         scope: &DesignScope,
         occurrence: &OccurrenceId,
     ) -> Result<Option<ConfigurationRef>, EditError> {
-        let active = scope.active_configuration.as_ref();
+        self.occurrence_configuration_in(scope, occurrence, scope.active_configuration.as_ref())
+    }
+
+    /// As [`CadIr::occurrence_configuration`], with `active` the
+    /// configuration of the scope that applies in place of the scope's
+    /// active one: the configuration an ancestor occurrence selects.
+    fn occurrence_configuration_in(
+        &self,
+        scope: &DesignScope,
+        occurrence: &OccurrenceId,
+        active: Option<&ConfigurationId>,
+    ) -> Result<Option<ConfigurationRef>, EditError> {
         let chain = match active {
-            Some(configuration) => self.configuration_chain(configuration)?,
+            Some(configuration) => self.design.configuration_chain(configuration)?,
             None => Vec::new(),
         };
         let stated = |overrides: &Overrides| {
@@ -213,6 +226,7 @@ impl CadIr {
                 .and_then(|state| state.configuration.clone())
         };
         let arranged = self
+            .design
             .arrangements_in_force(&scope.definition, active)?
             .into_iter()
             .find_map(|arrangement| stated(&arrangement.overrides));
@@ -223,6 +237,79 @@ impl CadIr {
                 .get(occurrence)
                 .and_then(|design| design.configuration.clone())
         }))
+    }
+
+    /// The cache a reference `through` an occurrence path reads (§5.13): the
+    /// occurrence the path reaches states its own override of the parameter
+    /// (`OccurrenceDesign.parameters`, §5.1), else the parameter's cache in
+    /// the configuration that occurrence uses. Each step uses its own
+    /// `configuration`, else the one its scope resolves for it (§5.1) in the
+    /// configuration the step above uses, the first step in its scope's
+    /// active one, else its prototype's active configuration. `None` where
+    /// no cache is stated: an empty path, a `Native` step, and an occurrence
+    /// whose configuration is `Named` or whose override states no value.
+    ///
+    /// # Errors
+    ///
+    /// As [`CadIr::parameter_cache`].
+    pub fn through_cache(
+        &self,
+        parameter: &ParameterId,
+        path: &OccurrencePath,
+    ) -> Result<Option<&ParameterValue>, EditError> {
+        let mut level: Option<Option<ConfigurationId>> = None;
+        let mut reached = None;
+        for step in &path.0 {
+            let StepRef::Occurrence(occurrence) = &step.occurrence else {
+                return Ok(None);
+            };
+            let scope = self
+                .design
+                .scopes
+                .iter()
+                .find(|scope| scope.occurrences.contains_key(occurrence));
+            let resolved = match (&step.configuration, scope) {
+                (Some(stated), _) => Some(stated.clone()),
+                (None, Some(scope)) => {
+                    let active = match &level {
+                        Some(selected) => selected.as_ref(),
+                        None => scope.active_configuration.as_ref(),
+                    };
+                    self.occurrence_configuration_in(scope, occurrence, active)?
+                }
+                (None, None) => None,
+            };
+            let uses = resolved.or_else(|| {
+                self.model
+                    .occurrences
+                    .iter()
+                    .find(|candidate| &candidate.id == occurrence)
+                    .and_then(|record| self.active_configuration_of(&record.prototype))
+                    .cloned()
+                    .map(ConfigurationRef::Local)
+            });
+            level = Some(match &uses {
+                Some(ConfigurationRef::Local(id)) => Some(id.clone()),
+                Some(ConfigurationRef::Named(_)) | None => None,
+            });
+            reached = Some((occurrence, scope, uses));
+        }
+        let Some((occurrence, scope, uses)) = reached else {
+            return Ok(None);
+        };
+        if let Some(own) = scope
+            .and_then(|scope| scope.occurrences.get(occurrence))
+            .and_then(|design| design.parameters.get(parameter))
+        {
+            return Ok(own.value.as_ref());
+        }
+        match uses {
+            Some(ConfigurationRef::Named(_)) => Ok(None),
+            Some(ConfigurationRef::Local(configuration)) => {
+                self.parameter_cache(parameter, Some(&configuration))
+            }
+            None => self.parameter_cache(parameter, None),
+        }
     }
 
     /// Resolves a dimension: a literal is its own value, and a bound
@@ -296,7 +383,7 @@ impl CadIr {
     ) -> Result<&FeatureDefinition, EditError> {
         let record = self.design_feature(feature)?;
         let chain = match configuration {
-            Some(configuration) => self.configuration_chain(configuration)?,
+            Some(configuration) => self.design.configuration_chain(configuration)?,
             None => Vec::new(),
         };
         Ok(chain
@@ -331,7 +418,7 @@ impl CadIr {
     ) -> Result<bool, EditError> {
         let record = self.design_feature(feature)?;
         let chain = match configuration {
-            Some(configuration) => self.configuration_chain(configuration)?,
+            Some(configuration) => self.design.configuration_chain(configuration)?,
             None => Vec::new(),
         };
         if self.feature_suppressed_in(record, &chain, configuration)? {

@@ -169,8 +169,8 @@ fn point2(e: &mut Emitter, p: Point2) -> Ref {
 }
 
 fn direction2(e: &mut Emitter, v: Point2) -> Option<Ref> {
-    let unit =
-        cadmpeg_ir::features::FiniteVector3::new(Vector3::new(v.u, v.v, 0.0))?.unit_nonzero()?;
+    let unit = cadmpeg_ir::features::geometry::FiniteVector3::new(Vector3::new(v.u, v.v, 0.0))?
+        .unit_nonzero()?;
     Some(e.emit_interned(
         "DIRECTION",
         &format!("'',({},{})", e.real(unit.x), e.real(unit.y)),

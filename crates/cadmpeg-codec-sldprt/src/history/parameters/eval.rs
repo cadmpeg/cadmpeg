@@ -3,10 +3,9 @@
 
 use cadmpeg_core::convert::{f64_from_i64, truncate_f64_to_i64, truncate_f64_to_u32};
 use cadmpeg_core::{decode::DecodeContext, CodecError};
-use cadmpeg_ir::{
-    features::{ParameterId, ParameterValue},
-    scalar::{Angle, FiniteReal, Length},
-};
+use cadmpeg_ir::features::parameters::ParameterValue;
+use cadmpeg_ir::features::ParameterId;
+use cadmpeg_ir::scalar::{Angle, FiniteReal, Length};
 use std::collections::HashMap;
 
 use super::ParameterAliasView;
@@ -744,7 +743,8 @@ mod tests {
         add_parameter_values, exponentiate_parameter_value, multiply_parameter_values,
         ParameterFunction,
     };
-    use cadmpeg_ir::{features::ParameterValue, scalar::FiniteReal};
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::scalar::FiniteReal;
 
     #[test]
     fn real_arithmetic_rejects_non_finite_results_at_construction() {

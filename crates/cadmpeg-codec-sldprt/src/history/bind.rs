@@ -2,10 +2,9 @@
 //! Sketch binding, regeneration order, and feature-output derivation.
 
 use crate::records::FeatureHistory;
-use cadmpeg_ir::features::{
-    FeatureDefinition, FeatureId, FeatureOperation, PathRef, PlanarProfileRef, ProfileRef,
-    SketchFeatureBinding, SplitFaceTool,
-};
+use cadmpeg_ir::features::direct_edit::SplitFaceTool;
+use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation, SketchFeatureBinding};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::topology::Face;
 use std::collections::{HashMap, HashSet};
@@ -441,12 +440,14 @@ fn copy_output_body_id(id: &str) -> Result<BodyId, cadmpeg_core::CodecError> {
 /// `body_modifiers` pairs an emitted body identity with the native source id of
 /// its last modifying history feature. An absent or ambiguous source id does
 /// not supply an output body.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub(crate) struct FeatureOutputSources<'a> {
     pub face_producers: &'a [(String, u32)],
     pub body_modifiers: &'a [(String, u32)],
 }
 
+/// `held` admits the bodies the outputs may name: every decoded body for the
+/// document features, a configuration's own partition bodies for its states.
 pub(crate) fn derive_feature_outputs(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[FeatureHistory],
@@ -454,6 +455,7 @@ pub(crate) fn derive_feature_outputs(
     faces: &[Face],
     shells: &[cadmpeg_ir::topology::Shell],
     regions: &[cadmpeg_ir::topology::Region],
+    held: impl Fn(&BodyId) -> bool,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let FeatureOutputSources {
         face_producers,
@@ -492,6 +494,9 @@ pub(crate) fn derive_feature_outputs(
                 Err(cadmpeg_core::CodecError::Malformed(_)) => continue,
                 Err(error) => return Err(error),
             };
+            if !held(&body) {
+                continue;
+            }
             feature.evaluation.edit(|_, outputs| {
                 outputs.insert(body);
             });
@@ -506,6 +511,9 @@ pub(crate) fn derive_feature_outputs(
         let Some(body) = owners.get(face.as_str()) else {
             continue;
         };
+        if !held(body) {
+            continue;
+        }
         let bodies = produced.entry(*source_id).or_default();
         if !bodies.contains(body) {
             bodies.push(body);
@@ -532,9 +540,9 @@ pub(crate) fn derive_feature_outputs(
         };
         if let Some(bodies) = produced.get(&source_id) {
             let outputs: Vec<_> = bodies.iter().copied().cloned().collect();
-            feature
-                .evaluation
-                .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(outputs)?);
+            feature.evaluation.set_outputs(
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(outputs)?,
+            );
         }
     }
     Ok(())
@@ -559,7 +567,7 @@ pub(super) fn bind_definition_sketch(
             false
         }
     };
-    let bind_planar_profile = |profile: &mut cadmpeg_ir::features::PlanarProfileRef| {
+    let bind_planar_profile = |profile: &mut cadmpeg_ir::features::profiles::PlanarProfileRef| {
         if has_profile
             && (matches!(profile, PlanarProfileRef::Unresolved(owner) if owner == native_ref)
                 || matches!(profile, PlanarProfileRef::Native(value) if value == native_ref)
@@ -621,7 +629,7 @@ pub(super) fn bind_definition_sketch(
         }) => {
             let mut profile_bound = false;
             for section in sections {
-                if let cadmpeg_ir::features::LoftSection::Profile(profile) = section {
+                if let cadmpeg_ir::features::profiles::LoftSection::Profile(profile) = section {
                     profile_bound |= bind_profile(profile);
                 }
             }

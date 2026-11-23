@@ -904,7 +904,7 @@ an extra surface alias in a loop slot. Carrier construction dependencies remain
 separate from face ownership.
 
 The 79-file byte check resolves all 32,870 later reference slots of 30,056
-complete counted face records as loops repeating the face carrier. Arduino's
+complete counted face records as loops repeating the face carrier. One part's
 unique 54-loop face matches the sibling STEP file's unique 54-bound face by
 plane origin and axes; both faces have one carrier.
 
@@ -914,11 +914,11 @@ The parser retains every canonical width-1 header value and applies one
 degree-5 jet grammar. The regression covers all 64 canonical values with
 unchanged site data and rejects all 192 noncanonical bytes.
 
-An independent byte check joins all 183 typed A5 jets in clothes-basket,
-spray-bottle, NIST CTC-02, and NIST CTC-05 to unique native frames. Every knot
+An independent byte check joins all 183 typed A5 jets in two parts,
+NIST CTC-02, and NIST CTC-05 to unique native frames. Every knot
 and all 30 value and derivative channels per site match exactly. The nine
 header bytes are `05`, `09`, `0d`, `19`, `1d`, `25`, `2d`, `35`, and `3d`.
-Source-extent reconstruction closes the spray-bottle frame at offset 809,757.
+Source-extent reconstruction closes the second part's frame at offset 809,757.
 All sites satisfy equal ball radii and the opening-angle equation within
 `1e-9`; the largest relative radius residual is `1.40e-12`, and the largest
 angle residual is `7.72e-12` radians.
@@ -962,8 +962,8 @@ CLI-checked CATParts. Their 53 logical sources use 105 header values from 1
 through 62,701, with widths 1/2/3 in 32,606/84/22 records. All five reference
 forms and the complete terminal match the typed native data. The first
 31,420-record population has repeated header values in every source and
-decreasing values in physical-offset order in 29 sources. The eyebolt and
-spring four-edge cycles both use `[2,1,1,1]`, with degree two at every endpoint.
+decreasing values in physical-offset order in 29 sources. The four-edge
+cycles of the 134-face and 84-face parts below both use `[2,1,1,1]`, with degree two at every endpoint.
 
 ## Gap-search temporary storage
 
@@ -983,7 +983,7 @@ the decode's fidelity report retains its declared losses.
 ## Four-reference consolidated edge frames
 
 An independent scan of all 79 CATParts finds 131 complete four-reference
-class-`5e` frames: 90 in bike-handle and 41 in snap-ring. Every frame has one
+class-`5e` frames: 90 in one part and 41 in another. Every frame has one
 descriptor owner and closes inside its reconstructed logical source. Exactly
 130 frames are immediately followed by another complete width-coded frame.
 Terminals `01/02/21/25` occur `32/3/93/3` times. All four reference lanes use
@@ -1007,7 +1007,7 @@ edge layouts. The counts for `01/02/21/22/25/26/29/2a` are
 not a count of transferred neutral edges. All 30 groups with identical ordered
 reference tuples and different terminals use `21` and `29`. Each frame in
 those groups, and the single `26` frame at physical offset 840,956 in
-ssd-crucial-mx500-carter-inf, has unique descriptor ownership and exact logical
+one part, has unique descriptor ownership and exact logical
 source closure. The rare frame selects edge object 4427636 and references
 `(4427641,4427634,4427627,4427642,4427643)`.
 Face 4427632 names loop 4427633, whose first edge is this `26` edge. The
@@ -1073,7 +1073,7 @@ their decode snapshots only add the empty domain-relation arena.
 Fresh whole-file decoding and checking covers 35 files with 4,362 scalar
 relations and all 5,276 owned compact definitions. Their complete decoded
 documents match the earlier models outside the intended native parameter
-projections and the new arena. Apartman reaches the existing 512-step ordered
+projections and the new arena. The one refused part reaches the existing 512-step ordered
 face-constraint limit; its 2,779 scalar frames are covered by the separate
 frame-grammar verification above.
 
@@ -1089,7 +1089,7 @@ Among sampled maps, 1,409 source arrays increase and 37 decrease. All samples
 remain within their named intervals. Sample extrema differ from the interval
 bounds bit-for-bit in 276 records; seven differences exceed the stored
 accuracy. The arrays therefore retain their pairing and do not supply interval
-endpoints. Two spray-bottle affine maps retain fit tolerance `0.001` separately
+endpoints. Two affine maps in one part retain fit tolerance `0.001` separately
 from signed accuracies `1.584409889836592e-8` and `1.1371036519709368e-8`.
 
 Every complete map was also decoded through the production codec in a
@@ -1105,9 +1105,9 @@ neutral and CATIA native validation, retaining 6,015 complete class-25 maps.
 Class-24 data and source positions remain exact. The complete documents match
 before and after except for the independently verified class-25 native
 projections and domain-relation identities. No whole-file edge definition or
-class-25 descriptor binds these maps. Arduino validation requires a verification
+class-25 descriptor binds these maps. Validating one large part requires a verification
 budget of one trillion work units and 256 million collection items; the default
-CLI work ceiling is exceeded. Apartman reaches the same existing 512-operation
+CLI work ceiling is exceeded. The refused part reaches the same existing 512-operation
 face-constraint refusal in both versions. Its 62 complete maps are verified in
 the separate frame-grammar container above.
 
@@ -1121,8 +1121,8 @@ contradictory map data, nonmonotone arrays, wrong frame flags, and A8 frames.
 
 A8 class-`0x25` verification scans all 79 physical CATIA files through
 `cadmpeg inspect`. Of 1,733 signatures, 1,728 complete `82` sampled maps occur
-in nine files. Four length-closed oil-tank records begin `84`; an Apartman
-signature declares a frame extending beyond the file. The complete maps have
+in nine files. Four length-closed records in one part begin `84`; a
+signature in the refused part declares a frame extending beyond the file. The complete maps have
 12 through 232 pairs: 1,026 co-curve arrays decrease and 702 increase. All
 reference arrays increase. Thirty-seven maps have zero fit tolerance, and 66
 have active reference intervals strictly inside their leading domains.
@@ -1144,11 +1144,11 @@ document passes checking with no errors or warnings and has no neutral
 geometry. The native `sampled_parameter_maps` arena retains exact source
 positions and payloads. Its wire loader rejects data contradicting the payload.
 The golden fixture adds zero fit, a 232-pair positional count, a proper active
-subrange, and the Arduino witness. Earlier decode snapshots change only by
+subrange, and the large part's witness. Earlier decode snapshots change only by
 adding the empty arena; all earlier fixture bytes remain exact.
 
-Arduino object 756464 at byte offset 19,668,336 pairs direct line pcurve 756466
-with wrapper 756467 and its quadratic pcurve 756468. The two cylinder supports
+In that witness, object 756464 at byte offset 19,668,336 pairs direct line
+pcurve 756466 with wrapper 756467 and its quadratic pcurve 756468. The two cylinder supports
 have identical geometry and distinct angular chart domains. All 17 parameter
 pairs lift to the same model-space points; the maximum separation is
 `6.280369834735101e-16` mm, below the binary64 roundoff bound
@@ -1159,8 +1159,8 @@ admission. Offset sources use that active range, including a strict subrange
 of the underlying pcurve domain. Between-sample interpolation remains open.
 
 
-Six sampled-map extrusion directrices in `v6-engine-air.CATPart` and five in
-`v6-engine-filter-assembly.CATPart` use parameterized first-pcurve lifts. Each
+Six sampled-map extrusion directrices in one part and five in
+another use parameterized first-pcurve lifts. Each
 lift passes 33 independent tensor-basis evaluations over its active reference
 interval, for 363 evaluations. The maximum model-space separation is
 `6.112319729142702e-14` mm. Surface isocurves map their knots to
@@ -1171,8 +1171,8 @@ charts remain unadmitted. Sampled maps do not inherit class-24 jet-origin or
 four-span chart translations.
 
 The eleven old intersection procedures are removed. Their first support
-carriers retain exact geometry. Second-operand planes 323806 in the air file
-and 356098 in the filter assembly have no remaining model use and are omitted;
+carriers retain exact geometry. Second-operand planes 323806 in the first part
+and 356098 in the second have no remaining model use and are omitted;
 later surface identities and their references change accordingly. Independent
 comparison verifies all other model arenas and all retained source arenas
 exactly.
@@ -1180,7 +1180,7 @@ exactly.
 Whole-file verification covers all 79 CATPart files and checks 78 decoded
 models. Their 1,728 sampled maps match independently inspected payloads,
 typed values, object identities, and physical and logical source positions.
-Only the two files above change model geometry. `apartman.CATPart` retains
+Only the two files above change model geometry. The refused part retains
 the baseline refusal at the 512-face ordered-constraint work limit; its 62
 complete maps are verified separately in the bounded production fixture.
 
@@ -1264,24 +1264,23 @@ validates the complete standard population relation:
 | Unmatched complete FBB layouts | 2 |
 | Unmatched surface/support populations | 0 |
 
-The unmatched layouts belong to `steering-wheel-connector.CATPart` and
-`steering-wheel.CATPart`. Each has 50 faces, 128 edges, and 80 vertices.
+The unmatched layouts belong to two related parts, A and B. Each has 50 faces, 128 edges, and 80 vertices.
 Their complete logical streams contain two and eleven isolated surface-record
 candidates, respectively, with no source-closed surface/support population.
-The connector and wheel share identical 400-byte FBB face rows and a
+Parts A and B share identical 400-byte FBB face rows and a
 1,203-byte vertex table. Their trim chains differ in 22 bytes and edge tables
-in nine bytes. The connector's maximal E5 walk has 1,137 frames; the wheel
+in nine bytes. Part A's maximal E5 walk has 1,137 frames; part B
 has two maximal walks of 1,217 frames. The E5 route supplies their geometry.
 
-Fresh native and sibling STEP decodes of the connector, middle horn, outer
-ring, complete wheel, and lower Carter produce ten checked documents. Unique
+Fresh native and sibling STEP decodes of five parts, A through E, produce ten
+checked documents. Unique
 body matches have bijective vertex matches, identical physical-edge endpoint
 multisets, and identical per-face loop endpoint multisets at a `0.002` mm
-coordinate gate. The four steering specimens contain eight bodies, 226 faces,
+coordinate gate. Parts A through D contain eight bodies, 226 faces,
 232 loops, 1,128 coedges, 564 edges, and 352 vertices, with maximum vertex
 residual `7.75264730289162e-6` mm. Their curve and surface family counts agree.
 
-The lower Carter's three standard populations have face/edge/vertex counts
+Part E's three standard populations have face/edge/vertex counts
 `245/601/350`, `9/18/12`, and `9/18/12`. The latter two share identical FBB
 face-row bytes and lie on opposite sides of Y=0. Source-order pairing has no
 bounds-containment failures; swapping those two populations causes two.
@@ -1300,7 +1299,7 @@ the admitted cylinder and torus branch rules.
 A broader center-azimuth rule conflicts with 75 cone and 38 sphere face
 witnesses on already checked, branch-bearing standard circles. Those counts
 compare against emitted intervals. Independent raw STEP verification proves
-four cone conflicts in `collet.CATPart`: the selected arc midpoint agrees
+four cone conflicts in one part: the selected arc midpoint agrees
 within `4.506e-7` mm, and the center-selected complement misses by 11.5 mm.
 The broader rule remains outside decoder admission; additional source-bound
 branch relations remain in SN-15.
@@ -1316,7 +1315,7 @@ verify the fixed-nine owner census:
 | Total | 968 |
 
 The 78 checked documents retain 951 of these packets, with bit-exact binary64
-rectangles and binary32 boxes. `apartman.CATPart` adds 17 all-compact packets
+rectangles and binary32 boxes. The refused part adds 17 all-compact packets
 verified directly from source. All 45 owner charts have complete seven-frame
 logical adjacency and four side relations equal to the stored rectangle:
 13 rolling-ball charts, one cylinder chart, and 31 torus charts. Among the
@@ -1338,7 +1337,7 @@ evaluation uses the rectangle's intersection with the candidate domain.
 | One grid candidate | 72 | 12 |
 | Multiple grid candidates | 40 | 2 |
 
-The spring owner at offset 40,482 stores its complete 62-byte tail inline.
+The 84-face part's owner at offset 40,482 stores its complete 62-byte tail inline.
 Carriers at offsets 50,739 and 52,715 pass the corner-box check. A 101-by-101
 interior grid has zero coordinate violations on the first and 13,284 on the
 second. The second carrier's U domain falls short of the rectangle by
@@ -1370,15 +1369,15 @@ both standard faces and fixed owners have unequal population counts.
 The checked documents contain 12,897 faces in the standard namespaces across
 68 files; this count includes every emitted standard population.
 
-The spring and eyebolt four-edge preludes reproduce their local simple
+The 84-face and 134-face parts' four-edge preludes reproduce their local simple
 cycles and ninth-identity-plus-ten relations. Their eight curve references
 have no numeric match among standard edge-support tags. Two other owner/tag
-equalities occur in eyebolt owner 67,398: slots zero and four equal carrier
+equalities occur in the 134-face part's owner 67,398: slots zero and four equal carrier
 tags 1,389 and 1,393, whose cylinder geometries are identical. Those equalities
 do not select an owner face ordinal.
 
 A separate 79-file byte sweep finds 14 complete eight-reference class-37
-constructions: ten in spray bottle and four in NIST CTC02. Nine have controls
+constructions: ten in one part and four in NIST CTC02. Nine have controls
 `11 09 03 03`, and five have `11 09 05 05`. Each has eight references, eight
 zero bytes, terminal `01 05`, and a backward-distance-one first reference.
 Logical-source reconstruction verifies a preceding rolling-ball carrier for
@@ -1390,13 +1389,14 @@ tails remain in their own addressing form. One construction closes the
 current fixed-owner chart relation. The other complete payloads do not imply
 fixed-nine recognition or a new neutral construction.
 
-Fresh sibling STEP documents for spring and eyebolt pass model checks.
+Fresh sibling STEP documents for the 84-face and 134-face parts pass model
+checks.
 Independent vertex, edge-endpoint, and face-loop multiset comparisons match
-their native topology at `0.002` mm. Spring has 84 faces, 166 edges,
-332 coedges, and 84 vertices; eyebolt has 134 faces, 268 edges, 536 coedges,
+their native topology at `0.002` mm. The first has 84 faces, 166 edges,
+332 coedges, and 84 vertices; the second has 134 faces, 268 edges, 536 coedges,
 and 136 vertices. Joint weighted face-adjacency refinement gives 134 unique
-eyebolt face matches and 42 two-face spring classes. Exact adjacency
-isomorphisms verify both graphs; the spring mapping remains non-unique.
+face matches in the 134-face part and 42 two-face classes in the 84-face part. Exact adjacency
+isomorphisms verify both graphs; the 84-face part's mapping remains non-unique.
 
 The [CGM generic-fillet description](https://www.maruf.ca/files/caadoc/CAAGobTechArticles/Surfaces.htm)
 defines center and two limiting loci. It does not define the bridge's wire
@@ -1422,7 +1422,7 @@ compact operands, finite lanes, and complete control closure:
 
 No admitted centered start is nonnegative. The maximum explicit direction
 norm error is `4.440892098500626e-16`, dimensionless. The raw sweep contains
-21,891 records beyond the decoded baseline, including `apartman.CATPart`.
+21,891 records beyond the decoded baseline, including the refused part.
 
 | Four-operand run relation | Runs | Scope |
 | --- | ---: | --- |
@@ -1434,7 +1434,7 @@ norm error is `4.440892098500626e-16`, dimensionless. The raw sweep contains
 | Open consecutive chains | 1 | HTC run at physical offset 806574 |
 
 Endpoint closure alone does not establish owner-chart side order. The FTC
-map at 1559012, HTC map at 811022, and basket map at 191651 independently
+map at 1559012, HTC map at 811022, and a third part's map at 191651 independently
 consume source/target operands `(3,2)`, `(5,4)`, and `(30,29)` from adjacent
 class-`18` records.
 
@@ -1444,7 +1444,7 @@ all 112 other-control rows remain excluded. Fresh original decodes and checks
 verify 20,259 records in the 33 decodable positive files. Their complete
 neutral models remain exact. Existing construction references preserve their
 source offsets when the enlarged point arena renumbers IDs. The other 45
-inputs have no candidates. `apartman.CATPart` reaches its existing 512-unit
+inputs have no candidates. The refused part reaches its existing 512-unit
 ordered-face constraint refusal; its 6,139 source records are verified in the
 constructed container. The local verification harness uses a 128-million
 collection-item ceiling for the FTC10 native serialization.

@@ -7,6 +7,51 @@ use cadmpeg_ir::math::Point2;
 
 const EPS_TEXT_ROTATION: f64 = 1.0e-12;
 
+#[test]
+fn skipped_text_charges_a_loss_and_keeps_its_sibling() {
+    use crate::design::test_support::{design_type, primary_record};
+
+    let mut unreadable = sketch_text_record(
+        &[("textex_tag", 800)],
+        [None, None],
+        Some((f64::MAX, 0.0, 0.0)),
+    );
+    unreadable[4..7].copy_from_slice(b"256");
+    unreadable[7..15].copy_from_slice(&41u64.to_le_bytes());
+    let mut sibling =
+        sketch_text_record(&[("textex_tag", 801)], [None, None], Some((1.0, 2.0, 0.0)));
+    sibling[4..7].copy_from_slice(b"256");
+    sibling[7..15].copy_from_slice(&42u64.to_le_bytes());
+    let sibling_start = unreadable.len();
+    unreadable.extend_from_slice(&sibling);
+    let meta = crate::metastream::MetaStream {
+        types: vec![design_type(
+            "E0618268-3A06-450E-9E94-7CF4C2E66802",
+            None,
+            4,
+            "Geometry",
+            vec![41, 42],
+        )],
+        records: vec![primary_record(41, 0), primary_record(42, sibling_start)],
+        secondary_records: Vec::new(),
+    };
+    let mut losses = Vec::new();
+    let texts =
+        decode_sketch_texts_from_stream(&unreadable, &meta, "Design/BulkStream.dat", &mut losses)
+            .unwrap();
+    assert_eq!(texts.len(), 1);
+    assert_eq!(texts[0].record_index, 42);
+    assert_eq!(
+        texts[0].placement().unwrap().anchor.get(),
+        Point2::new(10.0, 20.0)
+    );
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::SketchTextUndecoded.kind()
+    );
+}
+
 use crate::design::decode::sketch::decode_sketch_points_from_stream;
 
 use crate::design::decode::sketch::decode_sketch_texts_from_stream;
@@ -210,7 +255,8 @@ fn sketch_text_stream_decodes_its_text_records() {
         crate::design::decode::sketch::decode_sketch_texts_from_stream(
             &bytes,
             &meta,
-            "Design/BulkStream.dat"
+            "Design/BulkStream.dat",
+            &mut Vec::new(),
         )
         .unwrap()
         .len(),
@@ -500,8 +546,9 @@ fn sketch_records_use_the_primary_index_live_copy() {
         Some(SketchCurveGeometry::Line { start, .. }) if start.get() == Point3::new(50.0, 0.0, 0.0)
     ));
 
-    let texts = decode_sketch_texts_from_stream(&bytes, &meta, "Design/BulkStream.dat")
-        .expect("indexed sketch texts");
+    let texts =
+        decode_sketch_texts_from_stream(&bytes, &meta, "Design/BulkStream.dat", &mut Vec::new())
+            .expect("indexed sketch texts");
     assert_eq!(texts.len(), 1);
     assert_eq!(texts[0].byte_offset, u64_from_index(live_text_at));
     assert_eq!(texts[0].text, "live text");
@@ -509,27 +556,84 @@ fn sketch_records_use_the_primary_index_live_copy() {
     let mut mismatched_primary = bytes.clone();
     mismatched_primary[live_point_at + 7..live_point_at + 11]
         .copy_from_slice(&999u32.to_le_bytes());
-    assert!(matches!(
-        decode_sketch_points_from_stream(
-            &mismatched_primary,
-            &meta,
-            "Design/BulkStream.dat",
-            &mut Vec::new()
-        ),
-        Err(cadmpeg_core::CodecError::Malformed(_))
-    ));
+    assert!(decode_sketch_points_from_stream(
+        &mismatched_primary,
+        &meta,
+        "Design/BulkStream.dat",
+        &mut Vec::new(),
+    )
+    .unwrap()
+    .is_empty());
 
     let mut mismatched_secondary = bytes;
     mismatched_secondary[nested_at + 7..nested_at + 11].copy_from_slice(&999u32.to_le_bytes());
-    assert!(matches!(
-        decode_sketch_points_from_stream(
-            &mismatched_secondary,
-            &meta,
+    let points = decode_sketch_points_from_stream(
+        &mismatched_secondary,
+        &meta,
+        "Design/BulkStream.dat",
+        &mut Vec::new(),
+    )
+    .unwrap();
+    assert_eq!(points.len(), 1);
+    assert_eq!(points[0].byte_offset, u64_from_index(live_point_at));
+    assert_eq!(points[0].coordinates(), Point2::new(70.0, -30.0));
+    assert_eq!(points[0].owner_reference, None);
+}
+
+#[test]
+fn every_two_opaque_byte_planar_tail_charges_its_marker_and_construction_readings() {
+    use crate::loss::F3dLossCode;
+
+    let (bytes, meta, _, live_curve_at, _, _) = indexed_sketch_fixture();
+    let mut losses = Vec::new();
+    decode_sketch_curve_identities_from_stream(&bytes, &meta, "Design/BulkStream.dat", &mut losses)
+        .expect("indexed sketch curves");
+    assert!(losses.is_empty());
+
+    let tail_at = live_curve_at + 133 + 96;
+    for marker in [0, 1] {
+        let mut tail = Vec::new();
+        for reference in [10u32, 11] {
+            tail.push(1);
+            tail.extend_from_slice(&reference.to_le_bytes());
+            tail.extend_from_slice(&[0; 6]);
+        }
+        tail.extend_from_slice(&[0, 0, 0, 7, 8, marker]);
+        tail.extend_from_slice(&1u32.to_le_bytes());
+        tail.push(1);
+        let mut short = bytes.clone();
+        short.splice(tail_at..tail_at, tail.iter().copied());
+        let mut short_meta = meta.clone();
+        for record in &mut short_meta.records {
+            if record.bulk_offset > u64_from_index(tail_at) {
+                record.bulk_offset += u64_from_index(tail.len());
+            }
+        }
+        let mut losses = Vec::new();
+        let curves = decode_sketch_curve_identities_from_stream(
+            &short,
+            &short_meta,
             "Design/BulkStream.dat",
-            &mut Vec::new()
-        ),
-        Err(cadmpeg_core::CodecError::Malformed(_))
-    ));
+            &mut losses,
+        )
+        .expect("indexed sketch curves with a short tail");
+        assert_eq!(curves[0].tail_marker, Some(marker));
+        let codes = losses
+            .iter()
+            .map(|loss| loss.code.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            codes,
+            [
+                F3dLossCode::SketchCurveTailMarkerAssumed.kind(),
+                F3dLossCode::SketchCurveTailConstructionAssumed.kind(),
+            ],
+            "marker {marker}"
+        );
+        assert!(losses.iter().all(|loss| loss
+            .message
+            .starts_with("1 planar sketch curve(s) in Design/BulkStream.dat")));
+    }
 }
 
 #[test]
@@ -758,6 +862,34 @@ fn sketch_text_record_refuses_a_payload_that_does_not_end_on_its_owner() {
     let mut bytes = sketch_text_record(&[("textex_tag", 109)], [None, None], None);
     bytes.push(0);
     assert!(decode_sketch_text(&bytes).is_none());
+}
+
+#[test]
+fn textex_tag_sketch_text_record_admits_four_zero_bytes_before_its_owner() {
+    let plain = sketch_text_record(
+        &[("textex_tag", 109)],
+        [None, None],
+        Some((2.175, -0.5, 0.0)),
+    );
+    let owner_at = plain.len() - 11;
+    let mut padded = plain[..owner_at].to_vec();
+    padded.extend_from_slice(&[0; 4]);
+    padded.extend_from_slice(&plain[owner_at..]);
+    let text = decode_sketch_text(&padded).expect("padded sketch text record");
+    assert_eq!(text.owner_reference, 201);
+    assert_eq!(text.text, "path text");
+    assert_eq!(
+        text.placement().map(|placement| placement.anchor.get()),
+        Some(cadmpeg_ir::math::Point2::new(21.75, -5.0))
+    );
+
+    let mut nonzero = padded.clone();
+    nonzero[owner_at + 1] = 1;
+    assert!(decode_sketch_text(&nonzero).is_none());
+    let mut overlong = plain[..owner_at].to_vec();
+    overlong.extend_from_slice(&[0; 5]);
+    overlong.extend_from_slice(&plain[owner_at..]);
+    assert!(decode_sketch_text(&overlong).is_none());
 }
 
 #[test]

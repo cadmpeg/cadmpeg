@@ -3,20 +3,22 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::decode::append_design_losses;
+use cadmpeg_ir::features::edge_treatments::RadiusSpec;
+use cadmpeg_ir::features::operation_settings::{BodyRetentionMode, BooleanOp};
+use cadmpeg_ir::features::parameters::DesignParameter;
+use cadmpeg_ir::features::patterns::{PatternKind, PatternTransform};
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::selections::{BodySelection, EdgeSelection, FaceSelection};
+use cadmpeg_ir::features::surface_inputs::{RuledSurfaceMode, SurfaceContinuity};
+use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
+use cadmpeg_ir::features::{
+    Feature, FeatureDefinition, FeatureId, FeatureOperation, FeatureSourceContent, ParameterId,
+    UnresolvedFamily,
+};
 use cadmpeg_ir::ids::{BodyId, EdgeId};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::CadIr;
-use cadmpeg_ir::{
-    features::{
-        edge_treatments::RadiusSpec,
-        patterns::{PatternKind, PatternTransform},
-        BodyRetentionMode, BodySelection, BooleanOp, DesignParameter, EdgeSelection, FaceSelection,
-        Feature, FeatureDefinition, FeatureId, FeatureOperation, FeatureSourceContent,
-        FeatureTreeNodeRole, ParameterId, PathRef, RuledSurfaceMode, SurfaceContinuity,
-        UnresolvedFamily,
-    },
-    scalar::{Angle, Length},
-};
 use std::collections::BTreeMap;
 
 #[test]
@@ -52,7 +54,7 @@ fn surface_untrim_requires_resolved_faces_loops_and_distance() {
             "id": "synthetic:test:feature#untrim", "ordinal": 0, "suppressed": false, "definition": definition, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []})).unwrap());
         let mut report = super::empty_report(true);
         append_design_losses(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &ir,
             &mut report,
         )
@@ -74,26 +76,30 @@ fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            definition,
+        ),
         native_ref: None,
     };
     ir.model.features.push(feature(
         "synthetic:test:id#complete-helix",
         0,
         FeatureDefinition::Operation(FeatureOperation::Helix {
-            axis_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                .unwrap(),
-            axis_direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+            axis_origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                0.0, 0.0, 0.0,
+            ))
+            .unwrap(),
+            axis_direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
                 0.0, 0.0, 1.0,
             ))
             .unwrap(),
             radius: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
-            shape: cadmpeg_ir::features::HelixShape::Cylindrical {
+            shape: cadmpeg_ir::features::sweeps::HelixShape::Cylindrical {
                 pitch: cadmpeg_ir::scalar::NonZeroLength::new(2.0).unwrap(),
             },
             revolutions: cadmpeg_ir::scalar::PositiveReal::new(3.0).unwrap(),
@@ -128,7 +134,7 @@ fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -154,15 +160,17 @@ fn design_completeness_audits_direct_body_and_shape_families() {
                 ordinal,
                 name: None,
                 suppressed: Some(false),
-                dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies)
-                    .unwrap(),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(
+                    dependencies,
+                )
+                .unwrap(),
                 source_properties: BTreeMap::new(),
                 source_tag: None,
                 source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
-                evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
                     definition,
-                    cadmpeg_ir::features::DistinctMembers::try_from(outputs).unwrap(),
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(outputs).unwrap(),
                 ),
                 native_ref: None,
             });
@@ -174,7 +182,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         Vec::new(),
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {
             bodies: BodySelection::Bodies(
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()])
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![body.clone()])
                     .expect("distinct bodies"),
             ),
         }),
@@ -200,11 +208,13 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         Vec::new(),
         FeatureDefinition::Operation(FeatureOperation::MirrorShape {
             source: BodySelection::Bodies(
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()])
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![body.clone()])
                     .expect("distinct bodies"),
             ),
-            plane_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                .unwrap(),
+            plane_origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                0.0, 0.0, 0.0,
+            ))
+            .unwrap(),
             plane_normal: cadmpeg_ir::units::UnitVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
             plane_reference: Some(FaceSelection::Native("plane".into())),
         }),
@@ -216,7 +226,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         Vec::new(),
         FeatureDefinition::Operation(FeatureOperation::SewBodies {
             bodies: (BodySelection::Bodies(
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
                     body.clone(),
                     other_body.clone(),
                 ])
@@ -235,16 +245,18 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![body.clone()])
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![body.clone()])
                         .expect("distinct bodies"),
                 ),
                 BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![other_body.clone()])
-                        .expect("distinct bodies"),
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+                        other_body.clone()
+                    ])
+                    .expect("distinct bodies"),
                 ),
             )
             .unwrap(),
-            keep: cadmpeg_ir::features::BodyTrimSide::Unresolved,
+            keep: cadmpeg_ir::features::operation_settings::BodyTrimSide::Unresolved,
         }),
     );
     push(
@@ -254,7 +266,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         Vec::new(),
         FeatureDefinition::Operation(FeatureOperation::ImportedGeometry {
             path: "  ".to_owned().try_into().unwrap(),
-            format: cadmpeg_ir::features::GeometryImportFormat::Step,
+            format: cadmpeg_ir::features::operation_settings::GeometryImportFormat::Step,
         }),
     );
     push(
@@ -265,11 +277,11 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         FeatureDefinition::Operation(FeatureOperation::SectionShape {
             operands: cadmpeg_ir::features::SectionOperands::new(
                 BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![body])
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![body])
                         .expect("distinct bodies"),
                 ),
                 BodySelection::Bodies(
-                    cadmpeg_ir::features::DistinctMembers::try_from(vec![other_body])
+                    cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![other_body])
                         .expect("distinct bodies"),
                 ),
             )
@@ -280,7 +292,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -303,11 +315,12 @@ fn design_completeness_audits_typed_construction_families() {
     .expect("identity grammar")]);
     let definitions = [
         FeatureDefinition::Operation(FeatureOperation::PointGeometry {
-            position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+            position: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .unwrap(),
         }),
         FeatureDefinition::Operation(FeatureOperation::Primitive {
-            solid: cadmpeg_ir::features::PrimitiveSolid::new(
-                cadmpeg_ir::features::PrimitiveSolidKind::Box {
+            solid: cadmpeg_ir::features::primitives::PrimitiveSolid::new(
+                cadmpeg_ir::features::primitives::PrimitiveSolidKind::Box {
                     length: Length::new(1.0).unwrap(),
                     width: Length::new(2.0).unwrap(),
                     height: Length::new(3.0).unwrap(),
@@ -318,9 +331,9 @@ fn design_completeness_audits_typed_construction_families() {
             op: BooleanOp::NewBody,
         }),
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
-            profile: cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch),
+            profile: cadmpeg_ir::features::profiles::PlanarProfileRef::Sketch(sketch),
             thickness: cadmpeg_ir::scalar::PositiveLength::new(1.0),
-            side: Some(cadmpeg_ir::features::SheetMetalThicknessSide::Symmetric),
+            side: Some(cadmpeg_ir::features::sheet_metal_forms::SheetMetalThicknessSide::Symmetric),
         }),
         FeatureDefinition::Operation(FeatureOperation::Block {
             dimensions: None,
@@ -331,34 +344,35 @@ fn design_completeness_audits_typed_construction_families() {
             sources: PathRef::Native("sources".into()),
             support_face: face.clone(),
             direction: cadmpeg_ir::units::UnitVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
-            mode: cadmpeg_ir::features::SurfaceProjectionMode::All,
+            mode: cadmpeg_ir::features::surface_inputs::SurfaceProjectionMode::All,
             height: cadmpeg_ir::scalar::NonNegativeLength::new(0.0).unwrap(),
             offset: Length::new(0.0).unwrap(),
         }),
         FeatureDefinition::Operation(FeatureOperation::Coil {
-            construction: cadmpeg_ir::features::CoilConstruction {
-                placement: cadmpeg_ir::features::CoilPlacement::Native {
-                    native_ref: cadmpeg_ir::features::SelectionReference::try_from(String::from(
-                        "placement",
-                    ))
+            construction: cadmpeg_ir::features::sweeps::CoilConstruction {
+                placement: cadmpeg_ir::features::sweeps::CoilPlacement::Native {
+                    native_ref: cadmpeg_ir::features::selections::SelectionReference::try_from(
+                        String::from("placement"),
+                    )
                     .unwrap(),
                 },
                 diameter: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
-                extent: cadmpeg_ir::features::CoilExtent::RevolutionsHeight {
+                extent: cadmpeg_ir::features::sweeps::CoilExtent::RevolutionsHeight {
                     revolutions: cadmpeg_ir::scalar::PositiveReal::new(2.0).unwrap(),
                     height: Length::new(5.0).unwrap(),
                 },
-                section: cadmpeg_ir::features::CoilSection::Circular {
+                section: cadmpeg_ir::features::sweeps::CoilSection::Circular {
                     diameter: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
                 },
-                section_placement: cadmpeg_ir::features::CoilSectionPlacement::Center,
+                section_placement: cadmpeg_ir::features::sweeps::CoilSectionPlacement::Center,
                 clockwise: false,
                 taper: Angle::new(0.0).unwrap(),
             },
-            result: cadmpeg_ir::features::SolidFeatureResult::NewBody {},
+            result: cadmpeg_ir::features::operation_settings::SolidFeatureResult::NewBody {},
         }),
         FeatureDefinition::Operation(FeatureOperation::Sphere {
-            center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+            center: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .unwrap(),
             radius: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
             op: BooleanOp::Unresolved,
         }),
@@ -377,10 +391,10 @@ fn design_completeness_audits_typed_construction_families() {
         }),
         FeatureDefinition::Operation(FeatureOperation::BoundaryFill {
             tools: BodySelection::Bodies(
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![body])
+                cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![body])
                     .expect("distinct bodies"),
             ),
-            cells: cadmpeg_ir::features::NonEmptyMembers::one(
+            cells: cadmpeg_ir::features::selections::NonEmptyMembers::one(
                 cadmpeg_ir::features::boundary_fill::BoundaryFillCell::BodyRegion(
                     BodySelection::Unresolved,
                 ),
@@ -398,19 +412,21 @@ fn design_completeness_audits_typed_construction_families() {
             ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+                definition,
+            ),
             native_ref: None,
         });
     }
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -432,12 +448,15 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies).unwrap(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(dependencies)
+            .unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            definition,
+        ),
         native_ref: None,
     };
     ir.model.features.push(feature(
@@ -446,13 +465,13 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
         Vec::new(),
         FeatureDefinition::Operation(FeatureOperation::TreeNode {
             role: FeatureTreeNodeRole::History,
-            children: cadmpeg_ir::features::TreeChildren::default(),
+            children: cadmpeg_ir::features::tree::TreeChildren::default(),
         }),
     ));
     let shape = |sources| {
         FeatureDefinition::Operation(FeatureOperation::Binder {
             sources,
-            construction: cadmpeg_ir::features::BinderConstruction::Shape {
+            construction: cadmpeg_ir::features::binders::BinderConstruction::Shape {
                 trace_support: false,
             },
         })
@@ -461,8 +480,8 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
         "synthetic:test:id#complete",
         1,
         vec![source.clone()],
-        shape(vec![cadmpeg_ir::features::BinderSource {
-            target: cadmpeg_ir::features::BinderTarget::Feature {
+        shape(vec![cadmpeg_ir::features::binders::BinderSource {
+            target: cadmpeg_ir::features::binders::BinderTarget::Feature {
                 feature: source.clone(),
             },
             subelements: vec![cadmpeg_core::text::NonBlankString::new("Face1").unwrap()],
@@ -472,8 +491,8 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
         "synthetic:test:id#native",
         2,
         Vec::new(),
-        shape(vec![cadmpeg_ir::features::BinderSource {
-            target: cadmpeg_ir::features::BinderTarget::Native {
+        shape(vec![cadmpeg_ir::features::binders::BinderSource {
+            target: cadmpeg_ir::features::binders::BinderTarget::Native {
                 reference: cadmpeg_core::text::NonBlankString::new("source").unwrap(),
             },
             subelements: Vec::new(),
@@ -484,15 +503,15 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
         3,
         Vec::new(),
         shape(vec![
-            cadmpeg_ir::features::BinderSource {
-                target: cadmpeg_ir::features::BinderTarget::External {
+            cadmpeg_ir::features::binders::BinderSource {
+                target: cadmpeg_ir::features::binders::BinderTarget::External {
                     document: cadmpeg_core::text::NonBlankString::new("a.FCStd").unwrap(),
                     object: cadmpeg_core::text::NonBlankString::new("Body").unwrap(),
                 },
                 subelements: Vec::new(),
             },
-            cadmpeg_ir::features::BinderSource {
-                target: cadmpeg_ir::features::BinderTarget::External {
+            cadmpeg_ir::features::binders::BinderSource {
+                target: cadmpeg_ir::features::binders::BinderTarget::External {
                     document: cadmpeg_core::text::NonBlankString::new("b.FCStd").unwrap(),
                     object: cadmpeg_core::text::NonBlankString::new("Body").unwrap(),
                 },
@@ -503,7 +522,7 @@ fn binder_completeness_requires_resolved_targets_and_shape_arity() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -521,18 +540,20 @@ fn post_process_completeness_delegates_to_the_wrapped_operation() {
     let post_process = |operation: FeatureOperation| FeatureDefinition::PostProcess {
         operation,
         refine: true,
-        fuzzy_tolerance: cadmpeg_ir::features::FuzzyTolerance::KernelDefault,
+        fuzzy_tolerance: cadmpeg_ir::features::operation_settings::FuzzyTolerance::KernelDefault,
     };
     for (ordinal, definition) in [
         post_process(FeatureOperation::Helix {
-            axis_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                .unwrap(),
-            axis_direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+            axis_origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                0.0, 0.0, 0.0,
+            ))
+            .unwrap(),
+            axis_direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
                 0.0, 0.0, 1.0,
             ))
             .unwrap(),
             radius: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
-            shape: cadmpeg_ir::features::HelixShape::Cylindrical {
+            shape: cadmpeg_ir::features::sweeps::HelixShape::Cylindrical {
                 pitch: cadmpeg_ir::scalar::NonZeroLength::new(2.0).unwrap(),
             },
             revolutions: cadmpeg_ir::scalar::PositiveReal::new(3.0).unwrap(),
@@ -555,19 +576,21 @@ fn post_process_completeness_delegates_to_the_wrapped_operation() {
             ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+                definition,
+            ),
             native_ref: None,
         });
     }
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -634,10 +657,14 @@ fn design_completeness_recurses_through_pattern_operands() {
         (
             4,
             PatternKind::new(PatternTransform::Circular {
-                axis_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                    .unwrap(),
-                axis_dir: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
-                    .unwrap(),
+                axis_origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                    0.0, 0.0, 0.0,
+                ))
+                .unwrap(),
+                axis_dir: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
+                    0.0, 0.0, 1.0,
+                ))
+                .unwrap(),
                 angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
                 count: 4,
             })
@@ -651,12 +678,12 @@ fn design_completeness_recurses_through_pattern_operands() {
             ordinal,
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Pattern {
                     seeds: vec![seed.clone()],
                     pattern,
@@ -668,7 +695,7 @@ fn design_completeness_recurses_through_pattern_operands() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -684,14 +711,14 @@ fn design_completeness_recurses_through_pattern_operands() {
 fn design_completeness_checks_secondary_sweep_and_loft_paths() {
     let mut ir = CadIr::empty();
     let sketch = cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch").unwrap();
-    let planar_profile = cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch.clone());
-    let profile = cadmpeg_ir::features::ProfileRef::Planar(planar_profile.clone());
+    let planar_profile = cadmpeg_ir::features::profiles::PlanarProfileRef::Sketch(sketch.clone());
+    let profile = cadmpeg_ir::features::profiles::ProfileRef::Planar(planar_profile.clone());
     let path = PathRef::Sketch(sketch);
     let sweep = |sections, orientation| {
         FeatureDefinition::Operation(FeatureOperation::Sweep {
-            shape: cadmpeg_ir::features::SweepShape::sheet_sections(
-                cadmpeg_ir::features::SweepMode::Surface {},
-                cadmpeg_ir::features::SweepSection::Profile(planar_profile.clone()),
+            shape: cadmpeg_ir::features::sweeps::SweepShape::sheet_sections(
+                cadmpeg_ir::features::sweeps::SweepMode::Surface {},
+                cadmpeg_ir::features::sweeps::SweepSection::Profile(planar_profile.clone()),
                 sections,
             ),
             path: Some(path.clone()),
@@ -710,14 +737,14 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
     };
     let definitions = [
         sweep(
-            vec![cadmpeg_ir::features::SweepSection::Profile(
-                cadmpeg_ir::features::PlanarProfileRef::Native("section".into()),
+            vec![cadmpeg_ir::features::sweeps::SweepSection::Profile(
+                cadmpeg_ir::features::profiles::PlanarProfileRef::Native("section".into()),
             )],
             None,
         ),
         sweep(
             Vec::new(),
-            Some(cadmpeg_ir::features::SweepOrientation::Auxiliary {
+            Some(cadmpeg_ir::features::sweeps::SweepOrientation::Auxiliary {
                 path: PathRef::Native("auxiliary".into()),
                 tangent: false,
                 curvilinear: false,
@@ -725,8 +752,8 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
         ),
         FeatureDefinition::Operation(FeatureOperation::Loft {
             sections: vec![
-                cadmpeg_ir::features::LoftSection::Profile(profile.clone()),
-                cadmpeg_ir::features::LoftSection::Profile(profile.clone()),
+                cadmpeg_ir::features::profiles::LoftSection::Profile(profile.clone()),
+                cadmpeg_ir::features::profiles::LoftSection::Profile(profile.clone()),
             ],
             guidance: cadmpeg_ir::features::LoftGuidance::Centerline(PathRef::Native(
                 "centerline".into(),
@@ -749,19 +776,21 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
             ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+                definition,
+            ),
             native_ref: None,
         });
     }
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -777,8 +806,8 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
 fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
     let mut ir = CadIr::empty();
     let sketch = cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch").unwrap();
-    let planar_profile = cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch.clone());
-    let profile = cadmpeg_ir::features::ProfileRef::Planar(planar_profile.clone());
+    let planar_profile = cadmpeg_ir::features::profiles::PlanarProfileRef::Sketch(sketch.clone());
+    let profile = cadmpeg_ir::features::profiles::ProfileRef::Planar(planar_profile.clone());
     let path = PathRef::Sketch(sketch);
     let face = FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
         "test:model:entity#face",
@@ -788,9 +817,9 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
         FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: profile.clone(),
             direction,
-            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
-            extent: cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::ExtrudeSide {
+            start: cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {},
+            extent: cadmpeg_ir::features::extents::ExtrudeExtent::OneSided {
+                side: cadmpeg_ir::features::extents::ExtrudeSide {
                     termination,
                     draft: None,
                 },
@@ -807,21 +836,22 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
         FeatureDefinition::Operation(FeatureOperation::ProjectedCurve {
             source: path.clone(),
             target_faces: face.clone(),
-            direction: cadmpeg_ir::features::CurveProjectionDirection::State(
-                cadmpeg_ir::features::CurveProjectionDirectionState::Unresolved,
+            direction: cadmpeg_ir::features::surface_inputs::CurveProjectionDirection::State(
+                cadmpeg_ir::features::surface_inputs::CurveProjectionDirectionState::Unresolved,
             ),
             bidirectional: Some(false),
         }),
         extrude(
-            cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
-            cadmpeg_ir::features::LinearTermination::Blind {
+            cadmpeg_ir::features::extents::ExtrudeDirection::Unresolved {},
+            cadmpeg_ir::features::extents::LinearTermination::Blind {
                 length: cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap(),
             },
         ),
         extrude(
-            cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
-            cadmpeg_ir::features::LinearTermination::ToVertex {
-                vertex: cadmpeg_ir::features::VertexSelection::native("vertex".into()).unwrap(),
+            cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {},
+            cadmpeg_ir::features::extents::LinearTermination::ToVertex {
+                vertex: cadmpeg_ir::features::selections::VertexSelection::native("vertex".into())
+                    .unwrap(),
             },
         ),
         FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
@@ -837,12 +867,13 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
         FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
             faces: face.clone(),
             distance: Some(cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap()),
-            method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
+            method: cadmpeg_ir::features::surface_inputs::SurfaceExtension::Unresolved,
         }),
         FeatureDefinition::Operation(FeatureOperation::FilledSurface {
-            boundary: cadmpeg_ir::features::SurfaceBoundary::Path(path.clone()),
+            boundary: cadmpeg_ir::features::surface_inputs::SurfaceBoundary::Path(path.clone()),
             support_faces: face.clone(),
-            continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::unresolved(),
+            continuity:
+                cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuityState::unresolved(),
             merge_result: Some(false),
             interior_constraints: Vec::new(),
             reverse_normal: None,
@@ -850,11 +881,11 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
             faces: face.clone(),
             tool: path.clone(),
-            keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+            keep: cadmpeg_ir::features::surface_inputs::TrimRegion::Unresolved,
         }),
         FeatureDefinition::Operation(FeatureOperation::Draft {
             faces: face.clone(),
-            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+            anchor: cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane {
                 plane: face.clone(),
                 pull: None,
             },
@@ -865,8 +896,8 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
         FeatureDefinition::Operation(FeatureOperation::ProjectedCurve {
             source: path,
             target_faces: face,
-            direction: cadmpeg_ir::features::CurveProjectionDirection::State(
-                cadmpeg_ir::features::CurveProjectionDirectionState::TargetNormal,
+            direction: cadmpeg_ir::features::surface_inputs::CurveProjectionDirection::State(
+                cadmpeg_ir::features::surface_inputs::CurveProjectionDirectionState::TargetNormal,
             ),
             bidirectional: Some(false),
         }),
@@ -879,19 +910,21 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
             ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+                definition,
+            ),
             native_ref: None,
         });
     }
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -913,19 +946,21 @@ fn empty_required_operands_are_incomplete_design_semantics() {
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            definition,
+        ),
         native_ref: None,
     };
     ir.model.features.extend([
         feature(
             0,
             FeatureDefinition::Operation(FeatureOperation::Fillet {
-                groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(
                     cadmpeg_ir::features::edge_treatments::FilletGroup {
                         edges: EdgeSelection::Edges(Vec::new()),
                         radius: RadiusSpec::Constant {
@@ -946,14 +981,18 @@ fn empty_required_operands_are_incomplete_design_semantics() {
         feature(
             2,
             FeatureDefinition::Operation(FeatureOperation::DeleteBody {
-                bodies: BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::default()),
+                bodies: BodySelection::Bodies(
+                    cadmpeg_ir::features::selections::DistinctMembers::default(),
+                ),
                 mode: BodyRetentionMode::DeleteSelected,
             }),
         ),
         feature(
             3,
             FeatureDefinition::Operation(FeatureOperation::CompositeCurve {
-                segments: cadmpeg_ir::features::NonEmptyMembers::one(PathRef::Edges(Vec::new())),
+                segments: cadmpeg_ir::features::selections::NonEmptyMembers::one(PathRef::Edges(
+                    Vec::new(),
+                )),
                 closed: false,
             }),
         ),
@@ -973,13 +1012,16 @@ fn empty_required_operands_are_incomplete_design_semantics() {
         feature(
             5,
             FeatureDefinition::Operation(FeatureOperation::FilledSurface {
-                boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Edges(vec![
-                    EdgeId::mint("test:model:entity#boundary").expect("identity grammar"),
-                ])),
-                support_faces: FaceSelection::Faces(Vec::new()),
-                continuity: cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
-                    SurfaceContinuity::Contact,
+                boundary: cadmpeg_ir::features::surface_inputs::SurfaceBoundary::Edges(
+                    EdgeSelection::Edges(vec![
+                        EdgeId::mint("test:model:entity#boundary").expect("identity grammar")
+                    ]),
                 ),
+                support_faces: FaceSelection::Faces(Vec::new()),
+                continuity:
+                    cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuityState::uniform(
+                        SurfaceContinuity::Contact,
+                    ),
                 merge_result: Some(false),
                 interior_constraints: Vec::new(),
                 reverse_normal: None,
@@ -993,9 +1035,9 @@ fn empty_required_operands_are_incomplete_design_semantics() {
                 ]),
                 support_faces: FaceSelection::Faces(Vec::new()),
                 mode: RuledSurfaceMode::Direction {
-                    direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                        0.0, 0.0, 1.0,
-                    ))
+                    direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(
+                        Vector3::new(0.0, 0.0, 1.0),
+                    )
                     .unwrap(),
                     distance: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
                 },
@@ -1007,7 +1049,7 @@ fn empty_required_operands_are_incomplete_design_semantics() {
         feature(
             7,
             FeatureDefinition::Operation(FeatureOperation::Fillet {
-                groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(
                     cadmpeg_ir::features::edge_treatments::FilletGroup {
                         edges: EdgeSelection::Edges(vec![
                             EdgeId::mint("test:model:entity#edge").expect("identity grammar")
@@ -1024,7 +1066,7 @@ fn empty_required_operands_are_incomplete_design_semantics() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -1046,9 +1088,11 @@ fn hole_completeness_checks_optional_operands_when_present() {
             face: None,
             direction: None,
             placements: Some(vec![cadmpeg_ir::features::holes::HolePlacement::Directed {
-                position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                    .unwrap(),
-                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                position: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                    0.0, 0.0, 0.0,
+                ))
+                .unwrap(),
+                direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(Vector3::new(
                     0.0, 0.0, 1.0,
                 ))
                 .unwrap(),
@@ -1061,7 +1105,7 @@ fn hole_completeness_checks_optional_operands_when_present() {
                 Some(cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap()),
             )
             .unwrap(),
-            extent: Some(cadmpeg_ir::features::LinearTermination::ThroughAll {}),
+            extent: Some(cadmpeg_ir::features::extents::LinearTermination::ThroughAll {}),
             bottom: None,
             taper_angle: None,
             allow_multi_profile_faces: None,
@@ -1069,7 +1113,7 @@ fn hole_completeness_checks_optional_operands_when_present() {
     };
     for (ordinal, definition) in [
         hole(
-            Some(cadmpeg_ir::features::PlanarProfileRef::Native(
+            Some(cadmpeg_ir::features::profiles::PlanarProfileRef::Native(
                 "profile".into(),
             )),
             None,
@@ -1090,19 +1134,21 @@ fn hole_completeness_checks_optional_operands_when_present() {
             ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: None,
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+                definition,
+            ),
             native_ref: None,
         });
     }
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -1124,15 +1170,15 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         ordinal: 0,
         name: Some("Boss-Extrude1".into()),
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
-                children: cadmpeg_ir::features::TreeChildren::default(),
+                children: cadmpeg_ir::features::tree::TreeChildren::default(),
             }),
         ),
         native_ref: None,
@@ -1145,10 +1191,10 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         name: "D0".into(),
         expression: "1mm".into(),
         display: None,
-        value: Some(cadmpeg_ir::features::ParameterValue::Length(
+        value: Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             Length::new(1.0).unwrap(),
         )),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1162,7 +1208,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         expression: "\"D0@Boss-Extrude1\" + Missing@Sketch1".into(),
         display: None,
         value: None,
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1175,10 +1221,10 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         name: "D2".into(),
         expression: "D99 + 1".into(),
         display: None,
-        value: Some(cadmpeg_ir::features::ParameterValue::Real(
+        value: Some(cadmpeg_ir::features::parameters::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
         )),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1191,10 +1237,10 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         name: "D3".into(),
         expression: "\"D0@Boss-Extrude1".into(),
         display: None,
-        value: Some(cadmpeg_ir::features::ParameterValue::Real(
+        value: Some(cadmpeg_ir::features::parameters::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
         )),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1208,11 +1254,13 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         name: "D4".into(),
         expression: "D5".into(),
         display: None,
-        value: Some(cadmpeg_ir::features::ParameterValue::Real(
+        value: Some(cadmpeg_ir::features::parameters::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(2.0).unwrap(),
         )),
-        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(vec![future.clone()])
-            .unwrap(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![
+            future.clone()
+        ])
+        .unwrap(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1225,10 +1273,10 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         name: "D5".into(),
         expression: "1".into(),
         display: None,
-        value: Some(cadmpeg_ir::features::ParameterValue::Real(
+        value: Some(cadmpeg_ir::features::parameters::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
         )),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1241,10 +1289,10 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         name: "D6".into(),
         expression: "D0 + 1mm".into(),
         display: None,
-        value: Some(cadmpeg_ir::features::ParameterValue::Length(
+        value: Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             Length::new(2.0).unwrap(),
         )),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1258,10 +1306,10 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         name: "D7".into(),
         expression: "unsupported(1)".into(),
         display: None,
-        value: Some(cadmpeg_ir::features::ParameterValue::Real(
+        value: Some(cadmpeg_ir::features::parameters::ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
         )),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1281,10 +1329,10 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
             name: name.into(),
             expression: "1".into(),
             display: None,
-            value: Some(cadmpeg_ir::features::ParameterValue::Real(
+            value: Some(cadmpeg_ir::features::parameters::ParameterValue::Real(
                 cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
             )),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -1293,7 +1341,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -1321,15 +1369,16 @@ fn incoherent_feature_graph_is_reported_as_design_loss() {
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::try_from(dependencies).unwrap(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(dependencies)
+            .unwrap(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
-                children: cadmpeg_ir::features::TreeChildren::default(),
+                children: cadmpeg_ir::features::tree::TreeChildren::default(),
             }),
         ),
         native_ref: None,
@@ -1361,7 +1410,7 @@ fn incoherent_feature_graph_is_reported_as_design_loss() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -1384,24 +1433,24 @@ fn missing_feature_outputs_are_reported_as_design_loss() {
     ir.model.parameters.clear();
     let body = ir.geometry.bodies[0].id.clone();
     let repeated = vec![body.clone(), body.clone()];
-    assert!(cadmpeg_ir::features::DistinctMembers::try_from(repeated,).is_err());
+    assert!(cadmpeg_ir::features::selections::DistinctMembers::try_from(repeated,).is_err());
     let feature = |id: &str, ordinal: u64, outputs: Vec<BodyId>| Feature {
         product_definition: None,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
-                children: cadmpeg_ir::features::TreeChildren::default(),
+                children: cadmpeg_ir::features::tree::TreeChildren::default(),
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(outputs)
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(outputs)
                 .expect("distinct output fixture"),
         ),
         native_ref: None,
@@ -1417,7 +1466,7 @@ fn missing_feature_outputs_are_reported_as_design_loss() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -1433,10 +1482,11 @@ fn thin_operation_ambiguity_has_a_stable_loss() {
     use crate::records::{
         Feature, FeatureHistory, FeatureInputLane, FeatureInputName, FeatureSource, ObjectId,
     };
-    use cadmpeg_ir::features::{
-        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FeatureDefinition,
-        FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
+    use cadmpeg_ir::features::extents::{
+        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
     };
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::sketches::SketchId;
 
     let mut payload = vec![0; 40];
@@ -1512,13 +1562,15 @@ fn thin_operation_ambiguity_has_a_stable_loss() {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
             native_ref: Some("sldprt:history:feature#0:0".into()),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+                definition,
+            ),
         }];
         let histories = [FeatureHistory {
             id: "sldprt:history:feature-history#0".into(),
@@ -1531,7 +1583,7 @@ fn thin_operation_ambiguity_has_a_stable_loss() {
 
         let mut ir = CadIr::empty();
         ir.model.features = features.to_vec();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut native_lanes = lanes.to_vec();
         for lane in &mut native_lanes {
             let mut payload = vec![0; 64];
