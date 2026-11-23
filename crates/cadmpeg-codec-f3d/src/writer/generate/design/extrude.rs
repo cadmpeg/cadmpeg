@@ -2,20 +2,15 @@
 //! The source's one sketch-driven extrude as a Fusion `Extrude` item in
 //! place of the Base Feature (cadir-v11.md §3.4, Geometry-true; f3d.md §3.1,
 //! "Records of a sketch-driven Extrude", "Side faces" and "Side-face walk"):
-//! which extrude the writer writes with its state and its names, and why it
-//! writes the Base Feature otherwise.
+//! the rows of an extrude after the shared rows of [`super::item`], and the
+//! names of its result.
 
 use std::collections::HashMap;
 
-use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
-use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::shared::{Limit, Span};
 use cadmpeg_ir::design::ops::swept::{Extrude, ExtrudeDirection, ExtrudeOrigin};
 use cadmpeg_ir::design::options::{BodyForm, Boolean, BooleanOp};
-use cadmpeg_ir::design::refs::{Member, Position};
-use cadmpeg_ir::design::scope::DesignScope;
-use cadmpeg_ir::design::selection::{PickTarget, Picks};
 use cadmpeg_ir::design::units::{Quantity, UnitSymbol};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId;
@@ -24,16 +19,14 @@ use cadmpeg_ir::ids::{BodyId, CoedgeId, EdgeId, FaceId};
 use cadmpeg_ir::topology::Sense;
 
 use super::expression;
+use super::item::{Profiled, Rows};
 use super::parameters::{OwnedParameter, ParameterPlan};
-use super::sketch::{CurveGeometry, PlannedSketch, SketchPlan};
+use super::sketch::{CurveGeometry, PlannedSketch};
 
-use profile::{profile, ProfileLoop};
+use profile::ProfileLoop;
 
 pub(super) mod profile;
 
-/// The smallest linear tolerance the profile and the faces are checked
-/// with, in mm: the decoder's linear resolution.
-const MIN_LINEAR_TOLERANCE: f64 = 1e-5;
 /// Millimetres per Fusion length unit (cm).
 const MM_PER_CM: f64 = 10.0;
 
@@ -92,365 +85,166 @@ fn entries(profile: &[ProfileLoop], reversed: bool) -> impl Iterator<Item = (&Pr
     })
 }
 
-/// What the design writes for the scope's extrude.
-#[derive(Debug)]
-pub(super) enum Decision<'a> {
-    /// The scope holds no typed extrude among its geometry features.
-    None,
-    Extrude(Box<ExtrudePlan<'a>>),
-    /// The extrude stays in the Base Feature, for `reason`.
-    BaseFeature {
-        feature: &'a FeatureId,
-        reason: String,
-    },
-}
-
-impl Decision<'_> {
-    /// Whether `feature` is written as the `Extrude` item.
-    pub(super) fn writes(&self, feature: &FeatureId) -> bool {
-        matches!(self, Self::Extrude(plan) if plan.feature == feature)
-    }
-
-    /// The reason the Base Feature holds `feature`, where the extrude is it.
-    pub(super) fn reason(&self, feature: &FeatureId) -> Option<&str> {
-        match self {
-            Self::BaseFeature {
-                feature: extrude,
-                reason,
-            } if *extrude == feature => Some(reason),
-            Self::None | Self::Extrude(_) | Self::BaseFeature { .. } => None,
-        }
-    }
-}
-
-/// The decision for the scope's features in timeline order. `failure` is the
-/// error of an earlier attempt to write the `Extrude` form. A written
-/// extrude whose depth binds a parameter takes that parameter out of
-/// `parameters`; its two parameters take the source ordinals `ordinal` and
-/// `ordinal + 1`.
-pub(super) fn plan<'a>(
-    target: &'a CadIr,
-    scope: &'a DesignScope,
-    features: &[&'a FeatureId],
-    sketches: &SketchPlan<'a>,
-    parameters: &mut ParameterPlan,
-    failure: Option<&str>,
-    ordinal: u32,
-) -> Decision<'a> {
-    let stateful = features
-        .iter()
-        .enumerate()
-        .filter(|(_, feature)| !target.is_stateless(feature, None).unwrap_or(false))
-        .collect::<Vec<_>>();
-    let Some((position, feature, extrude)) = stateful.iter().find_map(|(position, feature)| {
-        typed_extrude(target, feature).map(|extrude| (*position, **feature, extrude))
-    }) else {
-        return Decision::None;
-    };
-    let base = |reason: String| Decision::BaseFeature { feature, reason };
-    if let Some(failure) = failure {
-        return base(format!("the writer cannot write its records ({failure})"));
-    }
-    if stateful.len() > 1 {
-        return base("the timeline holds other geometry features".to_owned());
-    }
-    let input = Input {
-        target,
-        scope,
-        features,
-        sketches,
-        feature,
-        position,
-        extrude,
-    };
-    match input.plan(parameters, ordinal) {
-        Ok(plan) => Decision::Extrude(Box::new(plan)),
-        Err(reason) => base(reason.to_owned()),
-    }
-}
-
-fn typed_extrude<'a>(target: &'a CadIr, feature: &FeatureId) -> Option<&'a Extrude> {
-    let record = target.design.features.iter().find(|f| &f.id == feature)?;
-    match &record.definition.operation {
-        FeatureOperation::Extrude(extrude) => Some(extrude.as_ref()),
-        _ => None,
-    }
-}
-
-/// What the rows read.
-struct Input<'a, 'p> {
-    target: &'a CadIr,
-    scope: &'a DesignScope,
-    features: &'p [&'a FeatureId],
-    sketches: &'p SketchPlan<'a>,
-    feature: &'a FeatureId,
-    /// The extrude's position in `features`.
-    position: usize,
-    extrude: &'a Extrude,
-}
-
 /// The distance of a one-sided blind span, in mm, and its binding.
 enum Amount<'a> {
     Literal(f64),
     Parameter(&'a cadmpeg_ir::features::ParameterId),
 }
 
-impl<'a> Input<'a, '_> {
-    /// Rows 1 to 10 of the rule, in order; the first that fails names the
-    /// reason.
-    fn plan(
-        &self,
-        parameters: &mut ParameterPlan,
-        ordinal: u32,
-    ) -> Result<ExtrudePlan<'a>, &'static str> {
-        let target = self.target;
-        let [body] = target.geometry.bodies.as_slice() else {
-            return Err("the design holds more than one body");
-        };
-        self.rollback()?;
-        self.current(&body.id)?;
-        let (sketch, after) = self.sketch()?;
-        let planned = &self.sketches.items[sketch];
-        if planned.origin_plane().is_none() {
-            return Err("its sketch lies on a construction plane");
-        }
-        let linear = target.tolerances.linear.get().max(MIN_LINEAR_TOLERANCE);
-        let loops = profile(planned, linear / MM_PER_CM)?;
-        if planned.mirrored {
-            return Err("its sketch is written mirrored on its origin plane");
-        }
-        let reversed = self.direction()?;
-        let sign = if reversed { -1.0 } else { 1.0 };
-        let amount = self.amount()?;
-        let distance = match amount {
-            Amount::Literal(distance) => distance,
-            Amount::Parameter(parameter) => parameters
-                .length(parameter)
-                .ok_or("its depth parameter is not written as a length")?,
-        };
-        if distance.is_nan() || distance <= 0.0 {
-            return Err("its extent is not one-sided blind");
-        }
-        self.output()?;
-        let faces = Faces::new(target, &body.id, linear, target.tolerances.angular.get())
-            .matched(planned, &loops, distance, reversed)
-            .ok_or("its faces do not match its profile")?;
-        let taper_ordinal = ordinal
-            .checked_add(1)
-            .ok_or("its parameters exceed the source ordinals")?;
-        let taper_literal = expression::quantity_literal(0.0, Some(UnitSymbol::Deg))
-            .ok_or("its taper has no Fusion literal")?;
-        let along = match amount {
-            Amount::Literal(distance) => parameters.owned(
+/// The rows of `extrude` after the shared rows of `rows`, in order; the
+/// first that fails names the reason. A depth that binds a user parameter
+/// takes it out of `parameters`; the two owned parameters take the source
+/// ordinals `ordinal` and `ordinal + 1`.
+pub(super) fn plan<'a>(
+    rows: &Rows<'a, '_>,
+    extrude: &'a Extrude,
+    parameters: &mut ParameterPlan,
+    ordinal: u32,
+) -> Result<ExtrudePlan<'a>, &'static str> {
+    let target = rows.target;
+    let Profiled {
+        body,
+        sketch,
+        planned,
+        after,
+        preceding,
+        loops,
+        linear,
+    } = rows.profiled(&extrude.profile)?;
+    let reversed = direction(extrude)?;
+    let sign = if reversed { -1.0 } else { 1.0 };
+    let amount = amount(extrude)?;
+    let distance = match amount {
+        Amount::Literal(distance) => distance,
+        Amount::Parameter(parameter) => parameters
+            .length(parameter)
+            .ok_or("its depth parameter is not written as a length")?,
+    };
+    if distance.is_nan() || distance <= 0.0 {
+        return Err("its extent is not one-sided blind");
+    }
+    output(extrude)?;
+    let faces = Faces::new(target, body, linear, target.tolerances.angular.get())
+        .matched(planned, &loops, distance, reversed)
+        .ok_or("its faces do not match its profile")?;
+    let taper_ordinal = ordinal
+        .checked_add(1)
+        .ok_or("its parameters exceed the source ordinals")?;
+    let taper_literal = expression::quantity_literal(0.0, Some(UnitSymbol::Deg))
+        .ok_or("its taper has no Fusion literal")?;
+    let along = match amount {
+        Amount::Literal(distance) => parameters.owned(
+            ordinal,
+            expression::quantity_literal(sign * distance, Some(UnitSymbol::Mm))
+                .ok_or("its depth has no Fusion literal")?,
+            UnitSymbol::Mm,
+            sign * distance / MM_PER_CM,
+            false,
+        ),
+        Amount::Parameter(parameter) if reversed => {
+            let named = parameters
+                .name(parameter)
+                .ok_or("its depth parameter is not written as a length")?;
+            // `-D1`, the form Fusion files hold (f3d.md §3.1).
+            let negated = format!("-{named}");
+            parameters.owned(
                 ordinal,
-                expression::quantity_literal(sign * distance, Some(UnitSymbol::Mm))
-                    .ok_or("its depth has no Fusion literal")?,
+                negated,
                 UnitSymbol::Mm,
-                sign * distance / MM_PER_CM,
-                false,
-            ),
-            Amount::Parameter(parameter) if reversed => {
-                let named = parameters
-                    .name(parameter)
-                    .ok_or("its depth parameter is not written as a length")?;
-                // `-D1`, the form Fusion files hold (f3d.md §3.1).
-                let negated = format!("-{named}");
-                parameters.owned(
-                    ordinal,
-                    negated,
-                    UnitSymbol::Mm,
-                    -distance / MM_PER_CM,
-                    true,
-                )
-            }
-            Amount::Parameter(parameter) => {
-                match parameters.claim(parameter, Quantity::LENGTH, ordinal) {
-                    Some(claimed) => claimed,
-                    None => {
-                        let named = parameters
-                            .name(parameter)
-                            .ok_or("its depth parameter is not written as a length")?
-                            .to_owned();
-                        parameters.owned(ordinal, named, UnitSymbol::Mm, distance / MM_PER_CM, true)
-                    }
+                -distance / MM_PER_CM,
+                true,
+            )
+        }
+        Amount::Parameter(parameter) => {
+            match parameters.claim(parameter, Quantity::LENGTH, ordinal) {
+                Some(claimed) => claimed,
+                None => {
+                    let named = parameters
+                        .name(parameter)
+                        .ok_or("its depth parameter is not written as a length")?
+                        .to_owned();
+                    parameters.owned(ordinal, named, UnitSymbol::Mm, distance / MM_PER_CM, true)
                 }
             }
-        };
-        let taper = parameters.owned(taper_ordinal, taper_literal, UnitSymbol::Deg, 0.0, false);
-        Ok(ExtrudePlan {
-            feature: self.feature,
-            sketch,
-            after,
-            preceding: after
-                + self
-                    .sketches
-                    .planes
-                    .iter()
-                    .filter(|plane| plane.first < after)
-                    .count(),
-            profile: loops,
-            reversed,
-            along,
-            taper,
-            body: &body.id,
-            start_cap: faces.start_cap,
-            end_cap: faces.end_cap,
-            sides: faces.sides,
-            links: faces.links,
-        })
-    }
-
-    /// Row 2: the extrude's timeline is rolled to its end.
-    fn rollback(&self) -> Result<(), &'static str> {
-        let member = Member::Feature(self.feature.clone());
-        let container = self
-            .target
-            .design
-            .containers
-            .iter()
-            .find(|container| match container {
-                Container::Ordered { members, .. } => members.contains(&member),
-                Container::Unordered { .. } => false,
-            })
-            .ok_or("it is in no ordered timeline")?;
-        match container {
-            Container::Ordered {
-                rollback: Rollback::End,
-                ..
-            } => Ok(()),
-            Container::Ordered { .. } | Container::Unordered { .. } => {
-                Err("its timeline's rollback is not at the end")
-            }
         }
-    }
+    };
+    let taper = parameters.owned(taper_ordinal, taper_literal, UnitSymbol::Deg, 0.0, false);
+    Ok(ExtrudePlan {
+        feature: rows.feature,
+        sketch,
+        after,
+        preceding,
+        profile: loops,
+        reversed,
+        along,
+        taper,
+        body,
+        start_cap: faces.start_cap,
+        end_cap: faces.end_cap,
+        sides: faces.sides,
+        links: faces.links,
+    })
+}
 
-    /// Row 3: the current state is the state after the extrude or a later
-    /// member, and holds the one body.
-    fn current(&self, body: &BodyId) -> Result<(), &'static str> {
-        const NOT_ITS_RESULT: &str = "the current state is not its result";
-        let [state] = self.scope.current.as_slice() else {
-            return Err(NOT_ITS_RESULT);
-        };
-        let Position::After(Member::Feature(at)) = &state.at else {
-            return Err(NOT_ITS_RESULT);
-        };
-        let later = self
-            .features
-            .iter()
-            .position(|feature| *feature == at)
-            .is_some_and(|at| at >= self.position);
-        if !later || !matches!(state.bodies.as_slice(), [only] if only == body) {
-            return Err(NOT_ITS_RESULT);
-        }
-        Ok(())
-    }
-
-    /// Row 4: the profile is one written sketch before the extrude. Returns
-    /// its position in the plan and the number of written sketches before
-    /// the extrude.
-    fn sketch(&self) -> Result<(usize, usize), &'static str> {
-        const NOT_WRITTEN: &str = "its sketch is not written";
-        let Picks::Named(members) = &self.extrude.profile.picks else {
-            return Err(NOT_WRITTEN);
-        };
-        let [picked] = members.as_slice() else {
-            return Err(NOT_WRITTEN);
-        };
-        let PickTarget::Sketch(sketch) = &picked.target else {
-            return Err(NOT_WRITTEN);
-        };
-        let owner = self
-            .target
-            .design
-            .sketches
-            .iter()
-            .find(|record| &record.id == sketch)
-            .map(|record| &record.owner)
-            .ok_or(NOT_WRITTEN)?;
-        let position_of = |feature: &FeatureId| {
-            self.features
-                .iter()
-                .position(|candidate| *candidate == feature)
-        };
-        let index = self
-            .sketches
-            .items
-            .iter()
-            .position(|item| item.feature == owner)
-            .ok_or(NOT_WRITTEN)?;
-        if position_of(owner).is_none_or(|at| at >= self.position) {
-            return Err(NOT_WRITTEN);
-        }
-        let after = self
-            .sketches
-            .items
-            .iter()
-            .filter(|item| position_of(item.feature).is_some_and(|at| at < self.position))
-            .count();
-        Ok((index, after))
-    }
-
-    /// Row 7: along or against the profile normal from the profile plane,
-    /// with no draft, fit, outside region or sheet-metal cut. Returns
-    /// whether it runs against the normal.
-    fn direction(&self) -> Result<bool, &'static str> {
-        let extrude = self.extrude;
-        let reversed = match &extrude.direction {
+/// Row 7: along or against the profile normal from the profile plane, with
+/// no draft, fit, outside region or sheet-metal cut. Returns whether it runs
+/// against the normal.
+fn direction(extrude: &Extrude) -> Result<bool, &'static str> {
+    let reversed = match &extrude.direction {
+        None => Some(false),
+        Some(ExtrudeDirection::ProfileNormal { reversed }) => match reversed {
             None => Some(false),
-            Some(ExtrudeDirection::ProfileNormal { reversed }) => match reversed {
-                None => Some(false),
-                Some(Dimension::Literal(reversed)) => Some(*reversed),
-                Some(Dimension::Parameter(_) | Dimension::Negated(_)) => None,
-            },
-            Some(ExtrudeDirection::Along { .. }) => None,
-        };
-        let established = matches!(extrude.origin, None | Some(ExtrudeOrigin::ProfilePlane))
-            && extrude.loops.is_none()
-            && extrude.draft.is_none()
-            && extrude.fit.is_none()
-            && extrude.outside.is_none()
-            && extrude.sheet_cut.is_none();
-        match reversed {
-            Some(reversed) if established => Ok(reversed),
-            _ => Err("its direction, start or draft is not established"),
-        }
+            Some(Dimension::Literal(reversed)) => Some(*reversed),
+            Some(Dimension::Parameter(_) | Dimension::Negated(_)) => None,
+        },
+        Some(ExtrudeDirection::Along { .. }) => None,
+    };
+    let established = matches!(extrude.origin, None | Some(ExtrudeOrigin::ProfilePlane))
+        && extrude.loops.is_none()
+        && extrude.draft.is_none()
+        && extrude.fit.is_none()
+        && extrude.outside.is_none()
+        && extrude.sheet_cut.is_none();
+    match reversed {
+        Some(reversed) if established => Ok(reversed),
+        _ => Err("its direction, start or draft is not established"),
     }
+}
 
-    /// Row 8: one side, from the profile plane, a blind distance.
-    fn amount(&self) -> Result<Amount<'a>, &'static str> {
-        const NOT_BLIND: &str = "its extent is not one-sided blind";
-        let Some(Span::Between { start, end }) = &self.extrude.span else {
-            return Err(NOT_BLIND);
-        };
-        match (start.as_ref(), end.as_ref()) {
-            (Limit::AtOrigin, Limit::Amount(Dimension::Literal(length))) => {
-                Ok(Amount::Literal(length.get()))
-            }
-            (Limit::AtOrigin, Limit::Amount(Dimension::Parameter(parameter))) => {
-                Ok(Amount::Parameter(parameter))
-            }
-            _ => Err(NOT_BLIND),
+/// Row 8: one side, from the profile plane, a blind distance.
+fn amount(extrude: &Extrude) -> Result<Amount<'_>, &'static str> {
+    const NOT_BLIND: &str = "its extent is not one-sided blind";
+    let Some(Span::Between { start, end }) = &extrude.span else {
+        return Err(NOT_BLIND);
+    };
+    match (start.as_ref(), end.as_ref()) {
+        (Limit::AtOrigin, Limit::Amount(Dimension::Literal(length))) => {
+            Ok(Amount::Literal(length.get()))
         }
+        (Limit::AtOrigin, Limit::Amount(Dimension::Parameter(parameter))) => {
+            Ok(Amount::Parameter(parameter))
+        }
+        _ => Err(NOT_BLIND),
     }
+}
 
-    /// Row 9: one new solid; row 1 leaves no body for a join to act on.
-    fn output(&self) -> Result<(), &'static str> {
-        let output = &self.extrude.output;
-        let new = matches!(
-            output.boolean,
-            Some(
-                Boolean::NewBody
-                    | Boolean::Apply {
-                        op: BooleanOp::Join,
-                        ..
-                    }
-            )
-        );
-        if new && matches!(output.body, None | Some(BodyForm::Solid)) {
-            Ok(())
-        } else {
-            Err("it does not make one new solid")
-        }
+/// Row 9: one new solid; row 1 leaves no body for a join to act on.
+fn output(extrude: &Extrude) -> Result<(), &'static str> {
+    let output = &extrude.output;
+    let new = matches!(
+        output.boolean,
+        Some(
+            Boolean::NewBody
+                | Boolean::Apply {
+                    op: BooleanOp::Join,
+                    ..
+                }
+        )
+    );
+    if new && matches!(output.body, None | Some(BodyForm::Solid)) {
+        Ok(())
+    } else {
+        Err("it does not make one new solid")
     }
 }
 

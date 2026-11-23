@@ -10,7 +10,7 @@
 //! current state's `Stale` or `Failed` status and poses, and for every stored
 //! evaluation. A failure here is a [`super::reduce::Stage::NeutralDesign`]
 //! failure. Its fallbacks, in [`Part`] order, write the sketches without
-//! their dimensions, the extrude in the Base Feature, the design without its
+//! their dimensions, the geometry item in the Base Feature, the design without its
 //! construction planes and the sketches on them, the design without its
 //! `Sketch` items, then no design ([`dropped_records`]): they never drop a
 //! body.
@@ -20,6 +20,7 @@ mod expression;
 mod extrude;
 pub(super) mod frames;
 pub(super) mod history;
+mod item;
 pub(super) mod parameters;
 mod roster;
 mod sketch;
@@ -50,8 +51,8 @@ use super::reduce::named_loss;
 use crate::loss::F3dLossCode;
 use crate::native::F3dNative;
 use base_feature::BaseFeaturePlan;
-use extrude::Decision;
 use frames::DesignRecords;
+use item::{Decision, Item};
 use parameters::ParameterPlan;
 use sketch::SketchPlan;
 
@@ -121,16 +122,16 @@ fn requested_dimension_failure() -> Option<cadmpeg_core::CodecError> {
 
 #[cfg(test)]
 thread_local! {
-    /// Makes the next attempt that writes an `Extrude` item on this thread
-    /// fail in the `Extrude` records.
-    static FAIL_NEXT_EXTRUDE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Makes the next attempt that writes a geometry item on this thread
+    /// fail in the item's records.
+    static FAIL_NEXT_ITEM: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-/// The failure [`FAIL_NEXT_EXTRUDE`] requests, once.
+/// The failure [`FAIL_NEXT_ITEM`] requests, once.
 #[cfg(test)]
-fn requested_extrude_failure() -> Option<cadmpeg_core::CodecError> {
-    FAIL_NEXT_EXTRUDE.with(|fail| fail.replace(false)).then(|| {
-        cadmpeg_core::CodecError::NotImplemented("a test failure of the Extrude records".into())
+fn requested_item_failure() -> Option<cadmpeg_core::CodecError> {
+    FAIL_NEXT_ITEM.with(|fail| fail.replace(false)).then(|| {
+        cadmpeg_core::CodecError::NotImplemented("a test failure of the item records".into())
     })
 }
 
@@ -159,8 +160,8 @@ pub(super) const DROPPED: DesignArenaDispositions = DesignArenaDispositions {
 pub(super) enum Part {
     /// The sketch dimensions: their parameters stay user parameters.
     Dimensions,
-    /// The `Extrude` item: the Base Feature holds the extrude.
-    Extrude,
+    /// The geometry item: the Base Feature holds its feature.
+    Item,
     /// The `WorkPlane` items and the `Sketch` items on them.
     Planes,
     /// The `Sketch` items.
@@ -168,12 +169,7 @@ pub(super) enum Part {
 }
 
 impl Part {
-    const ORDER: [Self; 4] = [
-        Self::Dimensions,
-        Self::Extrude,
-        Self::Planes,
-        Self::Sketches,
-    ];
+    const ORDER: [Self; 4] = [Self::Dimensions, Self::Item, Self::Planes, Self::Sketches];
 }
 
 /// The parts the writer has dropped, each with the failure that dropped it.
@@ -204,7 +200,7 @@ impl Fallback {
                 .flatten()
                 .is_some_and(|design| match part {
                     Part::Dimensions => design.writes_dimensions(),
-                    Part::Extrude => matches!(design.extrude, Decision::Extrude(_)),
+                    Part::Item => design.item.item().is_some(),
                     Part::Planes => !design.sketches.planes.is_empty(),
                     Part::Sketches => design.writes_sketches(),
                 });
@@ -221,9 +217,9 @@ impl Fallback {
 pub(super) struct NeutralDesign<'a> {
     parameters: ParameterPlan,
     sketches: SketchPlan<'a>,
-    /// The scope's extrude, written as an `Extrude` item in place of the
-    /// Base Feature where the rule of [`extrude::plan`] allows it.
-    extrude: Decision<'a>,
+    /// The scope's geometry feature, written as a timeline item in place of
+    /// the Base Feature where the rows of [`item::plan`] allow it.
+    item: Decision<'a>,
     base_feature: BaseFeaturePlan<'a>,
     losses: Vec<LossNote>,
 }
@@ -256,16 +252,16 @@ pub(super) fn plan<'a>(
             },
         );
     }
-    let extrude = if target.geometry.bodies.is_empty() {
+    let item = if target.geometry.bodies.is_empty() {
         Decision::None
     } else {
-        extrude::plan(
+        item::plan(
             target,
             scope,
             &features,
             &sketches,
             &mut parameters,
-            fallback.reason(Part::Extrude),
+            fallback.reason(Part::Item),
             ordinal,
         )
     };
@@ -283,13 +279,13 @@ pub(super) fn plan<'a>(
     }
     let unwritten = features
         .iter()
-        .filter(|feature| !sketches.writes(feature) && !extrude.writes(feature))
+        .filter(|feature| !sketches.writes(feature) && !item.writes(feature))
         .map(|feature| {
             let mut notes = Vec::new();
             if let Some(reason) = sketches.unwritten.get(*feature) {
                 notes.push(format!("its sketch {reason}"));
             }
-            if let Some(reason) = extrude.reason(feature) {
+            if let Some(reason) = item.reason(feature) {
                 notes.push(format!("the Base Feature holds it: {reason}"));
             }
             if let Some(parameters) = owned.get(*feature) {
@@ -304,7 +300,7 @@ pub(super) fn plan<'a>(
                 format!("{feature} ({})", notes.join("; "))
             }
         });
-    let reason = if matches!(extrude, Decision::Extrude(_)) {
+    let reason = if item.item().is_some() {
         "stores no timeline item for these features of the design"
     } else {
         "stores the current bodies as one Base Feature and no timeline item for these features of the design"
@@ -318,7 +314,7 @@ pub(super) fn plan<'a>(
     Ok(Some(NeutralDesign {
         parameters,
         sketches,
-        extrude,
+        item,
         base_feature,
         losses,
     }))
@@ -334,9 +330,9 @@ impl NeutralDesign<'_> {
     /// Name the result bodies and their faces in `native`, whose records the
     /// B-rep stream is written from.
     pub(super) fn stamp(&mut self, native: &mut F3dNative) -> Result<(), CodecError> {
-        match &self.extrude {
-            Decision::Extrude(plan) => extrude::stamp(plan, &self.sketches.items, native),
-            Decision::None | Decision::BaseFeature { .. } => {
+        match self.item.item() {
+            Some(Item::Extrude(plan)) => extrude::stamp(plan, &self.sketches.items, native),
+            None => {
                 let losses = self.base_feature.stamp(native)?;
                 self.losses.extend(losses);
                 Ok(())
@@ -369,21 +365,18 @@ impl NeutralDesign<'_> {
         let scope = root_scope(target)
             .ok_or_else(|| CodecError::Malformed("the design has no root scope".into()))?;
         let bodies = self.base_feature.roster_bodies(target);
-        let extrude = match &self.extrude {
-            Decision::Extrude(plan) => Some(plan.as_ref()),
-            Decision::None | Decision::BaseFeature { .. } => None,
-        };
+        let item = self.item.item();
         let roster = roster::Roster::new(
             bodies.len(),
             self.parameters.written_count(),
             &self.sketches,
-            extrude,
+            item,
         )?;
         let timeline_value = roster::ContextValue::of(
             self.parameters.names(),
             &self.sketches.items,
             &self.sketches.planes,
-            extrude,
+            item,
         );
         let ctx = roster::Context {
             table: roster::type_table(&roster, bodies.iter().any(|body| body.sheet))?,
@@ -392,7 +385,6 @@ impl NeutralDesign<'_> {
             bodies,
             sketches: &self.sketches.items,
             planes: &self.sketches.planes,
-            extrude,
             timeline_value,
         };
         let mut records = DesignRecords::default();
