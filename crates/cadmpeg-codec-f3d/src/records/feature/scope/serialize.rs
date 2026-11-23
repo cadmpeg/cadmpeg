@@ -142,16 +142,7 @@ impl Serialize for DesignParameterScope {
         emit!("feature_ordinal_offset", self.feature_ordinal_offset);
         emit_opt!("label", self.label.as_ref());
         emit_opt!("display_name", self.display_name.as_deref());
-        emit_opt!("rolled_back", self.rolled_back);
-        if self.suppression_flag {
-            emit!("suppression_flag", true);
-        }
-        if self.unevaluated_flag {
-            emit!("unevaluated_flag", true);
-        }
-        if self.no_result_flag {
-            emit!("no_result_flag", true);
-        }
+        emit_opt!("tail_flags", self.tail_flags.as_ref());
         emit_opt!("history_state_id", self.history_state_id);
         emit!("history_state_id_offset", self.history_state_id_offset());
         emit_opt!("previous_history_state_id", self.previous_history_state_id);

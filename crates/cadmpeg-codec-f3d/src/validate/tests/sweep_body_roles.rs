@@ -39,7 +39,10 @@ fn sweep_body_roles_preserve_group_frames_and_operation_contracts() {
                 let ir = cadmpeg_ir::examples::unit_cube().unwrap();
                 let ctx = super::super::Ctx::new(&ir, &native, decode);
                 let mut findings = Vec::new();
-                super::super::validate_construction_operand_groups(&ctx, &mut findings);
+                super::super::construction_operands::validate_construction_operand_groups(
+                    &ctx,
+                    &mut findings,
+                );
                 assert!(findings.is_empty(), "{findings:?}");
                 let template = native.design_construction_operand_groups[0].clone();
                 for (index, operand_role) in
@@ -57,7 +60,10 @@ fn sweep_body_roles_preserve_group_frames_and_operation_contracts() {
                     native.design_construction_operand_groups.push(group);
                 }
                 let ctx = super::super::Ctx::new(&ir, &native, decode);
-                super::super::validate_path_feature_operand_roles(&ctx, &mut findings);
+                super::super::path_features::validate_path_feature_operand_roles(
+                    &ctx,
+                    &mut findings,
+                );
                 assert_eq!(
                     findings.is_empty(),
                     operation != DesignExtrudeOperation::NewBody
@@ -70,13 +76,19 @@ fn sweep_body_roles_preserve_group_frames_and_operation_contracts() {
                     native.design_construction_operand_groups.remove(0);
                     let ctx = super::super::Ctx::new(&ir, &native, decode);
                     let mut findings = Vec::new();
-                    super::super::validate_path_feature_operand_roles(&ctx, &mut findings);
+                    super::super::path_features::validate_path_feature_operand_roles(
+                        &ctx,
+                        &mut findings,
+                    );
                     assert!(findings.is_empty());
                 }
                 native.design_construction_operand_groups.push(template);
                 let ctx = super::super::Ctx::new(&ir, &native, decode);
                 let mut findings = Vec::new();
-                super::super::validate_path_feature_operand_roles(&ctx, &mut findings);
+                super::super::path_features::validate_path_feature_operand_roles(
+                    &ctx,
+                    &mut findings,
+                );
                 assert_eq!(findings.len(), 1);
             }
         }

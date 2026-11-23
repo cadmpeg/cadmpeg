@@ -25,7 +25,6 @@ use crate::design::feature_project::scope_order::ScopeHistoryGraph;
 use crate::design::feature_project::scope_order::ScopeHistoryPredecessor;
 use crate::design::feature_project::scope_properties::scope_parameter_expressions;
 use crate::design::feature_project::scope_properties::scope_properties;
-use crate::design::feature_project::sheet_metal::project_base_flange;
 use crate::design::feature_project::sheet_metal::project_hem;
 use crate::design::feature_project::surface_edit::project_ruled_surface;
 use crate::design::feature_project::surface_edit::project_surface_stitch;
@@ -119,6 +118,7 @@ macro_rules! or_none {
 }
 
 mod base_face;
+mod base_flange;
 mod bend_lines;
 mod chamfer;
 mod coil;
@@ -1031,11 +1031,12 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::BaseFlange
                     {
-                        project_base_flange(
+                        base_flange::project(
                             scope,
                             construction_groups,
                             placements,
                             sheet_metal_settings,
+                            &mut projection_losses,
                         )
                         .map_or_else(
                             || {
@@ -1044,8 +1045,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                     parameters: BTreeMap::new(),
                                 })
                             },
-                            |(definition, ruled)| {
-                                if !ruled {
+                            |(definition, stored_thickness)| {
+                                if stored_thickness {
                                     unruled_flange_thicknesses
                                         .set(unruled_flange_thicknesses.get() + 1);
                                 }
@@ -1318,7 +1319,22 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             str::to_owned,
                         ),
                 ),
-                suppressed: Some(scope_is_suppressed(scope, family, &mut projection_losses)),
+                suppressed: Some(match scope.tail_flags {
+                    Some(flags) => {
+                        if let Some(code) = flags.active_without_result() {
+                            projection_losses.push(code.note(format!(
+                                "scope {} stores the no-result flag and no suppression state byte; it is read as an active feature with no current result",
+                                scope.id
+                            )));
+                        }
+                        flags.suppressed()
+                    }
+                    None => {
+                        family.is_some_and(stateless_scope_is_suppressed)
+                            && scope.history_state_id().is_none()
+                            && scope.previous_history_state_id().is_none()
+                    }
+                }),
                 dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 source_properties: if promoted_fillet_source.is_some() || promoted_fillet_sets.is_some() || matches!(
                     &definition,
@@ -2645,31 +2661,10 @@ pub(crate) fn untyped_parameter_unit_count(parameters: &[DesignParameter]) -> us
         .count()
 }
 
-/// Whether a scope is suppressed. A tail whose state bytes are read decides
-/// it by its suppression bytes; null history-state identities decide it only
-/// for a tail whose state bytes are unread.
-fn scope_is_suppressed(
-    scope: &DesignParameterScope,
-    family: Option<DesignFeatureFamily>,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> bool {
-    if scope.rolled_back.is_some() {
-        if scope.unevaluated_flag && !scope.suppression_flag {
-            losses.push(crate::loss::F3dLossCode::FeatureUnevaluatedStateAssumed.note(format!(
-                "scope {} sets the third tail state byte; it is read as an active feature with no evaluated result",
-                scope.id
-            )));
-        }
-        return scope.suppression_flag;
-    }
-    family.is_some_and(stateless_scope_is_suppressed)
-        && scope.history_state_id().is_none()
-        && scope.previous_history_state_id().is_none()
-}
-
-/// Whether a scope of this family with null current and preceding
-/// history-state identities is suppressed. An active scope of these families
-/// changes ASM topology and carries both identities.
+/// Whether a scope of this family whose tail stores no flags and whose
+/// current and preceding history-state identities are null is suppressed. An
+/// active scope of these families changes ASM topology and carries both
+/// identities.
 fn stateless_scope_is_suppressed(family: DesignFeatureFamily) -> bool {
     matches!(
         family,

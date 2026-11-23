@@ -251,6 +251,33 @@ fn ten_byte_trailer_keeps_a_parameter_with_a_set_flag_byte() {
 }
 
 #[test]
+fn second_flag_byte_of_the_nine_and_ten_byte_trailers_is_the_driven_flag() {
+    for trailer in [
+        &[0, 0, 0, 0, 0, 1, 0, 0, 0][..],
+        &[0, 0, 0, 0, 0, 0, 1, 0, 0, 0][..],
+    ] {
+        let driven = parse_design_parameter_record(&discriminated(
+            Some(0x31),
+            "Linear Dimension-2",
+            trailer,
+        ))
+        .unwrap_or_else(|| panic!("driven dimension parameter, {trailer:?}"));
+        assert!(driven.flags().driven, "{trailer:?}");
+        assert_eq!(driven.driving(), Some(false), "{trailer:?}");
+    }
+    // A document parameter has driven flag 0, so the byte is not its
+    // driven flag.
+    let document = parse_design_parameter_record(&discriminated(
+        None,
+        "User Parameter",
+        &[0, 0, 0, 0, 0, 0, 1, 0, 0, 1],
+    ))
+    .expect("document parameter");
+    assert_eq!(document.kind(), DesignParameterKind::User);
+    assert!(!document.flags().driven);
+}
+
+#[test]
 fn ten_byte_text_flag_admits_the_text_value_after_the_source_kind() {
     let text_parameter = |trailer: [u8; 10], text: &str| {
         let kind = "Text1-Text";

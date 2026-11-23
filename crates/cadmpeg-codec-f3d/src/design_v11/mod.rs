@@ -16,15 +16,16 @@
 //! A scope spans its definition and the embedded component definitions below
 //! it; where it spans several, each feature names the component the decoder
 //! lists it under. The scope holds the parameters (§5.12) and configurations
-//! (§5.11) of its document, and its current state, at the end of its first
-//! timeline, holds the bodies of the definitions it spans. The user
+//! (§5.11) of its document, and its current state, at the rollback marker of
+//! its first timeline, holds the bodies of the definitions it spans. The user
 //! parameters and configuration rows of a referenced design without a scope
 //! of its own belong to no scope here, and a loss names each of them.
 
 mod configurations;
 mod datum;
 mod operation;
-mod parameters;
+pub(crate) mod parameters;
+mod sheet_metal;
 #[cfg(test)]
 mod tests;
 mod thread;
@@ -36,7 +37,8 @@ use cadmpeg_core::decode::{DecodeContext, DecodeDepth};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
-use cadmpeg_ir::design::refs::Position;
+use cadmpeg_ir::design::ids::ContainerId;
+use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ProductDefinition, Storage};
@@ -44,6 +46,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
 
 use crate::records::entity_header::{DesignFeatureTimeline, SegmentType};
+use crate::records::feature::scope::DesignScopeTailFlags;
 
 /// The native arena that holds the timeline records.
 const TIMELINES: &str = "design_feature_timelines";
@@ -51,6 +54,14 @@ const TIMELINES: &str = "design_feature_timelines";
 const TYPES: &str = "design_types";
 /// The native arena that holds the parameter scopes.
 const SCOPES: &str = "design_parameter_scopes";
+
+/// The tail flags of one parameter scope.
+#[derive(serde::Deserialize)]
+struct ScopeTail {
+    id: String,
+    record_index: u32,
+    tail_flags: Option<DesignScopeTailFlags>,
+}
 
 /// Project the design of a decoded Fusion document into `ir.design`, beside
 /// its v10 records, and push what it leaves unstated to `losses`. The root
@@ -75,9 +86,19 @@ pub(crate) fn project(
         return Ok(());
     }
     let types = namespace.arena_as_for_decode::<SegmentType>(ctx, TYPES)?;
-    let scopes = timeline::TimelineScopes::new(
-        &namespace.arena_as_for_decode::<timeline::ScopeRollback>(ctx, SCOPES)?,
-    );
+    let scope_tails = namespace.arena_as_for_decode::<ScopeTail>(ctx, SCOPES)?;
+    let tail_flags: timeline::TailFlags<'_> = scope_tails
+        .iter()
+        .filter_map(|scope| {
+            Some((
+                (
+                    crate::ids::native_stream(&scope.id)?,
+                    u64::from(scope.record_index),
+                ),
+                scope.tail_flags?,
+            ))
+        })
+        .collect();
     let current = ir
         .geometry
         .bodies
@@ -89,8 +110,8 @@ pub(crate) fn project(
         &ir.model.features,
         &timelines,
         &types,
+        &tail_flags,
         &current,
-        &scopes,
         losses,
     )?;
     let mut scopes = BTreeMap::new();
@@ -166,9 +187,16 @@ pub(crate) fn project(
                     .map(|owner| (*owner).clone());
             }
         }
-        let Some(at) = projected.containers.first().and_then(rollback_position) else {
+        let Some(Container::Ordered {
+            id,
+            members,
+            rollback,
+            ..
+        }) = projected.containers.first()
+        else {
             continue;
         };
+        let at = rollback_position(id, members, rollback);
         let current = (!bodies.is_empty())
             .then(|| CurrentState {
                 at,
@@ -205,35 +233,26 @@ pub(crate) fn project(
     ir.design
         .configurations
         .extend(scoped_configurations.records);
+    sheet_metal::project(ctx, ir, &definitions, losses)?;
     thread::project(ctx, ir, losses)?;
     Ok(())
 }
 
-/// The position of an ordered container's rollback marker, spelled through
-/// the member before it, or the container's start before its first member.
-fn rollback_position(container: &Container) -> Option<Position> {
-    let Container::Ordered {
-        id,
-        members,
-        rollback,
-        ..
-    } = container
-    else {
-        return None;
-    };
-    let before = match rollback {
-        Rollback::End => members.last(),
-        Rollback::Before(first) => members
+/// The position of the rollback marker of the timeline `id`: after its last
+/// built member, or at its start when it builds none.
+fn rollback_position(id: &ContainerId, members: &[Member], rollback: &Rollback) -> Position {
+    let built = match rollback {
+        Rollback::End => members.len(),
+        Rollback::Before(marker) => members
             .iter()
-            .position(|member| member == first)?
-            .checked_sub(1)
-            .and_then(|at| members.get(at)),
+            .position(|member| member == marker)
+            .unwrap_or(members.len()),
     };
-    Some(
-        before
-            .cloned()
-            .map_or_else(|| Position::Start(id.clone()), Position::After),
-    )
+    members
+        .get(..built)
+        .and_then(<[_]>::last)
+        .cloned()
+        .map_or_else(|| Position::Start(id.clone()), Position::After)
 }
 
 /// The scope that holds the timelines of the document at `prefix`, which has

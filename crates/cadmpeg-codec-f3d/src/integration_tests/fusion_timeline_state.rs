@@ -53,13 +53,21 @@ fn expect(suppressed: &BTreeMap<String, bool>, expected: &[(&str, bool)]) {
     }
 }
 
+/// The rolled-back Combine and Fillet store the no-result flag and no
+/// suppression state byte: they are active with no current result.
 #[test]
 fn rolled_back_features_after_an_edit_are_active() {
-    let (suppressed, marker, _) = timeline_state(include_bytes!(
+    let (suppressed, marker, codes) = timeline_state(include_bytes!(
         "../../../../corpus/f3d/timeline_rolled_after_edit.f3d"
     ));
     expect(&suppressed, &[("Combine 1", false), ("Fillet 1", false)]);
     assert_eq!(marker.as_deref(), Some("Combine 1"));
+    assert!(
+        codes
+            .iter()
+            .any(|code| code == "feature.no-result-active-assumed"),
+        "{codes:?}"
+    );
 }
 
 #[test]
@@ -72,7 +80,7 @@ fn a_suppressed_feature_after_the_marker_stays_suppressed() {
 }
 
 #[test]
-fn inherited_and_direct_suppression_bytes_mark_suppressed_features() {
+fn either_suppression_state_byte_marks_a_feature_suppressed() {
     let (suppressed, marker, _) = timeline_state(include_bytes!(
         "../../../../corpus/f3d/timeline_combine_suppressed.f3d"
     ));
@@ -99,15 +107,20 @@ fn a_suppressed_timeline_group_suppresses_its_items() {
     assert_eq!(marker, None);
 }
 
+/// The occurrence item before the first rolled-back item stores no tail
+/// state, so the marker stands before that rolled-back item and a loss says
+/// that it can stand before the occurrence item.
 #[test]
-fn a_marker_after_an_occurrence_item_stays_unread() {
+fn a_marker_after_an_occurrence_item_charges_the_marker_bound_loss() {
     let (suppressed, marker, codes) = timeline_state(include_bytes!(
         "../../../../corpus/f3d/timeline_marker_after_occurrence.f3d"
     ));
     expect(&suppressed, &[("Sketch 2", false), ("Extrude 2", false)]);
-    assert_eq!(marker, None);
+    assert_eq!(marker.as_deref(), Some("Sketch 2"));
     assert!(
-        codes.iter().any(|code| code == "history.rollback-unread"),
+        codes
+            .iter()
+            .any(|code| code == "history.rollback-bound-unread"),
         "{codes:?}"
     );
 }

@@ -1980,6 +1980,7 @@ fn combine_selection_enrichment_binds_target_and_tool_paths() {
 }
 
 mod combine_projection;
+mod end_spec_reversal;
 mod route_limits;
 mod surface_sweep_projection;
 mod sweep_operands;

@@ -1,5 +1,5 @@
 use crate::design::decode::meta::decode_types;
-use crate::design::decode::operands::decode_construction_operand_groups;
+use crate::design::decode::operands::construction_groups::decode_construction_operand_groups;
 use crate::design::decode::scopes::parameter_scope::{
     decode_parameter_scopes, ParameterScopeSources,
 };

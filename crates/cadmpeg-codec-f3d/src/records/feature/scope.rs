@@ -94,7 +94,12 @@ cadmpeg_core::named_optional_field!(
     "label"
 );
 cadmpeg_core::named_optional_field!(deserialize_display_name, String, "display_name");
-cadmpeg_core::named_optional_field!(deserialize_rolled_back, bool, "rolled_back");
+cadmpeg_core::named_optional_field!(deserialize_tail_flags, DesignScopeTailFlags, "tail_flags");
+cadmpeg_core::named_optional_field!(
+    deserialize_tail_flags_envelope_offset,
+    u64,
+    "envelope_offset"
+);
 cadmpeg_core::named_optional_field!(
     deserialize_deleted_members,
     super::deleted_members::DesignDeletedMembers,
@@ -536,6 +541,77 @@ impl ScopePayloadCompleteness for super::boundary_fill::DesignBoundaryFillScope 
 impl ScopePayloadCompleteness for DesignCombineScope {
     fn is_uninterpreted(&self) -> bool {
         self.operation.is_none() && self.named_tail.is_none()
+    }
+}
+
+/// The timeline state of a feature item tail: three state bytes and the
+/// no-result and rolled-back lane flags.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DesignScopeTailFlags {
+    /// State bytes 0 and 1. Either byte set marks the feature suppressed.
+    pub(crate) suppression: [bool; 2],
+    /// State byte 2.
+    pub(crate) unevaluated: bool,
+    /// Byte offset of state byte 0; state bytes 1 and 2 follow it.
+    pub(crate) state_offset: u64,
+    /// The no-result flag `s0`: the stored history-state identities hold no
+    /// current result.
+    pub(crate) no_result: bool,
+    /// The feature stands after the saved rollback marker of its timeline.
+    pub(crate) rolled_back: bool,
+    /// Byte offset of the no-result flag; the rolled-back flag follows it.
+    pub(crate) no_result_offset: u64,
+    /// Byte offset of the earlier same-index envelope that stores the flags,
+    /// where this envelope stores none. The flags then lie after the start of
+    /// that envelope and before the start of this one.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_tail_flags_envelope_offset"
+    )]
+    pub(crate) envelope_offset: Option<u64>,
+}
+
+impl DesignScopeTailFlags {
+    /// Whether state byte 0 or 1 marks the feature suppressed.
+    pub(crate) fn suppressed(&self) -> bool {
+        self.suppression.contains(&true)
+    }
+
+    /// The assumption under which a feature whose flags store no current
+    /// result and no suppression is read as active.
+    pub(crate) fn active_without_result(&self) -> Option<crate::loss::F3dLossCode> {
+        use crate::loss::F3dLossCode;
+        (self.no_result && !self.suppressed()).then_some(if self.unevaluated {
+            F3dLossCode::FeatureUnevaluatedStateAssumed
+        } else {
+            F3dLossCode::FeatureNoResultActiveAssumed
+        })
+    }
+
+    /// Whether `scope` can hold these flags: state bytes set only with the
+    /// no-result flag, the state bytes before the lane flags, both in its own
+    /// tail before its paired header or, from the earlier envelope at
+    /// `envelope_offset`, after that envelope's start and before `scope`'s
+    /// start.
+    pub(crate) fn lie_within(&self, scope: &DesignParameterScope) -> bool {
+        let (Some(state_end), Some(end)) = (
+            self.state_offset.checked_add(3),
+            self.no_result_offset.checked_add(1),
+        ) else {
+            return false;
+        };
+        let consistent = self.no_result || (self.suppression == [false; 2] && !self.unevaluated);
+        consistent
+            && state_end <= self.no_result_offset
+            && match self.envelope_offset {
+                None => {
+                    self.state_offset >= scope.feature_ordinal_offset
+                        && end < scope.paired_byte_offset
+                }
+                Some(envelope) => envelope < self.state_offset && end < scope.byte_offset,
+            }
     }
 }
 
@@ -986,21 +1062,9 @@ pub(crate) struct DesignParameterScope {
     /// Display name bound from a companion `WorkPlane` entity record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) display_name: Option<String>,
-    /// The rolled-back lane flag, when the tail's lane flags are read: the
-    /// scope's timeline item follows the saved timeline marker.
+    /// Timeline state bytes and lane flags of the tail.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) rolled_back: Option<bool>,
-    /// A tail state byte marks the scope suppressed, directly or through a
-    /// suppressed timeline group.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub(crate) suppression_flag: bool,
-    /// The third tail state byte: the scope holds no evaluated result.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub(crate) unevaluated_flag: bool,
-    /// The no-result lane flag: the scope's stored history-state identities
-    /// hold no current result.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub(crate) no_result_flag: bool,
+    pub(crate) tail_flags: Option<DesignScopeTailFlags>,
     /// ASM delta-state identity produced by this scope, when active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     history_state_id: Option<i64>,
@@ -1157,22 +1221,13 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_display_name"
     )]
     display_name: Option<String>,
-    /// The rolled-back lane flag.
+    /// Timeline state bytes and lane flags of the tail.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_rolled_back"
+        deserialize_with = "deserialize_tail_flags"
     )]
-    rolled_back: Option<bool>,
-    /// The suppression state byte.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    suppression_flag: bool,
-    /// The unevaluated state byte.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    unevaluated_flag: bool,
-    /// The no-result lane flag.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    no_result_flag: bool,
+    tail_flags: Option<DesignScopeTailFlags>,
     /// ASM delta-state identity produced by this scope, when active.
     #[serde(
         default,
@@ -2761,12 +2816,17 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 ));
             }
         }
+        if wire
+            .tail_flags
+            .is_some_and(|flags| !flags.lie_within(&admitted))
+        {
+            return Err(DesignParameterScopePayloadError(
+                "tail_flags outside the scope tail".into(),
+            ));
+        }
         admitted.source_kind = wire.source_kind;
         admitted.display_name = wire.display_name;
-        admitted.rolled_back = wire.rolled_back;
-        admitted.suppression_flag = wire.suppression_flag;
-        admitted.unevaluated_flag = wire.unevaluated_flag;
-        admitted.no_result_flag = wire.no_result_flag;
+        admitted.tail_flags = wire.tail_flags;
         admitted.captured_positions = captured_positions;
         admitted.occurrence_transfer = occurrence_transfer;
         admitted.occurrence_transfer_intent = occurrence_transfer_intent;
@@ -2816,10 +2876,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             feature_ordinal_offset: scope.feature_ordinal_offset,
             label: scope.label,
             display_name: scope.display_name,
-            rolled_back: scope.rolled_back,
-            suppression_flag: scope.suppression_flag,
-            unevaluated_flag: scope.unevaluated_flag,
-            no_result_flag: scope.no_result_flag,
+            tail_flags: scope.tail_flags,
             history_state_id: scope.history_state_id,
             history_state_id_offset,
             previous_history_state_id: scope.previous_history_state_id,
@@ -3408,10 +3465,7 @@ impl DesignParameterScope {
             feature_ordinal_offset: draft.feature_ordinal_offset,
             label: draft.label,
             display_name: None,
-            rolled_back: None,
-            suppression_flag: false,
-            unevaluated_flag: false,
-            no_result_flag: false,
+            tail_flags: None,
             history_state_id: draft.history_state_id,
             previous_history_state_id: draft.previous_history_state_id,
             previous_history_state_id_offset: draft.previous_history_state_id_offset,

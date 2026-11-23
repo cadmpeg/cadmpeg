@@ -146,7 +146,7 @@ fn findings(
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let ctx = super::super::Ctx::new(&ir, native, decode);
         let mut findings = Vec::new();
-        super::super::validate_face_boundaries(&ctx, &mut findings, expected);
+        super::super::edge_operands::validate_face_boundaries(&ctx, &mut findings, expected);
         findings
             .into_iter()
             .map(|finding| (finding.message, finding.entity.unwrap_or_default()))

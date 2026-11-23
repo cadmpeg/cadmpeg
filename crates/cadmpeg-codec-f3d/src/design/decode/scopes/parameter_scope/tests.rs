@@ -190,7 +190,7 @@ fn named_combine_rejects_incomplete_or_inconsistent_tail() {
     let bytes = marked_named_combine("NewBody", &[], Some(900), None);
     for (offset, value) in [
         (174, 1),
-        (200, 2),
+        (200, 1),
         (203, 0),
         (214, 2),
         (220, 1),
@@ -199,7 +199,6 @@ fn named_combine_rejects_incomplete_or_inconsistent_tail() {
         (259, 0),
         (270, 2),
         (271, 1),
-        (257, 2),
         (258, 2),
     ] {
         let mut broken = bytes.clone();
@@ -209,9 +208,14 @@ fn named_combine_rejects_incomplete_or_inconsistent_tail() {
             "offset {offset}"
         );
     }
-    let mut admitted = bytes.clone();
-    admitted[241] = 2;
-    assert!(parse_marked_named_combine(&admitted).is_some());
+    for (offset, value) in [(241, 2), (258, 1)] {
+        let mut admitted = bytes.clone();
+        admitted[offset] = value;
+        assert!(
+            parse_marked_named_combine(&admitted).is_some(),
+            "offset {offset}"
+        );
+    }
     let mut broken = bytes.clone();
     broken[196..200].copy_from_slice(&u32::MAX.to_le_bytes());
     assert!(parse_marked_named_combine(&broken).is_none());
@@ -224,88 +228,6 @@ fn named_combine_rejects_incomplete_or_inconsistent_tail() {
     let mut broken = bytes;
     broken.insert(272, 0);
     assert!(parse_marked_named_combine(&broken).is_none());
-}
-
-/// A marked named Combine whose tail state bytes and lane flags are `state`
-/// and `flags`; `short` drops the `01` lane marker of the 78-byte form.
-fn marked_named_combine_with_state(
-    label: &str,
-    middle: Option<u32>,
-    state: [u8; 3],
-    flags: [u8; 3],
-    short: bool,
-) -> Vec<u8> {
-    let mut bytes = marked_named_combine(label, &[], middle, None);
-    let state_at = 170 + 16 + 2 * label.encode_utf16().count();
-    let flags_at = state_at + 3 + 11 + if middle.is_some() { 11 } else { 1 } + 31;
-    bytes[state_at..state_at + 3].copy_from_slice(&state);
-    bytes[flags_at..flags_at + 3].copy_from_slice(&flags);
-    if short {
-        bytes.remove(flags_at);
-    }
-    bytes
-}
-
-#[test]
-fn scope_tail_reads_its_state_bytes_and_lane_flags() {
-    for (state, flags, rolled_back, suppressed, unevaluated, no_result) in [
-        ([0, 0, 0], [1, 0, 0], false, false, false, false),
-        ([0, 0, 0], [1, 0, 1], true, false, false, false),
-        ([0, 0, 0], [1, 1, 1], true, false, false, true),
-        ([0, 1, 0], [1, 1, 0], false, true, false, true),
-        ([1, 0, 0], [1, 1, 0], false, true, false, true),
-        ([0, 1, 0], [1, 1, 1], true, true, false, true),
-        ([0, 0, 1], [1, 1, 0], false, false, true, true),
-    ] {
-        for label in ["", "NewBody"] {
-            for (middle, short) in [(None, false), (Some(900), false), (None, true)] {
-                if short && !label.is_empty() {
-                    continue;
-                }
-                let case = format!("{label:?} {middle:?} {short} {state:?} {flags:?}");
-                let bytes = marked_named_combine_with_state(label, middle, state, flags, short);
-                let scope = parse_marked_named_combine(&bytes).unwrap_or_else(|| panic!("{case}"));
-                assert_eq!(scope.rolled_back, Some(rolled_back), "{case}");
-                assert_eq!(scope.suppression_flag, suppressed, "{case}");
-                assert_eq!(scope.unevaluated_flag, unevaluated, "{case}");
-                assert_eq!(scope.no_result_flag, no_result, "{case}");
-                if !label.is_empty() && middle.is_some() {
-                    assert!(scope.combine_named_tail().is_some(), "{case}");
-                }
-                let wire = serde_json::to_value(&scope).unwrap();
-                assert_eq!(
-                    wire["rolled_back"],
-                    serde_json::json!(rolled_back),
-                    "{case}"
-                );
-                assert_eq!(
-                    serde_json::from_value::<super::DesignParameterScope>(wire).unwrap(),
-                    scope,
-                    "{case}"
-                );
-            }
-        }
-    }
-}
-
-#[test]
-fn scope_tail_state_outside_the_flag_domain_is_unread() {
-    for (state, flags) in [
-        ([2, 0, 0], [1, 0, 0]),
-        ([0, 2, 0], [1, 0, 0]),
-        ([0, 0, 0], [1, 0, 2]),
-    ] {
-        let bytes = marked_named_combine_with_state("", None, state, flags, false);
-        let scope = parse_marked_named_combine(&bytes);
-        assert!(
-            scope
-                .as_ref()
-                .is_none_or(|scope| scope.rolled_back.is_none()
-                    && !scope.suppression_flag
-                    && !scope.unevaluated_flag),
-            "{state:?} {flags:?}"
-        );
-    }
 }
 
 #[test]
@@ -651,75 +573,6 @@ fn reciprocal_hole_tail_length_follows_its_members_and_further_reference() {
     }
 }
 
-/// The 88-byte companion tail of Thread scope 12, which owns Hole 5.
-fn thread_companion_tail(suppressed: bool) -> Vec<u8> {
-    use crate::layout::thread_hole_companion_tail as companion;
-    let marked = |tail: &mut [u8], at: usize, record_index: u32| {
-        tail[at] = 1;
-        tail[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
-    };
-    let mut tail = vec![0; companion::LEN];
-    tail[..4].copy_from_slice(&1u32.to_le_bytes());
-    marked(&mut tail, companion::FIRST_COMPANION, 9);
-    tail[companion::PREVIOUS_HISTORY_STATE..companion::PREVIOUS_HISTORY_STATE + 4]
-        .copy_from_slice(&8u32.to_le_bytes());
-    tail[companion::EVALUATION_DURATION..companion::EVALUATION_DURATION + 8]
-        .copy_from_slice(&0.25f64.to_le_bytes());
-    marked(&mut tail, companion::SECOND_COMPANION, 8);
-    tail[companion::FLAGS] = u8::from(suppressed);
-    marked(&mut tail, companion::THIRD_COMPANION, 7);
-    marked(&mut tail, companion::HOLE, 5);
-    tail
-}
-
-fn parse_thread_scope(tail: &[u8]) -> Option<crate::records::feature::scope::DesignParameterScope> {
-    use crate::design::test_support::indexed_record_offsets_for_test;
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(&3u32.to_le_bytes());
-    bytes.extend_from_slice(b"344");
-    bytes.extend_from_slice(&12u32.to_le_bytes());
-    bytes.extend_from_slice(&[0; 10]);
-    bytes.extend_from_slice(&2u32.to_le_bytes());
-    push_marked(&mut bytes, 16);
-    push_marked(&mut bytes, 19);
-    bytes.extend_from_slice(&9u32.to_le_bytes());
-    lp_utf16(&mut bytes, "Thread");
-    bytes.extend_from_slice(tail);
-    bytes.extend_from_slice(&3u32.to_le_bytes());
-    bytes.extend_from_slice(b"262");
-    bytes.extend_from_slice(&12u32.to_le_bytes());
-    super::parse_parameter_scope(
-        &bytes,
-        &indexed_record_offsets_for_test(&bytes),
-        12,
-        &"344".to_owned().try_into().unwrap(),
-        0,
-    )
-    .unwrap()
-}
-
-#[test]
-fn companion_and_reciprocal_hole_tails_leave_the_timeline_state_unread() {
-    for suppressed in [false, true] {
-        let scope =
-            parse_thread_scope(&thread_companion_tail(suppressed)).expect("Thread companion tail");
-        assert_eq!(scope.previous_history_state_id(), Some(8));
-        assert_eq!(scope.rolled_back, None, "{suppressed}");
-        assert!(!scope.suppression_flag && !scope.no_result_flag);
-        for (members, further) in [
-            (&[12][..], false),
-            (&[12][..], true),
-            (&[12, 100][..], false),
-            (&[12, 100][..], true),
-        ] {
-            let scope = parse_hole_scope(&reciprocal_hole_tail(members, further, suppressed))
-                .expect("reciprocal Hole tail");
-            assert_eq!(scope.rolled_back, None, "{members:?} {further}");
-            assert!(!scope.suppression_flag && !scope.no_result_flag);
-        }
-    }
-}
-
 #[test]
 fn named_reciprocal_hole_retains_its_label_and_preceding_state() {
     let mut reciprocal = reciprocal_hole_tail(&[12, 100], false, false);
@@ -735,7 +588,6 @@ fn named_reciprocal_hole_retains_its_label_and_preceding_state() {
         Some("Tapped Hole")
     );
     assert_eq!(scope.previous_history_state_id(), Some(8));
-    assert_eq!(scope.rolled_back, None);
     tail[count_at] = 1;
     assert!(parse_hole_scope(&tail).is_none());
 }
@@ -855,12 +707,15 @@ fn scope_class_type_selects_hole_and_preserves_the_display_name() {
                     .previous_history_state_id_offset
                     .map(|offset| offset - 6);
                 let english = DesignParameterScope::try_new(english).unwrap();
-                assert!(super::equivalent_scope_variant_payload(
-                    &cadmpeg_core::decode::test_support::service_decode_context(),
-                    scope,
-                    &english,
-                )
-                .unwrap());
+                assert_eq!(
+                    super::compare_scope_variant_payloads(
+                        &cadmpeg_core::decode::test_support::service_decode_context(),
+                        scope,
+                        &english,
+                    )
+                    .unwrap(),
+                    super::EnvelopeComparison::Equivalent
+                );
             }
             assert_eq!(scope.source_kind_name(), "Perçage");
             assert_eq!(
@@ -1051,28 +906,18 @@ fn sketch_scope_binding_selects_the_container_shared_with_its_placement() {
 }
 
 #[test]
-fn a_76_byte_tail_reads_its_state_bytes_before_its_first_reference() {
-    let reference = |bytes: &mut [u8], at: usize, record: u32| {
-        bytes[at] = 1;
-        bytes[at + 1..at + 5].copy_from_slice(&record.to_le_bytes());
+fn integer_offsets_are_locations_and_float_offsets_stay_compared() {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let stripped = |mut value: serde_json::Value| {
+        super::strip_scope_variant_provenance(&ctx, &mut value, false).unwrap();
+        value
     };
-    for (state, suppressed, unevaluated) in [
-        ([0, 0, 1], false, true),
-        ([0, 1, 1], true, true),
-        ([0, 1, 0], true, false),
-        ([0, 0, 0], false, false),
-    ] {
-        let mut bytes = vec![0; 76];
-        bytes[16..19].copy_from_slice(&state);
-        reference(&mut bytes, 19, 40);
-        bytes[30..34].copy_from_slice(&7u32.to_le_bytes());
-        reference(&mut bytes, 50, 41);
-        bytes[61..63].copy_from_slice(&[0, 1]);
-        reference(&mut bytes, 63, 42);
-        let read = super::scope_timeline_state(&bytes, 0, 30, 76).expect("timeline state");
-        assert_eq!(read.suppressed, suppressed, "{state:?}");
-        assert_eq!(read.unevaluated, unevaluated, "{state:?}");
-        assert!(read.lanes.rolled_back, "{state:?}");
-        assert!(!read.lanes.no_result, "{state:?}");
-    }
+    let standard = |offset: u64| {
+        serde_json::json!({"hole_extent": {"standard": {
+            "offset": offset, "standard": "ISO", "fit": "Normal",
+            "size": "M6", "fastener": "Socket head cap screw"}}})
+    };
+    assert_eq!(stripped(standard(120)), stripped(standard(480)));
+    let alignment = |x: f64| serde_json::json!({"alignment": {"offset": [x, 0.0, 0.0]}});
+    assert_ne!(stripped(alignment(1.0)), stripped(alignment(2.0)));
 }

@@ -8,18 +8,16 @@
 //! projection did not resolve is a feature of the family its record type
 //! establishes, or a native feature named by that type.
 //!
-//! A timeline is rolled back before its first item whose parameter scope
-//! carries the rolled-back lane flag when every later scope item carries it
-//! and the item before it is a scope item whose flag reads `0`. Otherwise the timeline
-//! is stated built through its last item, and one loss names the unread
-//! marker.
+//! The rolled-back flags of the items' scope tails place the rollback marker
+//! of a timeline before its first rolled-back item. A timeline whose items
+//! carry no rolled-back flag is built through its last item.
 //!
 //! A Base Feature is stored geometry (§5.10) where the v10 projection names
 //! its bodies and each is a body of the current geometry, whose records the
 //! state after it holds; otherwise its bodies are typed with the carrier
 //! unread, and it is native.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
@@ -40,74 +38,10 @@ use super::operation::{family, kind_family, Family};
 use crate::ids::native_stream;
 use crate::loss::F3dLossCode;
 use crate::records::entity_header::{DesignFeatureTimeline, SegmentType};
+use crate::records::feature::scope::DesignScopeTailFlags;
 
-/// The parameter-scope records of the timeline items, keyed by native stream
-/// and record index.
-#[derive(Default)]
-pub(super) struct TimelineScopes {
-    scopes: HashSet<(String, u64)>,
-    built: HashSet<(String, u64)>,
-    rolled_back: HashSet<(String, u64)>,
-}
-
-/// The fields of a native parameter scope that place the rollback marker.
-#[derive(serde::Deserialize)]
-pub(super) struct ScopeRollback {
-    id: String,
-    record_index: u32,
-    #[serde(default, deserialize_with = "deserialize_rolled_back")]
-    rolled_back: Option<bool>,
-}
-
-cadmpeg_core::named_optional_field!(deserialize_rolled_back, bool, "rolled_back");
-
-impl TimelineScopes {
-    pub(super) fn new(scopes: &[ScopeRollback]) -> Self {
-        let mut out = Self::default();
-        for scope in scopes {
-            let Some(stream) = native_stream(&scope.id) else {
-                continue;
-            };
-            let key = (stream.to_owned(), u64::from(scope.record_index));
-            match scope.rolled_back {
-                Some(true) => {
-                    out.rolled_back.insert(key.clone());
-                }
-                Some(false) => {
-                    out.built.insert(key.clone());
-                }
-                None => {}
-            }
-            out.scopes.insert(key);
-        }
-        out
-    }
-
-    /// The position of the first item after the saved marker, when the
-    /// rolled-back lane flags of the scope items place it.
-    pub(super) fn marker(&self, stream: &str, items: &[u64]) -> Option<usize> {
-        let key = |record: u64| (stream.to_owned(), record);
-        let first = items
-            .iter()
-            .position(|record| self.rolled_back.contains(&key(*record)))?;
-        let suffix_rolled_back = items.get(first..)?.iter().all(|record| {
-            !self.scopes.contains(&key(*record)) || self.rolled_back.contains(&key(*record))
-        });
-        let before_is_built_scope = first.checked_sub(1).is_none_or(|before| {
-            let before = items.get(before).copied().map(key);
-            before.is_some_and(|before| self.built.contains(&before))
-        });
-        (suffix_rolled_back && before_is_built_scope).then_some(first)
-    }
-
-    /// Whether the lane flags of the last item state it built, which places
-    /// the saved marker after every item.
-    pub(super) fn built_through_end(&self, stream: &str, items: &[u64]) -> bool {
-        items
-            .last()
-            .is_some_and(|record| self.built.contains(&(stream.to_owned(), *record)))
-    }
-}
+/// The tail flags of the parameter scopes, keyed by stream and record index.
+pub(super) type TailFlags<'a> = HashMap<(&'a str, u64), DesignScopeTailFlags>;
 
 /// The containers and features of one document's timelines.
 #[derive(Default)]
@@ -122,15 +56,15 @@ pub(super) struct Projected {
 /// The timeline containers and item features of every document of the
 /// decode, keyed by the document's identity prefix (empty for the root
 /// document, `xref/…/occurrence-N/` for a referenced design). `bodies` are
-/// the bodies of the current geometry. Each timeline charges one loss to
-/// `losses` for its unread rollback marker. `scopes` places the markers.
+/// the bodies of the current geometry. A timeline whose rollback marker the
+/// flags leave open charges a loss to `losses`.
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
     features: &[LegacyFeature],
     timelines: &[DesignFeatureTimeline],
     types: &[SegmentType],
+    tail_flags: &TailFlags<'_>,
     bodies: &BTreeSet<&str>,
-    scopes: &TimelineScopes,
     losses: &mut Vec<LossNote>,
 ) -> Result<BTreeMap<String, Projected>, CodecError> {
     let mut streams = BTreeMap::<&str, Vec<&DesignFeatureTimeline>>::new();
@@ -162,15 +96,20 @@ pub(super) fn project(
                 .entry(document_prefix(stream).to_owned())
                 .or_default();
             let mut members = Vec::with_capacity(items.len());
+            let mut rolled_back = Vec::with_capacity(items.len());
             for item in items {
                 ctx.charge_entities(1, "project F3D v11 timeline item")?;
-                let feature = positioned
+                let flags = tail_flags.get(&(stream, item.value)).copied();
+                rolled_back.push(flags.map(|flags| flags.rolled_back));
+                let feature = match positioned
                     .get(&(stream, ordinal))
                     .and_then(|candidates| item_feature(candidates, item.value))
-                    .map_or_else(
-                        || unprojected_item(stream, timeline, item.value, &item_types),
-                        |feature| resolved_item(feature, bodies, losses),
-                    );
+                {
+                    Some(feature) => resolved_item(feature, bodies, losses),
+                    None => {
+                        unprojected_item(stream, timeline, item.value, &item_types, flags, losses)
+                    }
+                };
                 members.push(Member::Feature(feature.id.clone()));
                 projected.features.push(feature);
                 ordinal = ordinal
@@ -179,20 +118,7 @@ pub(super) fn project(
             }
             ctx.charge_entities(1, "project F3D v11 timeline")?;
             let id = container_id(timeline.id());
-            let records = items.iter().map(|item| item.value).collect::<Vec<_>>();
-            let rollback = match scopes
-                .marker(stream, &records)
-                .and_then(|first| members.get(first))
-            {
-                Some(first) => Rollback::Before(first.clone()),
-                None if scopes.built_through_end(stream, &records) => Rollback::End,
-                None => {
-                    losses.push(F3dLossCode::HistoryRollbackUnread.note(format!(
-                        "timeline {id}: rollback marker not read; stated built through its last item"
-                    )));
-                    Rollback::End
-                }
-            };
+            let rollback = rollback(&id, &members, &rolled_back, losses);
             projected.containers.push(Container::Ordered {
                 id,
                 kind: OrderedKind::Timeline,
@@ -204,6 +130,55 @@ pub(super) fn project(
         }
     }
     Ok(documents)
+}
+
+/// The rollback marker of the timeline `id` from the rolled-back flag of each
+/// of its `members` (`None` where the flags are unread): before the first
+/// rolled-back item when no later item is read as built, else after the last
+/// item. A loss names a marker the flags leave open: an unread item before the
+/// first rolled-back item, or after it.
+fn rollback(
+    id: &ContainerId,
+    members: &[Member],
+    rolled_back: &[Option<bool>],
+    losses: &mut Vec<LossNote>,
+) -> Rollback {
+    let Some(first) = rolled_back.iter().position(|flag| *flag == Some(true)) else {
+        if rolled_back.contains(&None) {
+            losses.push(F3dLossCode::HistoryRollbackUnread.note(format!(
+                "timeline {id}: rollback marker not read; stated built through its last item"
+            )));
+        }
+        return Rollback::End;
+    };
+    if rolled_back
+        .iter()
+        .skip(first)
+        .any(|flag| *flag == Some(false))
+    {
+        losses.push(F3dLossCode::HistoryRollbackUnread.note(format!(
+            "timeline {id}: a built item follows a rolled-back item; stated built through its last item"
+        )));
+        return Rollback::End;
+    }
+    if first
+        .checked_sub(1)
+        .and_then(|previous| rolled_back.get(previous))
+        == Some(&None)
+    {
+        losses.push(F3dLossCode::HistoryRollbackBoundUnread.note(format!(
+            "timeline {id}: the item before the first rolled-back item is unread; the rollback marker can stand before it"
+        )));
+    }
+    if rolled_back.iter().skip(first).any(Option::is_none) {
+        losses.push(F3dLossCode::HistoryRollbackUnread.note(format!(
+            "timeline {id}: an item after the first rolled-back item is unread; stated rolled back from the first rolled-back item"
+        )));
+    }
+    members
+        .get(first)
+        .cloned()
+        .map_or(Rollback::End, Rollback::Before)
 }
 
 /// The identity prefix of the document that holds `stream`: everything up to
@@ -280,22 +255,31 @@ fn stored(operation: &LegacyOperation, bodies: &BTreeSet<&str>) -> Option<Featur
 }
 
 /// The feature of an item the v10 projection did not resolve: its record
-/// type's family, or a native operation named by that type.
+/// type's family, or a native operation named by that type, suppressed as
+/// its scope tail `flags` state.
 fn unprojected_item(
     stream: &str,
     timeline: &DesignFeatureTimeline,
     record: u64,
     types: &ItemTypes<'_>,
+    flags: Option<DesignScopeTailFlags>,
+    losses: &mut Vec<LossNote>,
 ) -> Feature {
+    let id = item_feature_id(stream, record);
+    if let Some(code) = flags.and_then(|flags| flags.active_without_result()) {
+        losses.push(code.note(format!(
+            "feature {id} stores the no-result flag and no suppression state byte; it is read as an active feature with no current result"
+        )));
+    }
     let operation = match types.guid(record).map(kind_family) {
         Some(Family::Typed(family)) => FeatureOperation::Unresolved { family },
         Some(Family::Native(kind)) => native(&kind),
         None => native("timeline-item"),
     };
     Feature {
-        id: item_feature_id(stream, record),
+        id,
         name: None,
-        suppressed: None,
+        suppressed: flags.map(|flags| Dimension::Literal(flags.suppressed())),
         definition: FeatureDefinition {
             operation,
             refine: None,
