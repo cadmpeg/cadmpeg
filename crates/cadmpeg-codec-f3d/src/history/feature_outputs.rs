@@ -225,6 +225,41 @@ pub(crate) fn bind_feature_outputs(
         let order = history
             .states_oldest_first()
             .unwrap_or_else(|| (0..history.states().len()).collect());
+        let workers = std::thread::available_parallelism()
+            .map_or(1, std::num::NonZeroUsize::get)
+            .min(6);
+        let keep_materialized = history.states().len() <= super::KEEP_MATERIALIZED_MAX_STATES;
+        if keep_materialized && workers > 1 && order.len() >= 8 {
+            super::output_measure::measure_history_states_parallel(
+                &super::output_measure::ParallelMeasureInputs {
+                    history_index,
+                    history,
+                    by_node: &by_node,
+                    order: &order,
+                    output_states: &output_states,
+                    measured_states: &measured_states,
+                    workers,
+                },
+                &mut super::output_measure::ParallelMeasureTargets {
+                    treatment_states: &mut treatment_states,
+                    losses: &mut losses,
+                    feature_edge_midpoints: &mut feature_edge_midpoints,
+                    state_deleted_bodies: &mut state_deleted_bodies,
+                    state_face_planes: &mut state_face_planes,
+                    state_incomplete_body_centers: &mut state_incomplete_body_centers,
+                    state_body_vertices: &mut state_body_vertices,
+                    state_body_centers: &mut state_body_centers,
+                    state_exact_bodies: &mut state_exact_bodies,
+                    state_split_candidates: &mut state_split_candidates,
+                    state_body_bounds: &mut state_body_bounds,
+                    state_present_bodies: &mut state_present_bodies,
+                    state_solid_bodies: &mut state_solid_bodies,
+                    state_solid_outputs: &mut state_solid_outputs,
+                    state_outputs: &mut state_outputs,
+                },
+            );
+            continue;
+        }
         let mut walked_deletions: Option<(usize, Option<BTreeSet<i64>>)> = None;
         for (position, &index) in order.iter().enumerate() {
             let state = &history.states()[index];
@@ -509,7 +544,9 @@ pub(crate) fn bind_feature_outputs(
                 ))
             })();
             walked_deletions = next_deletions;
-            history.retain_topology(index);
+            if !keep_materialized {
+                history.retain_topology(index);
+            }
             let Some((state_id, outputs, solid_affected)) = outputs else {
                 continue;
             };
