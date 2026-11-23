@@ -6,7 +6,10 @@
 //! from the `SAB_DATA` and `STEP_DATA` streams of the compound-file directory
 //! and does not classify other compound files as Alibre. The `SAB_DATA` stream
 //! holds the part body as a Spatial ACIS binary stream, which decodes through
-//! `cadmpeg-asm` into the neutral B-rep. The crate is read-only.
+//! `cadmpeg-asm` into the neutral B-rep. The `STEP_DATA` stream holds the
+//! feature model as STEP Part 21 text, which decodes into the design layer:
+//! one ordered timeline of datums, sketches, and features with their
+//! parameters. The crate is read-only.
 //!
 //! <!-- generated: capability alibre -->
 //! Support: L3 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#alibre-design-adprt)).
@@ -15,8 +18,11 @@
 mod container;
 mod coverage;
 mod decode;
+mod design;
 mod dialect;
+mod history;
 mod loss;
+mod part21;
 
 use cadmpeg_container::compound::CompoundPrefixProbe;
 use cadmpeg_core::decode::{DecodeContext, View};

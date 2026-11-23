@@ -28,13 +28,37 @@ This document uses ASD-STE100 Simplified Technical English.
 
 ## 2. Feature history
 
-### ALB-02. Feature model in `STEP_DATA`
+### ALB-02. Feature families without a decoded record
 
-**Question.** How do the entities of the feature model map to features, sketches, constraints, and parameters in the neutral IR?
+**Question.** Which entities and attributes store a pattern, mirror, chamfer, shell, thread, sweep, draft, and rib?
 
-**Known.** `alibre.md` §4 lists the entity families. A `DESIGNSTATE` entity carries a name, an index, an operation reference, a flag, and a context reference. An `EXTRUDESKETCHOPERATION` entity references its sketch, its end condition, and its dimension. A `DOUBLEPARAMETER` entity holds a parameter name, a GUID, and a value in model units.
+**Known.** `alibre.md` §4 lists the operation entities of the extrusion, revolution, fillet, hole, loft, offset plane, and sketch. A state with another operation entity is a `DESIGNSTATE` whose operation attribute references that entity. The decoder keeps the state as a native feature named after the entity and reports `alibre/history.operation-unmapped`.
 
-**Need.** Parts with one feature of each family (extrusion, revolution, fillet, hole, loft, pattern), saved in turn, with the new entity families compared.
+**Need.** Parts with one feature of each family, saved in turn, with the new entity families compared against the state list.
+
+### ALB-06. Logicals and integers of the operation entities
+
+**Question.** What do the logical and integer attributes of the operation and end-condition entities state?
+
+**Known.** `BLINDENDCONDITION` attribute 2 is a logical that is false for an extrusion on the sketch normal. `BLINDANGLEENDCONDITION` attribute 0 and `THROUGHALLENDCONDITION` attribute 2 are logicals. `EXTRUDESKETCHOPERATION` stores the integer 0 at attribute 1 and the integer 2 at attribute 7, and a logical at attribute 9. `HOLEOPERATION` stores the integer 1 at attribute 1 and two logicals after the shape. `SIMPLEHOLE` stores the integer list `(0)` at attribute 0 and integers and logicals after the end condition. `BLOCKPRIMITIVE` ends with a logical. `DESIGNSKETCH` stores integers at attributes 4 to 6 and 8 and a list of text numbers at attribute 8.
+
+**Need.** One save of each operation with a single control changed (reversed extrusion direction, symmetric extrusion, extrusion to a face, hole direction, construction geometry in a sketch), with the changed attribute compared.
+
+### ALB-07. Edge and face selection
+
+**Question.** How does a `TOPOLOGYSIGNATURE` select edges and faces of the body?
+
+**Known.** An `OPERATIONTARGETPROXY` of a fillet or of a sketch on a face references a `TOPOLOGYSIGNATURE` whose attribute 0 is a short text of the form `#<n>`. The text names no edge or face by an index of the `SAB_DATA` records. The decoder keeps the text as the native selection text of an unread selection.
+
+**Need.** A fillet on two different edges of one body, and sketches on two different faces, with the signature texts compared against the edge and face order of the body.
+
+### ALB-08. Loft settings and sketch constraint kinds
+
+**Question.** What do the loft attributes after the section list state, and which kinds of `CONSTRAINTPAIRUV` besides 2, 4, and 6 exist?
+
+**Known.** `LOFTOPERATION` holds after the section list an empty list, the integer 2048, two lists of two reals `(1.,1.)` and `(0.1,0.1)` and `(0.,0.)`, a list of two logicals, the integer 4, and a logical. A `CONSTRAINTPAIRUV` of another kind, or with another pair of operands, is reported by `alibre/history.sketch-constraint-unmapped`.
+
+**Need.** A loft with tangent end conditions and a changed section count, and sketches with one constraint of each kind (tangent, equal, perpendicular, dimension), with the records compared.
 
 ### ALB-03. Other streams
 

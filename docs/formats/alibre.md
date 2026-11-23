@@ -25,7 +25,7 @@ The file is a CFB version 3 file with the signature `D0 CF 11 E0 A1 B1 1A E1`. T
 | `GLOBAL_PARAMETER_DATA_CACHE` | A short binary record. |
 | `LIGHT_CONFIGURATION_DATA` | A short binary record. |
 
-A part holds the streams `SAB_DATA` and `STEP_DATA`. An assembly file holds `STEP_DATA` and a `CONSTITUENTS` stream and holds no `SAB_DATA` stream. The decoder detects a part from the two stream names and reads only `SAB_DATA`.
+A part holds the streams `SAB_DATA` and `STEP_DATA`. An assembly file holds `STEP_DATA` and a `CONSTITUENTS` stream and holds no `SAB_DATA` stream. The decoder detects a part from the two stream names and reads `SAB_DATA` for the body and `STEP_DATA` for the feature history.
 
 ## 2. The `SAB_DATA` stream
 
@@ -59,18 +59,95 @@ An `edge` record stores the continuity string `unknown` or `tangent`. A face on 
 
 ## 3. Decode
 
-The decoder reports the primary dialect `alibre:cfb-acis-binary` and the kernel dialect `acis:save-format-binary-other`. The save format 33 is outside the verified Spatial ACIS bands, so the kernel layer is unverified and decode reports `alibre/source.kernel-dialect-unverified`. Every stream other than `SAB_DATA` is reported by `alibre/source.streams-undecoded`.
+The decoder reports the primary dialect `alibre:cfb-acis-binary` and the kernel dialect `acis:save-format-binary-other`. The save format 33 is outside the verified Spatial ACIS bands, so the kernel layer is unverified and decode reports `alibre/source.kernel-dialect-unverified`. Every stream other than `SAB_DATA` and `STEP_DATA` is reported by `alibre/source.streams-undecoded`.
 
 A `SAB_DATA` stream without the ACIS binary magic or without a record-stream boundary classifies as `alibre:unknown`, and decode refuses it as an unsupported dialect.
 
 ## 4. The `STEP_DATA` stream
 
-The stream is STEP Part 21 text with the schema names `ALIBRE_SCHEMA` and `CONFIG_CONTROL_DESIGN`. It describes the feature model and holds no faces. The entity families are:
+The stream is STEP Part 21 text with the schema names `ALIBRE_SCHEMA` and `CONFIG_CONTROL_DESIGN`. It describes the feature model and holds no faces. The `DATA` section holds simple entity instances `#n=NAME(arguments);`. A parameter is `$` (null), `*` (omitted), an integer, a real, a quoted string, an enumeration or logical `.X.`, a reference `#n`, a parenthesized list, or a typed parameter `NAME(arguments)`. Attribute positions below count from 0. The model unit is the centimetre, and an angle is in radians.
 
-- Product structure: `PRODUCT`, `PRODUCT_DEFINITION`, `DESIGNPARTCONFIGURATION`, `DESIGNWORKSPACE`.
-- Feature history: `DESIGNSTATE` (one for each origin, axis, plane, sketch, and feature, with an index), `DESIGNPARTSTATECONTEXT`, `EXTRUDESKETCHOPERATION`, `DEFINESKETCHOPERATION`, `BLINDENDCONDITION`.
-- Sketches: `DESIGNSKETCH`, `BLOCKDEFINITION`, `BLOCKPRIMITIVE`, `LINE`, `REFERENCEPOINTUV`, `REFERENCEAXISUV`, `CONSTRAINTPAIRUV`, `CONSTRAINTCONTEXTUV`.
-- Parameters and dimensions: `DOUBLEPARAMETER`, `PARAMETERTABLE`, `MEASUREMENT`, `LINEARDIMENSION`, `DESIGNDIMENSION`.
-- Document profile: `PROFILE` with `INTEGERVALUEPAIR`, `REALVALUEPAIR`, `STRINGVALUEPAIR`, `BOOLEANVALUEPAIR`, and `MEASUREMENTFORMAT` entities.
+The entity families are:
 
-The decoder does not read this stream.
+- Product structure: `PRODUCT`, `PRODUCT_DEFINITION`, `DESIGNPARTCONFIGURATION`, `DESIGNWORKSPACE`, `DESIGNPART`.
+- Feature history: `DESIGNSTATE`, `DESIGNPARTSTATECONTEXT`, the operation entities of §4.2, and the end-condition entities of §4.5.
+- Sketches: `DESIGNSKETCH`, `BLOCKDEFINITION`, `BLOCKPRIMITIVE`, `LINE`, `CIRCLE`, `NODEUV`, `REFERENCEPOINTUV`, `REFERENCEAXISUV`, `REFERENCECIRCLEUV`, `REFERENCEDEPENDENTUV`, `CONSTRAINTPAIRUV`, `CONSTRAINTCONTEXTUV`.
+- Parameters and dimensions: `DOUBLEPARAMETER`, `ANGLEPARAMETER`, `ANGLEUV`, `PARAMETERTABLE`, `MEASUREMENT`, `LINEARDIMENSION`, `DESIGNDIMENSION`, `DIMENSIONANNOTATION`.
+- Document profile: `PROFILE` with `INTEGERVALUEPAIR`, `REALVALUEPAIR`, `STRINGVALUEPAIR`, `BOOLEANVALUEPAIR`, `MEASUREMENTFORMATPAIR`, `FONTDESCRIPTIONPAIR`, and `HATCHPATTERNPAIR` entities.
+
+### 4.1 Geometry entities
+
+| Entity | Attributes |
+|---|---|
+| `CARTESIAN_POINT` | 1: list of 2 or 3 coordinates. |
+| `DIRECTION` | 1: list of 2 or 3 components. |
+| `VECTOR` | 1: `DIRECTION`; 2: length. |
+| `AXIS1_PLACEMENT` | 1: `CARTESIAN_POINT` origin; 2: `DIRECTION` axis. |
+| `AXIS2_PLACEMENT_3D` | 1: origin; 2: `DIRECTION` of the z axis; 3: `DIRECTION` of the x axis. |
+| `AXIS2_PLACEMENT_2D` | 1: 2D origin. |
+| `PLANE` | 1: `AXIS2_PLACEMENT_3D`. |
+| `LINE` | 1: 2D start point; 2: `VECTOR` whose direction is a 2D unit direction. |
+| `CIRCLE` | 1: `AXIS2_PLACEMENT_2D` of the centre; 2: radius. |
+| `NODEUV` | 1: 2D point of a free sketch point. |
+
+The y axis of a placement is the cross product of the z axis and the x axis. A `LINE` ends at its start point plus the direction scaled by the vector length. Sketch coordinates are in the frame of the sketch plane.
+
+### 4.2 States and operations
+
+`DESIGNPARTSTATECONTEXT` attribute 0 lists the `DESIGNSTATE` entities in feature order, and attribute 1 references the last state. A `DESIGNSTATE` holds the name (0), the index (1), the operation entity (2), and a logical (3). The index is 0 for the states of the origin, the principal axes, the principal planes, and sketches. A state of a modeling feature or a user datum holds its 1-based position among such states.
+
+| Operation entity | Attributes |
+|---|---|
+| `DESIGNPOINTOPERATION` | 1: `DESIGNPRIMARYPOINT` (name 1, `CARTESIAN_POINT` 2). |
+| `DESIGNAXISOPERATION` | 1: `DESIGNPRIMARYAXIS` (name 1, `AXIS1_PLACEMENT` 2). |
+| `DESIGNPLANEOPERATION` | 1: `DESIGNPRIMARYPLANE` (name 1, `PLANE` 2) or `DESIGNASSOCIATEDPLANE` (name 1, `PLANE` 2, `OFFSETPLANEPRODUCER` 3). |
+| `DEFINESKETCHOPERATION` | 1: `DESIGNSKETCH`. |
+| `EXTRUDESKETCHOPERATION` | 0: list of `DESIGNDIMENSION`; 2: `DESIGNSKETCH`; 3: `BLINDENDCONDITION`. |
+| `REVOLVESKETCHOPERATION` | 0: list of `DESIGNDIMENSION`; 2: `DESIGNSKETCH`; 3: `OPERATIONTARGETPROXY` of a `DESIGNPRIMARYAXIS`; 7: `AXIS1_PLACEMENT` of the revolution axis; 8: `BLINDANGLEENDCONDITION`. |
+| `FILLETOPERATION` | 1: list of `OPERATIONTARGETPROXY`; 2: radius `DOUBLEPARAMETER`. |
+| `HOLEOPERATION` | 2: `DESIGNSKETCH` of the hole centres; 3: `SIMPLEHOLE`. |
+| `LOFTOPERATION` | 2: ordered list of the `DESIGNSKETCH` entities of the sections. |
+
+`OFFSETPLANEPRODUCER` holds an `OPERATIONTARGETPROXY` of the base plane (0) and the offset `DOUBLEPARAMETER` (1). The plane of an associated plane lies at the offset along the normal of the base plane. `OPERATIONTARGETPROXY` attribute 1 references the target: a `DESIGNPRIMARYPLANE`, a `DESIGNASSOCIATEDPLANE`, a `DESIGNPRIMARYAXIS`, or a `TOPOLOGYSIGNATURE`.
+
+### 4.3 Sketches
+
+`DESIGNSKETCH` holds the name (0), the `OPERATIONTARGETPROXY` of the support (1), the `BLOCKDEFINITION` (2), and the `PLANE` of the sketch frame (3). A support that references a plane datum places the sketch on that plane. A support that references a `TOPOLOGYSIGNATURE` places the sketch on a face of the body.
+
+`BLOCKDEFINITION` holds the `BLOCKPRIMITIVE` list (1), the `CONSTRAINTCONTEXTUV` (8), the x axis reference (9), and the y axis reference (10), each a `REFERENCEAXISUV` with the first logical true. `BLOCKPRIMITIVE` holds the list of reference entities of the primitive (0), the geometry entity (1), and the ordinal (3).
+
+The reference entities of a primitive are:
+
+- `REFERENCEPOINTUV`: logical (0) true for the sketch origin; point (2); list of `REFERENCEDEPENDENTUV` (3).
+- `REFERENCEAXISUV`: logical (0) true for a sketch axis; point (2); `VECTOR` (3). A sketch axis starts at the unit point of the axis and ends at the origin.
+- `REFERENCECIRCLEUV`: logical (0); `CIRCLE` (2); list of `REFERENCEDEPENDENTUV` (3).
+
+`REFERENCEDEPENDENTUV` holds a geometry entity (0) and an index (1). Index 0 of a `LINE` is its start point, index 1 is its end point, and index 0 of a `CIRCLE` is its centre. A `REFERENCEPOINTUV` that depends on a `LINE` or `CIRCLE` bounds that primitive with the role of the index.
+
+`CONSTRAINTPAIRUV` holds a pair of reference entities (0), the context (1), and a kind (2). The kinds are:
+
+| Kind | Pair | Meaning |
+|---|---|---|
+| 6 | two `REFERENCEPOINTUV` | The two points coincide. |
+| 6 | `REFERENCEAXISUV` of a line, `REFERENCEPOINTUV` of an end point of that line | The point is an end point of the line. |
+| 2 | `REFERENCECIRCLEUV`, `REFERENCEPOINTUV` of its centre | The point is the centre of the circle. |
+| 4 | sketch axis, `REFERENCEAXISUV` of a line | The line is parallel to the sketch axis. |
+
+### 4.4 Parameters
+
+`DOUBLEPARAMETER` holds the name (0), a GUID or null (2), and the value (11) in centimetres. `ANGLEPARAMETER` holds the name (0), a GUID or null (2), and the `ANGLEUV` of the value (11), whose attribute 0 is the angle in radians. `PARAMETERTABLE` attribute 0 lists the parameters of the part. A parameter name starts with `D` for a distance, `R` for a radius, and `A` for an angle.
+
+### 4.5 End conditions and holes
+
+| Entity | Attributes |
+|---|---|
+| `BLINDENDCONDITION` | 2: logical, false for the direction of the sketch normal; 3: depth `DOUBLEPARAMETER`. |
+| `BLINDANGLEENDCONDITION` | 1: angle `ANGLEPARAMETER`. |
+| `THROUGHALLENDCONDITION` | The hole continues through the body. |
+| `SIMPLEHOLE` | 1: list with the diameter `DOUBLEPARAMETER`; 2: end condition. |
+
+An extrusion starts on the sketch plane and ends at the depth along the sketch normal. A revolution turns the sketch about the revolution axis through the angle. A loft joins its sections in list order. A fillet applies the radius to the edges that its targets name.
+
+### 4.6 Decode
+
+The decoder reads one feature for each state in state order and maps it to the design layer of the IR: the origin, axes, and planes to datums, an associated plane to an offset plane, a sketch to a placed sketch with its line, circle, and point entities, and the extrusion, revolution, fillet, hole, and loft to their operations. A parameter is a design parameter in millimetres or radians, and an operation refers to it by dimension. The decoder converts centimetres to millimetres. The decode reports `alibre/history.edge-selection-unresolved` for a topology signature, `alibre/history.direction-flag-assumed` for the logical of a blind end condition, and the other `alibre/history.*` codes for records that no feature maps. The remaining entities of the document profile are in `alibre/history.presentation-unmapped`.

@@ -18,6 +18,8 @@ use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection, Surface
 use crate::loss::AlibreLossCode;
 use crate::AlibreCodec;
 
+mod history;
+
 /// Allowance of a measured value beyond its stated numeric error, relative to
 /// the expected magnitude.
 const MEASURE_RELATIVE_FLOOR: f64 = 1.0e-9;

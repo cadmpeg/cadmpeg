@@ -15,7 +15,8 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::report::loss::LossNote;
 
-use crate::container::{AlibreContainer, SAB_STREAM};
+use crate::container::{AlibreContainer, SAB_STREAM, STEP_STREAM};
+use crate::history::History;
 use crate::dialect::{classify, kernel_stream, Classification, KernelStream};
 use crate::loss::AlibreLossCode;
 use crate::FORMAT;
@@ -55,7 +56,14 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     };
     let brep = decode_kernel_stream(ctx, bytes, &kernel)?;
     losses.extend(container.undecoded_streams_loss());
-    from_kernel(ctx, classification, &kernel, brep, losses, digest)
+    let step = container.stream(ctx, STEP_STREAM)?;
+    let history = crate::history::read(&crate::part21::parse(ctx, step.window())?)?;
+    if history.is_none() {
+        losses.push(AlibreLossCode::HistoryStreamUnread.note(
+            "the STEP_DATA stream names another schema or holds no part state context",
+        ));
+    }
+    from_kernel(ctx, classification, &kernel, brep, losses, digest, history)
 }
 
 fn decode_kernel_stream(
@@ -129,6 +137,7 @@ fn from_kernel(
     brep: AsmBrep,
     mut losses: Vec<LossNote>,
     digest: Sha256Digest,
+    history: Option<History>,
 ) -> Result<Decoded, CodecError> {
     let header = &kernel.header.metadata;
     losses.extend(classification.kernel_loss());
@@ -211,7 +220,7 @@ fn from_kernel(
         crate::coverage::UNKNOWN_SURFACE_FACES,
         stats.unknown_surface_faces(),
     );
-    let body = DecodeBody {
+    let mut body = DecodeBody {
         coverage,
         losses,
         ..DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer::full(
@@ -248,14 +257,18 @@ fn from_kernel(
     for id in untyped {
         source_fidelity.mark_untyped(id.as_str(), [ArenaClass::Model])?;
     }
+    let root = cadmpeg_ir::ids::ProductDefinitionId::compose(
+        &cadmpeg_ir::identity_namespace!("alibre", "model", "product-definition"),
+        cadmpeg_ir::identity_key!("root"),
+    );
     ir.state_root_definition(
         ctx,
-        cadmpeg_ir::ids::ProductDefinitionId::compose(
-            &cadmpeg_ir::identity_namespace!("alibre", "model", "product-definition"),
-            cadmpeg_ir::identity_key!("root"),
-        ),
+        root.clone(),
         cadmpeg_ir::products::ExternalDocument::default(),
     )?;
+    if let Some(history) = &history {
+        crate::design::project(ctx, &mut ir, history, &root, &mut body.losses)?;
+    }
     Ok(Decoded {
         ir,
         body,

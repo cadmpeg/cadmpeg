@@ -41,6 +41,24 @@ pub(crate) enum AlibreLossCode {
     SourceDialectUnverified,
     /// Streams of the container carry no decoded content in the IR.
     SourceStreamsUndecoded,
+    /// A history state holds an operation record that no feature of the history maps.
+    HistoryOperationUnmapped,
+    /// A sketch constraint record has a kind or operands that the history does not map.
+    HistoryConstraintUnmapped,
+    /// A sketch primitive holds a geometry record that the history does not map.
+    HistorySketchGeometryUnmapped,
+    /// A driving dimension holds annotation geometry that the history does not map.
+    HistoryDimensionAnnotationUnmapped,
+    /// A feature selects edges by a topology signature that names no edge of the body.
+    HistoryEdgeSelectionUnresolved,
+    /// A loft holds settings after its section list that the history does not map.
+    HistoryLoftSettingsUnmapped,
+    /// An end condition holds a logical that the history reads as the reversal of the sketch normal.
+    HistoryDirectionFlagAssumed,
+    /// The STEP_DATA stream holds no Alibre feature history.
+    HistoryStreamUnread,
+    /// The document profile and presentation records of the stream carry no decoded content in the IR.
+    HistoryPresentationUnmapped,
 }
 
 impl AlibreLossCode {
@@ -58,6 +76,15 @@ impl AlibreLossCode {
         Self::SourceRecordNameUnresolved,
         Self::SourceDialectUnverified,
         Self::SourceStreamsUndecoded,
+        Self::HistoryOperationUnmapped,
+        Self::HistoryConstraintUnmapped,
+        Self::HistorySketchGeometryUnmapped,
+        Self::HistoryDimensionAnnotationUnmapped,
+        Self::HistoryEdgeSelectionUnresolved,
+        Self::HistoryLoftSettingsUnmapped,
+        Self::HistoryDirectionFlagAssumed,
+        Self::HistoryStreamUnread,
+        Self::HistoryPresentationUnmapped,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -74,6 +101,15 @@ impl AlibreLossCode {
             Self::SourceRecordNameUnresolved => "source.record-name-unresolved",
             Self::SourceDialectUnverified => "source.kernel-dialect-unverified",
             Self::SourceStreamsUndecoded => "source.streams-undecoded",
+            Self::HistoryOperationUnmapped => "history.operation-unmapped",
+            Self::HistoryConstraintUnmapped => "history.sketch-constraint-unmapped",
+            Self::HistorySketchGeometryUnmapped => "history.sketch-geometry-unmapped",
+            Self::HistoryDimensionAnnotationUnmapped => "history.dimension-annotation-unmapped",
+            Self::HistoryEdgeSelectionUnresolved => "history.edge-selection-unresolved",
+            Self::HistoryLoftSettingsUnmapped => "history.loft-settings-unmapped",
+            Self::HistoryDirectionFlagAssumed => "history.direction-flag-assumed",
+            Self::HistoryStreamUnread => "history.stream-unread",
+            Self::HistoryPresentationUnmapped => "history.presentation-unmapped",
         }
     }
 
@@ -90,7 +126,16 @@ impl AlibreLossCode {
             | Self::TopologyFaceOwnerUnprojected
             | Self::SourceRecordNameUnresolved
             | Self::SourceDialectUnverified
-            | Self::SourceStreamsUndecoded => Severity::Warning,
+            | Self::SourceStreamsUndecoded
+            | Self::HistoryOperationUnmapped
+            | Self::HistoryConstraintUnmapped
+            | Self::HistorySketchGeometryUnmapped
+            | Self::HistoryDimensionAnnotationUnmapped
+            | Self::HistoryEdgeSelectionUnresolved
+            | Self::HistoryLoftSettingsUnmapped
+            | Self::HistoryDirectionFlagAssumed
+            | Self::HistoryStreamUnread
+            | Self::HistoryPresentationUnmapped => Severity::Warning,
         }
     }
 
@@ -108,6 +153,15 @@ impl AlibreLossCode {
                 LossTaxonomy::NoncanonicalSourceSyntax
             }
             Self::SourceStreamsUndecoded => LossTaxonomy::MetadataNotTransferred,
+            Self::HistoryOperationUnmapped
+            | Self::HistoryConstraintUnmapped
+            | Self::HistorySketchGeometryUnmapped
+            | Self::HistoryDimensionAnnotationUnmapped
+            | Self::HistoryEdgeSelectionUnresolved
+            | Self::HistoryLoftSettingsUnmapped
+            | Self::HistoryDirectionFlagAssumed
+            | Self::HistoryStreamUnread
+            | Self::HistoryPresentationUnmapped => LossTaxonomy::FeatureHistoryRetained,
         }
     }
 
@@ -147,6 +201,15 @@ mod tests {
                 "source.record-name-unresolved",
                 "source.kernel-dialect-unverified",
                 "source.streams-undecoded",
+                "history.operation-unmapped",
+                "history.sketch-constraint-unmapped",
+                "history.sketch-geometry-unmapped",
+                "history.dimension-annotation-unmapped",
+                "history.edge-selection-unresolved",
+                "history.loft-settings-unmapped",
+                "history.direction-flag-assumed",
+                "history.stream-unread",
+                "history.presentation-unmapped",
             ]
         );
     }

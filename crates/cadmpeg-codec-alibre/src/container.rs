@@ -77,7 +77,9 @@ impl<'a> AlibreContainer<'a> {
                 CompoundEntry::Stream(stream) => Some(stream.path()),
                 CompoundEntry::Storage(_) => None,
             })
-            .filter(|name| !name.eq_ignore_ascii_case(SAB_STREAM))
+            .filter(|name| {
+                !name.eq_ignore_ascii_case(SAB_STREAM) && !name.eq_ignore_ascii_case(STEP_STREAM)
+            })
             .collect();
         (!names.is_empty()).then(|| {
             AlibreLossCode::SourceStreamsUndecoded
