@@ -951,6 +951,30 @@ option `2`, and side extents `[1, 0]`.
 
 **Need.** A new-body `Extrude`, a `Fillet` of one of its edges, and then a cut `Extrude` of the body: the dependency entries of the cut scope and of its whole-body member, and the local identities of the selection identities of both `Extrude` items, compared with the same design without the `Fillet`.
 
+### DR-1049. Record-timestamp tables of the body-operand group and the whole-body member
+
+**Question.** Which records do record `G + 1` of the body-operand group and record `M + 1` of a whole-body member list, which record does each name as its owner, and in which form does record `M + 1` store them?
+
+**Known.** `f3d.md` §3.1 "**Body-operand group.**" gives record `G + 1` as the record-timestamp table of the group, and "**Whole-body member.**" gives record `M + 1`, which the member references as its record-timestamp table, as a record of type `6CCF41D5-40BE-48ED-A834-18F3EAED6C57`. `f3d.md` §3.1 gives the record-timestamp table: the prefix with `01 01` and a u32 entry count, entries of `01 + u32 record_index + six zero bytes + u64 timestamp`, an owner entry in the same form, and eight zero bytes. DR-916 gives the records that the tables of the records of a new-body `Extrude` list in a design of `Sketch` items and one `Extrude`.
+
+**Need.** A Sketch, a new-body `Extrude`, and a join `Extrude` of its body, saved, then a second join `Extrude` of the same body added and saved: the entries and the owner entry of records `G + 1` and `M + 1` of each join compared with the records of the scopes that the clauses of its whole-body member name.
+
+### DR-1050. Context GUID of the whole-body member
+
+**Question.** Which GUID does the whole-body member of a join or cut store as its context GUID?
+
+**Known.** `f3d.md` §3.1 "**Whole-body member.**" gives the LP-UTF16 asset GUID and the LP-UTF16 context GUID of the member, each of 36 code units; in `whole_body_member_single_clause` their length words stand at offsets 52 and 128. The asset GUID is the asset GUID of the profile selection. The context GUID of a persistent selection identity of the start record or of the profile selection is the third LP-UTF16 GUID of the component aggregate (type `E03784ED-5E19-4E14-B9F2-3B07017018CD`) ("**Persistent selection identities.**"). The decoder frames the member and keeps neither GUID.
+
+**Need.** A Sketch, a new-body `Extrude`, and a join `Extrude` of its body in the root component, and the same three features in a child component: the context GUID of the join's whole-body member compared with the GUIDs of the component aggregate and with the context GUID of the join's persistent selection identities.
+
+### DR-1051. GUID and tokens of the body entry of a join
+
+**Question.** Which GUID does the body entry of a join store, and which side keys of the join's tracked-results table do its tokens list?
+
+**Known.** `f3d.md` §3.1 "**Tracked results of a join or cut.**" gives the body entry of a join: the LP-UTF16 GUID of 36 code units at offset 22, u32 `0` at offset 98, the run count `1` at offset 102, the tokens, and the u64 first persistent identity of the join scope. The GUID of the body entry of a new-body `Extrude` is the browser-node GUID of its result body (DR-881), and its tokens are the side tokens `3` to `k + 2` ("**Tracked-results table.**"). In the fixed frame of a join, the result-body node count is `0` ("**Join or cut scope frame.**").
+
+**Need.** A Sketch, a new-body `Extrude` of a box, and a join `Extrude` whose profile lies on a face of the box, saved once with every side face of the join outside the box and once with some of its side faces inside the box: the GUID of the join's body entry compared with the GUIDs of the browser nodes and of the body entry of the creating `Extrude`, and the tokens compared with the keys of the side entries of the join's table.
+
 ### DR-884. Sketch placement without a tracked identity
 
 **Question.** What does a sketch placement path name when it references no tracked entity identity?
