@@ -159,10 +159,8 @@ fn a_display_table_binds_to_the_active_copy_of_a_stored_face() {
 }
 
 /// A configuration whose body list its evaluation holds writes its own
-/// partition from that evaluation's records. No write reaches this today:
-/// a write regenerates partitions only without a retained or patched
-/// partition, and such a write of a part with configurations is refused
-/// before it, for want of a native lane encoding of the design state.
+/// partition from that evaluation's records. A write with no retained or
+/// patched partition reaches it; the write tests below take that path.
 #[test]
 fn a_stored_configuration_state_writes_its_partition() {
     let result = decode(native_envelope_fixture(&two_configurations()));
