@@ -1283,21 +1283,42 @@ fn the_object_streams_hold_the_default_node_identifiers_and_the_top_plane_pair()
     let mut sketches = ids("moProfileFeature_c");
     sketches.sort_unstable();
     assert_eq!(sketches, [23, 24]);
-    // A `moCompRefPlane_c` names a default plane by its u32 feature number,
-    // a u32 time stamp, u16 `0`, the plane's u16 word, u16 `0` and a flag:
-    // `0` for the Front plane, `1` (a rotation follows) for the Top plane.
-    let reference = |feature: u32, word: u16, flag: u8| {
-        resolved.windows(15).any(|window| {
-            window[..4] == feature.to_le_bytes()
-                && window[8..10] == [0, 0]
-                && window[10..12] == word.to_le_bytes()
-                && window[12..14] == [0, 0]
-                && window[14] == flag
-        })
-    };
+    // Each sketch's `moCompRefPlane_c` opens with a `moUnitComponent_c`
+    // (79 bytes of body in a part of `swVersion` 14000) and then names a
+    // default plane by its u32 feature number, a u32 time stamp, u16 `0`, the
+    // plane's u16 word, u16 `0` and a flag: `0` for the Front plane, `1` (a
+    // rotation follows) for the Top plane.
+    let mut planes = Vec::new();
+    for (index, object) in walk.trace.iter().enumerate() {
+        if &*object.class != "moCompRefPlane_c" {
+            continue;
+        }
+        let sketch = walk.trace[..index]
+            .iter()
+            .rev()
+            .find(|owner| &*owner.class == "moProfileFeature_c")
+            .and_then(|owner| named_header(&resolved, owner.body))
+            .map(|(name, _)| name);
+        let unit = &walk.trace[index + 1];
+        assert_eq!(&*unit.class, "moUnitComponent_c");
+        assert_eq!(unit.at, object.body);
+        let at = unit.body + 79;
+        let u16_at = |offset: usize| u16::from_le_bytes([resolved[offset], resolved[offset + 1]]);
+        assert_eq!(u16_at(at + 8), 0);
+        assert_eq!(u16_at(at + 12), 0);
+        planes.push((
+            sketch,
+            u32::from_le_bytes(resolved[at..at + 4].try_into().expect("four bytes")),
+            u16_at(at + 10),
+            resolved[at + 14],
+        ));
+    }
     assert!(
-        reference(2, 3, 0),
-        "the Rectangle sketch names the Front plane"
+        planes.contains(&(Some("Rectangle".to_owned()), 2, 3, 0)),
+        "the Rectangle sketch names the Front plane: {planes:?}"
     );
-    assert!(reference(3, 2, 1), "the Arcs sketch names the Top plane");
+    assert!(
+        planes.contains(&(Some("Arcs".to_owned()), 3, 2, 1)),
+        "the Arcs sketch names the Top plane: {planes:?}"
+    );
 }

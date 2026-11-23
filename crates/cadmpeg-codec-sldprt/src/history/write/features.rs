@@ -1063,6 +1063,8 @@ mod tests {
         }
     }
 
+    /// When the part holds `u32::MAX - 1`, no identifier follows the largest,
+    /// and an added feature takes the lowest identifier the part does not hold.
     #[test]
     fn an_added_feature_takes_the_lowest_free_identifier_when_none_follows_the_largest() {
         let mut source = sldprt_with_body(&triangle_body());
@@ -1071,16 +1073,8 @@ mod tests {
             "Contents/Keywords",
             br#"<Keywords><Feature Name="Low" Type="MatrizL" id="1"><Dimension Name="D1">15</Dimension></Feature><Feature Name="High" Type="MatrizL" id="4294967294"><Dimension Name="D1">15</Dimension></Feature></Keywords>"#,
         ));
-        let decoded = SldprtCodec
-            .decode(&mut Cursor::new(source), &DecodeOptions::default())
-            .unwrap();
-        let native = sldprt_native(decoded.ir());
-        assert_eq!(native.object_ids().max(), Some(u32::MAX - 1));
-        let mut added = decoded.ir().model.features[0].clone();
-        added.id = FeatureId::mint("synthetic:test:feature#added").expect("fixture identity");
-        added.native_ref = None;
-        let allocated = super::generated_feature_source_ids(std::slice::from_ref(&added), &native)
-            .expect("an identifier is free");
-        assert_eq!(allocated[&added.id].value(), Some(2));
+        let written = written_with_an_added_datum_point(&source);
+        assert_eq!(source_ids(&written, "High"), [Some(u32::MAX - 1)]);
+        assert_eq!(source_ids(&written, "Added"), [Some(2)]);
     }
 }
