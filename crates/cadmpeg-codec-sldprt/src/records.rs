@@ -1439,9 +1439,15 @@ pub(crate) struct LineSides {
     /// next line record sweeps. `None` where the record is the direct form of
     /// section 2 (u32 `1` at +84 with a nonzero, non-null identity at +88),
     /// whose +84 is a selector.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_next_side"
+    )]
     pub(crate) next_side: Option<u32>,
 }
+
+cadmpeg_core::named_optional_field!(deserialize_next_side, u32, "next_side");
 
 /// Deserialization mirror of a sketch-entity marker, re-admitted against its lane payload.
 #[derive(Deserialize)]
