@@ -460,3 +460,14 @@ fn offset_plane_without_a_stored_distance_reads_its_display_in_the_document_unit
         Some(&"0.5".to_string())
     );
 }
+
+/// A value the `D1` parameter object holds that the display does not show is
+/// not the plane's distance: the plane reads its display and keeps it.
+#[test]
+fn offset_plane_rejects_a_stored_value_its_display_does_not_show() {
+    let lane = offset_plane_lane([0.0, 0.0, 0.006], Some(0.02));
+    let (parameters, properties) =
+        enriched_offset_plane(lane, "6", Some(cadmpeg_ir::design::units::UnitSymbol::Mm));
+    assert!((distance_mm(&parameters) - 6.0).abs() <= 1e-9);
+    assert_eq!(properties.get("DistanceDisplayed"), Some(&"6".to_string()));
+}

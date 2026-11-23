@@ -757,7 +757,7 @@ impl Writer<'_> {
             .map(|item| match item {
                 TimelineItem::Sketch(sketch) => sketch.scope,
                 TimelineItem::Plane(plane) => plane.scope,
-                TimelineItem::Extrude(extrude) => extrude.records.scope,
+                TimelineItem::Extrude(extrude) => extrude.records.scope.record,
             })
             .chain(indices.item.as_ref().map(|item| item.scope))
             .collect::<Vec<_>>();
@@ -795,12 +795,12 @@ impl Writer<'_> {
                 TimelineItem::Extrude(extrude) => {
                     let records = extrude.records;
                     members.extend([
-                        records.group,
-                        records.selection,
+                        records.group.record,
+                        records.selection.record,
                         records.along[0],
                         records.taper[0],
-                        records.start,
-                        records.scope,
+                        records.start.record,
+                        records.scope.record,
                     ]);
                 }
             }
@@ -834,12 +834,12 @@ impl Writer<'_> {
                 TimelineItem::Extrude(extrude) => {
                     let records = extrude.records;
                     members.extend([
-                        records.selection,
-                        records.group,
+                        records.selection.record,
+                        records.group.record,
                         records.along[0],
                         records.taper[0],
-                        records.start,
-                        records.scope,
+                        records.start.record,
+                        records.scope.record,
                     ]);
                 }
             }
@@ -1135,7 +1135,7 @@ impl Writer<'_> {
             let (scope, owned) = match item {
                 TimelineItem::Sketch(sketch) => (sketch.scope, 1),
                 TimelineItem::Plane(plane) => (plane.scope, 1),
-                TimelineItem::Extrude(extrude) => (extrude.records.scope, 2),
+                TimelineItem::Extrude(extrude) => (extrude.records.scope.record, 2),
             };
             identities.push((scope, (next..next + owned).collect()));
             next += owned;
@@ -1201,22 +1201,28 @@ impl Writer<'_> {
                     let records = extrude.records;
                     let [along, taper] = [records.along[0], records.taper[0]];
                     inputs.push((
-                        records.scope,
-                        vec![(component, COMPONENT_EDGE), (records.start, EDGE)],
+                        records.scope.record,
+                        vec![(component, COMPONENT_EDGE), (records.start.record, EDGE)],
                     ));
-                    inputs.push((records.group, vec![(records.selection, EDGE)]));
-                    inputs.push((records.selection, vec![(extrude.profile, SKETCH_EDGE)]));
+                    inputs.push((records.group.record, vec![(records.selection.record, EDGE)]));
                     inputs.push((
-                        records.start,
-                        vec![(records.group, EDGE), (along, EDGE), (taper, EDGE)],
+                        records.selection.record,
+                        vec![(extrude.profile, SKETCH_EDGE)],
                     ));
-                    dependents.push((extrude.profile, vec![(records.selection, SKETCH_EDGE)]));
-                    dependents.push((records.group, vec![(records.start, EDGE)]));
-                    dependents.push((records.start, vec![(records.scope, EDGE)]));
-                    dependents.push((records.selection, vec![(records.group, EDGE)]));
-                    dependents.push((along, vec![(records.start, EDGE)]));
-                    dependents.push((taper, vec![(records.start, EDGE)]));
-                    scopes.push(records.scope);
+                    inputs.push((
+                        records.start.record,
+                        vec![(records.group.record, EDGE), (along, EDGE), (taper, EDGE)],
+                    ));
+                    dependents.push((
+                        extrude.profile,
+                        vec![(records.selection.record, SKETCH_EDGE)],
+                    ));
+                    dependents.push((records.group.record, vec![(records.start.record, EDGE)]));
+                    dependents.push((records.start.record, vec![(records.scope.record, EDGE)]));
+                    dependents.push((records.selection.record, vec![(records.group.record, EDGE)]));
+                    dependents.push((along, vec![(records.start.record, EDGE)]));
+                    dependents.push((taper, vec![(records.start.record, EDGE)]));
+                    scopes.push(records.scope.record);
                 }
             }
         }

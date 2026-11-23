@@ -8,7 +8,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::View;
 
-use super::scalars::identified_trailer;
 use super::{is_class_token, COMPACT_SCALAR_HEADER, VALUE_ONLY_SCALAR_HEADER};
 use crate::archive::{compound_opening, resolved_count};
 use crate::layout::feature_input_scalar_class_prefix as prefix;
@@ -19,10 +18,17 @@ use crate::records::{
 
 /// The bytes of a class declaration before its name: the `ff ff 01 00`
 /// marker and the u16 name length.
-const DECLARATION_PREFIX: u64 = 6;
+pub(super) const DECLARATION_PREFIX: u64 = 6;
 
 /// The bytes of a count's i32 cell.
 const COUNT_LEN: usize = 4;
+
+/// The offset of the scalar object identifier in a scalar's trailer, after
+/// three zero bytes.
+const TRAILER_OBJECT_ID: usize = 3;
+
+/// The bound below which a count trailer's scalar object identifier lies.
+const COUNT_OBJECT_ID_BOUND: u32 = 1 << 24;
 
 /// A parameter a scalar's record states: its class, and its value in that
 /// class's unit.
@@ -278,18 +284,34 @@ fn stated(
 /// The offset of the i32 count of an `moIntegerParameter_c` scalar framed at
 /// `value`, the end of a 14-byte value-only header. Behind the 18-byte
 /// compact header, whose last four bytes are zero, the count follows those
-/// four bytes; each count's trailer begins after the count.
+/// four bytes; each count's trailer begins after the count. `None` unless a
+/// trailer begins at the cell's +4 and none at its +8 (`docs/formats/sldprt.md`
+/// §2): a padded value-only scalar frames an eight-byte f64 cell there, whose
+/// low half is no count.
 fn count_cell(payload: &[u8], value: usize) -> Option<usize> {
     let header = value.checked_sub(VALUE_ONLY_SCALAR_HEADER.len())?;
     let compact = header.checked_add(COMPACT_SCALAR_HEADER.len())?;
     let behind_compact_header = payload.get(header..compact) == Some(COMPACT_SCALAR_HEADER)
-        && !identified_trailer(payload, value.checked_add(COUNT_LEN)?)
-        && identified_trailer(payload, compact.checked_add(COUNT_LEN)?);
-    Some(if behind_compact_header {
+        && !count_trailer(payload, value.checked_add(COUNT_LEN)?)
+        && count_trailer(payload, compact.checked_add(COUNT_LEN)?);
+    let cell = if behind_compact_header {
         compact
     } else {
         value
-    })
+    };
+    (count_trailer(payload, cell.checked_add(COUNT_LEN)?)
+        && !count_trailer(payload, cell.checked_add(size_of::<f64>())?))
+    .then_some(cell)
+}
+
+/// Whether a count's trailer begins at `at`: three zero bytes, then the
+/// nonzero scalar object identifier, below 2^24.
+pub(super) fn count_trailer(payload: &[u8], at: usize) -> bool {
+    let Some(id_at) = at.checked_add(TRAILER_OBJECT_ID) else {
+        return false;
+    };
+    payload.get(at..id_at) == Some(&[0, 0, 0])
+        && View::u32_le_at(payload, id_at).is_some_and(|id| id != 0 && id < COUNT_OBJECT_ID_BOUND)
 }
 
 /// The class each class-token index of the lane's parameter slots names,

@@ -171,7 +171,11 @@ pub(crate) fn enrich_history_reference_planes(
                 .parameters
                 .get("D1")
                 .and_then(|value| displayed_offset_distance(value, length_unit));
-            let stored = displayed.and_then(|_| stored_offset_distance(lane, start, end));
+            let stored = displayed
+                .zip(feature.parameters.get("D1"))
+                .and_then(|(_, text)| {
+                    stored_offset_distance(lane, (start, end), text, length_unit)
+                });
             if let Some(distance) = stored {
                 stored_distances.entry(key).or_default().push(distance);
             }
@@ -567,8 +571,14 @@ fn displayed_offset_distance(text: &str, unit: Option<UnitSymbol>) -> Option<Len
 
 /// The distance the `D1` parameter object of the reference plane whose object
 /// spans `start..end` stores (`sldprt.md` §2): the first `D1` name record
-/// after the plane's own, its value in metres. `D1` is a magnitude.
-fn stored_offset_distance(lane: &FeatureInputLane, start: usize, end: usize) -> Option<Length> {
+/// after the plane's own, its value in metres, where the display `text`
+/// shows it. `D1` is a magnitude.
+fn stored_offset_distance(
+    lane: &FeatureInputLane,
+    (start, end): (usize, usize),
+    text: &str,
+    unit: Option<UnitSymbol>,
+) -> Option<Length> {
     let name = lane
         .names
         .iter()
@@ -576,8 +586,38 @@ fn stored_offset_distance(lane: &FeatureInputLane, start: usize, end: usize) -> 
         .filter_map(|name| usize::try_from(name.offset).ok())
         .filter(|offset| *offset > start && *offset < end)
         .min()?;
-    let metres = super::scalars::parameter_value(&lane.native_payload, name)?;
-    Length::new(metres.abs() * NATIVE_TO_MM)
+    let cell = super::scalars::scalar_value_offset(&lane.native_payload, name)?;
+    let metres = View::f64_le_at(&lane.native_payload, cell)?;
+    let distance = Length::new(metres.abs() * NATIVE_TO_MM)?;
+    display_shows(text, distance, unit).then_some(distance)
+}
+
+/// Whether the `D1` display `text` shows `distance`: a bare number is
+/// `distance` in the part's length unit `unit`, or in any length unit where
+/// the part states none, rounded to the number's decimal places; a literal
+/// with a unit is `distance`.
+fn display_shows(text: &str, distance: Length, unit: Option<UnitSymbol>) -> bool {
+    let text = text.trim();
+    let Ok(number) = text.parse::<f64>() else {
+        return crate::history::literals::parse_dimension_length_mm(text).is_some_and(|shown| {
+            (shown.get() - distance.get()).abs()
+                <= DISPLAY_LITERAL_TOLERANCE * shown.get().abs().max(1.0)
+        });
+    };
+    let places = text
+        .split_once('.')
+        .map_or(0, |(_, fraction)| fraction.len());
+    let half_step = 0.5 / 10_f64.powi(i32::try_from(places).unwrap_or(i32::MAX));
+    let units = match unit {
+        Some(unit) => vec![unit],
+        None => DISPLAY_LENGTH_UNITS.to_vec(),
+    };
+    units.into_iter().any(|unit| {
+        let (factor, quantity) = unit.canonical();
+        quantity == Quantity::LENGTH
+            && (distance.get() / factor - number).abs()
+                <= half_step + DISPLAY_LITERAL_TOLERANCE * number.abs().max(1.0)
+    })
 }
 
 /// The point and unit normal at the head of the plane-data object of the
@@ -2509,6 +2549,19 @@ const REFERENCE_PLANE_FRAME_TOLERANCE: f64 = 1.0e-9;
 
 /// Millimetres per metre: the plane records store metres.
 const NATIVE_TO_MM: f64 = 1000.0;
+
+/// Relative tolerance within which a length literal, or a display at its
+/// decimal places, shows a stored distance.
+const DISPLAY_LITERAL_TOLERANCE: f64 = 1.0e-9;
+
+/// The length units a bare display can be in where the part states none.
+const DISPLAY_LENGTH_UNITS: [UnitSymbol; 5] = [
+    UnitSymbol::Mm,
+    UnitSymbol::Cm,
+    UnitSymbol::M,
+    UnitSymbol::In,
+    UnitSymbol::Ft,
+];
 
 /// The zero bytes that end a reference plane's own bytes before the class
 /// token of its plane-data object in the shorter form (`sldprt.md` §2).

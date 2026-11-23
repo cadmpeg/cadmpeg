@@ -474,6 +474,21 @@ fn folder_sketch_uses_parent_collection() {
 }
 
 #[test]
+fn unread_folder_charges_one_loss_for_its_sketches() {
+    // The folder flag must be 0 or 1, so this folder frame is unread. The
+    // sketch and the parent collection both name it.
+    let (mut bytes, mut metadata) = collection_stream(500, &[(300, &[500])]);
+    append_folder(&mut bytes, &mut metadata, "Folder Name", 2, 8);
+    let (visibilities, losses) = decode_with_losses(&bytes, &metadata);
+    assert_eq!(visibilities.len(), 1);
+    assert_eq!(visibilities[0].1.ordinal_collection, None);
+    assert_eq!(
+        losses.iter().map(|loss| &loss.code).collect::<Vec<_>>(),
+        [&crate::loss::F3dLossCode::SketchFolderUndecoded.kind()]
+    );
+}
+
+#[test]
 fn collection_run_allows_uninterpreted_frame_tail() {
     let (mut bytes, metadata) = collection_stream(300, &[(300, &[ENTITY_SUFFIX])]);
     bytes.extend_from_slice(&[0; 3]);

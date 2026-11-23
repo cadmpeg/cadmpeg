@@ -2,7 +2,7 @@
 
 use super::super::names::object_names;
 use super::super::{COMPACT_SCALAR_HEADER, NAME_MARKER, SCALAR_HEADER, VALUE_ONLY_SCALAR_HEADER};
-use super::{named_scalars, parameter_value};
+use super::named_scalars;
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::FeatureInputOperandKind;
 
@@ -151,6 +151,74 @@ fn value_only_scalar_header_ends_at_the_value() {
     assert_eq!(scalar.object_id, 132);
     assert_eq!(scalar.role, crate::records::FeatureInputScalarRole::Native);
     assert!(scalar.operands.is_empty());
+}
+
+/// A value-only scalar named `D1` whose f64 `value` follows four zero bytes
+/// after its header, with the scalar trailer `object_id` after the value, and
+/// the offset of that value.
+fn padded_value_only_scalar(value: f64, object_id: u32) -> (Vec<u8>, usize) {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(NAME_MARKER);
+    payload.push(2);
+    for unit in "D1".encode_utf16() {
+        payload.extend_from_slice(&unit.to_le_bytes());
+    }
+    payload.extend_from_slice(VALUE_ONLY_SCALAR_HEADER);
+    payload.extend_from_slice(&[0; 4]);
+    let value_offset = payload.len();
+    payload.extend_from_slice(&value.to_le_bytes());
+    let trailer = payload.len();
+    payload.resize(trailer + 24, 0);
+    payload[trailer + 3..trailer + 7].copy_from_slice(&object_id.to_le_bytes());
+    (payload, value_offset)
+}
+
+#[test]
+fn padded_value_only_scalar_value_follows_its_four_zero_bytes() {
+    for value in [0.000_76, 2.0, 0.0127] {
+        let (payload, value_offset) = padded_value_only_scalar(value, 0x465);
+        let names = decoded_names(&payload);
+        let scalars = named_scalars(&payload, "lane", &names).unwrap();
+        let [scalar] = scalars.as_slice() else {
+            panic!("expected one scalar");
+        };
+        assert_eq!(scalar.value.get(), value);
+        assert_eq!(
+            scalar.offset,
+            cadmpeg_core::decode::u64_from_index(value_offset)
+        );
+        assert_eq!(scalar.object_id, 0x465);
+        assert_eq!(scalar.role, crate::records::FeatureInputScalarRole::Native);
+        let [name] = names.as_slice() else {
+            panic!("expected one name");
+        };
+        assert_eq!(
+            super::super::parameters::value_only_scalar_offset(&payload, name),
+            Some(value_offset)
+        );
+    }
+}
+
+#[test]
+fn a_padded_value_only_scalar_whose_trailer_opens_with_a_class_reference_holds_its_f64() {
+    // A class token (`0x8134`) or a class declaration after a zero byte.
+    let token = [0x00, 0x34, 0x81];
+    let mut declaration = vec![0x00, 0xff, 0xff, 0x01, 0x00, 0x05, 0x00];
+    declaration.extend_from_slice(b"sgArc");
+    for opening in [token.as_slice(), declaration.as_slice()] {
+        let (mut payload, value_offset) = padded_value_only_scalar(0.0127, 0x465);
+        payload[value_offset + 8..value_offset + 8 + opening.len()].copy_from_slice(opening);
+        let names = decoded_names(&payload);
+        let scalars = named_scalars(&payload, "lane", &names).unwrap();
+        let [scalar] = scalars.as_slice() else {
+            panic!("expected one scalar");
+        };
+        assert_eq!(scalar.value.get(), 0.0127);
+        assert_eq!(
+            scalar.offset,
+            cadmpeg_core::decode::u64_from_index(value_offset)
+        );
+    }
 }
 
 #[test]
@@ -373,69 +441,4 @@ fn indexed_feature_objects_match_the_linear_scans() {
             .unwrap_or(PAYLOAD_LEN);
         assert_eq!(starts.end(start, PAYLOAD_LEN), linear);
     }
-}
-
-/// A `D1` parameter object behind the named-object header `header`, storing
-/// `value`, with `trailer` after the f64.
-fn parameter_object(header: &[u8], value: f64, trailer: &[u8]) -> Vec<u8> {
-    let mut payload = Vec::new();
-    payload.extend_from_slice(NAME_MARKER);
-    payload.push(2);
-    for unit in "D1".encode_utf16() {
-        payload.extend_from_slice(&unit.to_le_bytes());
-    }
-    payload.extend_from_slice(header);
-    payload.extend_from_slice(&value.to_le_bytes());
-    payload.extend_from_slice(trailer);
-    payload.resize(payload.len() + 32, 0);
-    payload
-}
-
-/// Three zero bytes and a nonzero object identifier below 2^24.
-const IDENTIFIED: [u8; 7] = [0, 0, 0, 0x31, 0x02, 0, 0];
-
-#[test]
-fn parameter_value_is_the_cell_its_trailer_identifies_behind_each_header_form() {
-    let blank = [COMPACT_SCALAR_HEADER, &[0; 4]].concat();
-    for header in [
-        VALUE_ONLY_SCALAR_HEADER,
-        COMPACT_SCALAR_HEADER,
-        SCALAR_HEADER,
-        blank.as_slice(),
-    ] {
-        let payload = parameter_object(header, 0.012_345, &IDENTIFIED);
-        assert_eq!(
-            parameter_value(&payload, 0),
-            Some(0.012_345),
-            "{header:02x?}"
-        );
-    }
-}
-
-#[test]
-fn parameter_value_accepts_a_trailer_that_opens_with_a_class_token() {
-    let payload = parameter_object(COMPACT_SCALAR_HEADER, 0.0254, &[0, 0x4d, 0x82]);
-    assert_eq!(parameter_value(&payload, 0), Some(0.0254));
-}
-
-#[test]
-fn parameter_value_rejects_a_cell_without_a_trailer_and_two_identified_cells() {
-    let unidentified = parameter_object(COMPACT_SCALAR_HEADER, 0.0254, &[0, 0, 0, 0, 0, 0, 0]);
-    assert_eq!(parameter_value(&unidentified, 0), None);
-    // A zero value behind the 14-byte header followed by an identified
-    // trailer, then a second identified trailer four bytes later: both the
-    // 14-byte and the 18-byte cell are framed.
-    let mut payload = parameter_object(VALUE_ONLY_SCALAR_HEADER, 0.0, &[0, 0, 0, 0x31, 0, 0, 0]);
-    let trailer = NAME_MARKER.len() + 1 + 4 + COMPACT_SCALAR_HEADER.len() + 8;
-    payload[trailer..trailer + 7].copy_from_slice(&IDENTIFIED);
-    assert_eq!(parameter_value(&payload, 0), None);
-}
-
-/// A value whose low four bytes are zero behind the 18-byte header leaves a
-/// zero byte and a token-like word behind the 14-byte cell; the identified
-/// trailer of the 18-byte cell decides.
-#[test]
-fn parameter_value_prefers_an_identified_trailer_to_a_token_like_word() {
-    let payload = parameter_object(COMPACT_SCALAR_HEADER, 0.25, &IDENTIFIED);
-    assert_eq!(parameter_value(&payload, 0), Some(0.25));
 }

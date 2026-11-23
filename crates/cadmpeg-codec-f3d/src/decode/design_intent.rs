@@ -641,8 +641,10 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         crate::design::configurations::decode_configurations(ctx, scan, &mut losses)?;
     design.design_configurations = configurations.documents;
     design.configuration_roots_unbound = configurations.unbound_roots;
-    design.design_sheet_metal_settings =
-        crate::design::decode::sheet_metal_settings::decode_settings(scan, &mut losses)?;
+    design
+        .design_sheet_metal_settings
+        .clone_from(&prereqs.design_sheet_metal_settings);
+    losses.extend(prereqs.design_sheet_metal_settings_losses.iter().cloned());
     let projection_parameters = crate::design::decode::parameters::parameters_for_projection(
         &prereqs.design_parameters,
         &prereqs.design_parameter_owner_unparsed,
@@ -1544,17 +1546,22 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &model.features,
         &mut model.feature_input_topologies,
     )?;
-    model.configurations = crate::design::configurations::project_configurations_with_losses(
-        &design.design_configurations,
-        &crate::design::configurations::ConfigurationTargets {
-            parameters: &prereqs.design_parameters,
-            owners: &prereqs.design_parameter_owners,
-            scopes: &design.design_parameter_scopes,
-            neutral_parameters: &model.parameters,
-            neutral_features: &model.features,
-        },
+    model.configurations = crate::design::decode::record::recover(
+        crate::design::configurations::project_configurations(
+            &design.design_configurations,
+            &crate::design::configurations::ConfigurationTargets {
+                parameters: &prereqs.design_parameters,
+                owners: &prereqs.design_parameter_owners,
+                scopes: &design.design_parameter_scopes,
+                neutral_parameters: &model.parameters,
+                neutral_features: &model.features,
+            },
+        ),
         &mut losses,
-    )?;
+        F3dLossCode::ConfigurationProjectionNative,
+        "Configuration projection",
+    )?
+    .unwrap_or_default();
     crate::design::configurations::reconcile_active_configurations(
         &mut model.features,
         &mut model.configurations,

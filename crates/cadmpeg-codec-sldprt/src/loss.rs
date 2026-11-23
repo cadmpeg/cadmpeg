@@ -213,8 +213,9 @@ pub(crate) enum SldprtLossCode {
     /// An offset reference plane stores a frame, or a point and normal, that
     /// is not the plane the decoder places from its source plane and `D1`.
     FeatureOffsetPlaneFrameConflict,
-    /// An offset reference plane takes its distance from the `D1` display: no
-    /// `D1` parameter object of the plane stores it.
+    /// An offset reference plane takes its distance from the `D1` display: the
+    /// decoder reads no value of its `D1` parameter object that the display
+    /// shows.
     FeatureOffsetPlaneDistanceDisplayed,
     /// A revolution keeps a stored axis that lies outside the plane the
     /// decoder binds its profile sketch to (DI-85).
@@ -389,6 +390,14 @@ pub(crate) enum SldprtLossCode {
     WriterNativeStreamsOmitted,
     /// Export writes generated sketch marker records with no owning native object.
     WriterNativeSketchLaneOrphan,
+    /// Export writes a native extrusion with no face references and a zero bounding box.
+    WriterNativeBodyIdentityOmitted,
+    /// Export writes each native sketch with its profile body, which native top-level sketches
+    /// do not hold.
+    WriterNativeSketchProfileBodyKept,
+    /// Export writes the named native sketches of one circle about the origin with a
+    /// coincidence of the circle's centre and the origin point that the document does not state.
+    WriterNativeSketchOriginRelationAdded,
     /// Export writes the named configurations with a name or partition index it assigned.
     WriterConfigurationIdentityAssigned,
     /// Export omits the named bodies.
@@ -503,6 +512,11 @@ pub(crate) enum SldprtLossCode {
     /// value: no record types the dimension or binds it to a stored value,
     /// or the part's length unit is not read.
     DesignParameterValueUnread,
+    /// Parameters whose text is one reference to a parameter whose kind
+    /// differs or is not read, and whose unit-blind tree does not type or is
+    /// not confirmed by the document's values, hold the text and state no
+    /// dependency on the parameter it names.
+    DesignParameterReferenceAsText,
     /// Extrudes whose blind depth is bound to their record's only dimension,
     /// whose name is neither `Depth` nor `D1`.
     DesignExtrudeDepthAssumed,
@@ -520,6 +534,22 @@ pub(crate) enum SldprtLossCode {
     /// Parameters whose equation-manager line is stated as `SolidWorks`
     /// source text.
     DesignEquationSource,
+    /// Sketch curves stated construction because their curve record has
+    /// state `0`, read as a curve outside the profile.
+    DesignSketchConstructionAssumed,
+    /// Typed extrudes whose `Sketch` pick's closed regions differ from the
+    /// profile loops read from the stored records.
+    DesignExtrudeProfileDiffers,
+    /// Typed extrudes whose sketch holds no profile curve, so their `Sketch`
+    /// pick takes no region.
+    DesignExtrudeSketchEmpty,
+    /// Typed extrudes whose `Sketch` pick's closed regions the decoder did
+    /// not compare with the stored profile loops.
+    DesignExtrudeProfileUnchecked,
+    /// Sketch circles built from a dimension record that the design leaves
+    /// out, its dimension naming the stored curve they lie on, or states
+    /// construction where no face of the solid witnesses them.
+    DesignSketchDimensionCircle,
 }
 
 impl SldprtLossCode {
@@ -678,6 +708,9 @@ impl SldprtLossCode {
         Self::WriterNativeSkeletonOmitted,
         Self::WriterNativeStreamsOmitted,
         Self::WriterNativeSketchLaneOrphan,
+        Self::WriterNativeBodyIdentityOmitted,
+        Self::WriterNativeSketchProfileBodyKept,
+        Self::WriterNativeSketchOriginRelationAdded,
         Self::WriterConfigurationIdentityAssigned,
         Self::WriterBodiesOmitted,
         Self::WriterFaceNamesOmitted,
@@ -719,11 +752,17 @@ impl SldprtLossCode {
         Self::DesignFolderDropped,
         Self::DesignParameterDisplayRounded,
         Self::DesignParameterValueUnread,
+        Self::DesignParameterReferenceAsText,
         Self::DesignExtrudeDepthAssumed,
         Self::DesignParameterClassAssumed,
         Self::DesignParameterClassesDisagree,
         Self::DesignEquationUnread,
         Self::DesignEquationSource,
+        Self::DesignSketchConstructionAssumed,
+        Self::DesignExtrudeProfileDiffers,
+        Self::DesignExtrudeSketchEmpty,
+        Self::DesignExtrudeProfileUnchecked,
+        Self::DesignSketchDimensionCircle,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -886,6 +925,11 @@ impl SldprtLossCode {
             Self::WriterNativeSkeletonOmitted => "writer.native-skeleton-omitted",
             Self::WriterNativeStreamsOmitted => "writer.native-streams-omitted",
             Self::WriterNativeSketchLaneOrphan => "writer.native-sketch-lane-orphan",
+            Self::WriterNativeBodyIdentityOmitted => "writer.native-body-identity-omitted",
+            Self::WriterNativeSketchProfileBodyKept => "writer.native-sketch-profile-body-kept",
+            Self::WriterNativeSketchOriginRelationAdded => {
+                "writer.native-sketch-origin-relation-added"
+            }
             Self::WriterConfigurationIdentityAssigned => "writer.configuration-identity-assigned",
             Self::WriterBodiesOmitted => "writer.bodies-omitted",
             Self::WriterFaceNamesOmitted => "writer.face-names-omitted",
@@ -951,11 +995,17 @@ impl SldprtLossCode {
             Self::DesignFolderDropped => "design.folder-dropped",
             Self::DesignParameterDisplayRounded => "design.parameter-display-rounded",
             Self::DesignParameterValueUnread => "design.parameter-value-unread",
+            Self::DesignParameterReferenceAsText => "design.parameter-reference-as-text",
             Self::DesignExtrudeDepthAssumed => "design.extrude-depth-assumed",
             Self::DesignParameterClassAssumed => "design.parameter-class-assumed",
             Self::DesignParameterClassesDisagree => "design.parameter-classes-disagree",
             Self::DesignEquationUnread => "design.equation-unread",
             Self::DesignEquationSource => "design.equation-source",
+            Self::DesignSketchConstructionAssumed => "design.sketch-construction-assumed",
+            Self::DesignExtrudeProfileDiffers => "design.extrude-profile-differs",
+            Self::DesignExtrudeSketchEmpty => "design.extrude-sketch-empty",
+            Self::DesignExtrudeProfileUnchecked => "design.extrude-profile-unchecked",
+            Self::DesignSketchDimensionCircle => "design.sketch-dimension-circle",
         }
     }
 
@@ -971,6 +1021,9 @@ impl SldprtLossCode {
             Self::WriterNativeSkeletonOmitted => Severity::Warning,
             Self::WriterNativeStreamsOmitted => Severity::Warning,
             Self::WriterNativeSketchLaneOrphan => Severity::Warning,
+            Self::WriterNativeBodyIdentityOmitted => Severity::Warning,
+            Self::WriterNativeSketchProfileBodyKept => Severity::Warning,
+            Self::WriterNativeSketchOriginRelationAdded => Severity::Warning,
             Self::WriterConfigurationIdentityAssigned => Severity::Warning,
             Self::WriterBodiesOmitted => Severity::Warning,
             Self::WriterFaceNamesOmitted => Severity::Warning,
@@ -1147,11 +1200,16 @@ impl SldprtLossCode {
             | Self::DesignFolderDropped
             | Self::DesignParameterDisplayRounded
             | Self::DesignParameterValueUnread
+            | Self::DesignParameterReferenceAsText
             | Self::DesignExtrudeDepthAssumed
             | Self::DesignParameterClassAssumed
             | Self::DesignParameterClassesDisagree
             | Self::DesignEquationUnread
-            | Self::DesignEquationSource => Severity::Warning,
+            | Self::DesignEquationSource
+            | Self::DesignSketchConstructionAssumed
+            | Self::DesignExtrudeProfileDiffers
+            | Self::DesignExtrudeSketchEmpty
+            | Self::DesignSketchDimensionCircle => Severity::Warning,
             Self::AssemblyStructureNotTransferred => Severity::Blocking,
             Self::AssemblyPlacementUnresolved => Severity::Error,
             Self::AssemblyComponentsExternal
@@ -1160,6 +1218,7 @@ impl SldprtLossCode {
             | Self::AssemblyBomExclusionNotTransferred
             | Self::DesignFeatureUnresolved
             | Self::SketchSecondReading
+            | Self::DesignExtrudeProfileUnchecked
             | Self::HistoryRollbackMarkClassInferred
             | Self::HistoryXmlNormalised => Severity::Info,
         }
@@ -1177,6 +1236,9 @@ impl SldprtLossCode {
             Self::WriterNativeSkeletonOmitted => LossTaxonomy::MetadataNotTransferred,
             Self::WriterNativeStreamsOmitted => LossTaxonomy::MetadataNotTransferred,
             Self::WriterNativeSketchLaneOrphan => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterNativeBodyIdentityOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterNativeSketchProfileBodyKept => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterNativeSketchOriginRelationAdded => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterConfigurationIdentityAssigned => LossTaxonomy::MetadataNotTransferred,
             Self::WriterBodiesOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterFaceNamesOmitted => LossTaxonomy::AttributesNotTransferred,
@@ -1246,12 +1308,18 @@ impl SldprtLossCode {
                 LossTaxonomy::RecordNotTyped
             }
             Self::DesignFolderDropped => LossTaxonomy::MetadataNotTransferred,
+            Self::DesignParameterReferenceAsText => LossTaxonomy::ParametricRecordOmitted,
             Self::DesignParameterDisplayRounded
             | Self::DesignParameterValueUnread
             | Self::DesignExtrudeDepthAssumed
             | Self::DesignParameterClassAssumed
             | Self::DesignParameterClassesDisagree
-            | Self::DesignEquationSource => LossTaxonomy::DecodeDiagnostic,
+            | Self::DesignEquationSource
+            | Self::DesignSketchConstructionAssumed
+            | Self::DesignExtrudeProfileDiffers
+            | Self::DesignExtrudeSketchEmpty
+            | Self::DesignExtrudeProfileUnchecked
+            | Self::DesignSketchDimensionCircle => LossTaxonomy::DecodeDiagnostic,
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
             | Self::TopologyOwnershipWithheld
@@ -1709,6 +1777,9 @@ mod tests {
                 "writer.native-skeleton-omitted",
                 "writer.native-streams-omitted",
                 "writer.native-sketch-lane-orphan",
+                "writer.native-body-identity-omitted",
+                "writer.native-sketch-profile-body-kept",
+                "writer.native-sketch-origin-relation-added",
                 "writer.configuration-identity-assigned",
                 "writer.bodies-omitted",
                 "writer.face-names-omitted",
@@ -1750,11 +1821,17 @@ mod tests {
                 "design.folder-dropped",
                 "design.parameter-display-rounded",
                 "design.parameter-value-unread",
+                "design.parameter-reference-as-text",
                 "design.extrude-depth-assumed",
                 "design.parameter-class-assumed",
                 "design.parameter-classes-disagree",
                 "design.equation-unread",
                 "design.equation-source",
+                "design.sketch-construction-assumed",
+                "design.extrude-profile-differs",
+                "design.extrude-sketch-empty",
+                "design.extrude-profile-unchecked",
+                "design.sketch-dimension-circle",
             ]
         );
     }

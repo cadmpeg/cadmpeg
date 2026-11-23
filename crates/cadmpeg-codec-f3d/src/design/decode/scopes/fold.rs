@@ -1,5 +1,6 @@
+use super::parameter_scope::ParameterScopeSources;
 use super::sheet_metal_rule::{
-    local, rule_values, settings_rule, typed, Types, SETTINGS_GUID, UNFOLD_GUID,
+    linked_settings_rule, local, rule_values, typed, Types, SETTINGS_GUID, UNFOLD_GUID,
 };
 use crate::bytes::lp_utf16_bounded;
 use crate::design::decode::sketch::IndexedRecordOffsets;
@@ -44,6 +45,7 @@ fn unfold(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     types: &Types<'_>,
+    sources: &ParameterScopeSources<'_>,
 ) -> Option<DesignUnfoldOperation> {
     if !typed(types, scope.record_index, UNFOLD_GUID, 0) {
         return None;
@@ -63,13 +65,14 @@ fn unfold(
     {
         return None;
     }
-    let rule = settings_rule(
+    let rule = linked_settings_rule(
         bytes,
         records,
         types,
         settings.value,
-        scope.record_index,
+        scope,
         UNFOLD_GUID,
+        sources,
     );
     let rule_record_index = rule.map(|(index, _)| index);
     let rule_reference_assumed = rule.is_some_and(|(_, assumed)| assumed);
@@ -151,6 +154,7 @@ pub(super) fn bind(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     types: &Types<'_>,
+    sources: &ParameterScopeSources<'_>,
     scopes: &mut [DesignParameterScope],
 ) -> Result<(), CodecError> {
     if !scopes.iter().any(|scope| {
@@ -178,7 +182,7 @@ pub(super) fn bind(
     groups.sort_by_key(|group| (group.group_record_index, group.group_byte_offset));
     for scope in scopes {
         if scope.kind() == DesignFeatureKind::Unfold {
-            let value = unfold(bytes, records, scope, types);
+            let value = unfold(bytes, records, scope, types, sources);
             if let DesignScopePayloadMut::Unfold(slot) = scope.payload_mut() {
                 *slot = value;
             }

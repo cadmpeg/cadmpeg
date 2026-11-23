@@ -857,7 +857,11 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
         &[],
         &mut timeline,
         &entries,
-        &definition,
+        &super::typed::Scope {
+            definition: &definition,
+            outside_profile: &std::collections::HashSet::new(),
+            surfaces: &ir.geometry.surfaces,
+        },
     );
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
     let sketches = typed.sketches;
@@ -947,7 +951,7 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
         assert_eq!(typed.bound.get(parameter), Some(&Quantity::LENGTH));
     }
 
-    let (parameters, _) = entries.parameters(
+    let (parameters, _, _) = entries.parameters(
         &definition,
         &super::parameters::Readings {
             decoded: super::parameters::Decoded::new(
@@ -1010,7 +1014,11 @@ fn typed_timeline<'a>(
         &[],
         &mut timeline,
         &entries,
-        &ir.design.scopes[0].definition,
+        &super::typed::Scope {
+            definition: &ir.design.scopes[0].definition,
+            outside_profile: &std::collections::HashSet::new(),
+            surfaces: &ir.geometry.surfaces,
+        },
     );
     (timeline, entries, typed)
 }
@@ -1155,7 +1163,7 @@ fn a_reference_dimension_makes_the_tree_parameter_it_binds_driven() {
         &constraint.relation,
         SketchRelation::Radial { value: Dimension::Parameter(parameter), .. } if parameter == &hole
     )));
-    let (parameters, _) = entries.parameters(
+    let (parameters, _, _) = entries.parameters(
         &ir.design.scopes[0].definition,
         &super::parameters::Readings {
             decoded: super::parameters::Decoded::new(
@@ -1402,7 +1410,11 @@ fn members_follow_the_features_they_depend_on() {
         &[],
         &mut timeline,
         &entries,
-        &definition,
+        &super::typed::Scope {
+            definition: &definition,
+            outside_profile: &std::collections::HashSet::new(),
+            surfaces: &ir.geometry.surfaces,
+        },
     );
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
     let boss = &timeline.features[member_position(&timeline, "Boss")];
@@ -1536,5 +1548,7 @@ fn a_configuration_whose_bodies_are_current_bodies_charges_a_loss() {
     assert!(note.message.contains(&first.id.to_string()), "{note:#?}");
 }
 
+mod dimension_curves;
 mod parameters;
 mod rollback;
+mod state_zero;

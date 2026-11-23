@@ -2,7 +2,7 @@
 //! The XML streams and fixed-form streams of a generated part
 //! (`docs/formats/sldprt.md` §2 `KeyWords`, §8.2).
 
-use super::{ids, Facts, MATERIAL_NAME, TIME_STAMP};
+use super::{ids, Facts, Feature, MATERIAL_NAME, TIME_STAMP};
 
 /// The byte that opens a `KeyWords` payload before its XML declaration.
 const KEYWORDS_LEAD: u8 = 0x86;
@@ -14,12 +14,16 @@ const XML_DECLARATION: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n";
 /// The `swSolidWorks` namespace of `swXmlContents/Features`.
 const FEATURES_NAMESPACE: &str = "http://www.solidworks.com/sw2003/schema";
 
-/// One `KeyWords` record: element tag, identifier, name and type label.
+/// One `KeyWords` record: element tag, identifier, name, type label (empty
+/// for a user sketch, which writes none), whether it is dissectable, and its
+/// dimensions.
 struct Record<'a> {
     tag: &'static str,
     id: u32,
     name: &'a str,
     label: &'a str,
+    dissectable: bool,
+    dimensions: Vec<(&'static str, String)>,
 }
 
 /// `swXmlContents/KeyWords`: the lead byte, the XML declaration and a
@@ -32,138 +36,184 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
             id: facts.id_base + ids::ANNOTATIONS,
             name: "Annotations",
             label: "Annotations",
+            dissectable: false,
+            dimensions: Vec::new(),
         },
         Record {
             tag: "Feature",
             id: facts.id_base + ids::FRONT_PLANE,
             name: "Front Plane",
             label: "Plane",
+            dissectable: false,
+            dimensions: Vec::new(),
         },
         Record {
             tag: "Feature",
             id: facts.id_base + ids::TOP_PLANE,
             name: "Top Plane",
             label: "Plane",
+            dissectable: false,
+            dimensions: Vec::new(),
         },
         Record {
             tag: "Feature",
             id: facts.id_base + ids::RIGHT_PLANE,
             name: "Right Plane",
             label: "Plane",
+            dissectable: false,
+            dimensions: Vec::new(),
         },
         Record {
             tag: "Sketch",
             id: facts.id_base + ids::ORIGIN,
             name: "Origin",
             label: "Origin",
+            dissectable: false,
+            dimensions: Vec::new(),
         },
         Record {
             tag: "Feature",
             id: facts.id_base + ids::LIGHTS,
             name: "Lights, Cameras and Scene",
             label: "Lights, Cameras and Scene",
+            dissectable: false,
+            dimensions: Vec::new(),
         },
         Record {
             tag: "Feature",
             id: facts.id_base + ids::DESIGN_BINDER,
             name: "Design Binder",
             label: "Design Binder",
+            dissectable: false,
+            dimensions: Vec::new(),
         },
         Record {
             tag: "Feature",
             id: facts.id_base + ids::COMMENTS,
             name: "Comments",
             label: "Comments",
+            dissectable: false,
+            dimensions: Vec::new(),
         },
         Record {
             tag: "Feature",
             id: facts.id_base + ids::SOLID_BODIES,
             name: "Solid Bodies",
             label: "Solid Bodies",
+            dissectable: false,
+            dimensions: Vec::new(),
         },
         Record {
             tag: "Feature",
             id: facts.id_base + ids::SURFACE_BODIES,
             name: "Surface Bodies",
             label: "Surface Bodies",
+            dissectable: false,
+            dimensions: Vec::new(),
         },
         Record {
             tag: "Feature",
             id: facts.id_base + ids::MATERIAL,
             name: MATERIAL_NAME,
             label: "SOLIDWORKS Materials",
+            dissectable: false,
+            dimensions: Vec::new(),
         },
         Record {
             tag: "Feature",
             id: facts.id_base + ids::AMBIENT,
             name: "Ambient",
             label: "Ambient",
+            dissectable: false,
+            dimensions: Vec::new(),
         },
         Record {
             tag: "Feature",
             id: facts.id_base + ids::DIRECTIONAL_1,
             name: "Directional1",
             label: "Directional",
+            dissectable: false,
+            dimensions: Vec::new(),
         },
         Record {
             tag: "Feature",
             id: facts.id_base + ids::DIRECTIONAL_2,
             name: "Directional2",
             label: "Directional",
+            dissectable: false,
+            dimensions: Vec::new(),
         },
         Record {
             tag: "Feature",
             id: facts.id_base + ids::EQUATIONS,
             name: "Equations",
             label: "Equations",
+            dissectable: false,
+            dimensions: Vec::new(),
         },
         Record {
             tag: "Feature",
             id: facts.id_base + ids::EXPLODED_VIEWS,
             name: "",
             label: "Exploded Views",
+            dissectable: false,
+            dimensions: Vec::new(),
         },
         Record {
             tag: "Feature",
             id: facts.id_base + ids::SENSORS,
             name: "Sensors",
             label: "Sensors",
+            dissectable: false,
+            dimensions: Vec::new(),
         },
         Record {
             tag: "Feature",
             id: facts.id_base + ids::FAVORITES,
             name: "Favorites",
             label: "Favorites",
+            dissectable: false,
+            dimensions: Vec::new(),
         },
         Record {
             tag: "Feature",
             id: facts.id_base + ids::HISTORY,
             name: "History",
             label: "History",
+            dissectable: false,
+            dimensions: Vec::new(),
         },
         Record {
             tag: "Feature",
             id: facts.id_base + ids::SELECTION_SETS,
             name: "Selection Sets",
             label: "Selection Sets",
+            dissectable: false,
+            dimensions: Vec::new(),
         },
         Record {
             tag: "Feature",
             id: facts.id_base + ids::NOTES,
             name: "Notes",
             label: "Notes",
+            dissectable: false,
+            dimensions: Vec::new(),
         },
         Record {
             tag: "Feature",
             id: facts.id_base + ids::NOTES_END,
             name: "Notes1___EndTag___",
             label: "Notes",
+            dissectable: false,
+            dimensions: Vec::new(),
         },
         Record {
             tag: "Feature",
             id: facts.id_base + ids::MARKUPS,
             name: "Markups",
             label: "Markups",
+            dissectable: false,
+            dimensions: Vec::new(),
         },
     ];
     for body in facts.bodies {
@@ -172,6 +222,28 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
             id: body.feature_id,
             name: &body.name,
             label: "Imported",
+            dissectable: false,
+            dimensions: Vec::new(),
+        });
+    }
+    for feature in facts.features {
+        records.push(match feature {
+            Feature::Sketch(sketch) => Record {
+                tag: "Sketch",
+                id: sketch.feature_id,
+                name: &sketch.name,
+                label: "",
+                dissectable: true,
+                dimensions: Vec::new(),
+            },
+            Feature::Extrusion(extrusion) => Record {
+                tag: "Extrusion",
+                id: extrusion.feature_id,
+                name: &extrusion.name,
+                label: "Boss-Extrude",
+                dissectable: false,
+                dimensions: vec![("D1", format!("{}", extrusion.depth * MILLIMETRES_PER_METRE))],
+            },
         });
     }
     records.sort_by(|left, right| {
@@ -194,15 +266,39 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
         xml.push_str(&record.id.to_string());
         xml.push_str("\" Name=\"");
         push_escaped(&mut xml, record.name);
-        xml.push_str("\" Type=\"");
-        push_escaped(&mut xml, record.label);
-        xml.push_str("\"/>");
+        xml.push('"');
+        if !record.label.is_empty() {
+            xml.push_str(" Type=\"");
+            push_escaped(&mut xml, record.label);
+            xml.push('"');
+        }
+        if record.dissectable {
+            xml.push_str(" Dissectable=\"true\"");
+        }
+        if record.dimensions.is_empty() {
+            xml.push_str("/>");
+            continue;
+        }
+        xml.push('>');
+        for (name, text) in &record.dimensions {
+            xml.push_str("<Dimension Name=\"");
+            push_escaped(&mut xml, name);
+            xml.push_str("\">");
+            xml.push_str(text);
+            xml.push_str("</Dimension>");
+        }
+        xml.push_str("</");
+        xml.push_str(record.tag);
+        xml.push('>');
     }
     xml.push_str("</Keywords>");
     let mut payload = vec![KEYWORDS_LEAD];
     payload.extend_from_slice(xml.as_bytes());
     payload
 }
+
+/// Metres to millimetres.
+const MILLIMETRES_PER_METRE: f64 = 1000.0;
 
 /// `swXmlContents/Features`: the `swSolidWorks` document listing the file,
 /// its model and its configuration. The `swVersion` attribute is left out:

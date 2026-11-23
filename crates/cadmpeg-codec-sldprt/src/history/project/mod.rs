@@ -145,9 +145,10 @@ impl FeatureProjection {
             losses.push(
                 crate::loss::SldprtLossCode::FeatureOffsetPlaneDistanceDisplayed.note(format!(
                     "{} offset reference plane(s) ({displayed}) take their distance from the D1 \
-                     display, rounded to the display precision: no D1 parameter object of the \
-                     plane stores it. A bare display is read in the part's length unit, or in \
-                     millimetres where the part states none.",
+                     display, rounded to the display precision: the decoder reads no value of \
+                     the plane's D1 parameter object that the display shows. A bare display is \
+                     read in the part's length unit, or in millimetres where the part states \
+                     none.",
                     displayed.count(),
                 )),
             );
@@ -410,7 +411,8 @@ pub(super) struct OffsetSideReport {
     /// placed from their source plane and `D1`, each with what differs and
     /// the side the plane keeps.
     pub(super) contradicted: crate::loss::NamedCount,
-    /// Planes whose distance is the `D1` display: no lane stores it.
+    /// Planes whose distance is the `D1` display: the decoder reads no stored
+    /// value that the display shows.
     pub(super) displayed: crate::loss::NamedCount,
 }
 

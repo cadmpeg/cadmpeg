@@ -19,6 +19,7 @@ mod names;
 mod operation;
 mod order;
 mod parameters;
+mod profile_check;
 mod sketch;
 mod states;
 #[cfg(test)]
@@ -44,6 +45,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::sketches::SketchEntityId;
 
 use crate::loss::SldprtLossCode;
 use crate::records::{FeatureHistory, FeatureInputLane};
@@ -75,6 +77,9 @@ pub(crate) struct Part<'a> {
     pub(crate) length_places: Option<u32>,
     /// What the stored marks state of the rollback position.
     pub(crate) rollback: Reading,
+    /// The sketch entities read from a curve record of state `0`: curves
+    /// outside their sketch's profile.
+    pub(crate) outside_profile: &'a HashSet<SketchEntityId>,
 }
 
 /// Project the design of a part document into `ir.design`, beside its v10
@@ -101,6 +106,7 @@ pub(crate) fn project(
         equations: managers,
         length_places,
         rollback,
+        outside_profile,
     } = part;
     let active = equations::active_slot(histories, ir.source.as_ref());
     let mut timeline = tree::timeline(histories)?;
@@ -117,10 +123,19 @@ pub(crate) fn project(
         lanes,
         &mut timeline,
         &entries,
-        &definition,
+        &typed::Scope {
+            definition: &definition,
+            outside_profile,
+            surfaces: &ir.geometry.surfaces,
+        },
     );
     losses.extend(typed.loss);
     losses.extend(typed.assumed);
+    losses.extend(typed.state_construction);
+    losses.extend(typed.dimension_circles);
+    losses.extend(typed.profile_differs);
+    losses.extend(typed.sketch_empty);
+    losses.extend(typed.profile_unchecked);
     let mut readings = parameters::Readings {
         decoded: parameters::Decoded::new(&ir.model.parameters, lanes, configuration_maps),
         length_unit: length,
@@ -144,17 +159,24 @@ pub(crate) fn project(
         length_unit: length,
         tolerances: &ir.tolerances,
     };
-    let (mut parameters, mut notes) = entries.parameters(&definition, &readings);
+    let (mut parameters, mut notes, mut bare) = entries.parameters(&definition, &readings);
     let entered = parameters.len();
     let sketches = typed.sketches;
     parameters.extend(sketches.driven);
     readings.confirmed = equations::results(&parameters, &readings.manager, &linking);
     if !readings.confirmed.is_empty() {
         let driven = parameters.split_off(entered);
-        (parameters, notes) = entries.parameters(&definition, &readings);
+        (parameters, notes, bare) = entries.parameters(&definition, &readings);
         parameters.extend(driven);
     }
     losses.extend(notes);
+    losses.extend(equations::bare_references(
+        &mut parameters,
+        &bare,
+        &timeline.features,
+        length,
+        &ir.tolerances,
+    ));
     losses.extend(equations::link(&mut parameters, &linking));
     let configurations =
         configurations::configurations(histories, ir.source.as_ref(), &definition)?;
