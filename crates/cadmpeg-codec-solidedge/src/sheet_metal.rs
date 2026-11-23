@@ -361,5 +361,7 @@ pub(crate) fn project_base_tabs(
     }
 }
 
+pub(crate) mod flange;
+
 #[cfg(test)]
 mod tests;
