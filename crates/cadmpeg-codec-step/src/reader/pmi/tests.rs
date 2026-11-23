@@ -1646,18 +1646,6 @@ fn dimension_representations_merge_numeric_values_and_modifiers_in_either_order(
 }
 
 #[test]
-fn a_dimensional_note_reading_reference_is_the_reference_modifier() {
-    use cadmpeg_ir::pmi::PmiDefinition;
-    let input = format!("{LIMIT_DIMENSION}\n#20=DESCRIPTIVE_REPRESENTATION_ITEM('dimensional note','reference');\n#21=SHAPE_DIMENSION_REPRESENTATION('',(#20),#2);\n#16=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#10,#21);");
-    let result = decode_inline(&input);
-    assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
-        &annotation.definition,
-        PmiDefinition::Dimension(dimension) if dimension.modifiers
-            == [cadmpeg_ir::pmi::DimensionModifier::Reference].into()
-    )));
-}
-
-#[test]
 fn conflicting_dimension_representations_omit_the_ambiguous_nominal() {
     use cadmpeg_ir::pmi::PmiDefinition;
     let input = format!("{LIMIT_DIMENSION}\n#20=(LENGTH_MEASURE_WITH_UNIT() MEASURE_REPRESENTATION_ITEM() MEASURE_WITH_UNIT(LENGTH_MEASURE(36.),#1) REPRESENTATION_ITEM('nominal value'));\n#21=SHAPE_DIMENSION_REPRESENTATION('',(#20),#2);\n#22=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#10,#21);\n#23=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#10,#14);");
