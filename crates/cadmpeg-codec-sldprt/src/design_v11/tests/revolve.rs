@@ -4,9 +4,7 @@
 
 use std::f64::consts::{PI, TAU};
 
-use cadmpeg_ir::design::construction::{
-    AxisValue, InputReference, InputRole, PostStep, Relation, Subject,
-};
+use cadmpeg_ir::design::construction::{AxisValue, InputReference, InputRole, Relation, Subject};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ops::shared::{Limit, Span};
@@ -193,11 +191,13 @@ fn typed(ir: &CadIr, native: &SldprtNative, name: &str) -> Result<Revolve, Strin
     }
 }
 
-/// The sketch entity the revolve's axis picks, and its `after` steps.
-fn axis_pick(revolve: &Revolve) -> (Option<String>, Vec<PostStep>) {
+/// The sketch entity the revolve's axis picks, and whether the axis runs
+/// against it.
+fn axis_pick(revolve: &Revolve) -> (Option<String>, Option<bool>) {
     let axis = revolve.axis.as_ref().unwrap();
-    let picked = match axis.inputs.as_slice() {
-        [] => None,
+    assert!(axis.after.is_empty(), "{:?}", axis.after);
+    match axis.inputs.as_slice() {
+        [] => (None, None),
         [input] => {
             assert!(matches!(
                 input.role,
@@ -218,11 +218,10 @@ fn axis_pick(revolve: &Revolve) -> (Option<String>, Vec<PostStep>) {
             let PickTarget::SketchEntity(line) = &pick.target else {
                 panic!("the axis picks a sketch entity: {:?}", pick.target);
             };
-            Some(line.as_str().to_owned())
+            (Some(line.as_str().to_owned()), input.reversed)
         }
         inputs => panic!("one input at most: {inputs:?}"),
-    };
-    (picked, axis.after.clone())
+    }
 }
 
 fn with_centreline() -> Vec<Line> {
@@ -251,7 +250,7 @@ fn a_full_turn_about_a_centreline_picks_it_and_binds_its_angle() {
     };
     assert!(matches!(picks.as_slice(),
         [pick] if pick.target == PickTarget::Sketch(serde_json::from_value(json!(SKETCH)).unwrap())));
-    assert_eq!(axis_pick(revolve), (Some(entity("axis")), Vec::new()));
+    assert_eq!(axis_pick(revolve), (Some(entity("axis")), None));
     assert_eq!(
         revolve.axis.as_ref().unwrap().resolved,
         Some(
@@ -320,7 +319,7 @@ fn a_full_turn_about_a_centreline_picks_it_and_binds_its_angle() {
 }
 
 #[test]
-fn a_line_that_runs_against_the_axis_takes_a_flip_step() {
+fn an_axis_that_runs_against_its_line_reverses_the_input() {
     let (ir, native) = part(
         r#"<Dimension Name="D1">360deg</Dimension>"#,
         &with_centreline(),
@@ -332,26 +331,14 @@ fn a_line_that_runs_against_the_axis_takes_a_flip_step() {
         )],
     );
     let revolve = typed(&ir, &native, "Revolve1").unwrap();
-    assert_eq!(
-        axis_pick(&revolve),
-        (
-            Some(entity("axis")),
-            vec![PostStep::Flip(Dimension::Literal(true))]
-        )
-    );
+    assert_eq!(axis_pick(&revolve), (Some(entity("axis")), Some(true)));
 }
 
 #[test]
 fn a_profile_line_on_the_axis_is_picked_where_no_centreline_lies_on_it() {
     let (ir, native) = part("", &rectangle(0.0), &[about_y()]);
     let revolve = typed(&ir, &native, "Revolve1").unwrap();
-    assert_eq!(
-        axis_pick(&revolve),
-        (
-            Some(entity("left")),
-            vec![PostStep::Flip(Dimension::Literal(true))]
-        )
-    );
+    assert_eq!(axis_pick(&revolve), (Some(entity("left")), Some(true)));
 
     let mut lines = rectangle(0.0);
     lines.push(centreline("axis", (0.0, -5.0), (0.0, 25.0)));
@@ -377,7 +364,7 @@ fn an_axis_on_no_line_of_the_sketch_states_only_its_value() {
         )],
     );
     let revolve = typed(&ir, &native, "Revolve1").unwrap();
-    assert_eq!(axis_pick(&revolve), (None, Vec::new()));
+    assert_eq!(axis_pick(&revolve), (None, None));
     assert!(revolve.axis.unwrap().resolved.is_some());
     let (_, _, typed) = typed_timeline(&ir, &native);
     assert!(typed.revolve_axis_lines.is_none());

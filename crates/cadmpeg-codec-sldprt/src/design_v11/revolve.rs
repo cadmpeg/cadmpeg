@@ -8,8 +8,8 @@
 //! dimension the decoder read it from, and a merge into a part that holds no
 //! body yet is a new body (§6). The axis states the stored axis as its value
 //! and picks the line of the profile sketch that lies on it, a construction
-//! line before a profile line, with a `Flip` step where that line runs
-//! against the stored direction. A partial or two-sided turn, whose sense
+//! line before a profile line, the input `reversed` where that line runs
+//! against the stored direction (§5.9 Sense). A partial or two-sided turn, whose sense
 //! the decoder does not read, stays `Unresolved`, and so does a revolution
 //! whose axis lies outside its sketch's plane (open item DI-85) or whose
 //! sketch holds no profile curve.
@@ -17,8 +17,7 @@
 use std::collections::HashMap;
 
 use cadmpeg_ir::design::construction::{
-    kinds, AxisValue, Construction, ConstructionInput, InputReference, InputRole, PostStep,
-    Relation, Subject,
+    kinds, AxisValue, Construction, ConstructionInput, InputReference, InputRole, Relation, Subject,
 };
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{Feature, FeatureOperation, OperationFamily};
@@ -341,13 +340,8 @@ fn axis_construction(
             PickTarget::SketchEntity(line.id.clone()),
         )])?)),
         value: None,
-        reversed: None,
+        reversed: (!along).then_some(true),
     });
-    if !along {
-        construction
-            .after
-            .push(PostStep::Flip(Dimension::Literal(true)));
-    }
     Ok((construction, Some((line.id.clone(), lines.len()))))
 }
 
