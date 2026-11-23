@@ -95,6 +95,11 @@ Region selections can restrict the parameter interval of an exact curve.
 Loop closure follows stored curve endpoints and parameter intervals. Analytic
 intersection and containment of closed boundaries establish hole nesting.
 Directed carrier turns establish loop sense.
+A `BTMIndividualSketchRegionQuery-140` whose `queryString` is
+`query = qSketchRegion(id + "<featureId>", <filterInnerLoops>);` selects
+every region of that sketch. Its `deterministicIds` list the regions that
+string resolved to at the last regeneration and do not restrict the
+selection.
 
 A sketch's optional `plane` object stores its attachment frame. `origin` uses
 metres; `normal` and `x` store its normal and x axis. The axes are orthogonal.

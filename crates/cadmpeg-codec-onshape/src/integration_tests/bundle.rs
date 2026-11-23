@@ -1562,3 +1562,40 @@ fn up_to_next_refuses_a_narrow_recess_and_an_uncovered_profile_interior() {
         crate::test_support::review::validate(result);
     }
 }
+
+#[test]
+fn a_whole_sketch_region_query_maps_despite_its_resolved_region_ids() {
+    for (query_string, mapped) in [
+        ("query = qSketchRegion(id + \"Base sketch\", false);", true),
+        (
+            "query = qSketchRegion(id + \"Other sketch\", false);",
+            false,
+        ),
+        ("query = qSketchRegion(id + \"Base sketch\", true);", false),
+        (
+            "query = qUnion([qSketchRegion(id + \"Base sketch\", false)]);",
+            false,
+        ),
+    ] {
+        let bytes = changed(&fixture("plate-fillet"), |path, value| {
+            if path.ends_with("features.json") {
+                let query = &mut value["features"][1]["parameters"][2]["queries"][0];
+                query["deterministicIds"] = json!(["JGC"]);
+                query["queryString"] = json!(query_string);
+                query["filterInnerLoops"] = json!(false);
+            }
+        });
+        let (model, report) = read(&bytes).unwrap();
+        let deterministic = report.losses().iter().any(|loss| {
+            loss.code.as_deref() == Some("onshape/history.not-supported")
+                && loss.detail.contains("deterministic sketch-region subsets")
+        });
+        if mapped {
+            assert_eq!(kinds(&model)[1], "extrude", "{query_string}");
+            assert!(!deterministic, "{query_string}: {:?}", report.losses());
+        } else {
+            assert_eq!(kinds(&model)[1], "native", "{query_string}");
+            assert!(deterministic, "{query_string}: {:?}", report.losses());
+        }
+    }
+}
