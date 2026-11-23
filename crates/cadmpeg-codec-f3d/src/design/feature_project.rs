@@ -1319,14 +1319,22 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             str::to_owned,
                         ),
                 ),
-                suppressed: Some(scope.tail_flags.map_or_else(
-                    || {
+                suppressed: Some(match scope.tail_flags {
+                    Some(flags) => {
+                        if let Some(code) = flags.active_without_result() {
+                            projection_losses.push(code.note(format!(
+                                "scope {} stores the no-result flag and no suppression state byte; it is read as an active feature with no current result",
+                                scope.id
+                            )));
+                        }
+                        flags.suppressed()
+                    }
+                    None => {
                         family.is_some_and(stateless_scope_is_suppressed)
                             && scope.history_state_id().is_none()
                             && scope.previous_history_state_id().is_none()
-                    },
-                    |flags| flags.suppressed,
-                )),
+                    }
+                }),
                 dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 source_properties: if promoted_fillet_source.is_some() || promoted_fillet_sets.is_some() || matches!(
                     &definition,
