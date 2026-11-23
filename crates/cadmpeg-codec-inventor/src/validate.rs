@@ -131,6 +131,7 @@ const OPTIONAL_ARENAS: &[&str] = &[
     "feature_history_states",
     "pm_dc_sheet_metal_styles",
     "pm_dc_sheet_metal_flanges",
+    "pm_dc_sheet_metal_faces",
     "pm_app_sheet_metal_unfold_rules",
     "pm_app_sheet_metal_unfold_selections",
     "drawing_records",
@@ -3163,6 +3164,7 @@ struct NativeData {
     pm_dc_feature_properties: Vec<PmDcFeatureProperty>,
     pm_dc_sheet_metal_styles: Vec<crate::feature::sheet_metal::style::Style>,
     pm_dc_sheet_metal_flanges: Vec<crate::feature::sheet_metal::flange::Flange>,
+    pm_dc_sheet_metal_faces: Vec<crate::feature::sheet_metal::flange::Flange>,
     pm_app_sheet_metal_unfold_rules: Vec<crate::feature::sheet_metal::unfold::Rule>,
     pm_app_sheet_metal_unfold_selections: Vec<crate::feature::sheet_metal::unfold::Selection>,
     pm_dc_feature_dimensions: Vec<crate::feature::revolve::Dimension>,
@@ -3304,6 +3306,8 @@ impl NativeData {
                 .arena_as_for_decode(ctx, "pm_dc_sheet_metal_styles")?,
             pm_dc_sheet_metal_flanges: namespace
                 .arena_as_for_decode(ctx, "pm_dc_sheet_metal_flanges")?,
+            pm_dc_sheet_metal_faces: namespace
+                .arena_as_for_decode(ctx, "pm_dc_sheet_metal_faces")?,
             pm_app_sheet_metal_unfold_rules: namespace
                 .arena_as_for_decode(ctx, "pm_app_sheet_metal_unfold_rules")?,
             pm_app_sheet_metal_unfold_selections: namespace
@@ -4299,6 +4303,7 @@ impl NativeData {
             pm_dc_feature_properties: Vec::new(),
             pm_dc_sheet_metal_styles: Vec::new(),
             pm_dc_sheet_metal_flanges: Vec::new(),
+            pm_dc_sheet_metal_faces: Vec::new(),
             pm_app_sheet_metal_unfold_rules: Vec::new(),
             pm_app_sheet_metal_unfold_selections: Vec::new(),
             pm_dc_feature_dimensions: Vec::new(),
@@ -4337,6 +4342,7 @@ pub(crate) fn design_v11_findings_from_arenas(
         fill!(pm_dc_feature_properties);
         fill!(pm_dc_sheet_metal_styles);
         fill!(pm_dc_sheet_metal_flanges);
+        fill!(pm_dc_sheet_metal_faces);
         fill!(pm_app_sheet_metal_unfold_rules);
         fill!(pm_app_sheet_metal_unfold_selections);
         fill!(pm_dc_sketches);

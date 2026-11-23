@@ -945,3 +945,100 @@ fn a_plane_reference_that_does_not_prove_the_plane_stays_native() {
         );
     }
 }
+
+fn sheet_metal_parent(
+    type_id: [u8; 16],
+    ordinal: u32,
+    children: &[u32],
+) -> crate::feature::sheet_metal::flange::Flange {
+    let mut bytes = crate::test_support::test_fixtures::content_at(73, 19, &[]);
+    bytes.extend_from_slice(&(-1_i32).to_le_bytes());
+    bytes.extend_from_slice(&2_u16.to_le_bytes());
+    bytes.extend_from_slice(&0x3000_u16.to_le_bytes());
+    let count = u32::try_from(children.len()).expect("count");
+    bytes.extend_from_slice(&count.to_le_bytes());
+    if count != 0 {
+        for value in [1_u32, 0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for child in children {
+        bytes.extend_from_slice(&(0x8000_0000 | (child + 1)).to_le_bytes());
+    }
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    let payload = crate::test_support::test_fixtures::parse(&bytes, |ctx, view| {
+        crate::feature::sheet_metal::flange::parse(ctx, view, 19)
+    })
+    .expect("sheet-metal parent");
+    Located::new(
+        payload,
+        RecordTypeId::from_bytes(type_id),
+        segment(),
+        ordinal,
+    )
+}
+
+#[test]
+fn sheet_metal_parent_seeds_stand_for_their_ordered_child_features() {
+    use crate::feature::sheet_metal::flange::{CONTOUR_TYPE, FACE_TYPE, TYPE};
+    let fixture = Fixture::new(false);
+    let token = segment();
+    for type_id in [FACE_TYPE, TYPE, CONTOUR_TYPE] {
+        let parent = sheet_metal_parent(type_id, 6, &[4, 2]);
+        let index = fixture
+            .index()
+            .with_sheet_metal_parents(std::iter::once(&parent));
+        assert_eq!(index.seed_ordinals(token.as_str(), 6), [4, 2]);
+        assert_eq!(index.seed_ordinals(token.as_str(), 5), [5]);
+        let source = pattern(19, false, &[7], &[]);
+        let resolved = index
+            .resolve(&source, &fixture.label, seed)
+            .expect("parent mirror");
+        let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
+            resolved.definition
+        else {
+            panic!("pattern")
+        };
+        assert_eq!(
+            seeds,
+            vec![
+                PatternSeed::Feature(seed(4).expect("seed")),
+                PatternSeed::Feature(seed(2).expect("seed"))
+            ]
+        );
+    }
+    let parent = sheet_metal_parent(FACE_TYPE, 6, &[4, 2]);
+    let index = fixture
+        .index()
+        .with_sheet_metal_parents(std::iter::once(&parent));
+    // A child that is also listed, or listed twice, repeats a seed.
+    assert!(index
+        .resolve(&pattern(19, false, &[7, 5], &[]), &fixture.label, seed)
+        .is_none());
+    let twice = sheet_metal_parent(FACE_TYPE, 6, &[4, 4]);
+    assert!(fixture
+        .index()
+        .with_sheet_metal_parents(std::iter::once(&twice))
+        .resolve(&pattern(19, false, &[7], &[]), &fixture.label, seed)
+        .is_none());
+    // A child that is not an earlier feature, or a parent without children.
+    let missing = sheet_metal_parent(FACE_TYPE, 6, &[4, 7]);
+    assert!(fixture
+        .index()
+        .with_sheet_metal_parents(std::iter::once(&missing))
+        .resolve(&pattern(19, false, &[7], &[]), &fixture.label, seed)
+        .is_none());
+    let empty = sheet_metal_parent(FACE_TYPE, 6, &[]);
+    assert!(fixture
+        .index()
+        .with_sheet_metal_parents(std::iter::once(&empty))
+        .resolve(&pattern(19, false, &[7], &[]), &fixture.label, seed)
+        .is_none());
+    // A record of another type is no parent.
+    let other = sheet_metal_parent([0; 16], 6, &[4, 2]);
+    assert!(fixture
+        .index()
+        .with_sheet_metal_parents(std::iter::once(&other))
+        .resolve(&pattern(19, false, &[7], &[]), &fixture.label, seed)
+        .is_none());
+}
