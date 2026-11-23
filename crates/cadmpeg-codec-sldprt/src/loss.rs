@@ -212,6 +212,13 @@ pub(crate) enum SldprtLossCode {
     /// An offset reference plane stores a frame of its own that is not the
     /// plane the decoder places from its source plane and `D1` (DI-81).
     FeatureOffsetPlaneFrameConflict,
+    /// A revolution keeps a stored axis that lies outside the plane the
+    /// decoder binds its profile sketch to (DI-85).
+    FeatureRevolveAxisOffProfilePlane,
+    /// A revolution reads its axis from the tail of an `moLineRef_w` record
+    /// whose words before the scalar record are not read, or keeps no axis
+    /// from such records (DI-86).
+    FeatureRevolveAxisRecordPrefixUnread,
     /// Thin extrusion retains an ambiguous inline Boolean operation.
     FeatureThinOperationAmbiguous,
     /// Native edge selection has a refused terminal feature owner.
@@ -618,6 +625,8 @@ impl SldprtLossCode {
         Self::FeatureExtrudeStartUnresolved,
         Self::FeatureOffsetPlaneSideAssumed,
         Self::FeatureOffsetPlaneFrameConflict,
+        Self::FeatureRevolveAxisOffProfilePlane,
+        Self::FeatureRevolveAxisRecordPrefixUnread,
         Self::FeatureThinOperationAmbiguous,
         Self::FeatureEdgeTerminalUnresolved,
         Self::FeatureBodyPathAmbiguous,
@@ -823,6 +832,10 @@ impl SldprtLossCode {
             Self::FeatureExtrudeStartUnresolved => "feature.extrude-start-unresolved",
             Self::FeatureOffsetPlaneSideAssumed => "feature.offset-plane-side-assumed",
             Self::FeatureOffsetPlaneFrameConflict => "feature.offset-plane-frame-conflict",
+            Self::FeatureRevolveAxisOffProfilePlane => "feature.revolve-axis-off-profile-plane",
+            Self::FeatureRevolveAxisRecordPrefixUnread => {
+                "feature.revolve-axis-record-prefix-unread"
+            }
             Self::FeatureThinOperationAmbiguous => "feature.thin-operation-ambiguous",
             Self::FeatureEdgeTerminalUnresolved => "feature.edge-terminal-unresolved",
             Self::FeatureBodyPathAmbiguous => "feature.body-path-ambiguous",
@@ -1104,6 +1117,8 @@ impl SldprtLossCode {
             | Self::FeatureExtrudeStartUnresolved
             | Self::FeatureOffsetPlaneSideAssumed
             | Self::FeatureOffsetPlaneFrameConflict
+            | Self::FeatureRevolveAxisOffProfilePlane
+            | Self::FeatureRevolveAxisRecordPrefixUnread
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureEdgeTerminalUnresolved
             | Self::FeatureBodyPathAmbiguous
@@ -1403,6 +1418,8 @@ impl SldprtLossCode {
             | Self::FeatureExtrudeStartUnresolved
             | Self::FeatureOffsetPlaneSideAssumed
             | Self::FeatureOffsetPlaneFrameConflict
+            | Self::FeatureRevolveAxisOffProfilePlane
+            | Self::FeatureRevolveAxisRecordPrefixUnread
             | Self::FeatureThinOperationAmbiguous
             | Self::FeatureEdgeTerminalUnresolved
             | Self::FeatureBodyPathAmbiguous
@@ -1669,6 +1686,8 @@ mod tests {
                 "feature.extrude-start-unresolved",
                 "feature.offset-plane-side-assumed",
                 "feature.offset-plane-frame-conflict",
+                "feature.revolve-axis-off-profile-plane",
+                "feature.revolve-axis-record-prefix-unread",
                 "feature.thin-operation-ambiguous",
                 "feature.edge-terminal-unresolved",
                 "feature.body-path-ambiguous",
