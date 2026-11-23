@@ -3727,3 +3727,19 @@ pub(crate) mod sweep_component_profile_extended_prefix {
     /// Offset of `header_word` (`u32`, little-endian). Spec §2.
     pub(crate) const HEADER_WORD: usize = 81;
 }
+
+/// Byte offsets for the `profile_line_side_words` record.
+///
+/// Spec §5. Record length 92 B.
+///
+/// ```text
+/// The words of a 92-byte profile line record that join the side faces of an extruded polygon to its lines. The endpoint, selector and identity cells are those of the profile curve records of section 2.
+/// ```
+pub(crate) mod profile_line_side_words {
+    /// Record length in bytes. Spec §5.
+    pub(crate) const LEN: usize = 92;
+    /// Offset of `line_state` (`u32`, little-endian). Spec §5.
+    pub(crate) const LINE_STATE: usize = 80;
+    /// Offset of `next_side` (`u32`, little-endian). Spec §5.
+    pub(crate) const NEXT_SIDE: usize = 84;
+}

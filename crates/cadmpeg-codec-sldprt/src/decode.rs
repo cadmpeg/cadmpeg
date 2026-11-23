@@ -3556,10 +3556,6 @@ fn build_geometry_ir(
         &mut ir,
         &supplemental_config_lanes,
     )?;
-    crate::resolved_features::projections::note_blend_edge_generators(
-        &ir.model.features,
-        &mut pmi_losses,
-    );
     crate::resolved_features::profiles::project_compact_sketch_profiles(
         ctx,
         &mut ir.model.features,
@@ -4314,6 +4310,17 @@ fn build_geometry_ir(
     }
     stamp_configuration_baseline(ctx, &mut ir)?;
     snapshot_active_configuration(&mut ir);
+    crate::resolved_features::projections::note_blend_edge_generators(
+        &ir.model.features,
+        &native.feature_input_lanes,
+        &native.feature_histories,
+        &crate::resolved_features::side_generators::SideGenerators::derive(
+            &ir.model,
+            &native.feature_histories,
+            &native.feature_input_lanes,
+        ),
+        &mut pmi_losses,
+    );
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     if let Some(rollback) = rollback {
         project_design(
@@ -4913,10 +4920,6 @@ fn build_metadata_ir(
         &mut ir,
         &supplemental_config_lanes,
     )?;
-    crate::resolved_features::projections::note_blend_edge_generators(
-        &ir.model.features,
-        &mut pmi_losses,
-    );
     crate::resolved_features::profiles::project_compact_sketch_profiles(
         ctx,
         &mut ir.model.features,
@@ -5229,6 +5232,17 @@ fn build_metadata_ir(
     mark_active_configuration(&mut ir);
     stamp_configuration_baseline(ctx, &mut ir)?;
     snapshot_active_configuration(&mut ir);
+    crate::resolved_features::projections::note_blend_edge_generators(
+        &ir.model.features,
+        &native.feature_input_lanes,
+        &native.feature_histories,
+        &crate::resolved_features::side_generators::SideGenerators::derive(
+            &ir.model,
+            &native.feature_histories,
+            &native.feature_input_lanes,
+        ),
+        &mut pmi_losses,
+    );
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     if let Some(rollback) = rollback {
         let bodies = ir

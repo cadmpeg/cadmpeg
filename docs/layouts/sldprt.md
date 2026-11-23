@@ -4202,6 +4202,25 @@ Unstated regions:
 - `10..45` (35 B): Child data before the sentinel.
 - `61..81` (20 B): Child data before the header word.
 
+## `profile_line_side_words`
+
+Spec §5 · layout: byte offsets · size: 92 B
+
+The words of a 92-byte profile line record that join the side faces of an extruded polygon to its lines. The endpoint, selector and identity cells are those of the profile curve records of section 2.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 80 | 4 | `line_state` | `u32` | little | spec | In a line record whose u32 at marker +80 is zero |
+| 84 | 4 | `next_side` | `u32` | little | spec | the u32 at marker +84 is the local identifier of the side face that the next line record sweeps |
+
+Unstated regions:
+
+- `0..80` (80 B): Marker prefix, endpoint indices, selectors and constants of the profile curve records of section 2.
+- `88..92` (4 B): Identity trailer of the record.
+
 ## Not tabulated
 
 | Area | Spec | Reason |

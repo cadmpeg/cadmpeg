@@ -1018,13 +1018,43 @@ pub(crate) fn project_compact_edge_selections_with_ids(
 }
 
 /// Charge one loss for each fillet or chamfer of `features` that names its
-/// edges by generated-edge paths: the sketch entities that generate those
-/// edges are not established, so the selection keeps the paths.
+/// edges by generated-edge paths and whose paths do not all settle their
+/// generating sketch entities: a path settles when each entry names an end
+/// face or a side face that `generators` joins to a profile line.
 pub(crate) fn note_blend_edge_generators(
     features: &[cadmpeg_ir::features::Feature],
+    lanes: &[crate::records::FeatureInputLane],
+    histories: &[crate::records::FeatureHistory],
+    generators: &super::side_generators::SideGenerators,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
     let generated = |edges: &EdgeSelection| matches!(edges, EdgeSelection::Generated { .. });
+    let history = crate::records::HistoryFeatures::new(histories);
+    let settled = |feature: &cadmpeg_ir::features::Feature| -> bool {
+        let Some(native) = feature.native_ref.as_deref() else {
+            return false;
+        };
+        let owned = lanes
+            .iter()
+            .flat_map(|lane| &lane.edge_selections)
+            .filter(|selection| selection.feature_ref == native)
+            .collect::<Vec<_>>();
+        let operands = operand_selections(&owned);
+        !operands.is_empty()
+            && operands.iter().all(|selection| {
+                let classes = lanes
+                    .iter()
+                    .find(|lane| lane.id == selection.parent)
+                    .and_then(super::side_generators::SurfaceClasses::of);
+                let source = selection
+                    .terminal_feature_ref
+                    .as_deref()
+                    .and_then(|record| history.get(record))
+                    .and_then(crate::records::Feature::source_value);
+                matches!((classes, source), (Some(classes), Some(source))
+                    if generators.settle(selection, &classes, source))
+            })
+    };
     for feature in features {
         let named = match feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) => {
@@ -1035,7 +1065,7 @@ pub(crate) fn note_blend_edge_generators(
             }
             _ => false,
         };
-        if named {
+        if named && !settled(feature) {
             let name = feature
                 .name
                 .as_deref()
@@ -1044,7 +1074,7 @@ pub(crate) fn note_blend_edge_generators(
             losses.push(
                 crate::loss::SldprtLossCode::FeatureBlendEdgeGeneratorUnstated.note(format!(
                     "the edges of {name} are named by feature-local component paths; the sketch \
-                     entities that generate them are not established"
+                     entities that generate some of them are not established"
                 )),
             );
         }

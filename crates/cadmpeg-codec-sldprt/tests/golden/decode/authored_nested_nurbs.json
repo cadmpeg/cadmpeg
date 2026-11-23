@@ -812,6 +812,10 @@
             "kind": {
               "relation": "distance"
             },
+            "line_sides": {
+              "next_side": 0,
+              "state": 0
+            },
             "local_id": 1,
             "object_index": 0,
             "offset": 223,
@@ -884,7 +888,7 @@
         "sldprt_native_configuration_sha256": "d55754f580e5d079b91342208765b4956e459fe35126e4bfc27207bd30f674be",
         "sldprt_native_history_sha256": "2240296d19a53d54c13d5bf2c607d9a0d34e34c373b0b649e7dd0c6539ae93f1",
         "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_sketch_sha256": "14216ef9fb9d53666f2c46b33db5527e3016f8b5c1805102fe5743076d27e07c",
+        "sldprt_native_sketch_sha256": "0daeabfe25dc521d4e6fabe7165ba812d342cc81923937085b89f3c607bfb91e",
         "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",

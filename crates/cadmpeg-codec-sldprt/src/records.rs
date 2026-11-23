@@ -1421,9 +1421,24 @@ pub(crate) struct SketchInputEntity {
     /// Two little-endian coordinate fields stored by geometry-handle marker families, in metres.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) coordinates_m: Option<cadmpeg_ir::units::FiniteVector<2>>,
+    /// The side words of a 92-byte profile line record (`docs/formats/sldprt.md` §5).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) line_sides: Option<LineSides>,
     /// Resolved links and their selector from the reference-bearing layout.
     #[serde(flatten, with = "sketch_input_links_wire")]
     pub(crate) links: Option<SketchInputLinks>,
+}
+
+/// The two words of a 92-byte profile line record that join the side faces of
+/// an extruded polygon to its lines: the u32 at marker +80 and the u32 at
+/// marker +84.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct LineSides {
+    /// The u32 at marker +80; zero in the records whose +84 names a side face.
+    pub(crate) state: u32,
+    /// The u32 at marker +84: the local identifier of the side face that the
+    /// next line record sweeps.
+    pub(crate) next_side: u32,
 }
 
 /// Deserialization mirror of a sketch-entity marker, re-admitted against its lane payload.
@@ -1474,6 +1489,9 @@ pub(crate) struct SketchInputEntityWire {
         deserialize_with = "deserialize_coordinates_m"
     )]
     coordinates_m: Option<cadmpeg_ir::units::FiniteVector<2>>,
+    /// The side words of a 92-byte profile line record.
+    #[serde(default)]
+    line_sides: Option<LineSides>,
     /// Resolved links and their selector from the reference-bearing layout.
     #[serde(flatten, with = "sketch_input_links_wire")]
     links: Option<SketchInputLinks>,
@@ -1631,6 +1649,11 @@ impl SketchInputEntity {
         self.local_id
     }
 
+    /// The side words of this marker when it is a 92-byte record.
+    pub(crate) fn line_sides(&self) -> Option<LineSides> {
+        self.line_sides
+    }
+
     #[cfg(test)]
     /// Sets the identity fields on a cloned fixture.
     pub(crate) fn with_test_identity(
@@ -1670,6 +1693,11 @@ impl SketchInputEntity {
         entity.feature_ref = wire.feature_ref;
         entity.state_value = wire.state_value;
         entity.coordinates_m = wire.coordinates_m;
+        if wire.line_sides != entity.line_sides {
+            return Err(
+                "SolidWorks feature-input line side words do not match its native payload".into(),
+            );
+        }
         entity.links = wire.links;
         Ok(entity)
     }
@@ -1700,6 +1728,7 @@ impl SketchInputEntity {
             listed_curve_relation_drop: None,
             state_value: None,
             coordinates_m: None,
+            line_sides: crate::resolved_features::markers::marker_line_sides(payload, position),
             links: None,
         })
     }
@@ -1726,6 +1755,9 @@ impl SketchInputEntity {
             return Err(
                 "SolidWorks feature-input local object id does not match its native payload",
             );
+        }
+        if self.line_sides != expected.line_sides {
+            return Err("SolidWorks feature-input line side words do not match its native payload");
         }
         Ok(())
     }

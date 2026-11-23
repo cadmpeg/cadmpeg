@@ -15330,3 +15330,37 @@ offset = 81
 type = "u32"
 source = "spec"
 anchor = "a u32 header word before the complete component source record"
+
+[[record]]
+name = "profile_line_side_words"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs"
+kind = "byte"
+section = "5"
+anchor = "through the profile's 92-byte line records"
+size = 92
+endianness = "little"
+note = "The words of a 92-byte profile line record that join the side faces of an extruded polygon to its lines. The endpoint, selector and identity cells are those of the profile curve records of section 2."
+
+[[record.gap]]
+offset = 0
+size = 80
+note = "Marker prefix, endpoint indices, selectors and constants of the profile curve records of section 2."
+
+[[record.field]]
+name = "line_state"
+offset = 80
+type = "u32"
+source = "spec"
+anchor = "In a line record whose u32 at marker +80 is zero"
+
+[[record.field]]
+name = "next_side"
+offset = 84
+type = "u32"
+source = "spec"
+anchor = "the u32 at marker +84 is the local identifier of the side face that the next line record sweeps"
+
+[[record.gap]]
+offset = 88
+size = 4
+note = "Identity trailer of the record."

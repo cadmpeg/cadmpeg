@@ -619,13 +619,132 @@ fn a_blend_with_no_edge_outside_its_mark_record_keeps_the_record_edges() {
 fn a_blend_naming_edges_by_paths_charges_the_unstated_generator() {
     let (mut features, lane) = blend_edge_fixture(vec![blend_edge_vector(0, [4, 2, 1, 0], false)]);
     let mut losses = Vec::new();
-    super::super::note_blend_edge_generators(&features, &mut losses);
+    super::super::note_blend_edge_generators(
+        &features,
+        &[],
+        &[],
+        &crate::resolved_features::side_generators::SideGenerators::default(),
+        &mut losses,
+    );
     assert!(losses.is_empty(), "an unresolved selection names no path");
     super::super::project_compact_edge_selections(&mut features, &[], &[lane]).unwrap();
-    super::super::note_blend_edge_generators(&features, &mut losses);
+    super::super::note_blend_edge_generators(
+        &features,
+        &[],
+        &[],
+        &crate::resolved_features::side_generators::SideGenerators::default(),
+        &mut losses,
+    );
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].code.local_code(),
         "feature.blend-edge-generator-unstated"
     );
+}
+
+/// The lane of a blend over extrusion source 45: an end-face class declared
+/// inline at 100 and a side-face class at 200, then tagged identities.
+fn surface_class_lane(mut lane: FeatureInputLane) -> FeatureInputLane {
+    let class = |offset: u64, name: &str| crate::records::FeatureInputClass {
+        id: format!("class-{offset}"),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset,
+        name: name.into(),
+    };
+    let identity = |offset: u64, instance: Option<u16>, local: u32| {
+        crate::records::FeatureInputGeneratedSurfaceIdentity {
+            id: format!("identity-{offset}"),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset,
+            type_prefix: [0; 4].into(),
+            feature_source_id: 45.try_into().expect("source id"),
+            local_identity: local,
+            components: vec![FeatureInputComponentPathEntry {
+                instance,
+                type_signature: [0; 12].into(),
+                local_id: Some(local),
+            }],
+        }
+    };
+    lane.classes = vec![
+        class(100, "moEndFaceSurfIdRep_c"),
+        class(200, "moFromSktEntSurfIdRep_c"),
+    ];
+    lane.generated_surface_identities = vec![
+        identity(128, None, 0),
+        identity(231, None, 6),
+        identity(300, Some(0x814e), 4),
+        identity(320, Some(0x814e), 2),
+        identity(400, Some(0x814b), 1),
+    ];
+    lane
+}
+
+fn extrusion_history() -> crate::records::FeatureHistory {
+    crate::records::FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![crate::records::Feature {
+            id: "extrude".into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: crate::records::FeatureSource::from_value(45),
+            ordinal: 0,
+            name: String::new(),
+            kind: "Feature".into(),
+            input_class: None,
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        }],
+    }
+}
+
+#[test]
+fn a_blend_whose_path_faces_all_have_generators_charges_no_loss() {
+    use crate::resolved_features::side_generators::SideGenerators;
+
+    let mut vector = blend_edge_vector(0, [4, 2, 1, 0], false);
+    for (component, instance) in vector
+        .components
+        .iter_mut()
+        .zip([0x814e, 0x814e, 0x814b, 0x814b])
+    {
+        component.instance = Some(instance);
+    }
+    let (mut features, lane) = blend_edge_fixture(vec![vector]);
+    let lane = surface_class_lane(lane);
+    super::super::project_compact_edge_selections(&mut features, &[], std::slice::from_ref(&lane))
+        .unwrap();
+    let histories = [extrusion_history()];
+    let settled = |generators: &SideGenerators| {
+        let mut losses = Vec::new();
+        super::super::note_blend_edge_generators(
+            &features,
+            std::slice::from_ref(&lane),
+            &histories,
+            generators,
+            &mut losses,
+        );
+        losses.len()
+    };
+    let entity = |name: &str| {
+        cadmpeg_ir::sketches::SketchEntityId::mint(format!("synthetic:test:id#{name}"))
+            .expect("identity grammar")
+    };
+    let both = SideGenerators::default()
+        .with_face(45, 4, entity("four"))
+        .with_face(45, 2, entity("two"));
+    assert_eq!(settled(&both), 0);
+    let one = SideGenerators::default().with_face(45, 4, entity("four"));
+    assert_eq!(settled(&one), 1);
 }
