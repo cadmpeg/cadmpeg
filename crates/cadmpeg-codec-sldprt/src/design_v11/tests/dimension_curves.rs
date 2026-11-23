@@ -323,6 +323,38 @@ fn a_dimension_circle_repeating_an_earlier_one_is_construction() {
     )));
 }
 
+/// A cylinder of their radius lies on two built circles on one carrier: the
+/// first stays profile geometry, and the second, which a relation names, is
+/// construction before the cylinder is read, so the profile holds the
+/// circle once.
+#[test]
+fn a_dimension_circle_repeating_a_witnessed_one_is_construction() {
+    // The fixture's sketch lies in the plane y = 0 with u along x, so
+    // (u, v) is (u, 0, -v).
+    let mut ir = with_dimension_circle([10.0, 10.0], 3.0);
+    push_built(&mut ir, "again", 9, [10.0, 10.0], 3.0);
+    name_by_native(&mut ir, NATIVE, "again");
+    ir.geometry
+        .surfaces
+        .push(cylinder("bore", [10.0, 5.0, -10.0], [0.0, -1.0, 0.0], 3.0));
+    let (_, typed) = project(&mut ir, &HashSet::new());
+    assert_eq!(construction(&ir, "built"), None);
+    assert_eq!(dimensioned(&ir), entity("built").as_str());
+    assert_eq!(construction(&ir, "again"), Some(true));
+    let message = note(&typed);
+    assert!(
+        message.contains(&entry(
+            "again",
+            &format!("it repeats {}; construction", entity("built").as_str())
+        )),
+        "{message}"
+    );
+    assert!(
+        !message.contains(&format!("{} (", entity("built").as_str())),
+        "{message}"
+    );
+}
+
 /// A relation other than a dimension names the built circle on the stored
 /// circle: the dimension cannot move alone, so the circle stays,
 /// construction, and the dimension names it.
