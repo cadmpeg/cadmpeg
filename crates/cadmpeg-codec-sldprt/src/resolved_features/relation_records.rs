@@ -429,6 +429,30 @@ impl<'l> TokenRelations<'l> {
     }
 }
 
+/// Whether the display scalar at `index` of `scalars`, in `feature`, is the
+/// first scalar after the one scalar of `group` that a display or driving
+/// role frames, where that scalar, the one its relation-class declaration
+/// opens, holds the native role.
+fn first_framed_after_native(
+    group: &RelationGroup<'_>,
+    feature: &str,
+    scalars: &[FeatureInputScalar],
+    index: usize,
+) -> bool {
+    let [(declared, scalar)] = group.scalars.as_slice() else {
+        return false;
+    };
+    group.feature_ref == feature
+        && scalar.role == FeatureInputScalarRole::Native
+        && scalars
+            .get(declared.saturating_add(1)..index)
+            .is_some_and(|between| {
+                between
+                    .iter()
+                    .all(|scalar| scalar.role == FeatureInputScalarRole::Native)
+            })
+}
+
 /// The zero u32 that opens a relation object, before its parameter class.
 const RELATION_OBJECT_ZERO: u64 = 4;
 
@@ -501,9 +525,14 @@ pub(super) fn relation_instances(
             {
                 continue;
             }
-            let token_pair = lane
-                .scalars
-                .get(scalar_index + 1)
+            let declared_class = groups
+                .last()
+                .filter(|group| {
+                    first_framed_after_native(group, feature_ref, &lane.scalars, scalar_index)
+                })
+                .map(|group| group.class_ref);
+            let token_pair = declared_class
+                .and(lane.scalars.get(scalar_index + 1))
                 .filter(|driving| {
                     !candidate_counts.contains_key(driving.id.as_str())
                         && relation_class_offsets
@@ -513,7 +542,8 @@ pub(super) fn relation_instances(
                             )
                             .is_none_or(|offset| *offset >= driving.offset)
                 })
-                .and_then(|driving| token_relations.relation(scalar, driving));
+                .and_then(|driving| token_relations.relation(scalar, driving))
+                .filter(|&(_, class_ref)| Some(class_ref) == declared_class);
             if let Some((family, class_ref)) = token_pair {
                 groups.push(RelationGroup {
                     feature_ref,
@@ -2388,7 +2418,7 @@ mod relation_records_tests {
     }
 
     #[test]
-    fn token_form_dimensions_after_a_declared_one_are_relation_instances() {
+    fn the_first_token_form_dimension_after_a_native_declared_scalar_is_its_relation() {
         let lane = token_form_lane(0x30, 0x32);
         assert_eq!(lane.scalars.len(), 5, "{:#?}", lane.scalars);
         let class = lane
@@ -2424,15 +2454,9 @@ mod relation_records_tests {
                 ),
                 (
                     FeatureInputRelationFamily::PointPointDistance,
-                    class.clone(),
+                    class,
                     ids(1..3),
                     Some(lane.scalars[2].id.clone())
-                ),
-                (
-                    FeatureInputRelationFamily::PointPointDistance,
-                    class,
-                    ids(3..5),
-                    Some(lane.scalars[4].id.clone())
                 ),
             ]
         );
