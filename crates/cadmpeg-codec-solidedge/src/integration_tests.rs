@@ -11,6 +11,8 @@ use crate::{test_support, SolidEdgeCodec};
 const EPS_SPHERE_RADIUS_MM: f64 = 1.0e-12;
 const EPS_RESOLUTION_MM: f64 = 1.0e-15;
 const EPS_RING_VERTEX_MM: f64 = 1.0e-9;
+/// The null real of the kernel's binary encoding.
+const NULL_REAL: f64 = -3.14158e13;
 
 #[test]
 fn directory_signature_detects_solid_edge() {
@@ -302,4 +304,47 @@ fn vertexless_ring_edge_is_bounded_by_one_vertex_on_its_carrier() {
         .get();
     assert!((range[1] - range[0] - std::f64::consts::TAU).abs() < EPS_RING_VERTEX_MM);
     assert_geometry_valid(ir);
+}
+
+fn swept_ring_direction(scale: f64) -> f64 {
+    let bytes = test_support::with_partitions(&[test_support::swept_ring_partition(scale)]);
+    let result = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let geometry = &result.ir().geometry;
+    let surface = geometry
+        .surfaces
+        .iter()
+        .find(|candidate| candidate.id == geometry.faces[0].surface)
+        .unwrap();
+    let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction, .. } = &surface.geometry
+    else {
+        panic!("a swept surface is a procedural surface");
+    };
+    let procedural = geometry
+        .procedural_surfaces
+        .iter()
+        .find(|candidate| &candidate.id == construction)
+        .unwrap();
+    let cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::LinearSweep(sweep) =
+        procedural.definition()
+    else {
+        panic!("a swept surface is a linear sweep");
+    };
+    let direction = sweep.direction().get();
+    assert!(direction.x.abs() < EPS_RING_VERTEX_MM && direction.y.abs() < EPS_RING_VERTEX_MM);
+    assert_eq!(Some(sweep.directrix()), geometry.edges[0].carrier.curve());
+    assert_eq!(geometry.curves.len(), 1);
+    assert_geometry_valid(result.ir());
+    direction.z
+}
+
+#[test]
+fn swept_surface_face_rests_on_a_linear_sweep_of_its_section_curve() {
+    assert!((swept_ring_direction(0.01) - 10.0).abs() < EPS_RING_VERTEX_MM);
+}
+
+#[test]
+fn swept_surface_with_a_null_scale_sweeps_at_unit_parameter_speed() {
+    assert!((swept_ring_direction(NULL_REAL) - 1.0).abs() < EPS_RING_VERTEX_MM);
 }

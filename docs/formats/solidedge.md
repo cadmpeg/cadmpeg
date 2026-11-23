@@ -55,6 +55,11 @@ Direction vectors are dimensionless. A line's distance
 parameter has the model-space length unit. A body's `res_linear` field is
 its positive linear resolution in metres.
 
+A swept surface (type 67) is the linear extrusion of its `section` curve
+along its unit `sweep` direction. The surface does not store the extent along
+the sweep; the face loops bound it. A stated `scale` is a length in metres.
+A null `scale` makes the sweep parameter the distance along the direction.
+
 An intersection record references two support surfaces, a chart, and start
 and end limits. A chart carries a counted array of model-space points, a
 base parameter, a nonzero parameter scale, and a repeated point count.
