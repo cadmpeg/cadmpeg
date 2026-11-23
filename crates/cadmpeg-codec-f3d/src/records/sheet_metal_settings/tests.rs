@@ -48,3 +48,30 @@ fn settings_wire_couples_version_arity_and_source_identity() {
         assert!(serde_json::from_value::<DesignSheetMetalSettings>(invalid).is_err());
     }
 }
+
+#[test]
+fn leading_reference_form_has_no_mask() {
+    use super::DesignSheetMetalSettings;
+    let wire = serde_json::json!({
+        "id": "f3d:Design1/BulkStream.dat:design-sheet-metal-settings#20",
+        "record_index": 50, "byte_offset": 20, "paired_byte_offset": 100,
+        "inputs": {"version": "v3_leading_reference", "first": 55, "rule_reference_tail": "0000"},
+        "rule_record_index": 51, "presentation_record_index": 52,
+        "owner_record_index": 53, "context_record_index": 54,
+    });
+    let record: DesignSheetMetalSettings = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&record).unwrap(), wire);
+    assert_eq!(record.mask, None);
+    assert_eq!(
+        record.record_references().collect::<Vec<_>>(),
+        [50, 55, 51, 52, 53, 54]
+    );
+    let mut with_mask = wire.clone();
+    with_mask["mask"] = serde_json::json!(0);
+    assert!(serde_json::from_value::<DesignSheetMetalSettings>(with_mask).is_err());
+    let mut slots = wire;
+    slots["inputs"] = serde_json::json!({
+        "version": "v3", "slots": vec![None::<u64>; 9], "rule_reference_tail": "0000",
+    });
+    assert!(serde_json::from_value::<DesignSheetMetalSettings>(slots).is_err());
+}

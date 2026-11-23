@@ -7833,6 +7833,21 @@ Unstated regions:
 
 - `0..10` (10 B): Ten zero bytes precede the override mask.
 
+## `sheet_metal_settings_leading_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 33 B
+
+Offsets are relative to the end of the variable-length primary indexed header. The rule reference follows this prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 10 | 11 | `leading_reference` | `bytes[11]` | little | spec | a present local reference where the mask-and-slots form stores its mask |
+| 21 | 12 | `zero_run_12` | `bytes[12]` | little | spec | twelve zero bytes. The rule reference follows |
+
+Unstated regions:
+
+- `0..10` (10 B): Ten zero bytes precede the leading reference.
+
 ## `sheet_metal_bend_radius_override_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 21 B
@@ -8785,7 +8800,7 @@ Parsed by:
 | 78 | 8 | `scalar` | `f64` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
 | 86 | 4 | `repeated_lane` | `u32` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
 | 90 | 51 | `second_reference` | `bytes[51]` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
-| 141 | 1 | `suppressed_flag` | `u8` | little | spec | the suppressed flag at tail offset 141 |
+| 141 | 1 | `no_result_flag` | `u8` | little | spec | the no-result flag at tail offset 141 |
 | 142 | 1 | `rolled_back_flag` | `u8` | little | spec | the rolled-back flag at tail offset 142 |
 | 143 | 51 | `third_reference` | `bytes[51]` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |
 | 194 | 2 | `third_zero_run_2` | `bytes[2]` | little | spec | A typed-reference parameter scope, written by the container generation that writes typed references, has a 196-byte form |

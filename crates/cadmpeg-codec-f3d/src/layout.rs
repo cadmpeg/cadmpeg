@@ -6963,6 +6963,22 @@ pub(crate) mod sheet_metal_settings_prefix {
     pub(crate) const OVERRIDE_MASK: usize = 10;
 }
 
+/// Byte offsets for the `sheet_metal_settings_leading_prefix` record.
+///
+/// Spec §3.1. Record length 33 B.
+///
+/// ```text
+/// Offsets are relative to the end of the variable-length primary indexed header. The rule reference follows this prefix.
+/// ```
+pub(crate) mod sheet_metal_settings_leading_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 33;
+    /// Offset of `leading_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const LEADING_REFERENCE: usize = 10;
+    /// Offset of `zero_run_12` (`bytes[12]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_12: usize = 21;
+}
+
 /// Byte offsets for the `local_component_occurrence_prefix` record.
 ///
 /// Spec §3.1. Record length 209 B.
@@ -7852,8 +7868,8 @@ pub(crate) mod typed_reference_parameter_scope_tail {
     pub(crate) const PREVIOUS_HISTORY_STATE_ID: usize = 70;
     /// Offset of `second_reference` (`bytes[51]`). Spec §3.1.
     pub(crate) const SECOND_REFERENCE: usize = 90;
-    /// Offset of `suppressed_flag` (`u8`). Spec §3.1.
-    pub(crate) const SUPPRESSED_FLAG: usize = 141;
+    /// Offset of `no_result_flag` (`u8`). Spec §3.1.
+    pub(crate) const NO_RESULT_FLAG: usize = 141;
     /// Offset of `rolled_back_flag` (`u8`). Spec §3.1.
     pub(crate) const ROLLED_BACK_FLAG: usize = 142;
     /// Offset of `third_reference` (`bytes[51]`). Spec §3.1.

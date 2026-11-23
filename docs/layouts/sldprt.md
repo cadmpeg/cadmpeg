@@ -2778,6 +2778,36 @@ Parsed by:
 | 1 | 4 | `class_marker` | `bytes[4]` | little | spec | the class marker at `+1` · value `[255, 255, 1, 0]` |
 | 5 | 2 | `name_length` | `u16` | little | spec | name length at `+5` |
 
+## `revolution_line_reference_record_tail`
+
+Spec §2 · layout: byte offsets · size: 57 B
+
+Offsets begin at the tail, the last seven values of an moLineRef_w scalar record and the zero byte after them.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `scalar` | `f64` | little | spec | one positive scalar at tail offset `+0` |
+| 8 | 24 | `point` | `f64[3]` | little | spec | a point on the axis in metres at tail offset `+8` |
+| 32 | 24 | `direction` | `f64[3]` | little | spec | the unit axis direction at tail offset `+32` |
+| 56 | 1 | `zero` | `bytes[1]` | little | spec | one zero byte at tail offset `+56` · value `[0]` |
+
+## `revolution_line_reference_nested_end`
+
+Spec §2 · layout: byte offsets · size: 6 B
+
+Offsets begin after the seventh value of the nested-sketch-handle moLineRef_w record.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `zero` | `bytes[5]` | little | spec | five zero bytes at end offset `+0` · value `[0, 0, 0, 0, 0]` |
+| 5 | 1 | `selector` | `u8` | little | spec | a nonzero selector byte at end offset `+5` |
+
 ## `cosmetic_thread_component_edge_wrapper_prefix`
 
 Spec §2 · layout: byte offsets · size: 17 B
@@ -3210,6 +3240,55 @@ Parsed by:
 | 16 | 4 | `record_id` | `u32` | little | spec | a little-endian u32 record identifier |
 | 20 | 16 | `marker` | `bytes[16]` | little | spec | the 16 bytes `7d c3 94 25 ad 49 b2 54 7d c3 94 25 ad 49 b2 54` · value `[125, 195, 148, 37, 173, 73, 178, 84, 125, 195, 148, 37, 173, 73, 178, 84]` |
 | 36 | 2 | `zero_tail` | `u16` | little | spec | and u16 `0` · value `0` |
+
+## `view_bytes`
+
+Spec §Configuration objects · layout: byte offsets · size: 115 B
+
+A view's bytes after its name and frame, in a part of swVersion below 15000.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/writer/native/config.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 24 | 8 | `unit` | `f64` | little | spec | hold f64 `1` at +24 |
+| 58 | 8 | `scale` | `f64` | little | spec | the view's scale as an f64 at +58 |
+| 69 | 4 | `minus_one` | `i32` | little | spec | i32 `-1` at +69 |
+| 73 | 8 | `minus_one_real` | `f64` | little | spec | f64 `-1` at +73 |
+| 85 | 4 | `index` | `u32` | little | spec | the view's index as a little-endian u32 at +85 |
+
+Unstated regions:
+
+- `0..24` (24 B): Zero bytes.
+- `32..58` (26 B): Zero bytes.
+- `66..69` (3 B): Zero bytes.
+- `81..85` (4 B): Zero bytes.
+- `89..115` (26 B): Zero bytes.
+
+## `annotation_view_tail`
+
+Spec §Configuration objects · layout: byte offsets · size: 50 B
+
+The bytes a `moAnnotationView_c` writes after the view bytes.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/writer/native/config.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 10 | 1 | `area` | `u8` | little | spec | a byte at +10 |
+| 28 | 4 | `one` | `u32` | little | spec | little-endian u32 `1` at +28 · value `1` |
+| 34 | 4 | `minus_one` | `i32` | little | spec | i32 `-1` at +34 |
+| 38 | 4 | `word` | `u32` | little | spec | a little-endian u32 at +38 |
+| 42 | 4 | `minus_one_second` | `i32` | little | spec | i32 `-1` at +42 and +46 |
+| 46 | 4 | `minus_one_third` | `i32` | little | spec | i32 `-1` at +42 and +46 |
+
+Unstated regions:
+
+- `0..10` (10 B): Zero bytes.
+- `11..28` (17 B): Zero bytes.
+- `32..34` (2 B): Zero bytes.
 
 ## `named_object_header`
 
@@ -4093,9 +4172,10 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 4 | `source` | `u32` | little | spec | Its source identifier and selector are |
+| 0 | 4 | `source` | `u32` | little | spec | The plane's feature number; a time stamp in the padded form (compact_principal_plane_component_padded). |
+| 4 | 4 | `time_stamp` | `u32` | little | spec | A time stamp; zero in the padded form. |
 | 8 | 2 | `reserved` | `bytes[2]` | little | spec | A principal-plane component record has the 138-byte extent |
-| 10 | 4 | `selector` | `u32` | little | spec | Its source identifier and selector are |
+| 10 | 4 | `selector` | `u32` | little | spec | Its selector is the principal-plane selector |
 | 14 | 1 | `matrix_present` | `u8` | little | spec | Its f64 matrix is row-major |
 | 15 | 72 | `basis` | `f64[9]` | little | spec | Its f64 matrix is row-major |
 | 87 | 24 | `translation` | `f64[3]` | little | spec | Its translation is zero |
@@ -4106,8 +4186,35 @@ Parsed by:
 
 Unstated regions:
 
-- `4..8` (4 B): Opaque identity.
 - `130..138` (8 B): Opaque continuation.
+
+## `compact_principal_plane_component_padded`
+
+Spec §2 · layout: byte offsets · size: 142 B
+
+The principal-plane component record with its feature number one word earlier. The 138-byte record of compact_principal_plane_component starts at +4: its source word is the time stamp and its time-stamp word is the padding.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/compact_reference_planes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `feature_number` | `u32` | little | spec | The plane's feature number, the word before the 138-byte record. |
+| 4 | 4 | `time_stamp` | `u32` | little | spec | A time stamp, at +0 of the 138-byte record. |
+| 8 | 4 | `padding` | `u32` | little | spec | Zero, at +4 of the 138-byte record. · value `0` |
+| 12 | 2 | `reserved` | `bytes[2]` | little | spec | From the reserved field on, the two forms are the same |
+| 14 | 4 | `selector` | `u32` | little | spec | Its selector is the principal-plane selector |
+| 18 | 1 | `matrix_present` | `u8` | little | spec | Its f64 matrix is row-major |
+| 19 | 72 | `basis` | `f64[9]` | little | spec | Its f64 matrix is row-major |
+| 91 | 24 | `translation` | `f64[3]` | little | spec | Its translation is zero |
+| 115 | 8 | `scale` | `f64` | little | spec | its homogeneous scale is `1` |
+| 123 | 3 | `trailer_reserved` | `bytes[3]` | little | spec | From the reserved field on, the two forms are the same |
+| 126 | 4 | `trailer_kind` | `u32` | little | spec | From the reserved field on, the two forms are the same |
+| 130 | 4 | `trailer_sentinel` | `u32` | little | spec | From the reserved field on, the two forms are the same |
+
+Unstated regions:
+
+- `134..142` (8 B): Opaque continuation.
 
 ## `sketch_array_first_entry_prefix`
 
@@ -4281,6 +4388,51 @@ Unstated regions:
 
 - `10..45` (35 B): Child data before the sentinel.
 - `61..81` (20 B): Child data before the header word.
+
+## `sketch_dimension_parameter_trailer`
+
+Spec §Sketch objects · layout: byte offsets · size: 32 B
+
+The trailer of a sketch dimension's moLengthParameter_c or moAngleParameter_c after its tolerance pointer.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/writer/native/sketch.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `object_id` | `u32` | little | spec | the parameter's object identifier as a little-endian u32 at trailer +0 |
+| 20 | 4 | `measure` | `u32` | little | spec | the relation code of the dimension's measure as a little-endian u32 at trailer +20 |
+| 24 | 2 | `operand_count` | `u16` | little | spec | the operand count as a little-endian u16 at trailer +24 |
+| 26 | 4 | `word` | `u32` | little | spec | a little-endian u32 at trailer +26 |
+
+Unstated regions:
+
+- `4..20` (16 B): Sixteen bytes.
+- `30..32` (2 B): Two bytes.
+
+## `sketch_external_handle_block_54`
+
+Spec §Sketch objects · layout: byte offsets · size: 54 B
+
+The 54-byte block after a `moCompSketchEntHandle_c` whose object pointer is null.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/writer/native/sketch.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 4 | 4 | `word_4` | `u32` | little | spec | a little-endian u32 at +4 |
+| 20 | 4 | `first_sentinel` | `i32` | little | spec | three i32 `-12345` at +20 · value `-12345` |
+| 24 | 4 | `second_sentinel` | `i32` | little | spec | three i32 `-12345` at +20 · value `-12345` |
+| 28 | 4 | `third_sentinel` | `i32` | little | spec | three i32 `-12345` at +20 · value `-12345` |
+| 36 | 4 | `version` | `u32` | little | spec | a version number at +36 |
+| 40 | 14 | `trailing_zeros` | `bytes[14]` | little | spec | which end with fourteen zero bytes after the version · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+
+Unstated regions:
+
+- `0..4` (4 B): Four bytes.
+- `8..20` (12 B): Twelve bytes.
+- `32..36` (4 B): Four bytes.
 
 ## Not tabulated
 

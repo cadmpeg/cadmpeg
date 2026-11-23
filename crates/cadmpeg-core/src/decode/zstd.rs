@@ -44,6 +44,8 @@
 //!   error handler elsewhere, so an allocation that fails inside the decoder now panics or
 //!   aborts instead of returning an error.
 
+pub(crate) mod scan;
+
 use std::io::Read as _;
 
 use ruzstd::decoding::errors::FrameDecoderError;

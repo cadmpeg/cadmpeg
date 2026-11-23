@@ -2,7 +2,7 @@
 
 use super::parameter_classes::{stated_parameters, Statement, DECLARATION_PREFIX};
 use super::scalars::FeatureObjectNames;
-use super::{is_class_token, SKETCH_POINT_TOLERANCE};
+use super::{is_class_token, RELATION_INSTANCE_ID_PREFIX, SKETCH_POINT_TOLERANCE};
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::history::classify::HistoryMetadata;
 use crate::layout::feature_input_scalar_class_prefix as class_prefix;
@@ -648,7 +648,7 @@ pub(super) fn relation_instances(
         let ordinal = u32::try_from(ordinal)
             .map_err(|_| CodecError::malformed("SLDPRT relation instance ordinal overflows u32"))?;
         instances.push(FeatureInputRelationInstance {
-            id: format!("sldprt:feature-input:relation-instance#{lane_key}:{offset}"),
+            id: format!("{RELATION_INSTANCE_ID_PREFIX}{lane_key}:{offset}"),
             parent: lane.id.clone(),
             ordinal,
             offset,
@@ -689,10 +689,7 @@ pub(super) fn relation_instances(
         }
         claimed_scalar_refs.insert(binding.scalar_ref.as_str());
         instances.push(FeatureInputRelationInstance {
-            id: format!(
-                "sldprt:feature-input:relation-instance#{lane_key}:{}",
-                scalar.offset
-            ),
+            id: format!("{RELATION_INSTANCE_ID_PREFIX}{lane_key}:{}", scalar.offset),
             parent: lane.id.clone(),
             ordinal: u32::try_from(instances.len()).map_err(|_| {
                 CodecError::malformed("SLDPRT relation instance ordinal overflows u32")
@@ -2337,9 +2334,11 @@ mod relation_records_tests {
     /// `relation` and the parameter-class token `parameter`, each a display
     /// scalar and a driving scalar. Every scalar belongs to `sketch` and
     /// holds two point operands: the padded scalar and the first dimension
-    /// one pair, the second dimension another.
+    /// one pair, the second dimension another. The scalars' object
+    /// identifiers run from `0x40` in steps of 2, in stream order.
     fn token_form_lane(relation: u16, parameter: u16) -> FeatureInputLane {
         const NAME_CLASS: u16 = 0x72;
+        let object = |position: u32| 0x40 + 2 * position;
         let mut bytes = 0x20u32.to_le_bytes().to_vec();
         bytes.extend_from_slice(&[0x02, 0x00]);
         let declare = |bytes: &mut Vec<u8>, class: &str| {
@@ -2367,21 +2366,21 @@ mod relation_records_tests {
         name(&mut bytes, "D1");
         bytes.extend_from_slice(super::super::VALUE_ONLY_SCALAR_HEADER);
         bytes.extend_from_slice(&[0; 4]);
-        bytes.extend_from_slice(&0.031f64.to_le_bytes());
-        trailer(&mut bytes, 21, 40);
-        for (dimension, metres, role, object) in [
-            ("D1", 0.052f64, 1u8, 23u32),
-            ("D1", 0.06, 0, 24),
-            ("D2", 0.093, 1, 25),
-            ("D2", 0.3, 0, 26),
-        ] {
+        bytes.extend_from_slice(&0.0215f64.to_le_bytes());
+        trailer(&mut bytes, object(0), 40);
+        for (position, (dimension, metres, role)) in (1u32..).zip([
+            ("D1", 0.0412f64, 1u8),
+            ("D1", 0.045, 0),
+            ("D2", 0.0176, 1),
+            ("D2", 0.025, 0),
+        ]) {
             bytes.extend_from_slice(&(0x8000 | relation).to_le_bytes());
             bytes.extend_from_slice(&[0; 4]);
             bytes.extend_from_slice(&(0x8000 | parameter).to_le_bytes());
             name(&mut bytes, dimension);
             bytes.extend_from_slice(super::super::SCALAR_HEADER);
             bytes.extend_from_slice(&metres.to_le_bytes());
-            let at = trailer(&mut bytes, object, 35);
+            let at = trailer(&mut bytes, object(position), 35);
             bytes[at + 24..at + 29].copy_from_slice(&[0, 0, 0, 2, 0]);
             bytes[at + 29] = role;
         }
