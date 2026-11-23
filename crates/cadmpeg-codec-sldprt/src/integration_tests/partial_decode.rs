@@ -177,7 +177,33 @@ fn a_native_block_that_fails_its_crc_costs_that_block() {
     bytes.extend(&block);
     let decoded = decode(bytes);
     assert!(!baseline.ir().geometry.faces.is_empty());
-    assert_eq!(decoded.ir().geometry, baseline.ir().geometry);
+    assert_eq!(
+        decoded.ir().geometry.faces.len(),
+        baseline.ir().geometry.faces.len()
+    );
+    assert_eq!(
+        decoded.ir().geometry.bodies.len(),
+        baseline.ir().geometry.bodies.len()
+    );
+    let attributes = &decoded.ir().source.as_ref().expect("source").attributes;
+    assert!(!attributes.contains_key("active_parasolid_block"));
+    assert_eq!(
+        attributes
+            .get("sldprt_active_partition_unresolved")
+            .map(String::as_str),
+        Some("true")
+    );
+    let unread = crate::loss::SldprtLossCode::ConfigActivePartitionUnread.kind();
+    let [note] = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == unread)
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("one note says why no active partition is chosen");
+    };
+    assert!(note.message.contains("Contents/Config-1-Partition"));
     let [loss] = unreadable(&decoded)[..] else {
         panic!("one loss names the block");
     };

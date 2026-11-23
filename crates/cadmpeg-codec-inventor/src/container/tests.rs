@@ -82,3 +82,19 @@ fn malformed_metadata_inspection_retains_its_declaration() {
     assert_eq!(entry.attributes["meta_stream_version"], "8");
     assert!(entry.attributes.contains_key("framing_error"));
 }
+
+#[test]
+fn a_noncanonical_stream_chain_loss_names_the_stream() {
+    let mut bytes = cadmpeg_test_support::compound::compound_fixture();
+    let link = 10 * 512 + 8 * 4;
+    bytes[link..link + 4].copy_from_slice(&0xdead_beef_u32.to_le_bytes());
+    let arena = DecodeArena::new();
+    let (setup, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("build the decode context");
+    let snapshot = CompoundSnapshot::new(&setup, root).expect("the snapshot builds");
+    let losses = super::deviation_losses(&snapshot);
+    let [loss] = losses.as_slice() else {
+        panic!("one loss: {losses:#?}");
+    };
+    assert!(loss.message.starts_with("Payload: "), "{}", loss.message);
+}

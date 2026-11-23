@@ -49,6 +49,9 @@ pub(crate) enum SldprtLossCode {
     ConfigActiveIdentityUnresolved,
     /// Active configuration does not resolve to the active geometry partition.
     ConfigActivePartitionMismatch,
+    /// The active partition is not chosen: a section the choice needs was
+    /// given up.
+    ConfigActivePartitionUnread,
     /// Configuration state inferred from geometry without a native definition.
     ConfigInferredWithoutNative,
     /// Configuration-scoped feature-input lane has unresolved configuration id.
@@ -580,6 +583,7 @@ impl SldprtLossCode {
         Self::MetadataConfigurationPropertyValueUnsupported,
         Self::ConfigActiveIdentityUnresolved,
         Self::ConfigActivePartitionMismatch,
+        Self::ConfigActivePartitionUnread,
         Self::ConfigInferredWithoutNative,
         Self::ConfigLaneIdentityUnresolved,
         Self::ConfigAmbiguousPartition,
@@ -787,6 +791,7 @@ impl SldprtLossCode {
         match self {
             Self::ConfigActiveIdentityUnresolved => "config.active-identity-unresolved",
             Self::ConfigActivePartitionMismatch => "config.active-partition-mismatch",
+            Self::ConfigActivePartitionUnread => "config.active-partition-unread",
             Self::ConfigInferredWithoutNative => "config.inferred-without-native",
             Self::ConfigLaneIdentityUnresolved => "config.lane-identity-unresolved",
             Self::ConfigAmbiguousPartition => "config.ambiguous-partition",
@@ -1093,6 +1098,7 @@ impl SldprtLossCode {
             }
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
+            | Self::ConfigActivePartitionUnread
             | Self::ConfigInferredWithoutNative
             | Self::ConfigLaneIdentityUnresolved
             | Self::ConfigAmbiguousPartition
@@ -1409,6 +1415,7 @@ impl SldprtLossCode {
             | Self::HistoryXmlNormalised => LossTaxonomy::MetadataNotTransferred,
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
+            | Self::ConfigActivePartitionUnread
             | Self::ConfigInferredWithoutNative
             | Self::ConfigLaneIdentityUnresolved
             | Self::ConfigAmbiguousPartition
@@ -1667,6 +1674,7 @@ mod tests {
                 "metadata.configuration-property-value-unsupported",
                 "config.active-identity-unresolved",
                 "config.active-partition-mismatch",
+                "config.active-partition-unread",
                 "config.inferred-without-native",
                 "config.lane-identity-unresolved",
                 "config.ambiguous-partition",

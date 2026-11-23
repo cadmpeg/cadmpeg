@@ -81,6 +81,8 @@ pub(crate) struct Part<'a> {
     /// The sketch entities read from a curve record of state `0`: curves
     /// outside their sketch's profile.
     pub(crate) outside_profile: &'a HashSet<SketchEntityId>,
+    /// The native ids of the configurations whose partition was given up.
+    pub(crate) given_up_configurations: &'a BTreeSet<String>,
 }
 
 /// What [`project`] stated.
@@ -120,6 +122,7 @@ pub(crate) fn project(
         length_places,
         rollback,
         outside_profile,
+        given_up_configurations,
     } = part;
     let active = equations::active_slot(histories, ir.source.as_ref());
     let mut timeline = tree::timeline(histories)?;
@@ -225,6 +228,7 @@ pub(crate) fn project(
             configurations: &configurations.records,
             active: configurations.active.as_ref(),
             current: &bodies,
+            given_up: given_up_configurations,
         },
         &names,
         losses,

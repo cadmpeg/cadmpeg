@@ -261,6 +261,12 @@ impl GivenUpPart {
         self.name.as_deref()
     }
 
+    /// The stream that holds the part, where its decoder named one.
+    #[must_use]
+    pub const fn stream(&self) -> Option<&StreamName> {
+        self.stream.as_ref()
+    }
+
     /// Restates a part of a document that the stream `container` of an
     /// outer document holds, for a decoder that reads the nested document
     /// into the outer one. The part's stream becomes `container`, followed

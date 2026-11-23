@@ -1093,9 +1093,19 @@ const NO_ACTIVE_PARASOLID_NOTE: &str =
 
 pub(crate) fn notes(scan: &ContainerScan<'_>) -> Vec<String> {
     let mut notes = Vec::new();
+    let given_up_streams = scan
+        .given_up
+        .iter()
+        .filter(|part| part.kind() == COMPOUND_STREAM_PART)
+        .count();
+    let given_up_streams = if given_up_streams == 0 {
+        String::new()
+    } else {
+        format!(" read and {given_up_streams} given up")
+    };
     notes.push(format!(
         "outer version word: 0x{:08x}; {} CRC-validated block(s), {} tail-directory \
-             entry/entries, {} cache-cell(s), {} compound stream(s)",
+             entry/entries, {} cache-cell(s), {} compound stream(s){given_up_streams}",
         scan.version,
         scan.blocks.len(),
         scan.directory.len(),
@@ -1186,7 +1196,10 @@ pub(crate) fn select_active_parasolid_site<'a>(
     scan: &'a ContainerScan<'_>,
 ) -> Option<ActiveParasolidSite<'a>> {
     let active_configuration = active_configuration_index(scan);
-    if has_manifest_configuration_rows(scan) && active_configuration.is_none() {
+    if active_configuration.is_none()
+        && (has_manifest_configuration_rows(scan)
+            || !unread_active_partition_sections(scan).is_empty())
+    {
         return None;
     }
     let mut selected = None;
@@ -1235,6 +1248,37 @@ pub(crate) fn select_active_parasolid_site<'a>(
         }
     }
     selected
+}
+
+/// Whether `name` names a section that can hold a configuration's Parasolid
+/// partition.
+pub(crate) fn is_partition_section(name: &str) -> bool {
+    contains_ascii_case_insensitive(name, "partition")
+        && !contains_ascii_case_insensitive(name, "ghost")
+        && !contains_ascii_case_insensitive(name, "deltas")
+        && !contains_ascii_case_insensitive(name, "resolvedfeatures")
+        && !is_stock_bodies_section(name)
+        && virtual_component_key(name).is_none()
+}
+
+/// The given-up sections that the choice of the active partition needs:
+/// each partition section, and each features manifest where no manifest row
+/// was read.
+pub(crate) fn unread_active_partition_sections<'s>(scan: &'s ContainerScan<'_>) -> Vec<&'s str> {
+    let manifest_read = has_manifest_configuration_rows(scan);
+    scan.given_up
+        .iter()
+        .filter(|part| {
+            matches!(
+                part.kind(),
+                COMPOUND_STREAM_PART | NATIVE_BLOCK_PART | PARASOLID_STREAMS_PART
+            )
+        })
+        .filter_map(GivenUpPart::name)
+        .filter(|name| {
+            is_partition_section(name) || (!manifest_read && is_features_manifest_name(Some(name)))
+        })
+        .collect()
 }
 
 pub(crate) fn configuration_index(section: &str) -> Option<usize> {

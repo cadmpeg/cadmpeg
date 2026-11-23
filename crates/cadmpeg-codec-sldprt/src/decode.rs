@@ -225,7 +225,7 @@ fn decode_scan(
     part: bool,
 ) -> Result<Decoded, CodecError> {
     let decode_digest = Sha256Digest::digest(scan.source_image);
-    let mut given_up = std::mem::take(&mut scan.given_up);
+    let mut given_up = scan.given_up.clone();
     let parasolid_owner_unread = given_up.iter().any(|part| {
         matches!(
             part.kind(),
@@ -311,6 +311,12 @@ fn decode_scan(
             );
         }
     }
+    scan.given_up.extend(
+        given_up
+            .iter()
+            .filter(|part| part.kind() == PARASOLID_SITE_PART)
+            .cloned(),
+    );
 
     let (ir, annotations, unknowns, mut retention, mut pmi_losses) = build_metadata_ir(
         ctx,
@@ -2783,7 +2789,6 @@ fn try_decode_brep(
     for (index, stream) in streams.iter().enumerate() {
         sites.entry(stream.site_key()).or_default().push(index);
     }
-    let mut given_up_partitions = partitions_given_up(given_up);
     let mut decoded_sites = Vec::new();
     for (site, indices) in &sites {
         let first = indices[0];
@@ -2794,20 +2799,16 @@ fn try_decode_brep(
         match ctx.run_part(|| decode_bodies(ctx, &bodies, streams[first].source_stream()))? {
             Ok(decoded) => decoded_sites.push((site.clone(), first, decoded)),
             Err(error) => {
-                given_up_partitions.extend(
-                    streams[first]
-                        .section
-                        .name()
-                        .and_then(partition_configuration),
-                );
                 given_up.push(ctx.give_up_part(site_part(streams, indices), error)?);
             }
         }
     }
+    let given_up_partitions = partitions_given_up(given_up);
     if decoded_sites.is_empty() {
         let mut decoded = Brep::default();
         merge_virtual_component_bodies(ctx, scan, placed_virtual, &mut decoded, given_up)?;
         if decoded.bodies.is_empty() {
+            fallback_losses.append(&mut decoded.losses);
             return Ok(None);
         }
         let report = build_geometry_report(
@@ -2958,32 +2959,91 @@ fn try_decode_brep(
     )))
 }
 
+/// The part a Parasolid site is: its streams decoded together.
+const PARASOLID_SITE_PART: &str = "parasolid-site";
+
 /// The configuration index of `section` where it holds a configuration's
 /// Parasolid partition.
 fn partition_configuration(section: &str) -> Option<usize> {
-    (contains_ascii_case_insensitive(section, "partition")
-        && !contains_ascii_case_insensitive(section, "deltas")
-        && !contains_ascii_case_insensitive(section, "ghost"))
-    .then(|| container::configuration_index(section))
-    .flatten()
+    container::is_partition_section(section)
+        .then(|| container::configuration_index(section))
+        .flatten()
 }
 
-/// The configurations whose partition section is a given-up container
-/// part: a stream, a block, or the Parasolid streams of an owner.
+/// The configurations whose partition section is a given-up part: a stream,
+/// a block, the Parasolid streams of an owner, or a Parasolid site.
 fn partitions_given_up(parts: &[GivenUpPart]) -> BTreeSet<usize> {
     parts
         .iter()
-        .filter(|part| {
-            matches!(
-                part.kind(),
-                container::PARASOLID_STREAMS_PART
-                    | container::COMPOUND_STREAM_PART
-                    | container::NATIVE_BLOCK_PART
-            )
+        .filter_map(|part| match part.kind() {
+            container::PARASOLID_STREAMS_PART
+            | container::COMPOUND_STREAM_PART
+            | container::NATIVE_BLOCK_PART => part.name(),
+            PARASOLID_SITE_PART => part.stream().map(cadmpeg_ir::StreamName::as_str),
+            _ => None,
         })
-        .filter_map(GivenUpPart::name)
         .filter_map(partition_configuration)
         .collect()
+}
+
+/// The native ids of the configurations whose partition was given up: by
+/// their manifest index where the scan read manifest rows, else by their
+/// source index.
+fn configurations_given_up(
+    ir: &CadIr,
+    scan: &ContainerScan<'_>,
+    partitions: &BTreeSet<usize>,
+) -> BTreeSet<String> {
+    if partitions.is_empty() {
+        return BTreeSet::new();
+    }
+    let manifest = container::has_manifest_configuration_rows(scan);
+    ir.model
+        .configurations
+        .iter()
+        .filter(|configuration| {
+            let index = if manifest {
+                configuration.name.as_deref().and_then(|name| {
+                    match container::manifest_configuration_index(scan, name) {
+                        container::ManifestConfigurationIndex::Resolved(index) => Some(index),
+                        container::ManifestConfigurationIndex::Absent
+                        | container::ManifestConfigurationIndex::Unresolved => None,
+                    }
+                })
+            } else {
+                configuration
+                    .source_index
+                    .and_then(|index| usize::try_from(index).ok())
+            };
+            index.is_some_and(|index| partitions.contains(&index))
+        })
+        .filter_map(|configuration| configuration.native_ref.clone())
+        .collect()
+}
+
+/// The note of a document whose active partition is not chosen because
+/// sections that choice needs were given up; `document` names a nested
+/// document.
+fn active_partition_unread(
+    scan: &ContainerScan<'_>,
+    document: Option<&str>,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    if container::active_configuration_index(scan).is_some() {
+        return None;
+    }
+    let unread = container::unread_active_partition_sections(scan);
+    if unread.is_empty() {
+        return None;
+    }
+    let of = document
+        .map(|document| format!(" of {document}"))
+        .unwrap_or_default();
+    Some(SldprtLossCode::ConfigActivePartitionUnread.note(format!(
+        "no active Parasolid partition{of} is chosen: no read record names the active \
+         configuration, and the given-up section(s) {} store a configuration's partition or \
+         the configuration manifest.",
+        unread.join(", ")
+    )))
 }
 
 /// The Parasolid site whose body streams are `indices` of `streams`, as a
@@ -2993,7 +3053,7 @@ fn site_part<'a>(streams: &[ActiveParasolidSite<'a>], indices: &[usize]) -> Part
     let first = &streams[indices[0]];
     let mut part = Part::at(
         "sldprt",
-        "parasolid-site",
+        PARASOLID_SITE_PART,
         u64_from_index(first.offset),
         first.payload,
         [ArenaClass::Model],
@@ -3045,24 +3105,29 @@ fn merge_virtual_component_bodies(
             continue;
         }
         let _depth = ctx.enter_nested("decode SolidWorks virtual component document")?;
-        let mut nested = match container::scan(ctx, View::over_retained(section.payload())) {
+        let nested = match container::scan(ctx, View::over_retained(section.payload())) {
             Ok(nested) => nested,
             Err(limit @ CodecError::ResourceLimit(_)) => return Err(limit),
             Err(_) => continue,
         };
-        for part in std::mem::take(&mut nested.given_up) {
-            given_up.push(part.nested_in(ctx, section.source_stream())?);
+        for part in &nested.given_up {
+            given_up.push(part.clone().nested_in(ctx, section.source_stream())?);
         }
+        let unread = active_partition_unread(&nested, Some(section.source_stream().as_str()));
         let streams = active_body_streams(&nested);
         let site = container::select_active_parasolid_site(&nested)
             .map(|site| site.site_key())
             .or_else(|| {
+                if unread.is_some() {
+                    return None;
+                }
                 let first = streams.first()?.site_key();
                 streams
                     .iter()
                     .all(|stream| stream.site_key() == first)
                     .then_some(first)
             });
+        decoded.losses.extend(unread);
         let Some(site) = site else {
             continue;
         };
@@ -4085,6 +4150,7 @@ fn build_geometry_ir(
     );
     crate::history::bind::bind_bound_sketch_profiles(&mut ir.model.features, &ir.model.sketches);
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
+    let given_up_configurations = configurations_given_up(&ir, scan, &given_up_partitions);
     let active_given_up = container::active_configuration_index(scan)
         .is_some_and(|index| given_up_partitions.contains(&index));
     let (current_bodies, stored_bodies) =
@@ -4559,6 +4625,7 @@ fn build_geometry_ir(
                 length_places,
                 rollback,
                 outside_profile: &outside_profile,
+                given_up_configurations: &given_up_configurations,
             },
             &mut pmi_losses,
         )?;
@@ -5558,6 +5625,8 @@ fn build_metadata_ir(
             .iter()
             .map(|body| body.id.clone())
             .collect();
+        let given_up_configurations =
+            configurations_given_up(&ir, scan, &partitions_given_up(&scan.given_up));
         project_design(
             ctx,
             &mut ir,
@@ -5577,6 +5646,7 @@ fn build_metadata_ir(
                 length_places,
                 rollback,
                 outside_profile: &outside_profile,
+                given_up_configurations: &given_up_configurations,
             },
             &mut pmi_losses,
         )?;
@@ -6850,6 +6920,7 @@ fn append_parasolid_container_losses(
     for deviation in &scan.noncanonical {
         losses.push(SldprtLossCode::ContainerNoncanonical.note(deviation.clone()));
     }
+    losses.extend(active_partition_unread(scan, None));
     let mut capped = crate::loss::NamedCount::default();
     for section in scan.sections().filter(|section| section.ps_probe_capped()) {
         capped.push(section.source_stream().as_str());

@@ -1159,20 +1159,11 @@ impl CompoundState {
                         ),
                     };
                     let data = match NonZeroU64::new(entry.size) {
-                        None => match entry.start_sector {
-                            END_OF_CHAIN => StreamData::Empty(EmptyStreamStart::EndOfChain),
-                            FREE_SECTOR => StreamData::Empty(EmptyStreamStart::FreeSector),
-                            start => StreamData::Broken {
-                                logical_size: 0,
-                                allocation: None,
-                                start,
-                                reason: format!(
-                                    "empty CFB {} has an invalid start sector",
-                                    role.name()
-                                ),
-                                located: Vec::new(),
-                            },
-                        },
+                        None => StreamData::Empty(if entry.start_sector == FREE_SECTOR {
+                            EmptyStreamStart::FreeSector
+                        } else {
+                            EmptyStreamStart::EndOfChain
+                        }),
                         Some(logical_size) => {
                             let expected = usize::try_from(logical_size.get())
                                 .ok()
@@ -3341,13 +3332,33 @@ mod tests {
         let mut unowned_mini = fixture();
         put_u32(sector_mut(&mut unowned_mini, 10), 4, END_OF_CHAIN);
         assert!(!snapshot_parses(&unowned_mini));
+        let mut emptied = fixture();
+        sector_mut(&mut emptied, 0)[128 + 120..128 + 128].fill(0);
+        assert!(!snapshot_parses(&emptied));
     }
 
     #[test]
-    fn invalid_empty_truncated_and_escaping_streams_cost_that_stream_only() {
-        let mut invalid_empty = fixture();
-        sector_mut(&mut invalid_empty, 0)[128 + 120..128 + 128].fill(0);
+    fn an_empty_stream_reads_empty_whatever_its_start_sector() {
+        let mut file = fixture();
+        sector_mut(&mut file, 0)[128 + 120..128 + 128].fill(0);
+        put_u32(sector_mut(&mut file, 10), 0, FREE_SECTOR);
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &policy)
+            .expect("synthetic CFB fits the decode policy");
+        let snapshot = CompoundSnapshot::new(&ctx, root).expect("the snapshot builds");
+        assert_eq!(snapshot.deviations().count(), 0);
+        let stream = snapshot.stream("Small").expect("the empty stream exists");
+        assert_eq!(stream.logical_size(), 0);
+        assert!(snapshot
+            .open(&ctx, stream)
+            .expect("the empty stream opens")
+            .window()
+            .is_empty());
+    }
 
+    #[test]
+    fn truncated_and_escaping_streams_cost_that_stream_only() {
         let mut truncated = fixture();
         sector_mut(&mut truncated, 0)[3 * 128 + 120..4 * 128]
             .copy_from_slice(&4608_u64.to_le_bytes());
@@ -3357,11 +3368,7 @@ mod tests {
         sector_mut(&mut beyond_root_size, 0)[128 + 120..128 + 128]
             .copy_from_slice(&64_u64.to_le_bytes());
 
-        for (file, readable) in [
-            (invalid_empty, "Store/Large"),
-            (truncated, "Small"),
-            (beyond_root_size, "Store/Large"),
-        ] {
+        for (file, readable) in [(truncated, "Small"), (beyond_root_size, "Store/Large")] {
             let (streams, deviations) = opened_streams(&file);
             assert_eq!(broken(&deviations), 1);
             assert_eq!(
