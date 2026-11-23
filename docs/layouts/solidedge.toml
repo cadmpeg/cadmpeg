@@ -841,6 +841,45 @@ size = 374
 note = "§7.6 states no field after the edge length."
 
 [[record]]
+name = "topology_proxy_edge_tail"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/edge.rs"
+section = "7.6"
+anchor = "A proxy of another size `S` stores the edge start point at offset `S` - 438."
+size = 438
+
+[[record.field]]
+name = "start"
+offset = 0
+type = "f64[3]"
+source = "spec"
+anchor = "A proxy of another size `S` stores the edge start point at offset `S` - 438."
+
+[[record.field]]
+name = "direction"
+offset = 24
+type = "f64[3]"
+source = "spec"
+anchor = "The unit edge direction follows the start point after 24 bytes, and the edge"
+
+[[record.gap]]
+offset = 48
+size = 8
+note = "§7.6 states no field between the edge direction and the edge length."
+
+[[record.field]]
+name = "length"
+offset = 56
+type = "f64"
+source = "spec"
+anchor = "length follows it after 56 bytes."
+
+[[record.gap]]
+offset = 64
+size = 374
+note = "§7.6 states no field after the edge length."
+
+[[record]]
 name = "ref_axis"
 kind = "byte"
 parsed_by = "crates/cadmpeg-codec-solidedge/src/extents.rs"
@@ -1148,3 +1187,40 @@ offset = 16
 type = "f64"
 source = "spec"
 anchor = "| 16 | `f64` value, equal to the value of the referenced object |"
+
+[[record]]
+name = "standard_relation"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/sheet_metal.rs"
+section = "10.3"
+anchor = "Relation implementation` object of 161 bytes."
+size = 161
+
+[[record.gap]]
+offset = 0
+size = 99
+note = "§10.3 states no field before the flange object identifier."
+
+[[record.field]]
+name = "own_object"
+offset = 99
+type = "u32"
+source = "spec"
+anchor = "Relation implementation` object of 161 bytes. The `u32` at object offset 99"
+
+[[record.gap]]
+offset = 103
+size = 24
+note = "§10.3 states no field between the flange object identifier and the document variable identifier."
+
+[[record.field]]
+name = "variable_object"
+offset = 127
+type = "u32"
+source = "spec"
+anchor = "is the identifier of the flange object. The `u32` at object offset 127 is"
+
+[[record.gap]]
+offset = 131
+size = 30
+note = "§10.3 states no field after the document variable identifier."

@@ -351,6 +351,24 @@ Unstated regions:
 - `169..177` (8 B): §7.6 states no field between the edge direction and the edge length.
 - `185..559` (374 B): §7.6 states no field after the edge length.
 
+## `topology_proxy_edge_tail`
+
+Spec §7.6 · layout: byte offsets · size: 438 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/edge.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 24 | `start` | `f64[3]` | little | spec | A proxy of another size `S` stores the edge start point at offset `S` - 438. |
+| 24 | 24 | `direction` | `f64[3]` | little | spec | The unit edge direction follows the start point after 24 bytes, and the edge |
+| 56 | 8 | `length` | `f64` | little | spec | length follows it after 56 bytes. |
+
+Unstated regions:
+
+- `48..56` (8 B): §7.6 states no field between the edge direction and the edge length.
+- `64..438` (374 B): §7.6 states no field after the edge length.
+
 ## `ref_axis`
 
 Spec §6.4 · layout: byte offsets · size: 61 B
@@ -494,3 +512,21 @@ Parsed by:
 | 12 | 2 | `unit` | `u16` | little | spec | \| 12 \| `u16` unit type: `1` length in metres, `16` density, `58` unitless \| |
 | 14 | 2 | `reserved` | `u16` | little | spec | \| 14 \| `u16` zero \| · value `0` |
 | 16 | 8 | `value` | `f64` | little | spec | \| 16 \| `f64` value, equal to the value of the referenced object \| |
+
+## `standard_relation`
+
+Spec §10.3 · layout: byte offsets · size: 161 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/sheet_metal.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 99 | 4 | `own_object` | `u32` | little | spec | Relation implementation` object of 161 bytes. The `u32` at object offset 99 |
+| 127 | 4 | `variable_object` | `u32` | little | spec | is the identifier of the flange object. The `u32` at object offset 127 is |
+
+Unstated regions:
+
+- `0..99` (99 B): §10.3 states no field before the flange object identifier.
+- `103..127` (24 B): §10.3 states no field between the flange object identifier and the document variable identifier.
+- `131..161` (30 B): §10.3 states no field after the document variable identifier.
