@@ -1240,14 +1240,29 @@ The design reads a built circle in this order. A built circle that has the cente
 
 **Conflict.** A cylinder face witnesses a circle whichever feature cut it: a built circle that a later feature's hole repeats stays profile geometry. The witness reads cylinders along the sketch normal, so a built circle that a revolution sweeps has none.
 
-### DI-72. Length unit codes and the three-word unit base
+### DI-72. Length unit codes above `3`
 
-**Question.** Which length units do the codes other than `0`, `1` and `3` of the `moLengthUserUnits_c` unit word name, and is the u16 after a 44-byte base that word?
+**Question.** Which length units do the `moLengthUserUnits_c` unit codes above `3` name?
 
-**Known.** Code `0` is millimetre, `1` centimetre and `3` inch: each agrees with the quotient of a stored length and its Keywords display in every document that stores both. Some compound documents write three u32 words where the base holds four, so the base is 44 bytes, a u16 follows it, then the dual length unit object, whose first u32 is `2`; those documents store no length beside its display.
+**Known.** `sldprt.md` §2.3 gives the codes `0` to `3`. The decoder states no length unit for a document that writes another code.
 
-**Need.** Documents of each form that store a length scalar beside its Keywords display, so the quotient names the unit.
+**Need.** A document that writes a code above `3` and stores a length scalar beside its Keywords display, so that their quotient names the unit.
 
+### DI-87. The base form of each unit object of one units table
+
+**Question.** Does every unit object of a `moUnitsTable_c` open with a base of the form its `moNumberUserUnits_c` object has?
+
+**Known.** `sldprt.md` §2.3 gives the three base forms: 44 and 48 bytes in a compound document, 62 bytes in a block-container document. The decoder measures the `moNumberUserUnits_c` object, from the end of its class declaration to the next class declaration, and reads the `moLengthUserUnits_c` display decimal places and u16 unit code at that form's offsets. A 48-byte length unit base read at the 44-byte offsets gives as its unit code the low u16 of its last u32, which is `0` or `1`.
+
+**Need.** A compound document whose `moLengthUserUnits_c` base and `moNumberUserUnits_c` object differ in length, or a field of the length unit object that states its own base form.
+
+### DI-88. The end of a units table
+
+**Question.** At which byte does the last unit object of a `moUnitsTable_c` end?
+
+**Known.** The table writes a u16 count (12, 16 or 17) and that many unit objects. A unit object is its class declaration or a reference to an earlier one, a base, and what its class adds (`sldprt.md` §2.3). `moLengthUserUnits_c` adds an object pointer to a dual length unit, which the table writes in place as a second length unit object, and `moDensityUnits_c` adds a length-unit pointer when its flag byte is set. The decoder searches from the count to the end of the configuration stream for the first `moLengthUserUnits_c` and `moNumberUserUnits_c` declarations.
+
+**Need.** The encoding of a null and of an in-place object pointer in each unit class that writes one, so that a walk of the table's count of objects ends at the table's last byte and bounds the search.
 
 ### DI-77. The +17 value of a sketch curve record
 
