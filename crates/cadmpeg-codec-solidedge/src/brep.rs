@@ -698,7 +698,12 @@ fn trim_edges(
 }
 
 fn periodic_range([start, end]: [f64; 2], lower: f64, period: f64) -> [f64; 2] {
-    let start = lower + (start - lower).rem_euclid(period);
+    let mut start = lower + (start - lower).rem_euclid(period);
+    // A start a rounding step below `lower` wraps to exactly one period above
+    // it, outside the canonical turn `[lower, lower + period)`.
+    if start >= lower + period {
+        start -= period;
+    }
     let mut end = lower + (end - lower).rem_euclid(period);
     if end <= start {
         end += period;
@@ -719,5 +724,10 @@ mod tests {
         assert_eq!(periodic_range([-PI, PI], 0.0, TAU), [PI, PI + TAU]);
         assert_eq!(periodic_range([0.0, TAU], 0.0, TAU), [0.0, TAU]);
         assert_eq!(periodic_range([-1.0, 6.0], 5.0, 4.0), [7.0, 10.0]);
+        assert_eq!(
+            periodic_range([-1.0e-17, FRAC_PI_2], 0.0, TAU),
+            [0.0, FRAC_PI_2]
+        );
+        assert_eq!(periodic_range([-1.0e-17, TAU], 0.0, TAU), [0.0, TAU]);
     }
 }
