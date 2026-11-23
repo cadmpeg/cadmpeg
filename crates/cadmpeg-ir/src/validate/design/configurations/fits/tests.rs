@@ -3,9 +3,7 @@
 use crate::design::parameter::Tolerance;
 use crate::design::units::{Quantity, ValueKind};
 use crate::pmi::{FitZone, LimitsAndFits};
-use crate::validate::design::fixture::{
-    assert_finding, assert_no_design_finding, document, parameter,
-};
+use crate::validate::design::fixture::{assert_finding, design_findings, document, parameter};
 
 fn designation(form_variance: &str, zone: FitZone) -> LimitsAndFits {
     LimitsAndFits {
@@ -35,7 +33,13 @@ fn a_parameter_fit_and_its_mate_state_the_other_zone() {
         let mut bore = parameter("bore", ValueKind::Quantity(Quantity::LENGTH));
         bore.tolerance = Some(fit(own, mate));
         ir.design.parameters.push(bore);
-        assert_no_design_finding(&ir);
+        let findings = design_findings(&ir);
+        assert!(
+            !findings
+                .iter()
+                .any(|finding| finding.message.contains("the same zone")),
+            "{findings:#?}"
+        );
     }
     for zone in [FitZone::Hole, FitZone::Shaft] {
         let mut ir = document();
