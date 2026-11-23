@@ -8,7 +8,9 @@ use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::names::{NativeName, NativeNameValue};
 use cadmpeg_ir::design::ops::body::{Pattern, PatternInstances, PatternMethod, PatternSeeds};
-use cadmpeg_ir::design::ops::shared::{LinearRun, PatternLayout, PatternRun, RunSides, Spacing};
+use cadmpeg_ir::design::ops::shared::{
+    LinearLayout, LinearRun, PatternLayout, PatternRun, RunSides, Spacing,
+};
 use cadmpeg_ir::design::options::{NativeOption, SymmetricMeasure};
 use cadmpeg_ir::design::selection::{Anchor, Members, PickTarget, Picked, Picks, Selection};
 use cadmpeg_ir::features::patterns::{PatternSeed, PatternTransform};
@@ -162,11 +164,11 @@ pub(super) fn project(
     }
     Some(FeatureOperation::Pattern(Box::new(Pattern {
         seeds,
-        layout: PatternLayout::Linear {
+        layout: PatternLayout::Linear(LinearLayout {
             first,
             seed_only: Some(Dimension::Literal(false)),
             second: Some(second),
-        },
+        }),
         instances: PatternInstances::Implicit(Vec::new()),
         native_options,
         source_settings: BTreeMap::new(),

@@ -29,8 +29,9 @@ use crate::design::ops::dressup::{
     TransitionKind,
 };
 use crate::design::ops::shared::{
-    AxisLimits, Bounds, Coupling, Joint, JointConnector, JointKind, JointMotion, JointOffset,
-    Limit, LinearRun, PatternLayout, PatternRun, RunSides, Spacing, Span,
+    AxisLimits, Bounds, CompositeStage, Coupling, Joint, JointConnector, JointKind, JointMotion,
+    JointOffset, Limit, LinearLayout, LinearRun, Locus, PatternLayout, PatternRun, RunSides,
+    ScaleLayout, Spacing, Span,
 };
 use crate::design::ops::sheet_metal::{
     BendAllowance, BendSpec, Flange, FlangeWidth, KFactorRow, KFactorTable, SheetMetal,
@@ -60,7 +61,7 @@ use crate::ids::OccurrenceId;
 use crate::math::Point2;
 use crate::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
 use crate::report::Severity;
-use crate::scalar::{Angle, Fraction, Length, PositiveLength};
+use crate::scalar::{Angle, Fraction, Length, PositiveLength, PositiveReal};
 use crate::sketches::{SketchConstraintId, SketchEntityId, SketchId};
 use crate::transform::Transform;
 use crate::units::{FinitePoint2, UnitVector3};
@@ -613,7 +614,15 @@ fn a_hole_has_a_wider_head_and_a_series_only_in_an_assembly_feature() {
 // ----------------------------------------------------------------- patterns and body operations
 
 fn linear(sides: Option<RunSides<Length>>, count: u32) -> PatternLayout {
-    PatternLayout::Linear {
+    PatternLayout::Linear(linear_layout(sides, count))
+}
+
+fn linear_stage(count: u32) -> CompositeStage {
+    CompositeStage::Linear(linear_layout(None, count))
+}
+
+fn linear_layout(sides: Option<RunSides<Length>>, count: u32) -> LinearLayout {
+    LinearLayout {
         first: LinearRun {
             direction: Construction {
                 resolved: Some(UnitVector3::X_AXIS),
@@ -686,7 +695,7 @@ fn a_pattern_layout_and_its_indices_fit_its_runs() {
     );
     assert_finding(
         &with(pattern(
-            PatternLayout::Composite(vec![linear(None, 2)]),
+            PatternLayout::Composite(vec![linear_stage(2)]),
             Vec::new(),
         )),
         "fewer than two stages",
@@ -1576,7 +1585,7 @@ fn an_index_has_the_followed_and_composite_coordinates() {
     let mut ir = with(pattern(follow, vec![skipped(vec![1, 1, 1])]));
     ir.design.features[1].definition.operation = pattern(linear(None, 3), Vec::new());
     assert_finding(&ir, "other than one coordinate per run");
-    let composite = || PatternLayout::Composite(vec![linear(None, 2), linear(None, 2)]);
+    let composite = || PatternLayout::Composite(vec![linear_stage(2), linear_stage(2)]);
     assert_finding(
         &with(pattern(composite(), vec![skipped(vec![1])])),
         "other than one coordinate per run",
@@ -1677,17 +1686,36 @@ fn an_assembly_feature_runs_no_operation_that_states_its_bodies() {
 }
 
 #[test]
-fn a_composite_stage_is_a_linear_circular_mirror_scale_or_native_layout() {
-    let follow = PatternLayout::Follow(named(vec![pick(PickTarget::Feature(feature("fillet")))]));
-    let stages = |stage| PatternLayout::Composite(vec![linear(None, 2), stage]);
-    let refused = "a Composite stage is no Linear";
-    assert_finding(&with(pattern(stages(follow), Vec::new())), refused);
-    let nested = stages(PatternLayout::Composite(vec![
-        linear(None, 2),
-        linear(None, 2),
-    ]));
-    assert_finding(&with(pattern(nested, Vec::new())), refused);
-    assert_no_finding_containing(&with(pattern(stages(linear(None, 2)), Vec::new())), refused);
+fn a_composite_scale_stage_divides_the_instances_before_it() {
+    let scale = |count| {
+        CompositeStage::Scale(ScaleLayout {
+            factor: Dimension::Literal(PositiveReal::new(2.0).unwrap()),
+            count: Dimension::Literal(count),
+            center: Locus::Centroid,
+        })
+    };
+    let refused = "does not divide the instances";
+    assert_finding(
+        &with(pattern(
+            PatternLayout::Composite(vec![linear_stage(4), scale(3)]),
+            Vec::new(),
+        )),
+        refused,
+    );
+    assert_no_finding_containing(
+        &with(pattern(
+            PatternLayout::Composite(vec![linear_stage(4), scale(2)]),
+            Vec::new(),
+        )),
+        refused,
+    );
+    assert_finding(
+        &with(pattern(
+            PatternLayout::Composite(vec![linear_stage(4), scale(1)]),
+            Vec::new(),
+        )),
+        "a Scale layout's literal count is below 2",
+    );
 }
 
 #[test]

@@ -14,12 +14,12 @@ use crate::design::ops::body::{
     Transformation,
 };
 use crate::design::ops::shared::{
-    Alignment, AxisLimits, Bounds, ChainLayout, ChainLink, ChainLinks, Coupling, DimensionRun,
-    DimensionTable, DriveAxis, DriveMode, Increment, InstanceOrientation, JointConnector,
-    JointDrive, JointKind, JointMotion, JointOffset, LinearRun, Locus, PairElement,
-    PathAxisControl, PathPosition, PathReference, PathRollControl, PatternLayout, PatternRun,
-    RunSides, SlotPosition, Spacing, TableRow, TangentContact, ToolDisposition, UpToFill,
-    WidthMode,
+    Alignment, AxisLimits, Bounds, ChainLayout, ChainLink, ChainLinks, CircularLayout,
+    CompositeStage, Coupling, DimensionRun, DimensionTable, DriveAxis, DriveMode, Increment,
+    InstanceOrientation, JointConnector, JointDrive, JointKind, JointMotion, JointOffset,
+    LinearLayout, LinearRun, Locus, MirrorLayout, PairElement, PathAxisControl, PathPosition,
+    PathReference, PathRollControl, PatternLayout, PatternRun, RunSides, ScaleLayout, SlotPosition,
+    Spacing, TableRow, TangentContact, ToolDisposition, UpToFill, WidthMode,
 };
 use crate::scalar::{Angle, Length};
 
@@ -36,6 +36,11 @@ fn every_pattern_type_has_a_schema() {
     generates::<PatternMethod>(&mut generator);
     generates::<AdjustAgainst>(&mut generator);
     generates::<PatternLayout>(&mut generator);
+    generates::<CompositeStage>(&mut generator);
+    generates::<LinearLayout>(&mut generator);
+    generates::<CircularLayout>(&mut generator);
+    generates::<MirrorLayout>(&mut generator);
+    generates::<ScaleLayout>(&mut generator);
     generates::<ChainLayout>(&mut generator);
     generates::<ChainLinks>(&mut generator);
     generates::<ChainLink>(&mut generator);
