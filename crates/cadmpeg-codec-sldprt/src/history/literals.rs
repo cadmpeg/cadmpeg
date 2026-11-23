@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Length, angle, vector, and parameter-literal parse/format helpers.
 
+use cadmpeg_ir::features::direct_edit::FaceMotion;
+use cadmpeg_ir::features::edge_treatments::ChamferSpec;
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::parameters::{DimensionDisplay, ParameterValue};
+use cadmpeg_ir::features::patterns::PatternTransform;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::Vector3;
-use cadmpeg_ir::{
-    features::{
-        edge_treatments::ChamferSpec, patterns::PatternTransform, BooleanOp, DimensionDisplay,
-        FaceMotion, FeatureDefinition, FeatureOperation, FinitePoint3, FiniteVector3,
-        ParameterValue,
-    },
-    scalar::{Angle, FiniteReal, InteriorAngle, Length, PositiveAngle, PositiveLength},
-};
+use cadmpeg_ir::scalar::{Angle, FiniteReal, InteriorAngle, Length, PositiveAngle, PositiveLength};
 
 const EPS_LITERALS_VALID_PLANE_FRAME_E9: f64 = 1.0e-9;
 const EPS_LITERALS_PARSE_LENGTH_MM_E6: f64 = 1.0e-6;
@@ -76,6 +76,21 @@ pub(crate) fn parse_positive_dimension_length_mm(value: &str) -> Option<Positive
             .ok()
             .and_then(PositiveLength::new)
     })
+}
+
+/// The one parameter of a feature record, with its length, when the record
+/// holds exactly one and it is a positive length. An extrusion record that
+/// holds no `Depth` or `D1` states its first depth there: the projection
+/// reads the depth from it, and the encoder writes the depth to it.
+pub(crate) fn sole_length_parameter(
+    parameters: &std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+) -> Option<(&cadmpeg_core::text::NonBlankString, PositiveLength)> {
+    let mut entries = parameters.iter();
+    let (name, value) = entries.next()?;
+    if entries.next().is_some() {
+        return None;
+    }
+    Some((name, parse_positive_dimension_length_mm(value)?))
 }
 
 pub(crate) fn parse_dimension_length_mm(value: &str) -> Option<Length> {
@@ -191,10 +206,10 @@ pub(crate) fn parse_vector3(value: &str) -> Option<Vector3> {
 
 pub(super) fn parse_valid_direction(
     value: &str,
-) -> Option<cadmpeg_ir::features::FeatureDirection3> {
+) -> Option<cadmpeg_ir::features::geometry::FeatureDirection3> {
     parse_vector3(value)
         .filter(|value| valid_direction(*value))
-        .and_then(cadmpeg_ir::features::FeatureDirection3::new)
+        .and_then(cadmpeg_ir::features::geometry::FeatureDirection3::new)
 }
 
 pub(super) fn parse_boolean_op(value: &str) -> Option<BooleanOp> {
@@ -219,7 +234,7 @@ pub(super) fn parse_bool(value: &str) -> Option<bool> {
     }
 }
 
-pub(super) fn parse_parameter_literal(expression: &str) -> Option<ParameterValue> {
+pub(crate) fn parse_parameter_literal(expression: &str) -> Option<ParameterValue> {
     if dimension_display(expression).is_some() {
         return parse_dimension_display_length(expression).map(ParameterValue::Length);
     }
@@ -247,7 +262,7 @@ pub(super) fn parse_parameter_literal(expression: &str) -> Option<ParameterValue
         .map(ParameterValue::Real)
 }
 
-pub(super) fn dimension_display(expression: &str) -> Option<DimensionDisplay> {
+pub(crate) fn dimension_display(expression: &str) -> Option<DimensionDisplay> {
     let expression = strip_dimension_count(expression.trim());
     if strip_diameter_modifier(expression).is_some()
         || (expression.starts_with(['⌀', 'Ø']) && parse_length_mm(expression).is_some())
@@ -358,7 +373,7 @@ pub(super) fn parse_neutral_parameter_literal(
     parse_parameter_literal(expression)
 }
 
-pub(super) fn format_parameter_value(value: &ParameterValue) -> String {
+pub(crate) fn format_parameter_value(value: &ParameterValue) -> String {
     match value {
         ParameterValue::Length(value) => format_length_mm(*value),
         ParameterValue::Angle(value) => format_angle_rad(*value),
@@ -377,7 +392,8 @@ mod direction_tests {
     #[test]
     fn parsed_direction_retains_codec_threshold_and_components() {
         assert_eq!(
-            parse_valid_direction("2,0,-3").map(cadmpeg_ir::features::FeatureDirection3::get),
+            parse_valid_direction("2,0,-3")
+                .map(cadmpeg_ir::features::geometry::FeatureDirection3::get),
             Some(Vector3::new(2.0, 0.0, -3.0))
         );
         assert!(parse_valid_direction("0,0,0").is_none());

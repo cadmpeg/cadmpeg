@@ -17,11 +17,12 @@ use crate::pmdc::{content_header, state_content_header, Cursor};
 use crate::record_identity::{Located, RecordPayload, RecordTypeId};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::evaluation::FeatureResultTopology;
+use cadmpeg_ir::features::geometry::FeatureDirection3;
 use cadmpeg_ir::features::patterns::{
     LinearPatternDirection, PatternKind, PatternSeed, PatternTransform,
 };
-use cadmpeg_ir::features::FeatureDirection3;
-use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation, FeatureResultTopology};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::PositiveLength;
 use serde::{Deserialize, Serialize};
@@ -869,7 +870,7 @@ fn body_seed(source: &PmDcPatternFeature, index: &ProjectionIndex<'_>) -> Option
         wrappers.push(wrapper.id());
     }
     Some(PatternSeed::Bodies(
-        cadmpeg_ir::features::BodySelection::local(wrappers, collection.id()).ok()?,
+        cadmpeg_ir::features::selections::BodySelection::local(wrappers, collection.id()).ok()?,
     ))
 }
 
@@ -934,7 +935,7 @@ pub(super) fn project(
     };
     feature.id = id;
     feature.source_tag = Some("rectangular_pattern".into());
-    feature.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+    feature.evaluation = cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
         FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }),
     );
     Some(Ok((feature, result)))
@@ -952,7 +953,7 @@ pub(crate) fn is_linear_pattern(feature: &Feature) -> bool {
 pub(crate) struct SourceRecords<'a> {
     pub(crate) properties: &'a [PmDcFeatureProperty],
     pub(crate) parameters: &'a [crate::design::PmDcParameter],
-    pub(crate) values: &'a [cadmpeg_ir::features::DesignParameter],
+    pub(crate) values: &'a [cadmpeg_ir::features::parameters::DesignParameter],
     pub(crate) transforms: &'a [crate::sketch::PmDcTransform],
     pub(crate) directions: &'a [crate::sketch::PmDcDirection],
     pub(crate) bodies: &'a HashMap<String, cadmpeg_ir::ids::BodyId>,

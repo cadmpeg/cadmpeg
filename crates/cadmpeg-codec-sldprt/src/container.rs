@@ -11,13 +11,18 @@ use cadmpeg_core::container::{CompressionMethod, ContainerRole, EntryStorage, Ve
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
+use cadmpeg_container::compound::{
+    CompoundDeviation, CompoundEntry, CompoundPrefixProbe, CompoundSnapshot,
+};
 use cadmpeg_container::compression::{inflate_deflate_owned, inflate_zlib_member_owned};
 use cadmpeg_core::bytes::contains;
-use cadmpeg_core::decode::{index_from_u32, u64_from_index, DecodeContext, ExpandSpec, View};
+use cadmpeg_core::decode::{
+    index_from_u32, u64_from_index, ArenaClass, DecodeContext, ExpandSpec, View,
+};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::ContainerSummary;
 
 mod configuration_bindings;
@@ -88,6 +93,7 @@ pub(crate) fn payload_family(payload: &[u8]) -> PayloadFamily {
     } else if payload.starts_with(b"<?xml")
         || payload.starts_with(&[0xff, 0xfe])
         || (payload.first() == Some(&0x86) && contains(&payload[..payload.len().min(64)], b"<"))
+        || payload.starts_with(b"\x85<?xml")
     {
         PayloadFamily::Xml
     } else {
@@ -160,8 +166,6 @@ pub(crate) struct Block {
     pub(crate) ps_streams: Vec<crate::parasolid::ExtractedStream>,
     /// The legacy zlib probe stopped at its work limit in this block.
     pub(crate) ps_probe_capped: bool,
-    /// Malformed optional auxiliary extraction retained without interpretation.
-    pub(crate) ps_auxiliary_refusal: Option<String>,
 }
 
 impl Block {
@@ -215,8 +219,6 @@ pub(crate) struct CompoundStream {
     pub(crate) ps_streams: Vec<crate::parasolid::ExtractedStream>,
     /// The legacy zlib probe stopped at its work limit in this stream.
     pub(crate) ps_probe_capped: bool,
-    /// Malformed optional auxiliary extraction retained without interpretation.
-    pub(crate) ps_auxiliary_refusal: Option<String>,
 }
 
 /// Complete result of an outer-container scan.
@@ -235,6 +237,10 @@ pub(crate) struct ContainerScan<'a> {
     pub(crate) compound_streams: Vec<CompoundStream>,
     /// `swSolidWorks` XML facts parsed once from the retained sections.
     pub(crate) solidworks: SolidWorksEnvelopeScan,
+    /// Parts the scan could not read (spec §3.3), in file order.
+    pub(crate) given_up: Vec<GivenUpPart>,
+    /// Noncanonical CFB encodings the scan read past, each naming its stream.
+    pub(crate) noncanonical: Vec<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -289,6 +295,14 @@ impl<'a> Section<'a> {
         }
     }
 
+    /// The member's bytes as the file stores them, before `__ZLB` inflation.
+    pub(crate) fn stored_payload(self) -> &'a [u8] {
+        match self {
+            Self::Block(block) => &block.payload,
+            Self::Compound(stream) => &stream.payload,
+        }
+    }
+
     pub(crate) fn payload(self) -> &'a [u8] {
         match self {
             Self::Block(block) => &block.payload,
@@ -318,13 +332,6 @@ impl<'a> Section<'a> {
         }
     }
 
-    pub(crate) fn ps_auxiliary_refusal(self) -> Option<&'a str> {
-        match self {
-            Self::Block(block) => block.ps_auxiliary_refusal.as_deref(),
-            Self::Compound(stream) => stream.ps_auxiliary_refusal.as_deref(),
-        }
-    }
-
     pub(crate) fn ps_probe_capped(self) -> bool {
         match self {
             Self::Block(block) => block.ps_probe_capped,
@@ -343,6 +350,11 @@ impl ContainerScan<'_> {
 }
 
 const COMPOUND_FILE_MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+
+/// Whether `image` is a compound-file part rather than a block container.
+pub(crate) fn is_compound_file(image: &[u8]) -> bool {
+    image.starts_with(&COMPOUND_FILE_MAGIC)
+}
 const WRAPPED_PAYLOAD_MAGIC: [u8; 16] = zlb_hdr::MAGIC_VALUE;
 
 pub(crate) fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
@@ -394,11 +406,20 @@ fn completed_scan<'a>(
     ctx: &DecodeContext<'_>,
     source_image: &'a [u8],
     version: u32,
-    blocks: Vec<Block>,
-    directory: Vec<DirectoryEntry>,
-    cache_cells: Vec<CacheCell>,
-    compound_streams: Vec<CompoundStream>,
+    native: NativeMarkers,
+    compound: CompoundStreams,
 ) -> Result<ContainerScan<'a>, CodecError> {
+    let NativeMarkers {
+        blocks,
+        directory,
+        cache_cells,
+        given_up,
+    } = native;
+    let CompoundStreams {
+        streams: compound_streams,
+        given_up: compound_given_up,
+        noncanonical,
+    } = compound;
     let mut scan = ContainerScan {
         source_image,
         version,
@@ -407,6 +428,8 @@ fn completed_scan<'a>(
         cache_cells,
         compound_streams,
         solidworks: SolidWorksEnvelopeScan::default(),
+        given_up: given_up.into_iter().chain(compound_given_up).collect(),
+        noncanonical,
     };
     let solidworks = scan_solidworks_envelopes(
         scan.sections().filter_map(|section| {
@@ -432,7 +455,18 @@ struct NativeMarkers {
     blocks: Vec<Block>,
     directory: Vec<DirectoryEntry>,
     cache_cells: Vec<CacheCell>,
+    given_up: Vec<GivenUpPart>,
 }
+
+/// The part a CFB stream is: opened, retained and ZLB-unwrapped.
+pub(crate) const COMPOUND_STREAM_PART: &str = "compound-stream";
+/// The part a native block frame is: inflated and checked.
+pub(crate) const NATIVE_BLOCK_PART: &str = "native-block";
+/// The part the Parasolid streams of one owner are: extracted together.
+pub(crate) const PARASOLID_STREAMS_PART: &str = "parasolid-streams";
+
+/// The classes of content a `SolidWorks` section's bytes can hold.
+const SECTION_HOLDS: [ArenaClass; 2] = [ArenaClass::Model, ArenaClass::Design];
 
 fn walk_native_markers(
     ctx: &DecodeContext<'_>,
@@ -442,39 +476,67 @@ fn walk_native_markers(
     let mut blocks = Vec::new();
     let mut directory = Vec::new();
     let mut cache_cells = Vec::new();
-    let mut invalid_local_frame = None;
+    let mut given_up = Vec::new();
+    let mut unreadable_frames = Vec::new();
     let mut i = outer_hdr::LEN;
     while i + MARKER.len() <= bytes.len() {
         if bytes[i..i + MARKER.len()] != MARKER {
             i += 1;
             continue;
         }
-        if let Some(block) = try_block(ctx, root, i)? {
-            i = block.offset + block_hdr::LEN + block.preamble_len + index_from_u32(block.comp_sz);
-            blocks.push(block.into_block());
-            continue;
+        match ctx.run_part(|| try_block(ctx, root, i, &mut given_up))? {
+            Ok(Some(block)) => {
+                i = block.offset
+                    + block_hdr::LEN
+                    + block.preamble_len
+                    + index_from_u32(block.comp_sz);
+                blocks.push(block.into_block());
+                continue;
+            }
+            Ok(None) => {}
+            Err(error) => {
+                if let Some((_, _, end)) = read_block_frame(bytes, i) {
+                    given_up.push(ctx.give_up_part(native_block_part(bytes, i, end), error)?);
+                    i = end;
+                    continue;
+                }
+                return Err(error);
+            }
         }
         if let Some(cell) = try_cache_cell(bytes, i) {
             cache_cells.push(cell);
         } else if let Some(entry) = try_directory_entry(bytes, i) {
             directory.push(entry);
-        } else if read_block_frame(bytes, i).is_some_and(|(frame, start, _)| {
+        } else if let Some((_, _, end)) = read_block_frame(bytes, i).filter(|(frame, start, _)| {
             index_from_u32(frame.uncomp_sz) <= MAX_UNCOMP
                 && bytes
-                    .get(i + block_hdr::LEN..start)
+                    .get(i + block_hdr::LEN..*start)
                     .and_then(nibble_swap_name)
                     .is_some()
         }) {
-            invalid_local_frame =
-                Some(invalid_local_frame.map_or(i, |offset: usize| offset.min(i)));
+            unreadable_frames.push((i, end));
         }
         i += 1;
     }
-    let tail_start = native_layout::validate(bytes, &mut blocks, &mut cache_cells, &mut directory)?;
-    if let Some(offset) = invalid_local_frame.filter(|offset| *offset < tail_start) {
-        return Err(CodecError::malformed(format_args!(
-            "declared native local member at {offset} failed DEFLATE, size or CRC validation"
-        )));
+    let tail_start = native_layout::validate(
+        bytes,
+        &mut blocks,
+        &mut unreadable_frames,
+        &mut cache_cells,
+        &mut directory,
+    )?;
+    let mut given_up_end = 0;
+    for (offset, end) in unreadable_frames {
+        if offset >= tail_start || offset < given_up_end {
+            continue;
+        }
+        given_up_end = end;
+        given_up.push(ctx.give_up_part(
+            native_block_part(bytes, offset, end),
+            CodecError::malformed(
+                "declared native local member failed DEFLATE, size or CRC validation",
+            ),
+        )?);
     }
     ctx.charge_entities(u64_from_index(blocks.len()), "admit SLDPRT block")?;
     ctx.charge_entities(u64_from_index(cache_cells.len()), "admit SLDPRT cache cell")?;
@@ -486,61 +548,83 @@ fn walk_native_markers(
         blocks,
         directory,
         cache_cells,
+        given_up,
     })
 }
 
-fn extract_streams_for_owner(
-    payload: &[u8],
-    section: Option<&str>,
-    ctx: &DecodeContext<'_>,
-) -> Result<(crate::parasolid::ExtractedStreams, Option<String>), CodecError> {
-    contain_optional_parasolid_refusal(
-        section,
-        crate::parasolid::extract_streams_in_section(payload, section, ctx),
+/// The native block whose frame starts at `offset` and whose payload ends at
+/// `end`, as a part to give up.
+fn native_block_part(bytes: &[u8], offset: usize, end: usize) -> Part<'_> {
+    let part = Part::at(
+        "sldprt",
+        NATIVE_BLOCK_PART,
+        u64_from_index(offset),
+        bytes.get(offset..end).unwrap_or_default(),
+        SECTION_HOLDS,
     )
+    .digest_only();
+    match read_block_frame(bytes, offset)
+        .and_then(|(_, start, _)| nibble_swap_name(bytes.get(offset + block_hdr::LEN..start)?))
+    {
+        Some(name) => part.named(name),
+        None => part,
+    }
 }
 
-fn contain_optional_parasolid_refusal(
+/// The Parasolid streams `payload` holds for its owner `section`. Where they
+/// cannot be extracted, `part`, the source bytes that hold them, is given up
+/// and the owner holds none.
+fn extract_streams_for_owner(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
     section: Option<&str>,
-    result: Result<crate::parasolid::ExtractedStreams, CodecError>,
-) -> Result<(crate::parasolid::ExtractedStreams, Option<String>), CodecError> {
-    match result {
-        Err(CodecError::Malformed(reason)) if section == Some("ThirdPty/WELDMENT_STORAGE") => Ok((
-            crate::parasolid::ExtractedStreams {
+    part: Part<'_>,
+    given_up: &mut Vec<GivenUpPart>,
+) -> Result<crate::parasolid::ExtractedStreams, CodecError> {
+    match ctx.run_part(|| crate::parasolid::extract_streams_in_section(payload, section, ctx))? {
+        Ok(streams) => Ok(streams),
+        Err(error) => {
+            given_up.push(ctx.give_up_part(part, error)?);
+            Ok(crate::parasolid::ExtractedStreams {
                 streams: Vec::new(),
                 probe_capped: false,
-            },
-            Some(reason),
-        )),
-        result => result.map(|streams| (streams, None)),
+            })
+        }
     }
 }
 
 fn compound_stream(
     ctx: &DecodeContext<'_>,
-    path: String,
+    path: &str,
     directory_id: u32,
     start_sector: u32,
     bytes: Vec<u8>,
     decoded_bytes: Option<Vec<u8>>,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<CompoundStream, CodecError> {
     let semantic_payload = decoded_bytes.as_deref().unwrap_or(&bytes);
-    let (extracted, ps_auxiliary_refusal) =
-        extract_streams_for_owner(semantic_payload, Some(path.as_str()), ctx)?;
-    let path = match cadmpeg_ir::StreamName::try_from(path) {
-        Ok(path) => path,
-        Err(_) => cadmpeg_ir::stream_name!("compound@").with_suffix(directory_id),
-    };
+    let stream = compound_stream_name(path, directory_id);
+    let part = Part::at("sldprt", PARASOLID_STREAMS_PART, 0, &bytes, SECTION_HOLDS)
+        .named(path)
+        .in_stream(stream.clone())
+        .digest_only();
+    let extracted = extract_streams_for_owner(ctx, semantic_payload, Some(path), part, given_up)?;
     Ok(CompoundStream {
-        path,
+        path: stream,
         directory_id,
         start_sector,
         payload: bytes,
         decoded_payload: decoded_bytes,
         ps_streams: extracted.streams,
         ps_probe_capped: extracted.probe_capped,
-        ps_auxiliary_refusal,
     })
+}
+
+/// The stream name of the CFB stream at `path`, or its directory id where
+/// the path is no stream name.
+fn compound_stream_name(path: &str, directory_id: u32) -> cadmpeg_ir::StreamName {
+    cadmpeg_ir::StreamName::try_from(path.to_owned())
+        .unwrap_or_else(|_| cadmpeg_ir::stream_name!("compound@").with_suffix(directory_id))
 }
 
 /// Scans an in-memory image, inflating through the decode context's
@@ -550,16 +634,8 @@ pub(crate) fn scan<'a>(
     root: View<'a>,
 ) -> Result<ContainerScan<'a>, CodecError> {
     if root.window().starts_with(&COMPOUND_FILE_MAGIC) {
-        let compound_streams = compound_streams(ctx, root)?;
-        return completed_scan(
-            ctx,
-            root.window(),
-            0,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            compound_streams,
-        );
+        let compound = compound_streams(ctx, root)?;
+        return completed_scan(ctx, root.window(), 0, NativeMarkers::default(), compound);
     }
     let bytes = root.window();
     let mut envelope = root;
@@ -569,20 +645,17 @@ pub(crate) fn scan<'a>(
     // discarded-value: the file ID precedes the required version field
     let _ = header.req_take(outer_hdr::VERSION)?;
     let version = header.req_u32_be()?;
-    let NativeMarkers {
-        blocks,
-        directory,
-        cache_cells,
-    } = walk_native_markers(ctx, root)?;
-    completed_scan(
-        ctx,
-        bytes,
-        version,
-        blocks,
-        directory,
-        cache_cells,
-        Vec::new(),
-    )
+    let native = walk_native_markers(ctx, root)?;
+    completed_scan(ctx, bytes, version, native, CompoundStreams::default())
+}
+
+/// The streams of a CFB envelope, the streams given up, and the
+/// noncanonical encodings read past.
+#[derive(Default)]
+struct CompoundStreams {
+    streams: Vec<CompoundStream>,
+    given_up: Vec<GivenUpPart>,
+    noncanonical: Vec<String>,
 }
 
 /// CFB directory/FAT/open is [`CompoundSnapshot`]; ZLB unwrap and Parasolid
@@ -591,33 +664,74 @@ pub(crate) fn scan<'a>(
 fn compound_streams(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
-) -> Result<Vec<CompoundStream>, CodecError> {
+) -> Result<CompoundStreams, CodecError> {
     let snapshot = CompoundSnapshot::new(ctx, root)?;
-    snapshot.require_canonical()?;
-    let mut streams = Vec::new();
+    let mut compound = CompoundStreams::default();
+    for deviation in snapshot.deviations() {
+        let stream = deviation
+            .stream()
+            .and_then(|id| snapshot.stream_by_id(id))
+            .map(cadmpeg_container::compound::CompoundStreamEntry::path);
+        match (deviation, stream) {
+            (CompoundDeviation::StreamChainBroken(_), _) => {}
+            (_, Some(path)) => compound
+                .noncanonical
+                .push(format!("{path}: {}", deviation.description())),
+            (_, None) => compound
+                .noncanonical
+                .push(deviation.description().to_owned()),
+        }
+    }
     for entry in snapshot.entries() {
         let CompoundEntry::Stream(entry) = entry else {
             continue;
         };
-        let view = snapshot.open(ctx, entry)?;
-        ctx.retain_bytes(
-            u64_from_index(view.window().len()),
-            "retain SolidWorks CFB stream",
-        )?;
-        let payload = view.window().to_vec();
-        let decoded = decode_wrapped_payload(ctx, view)?;
-        let path = entry.path().to_owned();
+        let opened = ctx.run_part(|| {
+            let view = snapshot.open(ctx, entry)?;
+            ctx.retain_bytes(
+                u64_from_index(view.window().len()),
+                "retain SolidWorks CFB stream",
+            )?;
+            Ok((view.window().to_vec(), decode_wrapped_payload(ctx, view)?))
+        })?;
+        let path = entry.path();
+        let directory_id = entry.id().directory_id();
+        let (payload, decoded) = match opened {
+            Ok(opened) => opened,
+            Err(error) => {
+                let located = match snapshot.open_located(ctx, entry) {
+                    Ok(Some(located)) => Some(located),
+                    Ok(None) | Err(_) => snapshot.open(ctx, entry).ok(),
+                };
+                let bytes = located.as_ref().map_or(&[][..], |view| view.window());
+                let declared = entry.logical_size();
+                let mut part = Part::at("sldprt", COMPOUND_STREAM_PART, 0, bytes, SECTION_HOLDS)
+                    .named(path)
+                    .in_stream(compound_stream_name(path, directory_id))
+                    .digest_only();
+                if u64_from_index(bytes.len()) != declared {
+                    part = part.costing(format!(
+                        "the stream declares {declared} bytes; its length counts the {} bytes \
+                         its sector chain located",
+                        bytes.len()
+                    ));
+                }
+                compound.given_up.push(ctx.give_up_part(part, error)?);
+                continue;
+            }
+        };
         let stream = compound_stream(
             ctx,
             path,
-            entry.id().directory_id(),
+            directory_id,
             entry.start_sector(),
             payload,
             decoded,
+            &mut compound.given_up,
         )?;
-        streams.push(stream);
+        compound.streams.push(stream);
     }
-    Ok(streams)
+    Ok(compound)
 }
 
 fn decode_wrapped_payload(
@@ -674,7 +788,6 @@ struct RawBlock {
     payload: Vec<u8>,
     ps_streams: Vec<crate::parasolid::ExtractedStream>,
     ps_probe_capped: bool,
-    ps_auxiliary_refusal: Option<String>,
 }
 
 impl RawBlock {
@@ -699,7 +812,6 @@ impl RawBlock {
             payload: self.payload,
             ps_streams: self.ps_streams,
             ps_probe_capped: self.ps_probe_capped,
-            ps_auxiliary_refusal: self.ps_auxiliary_refusal,
         }
     }
 }
@@ -748,6 +860,7 @@ fn block_from_inflated(
     off: usize,
     frame: &BlockFrame,
     inflated: Vec<u8>,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<Option<RawBlock>, CodecError> {
     if inflated.len() != index_from_u32(frame.uncomp_sz) {
         return Ok(None);
@@ -764,8 +877,19 @@ fn block_from_inflated(
     // A Parasolid block is one from which a `PS\0\0` stream can be extracted (in
     // plain, wrapped, or nested form); otherwise fall back to a byte-signature
     // family label.
-    let (extracted, ps_auxiliary_refusal) =
-        extract_streams_for_owner(&inflated, section.as_deref(), ctx)?;
+    let payload_end = payload_start + index_from_u32(frame.comp_sz);
+    let mut part = Part::at(
+        "sldprt",
+        PARASOLID_STREAMS_PART,
+        u64_from_index(off),
+        bytes.get(off..payload_end).unwrap_or_default(),
+        SECTION_HOLDS,
+    )
+    .digest_only();
+    if let Some(name) = &section {
+        part = part.named(name.as_str());
+    }
+    let extracted = extract_streams_for_owner(ctx, &inflated, section.as_deref(), part, given_up)?;
     let family = if extracted.streams.is_empty() {
         payload_family(&inflated)
     } else {
@@ -782,7 +906,6 @@ fn block_from_inflated(
         payload: inflated,
         ps_streams: extracted.streams,
         ps_probe_capped: extracted.probe_capped,
-        ps_auxiliary_refusal,
     }))
 }
 
@@ -790,6 +913,7 @@ fn try_block(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
     off: usize,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<Option<RawBlock>, CodecError> {
     let bytes = root.window();
     let Some((frame, payload_start, payload_end)) = read_block_frame(bytes, off) else {
@@ -818,7 +942,7 @@ fn try_block(
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => return Ok(None),
     };
-    block_from_inflated(ctx, bytes, off, &frame, inflated)
+    block_from_inflated(ctx, bytes, off, &frame, inflated, given_up)
 }
 
 fn try_cache_cell(bytes: &[u8], off: usize) -> Option<CacheCell> {
@@ -974,9 +1098,19 @@ const NO_ACTIVE_PARASOLID_NOTE: &str =
 
 pub(crate) fn notes(scan: &ContainerScan<'_>) -> Vec<String> {
     let mut notes = Vec::new();
+    let given_up_streams = scan
+        .given_up
+        .iter()
+        .filter(|part| part.kind() == COMPOUND_STREAM_PART)
+        .count();
+    let given_up_streams = if given_up_streams == 0 {
+        String::new()
+    } else {
+        format!(" read and {given_up_streams} given up")
+    };
     notes.push(format!(
         "outer version word: 0x{:08x}; {} CRC-validated block(s), {} tail-directory \
-             entry/entries, {} cache-cell(s), {} compound stream(s)",
+             entry/entries, {} cache-cell(s), {} compound stream(s){given_up_streams}",
         scan.version,
         scan.blocks.len(),
         scan.directory.len(),
@@ -1026,6 +1160,8 @@ pub(crate) fn has_parasolid_body_stream(scan: &ContainerScan) -> bool {
 /// One selected Parasolid partition stream and its source site.
 pub(crate) struct ActiveParasolidSite<'a> {
     pub(crate) section: Section<'a>,
+    /// Offset of the stream in its section's semantic payload.
+    pub(crate) offset: usize,
     pub(crate) payload: &'a [u8],
     pub(crate) header: &'a crate::parasolid::StreamHeader,
 }
@@ -1065,7 +1201,10 @@ pub(crate) fn select_active_parasolid_site<'a>(
     scan: &'a ContainerScan<'_>,
 ) -> Option<ActiveParasolidSite<'a>> {
     let active_configuration = active_configuration_index(scan);
-    if has_manifest_configuration_rows(scan) && active_configuration.is_none() {
+    if active_configuration.is_none()
+        && (has_manifest_configuration_rows(scan)
+            || !unread_active_partition_sections(scan).is_empty())
+    {
         return None;
     }
     let mut selected = None;
@@ -1108,11 +1247,43 @@ pub(crate) fn select_active_parasolid_site<'a>(
             selected = Some(ActiveParasolidSite {
                 section,
                 payload: &stream.payload,
+                offset: stream.offset,
                 header: &stream.header,
             });
         }
     }
     selected
+}
+
+/// Whether `name` names a section that can hold a configuration's Parasolid
+/// partition.
+pub(crate) fn is_partition_section(name: &str) -> bool {
+    contains_ascii_case_insensitive(name, "partition")
+        && !contains_ascii_case_insensitive(name, "ghost")
+        && !contains_ascii_case_insensitive(name, "deltas")
+        && !contains_ascii_case_insensitive(name, "resolvedfeatures")
+        && !is_stock_bodies_section(name)
+        && virtual_component_key(name).is_none()
+}
+
+/// The given-up sections that the choice of the active partition needs:
+/// each partition section, and each features manifest where no manifest row
+/// was read.
+pub(crate) fn unread_active_partition_sections<'s>(scan: &'s ContainerScan<'_>) -> Vec<&'s str> {
+    let manifest_read = has_manifest_configuration_rows(scan);
+    scan.given_up
+        .iter()
+        .filter(|part| {
+            matches!(
+                part.kind(),
+                COMPOUND_STREAM_PART | NATIVE_BLOCK_PART | PARASOLID_STREAMS_PART
+            )
+        })
+        .filter_map(GivenUpPart::name)
+        .filter(|name| {
+            is_partition_section(name) || (!manifest_read && is_features_manifest_name(Some(name)))
+        })
+        .collect()
 }
 
 pub(crate) fn configuration_index(section: &str) -> Option<usize> {
@@ -1264,8 +1435,14 @@ pub(crate) fn virtual_component_key(name: &str) -> Option<String> {
     (key.len() > VIRTUAL_SUFFIX.len() && key.ends_with(VIRTUAL_SUFFIX)).then_some(key)
 }
 
+/// Lead bytes that a section stores before its XML text.
+const XML_LEAD_MARKERS: [u8; 2] = [0x85, 0x86];
+
 pub(crate) fn xml_text(bytes: &[u8]) -> Option<String> {
-    let bytes = bytes.strip_prefix(&[0x86]).unwrap_or(bytes);
+    let bytes = match bytes.split_first() {
+        Some((lead, rest)) if XML_LEAD_MARKERS.contains(lead) => rest,
+        _ => bytes,
+    };
     if bytes.starts_with(&[0xff, 0xfe]) {
         let mut view = View::over_retained(&bytes[2..]);
         let mut units = Vec::new();

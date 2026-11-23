@@ -6,7 +6,8 @@ use crate::classification::{
     principal_plane_with_siblings, FeatureClass, NativeClassKind,
 };
 use crate::records::{Feature, FeatureContent};
-use cadmpeg_ir::features::{BooleanOp, FeatureTreeNodeRole};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
 use std::collections::HashMap;
 
 use crate::history::literals::{parse_boolean_op, parse_dimension_length_mm};
@@ -74,7 +75,7 @@ impl<'a> HistoryMetadata<'a> {
     }
 }
 
-pub(super) fn feature_tree_node_role(
+pub(crate) fn feature_tree_node_role(
     feature: &Feature,
     history_features: &[Feature],
 ) -> Option<FeatureTreeNodeRole> {
@@ -415,7 +416,7 @@ pub(super) fn is_offset_plane(feature: &Feature) -> bool {
             .is_some()
 }
 
-pub(super) fn principal_plane_in_history(
+pub(crate) fn principal_plane_in_history(
     feature: &Feature,
     features_by_source: &HashMap<FeatureSource, &Feature>,
     history_features: &[Feature],

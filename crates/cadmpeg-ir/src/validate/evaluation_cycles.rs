@@ -7,9 +7,8 @@ use cadmpeg_core::decode::{DecodeContext, DepthGuard};
 use cadmpeg_core::CodecError;
 
 use crate::document::CadIr;
-use crate::geometry::{
-    ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
-};
+use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use crate::index::{identities::BorrowedIdentities, ModelIndex};
 use crate::report::{
     check::{Check, Finding},
@@ -135,83 +134,19 @@ struct Node<'ir> {
     visit: Visit,
 }
 
-/// Only carrier-to-construction associations are needed by the cycle graph.
-trait CarrierConstructions<'ir> {
-    fn curve(&self, id: &str) -> Option<&'ir ProceduralCurve>;
-    fn surface(&self, id: &str) -> Option<&'ir ProceduralSurface>;
-}
-
-impl<'ir> CarrierConstructions<'ir> for ModelIndex<'ir> {
-    fn curve(&self, id: &str) -> Option<&'ir ProceduralCurve> {
-        self.procedural_curves_for_curve(id, crate::index::StandardIndex)
-            .and_then(|rows| rows.first().copied())
-    }
-    fn surface(&self, id: &str) -> Option<&'ir ProceduralSurface> {
-        self.procedural_surface_for_surface(id, crate::index::StandardIndex)
-    }
-}
-
-struct CycleIndex<'ir> {
-    curves: BorrowedIdentities<'ir, &'ir ProceduralCurve>,
-    surfaces: BorrowedIdentities<'ir, &'ir ProceduralSurface>,
-}
-
-impl<'ir> CycleIndex<'ir> {
-    fn build(ir: &'ir CadIr) -> Self {
-        // The general index selects the first construction with an exact ID.
-        // BorrowedIdentities selects the last insertion, so reverse these rows.
-        let curves_by_id = BorrowedIdentities::build(|add| {
-            for row in ir.geometry.procedural_curves.iter().rev() {
-                add(row.id.as_str(), row);
-            }
-        });
-        let curves = BorrowedIdentities::<&ProceduralCurve>::build(|add| {
-            for carrier in ir.geometry.curves.iter().rev() {
-                if let Some(construction) = carrier.geometry.procedural_construction() {
-                    if let Some(row) = curves_by_id.get(construction.as_str()) {
-                        add(carrier.id.as_str(), row);
-                    }
-                }
-            }
-        });
-        drop(curves_by_id);
-        let surfaces_by_id = BorrowedIdentities::build(|add| {
-            for row in ir.geometry.procedural_surfaces.iter().rev() {
-                add(row.id.as_str(), row);
-            }
-        });
-        let surfaces = BorrowedIdentities::<&ProceduralSurface>::build(|add| {
-            for carrier in &ir.geometry.surfaces {
-                if let Some(construction) = carrier.geometry.procedural_construction() {
-                    if let Some(row) = surfaces_by_id.get(construction.as_str()) {
-                        add(carrier.id.as_str(), row);
-                    }
-                }
-            }
-        });
-        Self { curves, surfaces }
-    }
-}
-
-impl<'ir> CarrierConstructions<'ir> for CycleIndex<'ir> {
-    fn curve(&self, id: &str) -> Option<&'ir ProceduralCurve> {
-        self.curves.get(id).copied()
-    }
-    fn surface(&self, id: &str) -> Option<&'ir ProceduralSurface> {
-        self.surfaces.get(id).copied()
-    }
-}
-
-/// Walk the evaluator graph, stopping when the finding consumer asks to stop.
-fn walk_cycles<'ir>(
+/// Report cycles in the dependencies an evaluator can follow from a carrier.
+pub(super) fn check_evaluation_cycles<'ir>(
     ctx: &DecodeContext<'_>,
     ir: &'ir CadIr,
-    index: &impl CarrierConstructions<'ir>,
-    mut emit: impl FnMut(Finding) -> Result<bool, CodecError>,
+    index: &ModelIndex<'ir>,
+    findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let mut graph = BorrowedIdentities::build(|add| {
         for curve in &ir.geometry.curves {
-            if let Some(procedural) = index.curve(curve.id.as_str()) {
+            if let Some(procedural) = index
+                .procedural_curves_for_curve(curve.id.as_str(), crate::index::StandardIndex)
+                .and_then(|rows| rows.first().copied())
+            {
                 let dependencies = curve_dependencies(procedural.definition());
                 if !dependencies.is_empty() {
                     add(
@@ -225,7 +160,9 @@ fn walk_cycles<'ir>(
             }
         }
         for surface in &ir.geometry.surfaces {
-            if let Some(procedural) = index.surface(surface.id.as_str()) {
+            if let Some(procedural) = index
+                .procedural_surface_for_surface(surface.id.as_str(), crate::index::StandardIndex)
+            {
                 let dependencies = surface_dependencies(procedural.definition());
                 if !dependencies.is_empty() {
                     add(
@@ -276,7 +213,7 @@ fn walk_cycles<'ir>(
             match node.visit {
                 Visit::Complete => {}
                 Visit::Active(start_index) => {
-                    let finding = Finding {
+                    findings.push(Finding {
                         related: stack[start_index..]
                             .iter()
                             .map(|frame| frame.node)
@@ -293,10 +230,7 @@ fn walk_cycles<'ir>(
                             }
                         ),
                         entity: Some(child.to_owned()),
-                    };
-                    if !emit(finding)? {
-                        return Ok(());
-                    }
+                    });
                 }
                 Visit::Unseen => {
                     node.visit = Visit::Active(stack.len());
@@ -311,33 +245,6 @@ fn walk_cycles<'ir>(
         }
     }
     Ok(())
-}
-
-/// Report cycles in the dependencies an evaluator can follow from a carrier.
-pub(super) fn check_evaluation_cycles<'ir>(
-    ctx: &DecodeContext<'_>,
-    ir: &'ir CadIr,
-    index: &ModelIndex<'ir>,
-    findings: &mut Vec<Finding>,
-) -> Result<(), CodecError> {
-    walk_cycles(ctx, ir, index, |finding| {
-        findings.push(finding);
-        Ok(true)
-    })
-}
-
-/// Refuse a decoded model with the first recursive curve or surface dependency.
-pub(crate) fn admit_evaluation_cycles(
-    ctx: &DecodeContext<'_>,
-    ir: &CadIr,
-) -> Result<(), CodecError> {
-    if ir.geometry.procedural_curves.is_empty() && ir.geometry.procedural_surfaces.is_empty() {
-        return Ok(());
-    }
-    let index = CycleIndex::build(ir);
-    walk_cycles(ctx, ir, &index, |finding| {
-        Err(CodecError::Malformed(finding.message))
-    })
 }
 
 #[cfg(test)]

@@ -103,8 +103,7 @@ fn probes(state: &mut u64, polygon: &[Point2], tolerance: f64, scale: f64) -> Ve
 #[test]
 fn banded_queries_match_scanning_every_edge() {
     let mut state = 0x6a09_e667_f3bc_c908_u64;
-    let (mut polygons, mut banded, mut cases, mut near, mut inside) = (0, 0, 0, 0, 0);
-    let mut excluded = 0;
+    let mut inputs = Vec::new();
     for scale in [1.0e-250, 1.0e-6, 1.0, 3.0e4, 1.0e150, 1.0e300] {
         for _ in 0..20 {
             let center = Point2::new(
@@ -112,9 +111,7 @@ fn banded_queries_match_scanning_every_edge() {
                 (unit(&mut state) - 0.5) * 8.0 * scale,
             );
             let points = star(&mut state, center, scale);
-            let polygon = TrimPolygon::new(points.clone());
-            polygons += 1;
-            banded += usize::from(polygon.bands.is_some());
+            let mut samples = Vec::new();
             for tolerance in [
                 0.0,
                 -0.0,
@@ -125,40 +122,83 @@ fn banded_queries_match_scanning_every_edge() {
                 f64::NAN,
                 f64::INFINITY,
             ] {
-                for point in probes(&mut state, &points, tolerance, scale) {
-                    let within = polygon_boundary_within(&points, point, tolerance);
-                    let contains = polygon_contains(&points, point, tolerance);
-                    let context = format!("{points:?} {point:?} {tolerance:e}");
-                    assert_eq!(
-                        polygon.boundary_within(point, tolerance),
-                        within,
-                        "{context}"
-                    );
-                    assert_eq!(polygon.contains(point, tolerance), contains, "{context}");
-                    let strictly = contains && !within;
-                    assert_eq!(
-                        polygon_strictly_contains(&points, point, tolerance),
-                        strictly,
-                        "{context}"
-                    );
-                    assert_eq!(
-                        polygon.strictly_contains(point, tolerance),
-                        strictly,
-                        "{context}"
-                    );
-                    if PolygonBox::new(&points, tolerance)
-                        .is_some_and(|bounds| bounds.excludes(point))
-                    {
-                        assert!(!contains && !within, "{context}");
-                        excluded += 1;
-                    }
-                    cases += 1;
-                    near += usize::from(within);
-                    inside += usize::from(contains && !within);
-                }
+                samples.push((tolerance, probes(&mut state, &points, tolerance, scale)));
             }
+            inputs.push((points, samples));
         }
     }
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let (polygons, banded, cases, near, inside, excluded) = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..4)
+            .map(|_| {
+                scope.spawn(|| {
+                    let (mut polygons, mut banded, mut cases, mut near, mut inside, mut excluded) =
+                        (0, 0, 0, 0, 0, 0);
+                    while let Some((points, samples)) =
+                        inputs.get(next.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+                    {
+                        let polygon = TrimPolygon::new(points.clone());
+                        polygons += 1;
+                        banded += usize::from(polygon.bands.is_some());
+                        for (tolerance, probes) in samples {
+                            let tolerance = *tolerance;
+                            for &point in probes {
+                                let within = polygon_boundary_within(points, point, tolerance);
+                                let contains = polygon_contains(points, point, tolerance);
+                                assert_eq!(
+                                    polygon.boundary_within(point, tolerance),
+                                    within,
+                                    "{points:?} {point:?} {tolerance:e}"
+                                );
+                                assert_eq!(
+                                    polygon.contains(point, tolerance),
+                                    contains,
+                                    "{points:?} {point:?} {tolerance:e}"
+                                );
+                                let strictly = contains && !within;
+                                assert_eq!(
+                                    polygon_strictly_contains(points, point, tolerance),
+                                    strictly,
+                                    "{points:?} {point:?} {tolerance:e}"
+                                );
+                                assert_eq!(
+                                    polygon.strictly_contains(point, tolerance),
+                                    strictly,
+                                    "{points:?} {point:?} {tolerance:e}"
+                                );
+                                if PolygonBox::new(points, tolerance)
+                                    .is_some_and(|bounds| bounds.excludes(point))
+                                {
+                                    assert!(
+                                        !contains && !within,
+                                        "{points:?} {point:?} {tolerance:e}"
+                                    );
+                                    excluded += 1;
+                                }
+                                cases += 1;
+                                near += usize::from(within);
+                                inside += usize::from(contains && !within);
+                            }
+                        }
+                    }
+                    (polygons, banded, cases, near, inside, excluded)
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap())
+            .fold((0, 0, 0, 0, 0, 0), |a, b| {
+                (
+                    a.0 + b.0,
+                    a.1 + b.1,
+                    a.2 + b.2,
+                    a.3 + b.3,
+                    a.4 + b.4,
+                    a.5 + b.5,
+                )
+            })
+    });
     assert!(
         banded * 4 > polygons * 3,
         "{banded} of {polygons} polygons are banded"

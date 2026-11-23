@@ -90,12 +90,13 @@ output, because that spelling is nearly always `--input-format` (alias
 `--from`) written as `--format`; pass `-o FILE` or, for a deliberate binary
 pipe, `--binary-stdout`.
 
-Conversion stops before export if the check finds errors in what the output
-writes. An error in data the output format does not carry, for example
-feature history in a STEP export, stays in the report and does not stop the
-write. `--allow-errors` writes the current result anyway. It leaves model data
-unchanged. Conversion writes the available output when decoding transfers no
-geometry and reports the decode and export losses.
+Conversion writes the output when the check finds errors, and the check report
+lists every finding. The check leaves model data unchanged. `--reject-errors`
+stops the conversion before export if the check finds errors in what the output
+writes. An error in data the output format does not carry, for example feature
+history in a STEP export, stays in the report and does not stop the write under
+`--reject-errors`. Conversion writes the available output when decoding
+transfers no geometry and reports the decode and export losses.
 
 `convert` decodes a native source only as deeply as the output needs: STEP,
 IGES, and Rhino output decodes geometry and skips design intent, so the decode
@@ -147,7 +148,9 @@ its reason. STEP imports these declarations; CADIR preserves them.
 
 `--container-only` stops native decoding before geometry and records container
 depth. It is useful for container diagnostics. `convert` writes such a document
-to CADIR only: every other output refuses it (`insufficient_depth`, exit 1).
+to every output: the writer writes what the document holds, the export report
+notes the depth the writer plans from, and a writer that has nothing to write
+charges its empty-output loss.
 
 ## Read raw bytes
 
@@ -268,7 +271,10 @@ the scope. `--occurrence ID` measures in the instance space of an assembly
 occurrence: the scope is the bodies of its prototype and of the
 prototypes of its subtree, each placed by its own transform and then by
 the occurrence chain from the root, and every row states its `placement`
-space. When the space cannot place its bodies, the report has no row and
+space. Repeat `--occurrence` to name the occurrences above it, outermost
+first, where a subassembly above it is placed more than once:
+`--occurrence SUB --occurrence PART` measures `PART` in the instance that
+`SUB` places. When the space cannot place its bodies, the report has no row and
 the document totals are unavailable with the reason. `diff --geometry` stays in model space. `--kind KIND[,KIND...]` and `--radius RANGE` (`MIN..MAX`,
 `MIN..`, `..MAX`, or `R`) filter face rows. An ID is an exact ID or a unique
 ID suffix, as for `query item`.
@@ -297,8 +303,8 @@ depth holds no geometry; `measure` refuses it with `insufficient_depth`.
 
 The built-in codecs recognize `.f3d`, `.FCStd`, `.ipt`, `.iam`, `.sldprt`,
 `.3dm`, `.CATPart`, IGES, STEP, bare ASM/ACIS `.sat`/`.smt`/`.smb`/`.sab`
-streams, the NX and Creo `.prt` layouts, Creo View `.pvz` packages, and
-OpenUSD `.usda` text layers by content. Commands that load models also accept CADIR JSON. Use
+streams, the NX and Creo `.prt` layouts, Creo View `.pvz` packages, SolidWorks
+eDrawings `.eprt`/`.easm` packages, and OpenUSD `.usda` text layers by content. Commands that load models also accept CADIR JSON. Use
 `--input-format` (alias `--from`) to bypass
 detection for an ambiguous or extensionless input. Every command that takes
 one input file also accepts `--input FILE` as a spelling of the positional;

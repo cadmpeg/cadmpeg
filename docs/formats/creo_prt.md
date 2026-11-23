@@ -4,7 +4,7 @@
 
 This specification covers the Creo Parametric and Pro/ENGINEER `.prt` variant. Creo files use the PSB (Pro/E Session Binary) container.
 
-Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/creo.md`](../layouts/creo.md), generated from `docs/layouts/creo.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
+Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/creo.md`](../layouts/creo.md), generated from `docs/layouts/creo.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg-layout-tables` proves the two agree.
 
 ## 1. Container
 
@@ -29,7 +29,7 @@ spaces pad the counted field.
 `hhh` is a three-digit ASCII hexadecimal byte count for `name`; padding after
 those bytes is not part of the name. A common name is free text. It can be the
 model filename, such as `widget.prt`, or a descriptive title, such as
-`MOUNTING PLATE 40 MM`. A repeated or malformed `CMNM` record establishes no
+`WIDGET BRACKET 40 MM`. A repeated or malformed `CMNM` record establishes no
 common name.
 
 Binary model-data sections store the model name in the named field
@@ -436,13 +436,15 @@ Unit-definition records can include inactive units. `history_scale` is a version
 | `80..bf XX` | Two-byte big-endian integer: `((head - 0x80) << 8) \| XX`. |
 | `c0..ff`    | Control or special-token range on typed paths.             |
 
-Reference identifiers use a narrower grammar in `srf_array` row identifiers, `crv_array` suffixes, DEPDB suffixes, and terminator validation:
+Reference identifiers use a narrower grammar in `crv_array` suffixes, DEPDB suffixes, and terminator validation:
 
 | Bytes       | Meaning                                                  |
 | ----------- | -------------------------------------------------------- |
 | `00..7f`    | Identifier in `[0, 127]`.                                |
 | `80..bf XX` | Canonical two-byte identifier with value at least `128`. |
 | `c0..ff`    | Invalid reference-identifier start byte.                 |
+
+`srf_array` row fields use the compact integers of the first table, and a `c0..df` head starts the packed tier of §3.
 
 In `segtab`, `order_table`, and `ent_tab`, bytes `c0..ff` are single-byte null sentinels. `f6` does not begin a two-byte compact integer in those lanes.
 
@@ -615,6 +617,11 @@ An identified DEPDB layout does not grant a physical section this namespace.
 | Orientation bytes     | `01`, `f6`                                                                          |
 | Boundary bytes        | `00`, `01`, `06`, `08`, `f6`                                                         |
 
+The `geom_id`, `feat_id`, and `next_geom_ptr` fields of positional and
+named-record rows also use the packed tier
+`c0..df XX YY = ((head-c0)<<16) | (XX<<8) | YY`, which stores values of at
+least `0x4000`.
+
 A counted surface-array frame ends at the next `srf_array`, `crv_array`,
 `lo_array`, or `qlt_array` label. Header-shaped bytes outside that frame do not
 belong to it. A byte range owned by a bounded named prototype parameter cannot
@@ -632,6 +639,12 @@ Row bodies end at a valid row-close marker, named-record header, or a following 
 Named-record rows require one defined `orient` byte and one defined `boundary_type` byte from the row header value sets. An absent or undefined discriminator does not define a surface row.
 `geom_id` is unique within one selected namespace. Multiple header-shaped byte
 sequences carrying the same identifier are ambiguous and are not surface rows.
+CADIR decision: where rows read from different streams of one namespace carry
+one `geom_id`, the native surface-row arena states the first row in the order
+the streams are read (CADIR §2.2). Each later row is read and not stated, and
+is charged one `creo/container.surface-row-repeated` loss that names the row
+id and gives the row's stream and offset. The repeated id still types
+no positional surface from either row.
 A nonzero `next_geom_ptr` may reference a rowless face use, so materialization of
 its target is not a row-acceptance condition.
 Plane envelope and post-envelope local-system bodies use the same grammar for

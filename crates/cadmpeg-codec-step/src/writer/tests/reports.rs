@@ -39,13 +39,13 @@ pub(super) fn edgeless_doc() -> CadIr {
     let mut ir = CadIr::empty();
     ir.geometry.points.push(Point::new(
         PointId::mint("test:model:point#p0").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
             .expect("a finite position is a point"),
         None,
     ));
     ir.geometry.points.push(Point::new(
         PointId::mint("test:model:point#p1").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
             .expect("a finite position is a point"),
         None,
     ));
@@ -259,8 +259,9 @@ fn writer_reports_unrepresented_topology_metadata() {
         .find(|coedge| !coedge.pcurves.is_empty())
         .expect("pcurve-backed coedge");
     coedge.pcurves[0].isoparametric = Some(true);
-    coedge.pcurves[0].parameter_range =
-        Some(cadmpeg_ir::geometry::DirectedParameterRange::new([0.0, 1.0]).unwrap());
+    coedge.pcurves[0].parameter_range = Some(
+        cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::new([0.0, 1.0]).unwrap(),
+    );
     coedge.use_curve = Some(cadmpeg_ir::topology::CoedgeUseCurve {
         curve: edge_curve,
         parameter_range: cadmpeg_ir::topology::ParameterInterval::new([0.0, 1.0]).unwrap(),
@@ -423,10 +424,10 @@ fn ap242_writer_reports_unrepresented_tessellation_triangle_metadata() {
             Vec::new(),
         )
         .expect("valid tessellation")
-        .with_triangle_groups(vec![TessellationTriangleGroup {
-            source_id: Some("synthetic:test:group#0".into()),
-            triangles: vec![0],
-        }])
+        .with_triangle_groups(vec![TessellationTriangleGroup::new(
+            Some("synthetic:test:group#0".into()),
+            vec![0],
+        )])
         .expect("valid triangle group partition")
         .with_texture_assignments(vec![TessellationTextureAssignment {
             source_id: Some("synthetic:test:texture-resource#0".into()),
@@ -656,6 +657,7 @@ fn writer_reports_dangling_appearance_binding() {
         object_type: None,
         visible: None,
         channels: std::collections::BTreeMap::default(),
+        native_ref: None,
     });
 
     let report = write_step(
@@ -693,6 +695,7 @@ fn writer_reports_appearance_without_base_color() {
         base_color: None,
         properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: binding.try_into().expect("valid identity"),
@@ -702,6 +705,7 @@ fn writer_reports_appearance_without_base_color() {
         object_type: None,
         visible: None,
         channels: std::collections::BTreeMap::default(),
+        native_ref: None,
     });
 
     let report = write_step(
@@ -758,6 +762,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
             base_color: Some(color),
             properties: std::collections::BTreeMap::new(),
             textures: Vec::new(),
+            native_ref: None,
         });
     }
     let mut bindings = vec![
@@ -769,6 +774,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
             object_type: None,
             visible: None,
             channels: std::collections::BTreeMap::new(),
+            native_ref: None,
         },
         AppearanceBinding {
             id: "test:model:binding#blue"
@@ -780,6 +786,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
             object_type: None,
             visible: None,
             channels: std::collections::BTreeMap::new(),
+            native_ref: None,
         },
     ];
     if reverse {
@@ -1168,6 +1175,7 @@ fn ap203e1_reports_hidden_appearance_visibility_loss() {
         ),
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:model:appearance-binding#hidden-face"
@@ -1179,6 +1187,7 @@ fn ap203e1_reports_hidden_appearance_visibility_loss() {
         object_type: None,
         visible: Some(false),
         channels: std::collections::BTreeMap::new(),
+        native_ref: None,
     });
 
     let mut output = Vec::new();
@@ -1564,7 +1573,7 @@ fn procedural_surface_outside_the_writable_set_is_reported_not_panicked() {
         .procedural_surfaces
         .push(cadmpeg_ir::geometry::ProceduralSurface::new(
             construction_id,
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Compound(
+            cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Compound(
                 cadmpeg_ir::geometry::surface_payloads::CompoundSurfacePayload::try_new(
                     Vec::new(),
                     None,
@@ -1608,7 +1617,9 @@ fn procedural_curve_outside_the_writable_set_is_reported_not_panicked() {
         .procedural_curves
         .push(cadmpeg_ir::geometry::ProceduralCurve::new(
             construction_id,
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact { cache: None },
+            cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Exact {
+                cache: None,
+            },
         ));
 
     let report = write_step(
@@ -1805,7 +1816,7 @@ fn degenerate_torus_report(
                     "test:model:procedural-surface#degenerate_torus",
                 )
                 .expect("identity grammar"),
-                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::DegenerateTorus {
+                cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::DegenerateTorus {
                     select_outer: true,
                 },
                 None,
@@ -1872,7 +1883,7 @@ fn a_cone_cache_for_an_unwritable_construction_is_refused_at_planning() {
                     "test:model:procedural-surface#compound",
                 )
                 .expect("identity grammar"),
-                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Compound(
+                cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Compound(
                     cadmpeg_ir::geometry::surface_payloads::CompoundSurfacePayload::try_new(
                         Vec::new(),
                         None,
@@ -1902,18 +1913,23 @@ fn procedural_construction_reduction_is_reported() {
     let procedural = cadmpeg_ir::geometry::ProceduralCurve::new(
         ProceduralCurveId::mint("test:model:procedural-curve#generated_int_cur")
             .expect("identity grammar"),
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
-            context: cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
-                std::array::from_fn(|_| cadmpeg_ir::geometry::IntcurveSupportSide {
-                    surface: None,
-                    pcurve: None,
+        cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Intersection {
+            context: cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext::try_new(
+                std::array::from_fn(|_| {
+                    cadmpeg_ir::geometry::intersection_curves::IntcurveSupportSide {
+                        surface: None,
+                        pcurve: None,
+                    }
                 }),
                 [0.0, 1.0],
                 std::array::from_fn(|_| Vec::new()),
             )
             .unwrap(),
             discontinuity_flag: false,
-            cache: Some(cadmpeg_ir::geometry::LegacyCache::try_new(0.01).expect("fit tolerance")),
+            cache: Some(
+                cadmpeg_ir::geometry::legacy_cache::LegacyCache::try_new(0.01)
+                    .expect("fit tolerance"),
+            ),
         },
     );
     ir.geometry

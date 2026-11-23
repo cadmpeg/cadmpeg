@@ -4,7 +4,8 @@ use crate::record_identity::{Located, RecordTypeId};
 use crate::test_support::test_fixtures::{content_at, parse};
 
 use crate::feature::FeatureInventory;
-use cadmpeg_ir::features::{FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 use std::collections::BTreeMap;
 
 fn header(version: u8) -> Vec<u8> {
@@ -429,7 +430,7 @@ fn projected_unchanged_corner_reports_every_retained_control() {
     corner.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
         FeatureOperation::SheetMetalCorner {
             bend: FeatureId::mint("test:model:feature#bend").expect("bend identity"),
-            effect: cadmpeg_ir::features::SheetMetalCornerEffect::Unchanged,
+            effect: cadmpeg_ir::features::sheet_metal_forms::SheetMetalCornerEffect::Unchanged,
         },
     ));
     let losses = retained_control_losses([&corner]);
@@ -552,7 +553,9 @@ fn corner_round_loss_requires_a_unique_class_owner_and_native_source() {
     feature.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
         FeatureOperation::Fillet {
             groups: vec![cadmpeg_ir::features::edge_treatments::FilletGroup {
-                edges: cadmpeg_ir::features::EdgeSelection::Native("synthetic-edges".to_owned()),
+                edges: cadmpeg_ir::features::selections::EdgeSelection::Native(
+                    "synthetic-edges".to_owned(),
+                ),
                 radius: cadmpeg_ir::features::edge_treatments::RadiusSpec::Constant {
                     radius: cadmpeg_ir::scalar::PositiveLength::new(3.0).expect("radius"),
                 },
@@ -631,7 +634,7 @@ fn a_native_face_plate_names_its_first_refused_check() {
     typed.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
         FeatureOperation::SheetMetalCorner {
             bend: FeatureId::mint("test:model:feature#bend").expect("bend"),
-            effect: cadmpeg_ir::features::SheetMetalCornerEffect::Unchanged,
+            effect: cadmpeg_ir::features::sheet_metal_forms::SheetMetalCornerEffect::Unchanged,
         },
     ));
     assert!(face_losses(&refusals, &[typed]).is_empty());

@@ -1267,6 +1267,49 @@ discriminants = { pvs_signature = "any other leading ten bytes", pvs_xml_version
 witness = "code:crates/cadmpeg-codec-pvz/src/dialect.rs:66"
 
 # --------------------------------------------------------------------------
+# eDrawings .eprt and .easm packages
+# --------------------------------------------------------------------------
+# An eDrawings part (`.eprt`) or assembly (`.easm`) is a ZIP package. Its
+# `eModel` member opens with the ASCII comment line `;; HSF V<major>.<minor> `
+# and holds a HOOPS Stream Format model (docs/formats/edrawings.md section 2).
+# The discriminant is the stream version the comment line declares
+# (`stream::parse`, crates/cadmpeg-codec-edrawings/src/stream.rs). Only the
+# versions 19.10 (streams re-saved by the eDrawings viewer), 18.00, and 19.00
+# (streams written directly by SolidWorks) were observed; the writer and the declared
+# version are confounded. `dialect::classify`
+# (crates/cadmpeg-codec-edrawings/src/dialect.rs) is the codec's single
+# construction path for a `DialectMatch`.
+#
+# `complete = false`: no enumeration of stream versions is published.
+[format.edrawings]
+complete = false
+
+[[dialect]]
+id = "edrawings:hsf-19-10"
+title = "eDrawings package, HSF V19.10 model stream"
+discriminants = { hsf_version = "19.10" }
+witness = "spec:docs/formats/edrawings.md section 2"
+
+[[dialect]]
+id = "edrawings:hsf-18-00"
+title = "eDrawings package, HSF V18.00 model stream written directly by SolidWorks"
+discriminants = { hsf_version = "18.00" }
+witness = "spec:docs/formats/edrawings.md section 2"
+
+[[dialect]]
+id = "edrawings:hsf-19-00"
+title = "eDrawings package, HSF V19.00 model stream written directly by SolidWorks"
+discriminants = { hsf_version = "19.00" }
+witness = "spec:docs/formats/edrawings.md section 2"
+
+[[dialect]]
+id = "edrawings:unknown"
+unknown_kind = "recovered-residual"
+title = "eDrawings package with an unrecognized model stream version"
+discriminants = { hsf_version = "any other value" }
+witness = "code:crates/cadmpeg-codec-edrawings/src/dialect.rs:1"
+
+# --------------------------------------------------------------------------
 # OpenUSD layers (.usda, .usdc, .usd) and packages (.usdz)
 # --------------------------------------------------------------------------
 # A layer is a USDA text layer or a USDC binary (Crate) layer; the first bytes
@@ -1602,3 +1645,39 @@ unknown_kind = "recovered-residual"
 title = "Parasolid stream with an unrecognized schema token"
 discriminants = { schema = "any other SCH_ token" }
 witness = "code:crates/cadmpeg-parasolid/src/lib.rs"
+
+[format.solidedge]
+complete = false
+aliases = ["par", "psm", "asm"]
+
+[[dialect]]
+id = "solidedge:cfb"
+title = "Solid Edge compound directory"
+discriminants = { container = "CFB", directory = "JSitesList and PSMroots with a part, sheet-metal, or assembly root class, or FamilyInfo and FOAPublishData with the family-of-assemblies root class" }
+witness = "code:crates/cadmpeg-codec-solidedge/src/container.rs"
+
+[[dialect]]
+# Mandatory `unknown` row. Detection returns `Confidence::No` and a forced
+# decode or inspect returns `CodecError::WrongFormat` for every input outside
+# `solidedge:cfb`.
+id = "solidedge:unknown"
+unknown_kind = "detect-unreachable"
+title = "Input outside the Solid Edge compound identity"
+discriminants = { container = "any other input" }
+witness = "code:crates/cadmpeg-codec-solidedge/src/container.rs"
+
+[format.onshape]
+complete = false
+
+[[dialect]]
+id = "onshape:bundle-1"
+title = "Onshape offline bundle version 1"
+discriminants = { schema = "dutchman.onshape-bundle/1" }
+witness = "spec:docs/formats/onshape.md"
+
+[[dialect]]
+id = "onshape:unknown"
+unknown_kind = "refused-residual"
+title = "Onshape bundle with another schema"
+discriminants = { schema = "other" }
+witness = "code:crates/cadmpeg-codec-onshape/src/dialect.rs"

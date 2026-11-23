@@ -438,7 +438,10 @@ fn diameter_transfers_symmetric_tolerance_basic_modifier_and_face() {
     assert!(close(lower.get(), -0.15) && close(upper.get(), 0.15));
     assert_eq!(
         dimension.modifiers,
-        [DimensionModifier::Other("theoretical".to_owned())]
+        [DimensionModifier::Other(cadmpeg_core::nonblank_literal!(
+            "theoretical"
+        ))]
+        .into()
     );
     assert_eq!(
         annotation.targets,
@@ -456,7 +459,7 @@ fn display_two_marks_a_reference_dimension() {
     let (annotations, _) = run(&fixture, OWNER_AT);
     assert_eq!(
         dimension_of(&annotations[0]).modifiers,
-        [DimensionModifier::Reference]
+        [DimensionModifier::Reference].into()
     );
 }
 

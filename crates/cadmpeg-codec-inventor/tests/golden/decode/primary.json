@@ -3,47 +3,14 @@
     "design": {
       "arrangements": [],
       "configurations": [],
-      "containers": [
-        {
-          "kind": "ordered",
-          "value": {
-            "folders": [],
-            "id": "inventor:document:timeline#root",
-            "kind": "timeline",
-            "members": [],
-            "rollback": {
-              "kind": "end"
-            }
-          }
-        }
-      ],
+      "containers": [],
       "evaluations": [],
       "features": [],
       "names": [],
       "parameters": [],
       "programs": [],
       "publications": [],
-      "scopes": [
-        {
-          "active_arrangements": [],
-          "current": [
-            {
-              "at": {
-                "kind": "start",
-                "value": "inventor:document:timeline#root"
-              },
-              "bodies": [],
-              "poses": [],
-              "status": "current"
-            }
-          ],
-          "definition": "inventor:document:product#root",
-          "occurrences": {},
-          "roots": [
-            "inventor:document:timeline#root"
-          ]
-        }
-      ],
+      "scopes": [],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
@@ -558,6 +525,7 @@
       "assembly_record_issues": 0,
       "design_parameters_transferred": 0,
       "design_record_issues": 0,
+      "design_unproduced_bodies": 0,
       "embedded_references": 0,
       "external_references": 0,
       "face_color_appearances": 0,

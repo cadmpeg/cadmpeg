@@ -2,15 +2,147 @@
   "ir": {
     "design": {
       "arrangements": [],
-      "configurations": [],
-      "containers": [],
+      "configurations": [
+        {
+          "active_arrangements": [],
+          "id": "sldprt:model:configuration#350:0",
+          "materials": [],
+          "name": "Default",
+          "native_ref": "sldprt:history:configuration#350:0",
+          "overrides": {
+            "definitions": {},
+            "features": {},
+            "occurrences": {},
+            "parameters": {}
+          },
+          "scope": "sldprt:model:product-definition#root"
+        }
+      ],
+      "containers": [
+        {
+          "kind": "ordered",
+          "value": {
+            "folders": [],
+            "id": "sldprt:model:container#timeline",
+            "kind": "timeline",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "sldprt:model:feature#350:1"
+              },
+              {
+                "kind": "feature",
+                "value": "sldprt:model:feature#350:0"
+              }
+            ]
+          }
+        }
+      ],
       "evaluations": [],
-      "features": [],
+      "features": [
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "extrude"
+              }
+            }
+          },
+          "id": "sldprt:model:feature#350:0",
+          "name": "Boss",
+          "native_ref": "sldprt:history:feature#350:0",
+          "suppressed": {
+            "kind": "literal",
+            "value": false
+          }
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "curve"
+              }
+            }
+          },
+          "id": "sldprt:model:feature#350:1",
+          "name": "Profile",
+          "native_ref": "sldprt:history:feature#350:1",
+          "suppressed": {
+            "kind": "literal",
+            "value": false
+          }
+        }
+      ],
       "names": [],
-      "parameters": [],
+      "parameters": [
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "12.5[mm]"
+              }
+            }
+          },
+          "id": "sldprt:model:parameter#350:0:0",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Depth",
+          "native_options": {},
+          "owner": {
+            "kind": "feature",
+            "value": "sldprt:model:feature#350:0"
+          },
+          "scope": "sldprt:model:product-definition#root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 12.5
+          }
+        }
+      ],
       "programs": [],
       "publications": [],
-      "scopes": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "active_configuration": "sldprt:model:configuration#350:0",
+          "current": [
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "container",
+                  "value": "sldprt:model:container#timeline"
+                }
+              },
+              "bodies": [
+                "sldprt:brep:body#900"
+              ],
+              "poses": [],
+              "status": "current"
+            }
+          ],
+          "definition": "sldprt:model:product-definition#root",
+          "occurrences": {},
+          "roots": [
+            "sldprt:model:container#timeline"
+          ],
+          "unproduced": []
+        }
+      ],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
@@ -396,7 +528,25 @@
       "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "sldprt:brep:body#900"
+          ],
+          "bom_properties": {},
+          "id": "sldprt:model:product-definition#root",
+          "instance_bodies": [],
+          "kind": "part",
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
       "sketch_constraints": [],
@@ -635,6 +785,30 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "design.feature-unresolved",
+            "kind": "record_not_typed",
+            "namespace": "sldprt"
+          }
+        },
+        "message": "0 sketch, 1 extrude and 0 revolve features state their family without operands: the extrude's profile is no whole sketch (1: sldprt:model:feature#350:0)",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "history.rollback-unread",
+            "kind": "feature_history_retained",
+            "namespace": "sldprt"
+          }
+        },
+        "message": "The rollback position of the feature tree is not read (the partition section holds no deltas transmit); the timeline's rollback is not stated.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "feature.unresolved-output-scope",
             "kind": "feature_history_retained",
             "namespace": "sldprt"
@@ -812,7 +986,7 @@
         }
       }
     },
-    "decode_digest": "d75dc3ee025b84315a6a882a5480498a6f0079ff9fe04831eb1488e5ed18b0a2",
+    "decode_digest": "ea50d4e5a33a569e51d9bbcc1beb98781827cf40681fb8f9a09cacb659b74436",
     "file_digests": {},
     "retained_records": {
       "sldprt:file:block#12": {
@@ -847,7 +1021,7 @@
       },
       "sldprt:file:source-image#0": {
         "bytes": {
-          "data": "AQAAAAAAAARa2ciHFAAGAAgAIAAAAELkeVwZAQAAvQIAABsAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uaNkb9KA0EQxr91NYXomUQr4eIVFiZp9rKpJIkBESyFKywP5RDSJCJp0icWQQzYiO9iJfgiPoFvcM7u3pnb/P+WY+a+38zOsnsTAHAe7576nX6n1/Xue9EAKAaX12FwG0rpCxn6vhACNUSwVMWGuvi145wc7Jrk6/Nt8tFN3CP6ouyQA20plXRDgaIqO4EHSdmZOVWBDGV7hOuUlVPb03aJcI2yirHzpm1mdiI+JF5ewysreVEPm6qR1mkmLda0WN1irQxz0cAmctHM/i69fxetRfZc/V5Mw9n4FDvIgZnVnrTN+a4Grz/i5dy4DFuM8VFapBZ/TrL9mADPf5M1tOBhTGH7/SEFfBTAiempc8djsP/7VQ2gLaLqH1rZyIcUAAYACABCAAAA5twcJ7wAAAAbAQAAEQAAADT25kdW5kc38rRWl3f2J0Y3TZBBDoIwEEWv0swBRE2MLoCF4sIYjQleoKGDNJYWpy3C7a2I6O5nXmb+y8RH7J+GhGVnXmMCW+LFHR2k8c7oUt48cSeNHmmGJffKAcuNpwIPWmCXwBzYiTskyVUCuUNUwDJpG8X73AUQhhUXKCBK433nyNvfxa2xFti1b8Y8cIHApEhgHYoK80GiXwSpTNao7b9Q4ypIF8vZqq7jaMKh6OEH84xki3rnqcVx50KmlGqs2Lyloskq5O9D0hda2ciHFAAGAAgAQwAAAH22JuOZAAAA/QAAABEAAAA09uZHVuZHN/JkVhZHVydWN22Puw6CQBBFf4VML0u0MyyNWJiIBRTGcgOLbNyHYYaMn69L5Ua7yZzce3JL5C5YM1zD/MDs5axHCRPRcy8EM+cYIUeY98EJ5G1R7AT2k3YKqhK5CYO2mRkkuHhtCsiQD8GP5r7MikzwF+W0hFqParEEIoYSfjZIP89PyamWsLatilaPiaIJSK3utackJ+F27KJE/LWI77nVG0UrfigAABQABgAIACAAAABC5HlcGQEAAL0CAAAbAAAAAAAAAAEAAAAAAAAAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uZFK34oAAAUAAYACABCAAAA5twcJ7wAAAAbAQAAEQAAAAAAAAABAAAAAABSAQAANPbmR1bmRzfytFaXd/YnRjdFK34oAAAUAAYACABDAAAAfbYm45kAAAD9AAAAEQAAAAAAAAABAAAAAAA9AgAANPbmR1bmRzfyZFYWR1cnVjefgl4CAAAAAAMAAwDHAAAABQMAAAAA",
+          "data": "AQAAAAAAAARmWn5WFAAGAAgAIAAAAELkeVwZAQAAvQIAABsAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uaNkb9KA0EQxr91NYXomUQr4eIVFiZp9rKpJIkBESyFKywP5RDSJCJp0icWQQzYiO9iJfgiPoFvcM7u3pnb/P+WY+a+38zOsnsTAHAe7576nX6n1/Xue9EAKAaX12FwG0rpCxn6vhACNUSwVMWGuvi145wc7Jrk6/Nt8tFN3CP6ouyQA20plXRDgaIqO4EHSdmZOVWBDGV7hOuUlVPb03aJcI2yirHzpm1mdiI+JF5ewysreVEPm6qR1mkmLda0WN1irQxz0cAmctHM/i69fxetRfZc/V5Mw9n4FDvIgZnVnrTN+a4Grz/i5dy4DFuM8VFapBZ/TrL9mADPf5M1tOBhTGH7/SEFfBTAiempc8djsP/7VQ2gLaLqH2ZaflYUAAYACABCAAAA5twcJ7wAAAAbAQAAEQAAADT25kdW5kc38rRWl3f2J0Y3TZBBDoIwEEWv0swBRE2MLoCF4sIYjQleoKGDNJYWpy3C7a2I6O5nXmb+y8RH7J+GhGVnXmMCW+LFHR2k8c7oUt48cSeNHmmGJffKAcuNpwIPWmCXwBzYiTskyVUCuUNUwDJpG8X73AUQhhUXKCBK433nyNvfxa2xFti1b8Y8cIHApEhgHYoK80GiXwSpTNao7b9Q4ypIF8vZqq7jaMKh6OEH84xki3rnqcVx50KmlGqs2Lyloskq5O9D0hdmWn5WFAAGAAgAQwAAAH22JuOZAAAA/QAAABEAAAA09uZHVuZHN/JkVhZHVydWN22Puw6CQBBFf4VML0u0MyyNWJiIBRTGcgOLbNyHYYaMn69L5Ua7yZzce3JL5C5YM1zD/MDs5axHCRPRcy8EM+cYIUeY98EJ5G1R7AT2k3YKqhK5CYO2mRkkuHhtCsiQD8GP5r7MikzwF+W0hFqParEEIoYSfjZIP89PyamWsLatilaPiaIJSK3utackJ+F27KJE/LWI77nVG5P/rUcAABQABgAIACAAAABC5HlcGQEAAL0CAAAbAAAAAAAAAAEAAAAAAAAAAAA09uZHVuZHN/I09uZmlnbSA9IFFidHlkeW9uaT/61HAAAUAAYACABCAAAA5twcJ7wAAAAbAQAAEQAAAAAAAAABAAAAAABSAQAANPbmR1bmRzfytFaXd/YnRjeT/61HAAAUAAYACABDAAAAfbYm45kAAAD9AAAAEQAAAAAAAAABAAAAAAA9AgAANPbmR1bmRzfyZFYWR1cnVjcsNQcxAAAAAAMAAwDHAAAABQMAAAAA",
           "kind": "inline"
         },
         "offset": 0,

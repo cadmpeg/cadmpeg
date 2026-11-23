@@ -90,8 +90,11 @@ Each format carries one support level from the ladder; `cadmpeg inspect <file>` 
 - **CATIA V5 `.CATPart`** — L3 ([profile](docs/format-support.md#catia-v5-catpart))
 - **Creo Parametric `.prt`** — L1 ([profile](docs/format-support.md#creo-parametric-prt))
 - **Creo View `.pvz`** — L3 ([profile](docs/format-support.md#creo-view-pvz))
+- **SolidWorks eDrawings `.eprt` and `.easm`** — L2 ([profile](docs/format-support.md#solidworks-edrawings-eprt-and-easm))
 - **OpenUSD layers** — L2 ([profile](docs/format-support.md#openusd-layers))
 - **STEP Part 21** — L8 ([profile](docs/format-support.md#step-part-21))
+- **Solid Edge `.par`, `.psm`, and `.asm`** — L0 ([profile](docs/format-support.md#solid-edge-par-psm-and-asm))
+- **Onshape bundle** — L0 ([profile](docs/format-support.md#onshape-bundle))
 
 <!-- /generated: capability-lines -->
 

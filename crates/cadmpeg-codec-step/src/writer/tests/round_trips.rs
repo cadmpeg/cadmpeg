@@ -172,7 +172,7 @@ fn curve_geometry_for_sheet_pcurve(
             let distance = offset_pcurve.distance();
             let basis = offset_pcurve.basis();
             let Some((origin, direction)) = basis
-                .line_parameters(&cadmpeg_test_support::service_decode_context())
+                .line_parameters(&cadmpeg_core::decode::test_support::service_decode_context())
                 .expect("fixture line parameter walk is admitted")
             else {
                 return Ok(None);
@@ -270,7 +270,7 @@ fn align_sheet_edge_to_pcurve(
             .find(|point| point.id == point_id)
             .expect("sheet edge point")
             .set_position(
-                cadmpeg_ir::features::FinitePoint3::new(position)
+                cadmpeg_ir::features::geometry::FinitePoint3::new(position)
                     .expect("a finite position is a point"),
             );
     }
@@ -1181,6 +1181,7 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
         ),
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:model:appearance-binding#hidden-face"
@@ -1192,6 +1193,7 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
         object_type: None,
         visible: Some(false),
         channels: std::collections::BTreeMap::new(),
+        native_ref: None,
     });
 
     let mut output = Vec::new();
@@ -1243,6 +1245,7 @@ fn writer_round_trips_surface_appearance_transparency() {
         ),
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearances.push(Appearance {
         id: second_appearance.clone(),
@@ -1258,6 +1261,7 @@ fn writer_round_trips_surface_appearance_transparency() {
         ),
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:model:appearance-binding#transparent-face"
@@ -1269,6 +1273,7 @@ fn writer_round_trips_surface_appearance_transparency() {
         object_type: None,
         visible: None,
         channels: std::collections::BTreeMap::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:model:appearance-binding#more-transparent-face"
@@ -1280,6 +1285,7 @@ fn writer_round_trips_surface_appearance_transparency() {
         object_type: None,
         visible: None,
         channels: std::collections::BTreeMap::new(),
+        native_ref: None,
     });
 
     let mut output = Vec::new();
@@ -1701,8 +1707,8 @@ fn exporting_a_salvaged_noncanonical_unit_repairs_partial_order() {
 /// largest finite `f64`.
 #[test]
 fn a_linear_sweep_whose_magnitude_overflows_is_refused() {
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
     use cadmpeg_ir::geometry::surface_payloads::LinearSweepSurfaceConstruction;
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 
     let source = StepCodec::default()
         .decode(
@@ -1780,7 +1786,8 @@ fn replica_written_with(
     records: &str,
     transform: Transform,
 ) -> Result<String, cadmpeg_core::CodecError> {
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, ProceduralSurfaceDefinition};
+    use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+    use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 
     let source = crate::test_support::exchange::decode_inline(records);
     let mut ir = source.ir().clone();

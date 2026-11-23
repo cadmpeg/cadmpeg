@@ -15,11 +15,12 @@ use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsError, NurbsPoles3, WeightedPole3};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsError, NurbsPoles3, WeightedPole3},
     CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, ProceduralCurve,
-    ProceduralCurveDefinition, SolvedCurveGeometry,
+    SolvedCurveGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::math::Point3;
@@ -2257,7 +2258,7 @@ fn project_with_type_130_policy(
         let mut components = Vec::new();
         for segment in segments.into_iter() {
             boundaries.push(segment.end);
-            components.push(cadmpeg_ir::geometry::CompoundComponent {
+            components.push(cadmpeg_ir::geometry::procedural_curves::CompoundComponent {
                 parameter: segment.child_start,
                 component: segment.child,
             });
@@ -2270,7 +2271,7 @@ fn project_with_type_130_policy(
             ProceduralCurve::new(
                 crate::ids::procedural_curve(&stem),
                 ProceduralCurveDefinition::Compound(
-                    cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
+                    cadmpeg_ir::geometry::procedural_curves::CompoundCurveConstruction::try_new(
                         boundaries, components, None,
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,

@@ -13,7 +13,7 @@ use cadmpeg_core::decode::{index_from_u32, u64_from_index};
 use crate::records::references::DesignVisualToken;
 use cadmpeg_core::container::ContainerRole;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Write};
 
 use crate::records::{bodies::DesignBodyBinding, references::DesignMaterialAssignment};
@@ -37,7 +37,9 @@ use crate::container::ContainerScan;
 use crate::design::presentation::{
     APPEARANCE_LIBRARY_ID, GUID_LEN, MODERN_APPEARANCE_LIBRARY_IDS as APPEARANCE_LIBRARY_ID_PAIR,
 };
+use crate::loss::F3dLossCode;
 use crate::writer::primitives::zero_fill_to;
+use cadmpeg_ir::report::loss::LossNote;
 /// The `AssetLibID` [`encode_protein`] writes for an appearance that names no
 /// library. A stored library identifier is a library GUID or a library path;
 /// the null GUID names neither.
@@ -580,6 +582,8 @@ pub(crate) struct DecodedMaterials {
     pub(crate) untyped_distance_properties: usize,
     /// Rejected Protein record diagnostics.
     pub(crate) notes: Vec<String>,
+    /// Losses charged while joining appearances to topology.
+    pub(crate) losses: Vec<LossNote>,
 }
 
 /// Decode `.protein` assets and Design and ACT assignments without resolved
@@ -703,6 +707,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
                 base_color: None,
                 properties: BTreeMap::new(),
                 textures: Vec::new(),
+                native_ref: None,
             });
         }
     }
@@ -728,34 +733,41 @@ pub(crate) fn decode_with_body_bindings<'a>(
         body_bindings,
     )?;
     let body_overrides = decode_body_appearance_overrides(ctx, scan, body_bindings)?;
+    let mut overridden = BTreeSet::new();
+    let mut losses = Vec::new();
     for over in &body_overrides {
-        if bindings.iter().any(
-            |binding| matches!(&binding.target.entity, AppearanceTarget::Body(body) if body == &over.body),
-        ) {
-            continue;
-        }
         let Some(appearance) = appearance_for_visual_token(&out, &over.visual_guid, None)? else {
             continue;
         };
-        bindings.push(AppearanceBinding {
-            id: crate::ids::body_appearance_binding_id(
-                over.entity_suffix,
-                over.visual_guid.identity_key(),
-            ),
-            target: AppearanceTarget::Body(over.body.clone()).into(),
-            appearance: appearance.id.clone(),
-            source_entity_id: None,
-            object_type: (object_types.get(&over.entity_suffix).map(String::as_str))
-                .map(std::borrow::ToOwned::to_owned),
-            visible: None,
-            channels: named_act_channels(
-                format_args!(
-                    "f3d:appearance:body#{}:{}",
-                    over.entity_suffix, over.visual_guid
+        // The override is assumed to take precedence over the body's material
+        // assignment, so it replaces that binding. The override record stores
+        // only the body's entity suffix, not the component-qualified entity ID
+        // that names an ACT entity, so the binding has no source entity.
+        bind_body_override(
+            &mut bindings,
+            &mut overridden,
+            &mut losses,
+            AppearanceBinding {
+                id: crate::ids::body_appearance_binding_id(
+                    over.entity_suffix,
+                    over.visual_guid.identity_key(),
                 ),
-                act_channels.get(&over.entity_suffix),
-            )?,
-        });
+                target: AppearanceTarget::Body(over.body.clone()).into(),
+                appearance: appearance.id.clone(),
+                source_entity_id: None,
+                object_type: (object_types.get(&over.entity_suffix).map(String::as_str))
+                    .map(std::borrow::ToOwned::to_owned),
+                visible: None,
+                channels: named_act_channels(
+                    format_args!(
+                        "f3d:appearance:body#{}:{}",
+                        over.entity_suffix, over.visual_guid
+                    ),
+                    act_channels.get(&over.entity_suffix),
+                )?,
+                native_ref: None,
+            },
+        );
     }
     let face_assignments = decode_face_appearance_assignments(scan)?;
     let has_topology_assignments =
@@ -767,6 +779,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
         has_topology_assignments,
         untyped_distance_properties,
         notes,
+        losses,
     })
 }
 
@@ -853,6 +866,7 @@ fn appearances_from_schema_records(
                 properties,
             )?,
             textures: connected,
+            native_ref: None,
         };
         appearances.push(appearance);
     }
@@ -1556,6 +1570,7 @@ fn bind_bodies(
                 ),
                 act_channels.get(&assignment.entity_id.suffix()),
             )?,
+            native_ref: None,
         });
     }
     Ok(out)
@@ -2113,6 +2128,7 @@ fn decode_fixed_record(record: &[u8]) -> Result<Option<Appearance>, CodecError> 
         base_color: color,
         properties,
         textures: Vec::new(),
+        native_ref: None,
     }))
 }
 
@@ -2162,6 +2178,44 @@ fn generic_connection_delta(record: &[u8], value_block: usize) -> Option<usize> 
         }
         _ => None,
     }
+}
+
+/// Binds a body-override appearance. The override is assumed to take
+/// precedence over the body's material assignment: a binding of the same body
+/// to another appearance is replaced and charged as a loss, and a binding to
+/// the same appearance is kept with its assignment provenance. No stored order
+/// among several differing overrides of one body is known, so the decoder
+/// assumes the first in decode order binds and charges each later differing
+/// override it drops.
+fn bind_body_override(
+    bindings: &mut Vec<AppearanceBinding>,
+    overridden: &mut BTreeSet<AppearanceTarget>,
+    losses: &mut Vec<LossNote>,
+    binding: AppearanceBinding,
+) {
+    // A repeat of the appearance already bound to the body changes nothing and
+    // does not consume the body's override.
+    if bindings.iter().any(|existing| {
+        existing.target.entity == binding.target.entity && existing.appearance == binding.appearance
+    }) {
+        return;
+    }
+    if !overridden.insert(binding.target.entity.clone()) {
+        losses.push(F3dLossCode::BodyOverrideSuperseded.note(format!(
+            "A body-override appearance {} was not bound because an earlier body-override appearance already binds the body; the first override is assumed to bind.",
+            binding.appearance
+        )));
+        return;
+    }
+    let before = bindings.len();
+    bindings.retain(|existing| existing.target.entity != binding.target.entity);
+    if bindings.len() != before {
+        losses.push(F3dLossCode::BodyOverridePrecedenceAssumed.note(format!(
+            "A body-override appearance {} replaced the appearance named by the body's material assignment; the override is assumed to take precedence.",
+            binding.appearance
+        )));
+    }
+    bindings.push(binding);
 }
 
 #[cfg(test)]

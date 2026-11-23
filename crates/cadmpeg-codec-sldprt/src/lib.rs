@@ -110,6 +110,7 @@ mod carchive;
 mod classification;
 mod container;
 mod decode;
+mod design_v11;
 mod dialect;
 pub mod exact_ledger;
 mod feature_schema;
@@ -127,6 +128,8 @@ mod parasolid;
 mod pmi;
 mod records;
 mod resolved_features;
+mod rollback;
+mod scan;
 mod swift;
 mod tessellation;
 mod writer;
@@ -141,8 +144,8 @@ use std::io::Write;
 
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    ArenaCoverage, ArenaDispositions, Consumption, DepthNeed, EncodeInput, EncoderBackend,
-    ExportBody, PatchConsumption, WritePath,
+    ArenaCoverage, ArenaDispositions, Consumption, EncodeInput, EncoderBackend, ExportBody,
+    PatchConsumption, WritePath,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::document::CadIr;
@@ -183,6 +186,12 @@ impl SldprtCodec {
     /// conservative branch, which reproduces the document from the IR instead of
     /// replaying bytes that may no longer describe it.
     ///
+    /// The semantic writer writes a compound-file part into a native
+    /// envelope. Where it refuses one, or its envelope lands on another
+    /// dialect than `target`, the source's, the output is the stored
+    /// compound-file part, and a `writer.compound-file-edit-unwritten` loss
+    /// states that no edit is written.
+    ///
     /// The returned [`WritePath`] is the branch this function took, not a
     /// judgement made about its output afterwards. The semantic writer can
     /// reproduce the input byte for byte when nothing it rewrites has moved, so
@@ -191,43 +200,65 @@ impl SldprtCodec {
         ir: &CadIr,
         annotations: &Annotations,
         records: &[SourceRecord<'_>],
+        target: &DialectId,
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
+        let image = records
+            .iter()
+            .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
+            .and_then(|record| record.data);
         let expected = ir
             .source
             .as_ref()
             .and_then(|source| source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE));
-        let Some(expected) = expected else {
-            return Self::write_semantic(
-                ir,
-                annotations,
-                records,
-                SemanticFidelity::ReplaySkipped(ReplaySkipped::BaselineMissing),
-                writer,
-            );
+        let skipped = match expected {
+            None => Some(ReplaySkipped::BaselineMissing),
+            Some(expected) if decode::document_local_sha256(ir)? != *expected => {
+                Some(ReplaySkipped::DigestMismatch)
+            }
+            Some(_) => None,
         };
-        if decode::document_local_sha256(ir)? != *expected {
+        if let Some(reason) = skipped {
+            if let Some(image) = image.filter(|image| container::is_compound_file(image)) {
+                let mut bytes = Vec::new();
+                let why = match Self::write_semantic(
+                    ir,
+                    annotations,
+                    records,
+                    SemanticFidelity::ReplaySkipped(reason),
+                    &mut bytes,
+                ) {
+                    Ok(Written::Semantic { dialect, .. }) if dialect != *target => {
+                        format!("lands on dialect {dialect}, not the source's {target}")
+                    }
+                    Ok(written) => {
+                        writer.write_all(&bytes)?;
+                        return Ok(written);
+                    }
+                    Err(error) => format!("refuses it ({error})"),
+                };
+                writer.write_all(image)?;
+                let state = match reason {
+                    ReplaySkipped::BaselineMissing => {
+                        "The document has no decode baseline, so whether it is edited since decode is not known"
+                    }
+                    _ => "The document is edited since decode",
+                };
+                return Ok(Written::StoredCompoundFile {
+                    loss: loss::SldprtLossCode::WriterCompoundFileEditUnwritten.note(format!(
+                        "{state}; the native-envelope write of the compound-file part {why}, SLDPRT has no compound-file writer, and the output is the stored compound-file part, which carries no edit of the document."
+                    )),
+                });
+            }
             return Self::write_semantic(
                 ir,
                 annotations,
                 records,
-                SemanticFidelity::ReplaySkipped(ReplaySkipped::DigestMismatch),
+                SemanticFidelity::ReplaySkipped(reason),
                 writer,
             );
         }
-        let Some(record) = records
-            .iter()
-            .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
-        else {
-            return Self::write_semantic(
-                ir,
-                annotations,
-                records,
-                SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing),
-                writer,
-            );
-        };
-        let Some(data) = record.data.as_ref() else {
+        let Some(data) = image else {
             return Self::write_semantic(
                 ir,
                 annotations,
@@ -250,34 +281,64 @@ impl SldprtCodec {
         fidelity: SemanticFidelity,
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
+        // An edit the full decoder does not read back from the written part,
+        // or that changes what no edit touches, is written again with its
+        // feature's stored record.
+        let image = records
+            .iter()
+            .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
+            .and_then(|record| record.data);
+        let round_trip = |source: &cadmpeg_ir::codec::Decoded| {
+            let mut bytes = Vec::new();
+            writer::write_semantic_with_records(
+                &source.ir,
+                &source.source_fidelity.annotations,
+                records,
+                &[],
+                &mut bytes,
+            )
+            .ok()?;
+            (image != Some(bytes.as_slice())).then_some(bytes)
+        };
+        let ((bytes, output), read_back) = history::write::read_back::write_until_read_back(
+            ir,
+            &mut |withheld| {
+                let mut bytes = Vec::new();
+                let output = writer::write_semantic_with_records(
+                    ir,
+                    annotations,
+                    records,
+                    withheld,
+                    &mut bytes,
+                )?;
+                Ok((bytes, output))
+            },
+            &round_trip,
+        )?;
+        writer.write_all(&bytes)?;
         let writer::SemanticOutput {
             dialect,
             coverage,
-            omitted_envelope_bytes,
-        } = writer::write_semantic_with_records(ir, annotations, records, writer)?;
+            unwritten,
+            unwritten_edits,
+            written,
+            claims: _,
+            source: _,
+            losses,
+        } = output;
+        let unwritten_edits = unwritten_edits.render(&read_back);
         let native = ir
             .native
             .namespace("sldprt")
             .map(|namespace| native::SldprtNative::load(namespace).map_err(CodecError::from))
             .transpose()?;
-        let source_arena = cadmpeg_core::decode::DecodeArena::new();
-        let source_context = records
-            .iter()
-            .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
-            .and_then(|record| record.data)
-            .map(|bytes| {
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                    bytes,
-                    &source_arena,
-                    &cadmpeg_core::decode::DecodePolicy::desktop(),
-                )
-            })
-            .transpose()?;
-        let source_scan = source_context
-            .as_ref()
-            .map(|(ctx, root)| container::scan(ctx, *root))
-            .transpose()?;
-        history::write::brep_agreement::validate(ir, native.as_ref(), source_scan.as_ref())?;
+        let stale_solid = history::write::brep_agreement::stale_solid_losses(
+            ir,
+            native.as_ref(),
+            image,
+            &written,
+            &read_back.misread,
+        )?;
         Ok(Written::Semantic {
             path: if records.is_empty() {
                 SemanticPath::Synthesized
@@ -287,7 +348,10 @@ impl SldprtCodec {
             dialect,
             fidelity,
             coverage,
-            omitted_envelope_bytes,
+            stale_solid,
+            unwritten_edits,
+            unwritten,
+            losses,
         })
     }
 }
@@ -358,6 +422,11 @@ enum Written {
     /// The retained source image, byte for byte. The dialect is the source's
     /// own, which this write neither chooses nor needs to name.
     Replayed,
+    /// The retained compound-file source image, byte for byte, written for a
+    /// document that may be edited: `loss` states that no edit is written.
+    StoredCompoundFile {
+        loss: cadmpeg_ir::report::loss::LossNote,
+    },
     /// A semantic write, in the dialect the emitted `swSolidWorks` envelope
     /// declares.
     Semantic {
@@ -365,7 +434,16 @@ enum Written {
         dialect: DialectId,
         fidelity: SemanticFidelity,
         coverage: ArenaDispositions,
-        omitted_envelope_bytes: usize,
+        /// One loss per construction edit that shapes the solid: the output
+        /// keeps the stored solid, which shows the state before the edit.
+        stale_solid: Vec<cadmpeg_ir::report::loss::LossNote>,
+        /// One loss per edit the native records cannot carry: the output keeps
+        /// the stored record or value.
+        unwritten_edits: Vec<cadmpeg_ir::report::loss::LossNote>,
+        /// The metadata attributes the write did not write.
+        unwritten: writer::UnwrittenAttributes,
+        /// The write's other losses.
+        losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     },
 }
 
@@ -374,7 +452,7 @@ impl Written {
     /// byte, so the output cannot say and only this value can.
     fn path(&self) -> WritePath {
         match self {
-            Self::Replayed => WritePath::VerbatimReplay,
+            Self::Replayed | Self::StoredCompoundFile { .. } => WritePath::VerbatimReplay,
             Self::Semantic { path, fidelity, .. } => path.write_path(fidelity.consumption()),
         }
     }
@@ -384,6 +462,11 @@ impl Written {
     fn coverage(&self) -> ArenaCoverage {
         match self {
             Self::Replayed => ArenaCoverage::Complete,
+            // The stored part may represent a record of any arena; the loss
+            // names the edits it does not carry.
+            Self::StoredCompoundFile { .. } => {
+                ArenaCoverage::Declared(writer::stored_part_coverage())
+            }
             Self::Semantic { coverage, .. } => ArenaCoverage::Declared(*coverage),
         }
     }
@@ -434,6 +517,16 @@ impl CodecBackend for SldprtCodec {
         let classification = dialect::classify_layers(&scan)?;
         let mut summary = container::summarize(&scan, classification.layers().clone());
         classification.append_losses(&mut summary.losses);
+        summary.losses.extend(
+            scan.given_up
+                .iter()
+                .map(cadmpeg_ir::unknown::part::GivenUpPart::loss),
+        );
+        summary.losses.extend(
+            scan.noncanonical.iter().map(|deviation| {
+                loss::SldprtLossCode::ContainerNoncanonical.note(deviation.clone())
+            }),
+        );
         Ok(summary)
     }
 
@@ -444,9 +537,9 @@ impl CodecBackend for SldprtCodec {
 
 impl EncoderBackend for SldprtCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
-    /// Patches the retained source, so the design records it rewrites must be
-    /// present.
-    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Full);
+    /// Patches the retained source, so it plans from the design records it
+    /// rewrites.
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(dialect::TARGETS, Some(0));
 

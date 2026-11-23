@@ -23,6 +23,7 @@ use crate::design::scope::DesignScope;
 use crate::design::selection::{Anchor, OccurrencePath, StepRef};
 use crate::design::units::{Quantity, ValueKind};
 use crate::ids::ProductDefinitionId;
+use crate::products::Storage;
 use crate::report::check::Finding;
 
 /// What holds a set of overrides.
@@ -741,6 +742,16 @@ fn check_definition_override(
                     format_args!("part number of {definition} is the document name, but neither the definition nor the override states a `Title` or a source name"),
                 );
             }
+            let stored = record.is_some_and(|record| {
+                matches!(record.storage, Storage::File { .. } | Storage::External(_))
+            });
+            if record.is_some() && !stored {
+                super::error(
+                    findings,
+                    holder,
+                    format_args!("part number of {definition} is the document name, but no document of its own stores it"),
+                );
+            }
         }
         (
             Some(PartNumber::ParentConfigurationName),
@@ -785,7 +796,12 @@ fn check_parameter_tolerance(parameter: &DesignParameter, findings: &mut Vec<Fin
     }
     let deviations = match tolerance {
         Tolerance::Deviations(deviations) => Some(deviations),
-        Tolerance::Fit { deviations, .. } => {
+        Tolerance::Fit {
+            fit,
+            mate,
+            deviations,
+        } => {
+            fits::check_mate_zone(id, fit, mate.as_ref(), findings);
             if quantity != Some(Quantity::LENGTH) {
                 super::error(
                     findings,
@@ -815,6 +831,8 @@ fn check_parameter_tolerance(parameter: &DesignParameter, findings: &mut Vec<Fin
         }
     }
 }
+
+mod fits;
 
 #[cfg(test)]
 mod tests;

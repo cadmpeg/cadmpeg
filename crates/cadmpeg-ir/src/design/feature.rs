@@ -126,7 +126,7 @@ pub struct FeatureDefinition {
 }
 
 /// The feature that defines a feature generated in another scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -142,7 +142,7 @@ pub enum Driver {
 }
 
 /// The Boolean tolerance a feature carries.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -163,7 +163,7 @@ pub enum FuzzyTolerance {
 
 /// The operation of a feature: an arm per operation of the feature families
 /// (§6.1 to §6.7), and the stored, unresolved, and native forms.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -314,8 +314,43 @@ pub enum FeatureOperation {
     },
 }
 
+impl FeatureOperation {
+    /// Whether the operation's kind cannot change a state (§5.4): a sketch,
+    /// a sheet, a datum, a pattern whose instances are features of their
+    /// own, a template instance, a decal, a mesh section, and an
+    /// `Unresolved` operation of a family whose every operation is one of
+    /// these.
+    pub(crate) fn cannot_change_state(&self) -> bool {
+        match self {
+            Self::Sketch(_)
+            | Self::SpatialSketch(_)
+            | Self::Spreadsheet(_)
+            | Self::Datum(_)
+            | Self::TemplateInstance(_)
+            | Self::Decal(_) => true,
+            Self::Pattern(pattern) => {
+                matches!(
+                    pattern.instances,
+                    super::ops::body::PatternInstances::Members(_)
+                )
+            }
+            Self::Mesh(mesh) => matches!(mesh.kind, super::ops::surface::MeshKind::Section { .. }),
+            Self::Unresolved { family } => matches!(
+                family,
+                OperationFamily::Sketch
+                    | OperationFamily::SpatialSketch
+                    | OperationFamily::Spreadsheet
+                    | OperationFamily::Datum
+                    | OperationFamily::TemplateInstance
+                    | OperationFamily::Decal
+            ),
+            _ => false,
+        }
+    }
+}
+
 /// Where a feature's stored geometry came from.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum StoredOrigin {

@@ -119,6 +119,38 @@ impl PassAllowance {
         self.work.consumed()
     }
 
+    /// Work units still available in this pass.
+    pub(crate) fn remaining(&self) -> usize {
+        self.work.remaining()
+    }
+
+    /// Per-face slice cap of this pass.
+    pub(crate) const fn face_limit(&self) -> usize {
+        self.face_limit
+    }
+
+    /// Per-edge slice cap of this pass.
+    pub(crate) const fn edge_limit(&self) -> usize {
+        self.edge_limit
+    }
+
+    /// Build a standalone pass allowance with explicit item caps, used inside
+    /// parallel worker threads before committing total work back to the parent pass.
+    pub(crate) fn with_limits(allowance: usize, face_limit: usize, edge_limit: usize) -> Self {
+        Self {
+            allowance,
+            work: WorkBudget::new(allowance),
+            starved: Cell::new(false),
+            face_limit,
+            edge_limit,
+        }
+    }
+
+    /// Charge work already executed by a parallel chunk against this pass.
+    pub(crate) fn charge_committed(&self, units: usize) -> bool {
+        self.work.charge_by(units)
+    }
+
     /// Whether an item ran out because the pass could not pay its slice.
     pub(crate) fn exhausted(&self) -> bool {
         self.starved.get()
@@ -149,6 +181,15 @@ pub(crate) struct ItemBudget<'pass> {
 }
 
 impl ItemBudget<'_> {
+    /// A local allowance charged to this item.
+    pub(crate) fn local_slice(&self, limit: usize) -> ItemBudget<'_> {
+        ItemBudget {
+            work: self.work.charging_slice(limit),
+            truncated: self.truncated && self.work.remaining() < limit,
+            pass: self.pass,
+        }
+    }
+
     /// The item's work slice, for an evaluator that charges it directly.
     pub(crate) const fn slice(&self) -> &WorkBudget {
         &self.work
@@ -244,6 +285,19 @@ mod tests {
             assert_eq!(profile.pair_allowance(1 << 16), Some((1 << 16) * per_body));
             assert_eq!(profile.pair_allowance(usize::MAX), None);
         }
+    }
+
+    #[test]
+    fn a_local_slice_charges_the_item_and_preserves_its_remaining_work() {
+        let pass = PassAllowance::new(WorkProfile::Desktop.pass_allowance(1).unwrap());
+        let face = pass.face_slice();
+        let local = face.local_slice(10);
+        local.charge(5).unwrap();
+        assert!(local.charge(6).is_err());
+        assert_eq!(pass.used(), 5);
+        face.charge(10).unwrap();
+        assert!(!face.exhausted());
+        assert!(!pass.exhausted());
     }
 
     #[test]

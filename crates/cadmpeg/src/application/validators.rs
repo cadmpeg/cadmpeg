@@ -21,9 +21,12 @@ pub(crate) fn validate_loaded(
     let arena = DecodeArena::new();
     let result = (|| {
         let ctx = DecodeContext::for_loaded_input(&arena, policy, document.input_bytes)?;
-        let losses = document
+        // A neutral load has no decode report; the sidecar it ignored is its
+        // one loss.
+        let mut losses = document
             .decode_report()
             .map_or_else(Vec::new, |report| report.losses.clone());
+        losses.extend(document.stale_sidecar.clone());
         let report = cadmpeg_registry::check_with_context(
             &ctx,
             inputs,

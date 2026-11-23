@@ -134,7 +134,7 @@ fn repro_native_feature_closure_keeps_numeric_joins_and_type_rows() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: [(
             cadmpeg_core::text::NonBlankString::new("PLANTED_PROPERTY_PATH/member.cad").unwrap(),
             "PLANTED_PROPERTY_VALUE".into(),
@@ -143,7 +143,7 @@ fn repro_native_feature_closure_keeps_numeric_joins_and_type_rows() {
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             crate::features::FeatureDefinition::Operation(
                 crate::features::FeatureOperation::Native {
                     kind: "scope".into(),
@@ -413,6 +413,7 @@ fn repro_document_size_does_not_consume_the_closure_limit() {
             crate::ids::PointId::mint(format!("synthetic:unrelated:point#{ordinal}")).unwrap();
         document.geometry.points.push(unrelated);
     }
+    document.finalize();
     assert!(serde_json::to_vec(&document).unwrap().len() > limit);
     let options = CutOptions {
         max_rows: rows,

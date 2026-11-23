@@ -6,15 +6,15 @@ use std::path::Path;
 
 use anyhow::{anyhow, Context};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, View};
-use cadmpeg_ir::codec::DecodeOptions;
-use cadmpeg_ir::CadIr;
+use cadmpeg_ir::codec::{Confidence, DecodeOptions};
+use cadmpeg_ir::{CadIr, DecodeSidecar};
 
 use cadmpeg_registry::{
-    ForcedInput, InputCatalog, ResolveSourceError, ResolvedSource, DETECTION_PREFIX_LEN,
+    ForcedInput, InputCatalog, ResolveSourceError, ResolvedSource, Selection, DETECTION_PREFIX_LEN,
 };
 
-use crate::application::artifact_store;
-use crate::application::document::LoadedDocument;
+use crate::application::artifact_store::{self, SidecarLoad};
+use crate::application::document::{LoadOrigin, LoadedDocument};
 use crate::application::refusal::ApplicationError;
 
 pub(crate) mod companions;
@@ -35,7 +35,42 @@ pub(crate) fn detection_failure(error: &ResolveSourceError) -> anyhow::Error {
 /// An explicit input format bypasses detection. Without one, the registered
 /// codec with the strongest match decodes the file. An input beginning with a
 /// JSON object is parsed as CADIR when no native codec recognizes it.
+///
+/// Every command loads through here, so here is where the load's notices go
+/// to stderr: a decode sidecar the load ignored, and a detection below high
+/// confidence.
 pub(crate) fn load_artifact(
+    catalog: &InputCatalog,
+    path: &Path,
+    options: DecodeOptions,
+    forced: Option<ForcedInput>,
+) -> Result<LoadedDocument, ApplicationError> {
+    let document = load(catalog, path, options, forced)?;
+    print_load_notice(&document);
+    Ok(document)
+}
+
+fn print_load_notice(document: &LoadedDocument) {
+    if let Some(loss) = &document.stale_sidecar {
+        eprintln!("warning: {}: {}", loss.code, loss.message);
+    }
+    let LoadOrigin::Decoded {
+        selection: Selection::Detected { confidence },
+        report,
+        ..
+    } = &document.origin
+    else {
+        return;
+    };
+    if *confidence < Confidence::High {
+        let format_id = report.format();
+        eprintln!(
+            "warning: detected {format_id} with {confidence} confidence; use --input-format to override"
+        );
+    }
+}
+
+fn load(
     catalog: &InputCatalog,
     path: &Path,
     options: DecodeOptions,
@@ -72,7 +107,7 @@ pub(crate) fn load_artifact(
         ResolvedSource::Cadir => {}
         ResolvedSource::Unrecognized => {
             return Err(anyhow!(
-                "unrecognized format for {}; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP, ASM sat/smt/smb/sab, Creo View pvz, OpenUSD usda/usdc/usd/usdz, .cadir.json; use --input-format to override detection",
+                "unrecognized format for {}; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP, ASM sat/smt/smb/sab, Creo View pvz, eDrawings easm/eprt, OpenUSD usda/usdc/usd/usdz, .cadir.json; use --input-format to override detection",
                 path.display()
             )
             .into());
@@ -97,19 +132,21 @@ pub(crate) fn load_artifact(
             )
         }
     })?;
-    let Some(sidecar) = artifact_store::load_matching_sidecar(path, text.as_bytes(), max_bytes)?
-    else {
-        return Ok(LoadedDocument::neutral(
-            ir,
-            cadmpeg_core::decode::u64_from_index(text.len()),
-        ));
-    };
-    Ok(LoadedDocument::restored(
-        ir,
-        sidecar.report,
-        sidecar.fidelity,
-        cadmpeg_core::decode::u64_from_index(text.len()),
-    ))
+    let input_bytes = cadmpeg_core::decode::u64_from_index(text.len());
+    Ok(
+        match artifact_store::load_matching_sidecar(path, text.as_bytes(), max_bytes)? {
+            SidecarLoad::Absent => LoadedDocument::neutral(ir, input_bytes),
+            SidecarLoad::Stale(loss) => {
+                LoadedDocument::neutral(ir, input_bytes).with_stale_sidecar(loss)
+            }
+            SidecarLoad::Matching(sidecar) => {
+                let DecodeSidecar {
+                    report, fidelity, ..
+                } = *sidecar;
+                LoadedDocument::restored(ir, report, fidelity, input_bytes)
+            }
+        },
+    )
 }
 
 /// Whether the file name has the decode-sidecar suffix that `dump` writes
@@ -150,7 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn matching_sidecar_restores_decoded_origin_and_mismatch_is_hard_error() {
+    fn matching_sidecar_restores_decoded_origin_and_a_stale_one_is_ignored() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("part.cadir.json");
         let text = CadIr::empty().to_canonical_json().unwrap();
@@ -186,13 +223,19 @@ mod tests {
         assert_eq!(outcome.input_bytes, u64::try_from(text.len()).unwrap());
 
         std::fs::write(&path, format!("{text}\n")).unwrap();
-        let error = load_artifact(
+        let outcome = load_artifact(
             &InputCatalog::with_builtins(),
             &path,
             DecodeOptions::default(),
             Some(ForcedInput::Cadir),
         )
-        .unwrap_err();
-        assert!(error.to_string().contains("does not match"));
+        .expect("a stale sidecar does not refuse the load");
+        assert_eq!(outcome.origin, LoadOrigin::Neutral);
+        assert_eq!(outcome.ir, CadIr::empty());
+        let loss = outcome
+            .stale_sidecar
+            .expect("the load reports the stale sidecar");
+        assert_eq!(loss.code, cadmpeg_ir::source_fidelity::sidecar_stale_kind());
+        assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
     }
 }

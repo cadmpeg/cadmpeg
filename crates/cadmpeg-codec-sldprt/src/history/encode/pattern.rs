@@ -9,10 +9,9 @@ use super::support::{
 };
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    patterns::{PatternKind, PatternSeed, PatternTransform},
-    BooleanOp, RibConstruction, RibDraft, RibSide,
-};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::patterns::{PatternKind, PatternSeed, PatternTransform};
+use cadmpeg_ir::features::revolve::{RibConstruction, RibDraft, RibSide};
 
 impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_rib(
@@ -183,13 +182,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     }
                 }
             }
-            if seed_sources.is_empty()
-                && (!matches!(
-                    expected_form,
-                    Some(NativePatternClass::Linear | NativePatternClass::CurveDriven)
-                ) || existing.is_none())
-                && !pattern.is_unresolved()
-            {
+            // A stored record states the seeds the decoder leaves unbound.
+            if seed_sources.is_empty() && existing.is_none() && !pattern.is_unresolved() {
                 return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has no pattern seeds",
                     feature.id
@@ -408,5 +402,89 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             "SLDPRT feature {} uses a helical sweep that cannot be written",
             feature.id
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use std::collections::HashMap;
+
+    /// A mirror whose stored record states its seeds while the decoder binds
+    /// none, and whose plane is resolved: the plane a lane binds.
+    fn unbound_mirror() -> (crate::records::Feature, cadmpeg_ir::features::Feature) {
+        let record: crate::records::Feature = serde_json::from_value(serde_json::json!({
+            "id":"native", "parent":"history", "ordinal":0,
+            "name":"Reflect", "kind":"Mirror", "xml_tag":"Mirror",
+            "input_class":"moMirrorPattern_c", "parameters":{},
+            "properties":{"PlaneOrigin":"5mm,0mm,0mm", "PlaneNormal":"1,0,0"}
+        }))
+        .expect("synthetic feature record");
+        let history: crate::records::FeatureHistory = serde_json::from_value(serde_json::json!({
+            "id":"history", "features":[record.clone()]
+        }))
+        .expect("synthetic history");
+        let mut feature = crate::history::project::project_features(&[history])
+            .expect("feature projection")
+            .into_iter()
+            .next()
+            .expect("mirror");
+        feature
+            .evaluation
+            .set_definition(FeatureDefinition::Operation(FeatureOperation::Pattern {
+                seeds: Vec::new(),
+                pattern: PatternKind::new(PatternTransform::Mirror {
+                    plane_origin: FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
+                        .expect("finite origin"),
+                    plane_normal: FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
+                        .expect("nonzero normal"),
+                })
+                .expect("mirror pattern"),
+            }));
+        (record, feature)
+    }
+
+    fn encode(
+        feature: &cadmpeg_ir::features::Feature,
+        existing: Option<&crate::records::Feature>,
+    ) -> Result<NeutralFeatureEncoding, CodecError> {
+        NeutralFeatureEncoder {
+            contradicted_travel: false,
+            feature,
+            existing,
+            principal_planes_by_record: &HashMap::new(),
+            record_sources: &HashMap::new(),
+            retained_tree_node_roles: &HashMap::new(),
+            feature_sources: &HashMap::new(),
+            sketch_sources: &HashMap::new(),
+            parent_sources: &HashMap::new(),
+            resolved_parameter_names: &HashMap::new(),
+        }
+        .encode()
+    }
+
+    /// A stored mirror record whose seeds the decoder leaves unbound encodes
+    /// its edited plane, and its record keeps its seeds. A new mirror with no
+    /// seeds has no record to state them.
+    #[test]
+    fn a_stored_mirror_with_unbound_seeds_encodes_its_plane() {
+        let (record, feature) = unbound_mirror();
+
+        let encoded = encode(&feature, Some(&record)).expect("the stored mirror encodes");
+        assert_eq!(encoded.kind, "Mirror");
+        assert_eq!(encoded.properties["PlaneOrigin"], "2mm,0mm,0mm");
+        assert_eq!(encoded.properties["PlaneNormal"], "1,0,0");
+        assert!(!encoded.properties.contains_key("Seeds"));
+
+        let Err(error) = encode(&feature, None) else {
+            panic!("a new mirror with no seeds encodes");
+        };
+        assert!(
+            error.to_string().contains("has no pattern seeds"),
+            "{error}"
+        );
     }
 }

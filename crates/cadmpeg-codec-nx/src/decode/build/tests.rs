@@ -22,8 +22,10 @@ fn live_annotation_lookup_scales_with_tree_depth() {
             builder.exactness(&id, cadmpeg_ir::Exactness::Derived);
             ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
                 id,
-                cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0., 0., 0.))
-                    .expect("position"),
+                cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                    0., 0., 0.,
+                ))
+                .expect("position"),
                 None,
             ));
         }
@@ -167,8 +169,10 @@ fn inactive_body_pruning_keeps_the_vertex_of_a_kept_vertex_loop() {
     let body = BodyId::mint("nx:test:body#other").expect("identity");
     ir.geometry.points.push(Point::new(
         point.clone(),
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(5.0, 5.0, 5.0))
-            .expect("position"),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            5.0, 5.0, 5.0,
+        ))
+        .expect("position"),
         None,
     ));
     ir.geometry.vertices.push(Vertex {

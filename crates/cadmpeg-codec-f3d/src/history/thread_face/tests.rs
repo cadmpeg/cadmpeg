@@ -4,10 +4,9 @@ use crate::history_records::{
     AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalTransition, AsmHistory,
 };
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-use cadmpeg_ir::features::{
-    FaceSelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureInputTopology,
-    FeatureOperation,
-};
+use cadmpeg_ir::features::evaluation::{FeatureEvaluation, FeatureInputTopology};
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::topology::Face;
 
 const MEMBER: &str = "Active/BREP.test.smbh";
@@ -107,6 +106,7 @@ impl Fixture {
         transition.topology.surfaces.inserted = vec![77];
         transition.topology.surfaces.deleted = vec![88];
         let topology = FeatureInputTopology {
+            face_owners: Vec::new(),
             id: crate::ids::history_input_state_id(&prefix),
             input_of: id,
             bodies: Default::default(),

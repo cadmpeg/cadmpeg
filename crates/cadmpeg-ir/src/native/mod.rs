@@ -18,7 +18,7 @@ mod compare;
 mod copy;
 /// Native enum classification for privacy projection.
 pub mod privacy;
-mod replay;
+pub(crate) mod replay;
 pub(crate) mod view;
 
 #[cfg(test)]
@@ -48,18 +48,21 @@ fn nests_too_deep_message() -> String {
     format!("native value nests deeper than {MAX_NATIVE_NESTING_DEPTH} containers")
 }
 
-/// States whether `value` holds a container chain longer than `limit`.
+/// Measures the deepest container chain inside `value`, returning `None` if it
+/// exceeds `limit`.
 ///
 /// The pending containers live in this function's own vector, so measuring a
 /// value cannot itself overflow the machine stack. Only containers enter it: a
 /// scalar carries no chain, and a key is not a value.
-fn nests_past(value: &Value, limit: usize) -> bool {
+fn max_container_depth(value: &Value, limit: usize) -> Option<usize> {
     let mut pending: Vec<(&Value, usize)> = Vec::new();
+    let mut deepest = 0_usize;
     push_container(&mut pending, value, 1);
     while let Some((value, depth)) = pending.pop() {
         if depth > limit {
-            return true;
+            return None;
         }
+        deepest = deepest.max(depth);
         match value {
             Value::Array(items) => {
                 for item in items {
@@ -74,7 +77,7 @@ fn nests_past(value: &Value, limit: usize) -> bool {
             Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
         }
     }
-    false
+    Some(deepest)
 }
 
 /// Records `value` at `depth` when it is a container.
@@ -256,6 +259,9 @@ pub struct NativeRecord {
     /// Canonical compact JSON object text: `id` first, then the codec-owned
     /// fields in key order.
     json: Box<str>,
+    /// Deepest container nesting in `json`, the outer record object included.
+    /// Bounded by `MAX_NATIVE_NESTING_DEPTH + 1` (257).
+    depth: usize,
 }
 
 impl NativeRecord {
@@ -271,16 +277,19 @@ impl NativeRecord {
         mut fields: Map<String, Value>,
     ) -> Result<Self, NativeConvertError> {
         fields.remove("id");
+        let mut max_field_depth = 0_usize;
         for (field, value) in &fields {
-            if nests_past(value, MAX_NATIVE_NESTING_DEPTH) {
+            let Some(field_depth) = max_container_depth(value, MAX_NATIVE_NESTING_DEPTH) else {
                 return Err(NativeConvertError::FieldNestsTooDeep {
                     id,
                     field: field.clone(),
                 });
-            }
+            };
+            max_field_depth = max_field_depth.max(field_depth);
         }
         let json = render(&id, &fields);
-        Ok(Self { id, json })
+        let depth = 1 + max_field_depth;
+        Ok(Self { id, json, depth })
     }
 
     /// Build a record from an admitted identity and fields that do not nest.
@@ -294,13 +303,16 @@ impl NativeRecord {
     ) -> Self {
         let id = id.into();
         let mut stored = Map::new();
+        let mut has_list = false;
         for (name, value) in fields {
             if name != "id" {
+                has_list |= matches!(value, NativeField::TextList(_));
                 stored.insert(name, value.into_value());
             }
         }
         let json = render(&id, &stored);
-        Self { id, json }
+        let depth = if has_list { 2 } else { 1 };
+        Self { id, json, depth }
     }
 
     /// Build a record by serializing one codec-owned typed record.
@@ -334,15 +346,38 @@ impl NativeRecord {
         ctx: &DecodeContext<'_>,
         record: &T,
     ) -> Result<Self, NativeConvertError> {
-        let mut out = Vec::new();
-        let serialized = record
-            .serialize(canon::CanonText::for_record(ctx, &mut out))
-            .map_err(|error| error.into_native(ctx))?;
-        let canon::Written::Object(members) = serialized else {
-            return Err(NativeConvertError::NonObject);
-        };
-        let (id, json) = members.into_record(out)?;
-        Ok(Self { id, json })
+        use std::cell::RefCell;
+        thread_local! {
+            static CANON_SCRATCH: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+        }
+        let mut fallback = Vec::new();
+        CANON_SCRATCH.with(|scratch| {
+            let mut borrowed = scratch.try_borrow_mut();
+            let out: &mut Vec<u8> = match &mut borrowed {
+                Ok(guard) => {
+                    guard.clear();
+                    guard
+                }
+                Err(_) => &mut fallback,
+            };
+            let mut min_remaining = MAX_NATIVE_NESTING_DEPTH + 1;
+            let serialized = record
+                .serialize(canon::CanonText::for_record_tracking(
+                    ctx,
+                    out,
+                    &mut min_remaining,
+                ))
+                .map_err(|error| error.into_native(ctx))?;
+            let canon::Written::Object(members) = serialized else {
+                return Err(NativeConvertError::NonObject);
+            };
+            let (id, json) = members.into_record(out)?;
+            if out.capacity() > 64 * 1024 {
+                *out = Vec::new();
+            }
+            let depth = (MAX_NATIVE_NESTING_DEPTH + 1) - min_remaining;
+            Ok(Self { id, json, depth })
+        })
     }
 
     pub(crate) fn digest_unknown(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
@@ -402,6 +437,11 @@ impl NativeRecord {
         self.json.len()
     }
 
+    /// Borrow the stored canonical compact JSON object text.
+    pub(crate) fn json_text(&self) -> &str {
+        &self.json
+    }
+
     /// Parse the codec-owned fields, excluding `id`.
     ///
     /// Each call builds a new [`Value`] tree from the stored text. Read one
@@ -458,10 +498,58 @@ impl NativeRecord {
     /// `id` is not a codec-owned field and is never answered here.
     #[must_use]
     pub fn field(&self, name: &str) -> Option<Value> {
-        if name == "id" {
+        if name == "id" || !self.may_hold_field(name) {
             return None;
         }
         replay::value(replay::member(&self.json, name)?.get()).ok()
+    }
+
+    /// Cheap text check before parsing `self.json` for `name`: canonical
+    /// compact JSON renders any unescaped ASCII key literally as `"name":`.
+    fn may_hold_field(&self, name: &str) -> bool {
+        let plain_ascii = name
+            .bytes()
+            .all(|byte| (0x20..=0x7e).contains(&byte) && byte != b'"' && byte != b'\\');
+        if !plain_ascii {
+            return true;
+        }
+        if name.len() <= 64 {
+            let mut needle = [0_u8; 67];
+            needle[0] = b'"';
+            needle[1..=name.len()].copy_from_slice(name.as_bytes());
+            needle[name.len() + 1] = b'"';
+            needle[name.len() + 2] = b':';
+            if let Ok(needle) = std::str::from_utf8(&needle[..name.len() + 3]) {
+                return self.json.contains(needle);
+            }
+        }
+        self.json.contains(name)
+    }
+
+    /// Build a canonical record directly from pre-formatted canonical compact
+    /// JSON text (`{"id":...}` with `id` first and remaining keys sorted) of
+    /// known container nesting `depth` (`>= 1`, `<= MAX_NATIVE_NESTING_DEPTH + 1`).
+    ///
+    /// Enforces identity validation, caller depth admission, and retained-byte
+    /// admission identically to [`Self::from_typed_for_decode`].
+    #[inline]
+    pub fn from_canonical_flat(
+        ctx: &DecodeContext<'_>,
+        id: &str,
+        json: String,
+        depth: usize,
+    ) -> Result<Self, NativeConvertError> {
+        let id = crate::ids::Identity::new(id).map_err(NativeConvertError::InvalidIdentity)?;
+        if depth == 0 || depth > MAX_NATIVE_NESTING_DEPTH + 1 {
+            return Err(NativeConvertError::NonObject);
+        }
+        check_depth(ctx, depth)?;
+        ctx.retain_bytes(u64_from_index(json.len()), "serialize native record")?;
+        Ok(Self {
+            id,
+            json: json.into_boxed_str(),
+            depth,
+        })
     }
 
     /// Deserialize the codec-owned record straight from its stored text.
@@ -473,12 +561,33 @@ impl NativeRecord {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<T, NativeConvertError> {
-        let mut frames = Vec::new();
-        for _ in 0..container_depth(&self.json) {
-            frames.push(ctx.enter_nested(canon::WORK)?);
-        }
+        check_depth(ctx, self.depth)?;
         // The writer bounded each field's nesting, so the parser's recursion
         // limit is lifted.
+        let mut deserializer = serde_json::Deserializer::from_str(&self.json);
+        deserializer.disable_recursion_limit();
+        let value = T::deserialize(&mut deserializer)
+            .and_then(|value| deserializer.end().map(|()| value))
+            .map_err(|source| NativeConvertError::ReadRecord {
+                id: self.id.clone(),
+                source: without_position(source),
+            })?;
+        privacy::observe::<T>(self.id(), &self.json);
+        Ok(value)
+    }
+
+    /// Try a caller-provided fast parser on the canonical JSON text, falling
+    /// back to [`Self::to_typed`] when it returns `None`.
+    fn to_typed_fast<T: DeserializeOwned>(
+        &self,
+        ctx: &DecodeContext<'_>,
+        fast: impl FnOnce(&str) -> Option<T>,
+    ) -> Result<T, NativeConvertError> {
+        check_depth(ctx, self.depth)?;
+        if let Some(value) = fast(&self.json) {
+            privacy::observe::<T>(self.id(), &self.json);
+            return Ok(value);
+        }
         let mut deserializer = serde_json::Deserializer::from_str(&self.json);
         deserializer.disable_recursion_limit();
         let value = T::deserialize(&mut deserializer)
@@ -509,37 +618,6 @@ struct DigestUnknown<'a> {
     links: &'a [Value],
 }
 
-/// Deepest container nesting in canonical JSON text, the outer value
-/// included.
-fn container_depth(json: &str) -> usize {
-    let mut depth = 0_usize;
-    let mut deepest = 0;
-    let mut in_string = false;
-    let mut escaped = false;
-    for byte in json.bytes() {
-        if in_string {
-            if escaped {
-                escaped = false;
-            } else if byte == b'\\' {
-                escaped = true;
-            } else if byte == b'"' {
-                in_string = false;
-            }
-            continue;
-        }
-        match byte {
-            b'"' => in_string = true,
-            b'[' | b'{' => {
-                depth += 1;
-                deepest = deepest.max(depth);
-            }
-            b']' | b'}' => depth -= 1,
-            _ => {}
-        }
-    }
-    deepest
-}
-
 /// The refusal without the text position a parse appends to its message.
 fn without_position(error: serde_json::Error) -> serde_json::Error {
     if error.line() == 0 {
@@ -553,6 +631,93 @@ fn without_position(error: serde_json::Error) -> serde_json::Error {
     }
 }
 
+/// Enter and release `depth` nesting frames on `ctx` without heap allocation
+/// for common shallow records.
+#[inline]
+fn check_depth(ctx: &DecodeContext<'_>, depth: usize) -> Result<(), NativeConvertError> {
+    match depth {
+        0 => Ok(()),
+        1 => {
+            let _g1 = ctx.enter_nested(canon::WORK)?;
+            Ok(())
+        }
+        2 => {
+            let _g1 = ctx.enter_nested(canon::WORK)?;
+            let _g2 = ctx.enter_nested(canon::WORK)?;
+            Ok(())
+        }
+        3 => {
+            let _g1 = ctx.enter_nested(canon::WORK)?;
+            let _g2 = ctx.enter_nested(canon::WORK)?;
+            let _g3 = ctx.enter_nested(canon::WORK)?;
+            Ok(())
+        }
+        4 => {
+            let _g1 = ctx.enter_nested(canon::WORK)?;
+            let _g2 = ctx.enter_nested(canon::WORK)?;
+            let _g3 = ctx.enter_nested(canon::WORK)?;
+            let _g4 = ctx.enter_nested(canon::WORK)?;
+            Ok(())
+        }
+        _ => {
+            let mut frames = Vec::with_capacity(depth);
+            for _ in 0..depth {
+                frames.push(ctx.enter_nested(canon::WORK)?);
+            }
+            Ok(())
+        }
+    }
+}
+
+/// Append `text` as a quoted JSON string literal to `out`.
+#[inline]
+pub fn push_json_str(out: &mut String, text: &str) {
+    let bytes = text.as_bytes();
+    if !bytes.iter().any(|&b| b < 0x20 || b == b'"' || b == b'\\') {
+        out.push('"');
+        out.push_str(text);
+        out.push('"');
+        return;
+    }
+    push_json_str_escaped(out, text);
+}
+
+#[cold]
+#[inline(never)]
+fn push_json_str_escaped(out: &mut String, text: &str) {
+    out.push('"');
+    let bytes = text.as_bytes();
+    let mut start = 0;
+    for (i, &b) in bytes.iter().enumerate() {
+        let esc = match b {
+            b'"' => "\\\"",
+            b'\\' => "\\\\",
+            0x08 => "\\b",
+            0x0c => "\\f",
+            b'\n' => "\\n",
+            b'\r' => "\\r",
+            b'\t' => "\\t",
+            0x00..=0x1f => {
+                out.push_str(&text[start..i]);
+                let hi = b >> 4;
+                let lo = b & 0x0f;
+                let hex = |n: u8| char::from(if n < 10 { b'0' + n } else { b'a' + (n - 10) });
+                out.push_str("\\u00");
+                out.push(hex(hi));
+                out.push(hex(lo));
+                start = i + 1;
+                continue;
+            }
+            _ => continue,
+        };
+        out.push_str(&text[start..i]);
+        out.push_str(esc);
+        start = i + 1;
+    }
+    out.push_str(&text[start..]);
+    out.push('"');
+}
+
 /// Adds an arena name to a semantic typed-record refusal.
 fn read_record<T: DeserializeOwned>(
     ctx: &DecodeContext<'_>,
@@ -560,6 +725,28 @@ fn read_record<T: DeserializeOwned>(
     record: &NativeRecord,
 ) -> Result<T, NativeConvertError> {
     match record.to_typed(ctx) {
+        Ok(value) => Ok(value),
+        Err(source) if source.resource_limit().is_some() => Err(source),
+        Err(source) => {
+            let arena = arena.to_owned();
+
+            Err(NativeConvertError::Arena {
+                arena,
+                source: Box::new(source),
+            })
+        }
+    }
+}
+
+/// Adds an arena name to a semantic typed-record refusal, using `fast` when it
+/// matches the canonical JSON shape.
+fn read_record_fast<T: DeserializeOwned>(
+    ctx: &DecodeContext<'_>,
+    arena: &str,
+    record: &NativeRecord,
+    fast: impl FnOnce(&str) -> Option<T>,
+) -> Result<T, NativeConvertError> {
+    match record.to_typed_fast(ctx, fast) {
         Ok(value) => Ok(value),
         Err(source) if source.resource_limit().is_some() => Err(source),
         Err(source) => {
@@ -731,6 +918,13 @@ impl NativeNamespace {
         Ok(())
     }
 
+    /// Replace an arena with pre-built canonical [`NativeRecord`]s, sorted in
+    /// canonical identity order (preserving input order for equal identities).
+    pub fn set_arena_records(&mut self, name: impl AsRef<str>, mut records: Vec<NativeRecord>) {
+        records.sort_by(|left, right| left.id().cmp(right.id()));
+        self.arenas.insert(name.as_ref().to_owned(), records);
+    }
+
     /// Admit an arena through a codec-owned collection constructor.
     pub fn arena_as_collection<T, C>(&self, name: &str) -> Result<C, NativeConvertError>
     where
@@ -817,6 +1011,29 @@ impl NativeNamespace {
                     .map(move |record| read_record(ctx, arena, record))
             })
     }
+
+    /// Reads typed records lazily under the caller's decode session limits,
+    /// trying `fast` on each record's canonical JSON text before falling back
+    /// to `serde_json`.
+    pub fn arena_iter_as_for_decode_fast<'a, T, F>(
+        &'a self,
+        ctx: &'a DecodeContext<'_>,
+        name: &str,
+        fast: F,
+    ) -> impl Iterator<Item = Result<T, NativeConvertError>> + 'a
+    where
+        T: DeserializeOwned + 'a,
+        F: Fn(&str) -> Option<T> + Copy + 'a,
+    {
+        self.arenas
+            .get_key_value(name)
+            .into_iter()
+            .flat_map(move |(arena, records)| {
+                records
+                    .iter()
+                    .map(move |record| read_record_fast(ctx, arena, record, fast))
+            })
+    }
 }
 
 /// Native records grouped by source-format namespace id.
@@ -837,6 +1054,33 @@ impl Native {
     /// Return or create a source-format namespace.
     pub fn namespace_mut(&mut self, format: impl Into<String>) -> &mut NativeNamespace {
         self.0.entry(format.into()).or_default()
+    }
+
+    /// Whether every namespace arena is in increasing order of id.
+    pub(crate) fn is_finalized(&self) -> bool {
+        self.0.values().all(|namespace| {
+            namespace
+                .arenas
+                .values()
+                .all(|records| records.windows(2).all(|pair| pair[0].id() <= pair[1].id()))
+        })
+    }
+
+    /// Keeps the first record of each id in each sorted namespace arena and
+    /// drops the later ones, returning each repeated id whose copies differ.
+    pub(crate) fn drop_repeated_ids(&mut self) -> Vec<crate::document::RepeatedId> {
+        let mut repeated = Vec::new();
+        for (format, namespace) in &mut self.0 {
+            for (arena, records) in &mut namespace.arenas {
+                crate::document::keep_first_ids(
+                    records,
+                    NativeRecord::id,
+                    &format!("native.{format}.{arena}"),
+                    &mut repeated,
+                );
+            }
+        }
+        repeated
     }
 
     /// Sort every arena into canonical identity order.

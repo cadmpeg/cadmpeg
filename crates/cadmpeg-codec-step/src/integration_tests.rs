@@ -6,6 +6,7 @@ mod closed_faces;
 mod context_uncertainties;
 mod csg_solids;
 mod declared_measures;
+mod header_attributes;
 mod partial_geometry;
 mod plant_units;
 mod pmi_scope;
@@ -272,5 +273,6 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
 }
 
 mod dimension_limits;
+mod tolerance_order;
 
 mod near_coincident_edges;

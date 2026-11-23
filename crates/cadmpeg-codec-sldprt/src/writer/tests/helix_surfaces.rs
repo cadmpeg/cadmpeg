@@ -3,6 +3,18 @@
 
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::features::extents::AngularTermination;
+use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::revolve::RevolveExtent;
+use cadmpeg_ir::features::selections::{
+    BodySelection, DistinctMembers, EdgeSelection, FaceSelection,
+};
+use cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuityState;
+use cadmpeg_ir::features::sweeps::HelixShape;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+
 use cadmpeg_test_support::EditableDecodeResult;
 
 use crate::container;
@@ -28,7 +40,6 @@ const EPS_TWO_SIDED_REVOLUTION_SECOND_ANGLE: f64 = 1.0e-12;
 
 #[test]
 fn semantic_writer_round_trips_reference_coordinate_system() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -76,7 +87,7 @@ fn semantic_writer_round_trips_reference_coordinate_system() {
             else {
                 panic!("typed reference coordinate system");
             };
-            *frame = cadmpeg_ir::features::FeatureCoordinateFrame::new(
+            *frame = cadmpeg_ir::features::geometry::FeatureCoordinateFrame::new(
                 Point3::new(4.0, 5.0, 6.0),
                 Vector3::new(0.0, 1.0, 0.0),
                 Vector3::new(-1.0, 0.0, 0.0),
@@ -133,8 +144,6 @@ fn semantic_writer_round_trips_reference_coordinate_system() {
 
 #[test]
 fn semantic_writer_round_trips_equation_driven_curve() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
-
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
         0x42,
@@ -164,7 +173,7 @@ fn semantic_writer_round_trips_equation_driven_curve() {
             else {
                 panic!("typed equation curve");
             };
-            *curve = cadmpeg_ir::features::FeatureEquationCurve::new(
+            *curve = cadmpeg_ir::features::geometry::FeatureEquationCurve::new(
                 "u".into(),
                 "u".into(),
                 "u^2".into(),
@@ -177,7 +186,7 @@ fn semantic_writer_round_trips_equation_driven_curve() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -210,10 +219,7 @@ fn semantic_writer_round_trips_equation_driven_curve() {
 #[test]
 fn semantic_writer_round_trips_helix() {
     use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::{
-        features::{FeatureDefinition, FeatureOperation, HelixShape},
-        scalar::NonZeroLength,
-    };
+    use cadmpeg_ir::scalar::NonZeroLength;
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -263,10 +269,8 @@ fn semantic_writer_round_trips_helix() {
             else {
                 panic!("typed helix");
             };
-            *axis_origin =
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap();
-            *axis_direction =
-                cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap();
+            *axis_origin = FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap();
+            *axis_direction = FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap();
             *radius = cadmpeg_ir::scalar::PositiveLength::new(7.0).unwrap();
             *pitch = NonZeroLength::new(8.0).unwrap();
             *revolutions = cadmpeg_ir::scalar::PositiveReal::new(9.25).unwrap();
@@ -275,7 +279,7 @@ fn semantic_writer_round_trips_helix() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -319,10 +323,7 @@ fn semantic_writer_round_trips_helix() {
 #[test]
 fn semantic_writer_round_trips_slash_named_helix() {
     use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::{
-        features::{FeatureDefinition, FeatureOperation, HelixShape},
-        scalar::NonZeroLength,
-    };
+    use cadmpeg_ir::scalar::NonZeroLength;
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -364,10 +365,8 @@ fn semantic_writer_round_trips_slash_named_helix() {
             else {
                 panic!("typed helix");
             };
-            *axis_origin =
-                cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap();
-            *axis_direction =
-                cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap();
+            *axis_origin = FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap();
+            *axis_direction = FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap();
             *radius = cadmpeg_ir::scalar::PositiveLength::new(7.0).unwrap();
             *pitch = NonZeroLength::new(8.0).unwrap();
             *revolutions = cadmpeg_ir::scalar::PositiveReal::new(9.25).unwrap();
@@ -376,7 +375,7 @@ fn semantic_writer_round_trips_slash_named_helix() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -397,10 +396,7 @@ fn semantic_writer_round_trips_slash_named_helix() {
 
 #[test]
 fn semantic_writer_round_trips_native_axis_helix() {
-    use cadmpeg_ir::{
-        features::{FeatureDefinition, FeatureOperation},
-        scalar::{Angle, Length},
-    };
+    use cadmpeg_ir::scalar::{Angle, Length};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -463,7 +459,7 @@ fn semantic_writer_round_trips_native_axis_helix() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -496,9 +492,7 @@ fn semantic_writer_round_trips_native_axis_helix() {
 }
 
 #[test]
-fn semantic_writer_rejects_embedded_helix_geometry_edits() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
-
+fn semantic_writer_keeps_stored_embedded_helix_geometry_and_names_the_edit() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
         0x42,
@@ -512,7 +506,12 @@ fn semantic_writer_rejects_embedded_helix_geometry_edits() {
         &resolved_feature_classes_with_ids(&[("moHelix_c", "Helix/Spiral1", 30)]),
     ));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &source,
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     {
@@ -556,28 +555,29 @@ fn semantic_writer_rejects_embedded_helix_geometry_edits() {
         });
     }
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
+    // The construction curve added to the lane is written; the radius edit
+    // keeps the radius that curve states.
+    let (unwritten, written) =
+        crate::test_support::write_unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
     assert!(
-        error
-            .to_string()
-            .contains("changes embedded helix geometry"),
-        "{error}"
+        unwritten
+            .iter()
+            .any(|message| message.contains("changes embedded helix geometry")),
+        "{unwritten:?}"
     );
+    let FeatureDefinition::Operation(FeatureOperation::Helix { radius, .. }) =
+        written.ir().model.features[0].evaluation.definition()
+    else {
+        panic!("embedded helix geometry");
+    };
+    assert!((radius.get() - 3500.0).abs() <= 1.0e-6, "{radius:?}");
 }
 
 #[test]
 fn semantic_writer_round_trips_wrap() {
-    use cadmpeg_ir::{
-        features::{
-            FaceSelection, FeatureDefinition, FeatureOperation, PlanarProfileRef, WrapMode,
-        },
-        scalar::PositiveLength,
-    };
+    use cadmpeg_ir::features::profiles::PlanarProfileRef;
+    use cadmpeg_ir::features::surface_inputs::WrapMode;
+    use cadmpeg_ir::scalar::PositiveLength;
 
     let base_bytes = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
@@ -624,7 +624,8 @@ fn semantic_writer_round_trips_wrap() {
             else {
                 panic!("typed wrap");
             };
-            *profile = cadmpeg_ir::features::PlanarProfileRef::Faces(vec![face_id.clone()]);
+            *profile =
+                cadmpeg_ir::features::profiles::PlanarProfileRef::Faces(vec![face_id.clone()]);
             *face = FaceSelection::Faces(vec![face_id.clone()]);
             *mode = WrapMode::Deboss {
                 depth: PositiveLength::new(3.5).unwrap(),
@@ -633,7 +634,7 @@ fn semantic_writer_round_trips_wrap() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -669,7 +670,7 @@ fn semantic_writer_round_trips_wrap() {
         });
     }
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         scribed.ir(),
         scribed.source_fidelity(),
         &mut encoded,
@@ -692,11 +693,9 @@ fn semantic_writer_round_trips_wrap() {
 
 #[test]
 fn semantic_writer_round_trips_move_copy_body() {
+    use cadmpeg_ir::features::direct_edit::AxisAngle;
     use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::{
-        features::{AxisAngle, BodySelection, FeatureDefinition, FeatureOperation},
-        scalar::Angle,
-    };
+    use cadmpeg_ir::scalar::Angle;
 
     let base_bytes = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
@@ -747,18 +746,14 @@ fn semantic_writer_round_trips_move_copy_body() {
                 panic!("typed body motion");
             };
             *bodies = BodySelection::Bodies(
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![body_id.clone()])
-                    .expect("distinct bodies"),
+                DistinctMembers::try_from(vec![body_id.clone()]).expect("distinct bodies"),
             );
             *translation =
-                cadmpeg_ir::features::FiniteVector3::new(Vector3::new(-7.0, 8.0, 9.0)).unwrap();
+                cadmpeg_ir::features::geometry::FiniteVector3::new(Vector3::new(-7.0, 8.0, 9.0))
+                    .unwrap();
             *rotation = Some(AxisAngle {
-                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(10.0, 11.0, 12.0))
-                    .unwrap(),
-                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                    0.0, 1.0, 0.0,
-                ))
-                .unwrap(),
+                origin: FinitePoint3::new(Point3::new(10.0, 11.0, 12.0)).unwrap(),
+                direction: FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap(),
                 angle: Angle::new(0.25).unwrap(),
             });
             *copies = 3;
@@ -766,7 +761,7 @@ fn semantic_writer_round_trips_move_copy_body() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -800,7 +795,7 @@ fn semantic_writer_round_trips_move_copy_body() {
         });
     }
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         translated.ir(),
         translated.source_fidelity(),
         &mut encoded,
@@ -826,10 +821,7 @@ fn semantic_writer_round_trips_move_copy_body() {
 
 #[test]
 fn semantic_writer_round_trips_offset_surface() {
-    use cadmpeg_ir::{
-        features::{FaceSelection, FeatureDefinition, FeatureOperation},
-        scalar::Length,
-    };
+    use cadmpeg_ir::scalar::Length;
 
     let base_bytes = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
@@ -871,7 +863,7 @@ fn semantic_writer_round_trips_offset_surface() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -895,8 +887,6 @@ fn semantic_writer_round_trips_offset_surface() {
 
 #[test]
 fn semantic_writer_round_trips_knit_surface() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
-
     let base_bytes = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
         .decode(
@@ -945,7 +935,7 @@ fn semantic_writer_round_trips_knit_surface() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -973,8 +963,6 @@ fn semantic_writer_round_trips_knit_surface() {
 
 #[test]
 fn semantic_writer_round_trips_cut_with_surface() {
-    use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition, FeatureOperation};
-
     let base_bytes = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
         .decode(
@@ -1017,8 +1005,7 @@ fn semantic_writer_round_trips_cut_with_surface() {
                 panic!("typed surface cut");
             };
             *targets = BodySelection::Bodies(
-                cadmpeg_ir::features::DistinctMembers::try_from(vec![body_id.clone()])
-                    .expect("distinct bodies"),
+                DistinctMembers::try_from(vec![body_id.clone()]).expect("distinct bodies"),
             );
             *tools = FaceSelection::Faces(vec![face_id.clone()]);
             *reverse = Some(true);
@@ -1026,7 +1013,7 @@ fn semantic_writer_round_trips_cut_with_surface() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1051,8 +1038,6 @@ fn semantic_writer_round_trips_cut_with_surface() {
 
 #[test]
 fn semantic_writer_preserves_missing_cut_with_surface_side_flag() {
-    use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition, FeatureOperation};
-
     let base_bytes = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
         .decode(
@@ -1101,34 +1086,28 @@ fn semantic_writer_preserves_missing_cut_with_surface_side_flag() {
 
 #[test]
 fn semantic_writer_round_trips_filled_surface() {
-    filled_surface_round_trip(cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
-        cadmpeg_ir::features::SurfaceContinuity::Curvature,
+    filled_surface_round_trip(FilledSurfaceContinuityState::uniform(
+        cadmpeg_ir::features::surface_inputs::SurfaceContinuity::Curvature,
     ));
 }
 
 #[test]
 fn semantic_writer_accepts_all_equal_per_boundary_continuity() {
     for conditions in [
-        vec![cadmpeg_ir::features::SurfaceContinuity::Curvature],
-        vec![cadmpeg_ir::features::SurfaceContinuity::Curvature; 2],
+        vec![cadmpeg_ir::features::surface_inputs::SurfaceContinuity::Curvature],
+        vec![cadmpeg_ir::features::surface_inputs::SurfaceContinuity::Curvature; 2],
     ] {
-        filled_surface_round_trip(
-            cadmpeg_ir::features::FilledSurfaceContinuityState::per_boundary(
-                cadmpeg_ir::features::NonEmptyMembers::try_from(
-                    conditions.into_iter().map(Into::into).collect::<Vec<_>>(),
-                )
-                .unwrap(),
-            ),
-        );
+        filled_surface_round_trip(FilledSurfaceContinuityState::per_boundary(
+            cadmpeg_ir::features::selections::NonEmptyMembers::try_from(
+                conditions.into_iter().map(Into::into).collect::<Vec<_>>(),
+            )
+            .unwrap(),
+        ));
     }
 }
 
-fn filled_surface_round_trip(
-    edited_continuity: cadmpeg_ir::features::FilledSurfaceContinuityState,
-) {
-    use cadmpeg_ir::features::{
-        EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation, SurfaceContinuity,
-    };
+fn filled_surface_round_trip(edited_continuity: FilledSurfaceContinuityState) {
+    use cadmpeg_ir::features::surface_inputs::SurfaceContinuity;
 
     let base_bytes = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
@@ -1153,7 +1132,7 @@ fn filled_surface_round_trip(
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::FilledSurface {
-            boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Resolved { edges, native: edge_native }),
+            boundary: cadmpeg_ir::features::surface_inputs::SurfaceBoundary::Edges(EdgeSelection::Resolved { edges, native: edge_native }),
             support_faces: FaceSelection::Resolved { faces, native: face_native },
             continuity,
             merge_result: Some(false),
@@ -1178,9 +1157,9 @@ fn filled_surface_round_trip(
             else {
                 panic!("typed filled surface");
             };
-            *boundary = cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Edges(vec![
-                edge_id.clone(),
-            ]));
+            *boundary = cadmpeg_ir::features::surface_inputs::SurfaceBoundary::Edges(
+                EdgeSelection::Edges(vec![edge_id.clone()]),
+            );
             *support_faces = FaceSelection::Faces(vec![face_id.clone()]);
             *continuity = edited_continuity;
             *merge_result = Some(true);
@@ -1188,7 +1167,7 @@ fn filled_surface_round_trip(
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1214,14 +1193,17 @@ fn filled_surface_round_trip(
 }
 
 #[test]
-fn semantic_writer_refuses_filled_surface_weight_loss() {
-    use cadmpeg_ir::features::{
-        FeatureDefinition, FeatureOperation, FilledSurfaceBoundaryCondition,
-        FilledSurfaceContinuityState, NonEmptyMembers,
-    };
+fn semantic_writer_keeps_stored_filled_surface_weights_and_names_the_edit() {
+    use cadmpeg_ir::features::selections::NonEmptyMembers;
+    use cadmpeg_ir::features::surface_inputs::FilledSurfaceBoundaryCondition;
     let mut source = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
-        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &source,
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let edge = base.ir().geometry.edges[0].id.as_str();
     let face = base.ir().geometry.faces[0].id.as_str();
@@ -1230,7 +1212,12 @@ fn semantic_writer_refuses_filled_surface_weight_loss() {
     );
     source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &source,
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     {
@@ -1249,25 +1236,26 @@ fn semantic_writer_refuses_filled_surface_weight_loss() {
             ));
         });
     }
-    let mut encoded = Vec::new();
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut encoded,
-    )
-    .unwrap_err();
+    let unwritten =
+        crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
     assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(ref message) if message.contains("weighted filled-surface condition")),
-        "{error}"
+        unwritten
+            .iter()
+            .any(|message| message.contains("weighted filled-surface condition")),
+        "{unwritten:?}"
     );
 }
 
 #[test]
-fn semantic_writer_refuses_filled_surface_interior_constraints_and_reversed_normal() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef};
+fn semantic_writer_keeps_stored_filled_surface_constraints_and_names_the_edit() {
     let mut source = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
-        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &source,
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     let edge = base.ir().geometry.edges[0].id.as_str();
     let face = base.ir().geometry.faces[0].id.as_str();
@@ -1276,7 +1264,12 @@ fn semantic_writer_refuses_filled_surface_interior_constraints_and_reversed_norm
     );
     source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                &source,
+            )),
+            &DecodeOptions::default(),
+        )
         .unwrap();
     for interior in [true, false] {
         let mut edited = EditableDecodeResult::from(decoded.clone());
@@ -1298,25 +1291,20 @@ fn semantic_writer_refuses_filled_surface_interior_constraints_and_reversed_norm
                 }
             });
         }
-        let mut encoded = Vec::new();
-        let error = crate::test_support::plan_inherited_write(
-            edited.ir(),
-            edited.source_fidelity(),
-            &mut encoded,
-        )
-        .unwrap_err();
+        let unwritten =
+            crate::test_support::unwritten_feature_edits(edited.ir(), edited.source_fidelity());
         assert!(
-            matches!(error, cadmpeg_core::CodecError::NotImplemented(ref message) if message.contains("interior constraints or a reversed normal")),
-            "{error}"
+            unwritten
+                .iter()
+                .any(|message| message.contains("interior constraints or a reversed normal")),
+            "{unwritten:?}"
         );
     }
 }
 
 #[test]
 fn semantic_writer_round_trips_trim_surface() {
-    use cadmpeg_ir::features::{
-        FaceSelection, FeatureDefinition, FeatureOperation, PathRef, TrimRegion,
-    };
+    use cadmpeg_ir::features::surface_inputs::TrimRegion;
 
     let base_bytes = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
@@ -1367,7 +1355,7 @@ fn semantic_writer_round_trips_trim_surface() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1392,9 +1380,7 @@ fn semantic_writer_round_trips_trim_surface() {
 
 #[test]
 fn semantic_writer_round_trips_extend_surface() {
-    use cadmpeg_ir::features::{
-        FaceSelection, FeatureDefinition, FeatureOperation, SurfaceExtension,
-    };
+    use cadmpeg_ir::features::surface_inputs::SurfaceExtension;
 
     let base_bytes = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
@@ -1441,7 +1427,7 @@ fn semantic_writer_round_trips_extend_surface() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1467,9 +1453,7 @@ fn semantic_writer_round_trips_extend_surface() {
 
 #[test]
 fn semantic_writer_round_trips_all_ruled_surface_modes() {
-    use cadmpeg_ir::features::{
-        EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation, RuledSurfaceMode,
-    };
+    use cadmpeg_ir::features::surface_inputs::RuledSurfaceMode;
     use cadmpeg_ir::math::Vector3;
 
     let base_bytes = sldprt_with_body(&triangle_body());
@@ -1529,7 +1513,7 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1559,7 +1543,7 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
         });
     }
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         regenerated.ir(),
         regenerated.source_fidelity(),
         &mut encoded,
@@ -1581,7 +1565,6 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
 
 #[test]
 fn semantic_writer_round_trips_projected_curve() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation, PathRef};
     use cadmpeg_ir::math::Vector3;
 
     let base_bytes = sldprt_with_body(&triangle_body());
@@ -1609,7 +1592,7 @@ fn semantic_writer_round_trips_projected_curve() {
         FeatureDefinition::Operation(FeatureOperation::ProjectedCurve {
             source: PathRef::Edges(edges),
             target_faces: FaceSelection::Resolved { faces, native },
-            direction: cadmpeg_ir::features::CurveProjectionDirection::Vector(checked_geometry_1),
+            direction: cadmpeg_ir::features::surface_inputs::CurveProjectionDirection::Vector(checked_geometry_1),
             bidirectional: Some(false),
         }) if (
             edges == std::slice::from_ref(&edge_id)
@@ -1633,15 +1616,15 @@ fn semantic_writer_round_trips_projected_curve() {
             };
             *source = PathRef::Edges(vec![edge_id.clone()]);
             *target_faces = FaceSelection::Faces(vec![face_id.clone()]);
-            *direction = cadmpeg_ir::features::CurveProjectionDirection::State(
-                cadmpeg_ir::features::CurveProjectionDirectionState::TargetNormal,
+            *direction = cadmpeg_ir::features::surface_inputs::CurveProjectionDirection::State(
+                cadmpeg_ir::features::surface_inputs::CurveProjectionDirectionState::TargetNormal,
             );
             *bidirectional = Some(true);
         });
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1659,8 +1642,8 @@ fn semantic_writer_round_trips_projected_curve() {
     assert!(matches!(
         regenerated.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::ProjectedCurve {
-            direction: cadmpeg_ir::features::CurveProjectionDirection::State(
-                cadmpeg_ir::features::CurveProjectionDirectionState::TargetNormal
+            direction: cadmpeg_ir::features::surface_inputs::CurveProjectionDirection::State(
+                cadmpeg_ir::features::surface_inputs::CurveProjectionDirectionState::TargetNormal
             ),
             bidirectional: Some(true),
             ..
@@ -1670,8 +1653,6 @@ fn semantic_writer_round_trips_projected_curve() {
 
 #[test]
 fn semantic_writer_round_trips_ordered_composite_curve() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef};
-
     let base_bytes = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
         .decode(
@@ -1718,7 +1699,7 @@ fn semantic_writer_round_trips_ordered_composite_curve() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1746,9 +1727,6 @@ fn semantic_writer_round_trips_ordered_composite_curve() {
 
 #[test]
 fn semantic_writer_round_trips_typed_revolution() {
-    use cadmpeg_ir::features::{
-        AngularTermination, BooleanOp, FeatureDefinition, FeatureOperation, RevolveExtent,
-    };
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -1768,7 +1746,7 @@ fn semantic_writer_round_trips_typed_revolution() {
             op: BooleanOp::Join,
         }) if construction.profile().is_none()
             && construction.axis().is_some_and(|axis| matches!(axis,
-                cadmpeg_ir::features::RevolutionAxis {
+                cadmpeg_ir::features::revolve::RevolutionAxis {
                     origin: geometry_1,
                     direction: geometry_2,
                     ..
@@ -1790,9 +1768,8 @@ fn semantic_writer_round_trips_typed_revolution() {
         let Some(axis) = construction.axis_mut() else {
             panic!("resolved revolution axis");
         };
-        axis.origin = cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap();
-        axis.direction =
-            cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap();
+        axis.origin = FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap();
+        axis.direction = FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap();
         *construction.extent_mut().expect("fixture extent") = RevolveExtent::OneSided {
             termination: AngularTermination::Angle {
                 angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
@@ -1803,7 +1780,7 @@ fn semantic_writer_round_trips_typed_revolution() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1824,7 +1801,6 @@ fn semantic_writer_round_trips_typed_revolution() {
 
 #[test]
 fn semantic_writer_retains_partial_native_revolution_construction() {
-    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -1850,7 +1826,7 @@ fn semantic_writer_retains_partial_native_revolution_construction() {
             op: BooleanOp::Unresolved,
         }) if construction.profile().is_none()
             && construction.axis().is_some_and(|axis| matches!(axis,
-                cadmpeg_ir::features::RevolutionAxis {
+                cadmpeg_ir::features::revolve::RevolutionAxis {
                     origin: geometry_1,
                     direction: geometry_2,
                     ..
@@ -1908,10 +1884,6 @@ fn semantic_writer_retains_partial_native_revolution_construction() {
 
 #[test]
 fn semantic_writer_round_trips_all_revolution_extents() {
-    use cadmpeg_ir::features::{
-        AngularTermination, BooleanOp, FeatureDefinition, FeatureOperation, RevolveExtent,
-    };
-
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
         0x42,
@@ -1928,7 +1900,7 @@ fn semantic_writer_round_trips_all_revolution_extents() {
         FeatureDefinition::Operation(FeatureOperation::Revolve {
             construction,
             op: BooleanOp::Join,
-        }) if matches!(construction.profile(), Some(cadmpeg_ir::features::PlanarProfileRef::Feature(profile)) if profile == &profile_feature)
+        }) if matches!(construction.profile(), Some(cadmpeg_ir::features::profiles::PlanarProfileRef::Feature(profile)) if profile == &profile_feature)
             && matches!(construction.extent(), Some(RevolveExtent::OneSided {
                     termination: AngularTermination::Angle { angle: value },
                 }) if (value.get() - 90f64.to_radians()).abs() < EPS_REVERSED_REVOLUTION_ANGLE)
@@ -1975,7 +1947,7 @@ fn semantic_writer_round_trips_all_revolution_extents() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,

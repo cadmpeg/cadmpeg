@@ -158,22 +158,24 @@ fn datum_axis_bound_dimensions_resolve_within_the_consuming_definition() {
             definition.kind = Some(crate::products::ProductDefinitionKind::Part);
             ir.model.product_definitions.push(definition);
         }
-        ir.model.parameters.push(crate::features::DesignParameter {
-            product_definition: parameter_scope.map(id),
-            id: parameter,
-            owner: None,
-            ordinal: 0,
-            name: "Length".into(),
-            expression: "1 mm".into(),
-            display: None,
-            value: Some(crate::features::ParameterValue::Length(
-                crate::scalar::Length::new(1.0).unwrap(),
-            )),
-            dependencies: DistinctMembers::default(),
-            properties: std::collections::BTreeMap::new(),
-            pmi: None,
-            native_ref: None,
-        });
+        ir.model
+            .parameters
+            .push(crate::features::parameters::DesignParameter {
+                product_definition: parameter_scope.map(id),
+                id: parameter,
+                owner: None,
+                ordinal: 0,
+                name: "Length".into(),
+                expression: "1 mm".into(),
+                display: None,
+                value: Some(crate::features::parameters::ParameterValue::Length(
+                    crate::scalar::Length::new(1.0).unwrap(),
+                )),
+                dependencies: DistinctMembers::default(),
+                properties: std::collections::BTreeMap::new(),
+                pmi: None,
+                native_ref: None,
+            });
         let identity = owner.id.clone();
         ir.model.features.push(owner);
         let report = crate::validate::validate_neutral(&ir, Vec::new()).unwrap();
@@ -224,7 +226,7 @@ fn datum_axis_datum_parts_match_the_selected_known_family() {
     ] {
         let operation = if family == 1 {
             FeatureOperation::DatumCoordinateSystem {
-                frame: crate::features::FeatureCoordinateFrame::new(
+                frame: crate::features::geometry::FeatureCoordinateFrame::new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
@@ -342,7 +344,7 @@ fn datum_axis_option_keys_have_one_classification_and_distinct_literals_survive(
         "test:placed:parameter#one".to_owned(),
     )]);
     let replacements = TextReplacements::build(replacements.iter()).unwrap();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut map = IdentityMap::new(|id: &str| Ok(id.replace("test:model:", "test:placed:")))
         .with_text_replacements(&replacements);
     let axis = axis.rewrite_identities(&ctx, &mut map).unwrap();

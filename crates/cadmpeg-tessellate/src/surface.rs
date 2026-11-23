@@ -15,9 +15,9 @@ use cadmpeg_ir::eval::{
     model_surface_partials_by_id, model_surface_point_by_id, nurbs_surface_parameter_near_point,
     SurfacePartials,
 };
-use cadmpeg_ir::geometry::{
-    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedSurfaceGeometry,
-};
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::index::{ModelIndex, StandardIndex};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -357,7 +357,7 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
                 model_surface_point_by_id(admission, self.index, self.id, u, v)
             },
         ))
-        .map(|point| point.map(cadmpeg_ir::features::FinitePoint3::get))
+        .map(|point| point.map(cadmpeg_ir::features::geometry::FinitePoint3::get))
         .map_err(resource)?;
         self.points.borrow_mut().insert(bits(uv), point);
         Ok(point)
@@ -600,7 +600,7 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
                 }),
             )
             .map_err(resource)?;
-            let Some(on) = on.map(cadmpeg_ir::features::FinitePoint3::get) else {
+            let Some(on) = on.map(cadmpeg_ir::features::geometry::FinitePoint3::get) else {
                 continue;
             };
             let (gap, uv) = match sweep.motion {

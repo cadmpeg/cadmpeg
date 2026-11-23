@@ -95,7 +95,7 @@ fn prepared(
         assets: crate::loader::companions::Directory::beside(Path::new("input")),
         destination: ResolvedDestination::Stdout,
         loss_policy,
-        allow_errors: false,
+        reject_errors: false,
     }
 }
 
@@ -204,8 +204,10 @@ fn rhino_omitted_product_structure_is_rejected_by_the_shared_plan_gate() {
     let mut ir = CadIr::empty();
     ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         cadmpeg_ir::ids::PointId::mint("cadir:model:point#pin").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
-            .expect("finite position"),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            0.0, 0.0, 0.0,
+        ))
+        .expect("finite position"),
         None,
     ));
     ir.model
@@ -234,15 +236,12 @@ fn rhino_omitted_product_structure_is_rejected_by_the_shared_plan_gate() {
             general_tolerance: None,
             active: None,
         });
-    let mut conversion = prepared(
+    let conversion = prepared(
         ir,
         Format::Rhino,
         Box::new(cadmpeg_codec_rhino::RhinoCodec),
         LossPolicy::RejectExport,
     );
-    // The lone point is an orphan carrier, a check error the Rhino payload
-    // carries. This test covers the export-loss gate, so it permits errors.
-    conversion.allow_errors = true;
     let Err(error) = conversion.plan() else {
         panic!("the omitted product definition must refuse");
     };
@@ -267,8 +266,7 @@ struct NotImplementedEncoder;
 impl cadmpeg_ir::codec::write::EncoderBackend for NotImplementedEncoder {
     const FORMAT: cadmpeg_ir::codec::FormatId =
         cadmpeg_ir::codec::FormatId::new("not-implemented-test");
-    const NEEDS: cadmpeg_ir::codec::write::DepthNeed =
-        cadmpeg_ir::codec::write::DepthNeed::AtLeast(cadmpeg_core::decode::DecodeDepth::Full);
+    const REQUEST: cadmpeg_core::decode::DecodeDepth = cadmpeg_core::decode::DecodeDepth::Full;
     type Target = cadmpeg_ir::codec::write::target::DialectFree;
     const TARGET: Self::Target = cadmpeg_ir::codec::write::target::DialectFree;
 
@@ -301,6 +299,55 @@ fn not_implemented_plan_failure_is_not_reclassified_as_export_loss() {
         "not implemented yet: writer path is not implemented"
     );
     assert!(error.refusal().is_none());
+}
+
+/// A failed plan returns its own refusal by default, and the check refusal
+/// under `reject_errors`.
+#[test]
+fn a_failed_plan_refuses_on_check_errors_only_under_reject_errors() {
+    use crate::application::refusal::{CheckOperation, ConversionRefusal};
+    use cadmpeg_ir::report::{
+        check::{Check, Finding},
+        Severity,
+    };
+
+    for reject_errors in [false, true] {
+        let mut conversion = prepared(
+            CadIr::empty(),
+            Format::Cadir,
+            Box::new(NotImplementedEncoder),
+            LossPolicy::Allow,
+        );
+        conversion.reject_errors = reject_errors;
+        conversion.validation.findings.push(Finding {
+            related: Vec::new(),
+            check: Check::Counts,
+            severity: Severity::Error,
+            message: "synthetic document-wide error".into(),
+            entity: None,
+        });
+        let Err(error) = conversion.plan() else {
+            panic!("the synthetic writer is not implemented");
+        };
+        if reject_errors {
+            assert!(
+                matches!(
+                    error.refusal(),
+                    Some(ConversionRefusal::CheckFailed {
+                        operation: CheckOperation::Export { carried: 1 },
+                        ..
+                    })
+                ),
+                "{error:?}"
+            );
+        } else {
+            assert_eq!(
+                error.to_string(),
+                "not implemented yet: writer path is not implemented"
+            );
+            assert!(error.refusal().is_none());
+        }
+    }
 }
 
 /// Flag absence is always `Inherit`; the encoder decides what that means.
@@ -484,7 +531,7 @@ fn checked_design_history() -> (LoadedDocument, cadmpeg_ir::report::check::Valid
 }
 
 #[cfg(all(feature = "fcstd", feature = "step"))]
-fn prepare_cadir_for_step(ir: &CadIr, path: &Path) -> PreparedConversion {
+fn prepare_cadir_for_step(ir: &CadIr, path: &Path, reject_errors: bool) -> PreparedConversion {
     use cadmpeg_ir::codec::write::CadirEncoder;
     use cadmpeg_ir::codec::DecodeOptions;
     use cadmpeg_registry::InputCatalog;
@@ -505,7 +552,7 @@ fn prepare_cadir_for_step(ir: &CadIr, path: &Path) -> PreparedConversion {
         export_target(TargetSelection::new(Format::Step, None)),
         &super::ConversionPolicy {
             losses: LossPolicy::Allow,
-            allow_errors: false,
+            reject_errors,
             destination: DestinationPolicy::Stdout {
                 allow_binary: false,
             },
@@ -516,7 +563,7 @@ fn prepare_cadir_for_step(ir: &CadIr, path: &Path) -> PreparedConversion {
 
 #[cfg(all(feature = "fcstd", feature = "step"))]
 #[test]
-fn a_design_arena_error_does_not_block_a_step_export() {
+fn a_design_arena_error_does_not_refuse_a_step_export_under_reject_errors() {
     use cadmpeg_ir::features::FeatureId;
     use cadmpeg_ir::report::{check::Check, Severity};
 
@@ -525,7 +572,8 @@ fn a_design_arena_error_does_not_block_a_step_export() {
     document.ir.model.parameters[0].owner =
         Some(FeatureId::mint("fcstd:test:feature#missing").expect("valid absent feature identity"));
     let directory = tempfile::tempdir().expect("temporary CADIR directory");
-    let conversion = prepare_cadir_for_step(&document.ir, &directory.path().join("design.json"));
+    let conversion =
+        prepare_cadir_for_step(&document.ir, &directory.path().join("design.json"), true);
     let planned = conversion.plan().expect("STEP drops the design arenas");
     let report = &planned.prepared().validation;
     assert!(
@@ -554,7 +602,7 @@ fn a_design_arena_error_does_not_block_a_step_export() {
 
 #[cfg(all(feature = "fcstd", feature = "step"))]
 #[test]
-fn a_brep_error_blocks_a_step_export() {
+fn a_brep_error_refuses_a_step_export_under_reject_errors() {
     use crate::application::refusal::CheckOperation;
     use cadmpeg_ir::ids::SurfaceId;
     use cadmpeg_ir::report::Severity;
@@ -564,7 +612,8 @@ fn a_brep_error_blocks_a_step_export() {
     document.ir.geometry.faces[0].surface =
         SurfaceId::mint("fcstd:test:surface#missing").expect("valid absent surface identity");
     let directory = tempfile::tempdir().expect("temporary CADIR directory");
-    let conversion = prepare_cadir_for_step(&document.ir, &directory.path().join("brep.json"));
+    let conversion =
+        prepare_cadir_for_step(&document.ir, &directory.path().join("brep.json"), true);
     let Err(error) = conversion.plan() else {
         panic!("STEP must refuse an error in the B-rep it writes");
     };
@@ -610,7 +659,7 @@ fn a_brep_error_blocks_a_step_export() {
 
 #[cfg(all(feature = "fcstd", feature = "step"))]
 #[test]
-fn an_error_without_an_entity_blocks_a_step_export() {
+fn an_error_without_an_entity_refuses_a_step_export_under_reject_errors() {
     use crate::application::refusal::CheckOperation;
     use cadmpeg_ir::report::{
         check::{Check, Finding},
@@ -626,6 +675,7 @@ fn an_error_without_an_entity_blocks_a_step_export() {
             export_target(TargetSelection::new(Format::Step, None)).encoder,
             LossPolicy::Allow,
         );
+        conversion.reject_errors = true;
         assert_eq!(conversion.validation.error_count(), 0);
         conversion.validation.findings.push(Finding {
             related: Vec::new(),
@@ -669,7 +719,7 @@ fn an_error_without_an_entity_blocks_a_step_export() {
 
 #[cfg(feature = "fcstd")]
 #[test]
-fn a_design_arena_error_blocks_a_freecad_round_trip() {
+fn a_design_arena_error_refuses_a_freecad_round_trip_under_reject_errors() {
     use crate::application::refusal::{CheckOperation, ConversionRefusal};
     use cadmpeg_ir::report::{
         check::{Check, Finding},
@@ -688,7 +738,7 @@ fn a_design_arena_error_blocks_a_freecad_round_trip() {
             assets: crate::loader::companions::Directory::beside(Path::new("input")),
             destination: ResolvedDestination::Stdout,
             loss_policy: LossPolicy::Allow,
-            allow_errors: false,
+            reject_errors: true,
         };
         if inject_error {
             conversion.validation.findings.push(Finding {
@@ -722,7 +772,7 @@ fn a_design_arena_error_blocks_a_freecad_round_trip() {
 
 #[cfg(all(feature = "fcstd", feature = "step"))]
 #[test]
-fn allow_errors_writes_past_a_carried_error() {
+fn a_carried_error_does_not_refuse_the_export_by_default() {
     use cadmpeg_ir::report::{
         check::{Check, Finding},
         Severity,
@@ -743,16 +793,15 @@ fn allow_errors_writes_past_a_carried_error() {
         message: "synthetic document-wide error".into(),
         entity: None,
     });
-    conversion.allow_errors = true;
     let planned = conversion
         .plan()
-        .expect("allow-errors permits a carried error");
+        .expect("a carried error is reported, and the export proceeds");
     assert_eq!(planned.carried_errors(), 1);
 }
 
 #[cfg(feature = "step")]
 #[test]
-fn an_f3d_native_design_record_error_does_not_block_a_step_export() {
+fn an_f3d_native_design_record_error_does_not_refuse_a_step_export_under_reject_errors() {
     use cadmpeg_ir::report::{
         check::{Check, Finding},
         Severity,
@@ -764,6 +813,7 @@ fn an_f3d_native_design_record_error_does_not_block_a_step_export() {
         export_target(TargetSelection::new(Format::Step, None)).encoder,
         LossPolicy::Allow,
     );
+    conversion.reject_errors = true;
     assert_eq!(conversion.validation.error_count(), 0);
     let finding = Finding {
         related: Vec::new(),

@@ -14,15 +14,16 @@ use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput};
 use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
 use std::io::Cursor;
+use std::sync::LazyLock;
+
+/// The full decode of `CORE_DESIGN_PRODUCT`, shared by the tests that only
+/// read it or edit a clone of it.
+static CORE_DESIGN: LazyLock<cadmpeg_ir::DecodeResult> =
+    LazyLock::new(|| decode_at(DecodeDepth::Full));
 
 #[test]
 pub(crate) fn write_target_and_source_requirements_are_explicit() {
-    let decoded = FcstdCodec
-        .decode(
-            &mut Cursor::new(CORE_DESIGN_PRODUCT),
-            &DecodeOptions::default(),
-        )
-        .expect("decode source");
+    let decoded = &*CORE_DESIGN;
     let unsupported = FcstdCodec
         .plan(
             EncodeInput::new(decoded.ir(), None),
@@ -116,12 +117,7 @@ fn entry_payloads(archive: &[u8]) -> std::collections::BTreeMap<String, Vec<u8>>
 /// This is the catalog dialect, and the report states it.
 #[test]
 fn inherit_preserves_a_schema_four_source_entry_for_entry() {
-    let decoded = FcstdCodec
-        .decode(
-            &mut Cursor::new(CORE_DESIGN_PRODUCT),
-            &DecodeOptions::default(),
-        )
-        .expect("decode source");
+    let decoded = &*CORE_DESIGN;
     let plan = inherit(decoded.ir()).expect("schema 4 is preserved");
 
     assert!(matches!(
@@ -271,7 +267,7 @@ fn inherit_refuses_a_schema_two_source_with_no_usable_baseline() {
     ir.native
         .namespace_mut("fcstd")
         .set_arena::<DocumentFacts>(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "document",
             &[],
         )
@@ -367,13 +363,7 @@ fn an_explicit_schema_four_target_refuses_a_schema_two_source_by_name() {
 /// with every other encoder, and quotes no dialect id because none exists.
 #[test]
 fn inherit_refuses_a_source_that_records_no_dialect() {
-    let decoded = FcstdCodec
-        .decode(
-            &mut Cursor::new(CORE_DESIGN_PRODUCT),
-            &DecodeOptions::default(),
-        )
-        .expect("decode source");
-    let (mut ir, _, _) = decoded.into_parts();
+    let mut ir = CORE_DESIGN.ir().clone();
     let source = ir.source.take().expect("the decode records a source");
     let format = source.format().to_owned();
     ir.source = Some(
@@ -466,6 +456,61 @@ fn every_preserved_write_re_decodes_as_the_dialect_the_report_named() {
     }
 }
 
+/// A sidecar that marks a retained record `untyped` patches as an unmarked
+/// one does, and the report carries both carried-source codes naming the
+/// record.
+#[test]
+fn an_untyped_retained_record_is_patched_and_reported() {
+    let decoded = decode_at(DecodeDepth::Full);
+    let (ir, _, mut fidelity) = decoded.into_parts();
+    let write = |fidelity: &cadmpeg_ir::SourceFidelity| {
+        let plan = Encoder::plan(
+            &FcstdCodec,
+            EncodeInput::new(&ir, Some(fidelity)),
+            TargetRequest::Inherit,
+        )
+        .expect("the retained document patches");
+        let mut bytes = Vec::new();
+        let report = plan.write_to(&mut bytes).expect("the patch writes");
+        (report, bytes)
+    };
+    let (unmarked, unmarked_bytes) = write(&fidelity);
+    assert!(matches!(
+        unmarked.write_path(),
+        cadmpeg_ir::report::export::WritePath::Patched { .. }
+    ));
+    assert!(!unmarked
+        .losses
+        .iter()
+        .any(|loss| loss.code.namespace() == "export"));
+    fidelity
+        .insert_retained_record(
+            "fcstd:test:skipped#0"
+                .to_owned()
+                .try_into()
+                .expect("record id"),
+            cadmpeg_ir::RetainedSourceRecord::whole("", b"skipped".to_vec())
+                .with_untyped([cadmpeg_core::decode::ArenaClass::Design]),
+        )
+        .expect("a new record id");
+    let (marked, marked_bytes) = write(&fidelity);
+    assert_eq!(marked_bytes, unmarked_bytes);
+    let carried: Vec<_> = marked
+        .losses
+        .iter()
+        .filter(|loss| loss.code.namespace() == "export")
+        .map(|loss| (loss.code.local_code(), loss.severity, loss.message.as_str()))
+        .collect();
+    assert_eq!(carried.len(), 2, "{carried:?}");
+    assert_eq!(carried[0].0, "source.carried");
+    assert_eq!(carried[0].1, cadmpeg_ir::report::Severity::Info);
+    assert_eq!(carried[1].0, "source.unchecked");
+    assert_eq!(carried[1].1, cadmpeg_ir::report::Severity::Warning);
+    assert!(carried
+        .iter()
+        .all(|(_, _, message)| message.contains("fcstd:test:skipped#0 (design)")));
+}
+
 fn decode_at(depth: DecodeDepth) -> cadmpeg_ir::DecodeResult {
     FcstdCodec
         .decode(
@@ -486,7 +531,7 @@ fn recorded_digest(ir: &CadIr) -> Option<&String> {
 
 #[test]
 fn only_a_full_decode_records_the_digest() {
-    let full = decode_at(DecodeDepth::Full);
+    let full = &*CORE_DESIGN;
     assert_eq!(full.ir().scope(), DecodeDepth::Full.scope());
     assert!(recorded_digest(full.ir()).is_some());
     for depth in [DecodeDepth::Geometry, DecodeDepth::Container] {
@@ -496,52 +541,92 @@ fn only_a_full_decode_records_the_digest() {
     }
 }
 
-/// A document below `Full` has no digest to compare, so the depth gate must
-/// refuse it, edited or not, before the writer looks for a baseline.
+/// Writes `ir` through `Inherit` and returns the report and the file.
+fn patched(ir: &CadIr) -> (cadmpeg_ir::report::export::ExportReport, Vec<u8>) {
+    let mut bytes = Vec::new();
+    let report = inherit(ir)
+        .expect("the retained document patches")
+        .write_to(&mut bytes)
+        .expect("the patch writes");
+    assert!(matches!(
+        report.write_path(),
+        cadmpeg_ir::report::export::WritePath::Patched { .. }
+    ));
+    (report, bytes)
+}
+
+/// The `export:` losses of `report`, as code and severity.
+fn export_losses(
+    report: &cadmpeg_ir::report::export::ExportReport,
+) -> Vec<(&str, cadmpeg_ir::report::Severity)> {
+    report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.namespace() == "export")
+        .map(|loss| (loss.code.local_code(), loss.severity))
+        .collect()
+}
+
+/// A `Geometry` document records no digest, so its edits are not known. The
+/// writer patches the retained document as it patches the unedited `Full` one
+/// and reports `export:edit.unverified`, edited or not.
 #[test]
-fn a_document_below_full_is_refused_by_depth_edited_or_not() {
-    for depth in [DecodeDepth::Geometry, DecodeDepth::Container] {
-        let decoded = decode_at(depth);
-        let mut edited = decoded.ir().clone();
-        edited
-            .source
-            .as_mut()
-            .expect("the fixture records a source")
-            .attributes
-            .insert(
-                cadmpeg_core::nonblank_const!("edited_since_decode"),
-                "yes".to_owned(),
-            );
-        for ir in [decoded.ir(), &edited] {
-            let Err(CodecError::InsufficientDepth {
-                needed, recorded, ..
-            }) = inherit(ir)
-            else {
-                panic!("a {depth} document must be refused for its depth");
-            };
-            assert_eq!(needed, DecodeDepth::Full);
-            assert_eq!(recorded, depth);
-        }
+fn a_geometry_document_is_patched_and_its_edits_reported_unverified() {
+    let (full_report, full_bytes) = patched(CORE_DESIGN.ir());
+    assert_eq!(export_losses(&full_report), []);
+    let decoded = decode_at(DecodeDepth::Geometry);
+    let mut edited = decoded.ir().clone();
+    edited
+        .source
+        .as_mut()
+        .expect("the fixture records a source")
+        .attributes
+        .insert(
+            cadmpeg_core::nonblank_const!("edited_since_decode"),
+            "yes".to_owned(),
+        );
+    for ir in [decoded.ir(), &edited] {
+        let (report, bytes) = patched(ir);
+        assert_eq!(bytes, full_bytes);
+        assert_eq!(
+            export_losses(&report),
+            [("edit.unverified", cadmpeg_ir::report::Severity::Warning)]
+        );
     }
 }
 
-/// A `Full` document that lost its digest cannot prove that it is unedited.
+/// A `Container` document retains no archive entry, so this writer, which has
+/// no synthesis path, holds no source bytes to write.
 #[test]
-fn a_full_document_without_its_digest_is_refused() {
-    let decoded = decode_at(DecodeDepth::Full);
-    let mut stripped = decoded.ir().clone();
+fn a_container_document_is_an_unsupported_target() {
+    let decoded = decode_at(DecodeDepth::Container);
+    let error = inherit(decoded.ir()).expect_err("no entry is retained");
+    let CodecError::UnsupportedTarget(refusal) = &error else {
+        panic!("expected a target refusal, got {error}");
+    };
+    assert_eq!(refusal.format(), "fcstd");
+}
+
+/// A `Full` document that lost its digest cannot prove that it is unedited:
+/// it is patched and reported as a document below `Full` is.
+#[test]
+fn a_full_document_without_its_digest_is_patched_and_reported_unverified() {
+    let (_, unedited) = patched(CORE_DESIGN.ir());
+    let mut stripped = CORE_DESIGN.ir().clone();
     stripped
         .source
         .as_mut()
         .expect("the fixture records a source")
         .attributes
         .remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
-    let Err(CodecError::NotImplemented(message)) = inherit(&stripped) else {
-        panic!("a document with no digest must be refused");
-    };
-    assert!(
-        message.contains(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-        "{message}"
+    let (report, bytes) = patched(&stripped);
+    assert_eq!(
+        bytes, unedited,
+        "the stripped document patches as the unedited one"
+    );
+    assert_eq!(
+        export_losses(&report),
+        [("edit.unverified", cadmpeg_ir::report::Severity::Warning)]
     );
 }
 
@@ -549,12 +634,7 @@ fn a_full_document_without_its_digest_is_refused() {
 /// serializer. It is refused rather than written as the unedited source.
 #[test]
 fn a_neutral_edit_is_refused_and_the_unedited_document_still_writes() {
-    let decoded = FcstdCodec
-        .decode(
-            &mut Cursor::new(CORE_DESIGN_PRODUCT),
-            &DecodeOptions::default(),
-        )
-        .expect("decode source");
+    let decoded = &*CORE_DESIGN;
     let mut control = Vec::new();
     inherit(decoded.ir())
         .expect("an unedited document is preserved")

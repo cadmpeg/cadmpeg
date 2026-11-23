@@ -1,24 +1,43 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rewrite the identities owned by these fields.
 
-use super::{
+use super::{CosmeticThreadExtent, PrincipalPlane, UnresolvedFamily};
+use crate::features::binders::{
     BinderCopyOnChange, BinderLifecycle, BinderOffset, BinderOffsetJoin, BinderPlacement,
-    BodyRetentionMode, BodyTrimSide, BooleanKind, BooleanOp, CoilExtent, CoilSection,
-    CoilSectionPlacement, CosmeticThreadExtent, CurveProjectionDirection,
-    CurveProjectionDirectionState, DecalMapping, DesignConfiguration, DesignParameter,
-    DimensionDisplay, FeatureCircularArc, FeatureCoordinateFrame, FeatureEllipticArc,
-    FeatureImageBounds, FeatureInputTopology, FeatureLineSegment, FeatureResultMembers,
-    FeatureResultTopology, FeatureTreeNodeRole, FeatureUnitPlaneFrame,
-    FilledSurfaceBoundaryCondition, FlexForm, FlexMode, FuzzyTolerance, GeometryImportFormat,
-    HelicalSweepLaw, HelicalSweepTravel, HelixConstructionStyle, HelixShape,
-    HistoricalEdgeGeometry, InnerWireTaper, NoGeneratedSection, ParameterPmi, PmiDimensionSubtype,
-    PolygonSideCount, PrincipalPlane, RevolutionFuseOrder, RibDraft, RibSide,
-    RuledCurveOrientation, RuledSurfaceCorner, ScaleFactors, SheetMetalBendPosition,
-    SheetMetalHeightDatum, SheetMetalHemBendPosition, SheetMetalHemDirection,
-    SheetMetalThicknessSide, ShellJoin, ShellMode, SolidSweepOperation, SurfaceContinuity,
-    SurfaceExtension, SurfaceProjectionMode, SweepPathExtent, SweepTransformation, SweepTransition,
-    ThickenSide, UnresolvedFamily, WrapMode,
 };
+use crate::features::datums::DecalMapping;
+use crate::features::direct_edit::{FlexForm, FlexMode, ScaleFactors, ThickenSide};
+use crate::features::evaluation::{
+    EdgeSupport, FeatureInputTopology, FeatureResultMembers, FeatureResultTopology,
+    HistoricalEdgeCarrier, HistoricalEdgeGeometry, HistoricalFaceOwner,
+};
+use crate::features::geometry::{
+    FeatureCircularArc, FeatureCoordinateFrame, FeatureEllipticArc, FeatureImageBounds,
+    FeatureLineSegment, FeatureUnitPlaneFrame,
+};
+use crate::features::operation_settings::{
+    BodyRetentionMode, BodyTrimSide, BooleanKind, BooleanOp, FuzzyTolerance, GeometryImportFormat,
+    RuledCurveOrientation, ShellJoin, ShellMode,
+};
+use crate::features::parameters::{
+    DesignConfiguration, DesignParameter, DimensionDisplay, ParameterPmi, PmiDimensionSubtype,
+    PolygonSideCount,
+};
+use crate::features::revolve::{RevolutionFuseOrder, RibDraft, RibSide};
+use crate::features::sheet_metal_forms::{
+    SheetMetalBendPosition, SheetMetalHeightDatum, SheetMetalHemBendPosition,
+    SheetMetalHemDirection, SheetMetalThicknessSide,
+};
+use crate::features::surface_inputs::{
+    CurveProjectionDirection, CurveProjectionDirectionState, FilledSurfaceBoundaryCondition,
+    RuledSurfaceCorner, SurfaceContinuity, SurfaceExtension, SurfaceProjectionMode, WrapMode,
+};
+use crate::features::sweeps::{
+    CoilExtent, CoilSection, CoilSectionPlacement, HelicalSweepLaw, HelicalSweepTravel,
+    HelixConstructionStyle, HelixShape, InnerWireTaper, NoGeneratedSection, SolidSweepOperation,
+    SweepPathExtent, SweepTransformation, SweepTransition,
+};
+use crate::features::tree::FeatureTreeNodeRole;
 
 rewrite_scalar!(BinderCopyOnChange);
 rewrite_scalar!(BinderLifecycle);
@@ -43,8 +62,11 @@ rewrite_scalar!(FeatureCircularArc);
 rewrite_scalar!(FeatureCoordinateFrame);
 rewrite_scalar!(FeatureEllipticArc);
 rewrite_scalar!(FeatureImageBounds);
-rewrite_record!(FeatureInputTopology, []; {id, input_of, bodies, faces, edges, vertices, edge_geometry, native_ref});
-rewrite_record!(HistoricalEdgeGeometry, []; {edge, interior, tangent, start, end, faces});
+rewrite_record!(FeatureInputTopology, []; {id, input_of, bodies, faces, edges, vertices, edge_geometry, face_owners, native_ref});
+rewrite_record!(HistoricalFaceOwner, []; {face, body});
+rewrite_record!(EdgeSupport, []; {face, normal, with_edge});
+rewrite_scalar!(HistoricalEdgeCarrier);
+rewrite_record!(HistoricalEdgeGeometry, []; {edge, interior, tangent, start, end, faces, carrier, supports});
 rewrite_scalar!(FeatureLineSegment);
 rewrite_record!(FeatureResultMembers, []; {bodies, faces, edges, vertices});
 rewrite_record!(FeatureResultTopology, []; {id, output_of, members, native_ref});
@@ -71,7 +93,7 @@ rewrite_scalar!(RuledCurveOrientation);
 rewrite_scalar!(RuledSurfaceCorner);
 rewrite_scalar!(ScaleFactors);
 rewrite_scalar!(SheetMetalBendPosition);
-rewrite_scalar!(super::SheetMetalCornerEffect);
+rewrite_scalar!(crate::features::sheet_metal_forms::SheetMetalCornerEffect);
 rewrite_scalar!(SheetMetalHeightDatum);
 rewrite_scalar!(SheetMetalHemBendPosition);
 rewrite_scalar!(SheetMetalHemDirection);
@@ -89,13 +111,13 @@ rewrite_scalar!(ThickenSide);
 rewrite_scalar!(UnresolvedFamily);
 rewrite_scalar!(WrapMode);
 
-rewrite_scalar!(super::SweepCircularRegion);
+rewrite_scalar!(crate::features::sweeps::SweepCircularRegion);
 
 rewrite_scalar!(FilledSurfaceBoundaryCondition);
 
-rewrite_scalar!(super::SheetMetalReliefForm);
-rewrite_scalar!(super::SheetMetalTransitionForm);
-rewrite_record!(super::SheetMetalRelief, []; {form, width, depth, minimum_remnant, seam_gap});
-rewrite_record!(super::SheetMetalTransition, []; {form, radius});
+rewrite_scalar!(crate::features::sheet_metal_forms::SheetMetalReliefForm);
+rewrite_scalar!(crate::features::sheet_metal_forms::SheetMetalTransitionForm);
+rewrite_record!(crate::features::sheet_metal_forms::SheetMetalRelief, []; {form, width, depth, minimum_remnant, seam_gap});
+rewrite_record!(crate::features::sheet_metal_forms::SheetMetalTransition, []; {form, radius});
 
 rewrite_scalar!(super::sheet_metal::SheetMetalContourThicknessSide);

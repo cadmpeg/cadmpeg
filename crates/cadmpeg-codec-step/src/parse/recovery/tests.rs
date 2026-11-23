@@ -270,6 +270,38 @@ fn a_closed_shell_that_loses_a_face_keeps_the_rest_and_the_loss_names_both() {
 }
 
 #[test]
+fn a_face_that_loses_a_bound_and_a_solid_that_loses_a_void_are_dropped() {
+    let source = exchange(
+        "#9=ITEM();#20=ITEM();#21=ITEM(%,3);\
+         #30=ADVANCED_FACE('',(#20,#21),#9,.T.);#31=FACE('',(#20,#21));\
+         #32=FACE_SURFACE('',(#20,#21),#9,.T.);#33=SUBFACE('',(#20,#21),#9);\
+         #34=(FACE((#20,#21))REPRESENTATION_ITEM('')TOPOLOGICAL_REPRESENTATION_ITEM());\
+         #35=BREP_WITH_VOIDS('',#9,(#20,#21));\
+         #36=(BREP_WITH_VOIDS((#20,#21))MANIFOLD_SOLID_BREP(#9)REPRESENTATION_ITEM('')SOLID_MODEL());\
+         #40=CLOSED_SHELL('',(#30,#20));",
+    );
+    let (parsed, _) = with_service_context(source.as_bytes(), parse_inner).expect("bounded graph");
+    assert_eq!(
+        parsed.records().keys().copied().collect::<Vec<_>>(),
+        [9, 20, 40]
+    );
+    assert_eq!(
+        parsed.records()[&40].partials[0].parameters[1],
+        Value::List(vec![Value::Reference(20)])
+    );
+    let [statement] = parsed.given_up() else {
+        panic!("one given-up statement");
+    };
+    let mut dropped = statement.dropped.clone();
+    dropped.sort_unstable();
+    let offsets = (30..=36)
+        .map(|id| source.find(&format!("#{id}=")).expect("statement"))
+        .collect::<Vec<_>>();
+    assert_eq!(dropped, offsets);
+    assert_eq!(statement.lost, [(40, 30)]);
+}
+
+#[test]
 fn unordered_attribute_tables_are_sorted_for_lookup() {
     for table in [super::UNORDERED_SIMPLE, super::UNORDERED_PARTIAL] {
         assert!(table.windows(2).all(|pair| pair[0].0 < pair[1].0));
@@ -333,54 +365,73 @@ fn dangling_references_remove_transitive_dependents_without_removing_cycles() {
 }
 
 #[test]
-fn duplicate_id_removes_every_definition_and_its_users() {
+fn a_repeated_instance_name_keeps_its_first_statement() {
     let source = exchange("#1=ITEM();#2=ITEM(#1);#1=OTHER();#1=THIRD();#3=ITEM();");
-    let (parsed, _) =
+    let (parsed, diagnostics) =
         with_service_context(source.as_bytes(), parse_inner).expect("bounded duplicates");
-    assert_eq!(parsed.records().keys().copied().collect::<Vec<_>>(), [3]);
     assert_eq!(
-        parsed
-            .records()
-            .iter()
-            .filter(|(_, record)| parsed.data()[0].span.contains(&record.span.start))
-            .map(|(&id, _)| id)
-            .collect::<Vec<_>>(),
-        [3]
+        parsed.records().keys().copied().collect::<Vec<_>>(),
+        [1, 2, 3]
     );
-    assert_eq!(parsed.omitted_spans().len(), 4);
+    assert_eq!(&source[parsed.records()[&1].span.clone()], "#1=ITEM();");
+    assert_eq!(parsed.omitted_spans().len(), 2);
+    let repeated = diagnostics
+        .iter()
+        .filter(|item| {
+            item.kind == ParseDiagnosticKind::RecordOmitted
+                && item.message.contains("repeated instance name #1")
+        })
+        .map(|item| item.message.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(repeated.len(), 2, "{repeated:?}");
+    for (copy, message) in ["#1=OTHER();", "#1=THIRD();"].iter().zip(&repeated) {
+        let start = source.find(copy).expect("the copy");
+        let span = format!("bytes {start}..{}", start + copy.len());
+        assert!(message.contains(&span), "{message} names {span}");
+    }
 }
 
 #[test]
-fn malformed_definition_keeps_a_readable_instance_name_ambiguous() {
-    for definitions in [
-        "#1=ITEM();#1=ITEM(%,3);",
-        "#1=ITEM(%,3);#1=ITEM();",
-        "#1=ITEM(%,3);#1=ITEM();#1=OTHER();",
+fn a_defective_first_statement_gives_up_its_instance_name() {
+    for (definitions, later) in [
+        ("#1=ITEM(%,3);#1=ITEM();", 1),
+        ("#1=ITEM(%,3);#1=ITEM();#1=OTHER();", 2),
     ] {
         let source = exchange(&format!("{definitions}#2=ITEM(#1);#3=ITEM();"));
         let (parsed, diagnostics) =
             with_service_context(source.as_bytes(), parse_inner).expect("bounded definitions");
         assert_eq!(parsed.records().keys().copied().collect::<Vec<_>>(), [3]);
-        assert_eq!(
-            parsed
-                .records()
-                .iter()
-                .filter(|(_, record)| parsed.data()[0].span.contains(&record.span.start))
-                .map(|(&id, _)| id)
-                .collect::<Vec<_>>(),
-            [3]
-        );
         let [statement] = parsed.given_up() else {
             panic!("one given-up definition in {definitions}");
         };
-        // Every readable definition of #1 and its user #2 need the given-up one.
-        let dropped = definitions.matches(';').count();
-        assert_eq!(parsed.omitted_spans().len(), dropped);
-        assert_eq!(statement.dropped.len(), dropped);
-        assert!(!diagnostics
-            .iter()
-            .any(|item| item.kind == ParseDiagnosticKind::RecordOmitted));
+        // The user #2 needs the given-up first statement; each later copy
+        // of #1 is read and not stated.
+        assert_eq!(statement.dropped.len(), 1);
+        assert_eq!(parsed.omitted_spans().len(), later + 1);
+        assert_eq!(
+            diagnostics
+                .iter()
+                .filter(|item| item.message.contains("repeated instance name #1"))
+                .count(),
+            later
+        );
     }
+}
+
+#[test]
+fn a_defective_later_statement_leaves_the_first_standing() {
+    let source = exchange("#1=ITEM();#1=ITEM(%,3);#2=ITEM(#1);#3=ITEM();");
+    let (parsed, _) =
+        with_service_context(source.as_bytes(), parse_inner).expect("bounded definitions");
+    assert_eq!(
+        parsed.records().keys().copied().collect::<Vec<_>>(),
+        [1, 2, 3]
+    );
+    let [statement] = parsed.given_up() else {
+        panic!("the defective copy is its own given-up part");
+    };
+    assert!(statement.dropped.is_empty());
+    assert!(parsed.omitted_spans().is_empty());
 }
 
 #[test]

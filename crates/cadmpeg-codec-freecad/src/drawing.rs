@@ -115,7 +115,7 @@ pub(crate) fn transfer(
     Ok(drawings)
 }
 
-/// The neutral records that local FreeCAD objects become: drawing records
+/// The neutral records that local `FreeCAD` objects become: drawing records
 /// and semantic annotations, by source object id.
 pub(crate) struct LinkTargets {
     drawings: HashMap<String, (DrawingId, DrawingKind)>,
@@ -185,7 +185,7 @@ fn neutral_drawing_id(object: &str) -> Result<DrawingId, CodecError> {
 /// another local object, which the decoder does not resolve to the geometry
 /// it decoded. A reference that names a sub-element keeps it in its native
 /// name after the object's source name and a `.`. A sub-element of a drawing
-/// record is `Unread`: the projected edges and vertices that TechDraw
+/// record is `Unread`: the projected edges and vertices that `TechDraw`
 /// numbers are runtime geometry no `curves` entry holds.
 pub(crate) fn link_references(
     link: Option<&crate::native::LinkTarget>,

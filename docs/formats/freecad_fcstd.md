@@ -1,6 +1,6 @@
 # FreeCAD `.FCStd`
 
-Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/freecad.md`](../layouts/freecad.md), generated from `docs/layouts/freecad.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg --test layout_tables` proves the two agree.
+Record offsets, field widths, and endianness are also maintained as a machine-checked table in [`docs/layouts/freecad.md`](../layouts/freecad.md), generated from `docs/layouts/freecad.toml`. That table is the canonical source for the numbers; the prose below carries the semantics. `cargo test -p cadmpeg-layout-tables` proves the two agree.
 
 ## 1. Support envelope
 
@@ -387,6 +387,18 @@ tessellation is presentation data and does not replace an available exact shape.
 use is a distinct neutral occurrence. Repeated root uses of the same shape at the same placement
 retain their serialized root order as an occurrence discriminator; they do not share body,
 region, shell, face, loop, coedge, edge, vertex, or point identity.
+CADIR decision: below the root, a region, shell, face, loop, or coedge is keyed by its shape and
+location identity, so a compound or a shell that lists one shape twice at one location identity
+lists one element twice. A face listed again at one location identity under another shell, or
+with the other sense, is another face, as the two sides of a face that two solids share: its key
+appends `~use<n>` (escaped `%7Euse<n>` in the id), where `n` numbers the face's distinct uses in
+listing order from 2, and its loops and coedges take their keys from it. The element name binds the first use. Otherwise the
+first listing is the element (CADIR §2.2), as edges, vertices, and points already are. Each
+record a later listing restates with the same content is read and not stated, and is charged one
+`fcstd/topology.record-repeated` loss that names the payload and the record's id. A region or a
+shell restated with other content, as a shell that two solids list, is emitted as read, and the
+decode wrapper's rule for a repeated id applies (CADIR §2.8). Body kind and shell closure count
+every listing.
 A body's kind is its topology's dimension. An edge occurrence in a shell is an edge shape at the
 location identity of its composed face, wire, and edge use locations, so one edge shape at two
 location identities is two occurrences. Each boundary use of an edge occurrence by a face's wire is
@@ -589,7 +601,9 @@ An expression binding is retained independently from its target property's cache
 neutral parameter carries the exact decoded expression, evaluated canonical value, scalar-property
 identity, expression-engine identity, and dependencies on other decoded parameters when qualified
 or same-owner identifiers resolve unambiguously. Unresolved symbols remain expression text and do
-not create fabricated parameter identities.
+not create fabricated parameter identities. A binding whose expression text is empty or blank
+emits `parameter.expression-empty`; the v11 parameter states the target property's stored value as
+its expression.
 
 `Placement.Base.x`, `.y`, and `.z` identify the translation components of a
 `PropertyPlacement`; each component is a length in millimetres. An expression target
@@ -1901,7 +1915,18 @@ both taper angles and offsets, whether length follows the profile normal, and wh
 profile faces are allowed. Direction provenance distinguishes the profile normal, an explicit
 custom vector, and a selected reference axis while also retaining the normalized resolved
 direction. A non-sketch planar profile supplies its profile normal from its persisted placement
-frame. Reversal inverts the direction. A pad joins and a pocket cuts. Missing required lengths
+frame. Reversal inverts the direction.
+
+A body's `Group` list orders its solid features. Its first solid feature creates a new body
+when it adds material and both the body's `BaseFeature` link and the feature's `BaseFeature` link
+are empty.
+An absent `BaseFeature` property also denotes an empty link. Later features add to or remove from
+the result of the same body. A body with a `BaseFeature` link starts from that base. These rules
+apply to PartDesign pads, revolutions, primitives, lofts, pipes, and helices. Pockets, grooves,
+holes, and subtractive primitives, lofts, pipes, and helices remove material. A subtractive first
+solid feature with empty body and feature `BaseFeature` links has an empty input solid.
+
+Missing required lengths
 or selections and invalid directions remain attributable native operations instead of being
 rewritten as zero-length or blind features.
 
@@ -1924,7 +1949,8 @@ at most one turn. The sum of two fixed side magnitudes is at most one turn.
 Revolution `Type=1` selects last-intersection termination; Groove `Type=1` selects through-all
 termination. `Type=2` selects first-intersection termination, and `Type=3` selects the face in
 `UpToFace`. These terminations have no fixed angular endpoint.
-Standalone Part revolutions create a new body, PartDesign revolutions join, and grooves cut.
+Standalone Part revolutions create a new body, PartDesign revolutions join, and grooves cut,
+subject to the first-feature rule of the extrusion section.
 
 Part and PartDesign fillets distinguish an explicit edge selection from the persisted all-edges
 mode and require a finite positive constant radius. Chamfers retain equal-distance,

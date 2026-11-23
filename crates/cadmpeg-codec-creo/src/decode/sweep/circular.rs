@@ -266,7 +266,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                     native_ref: None,
                 },
             )?;
-            let finite_position = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+            let finite_position = cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
                 seam[0] + offset * transform.normal()[0],
                 seam[1] + offset * transform.normal()[1],
                 seam[2] + offset * transform.normal()[2],

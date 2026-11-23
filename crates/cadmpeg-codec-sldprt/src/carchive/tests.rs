@@ -4,6 +4,7 @@ use super::reader::{Reader, Stop};
 use super::Status;
 use crate::test_support::carchive::{
     config_object_stream, integer_parameter_body, real_parameter_body, resolved_features_stream,
+    toleranced_and_integer_parameters_stream,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
 use std::collections::{BTreeMap, HashMap};
@@ -210,6 +211,7 @@ fn every_parameter_class_reports_the_class_and_value_offset() {
         assert_eq!(&*parameter.class, class);
         assert_eq!(parameter.value_at, 38, "{class}");
         assert_eq!(parameter.value, expected, "{class}");
+        assert_eq!(parameter.object_id, Some(1), "{class}");
     }
 
     let mut known = known;
@@ -222,6 +224,38 @@ fn every_parameter_class_reports_the_class_and_value_offset() {
     assert_eq!(&*walk.parameters[0].class, "moIntegerParameter_c");
     assert_eq!(walk.parameters[0].value_at, 38);
     assert_eq!(walk.parameters[0].value, 42.0);
+    assert_eq!(walk.parameters[0].object_id, Some(1));
+}
+
+/// A parameter's identifier follows the trailer's zero byte and tolerance
+/// pointer: after the `moDimTolerance_c` body when the parameter has a
+/// tolerance, and after an integer parameter's four-byte value.
+#[test]
+fn a_parameter_holds_its_identifier_after_its_tolerance() {
+    let arena = DecodeArena::new();
+    let (ctx, _root) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop()).expect("context");
+    let resolved = toleranced_and_integer_parameters_stream(41, 42);
+    let count = crate::archive::resolved_count(&resolved).expect("the leading count");
+    let map = crate::archive::class_index_map(&config_object_stream(), count, &ctx)
+        .expect("the class walk succeeds")
+        .expect("the map reconciles with the leading count");
+    let walk = super::walk_configuration(&ctx, &map, &resolved, Some(17_000))
+        .expect("the walk succeeds")
+        .expect("the stream opens with its count");
+    assert_eq!(walk.status, Status::End);
+    let read = walk
+        .parameters
+        .iter()
+        .map(|parameter| (&*parameter.class, parameter.object_id))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        read,
+        [
+            ("moIntegerParameter_c", Some(41)),
+            ("moLengthParameter_c", Some(42))
+        ]
+    );
 }
 
 /// A counted string that declares more UTF-16 units than the stream carries
@@ -284,14 +318,14 @@ fn a_reconciled_configuration_map_types_the_parameter_object() {
     let arena = DecodeArena::new();
     let (ctx, _root) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop()).expect("context");
-    let walk = super::walk_configuration(
-        &ctx,
-        &config_object_stream(),
-        &resolved_features_stream(),
-        Some(17_000),
-    )
-    .expect("the class walk succeeds")
-    .expect("the map reconciles with the leading count");
+    let resolved = resolved_features_stream();
+    let count = crate::archive::resolved_count(&resolved).expect("the leading count");
+    let map = crate::archive::class_index_map(&config_object_stream(), count, &ctx)
+        .expect("the class walk succeeds")
+        .expect("the map reconciles with the leading count");
+    let walk = super::walk_configuration(&ctx, &map, &resolved, Some(17_000))
+        .expect("the walk succeeds")
+        .expect("the stream opens with its count");
     assert_eq!(walk.status, Status::End);
     assert_eq!(walk.parameters.len(), 1);
     assert_eq!(&*walk.parameters[0].class, "moLengthParameter_c");
@@ -756,6 +790,66 @@ fn a_profile_body_takes_the_extent_of_its_holding_object() {
             stream: 40,
             owner_start: 10,
             owner_end: 60,
+        }]
+    );
+}
+
+/// A `CString` holding `text`.
+fn cstring(text: &str) -> Vec<u8> {
+    let mut bytes = vec![0xff, 0xfe, 0xff, u8::try_from(text.len()).unwrap()];
+    for unit in text.encode_utf16() {
+        bytes.extend_from_slice(&unit.to_le_bytes());
+    }
+    bytes
+}
+
+/// A feature's named header (its `moNodeName_c` at class index 1) and a
+/// feature-object block with no children.
+fn feature_head(name: &str) -> Vec<u8> {
+    let mut bytes = vec![0x01, 0x80];
+    bytes.extend(cstring(name));
+    bytes.extend_from_slice(&[0; 8]);
+    bytes.extend_from_slice(&42_u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 4]);
+    bytes.extend(cstring(""));
+    bytes.extend_from_slice(&[0; 8 + 12 + 35]);
+    bytes.extend(cstring(""));
+    bytes.extend_from_slice(&[0x00, 0xff, 0xff, 0x00, 0x00]);
+    bytes.extend_from_slice(&[0; 49]);
+    bytes.extend_from_slice(&[0x02, 0x00]);
+    bytes.extend_from_slice(&[0; 8 + 4]);
+    bytes
+}
+
+#[test]
+fn a_mark_record_is_noted_with_the_feature_that_holds_it() {
+    const BASE_BODY: &str = "moBaseBody_c";
+    let mut rest = vec![0xff, 0xff, 0x01, 0x00];
+    rest.extend_from_slice(&u16::try_from(BASE_BODY.len()).unwrap().to_le_bytes());
+    rest.extend_from_slice(BASE_BODY.as_bytes());
+    rest.extend(feature_head("Base-Extrude1"));
+    rest.extend_from_slice(&[0; 32]);
+    rest.extend_from_slice(&[0x01, 0x00]);
+    rest.extend_from_slice(&[0x02, 0x80]);
+    let at = 6 + rest.len();
+    rest.extend_from_slice(&31_u32.to_le_bytes());
+    rest.extend_from_slice(&1_u32.to_le_bytes());
+    rest.extend_from_slice(&0_u32.to_le_bytes());
+    rest.extend_from_slice(&[0; 8]);
+    for word in [20_u32, 0, 20] {
+        rest.extend_from_slice(&word.to_le_bytes());
+    }
+    rest.extend_from_slice(&[0; 16]);
+    let bytes = stream(3, &rest);
+    let known = BTreeMap::from([(1, NODE_NAME.to_owned()), (2, "moPMarkRecord_c".to_owned())]);
+    let walk = walk_with_known(&bytes, &known);
+    assert_eq!(walk.status, Status::End);
+    assert_eq!(
+        walk.marks,
+        [super::reader::MarkOwner {
+            at,
+            end: at + 4 + 4 + 4 + 8 + 12 + 16,
+            owner: Some("Base-Extrude1".to_owned()),
         }]
     );
 }

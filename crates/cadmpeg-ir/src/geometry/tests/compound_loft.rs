@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::geometry::{CompoundLoftDirection, CompoundLoftTail};
+use crate::geometry::lofts::{CompoundLoftDirection, CompoundLoftTail};
 
 #[test]
 fn the_direction_selector_is_stored_once_on_the_curve_form() {
@@ -42,7 +42,7 @@ fn the_direction_selector_is_stored_once_on_the_curve_form() {
 
 #[test]
 fn a_scaled_direction_keeps_its_exact_nonzero_selector() {
-    use crate::geometry::ScaledCompoundLoftBranch;
+    use crate::geometry::lofts::ScaledCompoundLoftBranch;
     let branch = ScaledCompoundLoftBranch::Direct {
         flag: true,
         direction: CompoundLoftDirection::Curve {

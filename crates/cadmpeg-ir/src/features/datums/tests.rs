@@ -4,10 +4,9 @@ use crate::design::construction::{
 };
 use crate::design::dimension::Dimension;
 use crate::design::options::NativeOption;
-use crate::features::{
-    DistinctMembers, FeatureContent, FeatureDirection3, FeatureOperation, FinitePoint3,
-    ParameterId, UnresolvedFamily,
-};
+use crate::features::geometry::{FeatureDirection3, FinitePoint3};
+use crate::features::selections::DistinctMembers;
+use crate::features::{FeatureContent, FeatureOperation, ParameterId, UnresolvedFamily};
 use crate::math::{Point3, Vector3};
 use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities, TextReplacements};
 
@@ -27,7 +26,11 @@ fn datum_axis_partial_states_have_one_checked_wire_spelling() {
         reference: Some(InputReference::Built(Box::new(AnyConstruction::Point(
             Construction {
                 resolved: Some(origin()),
-                ..Default::default()
+                inputs: Vec::new(),
+                after: Vec::new(),
+                solution: None,
+                mode: None,
+                resolved_in: std::collections::BTreeMap::new(),
             },
         )))),
         value: None,
@@ -103,7 +106,7 @@ fn datum_axis_walks_bound_dimensions_and_preserves_colliding_option_literals() {
         ..Default::default()
     })
     .unwrap();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut seen = Vec::new();
     axis.visit_identity_references(&ctx, &mut |identity| {
         seen.push(identity.to_owned());
@@ -152,7 +155,7 @@ fn feature(operation: FeatureOperation, ordinal: u64) -> crate::features::Featur
         source_tag: None,
         source_text: None,
         source_content: FeatureContent::default(),
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             crate::features::FeatureDefinition::Operation(operation),
         ),
         native_ref: None,
@@ -161,7 +164,7 @@ fn feature(operation: FeatureOperation, ordinal: u64) -> crate::features::Featur
 
 #[test]
 fn datum_axis_validation_reaches_bound_parameter_owners_and_nested_subjects() {
-    use crate::features::{DesignParameter, ParameterValue};
+    use crate::features::parameters::{DesignParameter, ParameterValue};
     let mut ir = crate::CadIr::empty();
     let prior = feature(FeatureOperation::datum_axis(origin(), direction()), 1);
     let parameter: ParameterId = "test:model:parameter#length".try_into().unwrap();
@@ -225,7 +228,11 @@ fn datum_axis_validation_reaches_bound_parameter_owners_and_nested_subjects() {
             reference: Some(InputReference::Built(Box::new(AnyConstruction::Point(
                 Construction {
                     resolved: Some(origin()),
-                    ..Default::default()
+                    inputs: Vec::new(),
+                    after: Vec::new(),
+                    solution: None,
+                    mode: None,
+                    resolved_in: std::collections::BTreeMap::new(),
                 },
             )))),
             value: None,
@@ -284,7 +291,7 @@ fn axis_source_literals_preserve_both_collision_keys_while_other_feature_maps_ke
     let replacements =
         std::collections::BTreeMap::from([(source.to_owned(), destination.to_owned())]);
     let replacements = TextReplacements::build(replacements.iter()).unwrap();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut map = IdentityMap::new(|id: &str| Ok(id.replace("test:model:", "test:placed:")))
         .with_text_replacements(&replacements);
     let axis = axis.rewrite_identities(&ctx, &mut map).unwrap();
@@ -323,7 +330,11 @@ fn datum_axis_validation_reaches_solved_plane_frame_and_curve_values() {
         (
             AnyConstruction::Frame(Construction {
                 resolved: Some(frame.clone()),
-                ..Default::default()
+                inputs: Vec::new(),
+                after: Vec::new(),
+                solution: None,
+                mode: None,
+                resolved_in: std::collections::BTreeMap::new(),
             }),
             None,
         ),
@@ -334,7 +345,11 @@ fn datum_axis_validation_reaches_solved_plane_frame_and_curve_values() {
                     normal: frame.z_axis,
                     x_axis: frame.z_axis,
                 }),
-                ..Default::default()
+                inputs: Vec::new(),
+                after: Vec::new(),
+                solution: None,
+                mode: None,
+                resolved_in: std::collections::BTreeMap::new(),
             }),
             Some("plane axes must be perpendicular"),
         ),
@@ -344,7 +359,11 @@ fn datum_axis_validation_reaches_solved_plane_frame_and_curve_values() {
                     z_axis: unit(0.0, 0.0, -1.0),
                     ..frame.clone()
                 }),
-                ..Default::default()
+                inputs: Vec::new(),
+                after: Vec::new(),
+                solution: None,
+                mode: None,
+                resolved_in: std::collections::BTreeMap::new(),
             }),
             Some("orthonormal and right-handed"),
         ),
@@ -357,7 +376,11 @@ fn datum_axis_validation_reaches_solved_plane_frame_and_curve_values() {
                     start: FinitePoint3::new(Point3::new(2.0, 0.0, 0.0)).unwrap(),
                     end: FinitePoint3::new(Point3::new(0.0, 1.0, 0.0)).unwrap(),
                 }),
-                ..Default::default()
+                inputs: Vec::new(),
+                after: Vec::new(),
+                solution: None,
+                mode: None,
+                resolved_in: std::collections::BTreeMap::new(),
             }),
             Some("arc endpoint is outside"),
         ),
@@ -437,7 +460,11 @@ fn datum_axis_validation_keeps_curve_origins_and_two_pick_parameters() {
                     reference: Some(InputReference::Built(Box::new(AnyConstruction::Curve(
                         Construction {
                             inputs: vec![coordinates],
-                            ..Default::default()
+                            after: Vec::new(),
+                            solution: None,
+                            mode: None,
+                            resolved: None,
+                            resolved_in: std::collections::BTreeMap::new(),
                         },
                     )))),
                     value: None,
@@ -523,7 +550,9 @@ fn datum_axis_validation_rejects_bad_witness_frames_and_construction_controls() 
                                 angle: Dimension::Literal(crate::scalar::Angle::new(1.0).unwrap()),
                             },
                         ],
-                        ..Default::default()
+                        inputs: Vec::new(),
+                        mode: None,
+                        resolved_in: std::collections::BTreeMap::new(),
                     },
                 )))),
                 value: None,
@@ -778,7 +807,9 @@ fn datum_axis_resolved_configuration_keys_require_configuration_records() {
         }],
         resolved: Some(origin()),
         resolved_in: std::collections::BTreeMap::from([(key, origin())]),
-        ..Default::default()
+        after: Vec::new(),
+        solution: None,
+        mode: None,
     };
     let mut consumer = feature(
         DatumAxisDraft {

@@ -11,8 +11,14 @@ use crate::design::evaluation::{Evaluation, StateBase, StateContent, StateDelta}
 use crate::design::read::{self, Ceiling};
 use crate::document::CadIr;
 
+/// The desktop and service limits, with distinct state chain ceilings low
+/// enough to build chains past them cheaply.
 fn policies() -> [ResourceLimits; 2] {
-    [ResourceLimits::desktop(), ResourceLimits::service()]
+    let mut desktop = ResourceLimits::desktop();
+    desktop.max_state_chain_depth = 8;
+    let mut service = ResourceLimits::service();
+    service.max_state_chain_depth = 5;
+    [desktop, service]
 }
 
 fn key(at: u64) -> u32 {
@@ -59,6 +65,7 @@ fn chain(depth: u64) -> Vec<Evaluation> {
 fn document(evaluations: Vec<Evaluation>) -> String {
     let mut ir = CadIr::empty();
     ir.design.evaluations = evaluations;
+    ir.finalize();
     serde_json::to_string(&ir).unwrap()
 }
 
@@ -95,7 +102,7 @@ fn refused_cycle(evaluations: Vec<Evaluation>, limits: &ResourceLimits) {
 
 #[test]
 fn a_chain_at_the_ceiling_reads_and_one_past_is_refused() {
-    for limits in policies() {
+    for limits in policies().into_iter().chain([ResourceLimits::desktop()]) {
         let limit = Ceiling::StateChain.of(&limits);
         admitted(chain(limit), &limits);
         refused_past(chain(limit + 1), &limits);
@@ -141,7 +148,7 @@ fn a_cycle_of_state_bases_is_refused() {
 /// A chain far past the ceiling is refused one past it, from either end.
 #[test]
 fn a_chain_far_past_the_ceiling_is_refused_one_past_it() {
-    let limits = ResourceLimits::service();
+    let [_, limits] = policies();
     let long = chain(2 * Ceiling::StateChain.of(&limits));
     refused_past(long.clone(), &limits);
     let mut tip_first = long;

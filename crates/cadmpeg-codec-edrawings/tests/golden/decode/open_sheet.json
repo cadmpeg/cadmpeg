@@ -1,0 +1,776 @@
+{
+  "ir": {
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
+      "bodies": [
+        {
+          "id": "edrawings:model:body#body0",
+          "kind": "sheet",
+          "name": "single"
+        }
+      ],
+      "coedges": [
+        {
+          "edge": "edrawings:model:edge#body0:0",
+          "id": "edrawings:model:coedge#body0:0",
+          "owner_loop": "edrawings:model:loop#body0:0",
+          "pcurves": [],
+          "radial_next": "edrawings:model:coedge#body0:0",
+          "sense": "forward"
+        },
+        {
+          "edge": "edrawings:model:edge#body0:1",
+          "id": "edrawings:model:coedge#body0:1",
+          "owner_loop": "edrawings:model:loop#body0:0",
+          "pcurves": [],
+          "radial_next": "edrawings:model:coedge#body0:1",
+          "sense": "forward"
+        },
+        {
+          "edge": "edrawings:model:edge#body0:2",
+          "id": "edrawings:model:coedge#body0:2",
+          "owner_loop": "edrawings:model:loop#body0:0",
+          "pcurves": [],
+          "radial_next": "edrawings:model:coedge#body0:2",
+          "sense": "forward"
+        },
+        {
+          "edge": "edrawings:model:edge#body0:3",
+          "id": "edrawings:model:coedge#body0:3",
+          "owner_loop": "edrawings:model:loop#body0:0",
+          "pcurves": [],
+          "radial_next": "edrawings:model:coedge#body0:3",
+          "sense": "forward"
+        },
+        {
+          "edge": "edrawings:model:edge#body0:4",
+          "id": "edrawings:model:coedge#body0:4",
+          "owner_loop": "edrawings:model:loop#body0:1",
+          "pcurves": [],
+          "radial_next": "edrawings:model:coedge#body0:4",
+          "sense": "forward"
+        },
+        {
+          "edge": "edrawings:model:edge#body0:5",
+          "id": "edrawings:model:coedge#body0:5",
+          "owner_loop": "edrawings:model:loop#body0:1",
+          "pcurves": [],
+          "radial_next": "edrawings:model:coedge#body0:5",
+          "sense": "forward"
+        },
+        {
+          "edge": "edrawings:model:edge#body0:6",
+          "id": "edrawings:model:coedge#body0:6",
+          "owner_loop": "edrawings:model:loop#body0:1",
+          "pcurves": [],
+          "radial_next": "edrawings:model:coedge#body0:6",
+          "sense": "forward"
+        },
+        {
+          "edge": "edrawings:model:edge#body0:7",
+          "id": "edrawings:model:coedge#body0:7",
+          "owner_loop": "edrawings:model:loop#body0:1",
+          "pcurves": [],
+          "radial_next": "edrawings:model:coedge#body0:7",
+          "sense": "forward"
+        }
+      ],
+      "curves": [
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "edrawings:model:curve#body0:0"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 9.999999776482582,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "edrawings:model:curve#body0:1"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 9.999999776482582,
+                "y": 9.999999776482582,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "edrawings:model:curve#body0:2"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 9.999999776482582,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "edrawings:model:curve#body0:3"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 9.999999776482582
+              }
+            }
+          },
+          "id": "edrawings:model:curve#body0:4"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 9.999999776482582,
+                "y": 0.0,
+                "z": 9.999999776482582
+              }
+            }
+          },
+          "id": "edrawings:model:curve#body0:5"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 9.999999776482582,
+                "y": 9.999999776482582,
+                "z": 9.999999776482582
+              }
+            }
+          },
+          "id": "edrawings:model:curve#body0:6"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": -1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 9.999999776482582,
+                "z": 9.999999776482582
+              }
+            }
+          },
+          "id": "edrawings:model:curve#body0:7"
+        }
+      ],
+      "edges": [
+        {
+          "carrier": {
+            "curve": "edrawings:model:curve#body0:0",
+            "param_range": [
+              0.0,
+              9.999999776482582
+            ]
+          },
+          "ends": {
+            "end": "edrawings:model:vertex#body0:1",
+            "start": "edrawings:model:vertex#body0:0"
+          },
+          "id": "edrawings:model:edge#body0:0"
+        },
+        {
+          "carrier": {
+            "curve": "edrawings:model:curve#body0:1",
+            "param_range": [
+              0.0,
+              9.999999776482582
+            ]
+          },
+          "ends": {
+            "end": "edrawings:model:vertex#body0:2",
+            "start": "edrawings:model:vertex#body0:1"
+          },
+          "id": "edrawings:model:edge#body0:1"
+        },
+        {
+          "carrier": {
+            "curve": "edrawings:model:curve#body0:2",
+            "param_range": [
+              0.0,
+              9.999999776482582
+            ]
+          },
+          "ends": {
+            "end": "edrawings:model:vertex#body0:3",
+            "start": "edrawings:model:vertex#body0:2"
+          },
+          "id": "edrawings:model:edge#body0:2"
+        },
+        {
+          "carrier": {
+            "curve": "edrawings:model:curve#body0:3",
+            "param_range": [
+              0.0,
+              9.999999776482582
+            ]
+          },
+          "ends": {
+            "end": "edrawings:model:vertex#body0:0",
+            "start": "edrawings:model:vertex#body0:3"
+          },
+          "id": "edrawings:model:edge#body0:3"
+        },
+        {
+          "carrier": {
+            "curve": "edrawings:model:curve#body0:4",
+            "param_range": [
+              0.0,
+              9.999999776482582
+            ]
+          },
+          "ends": {
+            "end": "edrawings:model:vertex#body0:5",
+            "start": "edrawings:model:vertex#body0:4"
+          },
+          "id": "edrawings:model:edge#body0:4"
+        },
+        {
+          "carrier": {
+            "curve": "edrawings:model:curve#body0:5",
+            "param_range": [
+              0.0,
+              9.999999776482582
+            ]
+          },
+          "ends": {
+            "end": "edrawings:model:vertex#body0:6",
+            "start": "edrawings:model:vertex#body0:5"
+          },
+          "id": "edrawings:model:edge#body0:5"
+        },
+        {
+          "carrier": {
+            "curve": "edrawings:model:curve#body0:6",
+            "param_range": [
+              0.0,
+              9.999999776482582
+            ]
+          },
+          "ends": {
+            "end": "edrawings:model:vertex#body0:7",
+            "start": "edrawings:model:vertex#body0:6"
+          },
+          "id": "edrawings:model:edge#body0:6"
+        },
+        {
+          "carrier": {
+            "curve": "edrawings:model:curve#body0:7",
+            "param_range": [
+              0.0,
+              9.999999776482582
+            ]
+          },
+          "ends": {
+            "end": "edrawings:model:vertex#body0:4",
+            "start": "edrawings:model:vertex#body0:7"
+          },
+          "id": "edrawings:model:edge#body0:7"
+        }
+      ],
+      "faces": [
+        {
+          "id": "edrawings:model:face#body0:0",
+          "loops": {
+            "inner": [],
+            "kind": "classified",
+            "outer": "edrawings:model:loop#body0:0"
+          },
+          "sense": "forward",
+          "shell": "edrawings:model:shell#body0:0",
+          "surface": "edrawings:model:surface#body0:0"
+        },
+        {
+          "id": "edrawings:model:face#body0:1",
+          "loops": {
+            "inner": [],
+            "kind": "classified",
+            "outer": "edrawings:model:loop#body0:1"
+          },
+          "sense": "forward",
+          "shell": "edrawings:model:shell#body0:1",
+          "surface": "edrawings:model:surface#body0:1"
+        }
+      ],
+      "loops": [
+        {
+          "boundary": {
+            "coedges": [
+              "edrawings:model:coedge#body0:0",
+              "edrawings:model:coedge#body0:1",
+              "edrawings:model:coedge#body0:2",
+              "edrawings:model:coedge#body0:3"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "edrawings:model:face#body0:0",
+          "id": "edrawings:model:loop#body0:0"
+        },
+        {
+          "boundary": {
+            "coedges": [
+              "edrawings:model:coedge#body0:4",
+              "edrawings:model:coedge#body0:5",
+              "edrawings:model:coedge#body0:6",
+              "edrawings:model:coedge#body0:7"
+            ],
+            "kind": "ring",
+            "vertex_uses": []
+          },
+          "face": "edrawings:model:face#body0:1",
+          "id": "edrawings:model:loop#body0:1"
+        }
+      ],
+      "pcurves": [],
+      "points": [
+        {
+          "id": "edrawings:model:point#body0:0",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "edrawings:model:point#body0:1",
+          "position": {
+            "x": 0.0,
+            "y": 9.999999776482582,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "edrawings:model:point#body0:2",
+          "position": {
+            "x": 9.999999776482582,
+            "y": 9.999999776482582,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "edrawings:model:point#body0:3",
+          "position": {
+            "x": 9.999999776482582,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "edrawings:model:point#body0:4",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 9.999999776482582
+          }
+        },
+        {
+          "id": "edrawings:model:point#body0:5",
+          "position": {
+            "x": 9.999999776482582,
+            "y": 0.0,
+            "z": 9.999999776482582
+          }
+        },
+        {
+          "id": "edrawings:model:point#body0:6",
+          "position": {
+            "x": 9.999999776482582,
+            "y": 9.999999776482582,
+            "z": 9.999999776482582
+          }
+        },
+        {
+          "id": "edrawings:model:point#body0:7",
+          "position": {
+            "x": 0.0,
+            "y": 9.999999776482582,
+            "z": 9.999999776482582
+          }
+        }
+      ],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [
+        {
+          "body": "edrawings:model:body#body0",
+          "id": "edrawings:model:region#body0:0",
+          "shells": [
+            "edrawings:model:shell#body0:0"
+          ]
+        },
+        {
+          "body": "edrawings:model:body#body0",
+          "id": "edrawings:model:region#body0:1",
+          "shells": [
+            "edrawings:model:shell#body0:1"
+          ]
+        }
+      ],
+      "shells": [
+        {
+          "id": "edrawings:model:shell#body0:0",
+          "members": [],
+          "region": "edrawings:model:region#body0:0"
+        },
+        {
+          "id": "edrawings:model:shell#body0:1",
+          "members": [],
+          "region": "edrawings:model:region#body0:1"
+        }
+      ],
+      "subds": [],
+      "surfaces": [
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": -1.0
+              },
+              "origin": {
+                "x": 3.3333332588275275,
+                "y": 3.3333332588275275,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "edrawings:model:surface#body0:0"
+        },
+        {
+          "geometry": {
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 3.3333332588275275,
+                "y": 3.3333332588275275,
+                "z": 9.999999776482582
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            }
+          },
+          "id": "edrawings:model:surface#body0:1"
+        }
+      ],
+      "vertices": [
+        {
+          "id": "edrawings:model:vertex#body0:0",
+          "point": "edrawings:model:point#body0:0"
+        },
+        {
+          "id": "edrawings:model:vertex#body0:1",
+          "point": "edrawings:model:point#body0:1"
+        },
+        {
+          "id": "edrawings:model:vertex#body0:2",
+          "point": "edrawings:model:point#body0:2"
+        },
+        {
+          "id": "edrawings:model:vertex#body0:3",
+          "point": "edrawings:model:point#body0:3"
+        },
+        {
+          "id": "edrawings:model:vertex#body0:4",
+          "point": "edrawings:model:point#body0:4"
+        },
+        {
+          "id": "edrawings:model:vertex#body0:5",
+          "point": "edrawings:model:point#body0:5"
+        },
+        {
+          "id": "edrawings:model:vertex#body0:6",
+          "point": "edrawings:model:point#body0:6"
+        },
+        {
+          "id": "edrawings:model:vertex#body0:7",
+          "point": "edrawings:model:point#body0:7"
+        }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "edrawings:model:body#body0"
+          ],
+          "bom_properties": {},
+          "id": "edrawings:model:definition#0",
+          "instance_bodies": [],
+          "kind": "part",
+          "native_ref": "/include library/model_1_include/shared/body0",
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "source_name": "single",
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
+      "view_presentations": []
+    },
+    "native": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
+    "source": {
+      "attributes": {
+        "hsf_version": "19.10",
+        "member_count": "4",
+        "model_stream_bytes": "869"
+      },
+      "identity": {
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": {
+              "kind": "admitted"
+            },
+            "declared": {
+              "hsf_version": "19.10"
+            },
+            "dialect": "edrawings:hsf-19-10"
+          }
+        },
+        "kind": "classified"
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
+    }
+  },
+  "report": {
+    "coverage": {},
+    "identity": {
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": {
+            "kind": "admitted"
+          },
+          "declared": {
+            "hsf_version": "19.10"
+          },
+          "dialect": "edrawings:hsf-19-10"
+        }
+      },
+      "kind": "classified"
+    },
+    "losses": [
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "geometry.reconstructed-from-mesh",
+            "kind": "topology_gauge_substituted",
+            "namespace": "edrawings"
+          }
+        },
+        "message": "1 bodies were rebuilt from display meshes (4 triangles) as 2 planar faces with straight edges; the source stores no analytic surfaces or curves",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "geometry.open-body",
+            "kind": "topology_gauge_substituted",
+            "namespace": "edrawings"
+          }
+        },
+        "message": "1 bodies are not watertight and are sheets (8 open or non-manifold edges): single",
+        "severity": "warning"
+      }
+    ],
+    "notes": [],
+    "transfer": {
+      "geometry_transferred": true,
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
+    }
+  },
+  "source_fidelity": {
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "decode_digest": "bd09f04f88ad033c9b15c3be21eecc24a78ac2ebbcd6d043f4d0487032408795",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
+  }
+}

@@ -75,7 +75,7 @@ pub(super) fn containers() -> Vec<Container> {
             kind: OrderedKind::Timeline,
             members: vec![Member::Feature(feature(1)), Member::Container(container(2))],
             folders: folders(),
-            rollback: Rollback::Before(Member::Container(container(2))),
+            rollback: Some(Rollback::Before(Member::Container(container(2)))),
             placement: None,
         },
         Container::Ordered {
@@ -83,7 +83,7 @@ pub(super) fn containers() -> Vec<Container> {
             kind: OrderedKind::Body,
             members: Vec::new(),
             folders: Vec::new(),
-            rollback: Rollback::End,
+            rollback: Some(Rollback::End),
             placement: Some(frame()),
         },
         Container::Unordered {
@@ -95,6 +95,14 @@ pub(super) fn containers() -> Vec<Container> {
             id: container(4),
             kind: UnorderedKind::Group,
             members: BTreeSet::new(),
+        },
+        Container::Ordered {
+            id: container(5),
+            kind: OrderedKind::GeometricalSet,
+            members: vec![Member::Feature(feature(7))],
+            folders: Vec::new(),
+            rollback: None,
+            placement: None,
         },
     ]
 }
@@ -233,6 +241,7 @@ pub(super) fn design_scopes() -> Vec<DesignScope> {
             active_arrangements: BTreeSet::from([id("arrangement", 1), id("arrangement", 2)]),
             occurrences: BTreeMap::from([(id("occurrence", 1), occurrence_designs().remove(0))]),
             current: current_states(),
+            unproduced: BTreeSet::from([id("body", 8), id("body", 9)]),
         },
         DesignScope {
             definition: id("product-definition", 2),
@@ -241,6 +250,7 @@ pub(super) fn design_scopes() -> Vec<DesignScope> {
             active_arrangements: BTreeSet::new(),
             occurrences: BTreeMap::new(),
             current: Vec::new(),
+            unproduced: BTreeSet::default(),
         },
     ]
 }

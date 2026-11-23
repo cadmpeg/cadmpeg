@@ -2,6 +2,9 @@
 
 use super::*;
 use cadmpeg_ir::design::selection::Picks;
+use cadmpeg_ir::features::extents::{ExtrudeDirection, ExtrudeExtent, ExtrudeStart};
+use cadmpeg_ir::features::geometry::FeatureDirection3;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
 
 fn assert_native(operation: &LegacyOperation) {
     assert_native_part(part(operation.clone()));
@@ -58,7 +61,7 @@ fn selected_profile_loops_keep_nesting_native() {
     let LegacyOperation::Extrude { profile, .. } = &mut operation else {
         panic!("extrude")
     };
-    *profile = old::ProfileRef::Planar(old::PlanarProfileRef::SketchProfiles {
+    *profile = ProfileRef::Planar(PlanarProfileRef::SketchProfiles {
         sketch: cadmpeg_ir::sketches::SketchId::mint("inventor:design:sketch#synthetic")
             .expect("sketch"),
         profiles: vec![0, 1].try_into().expect("loops"),
@@ -108,7 +111,7 @@ fn extrusion_draft_keeps_unread_sign_and_neutral_plane_native() {
     for angle in [-0.2, 0.2] {
         let mut operation = extrude();
         let LegacyOperation::Extrude {
-            extent: old::ExtrudeExtent::TwoSided { first, .. },
+            extent: ExtrudeExtent::TwoSided { first, .. },
             ..
         } = &mut operation
         else {
@@ -121,7 +124,7 @@ fn extrusion_draft_keeps_unread_sign_and_neutral_plane_native() {
 
 #[test]
 fn loft_and_sweep_defaults_do_not_state_source_controls() {
-    let FeatureOperation::Extrude(value) = typed(&extrude(), &[]).expect("extrude") else {
+    let FeatureOperation::Extrude(value) = typed(&extrude(), &[], &[]).expect("extrude") else {
         panic!("extrude")
     };
     let Some(cadmpeg_ir::design::ops::swept::ExtrudeDirection::Along { direction, .. }) =
@@ -187,7 +190,7 @@ fn validator_checks_the_shared_projection_and_native_gate() {
     assert_eq!(validate(&ir).expect("missing feature").len(), 1);
     let mut operation = extrude();
     let LegacyOperation::Extrude {
-        extent: old::ExtrudeExtent::TwoSided { first, .. },
+        extent: ExtrudeExtent::TwoSided { first, .. },
         ..
     } = &mut operation
     else {
@@ -198,7 +201,7 @@ fn validator_checks_the_shared_projection_and_native_gate() {
     project_part(&mut ir);
     assert!(validate(&ir).expect("valid native gate").is_empty());
     ir.design.features[0].definition.operation =
-        typed(&extrude(), &[]).expect("unsupported replacement");
+        typed(&extrude(), &[], &[]).expect("unsupported replacement");
     assert_eq!(validate(&ir).expect("gate bypass").len(), 1);
 }
 
@@ -213,9 +216,9 @@ fn extrusion_amounts_require_resolved_travel_and_origin() {
             panic!("extrude")
         };
         if unknown_direction {
-            *direction = old::ExtrudeDirection::Unresolved {};
+            *direction = ExtrudeDirection::Unresolved {};
         } else {
-            *start = old::ExtrudeStart::Unresolved {};
+            *start = ExtrudeStart::Unresolved {};
         }
         assert_native(&operation);
     }
@@ -236,17 +239,17 @@ fn native_draft_operands_validate_after_canonical_zero_round_trip() {
     let LegacyOperation::Extrude {
         profile,
         direction,
-        extent: old::ExtrudeExtent::TwoSided { first, .. },
+        extent: ExtrudeExtent::TwoSided { first, .. },
         ..
     } = &mut operation
     else {
         panic!("extrude")
     };
-    *profile = old::ProfileRef::Planar(old::PlanarProfileRef::Native(
+    *profile = ProfileRef::Planar(PlanarProfileRef::Native(
         "inventor:pmdc:profile#text-0.0".into(),
     ));
-    *direction = old::ExtrudeDirection::Explicit {
-        vector: old::FeatureDirection3::new(cadmpeg_ir::math::Vector3::new(-0.0, 0.0, 1.0))
+    *direction = ExtrudeDirection::Explicit {
+        vector: FeatureDirection3::new(cadmpeg_ir::math::Vector3::new(-0.0, 0.0, 1.0))
             .expect("direction"),
         source: None,
     };

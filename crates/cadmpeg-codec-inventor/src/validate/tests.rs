@@ -16,9 +16,10 @@ use crate::feature::{
     FACE_ITEM_TYPE,
 };
 use crate::pmdc::{PmDcListMetadata, PmDcReference, PmDcReferenceList, PmDcU32List};
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::{DistinctMembers, FaceSelection};
 use cadmpeg_ir::features::{
-    DistinctMembers, FaceSelection, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
-    FeatureId, FeatureOperation,
+    Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
 };
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
@@ -174,78 +175,7 @@ fn face_collections_require_decoded_face_items() -> TestResult {
 }
 
 fn empty_data() -> super::NativeData {
-    super::NativeData {
-        storage_bands: Vec::new(),
-        databases: Vec::new(),
-        database_issues: Vec::new(),
-        registry: Vec::new(),
-        revisions: Vec::new(),
-        pairs: Vec::new(),
-        metadata: Vec::new(),
-        meta_sections: Vec::new(),
-        meta_types: Vec::new(),
-        metadata_issues: Vec::new(),
-        bulk: Vec::new(),
-        records: Vec::new(),
-        bulk_issues: Vec::new(),
-        unpaired: Vec::new(),
-        structural_issues: Vec::new(),
-        property_sets: Vec::new(),
-        property_sections: Vec::new(),
-        properties: Vec::new(),
-        property_issues: Vec::new(),
-        protein: super::ProteinRecord::Absent { id: String::new() },
-        protein_assets: Vec::new(),
-        protein_rejections: Vec::new(),
-        ufrx: super::UfrxRecord::Absent { id: String::new() },
-        assembly_occurrences: Vec::new(),
-        assembly_placements: Vec::new(),
-        design_view_representations: Vec::new(),
-        design_view_visibility: Vec::new(),
-        assembly_groundings: Vec::new(),
-        assembly_record_issues: Vec::new(),
-        pm_app_default_styles: Vec::new(),
-        pm_app_rendering_styles: Vec::new(),
-        pm_graphics_faces: Vec::new(),
-        pm_graphics_style_collections: Vec::new(),
-        pm_graphics_primary_color_styles: Vec::new(),
-        face_native_keys: Vec::new(),
-        body_native_keys: Vec::new(),
-        body_wrapper_links: Vec::new(),
-        composite_member_links: Vec::new(),
-        feature_history_states: Vec::new(),
-        presentation_record_issues: Vec::new(),
-        pm_dc_parameters: Vec::new(),
-        pm_dc_expressions: Vec::new(),
-        pm_dc_units: Vec::new(),
-        pm_dc_parameter_tables: Vec::new(),
-        pm_dc_model_roots: Vec::new(),
-        design_record_issues: Vec::new(),
-        pm_dc_sketches: Vec::new(),
-        pm_dc_sketch_entities: Vec::new(),
-        pm_dc_sketch_constraints: Vec::new(),
-        pm_dc_transforms: Vec::new(),
-        pm_dc_directions: Vec::new(),
-        sketch_record_issues: Vec::new(),
-        pm_dc_features: Vec::new(),
-        pm_dc_pattern_features: Vec::new(),
-        pm_dc_pattern_operands: Vec::new(),
-        pm_dc_feature_terminators: Vec::new(),
-        pm_dc_feature_properties: Vec::new(),
-        pm_dc_sheet_metal_styles: Vec::new(),
-        pm_dc_sheet_metal_flanges: Vec::new(),
-        pm_app_sheet_metal_unfold_rules: Vec::new(),
-        pm_app_sheet_metal_unfold_selections: Vec::new(),
-        pm_dc_feature_dimensions: Vec::new(),
-        pm_dc_feature_labels: Vec::new(),
-        pm_dc_thread_definitions: Vec::new(),
-        pm_dc_entity_style_links: Vec::new(),
-        pm_dc_kernel_entity_links: Vec::new(),
-        pm_dc_work_planes: Vec::new(),
-        feature_record_issues: Vec::new(),
-        active_carrier: super::ActiveCarrierRecord::NotApplicable { id: String::new() },
-        unknowns: Vec::new(),
-    }
+    super::NativeData::empty()
 }
 
 #[test]
@@ -696,8 +626,10 @@ fn work_plane_features_match_their_work_plane_frames() -> TestResult {
     let skewed = work_plane(4, [0.0; 3], [1.0, 0.0, 0.0], [0.6, 0.8, 0.0]);
     let admitted = frame(&plane).ok_or("orthonormal frame")?;
     let shifted = admitted.with_origin(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 0.0, 16.0))
-            .ok_or("finite origin")?,
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            0.0, 0.0, 16.0,
+        ))
+        .ok_or("finite origin")?,
     );
     let native = FeatureOperation::Native {
         kind: cadmpeg_ir::features::NativeFeatureKind::Other("WorkPlane".into()),
@@ -750,7 +682,7 @@ fn split_validation_recomputes_operands_and_the_plane_feature() -> TestResult {
             frame: frame(&plane).ok_or("orthonormal frame")?,
         },
     ));
-    let target = cadmpeg_ir::features::BodySelection::Native(properties[7].id());
+    let target = cadmpeg_ir::features::selections::BodySelection::Native(properties[7].id());
     let other = FeatureId::compose(
         &cadmpeg_ir::identity_namespace!("inventor", "design", "feature"),
         cadmpeg_ir::identity_key!("other"),
@@ -758,31 +690,33 @@ fn split_validation_recomputes_operands_and_the_plane_feature() -> TestResult {
     for (mode, tool, mismatches) in [
         (
             3,
-            cadmpeg_ir::features::SplitBodyTool::Plane {
+            cadmpeg_ir::features::direct_edit::SplitBodyTool::Plane {
                 plane: datum.id.clone(),
             },
             0,
         ),
         (
             3,
-            cadmpeg_ir::features::SplitBodyTool::Plane { plane: other },
+            cadmpeg_ir::features::direct_edit::SplitBodyTool::Plane { plane: other },
             1,
         ),
         (
             3,
-            cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(properties[10].id())),
+            cadmpeg_ir::features::direct_edit::SplitBodyTool::Faces(FaceSelection::Native(
+                properties[10].id(),
+            )),
             1,
         ),
         (
             1,
-            cadmpeg_ir::features::SplitBodyTool::Plane {
+            cadmpeg_ir::features::direct_edit::SplitBodyTool::Plane {
                 plane: datum.id.clone(),
             },
             1,
         ),
         (
             2,
-            cadmpeg_ir::features::SplitBodyTool::Plane {
+            cadmpeg_ir::features::direct_edit::SplitBodyTool::Plane {
                 plane: datum.id.clone(),
             },
             1,
@@ -838,9 +772,8 @@ fn split_validation_recomputes_operands_and_the_plane_feature() -> TestResult {
 
 #[test]
 fn neutral_sweep_validation_runs_the_shared_operand_gate() -> TestResult {
-    use cadmpeg_ir::features::{
-        PathRef, PlanarProfileRef, SolidSweepOperation, SweepSection, SweepShape,
-    };
+    use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef};
+    use cadmpeg_ir::features::sweeps::{SolidSweepOperation, SweepSection, SweepShape};
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
@@ -902,7 +835,8 @@ fn edge_treatment_validation_recomputes_all_admitted_dimension_forms() -> TestRe
     use cadmpeg_ir::features::edge_treatments::{
         ChamferGroup, ChamferSpec, FilletGroup, RadiusSpec,
     };
-    use cadmpeg_ir::features::{EdgeSelection, ParameterValue};
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::features::selections::EdgeSelection;
     use cadmpeg_ir::scalar::{Angle, Length, PositiveLength};
 
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -933,14 +867,14 @@ fn edge_treatment_validation_recomputes_all_admitted_dimension_forms() -> TestRe
         let distance = PositiveLength::new(2.0).ok_or("distance")?;
         let operation = match form {
             None => FeatureOperation::Fillet {
-                groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {
+                groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(FilletGroup {
                     edges: EdgeSelection::Native(properties[3].id()),
                     radius: RadiusSpec::Constant { radius: distance },
                     tangency_weight: None,
                 }),
             },
             Some(form) => FeatureOperation::Chamfer {
-                groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
+                groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(ChamferGroup {
                     edges: EdgeSelection::Native(if form == 0 {
                         properties[0].id()
                     } else {

@@ -3,7 +3,9 @@
 //!
 //! These codes belong to no codec: the wrapper charges them by comparing the
 //! content classes the requested depth names with the classes the document
-//! holds, so every codec reports them under one namespace.
+//! holds, for the records its normalizer gave up, and for an id a decoder
+//! emitted twice with different content, so every codec reports them under
+//! one namespace.
 
 use cadmpeg_core::decode::ArenaClass;
 
@@ -22,6 +24,13 @@ pub(crate) enum DecodeLossCode {
         /// The requested class the document does not hold.
         class: ArenaClass,
     },
+    /// A decoder emitted one id more than once in an arena, and the copies
+    /// differ. The first copy it emitted is kept and the others dropped
+    /// (interim: §2.8 states no copy, which needs the shared give-up pass).
+    IdRepeated,
+    /// The normalizer gave up records part way, which keep spellings the
+    /// decoder stated.
+    NormalizeIncomplete,
 }
 
 impl DecodeLossCode {
@@ -29,27 +38,45 @@ impl DecodeLossCode {
     const fn code(self) -> &'static str {
         match self {
             Self::DepthNotDelivered { .. } => "depth.not-delivered",
+            Self::IdRepeated => "id.repeated",
+            Self::NormalizeIncomplete => "normalize.incomplete",
         }
     }
 
     const fn severity(self) -> Severity {
         match self {
             Self::DepthNotDelivered { .. } => Severity::Error,
+            Self::IdRepeated => Severity::Error,
+            Self::NormalizeIncomplete => Severity::Warning,
         }
     }
 
     /// Shared category of the content the shallower depth left out.
     const fn shared_taxonomy(self) -> LossTaxonomy {
-        let Self::DepthNotDelivered { class } = self;
-        match class {
-            ArenaClass::Model => LossTaxonomy::GeometryNotTransferred,
-            ArenaClass::Design | ArenaClass::Process => LossTaxonomy::ParametricRecordOmitted,
+        match self {
+            Self::DepthNotDelivered {
+                class: ArenaClass::Model,
+            } => LossTaxonomy::GeometryNotTransferred,
+            Self::DepthNotDelivered {
+                class: ArenaClass::Design | ArenaClass::Process,
+            } => LossTaxonomy::ParametricRecordOmitted,
+            Self::IdRepeated | Self::NormalizeIncomplete => LossTaxonomy::DecodeDiagnostic,
+        }
+    }
+
+    /// A shallower delivery refuses a strict decode. A record the
+    /// normalizer gave up keeps all its content in a spelling the decoder
+    /// stated, so it refuses nothing; a repeated id refuses nothing either.
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::DepthNotDelivered { .. } => Some(Severity::Warning),
+            Self::IdRepeated | Self::NormalizeIncomplete => None,
         }
     }
 
     fn kind(self) -> LossKind {
         NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy())
-            .with_strict_floor(Some(Severity::Warning))
+            .with_strict_floor(self.strict_floor())
             .into()
     }
 

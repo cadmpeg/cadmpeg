@@ -16,6 +16,9 @@ pub(super) fn check_semantic_annotations(
     all_ids: &dyn IdentitySet,
     findings: &mut Vec<Finding>,
 ) {
+    if ir.model.semantic_annotations.is_empty() {
+        return;
+    }
     let records = DesignRecords::of(ir);
     let named = crate::references::ReferenceRecords::of(&ir.model);
     let mut orders = std::collections::BTreeSet::new();

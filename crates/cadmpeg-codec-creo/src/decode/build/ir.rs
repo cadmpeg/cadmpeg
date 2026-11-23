@@ -6,13 +6,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::{DecodeContext, DecodeDepth};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::VertexSelection;
-use cadmpeg_ir::features::{
-    patterns::{PatternKind, PatternTransform},
-    AngularTermination, BodySelection, EdgeSelection, FaceSelection, LinearTermination, PathRef,
-    SurfaceBoundary,
-};
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::extents::{AngularTermination, LinearTermination};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::patterns::{PatternKind, PatternTransform};
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::selections::VertexSelection;
+use cadmpeg_ir::features::selections::{BodySelection, EdgeSelection, FaceSelection};
+use cadmpeg_ir::features::surface_inputs::SurfaceBoundary;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
@@ -814,7 +814,14 @@ pub(in super::super) fn build_ir(
         &mut transfer_losses,
     )?;
     attach_expanded_sections(ctx, scan, &mut ir, &mut annotations)?;
-    emit_geometry_arenas(ctx, scan, &mut ir, &mut annotations, &brep_diagnostics)?;
+    emit_geometry_arenas(
+        ctx,
+        scan,
+        &mut ir,
+        &mut annotations,
+        &brep_diagnostics,
+        &mut transfer_losses,
+    )?;
     collect_feature_coverage(
         scan,
         &ir,
@@ -826,7 +833,13 @@ pub(in super::super) fn build_ir(
     let definition =
         super::design_v11::root_definition(ctx, &mut ir, super::design_v11::model_kind(scan))?;
     if ctx.depth() >= DecodeDepth::Design {
-        super::design_v11::project(ctx, scan, &mut ir, &definition)?;
+        cadmpeg_ir::design::projection::project_layer(
+            ctx,
+            "creo",
+            &mut ir,
+            &mut transfer_losses,
+            |ir, losses| super::design_v11::project(ctx, scan, ir, &definition, losses),
+        )?;
     }
     Ok(BuiltIr {
         ir,

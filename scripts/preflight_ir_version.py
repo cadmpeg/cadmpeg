@@ -58,7 +58,8 @@ LOWER_IDENTIFIER = re.compile(r"\b[a-z_]\w*")
 VERSION_FIELD = re.compile(r'\bir_version:|rename="ir_version"')
 PATH_ATTRIBUTE = re.compile(r'^#\[path\s*=\s*"([^"]+)"\]$')
 TEST_CFG = re.compile(r"^#\[cfg\(\s*(?:test|all\(.*\btest\b.*\))\s*\)\]$")
-SERDE_DERIVE = re.compile(r"\b(Serialize|Deserialize)\b")
+# `DeserializeTagged` reads the wire form that serde's `Deserialize` reads.
+SERDE_DERIVE = re.compile(r"\b(Serialize|Deserialize)(?:Tagged)?\b")
 WIRE_ATTRIBUTE = re.compile(r"\bserde\s*\(|\brename|^#\[cfg\(")
 VISIBILITY = re.compile(r"\bpub\b(?:\s*\((?:crate|super|self|in\s+[\w:]+)\))?\s*")
 IDENTIFIER = re.compile(r"\b[A-Z]\w*")
@@ -456,7 +457,7 @@ def other_changes(context) -> list[str]:
 
 def stale_fixtures(context, old: int) -> list[str]:
     """Files that pinned the old version at the merge base and still pin it."""
-    pattern = rf'"ir_version"\s*:\s*"{old}"'
+    pattern = rf'"ir_version"[[:space:]]*:[[:space:]]*"{old}"'
     pinned = context.git("grep", "-l", "-E", pattern, context.base, "--").stdout.splitlines()
     pinned = {line.split(":", 1)[1] for line in pinned if ":" in line}
     arguments = ["grep", "-l", "-E", pattern]

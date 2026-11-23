@@ -242,7 +242,12 @@ fn native_catalog_separates_offset_only_blocks_from_object_records() {
         prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
     let container = container::scan_bytes(file).expect("required invariant");
 
-    assert!((super::object_records(&container)).unwrap().0.is_empty());
+    assert!(
+        (super::object_records(&container, super::MAX_STABLE_GRAPH_WORK))
+            .unwrap()
+            .0
+            .is_empty()
+    );
     let blocks = super::data_blocks(&container).unwrap();
     assert_eq!(blocks.len(), 3);
     assert_eq!(blocks[0].block_ordinal, 0);
@@ -691,7 +696,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         result.ir().model.features[0].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::TreeNode {
-                role: cadmpeg_ir::features::FeatureTreeNodeRole::Equations,
+                role: cadmpeg_ir::features::tree::FeatureTreeNodeRole::Equations,
                 ..
             }
         )
@@ -703,7 +708,7 @@ fn decode_retains_typed_nx_numeric_expression() {
     assert_eq!(parameter.name, expressions[0].name.as_str());
     assert!(matches!(
         parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Angle(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Angle(
             value
         )) if value.get() == 120_f64.to_radians()
     ));

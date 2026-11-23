@@ -96,6 +96,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-codec-edrawings"
+version = "0.6.12"
+dependencies = [
+ "cadmpeg-container",
+ "cadmpeg-core",
+ "cadmpeg-ir",
+]
+
+[[package]]
 name = "cadmpeg-codec-f3d"
 version = "0.6.12"
 dependencies = [
@@ -226,6 +235,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-codec-solidedge"
+version = "0.6.12"
+dependencies = [
+ "cadmpeg-container",
+ "cadmpeg-core",
+ "cadmpeg-ir",
+]
+
+[[package]]
 name = "cadmpeg-codec-step"
 version = "0.6.12"
 dependencies = [
@@ -286,6 +304,7 @@ dependencies = [
  "cadmpeg-asm",
  "cadmpeg-codec-catia",
  "cadmpeg-codec-creo",
+ "cadmpeg-codec-edrawings",
  "cadmpeg-codec-f3d",
  "cadmpeg-codec-freecad",
  "cadmpeg-codec-iges",
@@ -295,6 +314,7 @@ dependencies = [
  "cadmpeg-codec-rhino",
  "cadmpeg-codec-sat",
  "cadmpeg-codec-sldprt",
+ "cadmpeg-codec-solidedge",
  "cadmpeg-codec-step",
  "cadmpeg-codec-usd",
  "cadmpeg-container",
@@ -315,8 +335,8 @@ dependencies = [
  "cadmpeg-core",
  "cadmpeg-derive",
  "libm",
+ "memchr",
  "serde",
- "serde-value",
  "serde_json",
  "sha2",
  "thiserror",

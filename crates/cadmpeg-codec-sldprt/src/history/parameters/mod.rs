@@ -5,13 +5,10 @@ use crate::classification::{classify, FeatureClass, NativeClassKind};
 use crate::records::{Feature, FeatureHistory};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::{
-    features::{
-        DesignParameter, DimensionDisplay, FeatureDefinition, FeatureId, FeatureOperation,
-        FeatureTreeNodeRole, ParameterId, ParameterValue,
-    },
-    scalar::{Angle, FiniteReal, Length},
-};
+use cadmpeg_ir::features::parameters::{DesignParameter, DimensionDisplay, ParameterValue};
+use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation, ParameterId};
+use cadmpeg_ir::scalar::{Angle, FiniteReal, Length};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
@@ -69,16 +66,7 @@ pub(crate) fn project_parameters(
                     .get(&name)
                     .cloned()
                     .unwrap_or_default();
-                let parse_value = |value: &str| match display {
-                    Some(DimensionDisplay::Diameter | DimensionDisplay::Radius) => {
-                        parse_dimension_display_length(value).map(ParameterValue::Length)
-                    }
-                    None => parse_native_parameter_literal(feature, &name, value),
-                };
-                let value = properties
-                    .get("Value")
-                    .and_then(|value| parse_value(value))
-                    .or_else(|| parse_value(expression));
+                let value = stated_parameter_value(feature, &name, expression, &properties);
                 let ordinal_u32 = u32::try_from(ordinal).map_err(|_| {
                     CodecError::malformed("SLDPRT feature parameter ordinal exceeds u32")
                 })?;
@@ -92,7 +80,7 @@ pub(crate) fn project_parameters(
                     expression: expression.clone(),
                     display,
                     value,
-                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                    dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                     native_ref: None,
                     pmi: None,
                 };
@@ -240,6 +228,26 @@ pub(super) fn apply_evaluated_parameters(
     Ok(())
 }
 
+/// The value a feature record states for its dimension `name`: the stored
+/// `Value` property, else the expression literal.
+pub(crate) fn stated_parameter_value(
+    feature: &Feature,
+    name: &str,
+    expression: &str,
+    properties: &std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+) -> Option<ParameterValue> {
+    let parse_value = |value: &str| match dimension_display(expression) {
+        Some(DimensionDisplay::Diameter | DimensionDisplay::Radius) => {
+            parse_dimension_display_length(value).map(ParameterValue::Length)
+        }
+        None => parse_native_parameter_literal(feature, name, value),
+    };
+    properties
+        .get("Value")
+        .and_then(|value| parse_value(value))
+        .or_else(|| parse_value(expression))
+}
+
 pub(crate) fn parse_native_parameter_literal(
     feature: &Feature,
     name: &str,
@@ -253,7 +261,7 @@ pub(crate) fn parse_native_parameter_literal(
     parse_parameter_literal(expression)
 }
 
-pub(super) fn native_parameter_is_length(
+pub(crate) fn native_parameter_is_length(
     feature: &Feature,
     name: &str,
     expression: Option<&str>,
@@ -287,6 +295,7 @@ pub(super) fn native_parameter_is_length(
                 || cosmetic_thread
         }
         "D2" if cosmetic_thread => true,
+        "D2" if is_extrude(feature) && extrude_second_side_blind(feature) => true,
         "D2" if is_chamfer(feature) => {
             expression.is_none_or(|value| parse_angle_rad(value).is_none())
         }
@@ -307,6 +316,13 @@ pub(super) fn native_parameter_is_length(
                 && feature.parameters.contains_key(name)
         }
     }
+}
+
+/// Whether an extrude's second side is blind, its depth the `D2` dimension:
+/// a second end condition `Blind`, or a `TwoSided` end condition.
+fn extrude_second_side_blind(feature: &Feature) -> bool {
+    feature.properties.get("EndCondition2").map(String::as_str) == Some("Blind")
+        || feature.properties.get("EndCondition").map(String::as_str) == Some("TwoSided")
 }
 
 /// The expression of a native scalar `value` in metres or radians, in the
@@ -343,8 +359,8 @@ pub(crate) fn format_native_scalar(
 fn project_parameter_dependencies(
     parameter: &DesignParameter,
     aliases: ParameterAliasView<'_>,
-) -> cadmpeg_ir::features::DistinctMembers<ParameterId> {
-    let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
+) -> cadmpeg_ir::features::selections::DistinctMembers<ParameterId> {
+    let mut dependencies = cadmpeg_ir::features::selections::DistinctMembers::default();
     let Some(tokens) = expression_identifier_tokens(&parameter.expression) else {
         return dependencies;
     };
@@ -649,7 +665,7 @@ pub(crate) fn parameters_with_unevaluable_expressions(
     parameters: &[DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
     global_owners: &HashSet<FeatureId>,
-    configurations: &[cadmpeg_ir::features::DesignConfiguration],
+    configurations: &[cadmpeg_ir::features::parameters::DesignConfiguration],
 ) -> Result<usize, CodecError> {
     if parameters.is_empty() {
         return Ok(0);
@@ -703,7 +719,7 @@ pub(crate) fn parameters_with_incoherent_evaluated_values(
     parameters: &[DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
     global_owners: &HashSet<FeatureId>,
-    configurations: &[cadmpeg_ir::features::DesignConfiguration],
+    configurations: &[cadmpeg_ir::features::parameters::DesignConfiguration],
 ) -> Result<usize, CodecError> {
     if parameters.is_empty() {
         return Ok(0);
@@ -741,16 +757,23 @@ pub(crate) fn parameters_with_incoherent_evaluated_values(
 
 fn parameter_value_states(
     parameters: &[DesignParameter],
-    configurations: &[cadmpeg_ir::features::DesignConfiguration],
+    configurations: &[cadmpeg_ir::features::parameters::DesignConfiguration],
     include_global: bool,
 ) -> Result<Vec<HashMap<ParameterId, ParameterValue>>, CodecError> {
-    let make_state = |configuration: Option<&cadmpeg_ir::features::DesignConfiguration>| -> Result<_, CodecError> {
+    let make_state = |configuration: Option<
+        &cadmpeg_ir::features::parameters::DesignConfiguration,
+    >|
+     -> Result<_, CodecError> {
         let mut values = HashMap::new();
         for parameter in parameters {
-            if let Some(value) = &parameter.value { insert_parameter_value(&mut values, &parameter.id, value); }
+            if let Some(value) = &parameter.value {
+                insert_parameter_value(&mut values, &parameter.id, value);
+            }
         }
         if let Some(configuration) = configuration {
-            for (id, value) in &configuration.parameter_values { insert_parameter_value(&mut values, id, value); }
+            for (id, value) in &configuration.parameter_values {
+                insert_parameter_value(&mut values, id, value);
+            }
         }
         Ok(values)
     };
@@ -766,7 +789,7 @@ fn parameter_value_states(
     Ok(states)
 }
 
-fn equivalent_parameter_values(left: &ParameterValue, right: &ParameterValue) -> bool {
+pub(crate) fn equivalent_parameter_values(left: &ParameterValue, right: &ParameterValue) -> bool {
     let close = |left: f64, right: f64| {
         (left - right).abs()
             <= EPS_PARAMETERS_EQUIVALENT_PARAMETER_VALUES_E9 * (1.0 + left.abs().max(right.abs()))
@@ -809,7 +832,7 @@ fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> {
 }
 
 /// One identifier token of the expression it borrows from.
-pub(super) struct ExpressionIdentifier<'a> {
+pub(crate) struct ExpressionIdentifier<'a> {
     raw: &'a str,
     following: &'a str,
     value: Cow<'a, str>,
@@ -850,8 +873,13 @@ impl<'a> ExpressionIdentifier<'a> {
     }
 
     /// The identifier text, with the quotes and doubled quotes resolved.
-    pub(super) fn value(&self) -> &str {
+    pub(crate) fn value(&self) -> &str {
         &self.value
+    }
+
+    /// The token as the source spells it, quotes included.
+    pub(crate) fn raw(&self) -> &'a str {
+        self.raw
     }
 
     /// Whether the source spelled this identifier in quotes.
@@ -861,7 +889,7 @@ impl<'a> ExpressionIdentifier<'a> {
 
     /// Whether the token is expression syntax — a literal, a constant, or a function name
     /// applied to a following argument list — rather than a name to resolve.
-    pub(super) fn is_syntax(&self) -> bool {
+    pub(crate) fn is_syntax(&self) -> bool {
         if self.quoted {
             return false;
         }
@@ -882,7 +910,7 @@ impl<'a> ExpressionIdentifier<'a> {
     }
 
     /// The expression text that follows this token.
-    pub(super) fn following(&self) -> &'a str {
+    pub(crate) fn following(&self) -> &'a str {
         self.following
     }
 
@@ -894,7 +922,7 @@ impl<'a> ExpressionIdentifier<'a> {
     }
 }
 
-pub(super) fn expression_identifier_tokens(
+pub(crate) fn expression_identifier_tokens(
     expression: &str,
 ) -> Option<Vec<ExpressionIdentifier<'_>>> {
     let mut identifiers = Vec::new();

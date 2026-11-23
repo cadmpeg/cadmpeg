@@ -69,7 +69,9 @@ fn compact_body_states_require_a_duplicated_local_identity() {
 
 #[test]
 fn compact_body_retention_mode_follows_the_state_roster() {
-    use cadmpeg_ir::features::BodyRetentionMode::{DeleteSelected, KeepSelected};
+    use cadmpeg_ir::features::operation_settings::BodyRetentionMode::{
+        DeleteSelected, KeepSelected,
+    };
 
     let token = 0x89a4u16;
     let mut payload = vec![0; 112];
@@ -791,6 +793,7 @@ fn compact_edge_selection_preserves_an_idless_path_entry() {
         references: Vec::new(),
         producer_feature_refs: vec!["producer".into()],
         terminal_feature_ref: Some("producer".into()),
+        mark_reference: false,
     };
     assert_eq!(compact_edge_path_value(&selection), "4,_,4,0");
     assert_eq!(

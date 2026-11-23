@@ -21,10 +21,8 @@ const EPS_PARAMETER_VALUE: f64 = 1.0e-12;
 
 #[test]
 fn decode_projects_every_dimension_as_a_neutral_parameter() {
-    use cadmpeg_ir::{
-        features::{DimensionDisplay, ParameterValue},
-        scalar::{Angle, Length},
-    };
+    use cadmpeg_ir::features::parameters::{DimensionDisplay, ParameterValue};
+    use cadmpeg_ir::scalar::{Angle, Length};
 
     let mut source = sldprt_with_body(&triangle_body());
     let keywords = format!(
@@ -310,7 +308,8 @@ fn parameter_references_distinguish_reserved_expression_syntax() {
 
 #[test]
 fn decode_evaluates_parameter_dependency_expressions() {
-    use cadmpeg_ir::{features::ParameterValue, scalar::Length};
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::scalar::Length;
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -409,13 +408,10 @@ fn decode_evaluates_parameter_dependency_expressions() {
 
 #[test]
 fn decode_projects_evaluated_equations_into_feature_semantics() {
-    use cadmpeg_ir::{
-        features::{
-            BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation,
-            LinearTermination,
-        },
-        scalar::Length,
-    };
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::scalar::Length;
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -458,7 +454,7 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
     assert_eq!(depth.expression, "Base * 2");
     assert_eq!(
         depth.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             Length::new(8.0).unwrap()
         ))
     );
@@ -498,13 +494,11 @@ fn decode_projects_evaluated_equations_into_feature_semantics() {
 
 #[test]
 fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
-    use cadmpeg_ir::{
-        features::{
-            ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation, FeatureTreeNodeRole,
-            LinearTermination, ParameterValue,
-        },
-        scalar::Length,
-    };
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::scalar::Length;
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -589,7 +583,7 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -729,7 +723,7 @@ fn decode_applies_owned_feature_units_to_resolved_scalar() {
     assert_eq!(parameter.expression, "25mm");
     assert_eq!(
         parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Length(
+        Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(25.0).unwrap()
         ))
     );
@@ -737,13 +731,11 @@ fn decode_applies_owned_feature_units_to_resolved_scalar() {
 }
 
 #[test]
-fn configuration_local_modeling_edits_without_brep_are_refused() {
-    use cadmpeg_ir::{
-        features::{
-            edge_treatments::RadiusSpec, FeatureDefinition, FeatureOperation, ParameterValue,
-        },
-        scalar::Length,
-    };
+fn inconsistent_configuration_local_edits_are_refused_and_consistent_ones_written_and_named() {
+    use cadmpeg_ir::features::edge_treatments::RadiusSpec;
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::scalar::Length;
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -904,13 +896,24 @@ fn configuration_local_modeling_edits_without_brep_are_refused() {
 
     let mut unavailable_fidelity = decoded.source_fidelity().clone();
     crate::test_support::make_source_image_unavailable(&mut unavailable_fidelity);
-    let error =
-        crate::test_support::plan_inherited_write(&edited, &unavailable_fidelity, &mut Vec::new())
-            .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-    assert!(error
-        .to_string()
-        .contains("validated retained local, central and EOCD signature tokens"));
+    let report = cadmpeg_ir::codec::write::Encoder::plan(
+        &SldprtCodec,
+        cadmpeg_ir::codec::write::EncodeInput::new(&edited, Some(&unavailable_fidelity)),
+        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+    )
+    .unwrap()
+    .write_to(&mut Vec::new())
+    .unwrap();
+    assert!(
+        report.losses.iter().any(|loss| loss.code
+            == crate::loss::SldprtLossCode::WriterSolidStaleAfterEdit.kind()
+            && loss
+                .message
+                .starts_with("The configurations differ from the decoded source.")
+            && loss.message.contains("without the retained source image")),
+        "{:#?}",
+        report.losses
+    );
 
     assert!(unavailable_fidelity
         .retained_record(crate::SOURCE_IMAGE_ID)
@@ -919,7 +922,7 @@ fn configuration_local_modeling_edits_without_brep_are_refused() {
         .is_none());
 
     let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
+    crate::test_support::write_history_over_stale_solid(
         &edited,
         decoded.source_fidelity(),
         &mut encoded,
@@ -963,13 +966,11 @@ fn configuration_local_modeling_edits_without_brep_are_refused() {
 
 #[test]
 fn decode_separates_document_expression_from_evaluated_feature_scalar() {
-    use cadmpeg_ir::{
-        features::{
-            BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureOperation,
-            LinearTermination, ParameterValue,
-        },
-        scalar::Length,
-    };
+    use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::parameters::ParameterValue;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::scalar::Length;
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(

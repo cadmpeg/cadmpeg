@@ -12,7 +12,9 @@
 //! asked:
 //!
 //! - [`verbatim_replay_holds`] covers the copy. It asserts the copy happened and
-//!   that the copy is faithful. It says nothing about the writer.
+//!   that the copy is faithful, and that the report carries
+//!   `export:source.carried` exactly when the decode kept bytes it did not
+//!   decode. It says nothing about the writer.
 //! - [`semantic_roundtrip`] covers the writer with the baseline taken away, so
 //!   the copy is not available, and asserts the copy did not happen.
 //! - [`mutation_roundtrip`] covers the writer with the baseline left in place
@@ -50,13 +52,16 @@ use cadmpeg_ir::report::export::{ExportReport, WritePath};
 /// retained bytes verbatim, producing `fixture` again.
 ///
 /// Proves container fidelity (retained image, integrity, matching baseline).
-/// Does not exercise the writer; use [`semantic_roundtrip`] for that.
+/// Does not exercise the writer; use [`semantic_roundtrip`] for that. A decode
+/// that marks a retained record `untyped` replays too, and the report says so
+/// with `export:source.carried`.
 ///
 /// # Panics
 ///
 /// Panics when the decode or the encode fails, when the encoder took any path
-/// other than [`WritePath::VerbatimReplay`], or when the replayed bytes differ
-/// from `fixture`.
+/// other than [`WritePath::VerbatimReplay`], when the replayed bytes differ
+/// from `fixture`, or when the report carries `export:source.carried` and the
+/// decode marks no retained record `untyped`, or the reverse.
 pub fn verbatim_replay_holds<C>(codec: &C, label: &str, fixture: &[u8]) -> ExportReport
 where
     C: Codec + Encoder,
@@ -69,6 +74,7 @@ where
         )
         .unwrap_or_else(|error| panic!("{label}: decode failed: {error}")),
     );
+    let untyped = !decoded.source_fidelity().unrepresented().is_empty();
     let plan = Encoder::plan(
         codec,
         EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
@@ -90,7 +96,23 @@ where
         "{label}: verbatim replay produced different bytes: {}",
         describe_byte_difference(fixture, &written)
     );
+    assert_eq!(
+        reports_carried_source(&report),
+        untyped,
+        "{label}: the report must carry export:source.carried exactly when the decode marks a \
+         retained record `untyped`"
+    );
     report
+}
+
+/// Whether `report` carries `export:source.carried`: the written file holds
+/// bytes the decode kept without decoding.
+#[must_use]
+pub fn reports_carried_source(report: &ExportReport) -> bool {
+    report
+        .losses
+        .iter()
+        .any(|loss| loss.code.namespace() == "export" && loss.code.local_code() == "source.carried")
 }
 
 /// What the writer did when it was denied the verbatim-replay shortcut.
@@ -190,6 +212,8 @@ pub enum MutationOutcome {
         edited: Box<CadIr>,
         /// The bytes the writer produced.
         bytes: Vec<u8>,
+        /// The export report the plan stated for those bytes.
+        report: Box<ExportReport>,
     },
     /// The encoder refused the edit.
     Refused {
@@ -284,24 +308,26 @@ where
         TargetRequest::Inherit,
     ) {
         Ok(plan) => {
-            let path = plan.report().write_path().clone();
             let mut bytes = Vec::new();
-            plan.write_to(&mut bytes)
+            let report = plan
+                .write_to(&mut bytes)
                 .unwrap_or_else(|error| panic!("{label}: write failed: {error}"));
-            Ok((path, bytes))
+            Ok((report, bytes))
         }
         Err(error) => Err(error),
     };
     let outcome = match written {
-        Ok((path, bytes)) => {
+        Ok((report, bytes)) => {
+            let path = report.write_path();
             assert!(
-                expected_path.describes(&path),
+                expected_path.describes(path),
                 "{label}: the document was edited, so the encoder was expected to write by the \
                  {expected_path} path, but it took the {path} path"
             );
             MutationOutcome::Written {
                 edited: Box::new(edited),
                 bytes,
+                report: Box::new(report),
             }
         }
         Err(error) => MutationOutcome::Refused { error },

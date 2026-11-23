@@ -24,6 +24,7 @@ default = [
   "fcstd",
   "f3d",
   "inventor",
+  "solidedge",
   "sldprt",
   "catia",
   "creo",
@@ -33,7 +34,9 @@ default = [
   "iges",
   "sat",
   "pvz",
+  "edrawings",
   "usd",
+  "onshape",
 ]
 #
 # Each id forwards to the same feature of `cadmpeg-registry`, which owns the
@@ -41,6 +44,7 @@ default = [
 # encoding. Direct codec dependencies are needed only by CLI tests.
 fcstd = ["cadmpeg-registry/fcstd", "dep:cadmpeg-codec-freecad"]
 f3d = ["cadmpeg-registry/f3d", "dep:cadmpeg-codec-f3d"]
+solidedge = ["cadmpeg-registry/solidedge"]
 inventor = ["cadmpeg-registry/inventor"]
 sldprt = ["cadmpeg-registry/sldprt", "dep:cadmpeg-codec-sldprt"]
 catia = ["cadmpeg-registry/catia", "dep:cadmpeg-codec-catia"]
@@ -51,12 +55,14 @@ step = ["cadmpeg-registry/step", "dep:cadmpeg-codec-step"]
 iges = ["cadmpeg-registry/iges", "dep:cadmpeg-codec-iges"]
 sat = ["cadmpeg-registry/sat"]
 pvz = ["cadmpeg-registry/pvz"]
+edrawings = ["cadmpeg-registry/edrawings"]
+onshape = ["cadmpeg-registry/onshape"]
 usd = ["cadmpeg-registry/usd"]
 
 [dependencies]
 cadmpeg-core.workspace = true
 cadmpeg-container.workspace = true
-cadmpeg-ir = { workspace = true, features = ["schema"] }
+cadmpeg-ir.workspace = true
 cadmpeg-measure.workspace = true
 cadmpeg-registry.workspace = true
 cadmpeg-codec-freecad = { workspace = true, optional = true }

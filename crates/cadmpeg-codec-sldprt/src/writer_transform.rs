@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsError, sampled::GeometryLayoutError, CurveGeometry, SolvedCurveGeometry,
     SolvedSurfaceGeometry, SurfaceGeometry,
@@ -220,7 +220,7 @@ fn placed_point(transform: Transform, point: FinitePoint3) -> Result<FinitePoint
 fn placed_vector(transform: Transform, vector: Vector3) -> Result<Vector3, CodecError> {
     transform
         .apply_vector(vector)
-        .map(cadmpeg_ir::features::FiniteVector3::get)
+        .map(cadmpeg_ir::features::geometry::FiniteVector3::get)
         .ok_or_else(non_finite_vector)
 }
 
@@ -477,7 +477,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
 mod tests {
     use super::{placed_point, placed_vector, transform_curve, transform_surface};
     use cadmpeg_core::CodecError;
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::geometry::analytic::LineCurve;
     use cadmpeg_ir::geometry::sampled::{PolygonalSurface, PolylineCurve, PolylineSamples};
     use cadmpeg_ir::geometry::{
@@ -601,7 +601,7 @@ mod tests {
                 &geometry,
                 0.0
             )
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get),
             Ok(Point3::new(0.0, 0.0, -2.0))
         );
     }

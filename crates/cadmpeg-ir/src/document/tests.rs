@@ -5,11 +5,12 @@ use cadmpeg_core::decode::{ArenaClass, ContentScope};
 
 use crate::document::{ArenaName, EntityRewrite, Model, ScopeViolation, SourceMeta, Topology};
 use crate::examples::unit_cube;
+use crate::geometry::nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use crate::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
-    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
-    SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
@@ -205,7 +206,7 @@ fn entity_schema_registry_covers_arenas_and_unit_cube_references_resolve() {
         }
         Ok(())
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     macro_rules! visit_arenas {
         ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
             $(for entity in &ir.$home.$field {
@@ -271,27 +272,26 @@ fn tree_node_model() -> (
     crate::features::FeatureId,
     crate::features::FeatureId,
 ) {
-    use crate::features::{
-        Feature, FeatureDefinition, FeatureId, FeatureOperation, FeatureTreeNodeRole,
-    };
+    use crate::features::tree::FeatureTreeNodeRole;
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
-    let parent_id = FeatureId::mint("test:model:feature#parent").expect("identity grammar");
-    let child_id = FeatureId::mint("test:model:feature#child").expect("identity grammar");
+    let parent_id = FeatureId::mint("test:model:feature#1-parent").expect("identity grammar");
+    let child_id = FeatureId::mint("test:model:feature#2-child").expect("identity grammar");
     let parent = Feature {
         product_definition: None,
         id: parent_id.clone(),
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::TreeNode {
                 role: FeatureTreeNodeRole::History,
-                children: crate::features::TreeChildren::new(
+                children: crate::features::tree::TreeChildren::new(
                     vec![child_id.clone()],
                     Some(child_id.clone()),
                 )
@@ -306,12 +306,12 @@ fn tree_node_model() -> (
         ordinal: 1,
         name: None,
         suppressed: None,
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
         ),
         native_ref: None,
@@ -348,12 +348,12 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
                 ordinal: 0,
                 name: None,
                 suppressed: None,
-                dependencies: crate::features::DistinctMembers::default(),
+                dependencies: crate::features::selections::DistinctMembers::default(),
                 source_properties: std::collections::BTreeMap::default(),
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
-                evaluation: crate::features::FeatureEvaluation::from_definition(
+                evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                 ),
                 native_ref: None,
@@ -364,12 +364,12 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
                 ordinal: 1,
                 name: None,
                 suppressed: None,
-                dependencies: crate::features::DistinctMembers::default(),
+                dependencies: crate::features::selections::DistinctMembers::default(),
                 source_properties: std::collections::BTreeMap::default(),
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
-                evaluation: crate::features::FeatureEvaluation::from_definition(
+                evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                 ),
                 native_ref: None,
@@ -406,13 +406,12 @@ fn feature_wire_refuses_the_deleted_parent_key() {
 /// A tree child cannot also state a regeneration predecessor.
 #[test]
 fn feature_parent_wire_rejects_disagreement_with_tree_children() {
-    use crate::features::{
-        Feature, FeatureDefinition, FeatureId, FeatureOperation, FeatureTreeNodeRole,
-    };
+    use crate::features::tree::FeatureTreeNodeRole;
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
-    let first_id = FeatureId::mint("test:model:feature#first").expect("identity grammar");
-    let second_id = FeatureId::mint("test:model:feature#second").expect("identity grammar");
-    let child_id = FeatureId::mint("test:model:feature#child").expect("identity grammar");
+    let first_id = FeatureId::mint("test:model:feature#1-first").expect("identity grammar");
+    let second_id = FeatureId::mint("test:model:feature#2-second").expect("identity grammar");
+    let child_id = FeatureId::mint("test:model:feature#3-child").expect("identity grammar");
     let model = Model {
         features: vec![
             Feature {
@@ -421,16 +420,19 @@ fn feature_parent_wire_rejects_disagreement_with_tree_children() {
                 ordinal: 0,
                 name: None,
                 suppressed: None,
-                dependencies: crate::features::DistinctMembers::default(),
+                dependencies: crate::features::selections::DistinctMembers::default(),
                 source_properties: std::collections::BTreeMap::default(),
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
-                evaluation: crate::features::FeatureEvaluation::from_definition(
+                evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::TreeNode {
                         role: FeatureTreeNodeRole::History,
-                        children: crate::features::TreeChildren::new(vec![child_id.clone()], None)
-                            .unwrap(),
+                        children: crate::features::tree::TreeChildren::new(
+                            vec![child_id.clone()],
+                            None,
+                        )
+                        .unwrap(),
                     }),
                 ),
                 native_ref: None,
@@ -441,12 +443,12 @@ fn feature_parent_wire_rejects_disagreement_with_tree_children() {
                 ordinal: 1,
                 name: None,
                 suppressed: None,
-                dependencies: crate::features::DistinctMembers::default(),
+                dependencies: crate::features::selections::DistinctMembers::default(),
                 source_properties: std::collections::BTreeMap::default(),
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
-                evaluation: crate::features::FeatureEvaluation::from_definition(
+                evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                 ),
                 native_ref: None,
@@ -457,12 +459,12 @@ fn feature_parent_wire_rejects_disagreement_with_tree_children() {
                 ordinal: 2,
                 name: None,
                 suppressed: None,
-                dependencies: crate::features::DistinctMembers::default(),
+                dependencies: crate::features::selections::DistinctMembers::default(),
                 source_properties: std::collections::BTreeMap::default(),
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
-                evaluation: crate::features::FeatureEvaluation::from_definition(
+                evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                 ),
                 native_ref: None,
@@ -552,7 +554,7 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
     assert_eq!(serde_json::from_value::<CadIr>(value).unwrap(), ir);
 
     let mut rewritten = Topology::default();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     rewritten
         .extend_rewritten(ir.geometry, &mut TypedIdentity(&ctx))
         .unwrap();
@@ -716,7 +718,7 @@ fn json_round_trip_preserves_ulp_edge_scalars_exactly() {
     {
         let moved = point.position().get();
         point.set_position(
-            crate::features::FinitePoint3::new(Point3::new(*value, moved.y, moved.z))
+            crate::features::geometry::FinitePoint3::new(Point3::new(*value, moved.y, moved.z))
                 .expect("a finite position is a point"),
         );
     }
@@ -800,8 +802,8 @@ fn current_document_excludes_source_byte_accounting() {
     assert!(json.get("byte_ledger").is_none());
 }
 
-fn parameter(id: &str) -> crate::features::DesignParameter {
-    crate::features::DesignParameter {
+fn parameter(id: &str) -> crate::features::parameters::DesignParameter {
+    crate::features::parameters::DesignParameter {
         product_definition: None,
         id: crate::features::ParameterId::mint(id).unwrap(),
         owner: None,
@@ -810,7 +812,7 @@ fn parameter(id: &str) -> crate::features::DesignParameter {
         expression: "1mm".into(),
         display: None,
         value: None,
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         properties: std::collections::BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -1080,12 +1082,11 @@ fn source_metadata_schema_requires_its_identity_and_has_no_singular_dialect() {
 
 #[test]
 fn parent_only_wire_preserves_regeneration_without_tree_membership() {
-    use crate::features::{
-        Feature, FeatureDefinition, FeatureId, FeatureOperation, FeatureTreeNodeRole,
-    };
+    use crate::features::tree::FeatureTreeNodeRole;
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
-    let parent_id = FeatureId::mint("test:model:feature#parent").expect("identity grammar");
-    let child_id = FeatureId::mint("test:model:feature#child").expect("identity grammar");
+    let parent_id = FeatureId::mint("test:model:feature#1-parent").expect("identity grammar");
+    let child_id = FeatureId::mint("test:model:feature#2-child").expect("identity grammar");
     let mut model = Model {
         features: vec![
             Feature {
@@ -1094,15 +1095,15 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
                 ordinal: 0,
                 name: None,
                 suppressed: None,
-                dependencies: crate::features::DistinctMembers::default(),
+                dependencies: crate::features::selections::DistinctMembers::default(),
                 source_properties: std::collections::BTreeMap::default(),
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
-                evaluation: crate::features::FeatureEvaluation::from_definition(
+                evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::TreeNode {
                         role: FeatureTreeNodeRole::SolidBodies,
-                        children: crate::features::TreeChildren::default(),
+                        children: crate::features::tree::TreeChildren::default(),
                     }),
                 ),
                 native_ref: None,
@@ -1113,12 +1114,12 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
                 ordinal: 1,
                 name: None,
                 suppressed: None,
-                dependencies: crate::features::DistinctMembers::default(),
+                dependencies: crate::features::selections::DistinctMembers::default(),
                 source_properties: std::collections::BTreeMap::default(),
                 source_tag: None,
                 source_text: None,
                 source_content: crate::features::FeatureContent::default(),
-                evaluation: crate::features::FeatureEvaluation::from_definition(
+                evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
                     FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
                 ),
                 native_ref: None,
@@ -1169,12 +1170,12 @@ fn a_stated_null_is_refused_on_every_feature_key_written_by_omission() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
         ),
         native_ref: None,
@@ -1266,6 +1267,7 @@ fn a_model_reference_into_the_design_outside_the_scope_is_refused() {
         target,
         name: "Part Number".into(),
         values,
+        native_ref: None,
     };
     let configuration =
         crate::features::ConfigurationId::mint("synthetic:test:configuration#large").unwrap();
@@ -1283,9 +1285,9 @@ fn a_model_reference_into_the_design_outside_the_scope_is_refused() {
         ),
         attribute(
             AttributeTarget::Document.into(),
-            vec![AttributeValue::Parameter(
+            vec![Some(AttributeValue::Parameter(
                 crate::features::ParameterId::mint("synthetic:test:parameter#depth").unwrap(),
-            )],
+            ))],
         ),
         attribute(
             InstanceTarget {
@@ -1340,4 +1342,44 @@ fn a_model_reference_into_the_design_outside_the_scope_is_refused() {
             arena: ArenaName::parse("declared_measures"),
         })
     );
+}
+
+#[test]
+fn an_arena_out_of_order_is_written_sorted_and_read_as_main_reads_it() {
+    let ir = unit_cube().expect("valid unit cube fixture");
+    let sorted = serde_json::to_value(&ir).expect("a sorted document writes");
+    assert!(ir.geometry.points.len() >= 2);
+
+    // Serialization sorts an arena out of order, as `finalize` does, and
+    // keeps records of one id in their order.
+    let mut unsorted = ir.clone();
+    unsorted.geometry.points.swap(0, 1);
+    let report = validate_neutral(&unsorted, Vec::new()).expect("validate in memory");
+    assert!(report
+        .findings
+        .iter()
+        .any(|finding| finding.check == crate::report::check::Check::ArenaOrder));
+    assert_eq!(
+        serde_json::to_value(&unsorted).expect("an unsorted document writes"),
+        sorted
+    );
+    let mut repeated = ir.clone();
+    let mut later = repeated.geometry.points[0].clone();
+    later.native_ref = Some("the later copy".into());
+    repeated.geometry.points.insert(0, later);
+    let wire = serde_json::to_value(&repeated).expect("a repeated id writes");
+    let points = wire["geometry"]["points"].as_array().unwrap();
+    assert_eq!(points.len(), ir.geometry.points.len() + 1);
+    assert_eq!(points[0]["native_ref"], "the later copy");
+
+    // Reading adds no refusal and no repair of its own (item Q).
+    let mut swapped = sorted;
+    swapped["geometry"]["points"]
+        .as_array_mut()
+        .unwrap()
+        .swap(0, 1);
+    let read = CadIr::from_json(&swapped.to_string()).expect("an arena out of order reads");
+    assert_eq!(read.geometry.points, unsorted.geometry.points);
+    let read = CadIr::from_json(&wire.to_string()).expect("a repeated id reads");
+    assert_eq!(read.geometry.points.len(), ir.geometry.points.len() + 1);
 }

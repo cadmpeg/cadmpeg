@@ -8,17 +8,16 @@ use super::records::{DesignRecords, MemberKey, OfKey, PositionKey};
 use crate::design::container::Container;
 use crate::design::dimension::Dimension;
 use crate::design::evaluation::{EvaluationStatus, StateBase};
-use crate::design::feature::{Feature, FeatureOperation, OperationFamily};
-use crate::design::ops::body::PatternInstances;
-use crate::design::ops::surface::MeshKind;
+use crate::design::feature::{Feature, FeatureOperation};
 use crate::design::refs::Position;
 use crate::design::selection::{OccurrencePath, StepRef};
 use crate::features::ConfigurationId;
 use crate::report::check::Finding;
 
-/// A position names an existing member of a container, or the start of an
-/// existing ordered container (§5.3). Returns whether it does.
-pub(super) fn check_position(
+/// A position names an existing member of a container, an ordered container
+/// that is a root of its scope, or the start of an existing ordered
+/// container (§5.3). Returns whether it does.
+pub(in crate::validate) fn check_position(
     index: &DesignRecords<'_>,
     position: PositionKey<'_>,
     entity: &str,
@@ -37,12 +36,21 @@ pub(super) fn check_position(
             ordered
         }
         PositionKey::After(member) => {
-            let listed = index.member_exists(member) && index.parents.contains_key(&member);
+            let ordered_root = matches!(
+                member,
+                MemberKey::Container(id)
+                    if index.roots.contains_key(id)
+                        && matches!(index.containers.get(id), Some(Container::Ordered { .. }))
+            );
+            let listed = ordered_root
+                || (index.member_exists(member) && index.parents.contains_key(&member));
             if !listed {
                 super::error(
                     findings,
                     entity,
-                    format_args!("{position} names no member of a container"),
+                    format_args!(
+                        "{position} names no member of a container and no ordered root container"
+                    ),
                 );
             }
             listed
@@ -218,11 +226,13 @@ pub(super) fn check_evaluations(
             StateBase::Current(position) => {
                 let position = PositionKey::of(position);
                 if check_position(index, position, id, findings) {
-                    if matches!(position, PositionKey::After(MemberKey::Container(_))) {
+                    if matches!(position, PositionKey::After(MemberKey::Container(_)))
+                        && !index.at_unstated_rollback(position)
+                    {
                         super::error(
                             findings,
                             id,
-                            format_args!("state base names {position}; a rollback position is spelled through its member"),
+                            format_args!("state base names {position}; a stated rollback position is spelled through its member"),
                         );
                     }
                     if !current_positions(index, scope).contains(&position) {
@@ -280,14 +290,16 @@ pub(super) fn check_evaluations(
 /// evaluation its base names, or one where its base is another arm or names
 /// no evaluation. The walk is iterative.
 #[derive(Default)]
-struct StateChains<'a> {
-    cyclic: BTreeSet<&'a str>,
-    depths: BTreeMap<&'a str, u64>,
+pub(in crate::validate) struct StateChains<'a> {
+    pub(in crate::validate) cyclic: BTreeSet<&'a str>,
+    pub(in crate::validate) depths: BTreeMap<&'a str, u64>,
 }
 
 /// Walks every chain of state bases. Returns the evaluation whose depth
 /// overflows, if one does.
-fn state_chains<'a>(index: &DesignRecords<'a>) -> Result<StateChains<'a>, &'a str> {
+pub(in crate::validate) fn state_chains<'a>(
+    index: &DesignRecords<'a>,
+) -> Result<StateChains<'a>, &'a str> {
     #[derive(Clone, Copy)]
     enum Mark {
         OnChain,
@@ -394,35 +406,10 @@ pub(super) fn is_stateless(
     if suppressed == Some(true) {
         return true;
     }
-    stateless_operation(&index.definition_in(feature, configuration).operation)
-}
-
-/// An operation whose kind cannot change a state: a sketch, a sheet, a datum,
-/// a pattern whose instances are features of their own, a template instance,
-/// a decal, and a mesh section.
-fn stateless_operation(operation: &FeatureOperation) -> bool {
-    match operation {
-        FeatureOperation::Sketch(_)
-        | FeatureOperation::SpatialSketch(_)
-        | FeatureOperation::Spreadsheet(_)
-        | FeatureOperation::Datum(_)
-        | FeatureOperation::TemplateInstance(_)
-        | FeatureOperation::Decal(_) => true,
-        FeatureOperation::Pattern(pattern) => {
-            matches!(pattern.instances, PatternInstances::Members(_))
-        }
-        FeatureOperation::Mesh(mesh) => matches!(mesh.kind, MeshKind::Section { .. }),
-        FeatureOperation::Unresolved { family } => matches!(
-            family,
-            OperationFamily::Sketch
-                | OperationFamily::SpatialSketch
-                | OperationFamily::Spreadsheet
-                | OperationFamily::Datum
-                | OperationFamily::TemplateInstance
-                | OperationFamily::Decal
-        ),
-        _ => false,
-    }
+    index
+        .definition_in(feature, configuration)
+        .operation
+        .cannot_change_state()
 }
 
 /// Every `Occurrence` step of the path names an occurrence of the model.
@@ -460,6 +447,20 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
     let mut listed: BTreeMap<&str, usize> = BTreeMap::new();
     for scope in &ir.design.scopes {
         let entity = scope.definition.as_str();
+        let spanned = index.spanned_definitions(entity);
+        let owned: BTreeSet<&str> = spanned
+            .iter()
+            .filter_map(|definition| index.definitions.get(definition))
+            .flat_map(|definition| {
+                definition.bodies.iter().chain(
+                    definition
+                        .instance_bodies
+                        .iter()
+                        .flat_map(|entry| &entry.bodies),
+                )
+            })
+            .map(crate::ids::BodyId::as_str)
+            .collect();
         let mut posed: BTreeMap<&OccurrencePath, usize> = BTreeMap::new();
         for current in &scope.current {
             check_current_position(index, &current.at, entity, findings);
@@ -481,6 +482,29 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
                 check_path_steps(index, path, entity, "pose", findings);
             }
         }
+        for body in &scope.unproduced {
+            *listed.entry(body.as_str()).or_default() += 1;
+            if !bodies.contains(body.as_str()) {
+                super::error(
+                    findings,
+                    entity,
+                    format_args!(
+                        "unproduced entry {} must be a body of the current geometry",
+                        body.as_str()
+                    ),
+                );
+            }
+            if !owned.contains(body.as_str()) {
+                super::error(
+                    findings,
+                    entity,
+                    format_args!(
+                        "unproduced body {} must be owned by a definition the scope spans",
+                        body.as_str()
+                    ),
+                );
+            }
+        }
         for count in posed.into_values() {
             if count > 1 {
                 super::error(
@@ -491,37 +515,40 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
             }
         }
     }
+    // A body of a scoped definition is listed by some scope, not
+    // necessarily its own.
+    for scope in &ir.design.scopes {
+        let entity = scope.definition.as_str();
+        let own = index
+            .definitions
+            .get(entity)
+            .map_or(&[][..], |definition| &definition.bodies[..]);
+        for body in own.iter().map(crate::ids::BodyId::as_str) {
+            if !listed.contains_key(body) {
+                super::error(
+                    findings,
+                    body,
+                    format_args!("body of scoped definition {entity} belongs to no current state or unproduced set"),
+                );
+            }
+        }
+    }
     for (body, count) in &listed {
         if *count > 1 {
             super::error(
                 findings,
                 body,
-                format_args!("body belongs to {count} current states; it belongs to exactly one"),
+                format_args!("body belongs to {count} current states or unproduced sets; it belongs to exactly one"),
             );
-        }
-    }
-    for scope in &ir.design.scopes {
-        let Some(definition) = index.definitions.get(scope.definition.as_str()) else {
-            continue;
-        };
-        for body in &definition.bodies {
-            if !listed.contains_key(body.as_str()) {
-                super::error(
-                    findings,
-                    body.as_str(),
-                    format_args!(
-                        "body of scoped definition {} belongs to no current state",
-                        scope.definition.as_str()
-                    ),
-                );
-            }
         }
     }
     check_stored_features(index, findings);
 }
 
-/// A current state names an existing position through its member, and one
-/// inside an ordered container is at that container's rollback position.
+/// A current state names an existing position, and one inside an ordered
+/// container is at that container's rollback position: spelled through its
+/// member where the rollback is stated, and as `After(Container(c))` where
+/// it is not (§5.3).
 fn check_current_position(
     index: &DesignRecords<'_>,
     at: &Position,
@@ -533,13 +560,15 @@ fn check_current_position(
         return;
     }
     if matches!(at, PositionKey::After(MemberKey::Container(_))) {
-        super::error(
-            findings,
-            entity,
-            format_args!(
-                "current state is at {at}; a rollback position is spelled through its member"
-            ),
-        );
+        if !index.at_unstated_rollback(at) {
+            super::error(
+                findings,
+                entity,
+                format_args!(
+                    "current state is at {at}; a stated rollback position is spelled through its member"
+                ),
+            );
+        }
         return;
     }
     let Some(container) = index.container_of(at) else {

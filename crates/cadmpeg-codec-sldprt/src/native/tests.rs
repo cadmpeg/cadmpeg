@@ -78,6 +78,7 @@ fn emitter_models() -> &'static [crate::native::SldprtNative] {
                 references: Vec::new(),
                 producer_feature_refs: Vec::new(),
                 terminal_feature_ref: None,
+                mark_reference: false,
             });
         lane.surface_selections
             .push(crate::records::FeatureInputSurfaceSelection {
@@ -385,7 +386,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     let mut round_trip = cadmpeg_ir::NativeNamespace::default();
     typed
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut round_trip,
         )
         .unwrap();
@@ -424,7 +425,7 @@ fn native_store_rejects_mismatched_nested_owners_atomically() {
     let before = decoded.ir().native.namespace("sldprt").unwrap().clone();
     let error = native
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             decoded.ir_mut().native.namespace_mut("sldprt"),
         )
         .unwrap_err();
@@ -453,7 +454,7 @@ fn native_store_rejects_missing_sketch_marker_feature_owner() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut namespace,
         )
         .unwrap_err();
@@ -484,7 +485,7 @@ fn native_store_rejects_edited_history_feature_class() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut namespace,
         )
         .unwrap_err();
@@ -517,7 +518,7 @@ fn native_store_rejects_missing_sketch_marker_local_link() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut namespace,
         )
         .unwrap_err();
@@ -577,7 +578,7 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
         );
     }
     let expected = crate::native::lanes::expected_lanes(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &native,
     )
     .unwrap()
@@ -592,7 +593,7 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut namespace,
         )
         .unwrap();
@@ -625,7 +626,7 @@ fn native_store_rejects_relation_scalar_owner_disagreement() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut namespace,
         )
         .unwrap_err();
@@ -689,7 +690,7 @@ fn native_load_rejects_nonadjacent_duplicate_relation_scalars() {
     refs.push(refs[0].clone());
     namespace
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "feature_input_relation_instances",
             &relations,
         )
@@ -716,7 +717,7 @@ fn native_store_rejects_relation_instance_operand_disagreement() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut namespace,
         )
         .unwrap_err();
@@ -752,7 +753,7 @@ fn native_store_rejects_inconsistent_scalar_marker_target() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut namespace,
         )
         .unwrap_err();
@@ -797,7 +798,7 @@ fn native_store_accepts_duplicate_local_ids_for_scalar_ordinals() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut namespace,
         )
         .unwrap();
@@ -1049,7 +1050,10 @@ fn native_load_refuses_a_forged_object_name_length_byte_after_a_store() {
 
     let mut forged = cadmpeg_ir::NativeNamespace::default();
     typed
-        .store(&cadmpeg_test_support::service_decode_context(), &mut forged)
+        .store(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &mut forged,
+        )
         .unwrap();
     let error = crate::native::SldprtNative::load(&forged).unwrap_err();
     assert!(
@@ -1210,6 +1214,7 @@ fn circle_run_scalar(
             .into_iter()
             .collect(),
         archive_class: None,
+        archive_object_id: None,
     }
 }
 

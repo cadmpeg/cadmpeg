@@ -261,7 +261,127 @@ fn not_converged() -> MeasureFailure {
     )
 }
 
+/// Orientation-only flux components: volume and the three closure components.
+const ORIENTATION_FLUX: usize = 4;
+
+/// Integrated orientation values and their error estimates.
+const ORIENTATION_TRACKED: usize = 2 * ORIENTATION_FLUX;
+
+/// `1 / sqrt(3)` for the 2-point Gauss-Legendre rule (exact up to degree 3).
+const GL2_NODE: f64 = 0.577_350_269_189_625_7;
+
+/// `sqrt(3 / 5)` for the 3-point Gauss-Legendre rule (exact up to degree 5).
+const GL3_NODE: f64 = 0.774_596_669_241_483_4;
+
+/// The orientation-only flux density (`volume`, `closure[0..3]`) at one point.
+fn orientation_density(partials: &Partials, origin: Point3) -> [f64; ORIENTATION_FLUX] {
+    let normal = partials.du.cross(partials.dv);
+    let d = partials.point.vector_from(origin);
+    [d.dot(normal) / 3.0, normal.x, normal.y, normal.z]
+}
+
+fn orientation_scales(scale: f64, reach: f64) -> [f64; ORIENTATION_TRACKED] {
+    let distance = reach.max(scale);
+    let area = scale * scale;
+    let vol = area * distance;
+    [vol, area, area, area, vol, area, area, area]
+}
+
+fn orientation_inner_scales(scale: f64, reach: f64, width: f64) -> [f64; ORIENTATION_FLUX] {
+    let distance = reach.max(scale);
+    let area = scale * scale / width;
+    [area * distance, area, area, area]
+}
+
+fn orientation_from_tracked(
+    value: [f64; ORIENTATION_TRACKED],
+    error: [f64; ORIENTATION_TRACKED],
+) -> Flux {
+    let mut flux = Flux::ZERO;
+    flux.value[VOLUME] = value[0];
+    flux.error[VOLUME] = error[0] + value[ORIENTATION_FLUX].abs();
+    for axis in 0..3 {
+        flux.value[CLOSURE + axis] = value[1 + axis];
+        flux.error[CLOSURE + axis] = error[1 + axis] + value[ORIENTATION_FLUX + 1 + axis].abs();
+    }
+    flux
+}
+
+/// Exact polynomial inner integral along `v` for `Plane`, `Cylinder`, and
+/// single-nappe `Cone` charts using Gauss-Legendre quadrature (exact to
+/// rounding for the polynomial degree in `v`).
+fn analytic_inner_polynomial<const K: usize>(
+    chart: &Chart<'_>,
+    u: f64,
+    [from, to]: [f64; 2],
+    orientation_only: bool,
+    mut eval_density: impl FnMut(&Partials) -> [f64; K],
+) -> Option<([f64; K], [f64; K])> {
+    let points: &[(f64, f64)] = match chart {
+        Chart::Plane(_) | Chart::Cylinder(_) => {
+            if orientation_only {
+                &[(0.0, 2.0)]
+            } else {
+                &[(-GL2_NODE, 1.0), (GL2_NODE, 1.0)]
+            }
+        }
+        Chart::Cone(cone) => {
+            let r0 = cone.rho0 + cone.tau * from;
+            let r1 = cone.rho0 + cone.tau * to;
+            if !r0.is_finite() || !r1.is_finite() || r0 * r1 < 0.0 {
+                return None;
+            }
+            if orientation_only {
+                &[(-GL2_NODE, 1.0), (GL2_NODE, 1.0)]
+            } else {
+                &[
+                    (-GL3_NODE, 5.0 / 9.0),
+                    (0.0, 8.0 / 9.0),
+                    (GL3_NODE, 5.0 / 9.0),
+                ]
+            }
+        }
+        _ => return None,
+    };
+    let half = 0.5 * (to - from);
+    let mid = 0.5 * (from + to);
+    if !half.is_finite() || !mid.is_finite() {
+        return None;
+    }
+    if half == 0.0 {
+        return Some(([0.0; K], [0.0; K]));
+    }
+    let mut sum = [0.0; K];
+    let mut mag = [0.0; K];
+    for &(node, weight) in points {
+        let s = mid + half * node;
+        let partials = chart.closed_partials(u, s)?;
+        let values = eval_density(&partials);
+        let factor = half * weight;
+        for k in 0..K {
+            let term = factor * values[k];
+            if !term.is_finite() {
+                return None;
+            }
+            sum[k] += term;
+            mag[k] += term.abs();
+        }
+    }
+    let mut err = [0.0; K];
+    for k in 0..K {
+        if !sum[k].is_finite() || !mag[k].is_finite() {
+            return None;
+        }
+        err[k] = 16.0 * f64::EPSILON * mag[k];
+    }
+    Some((sum, err))
+}
+
 impl FluxFrame<'_, '_> {
+    fn is_orientation_only(&self) -> bool {
+        self.active == ORIENTATION_COMPONENTS
+    }
+
     /// The active mask over values and inner-integral errors.
     fn tracked(&self) -> [bool; TRACKED] {
         std::array::from_fn(|k| self.active[k % FLUX])
@@ -274,6 +394,72 @@ impl FluxFrame<'_, '_> {
         }
     }
 
+    /// `∫_from^to f_orient(u, s) ds` for the 4 orientation components.
+    fn inner_orientation(
+        &self,
+        eval: &Eval<'_, '_>,
+        u: f64,
+        interval: [f64; 2],
+    ) -> Measure<([f64; ORIENTATION_FLUX], [f64; ORIENTATION_FLUX])> {
+        if let Some(exact) = analytic_inner_polynomial(self.chart, u, interval, true, |partials| {
+            orientation_density(partials, self.origin)
+        }) {
+            eval.charge(1)?;
+            return Ok(exact);
+        }
+        let column = Column::new(eval, self.chart, u)?;
+        let mut charge = |units| eval.charge(units);
+        let mut density_at = |s: f64| -> Measure<[f64; ORIENTATION_FLUX]> {
+            Ok(orientation_density(&column.partials(eval, s)?, self.origin))
+        };
+        let width = match self.chart {
+            Chart::Nurbs(nurbs) => nurbs.width(0),
+            _ => 1.0,
+        };
+        let integral = integrate(
+            &mut charge,
+            &mut density_at,
+            interval[0],
+            interval[1],
+            &self.v_breaks(),
+            Target::inner(orientation_inner_scales(self.scale, self.reach, width)),
+        )?;
+        if !integral.converged {
+            return Err(not_converged());
+        }
+        Ok((integral.value, integral.error))
+    }
+
+    /// `∫_from^to f_orient(s, v) ds` along a `u`-isoline for the 4 orientation components.
+    fn inner_orientation_across(
+        &self,
+        eval: &Eval<'_, '_>,
+        v: f64,
+        [from, to]: [f64; 2],
+    ) -> Measure<([f64; ORIENTATION_FLUX], [f64; ORIENTATION_FLUX])> {
+        let row = Column::across(eval, self.chart, v)?;
+        let mut charge = |units| eval.charge(units);
+        let mut density_at = |s: f64| -> Measure<[f64; ORIENTATION_FLUX]> {
+            Ok(orientation_density(&row.partials(eval, s)?, self.origin))
+        };
+        let (breaks, width) = match self.chart {
+            Chart::Nurbs(nurbs) => (nurbs.u_breaks(), nurbs.width(1)),
+            _ => (Vec::new(), 1.0),
+        };
+        let integral = integrate(
+            &mut charge,
+            &mut density_at,
+            from,
+            to,
+            &breaks,
+            Target::inner(orientation_inner_scales(self.scale, self.reach, width)),
+        )?;
+        if !integral.converged {
+            return Err(not_converged());
+        }
+        Ok((integral.value, integral.error))
+    }
+
     /// `∫_from^to f(u, s) ds` and its error estimate.
     fn inner(
         &self,
@@ -281,6 +467,14 @@ impl FluxFrame<'_, '_> {
         u: f64,
         [from, to]: [f64; 2],
     ) -> Measure<([f64; FLUX], [f64; FLUX])> {
+        if let Some(exact) =
+            analytic_inner_polynomial(self.chart, u, [from, to], false, |partials| {
+                density(partials, self.origin)
+            })
+        {
+            eval.charge(1)?;
+            return Ok(exact);
+        }
         let column = Column::new(eval, self.chart, u)?;
         let mut charge = |units| eval.charge(units);
         let mut density_at = |s: f64| -> Measure<[f64; FLUX]> {
@@ -352,6 +546,9 @@ impl FluxFrame<'_, '_> {
         base: f64,
         cut: Option<LoopCut<'_>>,
     ) -> Measure<Flux> {
+        if self.is_orientation_only() {
+            return self.loop_orientation_flux(eval, resolved, base, cut);
+        }
         let mut flux = Flux::ZERO;
         let along_u = self.along_u();
         for (position, piece) in resolved.pieces.iter().enumerate() {
@@ -437,6 +634,73 @@ impl FluxFrame<'_, '_> {
         self.strip_flux(eval, u, v, &u_breaks)
     }
 
+    /// Orientation-only `∮ F du` using 4 flux components (`Panel<8>`).
+    fn loop_orientation_flux(
+        &self,
+        eval: &Eval<'_, '_>,
+        resolved: &ResolvedLoop<'_>,
+        base: f64,
+        cut: Option<LoopCut<'_>>,
+    ) -> Measure<Flux> {
+        let mut flux = Flux::ZERO;
+        let along_u = self.along_u();
+        let target = Target::outer(orientation_scales(self.scale, self.reach));
+        for (position, piece) in resolved.pieces.iter().enumerate() {
+            let mut charge = |units| eval.charge(units);
+            let mut integrand = |t: f64| -> Measure<[f64; ORIENTATION_TRACKED]> {
+                let sample = piece.sample(eval, self.chart, t)?;
+                if let Some(u0) = along_u {
+                    if sample.duv[1] == 0.0 {
+                        return Ok([0.0; ORIENTATION_TRACKED]);
+                    }
+                    let (value, error) =
+                        self.inner_orientation_across(eval, sample.uv[1], [u0, sample.uv[0]])?;
+                    let speed = sample.duv[1];
+                    return Ok(std::array::from_fn(|k| {
+                        if k < ORIENTATION_FLUX {
+                            value[k] * speed
+                        } else {
+                            error[k - ORIENTATION_FLUX] * speed.abs()
+                        }
+                    }));
+                }
+                if sample.duv[0] == 0.0 {
+                    return Ok([0.0; ORIENTATION_TRACKED]);
+                }
+                let v = cut.map_or(sample.uv[1], |cut| cut.wrap(base, sample.uv[1]));
+                let (value, error) = self.inner_orientation(eval, sample.uv[0], [base, v])?;
+                let speed = sample.duv[0];
+                Ok(std::array::from_fn(|k| {
+                    if k < ORIENTATION_FLUX {
+                        -value[k] * speed
+                    } else {
+                        error[k - ORIENTATION_FLUX] * speed.abs()
+                    }
+                }))
+            };
+            let integral = integrate(
+                &mut charge,
+                &mut integrand,
+                piece.t0,
+                piece.t1,
+                &LoopCut::breaks(
+                    cut.as_ref(),
+                    position,
+                    outer_breaks(eval, self.chart, piece, along_u)?,
+                ),
+                target,
+            )?;
+            if !integral.converged {
+                return Err(not_converged());
+            }
+            flux = flux.add(
+                orientation_from_tracked(integral.value, integral.error),
+                1.0,
+            );
+        }
+        Ok(flux)
+    }
+
     /// `∫_u0^u1 ∫_v0^v1 f du dv` over a parameter rectangle.
     fn strip_flux(
         &self,
@@ -445,6 +709,31 @@ impl FluxFrame<'_, '_> {
         v: [f64; 2],
         u_breaks: &[f64],
     ) -> Measure<Flux> {
+        if self.is_orientation_only() {
+            let mut charge = |units| eval.charge(units);
+            let mut integrand = |u: f64| -> Measure<[f64; ORIENTATION_TRACKED]> {
+                let (value, error) = self.inner_orientation(eval, u, v)?;
+                Ok(std::array::from_fn(|k| {
+                    if k < ORIENTATION_FLUX {
+                        value[k]
+                    } else {
+                        error[k - ORIENTATION_FLUX]
+                    }
+                }))
+            };
+            let integral = integrate(
+                &mut charge,
+                &mut integrand,
+                u0,
+                u1,
+                u_breaks,
+                Target::outer(orientation_scales(self.scale, self.reach)),
+            )?;
+            if !integral.converged {
+                return Err(not_converged());
+            }
+            return Ok(orientation_from_tracked(integral.value, integral.error));
+        }
         let mut charge = |units| eval.charge(units);
         let mut integrand = |u: f64| -> Measure<[f64; TRACKED]> {
             let (value, error) = self.inner(eval, u, v)?;
@@ -541,5 +830,103 @@ mod tests {
             assert!((far[k] - at_distance).abs() <= 1.0e-12 * at_distance, "{k}");
             assert!((near[k] - at_origin).abs() <= 1.0e-12 * at_origin, "{k}");
         }
+    }
+
+    #[test]
+    fn analytic_inner_polynomial_matches_adaptive_quadrature_on_plane_cylinder_and_cone() {
+        use super::{analytic_inner_polynomial, density, orientation_density, FLUX};
+        use crate::canonical::surface::{Chart, ConeChart, CylinderChart, PlaneChart};
+        use crate::quadrature::{integrate, Target};
+        use cadmpeg_ir::math::{Point3, Vector3};
+
+        let origin = Point3::new(1.25, -2.5, 0.75);
+        let charts = [
+            Chart::Plane(PlaneChart {
+                origin: Point3::new(0.5, 1.0, -0.25),
+                eu: Vector3::new(1.0, 0.0, 0.0),
+                ev: Vector3::new(0.0, 1.0, 0.0),
+                h: 2.0,
+            }),
+            Chart::Cylinder(CylinderChart {
+                origin: Point3::new(-0.3, 0.4, 0.8),
+                e1: Vector3::new(1.0, 0.0, 0.0),
+                e2: Vector3::new(0.0, 1.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                radius: 3.5,
+                h: 1.5,
+            }),
+            Chart::Cone(ConeChart {
+                origin: Point3::new(0.2, -0.6, 0.1),
+                e1: Vector3::new(1.0, 0.0, 0.0),
+                e2: Vector3::new(0.0, 1.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                rho0: 2.0,
+                tau: 0.4,
+                ratio: 1.0,
+                h: 1.2,
+            }),
+        ];
+
+        for chart in &charts {
+            let u = 0.7;
+            let interval = [0.25, 2.75];
+            let (full_exact, full_err) =
+                analytic_inner_polynomial(chart, u, interval, false, |p| density(p, origin))
+                    .expect("polynomial chart");
+            let mut charge = |_units: usize| Ok(());
+            let mut eval_full = |s: f64| {
+                let p = chart.closed_partials(u, s).expect("closed partials");
+                Ok(density(&p, origin))
+            };
+            let ref_full = integrate(
+                &mut charge,
+                &mut eval_full,
+                interval[0],
+                interval[1],
+                &[],
+                Target::inner([1.0; FLUX]),
+            )
+            .expect("adaptive quadrature");
+            for k in 0..FLUX {
+                let tol = 1.0e-11 * (1.0 + ref_full.value[k].abs()) + full_err[k];
+                assert!(
+                    (full_exact[k] - ref_full.value[k]).abs() <= tol,
+                    "component {k}: exact={} ref={}",
+                    full_exact[k],
+                    ref_full.value[k]
+                );
+            }
+
+            let (orient_exact, orient_err) =
+                analytic_inner_polynomial(chart, u, interval, true, |p| {
+                    orientation_density(p, origin)
+                })
+                .expect("polynomial orientation chart");
+            assert!((orient_exact[0] - full_exact[VOLUME]).abs() <= 1.0e-12 + orient_err[0]);
+            for axis in 0..3 {
+                assert!(
+                    (orient_exact[1 + axis] - full_exact[CLOSURE + axis]).abs()
+                        <= 1.0e-12 + orient_err[1 + axis]
+                );
+            }
+        }
+
+        // Cross-apex cone interval must fall back to adaptive quadrature.
+        let cross_apex = Chart::Cone(ConeChart {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            e1: Vector3::new(1.0, 0.0, 0.0),
+            e2: Vector3::new(0.0, 1.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            rho0: 1.0,
+            tau: -1.0,
+            ratio: 1.0,
+            h: 1.0,
+        });
+        assert!(
+            analytic_inner_polynomial(&cross_apex, 0.5, [0.5, 1.5], false, |p| {
+                density(p, origin)
+            })
+            .is_none()
+        );
     }
 }

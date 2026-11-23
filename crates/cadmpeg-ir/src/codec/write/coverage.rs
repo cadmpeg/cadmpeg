@@ -75,6 +75,25 @@ fn arena_kind<T: ArenaRecord>(_: &[T]) -> EntityKind {
     T::KIND
 }
 
+/// Whether a v10 design record restates the records of this design arena.
+const fn has_v10_counterpart(kind: EntityKind) -> bool {
+    matches!(
+        kind,
+        EntityKind::DesignScope
+            | EntityKind::DesignContainer
+            | EntityKind::DesignFeature
+            | EntityKind::DesignSketch
+            | EntityKind::DesignSketchEntity
+            | EntityKind::DesignSketchConstraint
+            | EntityKind::DesignSpatialSketch
+            | EntityKind::DesignSpatialSketchEntity
+            | EntityKind::DesignSpatialSketchConstraint
+            | EntityKind::DesignParameter
+            | EntityKind::DesignSpreadsheet
+            | EntityKind::DesignConfiguration
+    )
+}
+
 /// A disposition field of [`ArenaDispositions`]: the arenas of the `design`
 /// and `process` homes are fields of its `design` and `process` members.
 macro_rules! disposition {
@@ -164,28 +183,56 @@ macro_rules! declare_arena_dispositions {
                     .is_none_or(|disposition| disposition.carries())
             }
 
+            /// The label of each arena of `ir` whose records the write omits and
+            /// names in an `arena.omitted` loss: a model arena by its field name,
+            /// a design or process arena as `design.<field>` or `process.<field>`.
+            #[must_use]
+            pub fn omitted(&self, ir: &CadIr) -> Vec<&'static str> {
+                self.charged_omissions(ir)
+                    .into_iter()
+                    .map(|(_, label, _)| label)
+                    .collect()
+            }
+
             fn omission_losses(&self, ir: &CadIr, format: &str) -> Vec<LossNote> {
+                self.charged_omissions(ir)
+                    .into_iter()
+                    .map(|(kind, label, records)| {
+                        ExportLossCode::ArenaOmitted(kind).note(format!(
+                            "the {format} write does not represent model arena `{label}`: \
+                             {records} record(s) omitted",
+                        ))
+                    })
+                    .collect()
+            }
+
+            /// Each arena of `ir` whose records the write omits and charges: its
+            /// kind, label and record count.
+            fn charged_omissions(&self, ir: &CadIr) -> Vec<(EntityKind, &'static str, usize)> {
                 // While the document holds a v10 design record, the v11 design
-                // arenas restate content the v10 path writes.
+                // arenas with a v10 counterpart restate content the v10 path
+                // writes.
                 let restated = ir.arenas().holds(ArenaClass::Design, ArenaHome::Model);
-                let mut losses = Vec::new();
+                let mut charged = Vec::new();
                 $(
+                    // The document root is the written document itself.
+                    let records = if arena_kind(&ir.$home.$field) == EntityKind::ProductDefinition {
+                        crate::products::stated_definitions(&ir.model.product_definitions).count()
+                    } else {
+                        ir.$home.$field.len()
+                    };
                     if disposition!(self, $field, $home) == ArenaDisposition::Omitted
-                        && !ir.$home.$field.is_empty()
-                        && !(restated && crate::document::arena_home!($home) == ArenaHome::Design)
+                        && records != 0
+                        && !(restated && has_v10_counterpart(arena_kind(&ir.$home.$field)))
                     {
-                        losses.push(
-                            ExportLossCode::ArenaOmitted(arena_kind(&ir.$home.$field))
-                            .note(format!(
-                                "the {format} write does not represent model arena `{}`: \
-                                 {} record(s) omitted",
-                                crate::document::arena_label!($field, $home),
-                                ir.$home.$field.len(),
-                            )),
-                        );
+                        charged.push((
+                            arena_kind(&ir.$home.$field),
+                            crate::document::arena_label!($field, $home),
+                            records,
+                        ));
                     }
                 )*
-                losses
+                charged
             }
         }
     };

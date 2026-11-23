@@ -1,0 +1,678 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Command reports: the JSON command-report envelope on stdout and on disk.
+
+use std::fs;
+
+use assert_cmd::Command;
+use cadmpeg_ir::examples::unit_cube;
+use predicates::prelude::predicate;
+use tempfile::tempdir;
+
+use crate::support::fixture;
+#[cfg(feature = "creo")]
+use crate::support::geometryless_creo;
+#[cfg(feature = "rhino")]
+use crate::support::minimal_rhino_archive;
+
+#[cfg(all(feature = "creo", feature = "step"))]
+#[test]
+fn artifact_reports_cover_success_with_and_without_geometry() {
+    let dir = tempdir().unwrap();
+    let cube = fixture(
+        dir.path(),
+        "cube.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
+    let success_report = dir.path().join("success-report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            cube.to_str().unwrap(),
+            "-f",
+            "step",
+            "--report",
+            success_report.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let value: serde_json::Value =
+        serde_json::from_slice(&fs::read(success_report).unwrap()).unwrap();
+    assert_eq!(value["command"], "convert");
+    assert_eq!(value["status"], "ok");
+    assert!(value["refusal"].is_null());
+    assert!(value["decode_report"].is_null());
+    assert!(value["check_report"].is_object());
+    assert_eq!(value["export"]["identity"]["kind"], "native");
+    assert_eq!(value["export"]["identity"]["target"], "step:ap214");
+    assert_eq!(value["export"]["census"]["basis"], "target_records");
+    assert!(value["export"]["census"]["counts"].is_object());
+    assert_eq!(value["export"]["write_path"]["kind"], "synthesized");
+    assert_eq!(
+        value["export"]["write_path"]["fidelity"]["kind"],
+        "not_provided"
+    );
+    assert!(value["export"]["losses"].is_array());
+    assert!(value["export"]["notes"].is_array());
+
+    let empty = geometryless_creo(dir.path(), "empty.prt");
+    let empty_report = dir.path().join("empty-report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            empty.to_str().unwrap(),
+            "-f",
+            "step",
+            "--report",
+            empty_report.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let value: serde_json::Value =
+        serde_json::from_slice(&fs::read(empty_report).unwrap()).unwrap();
+    assert_eq!(value["command"], "convert");
+    assert_eq!(value["status"], "ok");
+    assert!(value["refusal"].is_null());
+    assert!(value["decode_report"].is_object());
+    assert!(value["check_report"].is_object());
+    assert!(value["export"].is_object());
+}
+
+#[cfg(feature = "step")]
+#[test]
+fn convert_refuses_one_path_for_the_cad_file_and_command_report() {
+    let dir = tempdir().unwrap();
+    let cube = fixture(
+        dir.path(),
+        "cube.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
+    let output = dir.path().join("collision.step");
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            cube.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+            "--report",
+            output.to_str().unwrap(),
+            "--force",
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "CAD output and command report resolve to the same path",
+        ));
+
+    assert!(!output.exists());
+}
+
+#[cfg(feature = "step")]
+#[test]
+fn report_write_failure_does_not_replace_a_typed_refusal() {
+    use predicates::prelude::PredicateBooleanExt;
+    let dir = tempdir().unwrap();
+    let cube = fixture(
+        dir.path(),
+        "cube.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            cube.to_str().unwrap(),
+            "--to",
+            "step:ap999",
+            "--report",
+            dir.path().to_str().unwrap(),
+            "--force",
+        ])
+        .assert()
+        .code(1)
+        .stderr(
+            predicate::str::contains("step cannot write ap999").and(predicate::str::contains(
+                "could not write convert refusal report",
+            )),
+        );
+}
+
+#[cfg(feature = "step")]
+#[test]
+fn report_write_failure_does_not_reclassify_a_completed_conversion() {
+    let dir = tempdir().unwrap();
+    let cube = fixture(
+        dir.path(),
+        "cube.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
+    let output = dir.path().join("cube.step");
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            cube.to_str().unwrap(),
+            "--to",
+            "step",
+            "-o",
+            output.to_str().unwrap(),
+            "--report",
+            dir.path().to_str().unwrap(),
+            "--force",
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains(
+            "CAD output was written, but the convert report could not be written",
+        ));
+
+    assert!(fs::read(output).unwrap().starts_with(b"ISO-10303-21"));
+}
+
+#[cfg(feature = "f3d")]
+#[test]
+fn f3d_export_report_identifies_regenerated_output() {
+    let dir = tempdir().unwrap();
+    let cube = fixture(
+        dir.path(),
+        "cube.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
+    let output = dir.path().join("cube.f3d");
+    let report = dir.path().join("f3d-report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            cube.to_str().unwrap(),
+            "-f",
+            "f3d",
+            "-o",
+            output.to_str().unwrap(),
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert_eq!(value["export"]["identity"]["kind"], "native");
+    assert_eq!(
+        value["export"]["identity"]["target"],
+        "f3d:manifest-3-2-0-0"
+    );
+    assert!(value["export"]["notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|note| note
+            .as_str()
+            .is_some_and(|note| note.contains("regenerated"))));
+}
+
+#[cfg(feature = "creo")]
+#[test]
+fn reporting_commands_emit_json_only_on_stdout() {
+    let dir = tempdir().unwrap();
+    let input = fixture(
+        dir.path(),
+        "cube.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
+    let validate = Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["check", input.to_str().unwrap(), "--json"])
+        .output()
+        .unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&validate.stdout).unwrap();
+    assert_eq!(value["command"], "check");
+
+    let diff = Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "diff",
+            input.to_str().unwrap(),
+            input.to_str().unwrap(),
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&diff.stdout).unwrap();
+    assert_eq!(value["command"], "diff");
+
+    let native = geometryless_creo(dir.path(), "ambiguous.bin");
+    let inspect = Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "inspect",
+            native.to_str().unwrap(),
+            "--input-format",
+            "creo",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(inspect.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&inspect.stdout).unwrap();
+    assert_eq!(value["command"], "inspect");
+}
+
+#[cfg(feature = "rhino")]
+#[test]
+fn inspect_report_writes_summary_to_file() {
+    let dir = tempdir().unwrap();
+    let input = minimal_rhino_archive(dir.path(), "empty.3dm", "50");
+    let report = dir.path().join("inspect-report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "inspect",
+            input.to_str().unwrap(),
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("format: rhino (detected high)"));
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert_eq!(value["command"], "inspect");
+    assert_eq!(value["selection"]["kind"], "detected");
+    assert_eq!(value["selection"]["confidence"], "high");
+    assert!(
+        value["summary"]["identity"]["dialects"]["primary"]["dialect"]
+            .as_str()
+            .is_some_and(|dialect| dialect.starts_with("rhino:")),
+        "{value}"
+    );
+}
+
+#[test]
+fn validate_report_writes_result_to_file() {
+    let dir = tempdir().unwrap();
+    let input = fixture(
+        dir.path(),
+        "cube.cadir.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
+    let report = dir.path().join("validate-report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "check",
+            input.to_str().unwrap(),
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("check: OK"));
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert_eq!(value["command"], "check");
+    assert!(value["decode_report"].is_null());
+    assert!(value["check_report"].is_object());
+}
+
+#[cfg(feature = "step")]
+#[test]
+fn check_classifies_and_reports_an_unsupported_dialect() {
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("part28.xml");
+    fs::write(&input, b"<iso_10303_28/>").unwrap();
+    let report = dir.path().join("unsupported-dialect-report.json");
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "check",
+            input.to_str().unwrap(),
+            "--input-format",
+            "step",
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "unsupported step dialect step:part28-xml",
+        ));
+
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert_eq!(value["command"], "check");
+    assert_eq!(value["status"], "refused");
+    assert_eq!(value["refusal"]["stage"], "decode");
+    assert_eq!(value["refusal"]["code"], "unsupported_dialect");
+    assert_eq!(
+        value["refusal"]["dialects"]["primary"]["dialect"],
+        "step:part28-xml"
+    );
+    assert!(value["decode_report"].is_null());
+    assert!(value["check_report"].is_null());
+}
+
+#[cfg(feature = "step")]
+#[test]
+fn inspect_classifies_and_reports_an_unsupported_dialect() {
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("part28.xml");
+    fs::write(&input, b"<iso_10303_28/>").unwrap();
+    let report = dir.path().join("inspect-unsupported-dialect-report.json");
+
+    let output = Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "inspect",
+            input.to_str().unwrap(),
+            "--input-format",
+            "step",
+            "--json",
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+
+    let report_bytes = fs::read(&report).unwrap();
+    for bytes in [output.stdout.as_slice(), report_bytes.as_slice()] {
+        let value: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+        assert_eq!(value["command"], "inspect");
+        assert_eq!(value["status"], "refused");
+        assert_eq!(value["refusal"]["code"], "unsupported_dialect");
+        assert_eq!(
+            value["refusal"]["dialects"]["primary"]["dialect"],
+            "step:part28-xml"
+        );
+        assert!(value["generator"].as_str().is_some());
+    }
+}
+
+#[test]
+fn reporting_commands_accept_o_for_the_report_and_force_to_replace_it() {
+    let dir = tempdir().unwrap();
+    let input = fixture(
+        dir.path(),
+        "cube.cadir.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
+    let report = dir.path().join("report.json");
+
+    for (command, path_flag) in [
+        (vec!["check"], "-o"),
+        (vec!["check"], "--output"),
+        (vec!["diff"], "-o"),
+    ] {
+        fs::write(&report, b"keep").unwrap();
+        let mut arguments = command.clone();
+        arguments.push(input.to_str().unwrap());
+        if command[0] == "diff" {
+            arguments.push(input.to_str().unwrap());
+        }
+        arguments.extend([path_flag, report.to_str().unwrap()]);
+
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(&arguments)
+            .assert()
+            .code(2)
+            .stderr(predicate::str::contains("pass --force to overwrite"));
+        assert_eq!(fs::read(&report).unwrap(), b"keep");
+
+        arguments.push("--force");
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(&arguments)
+            .assert()
+            .success();
+        let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+        assert_eq!(value["command"], command[0]);
+    }
+}
+
+#[test]
+fn validate_agrees_between_its_exit_code_printed_summary_and_report() {
+    // findings under `.check_report.findings` in the written report.
+    let dir = tempdir().unwrap();
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    let absent = format!("{}-absent", ir.geometry.faces[0].surface);
+    ir.geometry.faces[0].surface = absent.try_into().expect("valid identity");
+    let input = fixture(dir.path(), "broken.cadir.json", &ir);
+    let report = dir.path().join("report.json");
+
+    let output = Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "check",
+            input.to_str().unwrap(),
+            "-o",
+            report.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let printed = String::from_utf8(output.stdout).unwrap();
+    let summary = printed
+        .lines()
+        .find(|line| line.starts_with("check: FAILED"))
+        .unwrap_or_else(|| panic!("{printed}"));
+    let printed_errors: usize = summary
+        .split_once('(')
+        .and_then(|(_, rest)| rest.split_once(" error(s)"))
+        .map_or_else(|| panic!("{summary}"), |(count, _)| count.parse().unwrap());
+
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    let findings = value["check_report"]["findings"].as_array().unwrap();
+    let reported_errors = findings
+        .iter()
+        .filter(|finding| finding["severity"] == "error" || finding["severity"] == "blocking")
+        .count();
+    assert!(printed_errors > 0, "{summary}");
+    assert_eq!(printed_errors, reported_errors, "{findings:#?}");
+}
+
+#[test]
+fn diff_report_writes_result_to_file() {
+    let dir = tempdir().unwrap();
+    let cube = unit_cube().expect("unit cube fixture is admitted");
+    let a = fixture(dir.path(), "a.cadir.json", &cube);
+    let b = fixture(dir.path(), "b.cadir.json", &cube);
+    let report = dir.path().join("diff-report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "diff",
+            a.to_str().unwrap(),
+            b.to_str().unwrap(),
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("identical"));
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert_eq!(value["command"], "diff");
+    assert_eq!(value["different"], false);
+    assert!(value["diff"].is_object());
+}
+
+#[cfg(feature = "step")]
+#[test]
+fn a_decode_sidecar_passed_as_the_model_is_named() {
+    let dir = tempdir().unwrap();
+    let cube = fixture(
+        dir.path(),
+        "cube.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
+    let step = dir.path().join("cube.step");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            cube.to_str().unwrap(),
+            "-o",
+            step.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let cadir = dir.path().join("cube.cadir.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "dump",
+            step.to_str().unwrap(),
+            "-o",
+            cadir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let sidecar = dir.path().join("cube.cadir.fidelity.json");
+    assert!(sidecar.exists(), "dump writes the decode sidecar");
+    let message = format!(
+        "{} is a decode sidecar; pass the CADIR document beside it",
+        sidecar.display()
+    );
+    for args in [
+        vec!["check", sidecar.to_str().unwrap()],
+        vec!["dump", sidecar.to_str().unwrap()],
+        vec!["diff", sidecar.to_str().unwrap(), cadir.to_str().unwrap()],
+    ] {
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(&args)
+            .assert()
+            .code(2)
+            .stderr(predicate::str::contains(message.as_str()));
+    }
+}
+
+/// A cube with one vertex moved off its edges, so `check` has a finding for
+/// `repro` to cut, beside a decode sidecar that does not parse.
+fn cube_with_stale_sidecar(dir: &std::path::Path) -> std::path::PathBuf {
+    let mut document = unit_cube().expect("unit cube fixture is admitted");
+    document.geometry.points[0].set_position(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            50.0, 0.0, 0.0,
+        ))
+        .expect("a finite position is a point"),
+    );
+    let cadir = fixture(dir, "cube.cadir.json", &document);
+    fs::write(
+        cadmpeg_ir::decode_sidecar_path(&cadir).unwrap(),
+        "{\"edited\": true}",
+    )
+    .unwrap();
+    cadir
+}
+
+#[test]
+fn every_command_that_loads_a_cadir_document_names_its_stale_sidecar() {
+    let dir = tempdir().unwrap();
+    let cadir = cube_with_stale_sidecar(dir.path());
+    let document =
+        cadmpeg_ir::CadIr::from_json(&fs::read_to_string(&cadir).unwrap()).expect("fixture");
+    let validation = cadmpeg_ir::validate_neutral(&document, Vec::new()).unwrap();
+    assert!(!validation.findings.is_empty());
+    let check_report = dir.path().join("check.json");
+    fs::write(
+        &check_report,
+        serde_json::to_vec(&serde_json::json!({
+            "ir_version": cadmpeg_ir::document::IR_VERSION,
+            "command": "check",
+            "input_path": cadir,
+            "check_report": validation,
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let cadir = cadir.to_str().unwrap();
+    let out = |name: &str| dir.path().join(name).to_str().unwrap().to_owned();
+    let warning = format!(
+        "warning: {}: decode sidecar ",
+        cadmpeg_ir::source_fidelity::sidecar_stale_kind()
+    );
+    let check_report = check_report.to_str().unwrap().to_owned();
+    let mut silent = Vec::new();
+    for (args, loads) in [
+        (vec!["dump", cadir, "-o", &out("dump.cadir.json")], 1),
+        (vec!["check", cadir], 1),
+        (
+            vec![
+                "convert",
+                cadir,
+                "--to",
+                "cadir",
+                "-o",
+                &out("convert.cadir.json"),
+            ],
+            1,
+        ),
+        (vec!["diff", cadir, cadir], 2),
+        (vec!["measure", cadir, "--json"], 1),
+        (
+            vec![
+                "repro",
+                "--from",
+                &check_report,
+                "--finding",
+                "0",
+                "-o",
+                &out("bundle.json"),
+            ],
+            1,
+        ),
+    ] {
+        let output = Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(&args)
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let named = stderr.matches(warning.as_str()).count();
+        if named != loads {
+            silent.push(format!("{} ({named} of {loads}): {stderr}", args[0]));
+        }
+    }
+    assert!(
+        silent.is_empty(),
+        "each load names the stale sidecar once: {silent:#?}"
+    );
+}
+
+#[test]
+fn the_check_report_carries_the_stale_sidecar_loss() {
+    let dir = tempdir().unwrap();
+    let cadir = fixture(
+        dir.path(),
+        "cube.cadir.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
+    fs::write(
+        cadmpeg_ir::decode_sidecar_path(&cadir).unwrap(),
+        "{\"edited\": true}",
+    )
+    .unwrap();
+    let report = dir.path().join("check-report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "check",
+            cadir.to_str().unwrap(),
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    let losses: Vec<cadmpeg_ir::report::loss::LossNote> =
+        serde_json::from_value(value["check_report"]["losses"].clone()).unwrap();
+    assert_eq!(losses.len(), 1, "{value:#}");
+    assert_eq!(
+        losses[0].code,
+        cadmpeg_ir::source_fidelity::sidecar_stale_kind()
+    );
+    assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Warning);
+}

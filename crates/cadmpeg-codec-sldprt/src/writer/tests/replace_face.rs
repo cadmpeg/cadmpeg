@@ -11,7 +11,7 @@ use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 
 #[test]
-fn replace_face_writer_refuses_tangent_chain_settings_it_cannot_encode() {
+fn replace_face_writer_keeps_stored_tangent_chain_settings_it_cannot_encode() {
     for tangent_chain in [None, Some(false), Some(true)] {
         let mut source = sldprt_with_body(&triangle_body());
         source.extend(make_block(
@@ -20,7 +20,12 @@ fn replace_face_writer_refuses_tangent_chain_settings_it_cannot_encode() {
             br#"<Keywords><ReplaceFace Name="Patch" Type="ReplaceFace" id="21" Faces="face:4,face:5" ReplacementFaces="face:8"/></Keywords>"#,
         ));
         let decoded = SldprtCodec
-            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .decode(
+                &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                    &source,
+                )),
+                &DecodeOptions::default(),
+            )
             .unwrap();
         let mut decoded = EditableDecodeResult::from(decoded);
         decoded.ir_mut().model.features[0]
@@ -33,18 +38,12 @@ fn replace_face_writer_refuses_tangent_chain_settings_it_cannot_encode() {
                 };
                 *operands = operands.clone().with_tangent_chain(tangent_chain);
             });
-        let result = crate::test_support::plan_fixture_write_with_native_envelope(
-            decoded.ir(),
-            decoded.source_fidelity(),
-            &mut Vec::new(),
+        let unwritten =
+            crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
+        assert_eq!(
+            unwritten.is_empty(),
+            tangent_chain.is_none(),
+            "{unwritten:?}"
         );
-        if tangent_chain.is_some() {
-            assert!(matches!(
-                result,
-                Err(cadmpeg_core::CodecError::NotImplemented(_))
-            ));
-        } else {
-            assert!(result.is_ok());
-        }
     }
 }

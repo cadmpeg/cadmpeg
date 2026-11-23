@@ -2,8 +2,9 @@
 //! A design document that breaks no part 10 rule, and helpers that build
 //! and check variations of it.
 
-use cadmpeg_core::decode::ContentScope;
+use cadmpeg_core::decode::{ContentScope, DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 
@@ -20,11 +21,12 @@ use crate::design::units::ValueKind;
 use crate::document::CadIr;
 use crate::features::FeatureId;
 use crate::ids::BodyId;
+use crate::index::ModelIndex;
 use crate::products::{ProductDefinition, ProductDefinitionKind, Storage};
 use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 
-pub(super) fn id<T>(kind: &str, key: &str) -> T
+pub(in crate::validate) fn id<T>(kind: &str, key: &str) -> T
 where
     T: TryFrom<String>,
     T::Error: Debug,
@@ -32,15 +34,15 @@ where
     T::try_from(format!("test:design:{kind}#{key}")).unwrap()
 }
 
-pub(super) fn feature(key: &str) -> FeatureId {
+pub(in crate::validate) fn feature(key: &str) -> FeatureId {
     id("feature", key)
 }
 
-pub(super) fn after(key: &str) -> Position {
+pub(in crate::validate) fn after(key: &str) -> Position {
     Position::After(Member::Feature(feature(key)))
 }
 
-pub(super) fn unresolved(key: &str, family: OperationFamily) -> Feature {
+pub(in crate::validate) fn unresolved(key: &str, family: OperationFamily) -> Feature {
     Feature {
         id: feature(key),
         name: None,
@@ -57,7 +59,7 @@ pub(super) fn unresolved(key: &str, family: OperationFamily) -> Feature {
     }
 }
 
-pub(super) fn configuration(key: &str, parent: Option<&str>) -> DesignConfiguration {
+pub(in crate::validate) fn configuration(key: &str, parent: Option<&str>) -> DesignConfiguration {
     DesignConfiguration {
         id: id("configuration", key),
         scope: id("definition", "part"),
@@ -71,7 +73,7 @@ pub(super) fn configuration(key: &str, parent: Option<&str>) -> DesignConfigurat
     }
 }
 
-pub(super) fn evaluation(
+pub(in crate::validate) fn evaluation(
     key: &str,
     configuration: &str,
     of: Evaluated,
@@ -92,22 +94,22 @@ pub(super) fn evaluation(
     }
 }
 
-pub(super) fn stored(base: StateBase) -> StateContent {
+pub(in crate::validate) fn stored(base: StateBase) -> StateContent {
     StateContent {
         base,
         delta: StateDelta::default(),
     }
 }
 
-pub(super) fn set_base(ir: &mut CadIr, evaluation: usize, base: StateBase) {
+pub(in crate::validate) fn set_base(ir: &mut CadIr, evaluation: usize, base: StateBase) {
     ir.design.evaluations[evaluation].content = Some(stored(base));
 }
 
-pub(super) fn body(ir: &CadIr) -> BodyId {
+pub(in crate::validate) fn body(ir: &CadIr) -> BodyId {
     ir.geometry.bodies[0].id.clone()
 }
 
-pub(super) fn arrangement(key: &str, kind: ArrangementKind) -> Arrangement {
+pub(in crate::validate) fn arrangement(key: &str, kind: ArrangementKind) -> Arrangement {
     Arrangement {
         id: id("arrangement", key),
         scope: id("definition", "part"),
@@ -122,7 +124,7 @@ pub(super) fn arrangement(key: &str, kind: ArrangementKind) -> Arrangement {
     }
 }
 
-pub(super) fn parameter(key: &str, kind: ValueKind) -> DesignParameter {
+pub(in crate::validate) fn parameter(key: &str, kind: ValueKind) -> DesignParameter {
     DesignParameter {
         id: id("parameter", key),
         scope: id("definition", "part"),
@@ -146,7 +148,7 @@ pub(super) fn parameter(key: &str, kind: ValueKind) -> DesignParameter {
 /// fillet, rolled to its end; two configurations; the current state after the
 /// fillet holding the cube; and an evaluation of the base configuration after
 /// the extrude, stored against the current state.
-pub(super) fn document() -> CadIr {
+pub(in crate::validate) fn document() -> CadIr {
     let mut ir = crate::examples::unit_cube().unwrap();
     ir.set_scope(ContentScope::full()).unwrap();
     let body = body(&ir);
@@ -169,6 +171,7 @@ pub(super) fn document() -> CadIr {
             status: EvaluationStatus::Current,
             native_ref: None,
         }],
+        unproduced: BTreeSet::default(),
     });
     design.containers.push(Container::Ordered {
         id: id("container", "timeline"),
@@ -178,7 +181,7 @@ pub(super) fn document() -> CadIr {
             Member::Feature(feature("fillet")),
         ],
         folders: Vec::new(),
-        rollback: Rollback::End,
+        rollback: Some(Rollback::End),
         placement: None,
     });
     design
@@ -206,23 +209,42 @@ pub(super) fn document() -> CadIr {
     ir
 }
 
-pub(super) fn design_findings(ir: &CadIr) -> Vec<Finding> {
-    super::super::validate_neutral(ir, Vec::new())
-        .unwrap()
-        .findings
-        .into_iter()
-        .filter(|finding| finding.check == Check::Design)
-        .collect()
+/// The findings of one family of checks, run as `validate_neutral` runs it.
+pub(in crate::validate) fn family_findings(
+    ir: &CadIr,
+    family: Check,
+    check: impl FnOnce(
+        &DecodeContext<'_>,
+        &CadIr,
+        &ModelIndex<'_>,
+        &mut Vec<Finding>,
+    ) -> Result<(), CodecError>,
+) -> Vec<Finding> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
+    let index = ModelIndex::build(ir);
+    let mut findings = Vec::new();
+    {
+        let _depth = ctx.enter_nested("IR neutral validation").unwrap();
+        check(&ctx, ir, &index, &mut findings).unwrap();
+    }
+    ctx.finish_session().unwrap();
+    findings.retain(|finding| finding.check == family);
+    findings
+}
+
+pub(in crate::validate) fn design_findings(ir: &CadIr) -> Vec<Finding> {
+    family_findings(ir, Check::Design, super::check_design)
 }
 
 #[track_caller]
-pub(super) fn assert_no_design_finding(ir: &CadIr) {
+pub(in crate::validate) fn assert_no_design_finding(ir: &CadIr) {
     let findings = design_findings(ir);
     assert!(findings.is_empty(), "{findings:#?}");
 }
 
 #[track_caller]
-pub(super) fn assert_finding(ir: &CadIr, fragment: &str) {
+pub(in crate::validate) fn assert_finding(ir: &CadIr, fragment: &str) {
     let findings = design_findings(ir);
     assert!(
         findings.iter().any(

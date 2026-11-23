@@ -13,6 +13,7 @@ use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
+use cadmpeg_ir::design::projection::project_layer;
 use cadmpeg_ir::document::{CadIr, Model, SourceMeta, Topology};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
@@ -1539,7 +1540,7 @@ fn decode_container<'a>(
             feature_inventory.sheet_metal_flanges.len(),
         ),
     ];
-    let coverage: cadmpeg_ir::report::decode::Coverage = coverage_entries
+    let mut coverage: cadmpeg_ir::report::decode::Coverage = coverage_entries
         .into_iter()
         .chain(
             sheet_metal_coverage
@@ -1551,17 +1552,37 @@ fn decode_container<'a>(
         ir.geometry = Topology::default();
         ir.model = Model::default();
     }
-    if document_kind == DocumentKind::Part && ctx.depth() >= DecodeDepth::Design {
-        crate::design_v11::project(
-            ctx,
-            &mut ir,
-            &feature_inventory,
-            &sketch_inventory,
-            &design_inventory.parameters,
-            &design_inventory.units,
-            &mut losses,
-        )?;
+    if let Some(root) =
+        ir.state_root_definition(ctx, root_product_id(), ExternalDocument::default())?
+    {
+        if root.kind.is_none() {
+            root.kind = match document_kind {
+                DocumentKind::Part => Some(ProductDefinitionKind::Part),
+                DocumentKind::Assembly => Some(ProductDefinitionKind::Assembly),
+                _ => None,
+            };
+        }
     }
+    if document_kind == DocumentKind::Part && ctx.depth() >= DecodeDepth::Design {
+        project_layer(ctx, "inventor", &mut ir, &mut losses, |ir, losses| {
+            crate::design_v11::project(
+                ctx,
+                ir,
+                &feature_inventory,
+                &sketch_inventory,
+                &design_inventory.parameters,
+                &design_inventory.units,
+                losses,
+            )
+        })?;
+    }
+    if document_kind == DocumentKind::Assembly {
+        crate::design_v11::assembly::project(ctx, &mut ir, &mut losses)?;
+    }
+    coverage.record(
+        crate::coverage::DESIGN_UNPRODUCED_BODIES,
+        crate::design_v11::unproduced_bodies(&ir),
+    );
     let body = DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::at(delivered, geometry_transferred),
         coverage,
@@ -1698,6 +1719,14 @@ fn project_design(
     })
 }
 
+/// The root definition: the part or assembly the document holds at its top.
+fn root_product_id() -> ProductDefinitionId {
+    ProductDefinitionId::compose(
+        &cadmpeg_ir::identity_namespace!("inventor", "document", "product"),
+        cadmpeg_ir::identity_key!("root"),
+    )
+}
+
 fn project_root_product(
     ctx: &DecodeContext<'_>,
     document_kind: &DocumentKind,
@@ -1714,13 +1743,7 @@ fn project_root_product(
     let label = metadata.title.as_deref().map(str::to_owned);
     let description = metadata.description.as_deref().map(str::to_owned);
     let part_number = metadata.part_number.as_deref().map(str::to_owned);
-    let mut definition = ProductDefinition::root(
-        ProductDefinitionId::compose(
-            &cadmpeg_ir::identity_namespace!("inventor", "document", "product"),
-            cadmpeg_ir::identity_key!("root"),
-        ),
-        ExternalDocument::default(),
-    );
+    let mut definition = ProductDefinition::root(root_product_id(), ExternalDocument::default());
     definition.kind = Some(if *document_kind == DocumentKind::Assembly {
         ProductDefinitionKind::Assembly
     } else {

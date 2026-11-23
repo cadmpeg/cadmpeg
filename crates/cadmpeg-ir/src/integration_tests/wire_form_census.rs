@@ -6,8 +6,8 @@
 //! that derives `Serialize` or `Deserialize` and computes the one tag form the
 //! spec gives it from its variants. It finds each field, named or in a newtype,
 //! and checks that an `Option` is omitted for `None` and refuses `null`, and
-//! that no field other than an `Option` is ever left out. Test files and
-//! `#[cfg(test)]` items are not wire types.
+//! that each other field is written.
+//! Test files and `#[cfg(test)]` items are not wire types.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -18,10 +18,6 @@ use syn::spanned::Spanned;
 use syn::{Attribute, Fields, Item, Variant};
 
 const WIRE_CRATES: [&str; 2] = ["crates/cadmpeg-ir/src", "crates/cadmpeg-core/src"];
-
-const COLLECTIONS: [&str; 8] = [
-    "Vec", "VecDeque", "BTreeMap", "HashMap", "BTreeSet", "HashSet", "IndexMap", "Map",
-];
 
 const MAPS: [&str; 3] = ["BTreeMap", "HashMap", "IndexMap"];
 
@@ -756,32 +752,6 @@ impl Index {
         ty
     }
 
-    fn is_collection(&self, ty: &syn::Type, depth: usize) -> bool {
-        let Some((ident, arguments)) = last_segment(ty) else {
-            return matches!(ty, syn::Type::Slice(_));
-        };
-        let name = ident.to_string();
-        if COLLECTIONS.contains(&name.as_str()) {
-            return true;
-        }
-        if name == "Box" {
-            return first_type_argument(arguments)
-                .is_some_and(|inner| self.is_collection(inner, depth));
-        }
-        if depth > 4 {
-            return false;
-        }
-        let Some(decl) = self.unique(&name) else {
-            return false;
-        };
-        match &decl.body {
-            Body::Struct(Fields::Unnamed(fields)) if fields.unnamed.len() == 1 => {
-                self.is_collection(&fields.unnamed[0].ty, depth + 1)
-            }
-            _ => false,
-        }
-    }
-
     /// Whether `ty` is a newtype struct over an `Option`, which writes `null`
     /// for `None` as the `Option` does.
     fn is_optional_newtype(&self, ty: &syn::Type) -> bool {
@@ -1113,11 +1083,6 @@ fn check_fields(
             if let Some(skip) = skip {
                 problems.push(format!("{at}: field is left out by {skip}"));
             }
-            if reads && has(&metas, "default") && index.is_collection(ty, 0) {
-                problems.push(format!(
-                    "{at}: collection field reads its omission as empty"
-                ));
-            }
             let is_map = last_segment(ty)
                 .is_some_and(|(ident, _)| MAPS.contains(&ident.to_string().as_str()));
             if reads && is_map && !reader.is_some_and(|reader| reader.contains("distinct_keys")) {
@@ -1232,7 +1197,8 @@ fn problems(index: &Index) -> Vec<String> {
         let metas = serde_metas(&decl.attrs);
         let writes =
             derives(&decl.attrs, "Serialize") && !has(&metas, "into") && !has(&metas, "remote");
-        let reads = derives(&decl.attrs, "Deserialize")
+        let reads = (derives(&decl.attrs, "Deserialize")
+            || derives(&decl.attrs, "DeserializeTagged"))
             && !has(&metas, "from")
             && !has(&metas, "try_from")
             && !has(&metas, "remote");
@@ -1572,5 +1538,26 @@ fn every_wire_type_states_the_v11_wire_form() {
         "{} serialized types depart from the docs/cadir-v11.md §2.5 wire form:\n{}",
         problems.len(),
         problems.join("\n")
+    );
+}
+
+#[test]
+fn the_census_requires_defaulted_collections_to_be_written() {
+    let source = r#"#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Holder {
+    #[serde(default, with = "cadmpeg_core::distinct_keys::set")]
+    bodies: BTreeSet<BodyId>,
+}"#;
+    assert!(probe_problems(source).is_empty());
+    let omitted = source.replace(
+        "default, with",
+        "default, skip_serializing_if = \"BTreeSet::is_empty\", with",
+    );
+    assert_eq!(
+        probe_problems(&omitted),
+        vec![format!(
+            "{PROBE}:3 Holder.bodies@5: field is left out by BTreeSet::is_empty"
+        )]
     );
 }

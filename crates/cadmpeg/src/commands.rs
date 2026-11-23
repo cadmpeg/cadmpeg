@@ -10,7 +10,6 @@ use reporting::{
 };
 
 use cadmpeg_ir::codec::write::target::TargetRequest;
-use cadmpeg_ir::codec::Confidence;
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::Path;
@@ -23,11 +22,10 @@ use serde::{Serialize, Serializer};
 
 use cadmpeg_registry::{
     build_encoder, resolve_and_inspect_with, ForcedInput, Format, InputCatalog, InspectError,
-    Inspected, Selection,
+    Inspected,
 };
 
 use crate::application::artifact_store::{self, FileDestination};
-use crate::application::document::{LoadOrigin, LoadedDocument};
 use crate::application::refusal::{ApplicationError, ConversionRefusal, RefusalStage};
 use crate::application::transcoder::{
     self, emit_export_plan, export_target, ConversionPolicy, DestinationPolicy, LossPolicy,
@@ -41,29 +39,12 @@ use cadmpeg_measure::compare::Verdict;
 
 type CommandResult<T> = std::result::Result<T, ApplicationError>;
 
-pub(crate) fn print_load_notice(document: &LoadedDocument) {
-    let LoadOrigin::Decoded {
-        selection: Selection::Detected { confidence },
-        report,
-        ..
-    } = &document.origin
-    else {
-        return;
-    };
-    if *confidence < Confidence::High {
-        let format_id = report.format();
-        eprintln!(
-            "warning: detected {format_id} with {confidence} confidence; use --input-format to override"
-        );
-    }
-}
-
 /// CLI-facing conversion arguments assembled from argv.
 pub(crate) struct ConversionArgs {
     /// Decode and export loss refusal.
     pub(crate) losses: LossPolicy,
-    /// Permit export when validation reports errors.
-    pub(crate) allow_errors: bool,
+    /// Refuse export when validation reports an error in what the output writes.
+    pub(crate) reject_errors: bool,
     /// Decode at full depth whatever depth the output format needs.
     pub(crate) full_decode: bool,
     /// CAD output destination and its overwrite policy.
@@ -355,7 +336,7 @@ pub(crate) fn inspect(
 
 fn inspect_unrecognized(path: &Path) -> anyhow::Error {
     anyhow!(
-        "no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP, Creo View pvz, OpenUSD usda/usd; use --input-format to override detection",
+        "no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP, Creo View pvz, eDrawings easm/eprt, OpenUSD usda/usd; use --input-format to override detection",
         path.display()
     )
 }
@@ -395,7 +376,6 @@ pub(crate) fn dump(
             }
         }
         let loaded = loader::load_artifact(inputs, path, args.options(), forced)?;
-        print_load_notice(&loaded);
         let encoder = build_encoder(Format::Cadir);
         let plan = encoder
             .plan(
@@ -438,7 +418,6 @@ pub(crate) fn check_cmd(
 ) -> CommandResult<()> {
     let result = (|| {
         let loaded = loader::load_artifact(inputs, path, args.options(), forced)?;
-        print_load_notice(&loaded);
         let mut stdout = io::stdout();
         if let Some(report) = loaded.decode_report() {
             print_decode_report(&mut io::stderr(), report)?;
@@ -484,7 +463,7 @@ pub(crate) fn convert(
     let result = (|| {
         let policy = ConversionPolicy {
             losses: conversion.losses,
-            allow_errors: conversion.allow_errors,
+            reject_errors: conversion.reject_errors,
             destination: conversion.destination.clone(),
         };
         let selection = TargetSelection::resolve(to, policy.destination.path())?;
@@ -504,7 +483,7 @@ pub(crate) fn convert(
         let depth = if conversion.full_decode || conversion.losses.needs_full_decode() {
             DecodeDepth::Full
         } else {
-            target.needs().request()
+            target.request()
         };
         let source = SourceRequest {
             path,
@@ -517,7 +496,6 @@ pub(crate) fn convert(
 
         let (decode_report, validation) = {
             let prepared = planned.prepared();
-            print_load_notice(&prepared.document);
             let mut stderr = io::stderr();
             if let Some(report) = prepared.document.decode_report() {
                 print_decode_report(&mut stderr, report)?;
@@ -577,9 +555,7 @@ pub(crate) fn diff(
             report_path.check(b.path)?;
         }
         let left = loader::load_artifact(inputs, a.path, args.options(), a.forced)?;
-        print_load_notice(&left);
         let right = loader::load_artifact(inputs, b.path, args.options(), b.forced)?;
-        print_load_notice(&right);
         let result = cadmpeg_ir::diff(&left.ir, &right.ir);
         let fidelity = fidelity_diff(left.fidelity(), right.fidelity());
         let measured = match &geometry {

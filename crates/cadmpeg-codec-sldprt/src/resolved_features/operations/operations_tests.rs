@@ -11,7 +11,7 @@ use crate::records::ObjectId;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
 };
-use cadmpeg_ir::features::BooleanOp;
+use cadmpeg_ir::features::operation_settings::BooleanOp;
 use std::collections::BTreeMap;
 
 #[test]
@@ -139,7 +139,7 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
 #[test]
 fn inline_operation_binds_join_and_cut_to_their_family_words() {
     use crate::records::{FeatureInputLane, FeatureInputName};
-    use cadmpeg_ir::features::BooleanOp;
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
 
     let value = "F";
     let name_offset = 10usize;
@@ -281,7 +281,7 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
 
 #[test]
 fn extrusion_form_codes_are_scoped_to_their_native_classes() {
-    use cadmpeg_ir::features::BooleanOp;
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
 
     assert_eq!(
         extrusion_operation(Some("moExtrusion_c"), 82),
@@ -461,18 +461,14 @@ fn form_code_padding_follows_the_solidworks_schema_version() {
 }
 
 #[test]
-fn revolution_form_words_distinguish_new_body_and_join() {
-    for code in [5, 6, 11, 60, 20_322, 22_016] {
-        assert_eq!(
-            revolution_operation(Some("moRevolution_c"), code),
-            Some(BooleanOp::NewBody)
-        );
+fn revolution_form_eight_joins_and_other_forms_leave_the_operation_unread() {
+    for code in [5, 6, 7, 11, 60, 20_322, 22_016] {
+        assert_eq!(revolution_operation(Some("moRevolution_c"), code), None);
     }
     assert_eq!(
         revolution_operation(Some("moRevolution_c"), 8),
         Some(BooleanOp::Join)
     );
-    assert_eq!(revolution_operation(Some("moRevolution_c"), 7), None);
     assert_eq!(
         revolution_operation(Some("moRevCut_c"), 13),
         Some(BooleanOp::Cut)
@@ -481,11 +477,13 @@ fn revolution_form_words_distinguish_new_body_and_join() {
 
 #[test]
 fn configuration_operation_fallback_fills_only_unresolved_matching_operations() {
-    use cadmpeg_ir::features::{
+    use cadmpeg_ir::features::extents::{
         AngularTermination, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
-        FeatureDefinition, FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
-        RevolutionAxis, RevolveConstruction, RevolveExtent,
+        LinearTermination,
     };
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::revolve::{RevolutionAxis, RevolveConstruction, RevolveExtent};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::sketches::SketchId;
 
@@ -519,11 +517,13 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
                     SketchId::mint("synthetic:test:id#sketch").unwrap(),
                 ),
                 axis: RevolutionAxis {
-                    origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                        .unwrap(),
-                    direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                        0.0, 0.0, 1.0,
+                    origin: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                        0.0, 0.0, 0.0,
                     ))
+                    .unwrap(),
+                    direction: cadmpeg_ir::features::geometry::FeatureDirection3::new(
+                        Vector3::new(0.0, 0.0, 1.0),
+                    )
                     .unwrap(),
                     reference: None,
                 },
@@ -544,12 +544,14 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            definition,
+        ),
         native_ref: Some(native_ref.into()),
     };
     let native_feature = |id: &str, class: &str| Feature {
@@ -708,10 +710,11 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
 
 #[test]
 fn ambiguous_thin_join_carrier_does_not_resolve_an_operation() {
-    use cadmpeg_ir::features::{
-        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FeatureDefinition,
-        FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
+    use cadmpeg_ir::features::extents::{
+        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
     };
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::sketches::SketchId;
 
     let mut payload = vec![0; 40];
@@ -787,13 +790,15 @@ fn ambiguous_thin_join_carrier_does_not_resolve_an_operation() {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
             native_ref: Some("native".into()),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+                definition,
+            ),
         }];
         let histories = [FeatureHistory {
             id: "history".into(),
@@ -1033,10 +1038,11 @@ fn boundary_trailers_end_at_the_next_object() {
 
 #[test]
 fn inline_trailer_replaces_the_classless_extrusion_default_join() {
-    use cadmpeg_ir::features::{
-        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FeatureDefinition,
-        FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
+    use cadmpeg_ir::features::extents::{
+        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
     };
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::sketches::SketchId;
 
     let sparse = |family: u16, operation: u8| {
@@ -1074,13 +1080,13 @@ fn inline_trailer_replaces_the_classless_extrusion_default_join() {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
             native_ref: Some("native".into()),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Extrude {
                     profile: ProfileRef::Planar(PlanarProfileRef::Sketch(
                         SketchId::mint("synthetic:test:id#sketch").unwrap(),

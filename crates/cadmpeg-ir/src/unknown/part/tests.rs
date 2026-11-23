@@ -427,3 +427,58 @@ fn a_given_up_part_survives_the_wire() {
         fidelity
     );
 }
+
+#[test]
+fn a_part_of_a_nested_document_is_restated_in_its_container_stream() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(SOURCE, &arena, &DecodePolicy::default()).expect("root");
+    let part = || {
+        Part::new(
+            "synthetic",
+            "record",
+            root.child(4, 18).expect("extent"),
+            [ArenaClass::Model],
+        )
+        .in_stream(crate::stream_name!("Body.bin"))
+    };
+    let outer = part().id().expect("part id");
+    let container = crate::stream_name!("Embedded");
+    let nested = ctx
+        .give_up_part(part(), CodecError::malformed("damaged"))
+        .expect("given up")
+        .nested_in(&ctx, &container)
+        .expect("restated");
+    assert_eq!(nested.kind(), "record");
+    assert_ne!(nested.id(), &outer);
+    let literal = part()
+        .in_stream(crate::stream_name!("Embedded/Body.bin"))
+        .id()
+        .expect("part id");
+    assert_ne!(nested.id(), &literal);
+    let id = nested.id().clone();
+    let mut ir = CadIr::empty();
+    let mut fidelity = SourceFidelity::for_root(root);
+    let loss = nested.commit(&ctx, &mut ir, &mut fidelity).expect("commit");
+    assert_eq!(
+        loss.message,
+        format!(
+            "part record stream=\"Embedded/Body.bin\" offset=4 length=14 record={id}: \
+             malformed container: damaged; dropped=[]"
+        )
+    );
+    assert_eq!(
+        loss.provenance,
+        Some(
+            crate::SourceProvenance::in_stream(
+                "synthetic",
+                crate::stream_name!("Embedded/Body.bin"),
+                4
+            )
+            .with_tag("record")
+        )
+    );
+    let retained = fidelity.retained_record(id.as_str()).expect("retained");
+    assert_eq!(retained.stream(), "Embedded/Body.bin");
+    assert_eq!(retained.data(), Some(b"[damaged part]".as_slice()));
+}

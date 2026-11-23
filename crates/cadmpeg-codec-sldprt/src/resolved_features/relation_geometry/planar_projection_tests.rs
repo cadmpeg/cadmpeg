@@ -6,9 +6,10 @@ use super::{
 use crate::records::{FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{
-    DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
-    FeatureOperation, SketchFeatureBinding,
+    Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation, SketchFeatureBinding,
 };
 use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement, SketchProfiles};
 use std::collections::BTreeMap;
@@ -113,7 +114,13 @@ fn solved_line_projection_succeeds() {
 fn project_relation_point_with_policy() {
     let (sketch, feature, lane) = planar_fixture();
     let mut entities = Vec::new();
-    project_relation_point_geometry(&mut entities, &[sketch], &[feature], &[lane]);
+    project_relation_point_geometry(
+        &mut entities,
+        &[sketch],
+        &[feature],
+        &[lane],
+        &crate::resolved_features::stream_readings::SolidEdges::default(),
+    );
     assert!(entities.is_empty());
 }
 
@@ -298,7 +305,8 @@ fn assert_owned_loci_refusal(project: impl Fn(&DecodePolicy) -> Result<(), Codec
 }
 
 fn project_dimensional_with_policy(policy: &DecodePolicy) -> Result<(), CodecError> {
-    use cadmpeg_ir::features::{DesignParameter, DimensionDisplay, ParameterId, ParameterValue};
+    use cadmpeg_ir::features::parameters::{DesignParameter, DimensionDisplay, ParameterValue};
+    use cadmpeg_ir::features::ParameterId;
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
         SketchGeometryDefinition,
@@ -357,7 +365,8 @@ fn planar_dimensional_relation_succeeds() {
 }
 
 fn project_dimensional_points_with_policy(policy: &DecodePolicy) -> Result<(), CodecError> {
-    use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
+    use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+    use cadmpeg_ir::features::ParameterId;
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
         SketchGeometryDefinition, SketchLocus,
@@ -431,7 +440,8 @@ fn planar_dimensional_points_succeeds() {
 }
 
 fn project_dimensional_lines_with_policy(policy: &DecodePolicy) -> Result<(), CodecError> {
-    use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
+    use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+    use cadmpeg_ir::features::ParameterId;
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
         SketchGeometryDefinition,
@@ -505,7 +515,8 @@ fn planar_dimensional_lines_succeeds() {
 }
 
 fn project_repeated_circles_with_policy(policy: &DecodePolicy) -> Result<(), CodecError> {
-    use cadmpeg_ir::features::{DesignParameter, DimensionDisplay, ParameterId, ParameterValue};
+    use cadmpeg_ir::features::parameters::{DesignParameter, DimensionDisplay, ParameterValue};
+    use cadmpeg_ir::features::ParameterId;
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
         SketchGeometryDefinition,
@@ -575,7 +586,8 @@ fn planar_repeated_circles_succeeds() {
 }
 
 fn project_dynamic_lines_with_policy(policy: &DecodePolicy) -> Result<(), CodecError> {
-    use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
+    use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+    use cadmpeg_ir::features::ParameterId;
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
         SketchGeometryDefinition,
@@ -652,7 +664,8 @@ fn planar_dynamic_lines_succeeds() {
 
 fn project_dynamic_marker_points_with_policy(policy: &DecodePolicy) -> Result<(), CodecError> {
     use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink, SketchInputLinks};
-    use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
+    use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+    use cadmpeg_ir::features::ParameterId;
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
         SketchGeometryDefinition, SketchLocus,
@@ -811,5 +824,7 @@ mod roster_points;
 mod address_markers;
 
 mod axis_markers;
+
+mod curve_records;
 
 mod native_markers;

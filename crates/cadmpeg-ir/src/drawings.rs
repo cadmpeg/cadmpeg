@@ -540,7 +540,7 @@ pub struct DrawingCurve {
 }
 
 /// Analytic two-dimensional geometry in the frame specified by its owner.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum DrawingCurveGeometry {

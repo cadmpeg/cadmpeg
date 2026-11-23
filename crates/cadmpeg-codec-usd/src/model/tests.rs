@@ -145,7 +145,8 @@ fn a_patch_becomes_a_sheet_body_face() {
         ir.geometry.faces[0].sense,
         cadmpeg_ir::topology::Sense::Reversed
     );
-    assert!(ir.geometry.faces[0].loops.is_empty());
+    assert_eq!(ir.geometry.faces[0].loops.len(), 1);
+    assert_eq!(ir.geometry.coedges.len(), 4);
     assert!(has_loss(&result, UsdLossCode::NurbsTrimNotTransferred));
 }
 

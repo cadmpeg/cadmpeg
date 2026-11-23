@@ -136,7 +136,7 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
             .map(cadmpeg_ir::drawings::DrawingId::as_str),
         Some(neutral_template.id.as_str())
     );
-    assert_eq!(neutral_page.views, [neutral_view.id.clone()]);
+    assert_eq!(neutral_page.views, std::slice::from_ref(&neutral_view.id));
     assert!(neutral_page.relationships.is_empty());
     assert_eq!(neutral_template.assets.len(), 1);
     assert_eq!(
@@ -292,7 +292,7 @@ fn keeps_non_page_template_links_out_of_neutral_page_field() {
         Some(neutral_template.id.as_str())
     );
     assert!(!neutral_page.relationships.contains_key("Template"));
-    assert_eq!(neutral_page.views, [neutral_view.id.clone()]);
+    assert_eq!(neutral_page.views, std::slice::from_ref(&neutral_view.id));
     assert_eq!(
         neutral_view.relationships["Template"],
         [cadmpeg_ir::ReferenceSelection::new(

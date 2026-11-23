@@ -14,9 +14,11 @@ use cadmpeg_ir::geometry::pcurve::{
     CirclePcurve, LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs,
     PcurveNurbsPoles, PolarHarmonicPcurve,
 };
+use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, DirectedParameterRange, ProceduralSurface, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
@@ -217,7 +219,8 @@ impl Builder {
         let [x, y, z] = position;
         self.ir.geometry.points.push(Point::new(
             point.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(x, y, z)).expect("finite"),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(x, y, z))
+                .expect("finite"),
             None,
         ));
         self.ir.geometry.vertices.push(Vertex {
@@ -1210,6 +1213,7 @@ pub(crate) fn merged(a: &CadIr, b: &CadIr) -> CadIr {
                 records.as_array(),
             ) {
                 target.extend(records.iter().cloned());
+                target.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
             }
         }
     }

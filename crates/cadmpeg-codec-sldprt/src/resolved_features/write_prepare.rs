@@ -13,7 +13,8 @@ use super::sketch_write::{patch_line_profiles, same_sketch_point, sketch_brep};
 use super::transforms::{locus_entity, sketch_entity_locus_points};
 use super::typed_relations::{sketch_entity_contains_point, symmetric_loci_match_axis};
 use super::write_generate::{
-    append_generated_object_name, append_generated_sketch_markers, generated_locus_is_point,
+    append_generated_object_name, append_generated_sketch_markers, dimension_parameter,
+    generated_locus_is_point, is_driven_dimension,
 };
 use super::{SKETCH_MARKER, SKETCH_POINT_TOLERANCE, SPATIAL_VERTEX_PREFIX};
 use crate::records::{FeatureInputLane, SketchRelationKind};
@@ -26,16 +27,28 @@ use cadmpeg_ir::sketches::{
     SpatialSketchGeometryDefinition, SpatialSketchId,
 };
 use cadmpeg_ir::units::FinitePoint2;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+
+/// A generated object or parameter name: 1 to 128 UTF-16 code units behind
+/// a u8 count.
+pub(crate) const GENERATED_NAME: cadmpeg_ir::codec::write::capacity::TextCapacity =
+    cadmpeg_ir::codec::write::capacity::TextCapacity::new(
+        "generated object name",
+        cadmpeg_ir::codec::write::capacity::TextUnit::Utf16CodeUnit,
+        128,
+    );
 
 /// Reject unsupported neutral sketch edits before native lane replay.
 ///
 /// Bitwise comparison against the machine-local document baseline; see
 /// [`cadmpeg_ir::hash::document_local_sha256`]. Absent baseline: sync lanes from
-/// the neutral side.
+/// the neutral side. `cut` receives an `export:value.unwritable` entry for
+/// each generated name cut to [`GENERATED_NAME`].
 pub(crate) fn prepare_sketches_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
+    edits: &crate::history::write::edits::SourceEdits<'_>,
+    cut: &mut Vec<String>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let hash_arena = cadmpeg_core::decode::DecodeArena::new();
     let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
@@ -44,14 +57,7 @@ pub(crate) fn prepare_sketches_for_write(
         &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
 
-    let baseline_neutral = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("sldprt_neutral_sketch_local_sha256"));
-    let baseline_native = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("sldprt_native_sketch_sha256"));
+    let (baseline_neutral, baseline_native) = sketch_baselines(ir);
     let baseline_constraints = ir.source.as_ref().and_then(|source| {
         source
             .attributes
@@ -63,17 +69,12 @@ pub(crate) fn prepare_sketches_for_write(
         .map(|native| lane_hash(&hash_ctx, &native.feature_input_lanes))
         .transpose()?;
     if baseline_neutral.is_none() && baseline_native.is_none() {
-        if ir.model.sketches.is_empty()
-            && ir.model.sketch_entities.is_empty()
-            && ir.model.sketch_constraints.is_empty()
-            && ir.model.spatial_sketches.is_empty()
-            && ir.model.spatial_sketch_entities.is_empty()
-        {
+        if !holds_sketches(ir) {
             return Ok(());
         }
         validate_source_less_constraints(ir)?;
         let native = native.get_or_insert_with(crate::native::SldprtNative::default);
-        let generated = source_less_lanes(ir, native)?;
+        let generated = source_less_lanes(ir, native, cut)?;
         native.feature_input_lanes.extend(generated);
         return Ok(());
     }
@@ -87,11 +88,12 @@ pub(crate) fn prepare_sketches_for_write(
             "SLDPRT native sketch relation editing is not implemented".into(),
         ));
     }
-    let native_changed = match (&current_native, baseline_native) {
-        (Some(current), Some(baseline)) => current != baseline,
-        (Some(_), None) | (None, Some(_)) => true,
-        (None, None) => false,
-    };
+    let native_changed = !edits.native_unedited()
+        && match (&current_native, baseline_native) {
+            (Some(current), Some(baseline)) => current != baseline,
+            (Some(_), None) | (None, Some(_)) => true,
+            (None, None) => false,
+        };
     if native_changed {
         return Err(cadmpeg_core::CodecError::Malformed(
             "conflicting neutral and native SLDPRT sketch edits".into(),
@@ -104,6 +106,74 @@ pub(crate) fn prepare_sketches_for_write(
     })?;
     patch_spatial_sketches(ir, retained)?;
     patch_line_profiles(ir, retained)
+}
+
+/// The source's neutral and native sketch digests, where the decoder stated
+/// them.
+fn sketch_baselines(ir: &cadmpeg_ir::CadIr) -> (Option<&String>, Option<&String>) {
+    let attribute = |key: &str| {
+        ir.source
+            .as_ref()
+            .and_then(|source| source.attributes.get(key))
+    };
+    (
+        attribute("sldprt_neutral_sketch_local_sha256"),
+        attribute("sldprt_native_sketch_sha256"),
+    )
+}
+
+fn holds_sketches(ir: &cadmpeg_ir::CadIr) -> bool {
+    !(ir.model.sketches.is_empty()
+        && ir.model.sketch_entities.is_empty()
+        && ir.model.sketch_constraints.is_empty()
+        && ir.model.spatial_sketches.is_empty()
+        && ir.model.spatial_sketch_entities.is_empty())
+}
+
+/// The parameters of driven (reference) dimensions that a write generating
+/// the sketch lanes leaves out of their features' records: it writes a
+/// dimension only as a driving scalar and a parameter only as an editable
+/// dimension of its feature, so a driven parameter would read back as an
+/// editable one. A parameter is driven where the design states it `Driven`
+/// (D11) or a dimension that states it is driven binds it.
+pub(crate) fn omitted_driven_parameters(
+    ir: &cadmpeg_ir::CadIr,
+) -> HashSet<&cadmpeg_ir::features::ParameterId> {
+    if sketch_baselines(ir) != (None, None) {
+        return HashSet::new();
+    }
+    ir.design
+        .parameters
+        .iter()
+        .filter(|parameter| {
+            matches!(
+                parameter.definition,
+                cadmpeg_ir::design::parameter::ParameterDefinition::Driven
+            )
+        })
+        .map(|parameter| &parameter.id)
+        .chain(
+            ir.model
+                .sketch_constraints
+                .iter()
+                .filter(|constraint| constraint.driving == Some(false))
+                .filter_map(|constraint| dimension_parameter(constraint.definition.kind())),
+        )
+        .collect()
+}
+
+/// The driven (reference) dimensions a write omits: a write that generates
+/// the sketch lanes writes each dimension as a driving scalar, so it writes
+/// no driven one.
+pub(crate) fn omitted_driven_dimensions(ir: &cadmpeg_ir::CadIr) -> usize {
+    if sketch_baselines(ir) != (None, None) || !holds_sketches(ir) {
+        return 0;
+    }
+    ir.model
+        .sketch_constraints
+        .iter()
+        .filter(|constraint| is_driven_dimension(ir, constraint))
+        .count()
 }
 
 /// Each marker id's first offset in every lane holding it, in lane order.
@@ -403,6 +473,11 @@ fn validate_source_less_constraints(
     ir: &cadmpeg_ir::CadIr,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for constraint in &ir.model.sketch_constraints {
+        // The generated sketch omits a driven dimension, so its value and
+        // parameter decide nothing written.
+        if is_driven_dimension(ir, constraint) {
+            continue;
+        }
         let SketchConstraintDefinitionInput::CoincidentLoci { loci } = constraint.definition.kind()
         else {
             validate_generated_marker_constraint(ir, constraint)?;
@@ -829,22 +904,30 @@ impl<'a> DimensionDefinition<'a> {
     }
 
     /// The display semantics a driving parameter must carry for this form.
-    fn display(&self) -> Option<cadmpeg_ir::features::DimensionDisplay> {
+    fn display(&self) -> Option<cadmpeg_ir::features::parameters::DimensionDisplay> {
         match self {
-            Self::Radius { .. } => Some(cadmpeg_ir::features::DimensionDisplay::Radius),
-            Self::Diameter { .. } => Some(cadmpeg_ir::features::DimensionDisplay::Diameter),
+            Self::Radius { .. } => Some(cadmpeg_ir::features::parameters::DimensionDisplay::Radius),
+            Self::Diameter { .. } => {
+                Some(cadmpeg_ir::features::parameters::DimensionDisplay::Diameter)
+            }
             _ => None,
         }
     }
 
     /// The evaluated magnitude this form measures, when the parameter carries a compatible value.
-    fn magnitude(&self, value: Option<&cadmpeg_ir::features::ParameterValue>) -> Option<f64> {
+    fn magnitude(
+        &self,
+        value: Option<&cadmpeg_ir::features::parameters::ParameterValue>,
+    ) -> Option<f64> {
         match (self, value) {
-            (Self::Angle { .. }, Some(cadmpeg_ir::features::ParameterValue::Angle(angle))) => {
-                Some(angle.get())
-            }
+            (
+                Self::Angle { .. },
+                Some(cadmpeg_ir::features::parameters::ParameterValue::Angle(angle)),
+            ) => Some(angle.get()),
             (Self::Angle { .. }, _) => None,
-            (_, Some(cadmpeg_ir::features::ParameterValue::Length(length))) => Some(length.get()),
+            (_, Some(cadmpeg_ir::features::parameters::ParameterValue::Length(length))) => {
+                Some(length.get())
+            }
             (_, _) => None,
         }
     }
@@ -1397,7 +1480,7 @@ pub(super) fn ellipse_angle_relation_kind(angle: f64) -> Option<SketchRelationKi
     .find_map(|(expected, kind)| ((angle - expected).abs() <= TOLERANCE).then_some(kind))
 }
 
-fn unique_planar_sketch_owner<'a>(
+pub(crate) fn unique_planar_sketch_owner<'a>(
     ir: &'a cadmpeg_ir::CadIr,
     sketch: &SketchId,
 ) -> Result<&'a cadmpeg_ir::features::Feature, cadmpeg_core::CodecError> {
@@ -1444,7 +1527,7 @@ fn unique_sketch_owner<'a>(
     Ok(owner)
 }
 
-fn generated_sketch_owner_record<'a>(
+pub(crate) fn generated_sketch_owner_record<'a>(
     native: &'a crate::native::SldprtNative,
     owner: &cadmpeg_ir::features::Feature,
     sketch: &str,
@@ -1465,7 +1548,7 @@ fn generated_sketch_owner_record<'a>(
         })
 }
 
-fn generated_sketch_owner_id(
+pub(crate) fn generated_sketch_owner_id(
     owner: &crate::records::Feature,
     sketch: &str,
 ) -> Result<u32, cadmpeg_core::CodecError> {
@@ -1479,6 +1562,7 @@ fn generated_sketch_owner_id(
 fn source_less_lanes(
     ir: &cadmpeg_ir::CadIr,
     native: &crate::native::SldprtNative,
+    cut: &mut Vec<String>,
 ) -> Result<Vec<FeatureInputLane>, cadmpeg_core::CodecError> {
     let mut objects = Vec::<(String, u64, Vec<u8>)>::new();
     for sketch in &ir.model.sketches {
@@ -1495,15 +1579,11 @@ fn source_less_lanes(
                 owner_record.name.as_str()
             },
             object_id,
+            sketch.id.as_str(),
+            cut,
         )?;
-        append_generated_sketch_markers(ir, sketch, &mut payload)?;
-        let sketch_ir = sketch_brep(ir, sketch)?;
-        let body = crate::writer::brep_body(&sketch_ir, 0.001, false)?;
-        payload.extend(crate::writer::parasolid_stream_named(
-            &body,
-            "SCH_SW_33103_11000",
-            sketch.name.as_deref().unwrap_or(sketch.id.as_str()),
-        )?);
+        append_generated_sketch_markers(ir, sketch, &mut payload, cut)?;
+        payload.extend(generated_profile_stream(ir, sketch)?);
         objects.push((configuration, owner.ordinal, payload));
     }
     for sketch in &ir.model.spatial_sketches {
@@ -1520,6 +1600,8 @@ fn source_less_lanes(
                 owner_record.name.as_str()
             },
             object_id,
+            sketch.id.as_str(),
+            cut,
         )?;
         let entities = ir
             .model
@@ -1579,6 +1661,30 @@ fn source_less_lanes(
     )?;
     bind_scalar_operands(&ctx, &native.feature_histories, &mut lanes)?;
     Ok(lanes)
+}
+
+/// The nested Parasolid stream of a generated sketch's profile body: the
+/// sheet body of its profile curves, described by the sketch's name, in
+/// schema `SCH_SW_33103_11000` (§3).
+pub(crate) fn generated_profile_stream(
+    ir: &cadmpeg_ir::CadIr,
+    sketch: &cadmpeg_ir::sketches::Sketch,
+) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
+    let sketch_ir = sketch_brep(ir, sketch)?;
+    // The generated body's records are named for the sketch, which the
+    // history writer's retry leaves out (§3.2).
+    let body = crate::writer::brep_body(&sketch_ir, 0.001, false).map_err(|error| match error {
+        cadmpeg_core::CodecError::ResourceLimit(_) | cadmpeg_core::CodecError::Io(_) => error,
+        other => cadmpeg_core::CodecError::NotImplemented(format!(
+            "source-less SLDPRT sketch {} cannot be encoded ({other})",
+            sketch.id.as_str()
+        )),
+    })?;
+    crate::writer::parasolid_stream_named(
+        &body,
+        "SCH_SW_33103_11000",
+        sketch.name.as_deref().unwrap_or(sketch.id.as_str()),
+    )
 }
 
 fn assemble_source_less_lanes(mut objects: Vec<(String, u64, Vec<u8>)>) -> Vec<FeatureInputLane> {
@@ -1723,12 +1829,12 @@ mod source_less_lane_tests {
             ordinal: 0,
             name: Some("Sketch".into()),
             suppressed: Some(false),
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::default(),
             source_tag: None,
             source_text: None,
             source_content: cadmpeg_ir::features::FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
@@ -1994,13 +2100,135 @@ mod source_less_lane_tests {
         let mut payload = Vec::new();
 
         validate_source_less_constraints(&ir).expect("required invariant");
-        append_generated_sketch_markers(&ir, &sketch, &mut payload).expect("required invariant");
+        append_generated_sketch_markers(&ir, &sketch, &mut payload, &mut Vec::new())
+            .expect("required invariant");
 
         assert_eq!(
             coordinate_marker_local_links(&payload, 0),
             Some((vec![6], 0x8386))
         );
         assert_eq!(marker_local_links(&payload, 710), Some(([2, 4], 0)));
+    }
+
+    /// A driven (reference) dimension is never written as a driving scalar:
+    /// the generated sketch omits it and the export charges it, whether the
+    /// constraint states it or the design states its parameter `Driven` (D11).
+    #[test]
+    fn a_generated_sketch_omits_a_driven_dimension() {
+        let sketch = generated_sketch();
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        add_sketch_owner(&mut ir, &sketch);
+        let point = |id: &str, u: f64| {
+            generated_entity(
+                id,
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                    position: Point2::new(u, 0.0),
+                })
+                .unwrap(),
+            )
+        };
+        ir.model.sketch_entities = vec![
+            point("synthetic:test:id#first", -1.0),
+            point("synthetic:test:id#second", 1.0),
+        ];
+        let parameter = cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#width").unwrap();
+        ir.model
+            .parameters
+            .push(cadmpeg_ir::features::parameters::DesignParameter {
+                product_definition: None,
+                id: parameter.clone(),
+                owner: None,
+                ordinal: 0,
+                name: "D1".to_owned(),
+                expression: "2 mm".to_owned(),
+                display: None,
+                value: Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
+                    cadmpeg_ir::scalar::Length::new(2.0).unwrap(),
+                )),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+                properties: BTreeMap::new(),
+                pmi: None,
+                native_ref: None,
+            });
+        ir.model.sketch_constraints.push(SketchConstraint {
+            id: SketchConstraintId::mint("synthetic:test:id#width-dimension").unwrap(),
+            sketch: sketch.id.clone(),
+            definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                SketchConstraintDefinitionInput::DistanceLoci {
+                    first: SketchLocus::Entity(
+                        SketchEntityId::mint("synthetic:test:id#first").unwrap(),
+                    ),
+                    second: SketchLocus::Entity(
+                        SketchEntityId::mint("synthetic:test:id#second").unwrap(),
+                    ),
+                    parameter: parameter.clone(),
+                },
+            )
+            .unwrap(),
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
+            native_ref: None,
+        });
+        let writes_scalar = |ir: &cadmpeg_ir::CadIr| {
+            let mut payload = Vec::new();
+            append_generated_sketch_markers(ir, &sketch, &mut payload, &mut Vec::new())
+                .expect("required invariant");
+            payload
+                .windows(b"sgPntPntDist".len())
+                .any(|window| window == b"sgPntPntDist")
+        };
+        assert!(writes_scalar(&ir));
+        assert_eq!(super::omitted_driven_dimensions(&ir), 0);
+        assert!(super::omitted_driven_parameters(&ir).is_empty());
+
+        ir.model.sketch_constraints[0].driving = Some(false);
+        assert!(!writes_scalar(&ir));
+        assert_eq!(super::omitted_driven_dimensions(&ir), 1);
+        assert_eq!(
+            super::omitted_driven_parameters(&ir),
+            std::collections::HashSet::from([&parameter])
+        );
+
+        ir.model.sketch_constraints[0].driving = None;
+        ir.design
+            .parameters
+            .push(cadmpeg_ir::design::parameter::DesignParameter {
+                id: parameter,
+                scope: cadmpeg_ir::ids::ProductDefinitionId::mint("synthetic:test:id#part")
+                    .unwrap(),
+                owner: None,
+                name: Some(cadmpeg_core::nonblank_literal!("D1")),
+                kind: cadmpeg_ir::design::units::ValueKind::Quantity(
+                    cadmpeg_ir::design::units::Quantity::LENGTH,
+                ),
+                unit: None,
+                definition: cadmpeg_ir::design::parameter::ParameterDefinition::Driven,
+                value: None,
+                display: None,
+                tolerance: None,
+                decimals: None,
+                comment: None,
+                native_options: BTreeMap::new(),
+                source_settings: BTreeMap::new(),
+                native_ref: None,
+            });
+        assert!(!writes_scalar(&ir));
+        assert_eq!(super::omitted_driven_dimensions(&ir), 1);
+
+        // A `Driven` parameter that no dimension binds stays out of its
+        // feature's record too.
+        ir.model.sketch_constraints.clear();
+        assert_eq!(
+            super::omitted_driven_parameters(&ir),
+            std::collections::HashSet::from([&ir.design.parameters[0].id])
+        );
     }
 
     #[test]
@@ -2061,7 +2289,8 @@ mod source_less_lane_tests {
         let mut payload = Vec::new();
 
         validate_source_less_constraints(&ir).expect("required invariant");
-        append_generated_sketch_markers(&ir, &sketch, &mut payload).expect("required invariant");
+        append_generated_sketch_markers(&ir, &sketch, &mut payload, &mut Vec::new())
+            .expect("required invariant");
 
         assert_eq!(
             coordinate_marker_local_links(&payload, 284),
@@ -2148,6 +2377,28 @@ mod source_less_lane_tests {
                     .is_err()
             );
         }
+    }
+
+    #[test]
+    fn an_overlong_generated_object_name_is_cut() {
+        let mut payload = Vec::new();
+        let mut cut = Vec::new();
+        super::append_generated_object_name(
+            &mut payload,
+            &"s".repeat(140),
+            7,
+            "test:sketch#a",
+            &mut cut,
+        )
+        .unwrap();
+        assert_eq!(
+            cut,
+            [
+                "test:sketch#a generated object name: 140 UTF-16 code units cut to 128; \
+              the field holds 128"
+            ]
+        );
+        assert!(payload.windows(2).any(|window| window == [128, b's']));
     }
 }
 

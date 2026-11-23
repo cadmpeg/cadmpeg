@@ -13,7 +13,8 @@ use crate::layout::mfc_new_class_header as class_hdr;
 use crate::records::ObjectId;
 use crate::records::{Feature, FeatureInputLane, FeatureInputName};
 use cadmpeg_core::decode::{u64_from_index, View};
-use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use std::collections::HashMap;
 
 pub(crate) const SPLIT_LINE_MODE_PROPERTY: &str = "SplitLineMode";
@@ -115,7 +116,6 @@ fn feature_operation_code(
 
 fn revolution_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
     match (class, code) {
-        (Some("moRevolution_c"), 5 | 6 | 11 | 60 | 20_322 | 22_016) => Some(BooleanOp::NewBody),
         (Some("moRevolution_c"), 8) => Some(BooleanOp::Join),
         (Some("moRevCut_c"), _) => Some(BooleanOp::Cut),
         _ => None,
@@ -213,7 +213,7 @@ pub(crate) fn bind_sweep_operations(
             'sweep_mode: {
                 if !matches!(
                     shape.mode(),
-                    cadmpeg_ir::features::SweepMode::Unresolved { .. }
+                    cadmpeg_ir::features::sweeps::SweepMode::Unresolved { .. }
                 ) {
                     break 'sweep_mode;
                 }
@@ -246,12 +246,14 @@ pub(crate) fn bind_sweep_operations(
                 };
                 if operations.all(|operation| operation == Some(first)) {
                     let op = match first {
-                        BooleanOp::Join => cadmpeg_ir::features::SolidSweepOperation::Join,
-                        BooleanOp::Cut => cadmpeg_ir::features::SolidSweepOperation::Cut,
+                        BooleanOp::Join => cadmpeg_ir::features::sweeps::SolidSweepOperation::Join,
+                        BooleanOp::Cut => cadmpeg_ir::features::sweeps::SolidSweepOperation::Cut,
                         BooleanOp::Intersect => {
-                            cadmpeg_ir::features::SolidSweepOperation::Intersect
+                            cadmpeg_ir::features::sweeps::SolidSweepOperation::Intersect
                         }
-                        BooleanOp::NewBody => cadmpeg_ir::features::SolidSweepOperation::NewBody,
+                        BooleanOp::NewBody => {
+                            cadmpeg_ir::features::sweeps::SolidSweepOperation::NewBody
+                        }
                         BooleanOp::Unresolved => break 'sweep_mode,
                     };
                     // The lane always names a solid result, which admits every
@@ -259,11 +261,12 @@ pub(crate) fn bind_sweep_operations(
                     // sections it already holds.
                     let (section, sections) = std::mem::replace(
                         shape,
-                        cadmpeg_ir::features::SweepShape::unresolved(None),
+                        cadmpeg_ir::features::sweeps::SweepShape::unresolved(None),
                     )
                     .into_sections();
-                    *shape =
-                        cadmpeg_ir::features::SweepShape::solid_sections(op, section, sections);
+                    *shape = cadmpeg_ir::features::sweeps::SweepShape::solid_sections(
+                        op, section, sections,
+                    );
                 }
             }
         });
@@ -518,6 +521,7 @@ pub(crate) fn bind_extrusion_operations(
                 *op = first;
             }
         });
+        crate::history::extrude_direction::settle_reversal(feature);
     }
 }
 
@@ -588,6 +592,7 @@ pub(crate) fn inherit_configuration_operations(
                 _ => {}
             }
         });
+        crate::history::extrude_direction::settle_reversal(feature);
     }
 }
 

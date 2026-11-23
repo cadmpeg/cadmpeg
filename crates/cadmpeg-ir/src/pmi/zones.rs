@@ -21,7 +21,7 @@ pub struct ToleranceZone {
 }
 
 /// The form of a tolerance zone.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -38,6 +38,20 @@ pub enum ToleranceZoneForm {
     Spherical,
     /// The source's name of another form.
     Other(String),
+}
+
+impl ToleranceZoneForm {
+    /// Whether an `Other` name is one of the typed forms, compared without
+    /// regard to ASCII case (part 10).
+    #[must_use]
+    pub fn other_names_a_typed_form(&self) -> bool {
+        match self {
+            Self::Other(name) => ["cylindrical or circular", "spherical"]
+                .iter()
+                .any(|form| name.eq_ignore_ascii_case(form)),
+            _ => false,
+        }
+    }
 }
 
 /// A projected tolerance zone and its terminating feature.

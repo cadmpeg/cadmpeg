@@ -626,7 +626,11 @@ fn drawing_only_pages_keep_independent_physical_sheets() {
             .find(|drawing| drawing.object.ends_with(&format!("#{note_name}")))
             .unwrap();
         assert_eq!(view.kind, DrawingKind::Annotation);
-        assert_eq!(page.views, [view.id.clone()], "{name} page owns one view");
+        assert_eq!(
+            page.views,
+            std::slice::from_ref(&view.id),
+            "{name} page owns one view"
+        );
     }
 }
 

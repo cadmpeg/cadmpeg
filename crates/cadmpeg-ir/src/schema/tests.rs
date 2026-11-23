@@ -40,7 +40,7 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
     let mut references = Vec::new();
     crate::schema::EntitySchema::visit_references(
         &ir.model.product_definitions[0],
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &mut |reference| {
             references.push(reference.to_owned());
             Ok(())
@@ -51,7 +51,7 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
     let mut borrowed_references = Vec::new();
     crate::schema::EntitySchema::visit_references(
         &ir.model.product_definitions[0],
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &mut |reference| {
             borrowed_references.push(reference.to_owned());
             Ok(())
@@ -74,11 +74,10 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
 
 #[test]
 fn typed_reference_walk_treats_historical_members_as_state_local() {
-    use crate::features::{
-        edge_treatments::{FilletGroup, RadiusSpec},
-        EdgeSelection, Feature, FeatureDefinition, FeatureId, FeatureInputTopology,
-        FeatureOperation,
-    };
+    use crate::features::edge_treatments::{FilletGroup, RadiusSpec};
+    use crate::features::evaluation::FeatureInputTopology;
+    use crate::features::selections::EdgeSelection;
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use crate::ids::{FeatureInputTopologyId, HistoricalEdgeId};
     use crate::schema::EntitySchema;
 
@@ -88,12 +87,16 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
     let historical_edge =
         HistoricalEdgeId::mint("test:model:historical-edge#local").expect("valid identity");
     let state = FeatureInputTopology {
+        face_owners: Vec::new(),
         id: state_id.clone(),
         input_of: feature_id.clone(),
-        bodies: crate::features::DistinctMembers::try_from(Vec::new()).unwrap(),
-        faces: crate::features::DistinctMembers::try_from(Vec::new()).unwrap(),
-        edges: crate::features::DistinctMembers::try_from(vec![historical_edge.clone()]).unwrap(),
-        vertices: crate::features::DistinctMembers::try_from(Vec::new()).unwrap(),
+        bodies: crate::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
+        faces: crate::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
+        edges: crate::features::selections::DistinctMembers::try_from(
+            vec![historical_edge.clone()],
+        )
+        .unwrap(),
+        vertices: crate::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
         edge_geometry: Vec::new(),
         native_ref: None,
     };
@@ -103,15 +106,15 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Fillet {
-                groups: crate::features::NonEmptyMembers::one(FilletGroup {
+                groups: crate::features::selections::NonEmptyMembers::one(FilletGroup {
                     edges: EdgeSelection::historical(
                         state_id.clone(),
                         vec![historical_edge],
@@ -131,7 +134,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
     let mut state_references = Vec::new();
     state
         .visit_references(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut |reference| {
                 state_references.push(reference.to_owned());
                 Ok(())
@@ -139,7 +142,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         )
         .expect("state states its typed references");
     assert_eq!(state_references, vec![feature_id.as_str().to_owned()]);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut borrowed_state_references = Vec::new();
     state
         .visit_references(&ctx, &mut |target| {
@@ -152,7 +155,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
     let mut feature_references = Vec::new();
     feature
         .visit_references(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut |reference| {
                 feature_references.push(reference.to_owned());
                 Ok(())
@@ -269,13 +272,15 @@ fn schema_generation_produces_definitions() {
 #[test]
 fn model_feature_schema_describes_serialized_regeneration_parent() {
     use crate::document::Model;
+    use crate::features::evaluation::FeatureEvaluation;
+    use crate::features::selections::DistinctMembers;
+    use crate::features::tree::{FeatureTreeNodeRole, TreeChildren};
     use crate::features::{
-        DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
-        FeatureOperation, FeatureTreeNodeRole, TreeChildren,
+        Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
     };
 
-    let parent = FeatureId::mint("test:model:feature#parent").unwrap();
-    let child = FeatureId::mint("test:model:feature#child").unwrap();
+    let parent = FeatureId::mint("test:model:feature#1-parent").unwrap();
+    let child = FeatureId::mint("test:model:feature#2-child").unwrap();
     let mut model = Model::default();
     model.features.push(Feature {
         product_definition: None,
@@ -365,7 +370,7 @@ fn borrowed_reference_walk_refuses_at_the_depth_limit() {
     assert!(
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(original)) if original == limit)
     );
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut seen = 0;
     entity
         .visit_references(&ctx, &mut |target| {
@@ -388,7 +393,7 @@ fn borrowed_reference_walk_preserves_a_callback_resource_refusal() {
         tolerance: None,
         native_ref: None,
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let limit = ResourceLimit::allocation_failed(
         ResourceDimension::RetainedBytes,
         4096,

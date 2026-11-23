@@ -45,6 +45,7 @@ jobs:
             cadmpeg-tessellate
             cadmpeg-codec-catia
             cadmpeg-codec-creo
+            cadmpeg-codec-edrawings
             cadmpeg-codec-f3d
             cadmpeg-codec-freecad
             cadmpeg-codec-iges
@@ -54,6 +55,7 @@ jobs:
             cadmpeg-codec-rhino
             cadmpeg-codec-sat
             cadmpeg-codec-sldprt
+            cadmpeg-codec-solidedge
             cadmpeg-codec-step
             cadmpeg-codec-usd
             cadmpeg-registry

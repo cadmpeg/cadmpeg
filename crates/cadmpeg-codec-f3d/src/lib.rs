@@ -92,6 +92,7 @@ mod clock;
 mod container;
 mod decode;
 mod design;
+mod design_v11;
 mod dialect;
 mod f3z;
 pub use f3z::{
@@ -112,6 +113,7 @@ mod paramesh;
 mod records;
 mod report;
 mod repro;
+mod scan;
 mod scene;
 mod tree;
 mod tsm;
@@ -125,7 +127,7 @@ use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    DepthNeed, EncodeInput, EncoderBackend, ExportBody,
+    EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::document::CadIr;
@@ -244,11 +246,13 @@ impl CodecBackend for F3dCodec {
 
 impl EncoderBackend for F3dCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
-    /// Patches the retained source, so the history and design records it rewrites
-    /// must be present.
-    const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Full);
+    /// Patches the retained source, so it plans from the history and design
+    /// records it rewrites.
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
     type Target = Catalog;
-    const TARGET: Catalog = Catalog::new(dialect::TARGETS, Some(0));
+    const TARGET: Catalog = Catalog::new(dialect::TARGETS, Some(0))
+        .with_replay_rows(dialect::REPLAY_ROWS)
+        .synthesizing_preserved_as_default();
 
     fn plan_resolved(
         &self,

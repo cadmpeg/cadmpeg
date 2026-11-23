@@ -27,6 +27,7 @@ impl IdFormat {
 
     /// Construct the namespace used by BREP identities.
     #[must_use]
+    #[inline]
     pub(crate) fn brep_namespace(self, kind: &IdentityComponent) -> IdentityNamespace {
         let format = IdentityComponent::from_static(self.proof);
         let scope = cadmpeg_ir::identity_component!("brep");
@@ -35,6 +36,7 @@ impl IdFormat {
 
     /// Compose an identity under a static BREP namespace.
     #[must_use]
+    #[inline]
     pub(crate) fn brep_identity(
         self,
         kind: &IdentityComponent,

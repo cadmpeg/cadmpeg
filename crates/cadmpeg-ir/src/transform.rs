@@ -5,7 +5,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::features::{FinitePoint3, FiniteVector3};
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::math::sum::{finite_dot, ExactSignedSum, ScaledValue};
 use crate::math::{Point2, Point3, Vector3};
 use crate::scalar::{FiniteReal, PositiveReal};
@@ -381,7 +381,7 @@ impl Transform {
 #[cfg(test)]
 mod tests {
     use super::{PositiveReal, Transform, Transform2, TransformError};
-    use crate::features::{FinitePoint3, FiniteVector3};
+    use crate::features::geometry::{FinitePoint3, FiniteVector3};
     use crate::math::{Point3, Vector3};
 
     mod numeric;

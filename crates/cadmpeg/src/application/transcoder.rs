@@ -5,9 +5,8 @@ use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result as AnyResult};
-use cadmpeg_ir::codec::write::{
-    target::TargetRequest, DepthNeed, EncodeInput, Encoder, ExportPlan,
-};
+use cadmpeg_core::decode::DecodeDepth;
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::report::{check::ValidationReport, decode::DecodeReport, export::ExportReport};
 use clap::ValueEnum;
@@ -16,7 +15,7 @@ use cadmpeg_registry::{ForcedInput, Format, InputCatalog};
 
 use crate::application::artifact_store::{self, FileDestination, SidecarPersistOutcome};
 use crate::application::document::{LoadOrigin, LoadedDocument};
-use crate::application::refusal::{ApplicationError, ConversionRefusal, DepthReport, RefusalStage};
+use crate::application::refusal::{ApplicationError, ConversionRefusal, RefusalStage};
 use crate::application::validators::validate_loaded;
 use crate::loader;
 
@@ -41,8 +40,8 @@ pub(crate) struct ExportTarget {
 impl ExportTarget {
     /// The decode depth the selected encoder plans from.
     #[must_use]
-    pub(crate) fn needs(&self) -> DepthNeed {
-        self.encoder.needs()
+    pub(crate) fn request(&self) -> DecodeDepth {
+        self.encoder.request()
     }
 }
 
@@ -314,8 +313,8 @@ impl DestinationPolicy {
 pub(crate) struct ConversionPolicy {
     /// Decode and export loss refusal.
     pub(crate) losses: LossPolicy,
-    /// Permit export when validation reports errors.
-    pub(crate) allow_errors: bool,
+    /// Refuse export when validation reports an error in what the output writes.
+    pub(crate) reject_errors: bool,
     /// Output destination rules.
     pub(crate) destination: DestinationPolicy,
 }
@@ -348,14 +347,15 @@ pub(crate) struct PreparedConversion {
     assets: loader::companions::Directory,
     destination: ResolvedDestination,
     loss_policy: LossPolicy,
-    allow_errors: bool,
+    reject_errors: bool,
 }
 
 /// Loads and validates a conversion without planning or writing it.
 ///
 /// Applies destination admission and decode-loss refusal. Runs validation.
 /// Check, plan, and export-loss refusals run in `plan`.
-/// Does not print reports or write destination artifacts.
+/// Prints only the load's notices (see `loader::load_artifact`); does not
+/// print reports or write destination artifacts.
 pub(crate) fn prepare(
     inputs: &InputCatalog,
     source: &SourceRequest<'_>,
@@ -385,14 +385,15 @@ pub(crate) fn prepare(
         assets: loader::companions::Directory::beside(source.path),
         destination,
         loss_policy: policy.losses,
-        allow_errors: policy.allow_errors,
+        reject_errors: policy.reject_errors,
     })
 }
 
 impl PreparedConversion {
     /// Plans the export before applying check and export-loss refusals.
-    /// A failed plan counts every error as carried, then applies plan refusal.
-    /// A completed plan checks carried errors, then applies export-loss refusal.
+    /// Under `reject_errors`, a failed plan counts every error as carried and
+    /// refuses on them before the plan refusal, and a completed plan refuses
+    /// on carried errors before export-loss refusal.
     pub(crate) fn plan(self) -> Result<PlannedConversion, ApplicationError> {
         // Resolution is the encoder's, and so is its refusal: the message
         // already names the requested id and the whole catalog, and it
@@ -405,7 +406,7 @@ impl PreparedConversion {
             Ok(plan) => plan,
             Err(error) => {
                 let carried = self.validation.error_count();
-                if carried > 0 && !self.allow_errors {
+                if carried > 0 && self.reject_errors {
                     return Err(self.check_refusal(carried));
                 }
                 return Err(plan_refusal(
@@ -418,7 +419,7 @@ impl PreparedConversion {
         let carried = plan
             .carried_errors(&self.document.ir, &self.validation)
             .len();
-        if carried > 0 && !self.allow_errors {
+        if carried > 0 && self.reject_errors {
             return Err(self.check_refusal(carried));
         }
         if self.loss_policy.rejects_export() && !plan.report().losses.is_empty() {
@@ -500,8 +501,7 @@ pub(crate) enum EmittedArtifact {
     StdoutWithoutSidecar,
 }
 
-/// Restates an unsupported target or an insufficient decode depth as a typed
-/// refusal.
+/// Restates an unsupported target as a typed refusal.
 ///
 /// Resource failures retain their typed evidence; other plan failures stay
 /// operational. Export-loss refusal needs a completed plan's typed loss rows.
@@ -519,17 +519,6 @@ fn plan_refusal(
             }
             .into()
         }
-        cadmpeg_core::CodecError::InsufficientDepth {
-            format,
-            needed,
-            recorded,
-        } => ConversionRefusal::InsufficientDepth {
-            format,
-            depth: DepthReport { needed, recorded },
-            decode_report,
-            validation,
-        }
-        .into(),
         _ => ApplicationError::from(error).at_stage(RefusalStage::Plan),
     }
 }

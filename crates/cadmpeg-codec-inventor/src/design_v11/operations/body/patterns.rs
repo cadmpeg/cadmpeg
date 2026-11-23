@@ -10,10 +10,8 @@ use cadmpeg_ir::design::ops::{
     body as new,
     shared::{LinearRun, PatternLayout, PatternRun, RunSides, Spacing},
 };
-use cadmpeg_ir::features::{
-    patterns::{PatternKind, PatternSeed, PatternTransform},
-    FeatureDirection3, FinitePoint3,
-};
+use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3};
+use cadmpeg_ir::features::patterns::{PatternKind, PatternSeed, PatternTransform};
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::units::UnitVector3;
@@ -42,7 +40,11 @@ pub(super) fn plane(
             x_axis: UnitVector3::normalized(n.cross(basis))
                 .ok_or("the mirror frame is degenerate")?,
         }),
-        ..Construction::default()
+        inputs: Vec::new(),
+        after: Vec::new(),
+        solution: None,
+        mode: None,
+        resolved_in: BTreeMap::default(),
     })
 }
 

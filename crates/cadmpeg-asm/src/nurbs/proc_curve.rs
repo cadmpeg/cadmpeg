@@ -25,7 +25,7 @@ use crate::nurbs::subtypes::{
 use crate::nurbs::support_chart::{cone_axis_reversed, cone_is_circular_cylinder, SupportChart};
 use crate::nurbs::toks::{Cur, SubtypeTable};
 use crate::sab::Token;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{
     ConeSurface, CylinderSurface, PlaneSurface, SphereSurface, TorusSurface,
 };
@@ -54,7 +54,7 @@ pub type VectorOffsetDefinition = (
     NurbsCurve,
     [f64; 2],
     Vector3,
-    cadmpeg_ir::geometry::VectorOffsetRoles,
+    cadmpeg_ir::geometry::procedural_curves::VectorOffsetRoles,
 );
 
 /// Parent curve and retained range decoded from a `subset_int_cur` construction.
@@ -65,7 +65,7 @@ pub struct CompoundDefinition {
     /// Leading native parameter array.
     pub parameters: Vec<f64>,
     /// Ordered child curves and their construction scalars.
-    pub components: Vec<cadmpeg_ir::geometry::CompoundComponent<NurbsCurve>>,
+    pub components: Vec<cadmpeg_ir::geometry::procedural_curves::CompoundComponent<NurbsCurve>>,
 }
 
 /// Embedded freeform support carriers and tail fields of an `off_int_cur`.
@@ -158,7 +158,11 @@ pub enum EmbeddedSurfaceCurve {
     /// The surface-constrained family.
     SurfaceConstrained(EmbeddedSurfaceCurveLayout<bool>),
     /// The parametric family.
-    Parametric(EmbeddedSurfaceCurveLayout<cadmpeg_ir::geometry::ParametricSurfaceCurveFlags>),
+    Parametric(
+        EmbeddedSurfaceCurveLayout<
+            cadmpeg_ir::geometry::surface_curves::ParametricSurfaceCurveFlags,
+        >,
+    ),
     /// The skin family.
     Skin(EmbeddedSurfaceCurveLayout<bool>),
 }
@@ -223,7 +227,7 @@ pub struct EmbeddedProjection {
     /// The embedded projected source curve.
     pub source: NurbsCurve,
     /// Neutral tail fields decoded after the source curve.
-    pub tail: cadmpeg_ir::geometry::ProjectionTail,
+    pub tail: cadmpeg_ir::geometry::surface_curves::ProjectionTail,
 }
 
 /// Shared context and tail fields of a silhouette intcurve.
@@ -237,7 +241,7 @@ pub struct EmbeddedSilhouette {
     /// The three discontinuity arrays.
     pub discontinuities: [Vec<f64>; 3],
     /// The silhouette family the subtype name selects.
-    pub silhouette: cadmpeg_ir::geometry::SilhouetteKind,
+    pub silhouette: cadmpeg_ir::geometry::surface_curves::SilhouetteKind,
     /// The embedded surface the silhouette is cast on.
     pub cast_surface: SurfaceGeometry,
     /// The projection direction of the silhouette light.
@@ -445,21 +449,24 @@ pub struct HelixDefinition {
 impl HelixDefinition {
     pub(crate) fn into_definition(
         self,
-    ) -> Result<cadmpeg_ir::geometry::ProceduralCurveDefinition, &'static str> {
-        Ok(cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(
-            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
-                self.angle_range,
-                cadmpeg_ir::geometry::HelixFrame {
-                    center: self.center,
-                    major: self.major,
-                    minor: self.minor,
-                    pitch: self.pitch,
-                    axis: self.axis,
-                },
-                self.apex_factor,
-                None,
-            )?,
-        ))
+    ) -> Result<cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition, &'static str>
+    {
+        Ok(
+            cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Helix(
+                cadmpeg_ir::geometry::helix::HelixCurveConstruction::try_new(
+                    self.angle_range,
+                    cadmpeg_ir::geometry::helix::HelixFrame {
+                        center: self.center,
+                        major: self.major,
+                        minor: self.minor,
+                        pitch: self.pitch,
+                        axis: self.axis,
+                    },
+                    self.apex_factor,
+                    None,
+                )?,
+            ),
+        )
     }
 }
 
@@ -1770,7 +1777,7 @@ pub fn surface_offset_patch_layout(
 const ZERO_DRAFT_FACTOR: cadmpeg_ir::scalar::FiniteReal = cadmpeg_ir::scalar::FiniteReal::ZERO;
 
 fn embedded_silhouette(toks: &[Token]) -> Option<EmbeddedSilhouette> {
-    use cadmpeg_ir::geometry::SilhouetteKind;
+    use cadmpeg_ir::geometry::surface_curves::SilhouetteKind;
     let names = [
         ("silh_int_cur", SilhouetteKind::Standard {}),
         ("para_silh_int_cur", SilhouetteKind::Parametric {}),
@@ -1826,9 +1833,9 @@ pub struct SilhouettePatchLayout {
 pub fn silhouette_patch_layout(
     bytes: &[u8],
     int_width: RefWidth,
-    silhouette: &cadmpeg_ir::geometry::SilhouetteKind,
+    silhouette: &cadmpeg_ir::geometry::surface_curves::SilhouetteKind,
 ) -> Option<SilhouettePatchLayout> {
-    use cadmpeg_ir::geometry::SilhouetteKind;
+    use cadmpeg_ir::geometry::surface_curves::SilhouetteKind;
     let (names, tapered): (&[&[u8]], bool) = match silhouette {
         SilhouetteKind::Standard {} => (&[b"silh_int_cur"], false),
         SilhouetteKind::Parametric {} => (&[b"para_silh_int_cur", b"parasil"], false),
@@ -1866,7 +1873,7 @@ fn embedded_surface_curve(
     toks: &[Token],
     table: &SubtypeTable,
 ) -> Option<Result<EmbeddedSurfaceCurve, cadmpeg_core::CodecError>> {
-    use cadmpeg_ir::geometry::SurfaceCurveFamilyKind;
+    use cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamilyKind;
     let names = [
         ("blend_int_cur", SurfaceCurveFamilyKind::Blend),
         ("bldcur", SurfaceCurveFamilyKind::Blend),
@@ -2064,7 +2071,7 @@ fn agree(left: f64, right: f64, scale: f64) -> bool {
 /// fit tolerance, two bounded supports, two nullable pcurves, two optional
 /// solved-interval endpoints, three discontinuity arrays, and one extension.
 pub struct CacheFirstCurveContext {
-    pub(super) form: cadmpeg_ir::geometry::CacheFirstCurveForm,
+    pub(super) form: cadmpeg_ir::geometry::surface_curves::CacheFirstCurveForm,
     pub(super) surfaces: [SupportSlot; 2],
     pub(super) pcurves: [Option<PcurveNurbs>; 2],
     discontinuities: [Vec<f64>; 3],
@@ -2076,7 +2083,7 @@ impl CacheFirstCurveContext {
         domain: [f64; 2],
     ) -> (
         EmbeddedIntersection,
-        cadmpeg_ir::geometry::CacheFirstCurveForm,
+        cadmpeg_ir::geometry::surface_curves::CacheFirstCurveForm,
     ) {
         let parameter_range =
             std::array::from_fn(|index| self.form.solved_range[index].unwrap_or(domain[index]));
@@ -2108,15 +2115,15 @@ fn cache_first_curve_context(
         0 => {
             let (_, end) = curve_block(cur.toks(), cur.pos())?;
             cur.set_pos(end);
-            cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache {
-                fit_tolerance: cadmpeg_ir::geometry::FitTolerance::try_new(
+            cadmpeg_ir::geometry::revision_forms::RevisionCacheForm::SolvedCache {
+                fit_tolerance: cadmpeg_ir::geometry::legacy_cache::FitTolerance::try_new(
                     cur.take_f64()? * LEN_TO_MM,
                 )
                 .ok()?,
             }
         }
-        2 => cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(
-            cadmpeg_ir::geometry::CacheFirstCurveParameterization {
+        2 => cadmpeg_ir::geometry::revision_forms::RevisionCacheForm::Parameterization(
+            cadmpeg_ir::geometry::surface_curves::CacheFirstCurveParameterization {
                 interval: [
                     cur.take_optional_range_value()?.value(),
                     cur.take_optional_range_value()?.value(),
@@ -2154,7 +2161,7 @@ fn cache_first_curve_context(
     ];
     let extension = cur.take_long()?;
     Some(Ok(CacheFirstCurveContext {
-        form: cadmpeg_ir::geometry::CacheFirstCurveForm {
+        form: cadmpeg_ir::geometry::surface_curves::CacheFirstCurveForm {
             revision,
             cache,
             support_bounds: [first.bounds, second.bounds],
@@ -2173,7 +2180,7 @@ fn cache_first_curve_context(
 fn context_first_surface_curve(
     toks: &[Token],
     position: usize,
-    family: cadmpeg_ir::geometry::SurfaceCurveFamilyKind,
+    family: cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamilyKind,
 ) -> Option<EmbeddedSurfaceCurve> {
     let mut cur = Cur::at(toks, position);
     let RequiredSupportPair { surfaces, pcurves } = required_support_pair(&mut cur)?;
@@ -2198,7 +2205,7 @@ fn cache_first_surface_curve(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     position: usize,
-    family: cadmpeg_ir::geometry::SurfaceCurveFamilyKind,
+    family: cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamilyKind,
     table: &SubtypeTable,
 ) -> Option<Result<EmbeddedSurfaceCurve, cadmpeg_core::CodecError>> {
     let mut cur = Cur::at(toks, position);
@@ -2221,10 +2228,12 @@ fn cache_first_surface_curve(
 }
 
 fn embedded_surface_curve_from_parts(
-    family: cadmpeg_ir::geometry::SurfaceCurveFamilyKind,
+    family: cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamilyKind,
     layout: EmbeddedSurfaceCurveLayout<(bool, Option<bool>)>,
 ) -> Option<EmbeddedSurfaceCurve> {
-    use cadmpeg_ir::geometry::{ParametricSurfaceCurveFlags, SurfaceCurveFamilyKind};
+    use cadmpeg_ir::geometry::surface_curves::{
+        ParametricSurfaceCurveFlags, SurfaceCurveFamilyKind,
+    };
     let single = |(flag, second): (bool, Option<bool>)| second.is_none().then_some(flag);
     Some(match family {
         SurfaceCurveFamilyKind::Blend => EmbeddedSurfaceCurve::Blend(layout.try_map_flags(single)?),
@@ -2252,9 +2261,9 @@ pub struct SurfaceCurvePatchLayout {
 pub fn surface_curve_patch_layout(
     bytes: &[u8],
     int_width: RefWidth,
-    family: cadmpeg_ir::geometry::SurfaceCurveFamilyKind,
+    family: cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamilyKind,
 ) -> Option<SurfaceCurvePatchLayout> {
-    use cadmpeg_ir::geometry::SurfaceCurveFamilyKind;
+    use cadmpeg_ir::geometry::surface_curves::SurfaceCurveFamilyKind;
     let names: &[&[u8]] = match family {
         SurfaceCurveFamilyKind::Blend => &[b"blend_int_cur", b"bldcur"],
         SurfaceCurveFamilyKind::SurfaceConstrained => &[b"surf_int_cur", b"surfcur"],
@@ -2364,12 +2373,12 @@ fn embedded_projection(toks: &[Token]) -> Option<EmbeddedProjection> {
     cur.set_pos(source_end);
     let flag = cur.take_bool()?;
     let tail = if matches!(cur.peek(), Some(Token::SubtypeClose)) {
-        cadmpeg_ir::geometry::ProjectionTail::EarlyClose { flag }
+        cadmpeg_ir::geometry::surface_curves::ProjectionTail::EarlyClose { flag }
     } else {
-        cadmpeg_ir::geometry::ProjectionTail::Ranged {
+        cadmpeg_ir::geometry::surface_curves::ProjectionTail::Ranged {
             flag,
             parameter_range: [cur.take_range_value()?, cur.take_range_value()?],
-            role: cadmpeg_ir::geometry::ProjectionRole::parse(cur.take_str()?)?,
+            role: cadmpeg_ir::geometry::surface_curves::ProjectionRole::parse(cur.take_str()?)?,
         }
     };
     Some(EmbeddedProjection {
@@ -2401,11 +2410,11 @@ impl ProjectionRoleSlot {
     pub fn write(
         &self,
         bytes: &mut [u8],
-        role: cadmpeg_ir::geometry::ProjectionRole,
+        role: cadmpeg_ir::geometry::surface_curves::ProjectionRole,
     ) -> Result<(), cadmpeg_core::CodecError> {
         let payload: &[u8; 5] = match role {
-            cadmpeg_ir::geometry::ProjectionRole::Surf1 => b"surf1",
-            cadmpeg_ir::geometry::ProjectionRole::Surf2 => b"surf2",
+            cadmpeg_ir::geometry::surface_curves::ProjectionRole::Surf1 => b"surf1",
+            cadmpeg_ir::geometry::surface_curves::ProjectionRole::Surf2 => b"surf2",
         };
         let target = bytes.get_mut(self.range()).ok_or_else(|| {
             cadmpeg_core::CodecError::Malformed("projection role payload is truncated".into())
@@ -3103,7 +3112,7 @@ fn compound_definition(toks: &[Token]) -> Option<CompoundDefinition> {
     let mut components = Vec::new();
     for parameter in component_parameters {
         let (curve, end) = curve_block(toks, cur.pos())?;
-        components.push(cadmpeg_ir::geometry::CompoundComponent {
+        components.push(cadmpeg_ir::geometry::procedural_curves::CompoundComponent {
             parameter,
             component: curve,
         });
@@ -3152,7 +3161,7 @@ fn vector_offset_definition(toks: &[Token]) -> Option<VectorOffsetDefinition> {
             offset[1] * LEN_TO_MM,
             offset[2] * LEN_TO_MM,
         ),
-        cadmpeg_ir::geometry::VectorOffsetRoles {
+        cadmpeg_ir::geometry::procedural_curves::VectorOffsetRoles {
             source: first_code,
             offset: second_code,
         },
@@ -3580,7 +3589,10 @@ mod cache_form_tests {
         let mut bytes = original[..6].to_vec();
         let before = bytes.clone();
         let error = slot
-            .write(&mut bytes, cadmpeg_ir::geometry::ProjectionRole::Surf2)
+            .write(
+                &mut bytes,
+                cadmpeg_ir::geometry::surface_curves::ProjectionRole::Surf2,
+            )
             .unwrap_err();
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
         assert_eq!(bytes, before);
@@ -3674,8 +3686,10 @@ mod cache_form_tests {
             let (context, form) =
                 context.into_intersection(nurbs_curve_parameter_domain(&solved).unwrap());
             let parameterization = match form.cache {
-                cadmpeg_ir::geometry::RevisionCacheForm::Parameterization(value) => value,
-                cadmpeg_ir::geometry::RevisionCacheForm::SolvedCache { .. } => {
+                cadmpeg_ir::geometry::revision_forms::RevisionCacheForm::Parameterization(
+                    value,
+                ) => value,
+                cadmpeg_ir::geometry::revision_forms::RevisionCacheForm::SolvedCache { .. } => {
                     panic!("parameterized cache-first context")
                 }
             };

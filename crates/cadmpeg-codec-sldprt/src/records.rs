@@ -158,6 +158,18 @@ pub(crate) struct Configuration {
     pub(crate) properties: BTreeMap<NonBlankString, String>,
 }
 
+impl Configuration {
+    /// The configuration's index `N`, which names its `Config-N` streams: the
+    /// stored `SourceIndex`, else the decimal Keywords `id` (`sldprt.md` §2).
+    pub(crate) fn partition_index(&self) -> Option<u32> {
+        self.source_index.or_else(|| {
+            self.properties
+                .get("id")
+                .and_then(|value| value.parse().ok())
+        })
+    }
+}
+
 fn default_feature_xml_tag() -> String {
     "Feature".into()
 }
@@ -327,7 +339,105 @@ impl Feature {
     pub(crate) fn source_value(&self) -> Option<u32> {
         self.source_id.and_then(FeatureSource::value)
     }
+
+    /// Whether the record states any of the properties `keys`.
+    pub(crate) fn states_any(&self, keys: &[&str]) -> bool {
+        keys.iter().any(|key| self.properties.contains_key(*key))
+    }
 }
+
+/// The revolution axis, filled from the feature-input lane.
+pub(crate) const REVOLUTION_AXIS_PROPERTIES: [&str; 2] = ["AxisOrigin", "AxisDirection"];
+/// The frame of a coordinate system, filled from the feature-input lane.
+pub(crate) const COORDINATE_SYSTEM_PROPERTIES: [&str; 4] = ["Origin", "XAxis", "YAxis", "ZAxis"];
+/// The frame of a reference plane, filled from the feature-input lane.
+pub(crate) const REFERENCE_PLANE_FRAME_PROPERTIES: [&str; 3] = ["Origin", "Normal", "UAxis"];
+/// Where a reference plane's sketch U axis comes from, filled with its frame.
+pub(crate) const REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY: &str = "UAxisSource";
+/// What the decoder fills from the feature-input lane while a reference
+/// plane's record states none of its frame: the frame, its U-axis source, and
+/// the plane's reference.
+pub(crate) const REFERENCE_PLANE_DERIVED_PROPERTIES: [&str; 10] = [
+    "Origin",
+    "Normal",
+    "UAxis",
+    REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY,
+    "Reference",
+    "ReferenceFaceNative",
+    "ReferenceFaceFeature",
+    "ReferenceFaceOrigin",
+    "ReferenceFaceNormal",
+    "ReferenceFaceUAxis",
+];
+/// The frame of a reference axis, filled from its two construction planes.
+pub(crate) const REFERENCE_AXIS_FRAME_PROPERTIES: [&str; 2] = ["Origin", "Direction"];
+/// The translation of a move-face feature, filled from the feature-input lane.
+pub(crate) const MOVE_FACE_PROPERTIES: [&str; 2] = ["Mode", "Direction"];
+/// The end condition whose absence makes the decoder fill an extrusion's
+/// termination from the feature-input lane.
+pub(crate) const EXTRUSION_TERMINATION_GATE: [&str; 1] = ["EndCondition"];
+/// The end conditions of an extrusion that the decoder fills from the lane.
+pub(crate) const EXTRUSION_TERMINATION_PROPERTIES: [&str; 4] =
+    ["EndCondition", "EndCondition2", "Vertex", "Face"];
+/// The depths of an extrusion that the decoder fills from the lane, each
+/// under the first of its two names when the record states neither.
+pub(crate) const EXTRUSION_DEPTH_PARAMETERS: [&str; 4] = ["D1", "Depth", "D2", "Depth2"];
+/// The two directions of a linear pattern, which the decoder fills from the
+/// lane while the projected definition states neither.
+pub(crate) const LINEAR_PATTERN_DIRECTION_PROPERTIES: [&str; 2] = ["Direction", "Direction2"];
+
+/// Record fields the decoder fills from the feature-input lane together, and
+/// only while the record states none of the group's gate. A record that states
+/// a gate key is read for the whole group.
+pub(crate) struct LaneDerivedGroup {
+    /// The properties whose absence lets the decoder fill the group.
+    pub(crate) gate: &'static [&'static str],
+    /// The properties the decoder fills, the gate among them.
+    pub(crate) properties: &'static [&'static str],
+    /// The parameters the decoder fills with them.
+    pub(crate) parameters: &'static [&'static str],
+}
+
+/// Every lane-derived group. The decoder guards read the gate constants above;
+/// the linear-pattern guard reads the projected definition, whose two
+/// directions come from these two properties.
+pub(crate) const LANE_DERIVED_GROUPS: [LaneDerivedGroup; 7] = [
+    LaneDerivedGroup {
+        gate: &REVOLUTION_AXIS_PROPERTIES,
+        properties: &REVOLUTION_AXIS_PROPERTIES,
+        parameters: &[],
+    },
+    LaneDerivedGroup {
+        gate: &COORDINATE_SYSTEM_PROPERTIES,
+        properties: &COORDINATE_SYSTEM_PROPERTIES,
+        parameters: &[],
+    },
+    LaneDerivedGroup {
+        gate: &REFERENCE_PLANE_FRAME_PROPERTIES,
+        properties: &REFERENCE_PLANE_DERIVED_PROPERTIES,
+        parameters: &[],
+    },
+    LaneDerivedGroup {
+        gate: &REFERENCE_AXIS_FRAME_PROPERTIES,
+        properties: &REFERENCE_AXIS_FRAME_PROPERTIES,
+        parameters: &[],
+    },
+    LaneDerivedGroup {
+        gate: &MOVE_FACE_PROPERTIES,
+        properties: &MOVE_FACE_PROPERTIES,
+        parameters: &[],
+    },
+    LaneDerivedGroup {
+        gate: &EXTRUSION_TERMINATION_GATE,
+        properties: &EXTRUSION_TERMINATION_PROPERTIES,
+        parameters: &EXTRUSION_DEPTH_PARAMETERS,
+    },
+    LaneDerivedGroup {
+        gate: &LINEAR_PATTERN_DIRECTION_PROPERTIES,
+        properties: &LINEAR_PATTERN_DIRECTION_PROPERTIES,
+        parameters: &[],
+    },
+];
 
 /// One parametric construction-history feature (e.g. an extrude or fillet operation).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -408,6 +518,32 @@ pub(crate) enum HistoryContent {
     /// Native top-level feature record id.
     Feature(String),
     /// Non-whitespace root text content.
+    Text(String),
+    /// A root child element that is neither a configuration nor a feature: an
+    /// `Application` element with its `Keyword` children.
+    Element(HistoryElement),
+}
+
+/// One XML element of a Keywords root and its subtree.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct HistoryElement {
+    /// Element name.
+    pub(crate) tag: String,
+    /// Source attributes.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) attributes: BTreeMap<NonBlankString, String>,
+    /// Child elements and non-whitespace text, in source order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) content: Vec<HistoryElementContent>,
+}
+
+/// One ordered item inside a [`HistoryElement`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub(crate) enum HistoryElementContent {
+    /// Child element.
+    Element(HistoryElement),
+    /// Non-whitespace text content.
     Text(String),
 }
 
@@ -580,14 +716,8 @@ impl FeatureInputLaneWire {
             .into_iter()
             .map(FeatureInputRelationInstanceWire::admit)
             .collect::<Result<Vec<_>, _>>()?;
-        let entities = self
-            .sketch_entities
-            .into_iter()
-            .map(|entity| {
-                SketchInputEntity::try_from_wire(entity, &self.native_payload)
-                    .map_err(cadmpeg_core::CodecError::malformed)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let entities = sketch_entities_from_wire(self.sketch_entities, &self.native_payload)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         Ok(FeatureInputLane {
             id: self.id,
             configuration: self.configuration,
@@ -610,11 +740,8 @@ impl FeatureInputLaneWire {
 impl TryFrom<FeatureInputLaneWire> for FeatureInputLane {
     type Error = String;
     fn try_from(wire: FeatureInputLaneWire) -> Result<Self, Self::Error> {
-        let sketch_entities = wire
-            .sketch_entities
-            .into_iter()
-            .map(|entity| SketchInputEntity::try_from_wire(entity, &wire.native_payload))
-            .collect::<Result<Vec<_>, _>>()?;
+        let sketch_entities =
+            sketch_entities_from_wire(wire.sketch_entities, &wire.native_payload)?;
         let relation_instances = wire
             .relation_instances
             .into_iter()
@@ -665,7 +792,7 @@ pub(crate) struct FeatureInputBodySelection {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_mode"
     )]
-    pub(crate) mode: Option<cadmpeg_ir::features::BodyRetentionMode>,
+    pub(crate) mode: Option<cadmpeg_ir::features::operation_settings::BodyRetentionMode>,
 }
 
 /// One compact feature-local edge-selection vector.
@@ -701,6 +828,10 @@ pub(crate) struct FeatureInputEdgeSelection {
         deserialize_with = "deserialize_terminal_feature_ref"
     )]
     pub(crate) terminal_feature_ref: Option<String>,
+    /// Whether the vector lies inside a `moPMarkRecord_c`, where it is one of
+    /// the record's edge references and not an operand of the feature.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) mark_reference: bool,
 }
 
 /// One compact feature-local surface-component selection.
@@ -1084,6 +1215,7 @@ cadmpeg_core::named_optional_field!(
     ArchiveParameterClass,
     "archive_class"
 );
+cadmpeg_core::named_optional_field!(deserialize_archive_object_id, u32, "archive_object_id");
 
 /// One named scalar serialized in native SI units.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1122,6 +1254,15 @@ pub(crate) struct FeatureInputScalar {
         deserialize_with = "deserialize_archive_class"
     )]
     pub(crate) archive_class: Option<ArchiveParameterClass>,
+    /// Object identifier of the parameter object whose value this scalar is,
+    /// as the exact archive walk read it after the trailer's zero byte and
+    /// tolerance pointer (§2.3); `None` where the walk read no identifier.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_archive_object_id"
+    )]
+    pub(crate) archive_object_id: Option<u32>,
 }
 
 /// The class of a named parameter object in the native archive.
@@ -1379,15 +1520,53 @@ pub(crate) struct SketchInputEntity {
     local_id: Option<u32>,
     /// Sketch-entity kind this marker identifies.
     kind: SketchInputKind,
+    /// The stored kind a list-curve reading replaced (DI-77).
+    #[serde(skip)]
+    pub(crate) listed_curve: Option<ListedCurveOverride>,
     /// Little-endian state scalar at the marker layout's state slot.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) state_value: Option<cadmpeg_ir::scalar::FiniteReal>,
     /// Two little-endian coordinate fields stored by geometry-handle marker families, in metres.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) coordinates_m: Option<cadmpeg_ir::units::FiniteVector<2>>,
+    /// The side words of a 92-byte profile line record (`docs/formats/sldprt.md` §5).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) line_sides: Option<LineSides>,
     /// Resolved links and their selector from the reference-bearing layout.
     #[serde(flatten, with = "sketch_input_links_wire")]
     pub(crate) links: Option<SketchInputLinks>,
+}
+
+/// The side words of a 92-byte profile line record that join the side faces of
+/// an extruded polygon to its lines (`docs/formats/sldprt.md` §5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct LineSides {
+    /// The u32 at marker +80; zero in the records whose +84 names a side face.
+    pub(crate) state: u32,
+    /// The u32 at marker +84: the local identifier of the side face that the
+    /// next line record sweeps. `None` where the record is the direct form of
+    /// section 2 (u32 `1` at +84 with a nonzero, non-null identity at +88),
+    /// whose +84 is a selector.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_next_side"
+    )]
+    pub(crate) next_side: Option<u32>,
+}
+
+cadmpeg_core::named_optional_field!(deserialize_next_side, u32, "next_side");
+
+/// A marker whose record a `sgSketch` curve list reads as a curve, and the
+/// kind its +17 code selects without that reading (DI-77).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ListedCurveOverride {
+    /// Curve form the list reading gives the record: `line`, `circle` or `arc`.
+    pub(crate) form: &'static str,
+    /// The +17 code.
+    pub(crate) code: u32,
+    /// The kind the code selects without the list reading.
+    pub(crate) stored: SketchInputKind,
 }
 
 /// Deserialization mirror of a sketch-entity marker, re-admitted against its lane payload.
@@ -1438,9 +1617,36 @@ pub(crate) struct SketchInputEntityWire {
         deserialize_with = "deserialize_coordinates_m"
     )]
     coordinates_m: Option<cadmpeg_ir::units::FiniteVector<2>>,
+    /// The side words of a 92-byte profile line record.
+    #[serde(default, deserialize_with = "deserialize_line_sides")]
+    line_sides: Option<LineSides>,
     /// Resolved links and their selector from the reference-bearing layout.
     #[serde(flatten, with = "sketch_input_links_wire")]
     links: Option<SketchInputLinks>,
+}
+
+// The optional key names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_line_sides, LineSides, "line_sides");
+
+fn sketch_entities_from_wire(
+    wire: Vec<SketchInputEntityWire>,
+    payload: &[u8],
+) -> Result<Vec<SketchInputEntity>, String> {
+    let Some(parent) = wire.first().map(|entity| entity.parent.as_str()) else {
+        return Ok(Vec::new());
+    };
+    let listed = crate::resolved_features::markers::admit_sketch_input_entities(payload, parent)
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .filter_map(|entity| entity.listed_curve.map(|listed| (entity.offset(), listed)))
+        .collect::<HashMap<_, _>>();
+    wire.into_iter()
+        .map(|entity| {
+            let mut entity = SketchInputEntity::try_from_wire(entity, payload)?;
+            entity.listed_curve = listed.get(&entity.offset()).copied();
+            Ok(entity)
+        })
+        .collect()
 }
 
 /// A selector paired with a nonempty collection of resolved marker links.
@@ -1534,6 +1740,12 @@ impl SketchInputEntity {
         self.kind
     }
 
+    /// The kind the marker's +17 code selects before a list-curve reading
+    /// replaces it (DI-77).
+    pub(crate) fn stored_kind(&self) -> SketchInputKind {
+        self.listed_curve.map_or(self.kind, |listed| listed.stored)
+    }
+
     /// Reclassifies this marker once its payload neighbourhood identifies a
     /// narrower entity family than the marker prefix alone.
     pub(crate) fn reclassify(&mut self, kind: SketchInputKind) {
@@ -1568,6 +1780,11 @@ impl SketchInputEntity {
     /// Returns the feature-local object identifier.
     pub(crate) fn local_id(&self) -> Option<u32> {
         self.local_id
+    }
+
+    /// The side words of this marker when it is a 92-byte record.
+    pub(crate) fn line_sides(&self) -> Option<LineSides> {
+        self.line_sides
     }
 
     #[cfg(test)]
@@ -1609,6 +1826,11 @@ impl SketchInputEntity {
         entity.feature_ref = wire.feature_ref;
         entity.state_value = wire.state_value;
         entity.coordinates_m = wire.coordinates_m;
+        if wire.line_sides != entity.line_sides {
+            return Err(
+                "SolidWorks feature-input line side words do not match its native payload".into(),
+            );
+        }
         entity.links = wire.links;
         Ok(entity)
     }
@@ -1636,8 +1858,10 @@ impl SketchInputEntity {
             object_index: crate::resolved_features::markers::marker_object_index(payload, position),
             local_id: crate::resolved_features::markers::marker_local_id(payload, position),
             kind,
+            listed_curve: None,
             state_value: None,
             coordinates_m: None,
+            line_sides: crate::resolved_features::markers::marker_line_sides(payload, position),
             links: None,
         })
     }
@@ -1665,6 +1889,9 @@ impl SketchInputEntity {
                 "SolidWorks feature-input local object id does not match its native payload",
             );
         }
+        if self.line_sides != expected.line_sides {
+            return Err("SolidWorks feature-input line side words do not match its native payload");
+        }
         Ok(())
     }
 
@@ -1677,7 +1904,7 @@ impl SketchInputEntity {
         kind: SketchInputKind,
     ) -> Self {
         let position = usize::try_from(offset).unwrap();
-        let mut payload = cadmpeg_test_support::service_decode_context()
+        let mut payload = cadmpeg_core::decode::test_support::service_decode_context()
             .alloc_filled(
                 position.checked_add(39).unwrap(),
                 0,
@@ -2854,7 +3081,7 @@ cadmpeg_core::named_optional_field!(deserialize_part_name, String, "part_name");
 cadmpeg_core::named_optional_field!(deserialize_configuration, String, "configuration");
 cadmpeg_core::named_optional_field!(
     deserialize_mode,
-    cadmpeg_ir::features::BodyRetentionMode,
+    cadmpeg_ir::features::operation_settings::BodyRetentionMode,
     "mode"
 );
 cadmpeg_core::named_optional_field!(

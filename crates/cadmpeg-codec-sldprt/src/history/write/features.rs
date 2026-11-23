@@ -3,9 +3,8 @@
 
 use crate::records::{Feature, FeatureContent, FeatureHistory, HistoryContent};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    DesignParameter, FeatureDefinition, FeatureId, FeatureOperation, FeatureSourceContent,
-};
+use cadmpeg_ir::features::parameters::DesignParameter;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation, FeatureSourceContent};
 use cadmpeg_ir::topology::Body;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -14,13 +13,28 @@ use crate::history::classify::{
 };
 use crate::history::configuration::enrich_history_parameters_semantic;
 use crate::history::parameters::apply_evaluated_parameters;
-use crate::history::project::neutral_feature_id;
+use crate::history::project::{neutral_feature_id, referenced_sources};
 
+use super::edits::ConstructionEdit;
 use super::parameters::restore_equivalent_parameter_expressions;
 use super::project_features_with_native_inputs;
-use super::xml::{feature_xml_tag, valid_xml_name};
+use super::xml::{feature_xml_tag, solidworks_source_tag};
 use crate::history::encode::{NeutralFeatureEncoder, NeutralFeatureEncoding};
+use crate::history::extrude_direction::cleared_reversal;
+use crate::loss::SldprtLossCode;
 use crate::records::FeatureSource;
+use crate::resolved_features::terminations::EndSpecAnchor;
+
+/// What preparing the native history for a write produced.
+#[derive(Debug, Default)]
+pub(crate) struct PreparedFeatures {
+    /// The serialized object names to rewrite.
+    pub(crate) renames: Vec<FeatureInputRename>,
+    /// The feature edits the written records hold only in part, or that the
+    /// stored solid does not show, and the relation point charges of the
+    /// configuration states projected again for the write.
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+}
 
 /// A write-side request to rewrite one serialized object name.
 ///
@@ -82,6 +96,22 @@ fn synchronize_feature_input_names(
                 }
             }
         }
+        // A later object of the class is a repeated-class record away from
+        // the declaration; it is linked when one lane name carries the name.
+        if matches.is_empty() {
+            matches = native
+                .feature_input_lanes
+                .iter()
+                .enumerate()
+                .flat_map(|(lane_index, lane)| {
+                    lane.names
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, name)| name.value == old_name)
+                        .map(move |(name_index, _)| (lane_index, name_index))
+                })
+                .collect();
+        }
         let [(lane_index, name_index)] = matches.as_slice() else {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature-input name for {old_name:?} is not uniquely linked"
@@ -112,60 +142,45 @@ fn generated_feature_source_ids(
     features: &[cadmpeg_ir::features::Feature],
     native: &crate::native::SldprtNative,
 ) -> Result<HashMap<FeatureId, FeatureSource>, CodecError> {
-    let mut used = native
-        .feature_histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter_map(crate::records::Feature::source_value)
-        .collect::<HashSet<_>>();
+    let held = native.object_ids().collect::<HashSet<_>>();
     let existing = native
         .feature_histories
         .iter()
         .flat_map(|history| &history.features)
         .filter_map(|feature| Some((feature.id.as_str(), feature.source_value()?)))
         .collect::<HashMap<_, _>>();
-    // `next` is the lowest source id not yet offered. `None` states that the
-    // id space is exhausted: every allocation advances it, and the allocation
-    // that finds it exhausted is the one refusal.
-    let mut next = Some(1u32);
+    // An added feature takes an identifier past every identifier the part's
+    // objects hold, and the lowest one they do not hold once those run out.
+    // A part that holds none is numbered as a generated part is.
+    let start = held
+        .iter()
+        .max()
+        .map_or(Some(crate::writer::native::ids::FIRST_USER), |largest| {
+            largest.checked_add(1)
+        });
+    let below = (1..u32::MAX).take_while(|&candidate| start.is_none_or(|start| candidate < start));
+    let mut free = start
+        .into_iter()
+        .flat_map(|start| start..u32::MAX)
+        .chain(below)
+        .filter(|candidate| !held.contains(candidate));
     let mut allocated = HashMap::new();
     for feature in features
         .iter()
         .filter(|feature| feature.native_ref.is_none())
     {
         let record_id = generated_feature_record_id(&feature.id);
-        let source_id = if let Some(source_id) = existing.get(record_id.as_str()).copied() {
-            source_id
-        } else {
-            allocate_feature_source_id(&mut used, &mut next)?
-        };
-        let source_id = FeatureSource::from_value(source_id).ok_or_else(|| {
-            CodecError::Malformed("SLDPRT feature source-id space is exhausted".into())
+        let source_id = match existing.get(record_id.as_str()) {
+            Some(&source_id) => Some(source_id),
+            None => free.next(),
+        }
+        .and_then(FeatureSource::from_value)
+        .ok_or_else(|| {
+            CodecError::NotImplemented("SLDPRT feature source-id space is exhausted".into())
         })?;
         allocated.insert(feature.id.clone(), source_id);
     }
     Ok(allocated)
-}
-
-/// Take the lowest source id no feature holds, and advance `next` past it.
-///
-/// `next` states the lowest id not yet offered; `None` states that the previous
-/// allocation took `u32::MAX` and the id space holds no further id. Every exit
-/// from this function either returns an id no other feature holds or refuses,
-/// so no caller writes a source id twice and none saturates.
-fn allocate_feature_source_id(
-    used: &mut HashSet<u32>,
-    next: &mut Option<u32>,
-) -> Result<u32, CodecError> {
-    loop {
-        let candidate = next.ok_or_else(|| {
-            CodecError::NotImplemented("SLDPRT feature source-id space is exhausted".into())
-        })?;
-        *next = candidate.checked_add(1);
-        if used.insert(candidate) {
-            return Ok(candidate);
-        }
-    }
 }
 
 /// Apply neutral native-feature edits to the `SolidWorks` history used for writing.
@@ -174,7 +189,8 @@ pub(in crate::history) fn sync_neutral_features(
     parameters: &[DesignParameter],
     bodies: &[Body],
     native: &mut Option<crate::native::SldprtNative>,
-) -> Result<Vec<FeatureInputRename>, CodecError> {
+    edits: &mut super::edits::SourceEdits<'_>,
+) -> Result<PreparedFeatures, CodecError> {
     let features = &ir.model.features;
     if features.is_empty() {
         if let Some(native) = native {
@@ -182,7 +198,7 @@ pub(in crate::history) fn sync_neutral_features(
                 history.features.retain(is_custom_property);
             }
         }
-        return Ok(Vec::new());
+        return Ok(PreparedFeatures::default());
     }
     let native = native.get_or_insert_with(|| crate::native::SldprtNative {
         feature_histories: vec![FeatureHistory {
@@ -215,6 +231,20 @@ pub(in crate::history) fn sync_neutral_features(
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
+    // The end specs whose reversal flag an edit clears, read from the stored
+    // records as the decoder read them; `None` where the context refuses the
+    // scan.
+    let reversed_end_specs = if features.iter().any(cleared_reversal) {
+        crate::resolved_features::terminations::reversed_end_specs(
+            &ctx,
+            &native.feature_histories,
+            &native.feature_input_lanes,
+        )
+        .ok()
+    } else {
+        Some(HashMap::new())
+    };
+    let mut cleared = Vec::new();
     enrich_history_parameters_semantic(&mut resolved_histories, &native.feature_input_lanes);
     let resolved_parameter_names = resolved_histories
         .iter()
@@ -244,6 +274,20 @@ pub(in crate::history) fn sync_neutral_features(
     }
 
     let renames = synchronize_feature_input_names(features, native)?;
+    // The millimetre value of each length parameter of the decoded source,
+    // by owner and name: what the stored text of that dimension states.
+    let source_lengths = edits
+        .source()
+        .into_iter()
+        .flat_map(|source| &source.model.parameters)
+        .filter_map(|parameter| match &parameter.value {
+            Some(cadmpeg_ir::features::parameters::ParameterValue::Length(length)) => Some((
+                (parameter.owner.as_ref()?, parameter.name.as_str()),
+                length.get(),
+            )),
+            _ => None,
+        })
+        .collect::<HashMap<_, _>>();
 
     let generated_sources = generated_feature_source_ids(features, native)?;
     let parent_sources = features
@@ -355,22 +399,49 @@ pub(in crate::history) fn sync_neutral_features(
         .iter()
         .map(|body| (body.id.clone(), body.id.as_str().to_owned()))
         .collect::<HashMap<_, _>>();
+    let source_contradicted_travel = edits
+        .source()
+        .map(crate::history::extrude_direction::contradicted_features)
+        .unwrap_or_default();
+    // Features whose stored content items are kept: the caller did not edit
+    // their source content.
+    let mut content_kept = HashSet::new();
+    // The construction edits of each edited feature with a stored record and
+    // a source feature, each with whether it moves no record field.
+    let mut edited_constructions = HashMap::<FeatureId, Vec<(ConstructionEdit, bool)>>::new();
     for feature in features {
-        if feature
-            .source_tag
-            .as_deref()
-            .is_some_and(|tag| !valid_xml_name(tag))
-        {
-            return Err(CodecError::malformed(format_args!(
-                "SLDPRT feature {} has an invalid source tag",
-                feature.id
-            )));
-        }
         let mut existing = native
             .feature_histories
             .iter_mut()
             .flat_map(|history| &mut history.features)
             .find(|candidate| feature.native_ref.as_deref() == Some(candidate.id.as_str()));
+        // The source feature of an existing record: each field the caller did
+        // not edit keeps its stored state.
+        let original = existing
+            .as_deref()
+            .and_then(|_| edits.source_feature(&feature.id));
+        if let (Some(record), Some(original)) = (existing.as_deref_mut(), original) {
+            if edits.feature_unedited(ir, feature) {
+                if feature.name != original.name {
+                    record.name = feature.name.clone().unwrap_or_default();
+                }
+                content_kept.insert(feature.id.clone());
+                continue;
+            }
+        }
+        // The construction edits, and the source feature with each applied
+        // alone. A feature with an edit that is not written keeps its stored
+        // record, whose loss names them.
+        let construction = original
+            .filter(|_| !edits.feature_edit_unwritten(&feature.id))
+            .map(|original| super::edits::construction_edits(original, feature))
+            .unwrap_or_default();
+        let applied_edits = original.map_or_else(Vec::new, |original| {
+            construction
+                .iter()
+                .map(|edit| edit.applied(original, feature))
+                .collect::<Vec<_>>()
+        });
         let suppressed = feature
             .suppressed
             .or_else(|| existing.as_deref().map(|record| record.suppressed))
@@ -380,12 +451,8 @@ pub(in crate::history) fn sync_neutral_features(
                     feature.id
                 ))
             })?;
-        let NeutralFeatureEncoding {
-            kind,
-            mut parameters,
-            mut properties,
-        } = NeutralFeatureEncoder {
-            contradicted_travel: contradicted_travel.contains(&feature.id),
+        let encoder = |feature, contradicted_travel: bool| NeutralFeatureEncoder {
+            contradicted_travel,
             feature,
             existing: existing.as_deref(),
             principal_planes_by_record: &principal_planes_by_record,
@@ -395,8 +462,76 @@ pub(in crate::history) fn sync_neutral_features(
             sketch_sources: &sketch_sources,
             parent_sources: &parent_sources,
             resolved_parameter_names: &resolved_parameter_names,
+        };
+        let encoded = encoder(feature, contradicted_travel.contains(&feature.id)).encode();
+        // The source feature encoded the same way: a record field whose
+        // encoding the edit does not move keeps its stored state.
+        let baseline = original.map(|original| {
+            encoder(original, source_contradicted_travel.contains(&original.id)).encode()
+        });
+        // A construction edit that, applied alone to the source feature,
+        // encodes as the source does moves no record field.
+        if let (Some(original), false) = (original, construction.is_empty()) {
+            let unmoved = applied_edits
+                .iter()
+                .map(|applied| {
+                    let (Some(applied), Some(Ok(baseline))) = (applied, baseline.as_ref()) else {
+                        return false;
+                    };
+                    encoder(applied, source_contradicted_travel.contains(&original.id))
+                        .encode()
+                        .is_ok_and(|encoding| {
+                            encoding.kind == baseline.kind
+                                && encoding.parameters == baseline.parameters
+                                && encoding.properties == baseline.properties
+                        })
+                })
+                .collect::<Vec<_>>();
+            edited_constructions.insert(
+                feature.id.clone(),
+                construction.into_iter().zip(unmoved).collect(),
+            );
         }
-        .encode()?;
+        let source_unrestatable = matches!(baseline, Some(Err(CodecError::NotImplemented(_))));
+        // A stored record the encoder cannot restate from the neutral
+        // definition is written as stored.
+        let mut kept = false;
+        let NeutralFeatureEncoding {
+            kind,
+            mut parameters,
+            mut properties,
+        } = match (encoded, existing.as_deref()) {
+            (Ok(encoding), _) => encoding,
+            (Err(CodecError::NotImplemented(reason)), Some(record)) if edits.has_source() => {
+                if original.is_none_or(|original| {
+                    !super::edits::construction_edits(original, feature).is_empty()
+                }) {
+                    let reason = if source_unrestatable {
+                        format!(
+                            "SLDPRT cannot restate the stored record of feature {} from its definition",
+                            feature.id
+                        )
+                    } else {
+                        reason
+                    };
+                    edits.feature_unwritten(&feature.id, reason)?;
+                }
+                kept = true;
+                NeutralFeatureEncoding {
+                    kind: record.kind.clone(),
+                    parameters: record.parameters.clone(),
+                    properties: record.properties.clone(),
+                }
+            }
+            (Err(error), _) => return Err(error),
+        };
+        // A feature written with its stored record keeps its stored flag.
+        if !kept && !edits.feature_edit_unwritten(&feature.id) && cleared_reversal(feature) {
+            let stated = existing
+                .as_deref()
+                .is_some_and(|record| record.properties.contains_key("Reverse"));
+            cleared.push((feature, stated));
+        }
         if let Some(record) = existing.as_deref() {
             restore_equivalent_parameter_expressions(
                 record,
@@ -404,25 +539,105 @@ pub(in crate::history) fn sync_neutral_features(
                 &evaluated_parameters,
                 &mut parameters,
             );
-        }
-        if feature.evaluation.outputs().is_empty() {
-            if existing.is_none() {
-                properties.remove("Scope");
-            }
         } else {
-            let scope = feature
-                .evaluation
-                .outputs()
+            state_unreferenced_dependencies(feature, &structural_parent_sources, &mut properties);
+        }
+        // With a source baseline, each record field the edit does not move
+        // keeps its stored state.
+        let mut kind = kind;
+        let field_baseline = original;
+        // A feature with an edit the output does not carry keeps its stored
+        // definition record whole: the unwritten-edit loss states that.
+        if let (false, Some(record)) = (kept, existing.as_deref()) {
+            if edits.feature_edit_unwritten(&feature.id) {
+                kept = true;
+                kind.clone_from(&record.kind);
+                parameters.clone_from(&record.parameters);
+                properties.clone_from(&record.properties);
+            }
+        }
+        if let (false, Some(record), Some(Ok(mut baseline))) = (kept, existing.as_deref(), baseline)
+        {
+            restore_equivalent_parameter_expressions(
+                record,
+                &original_parameters,
+                &evaluated_parameters,
+                &mut baseline.parameters,
+            );
+            if kind == baseline.kind {
+                kind.clone_from(&record.kind);
+            }
+            // A lane-derived group whose gate the record does not state is
+            // read from the record once a member is written: write it whole.
+            let moved_properties = moved_keys(&properties, &baseline.properties);
+            let groups = crate::records::LANE_DERIVED_GROUPS
                 .iter()
-                .map(|body| body_sources.get(body).cloned())
-                .collect::<Option<Vec<_>>>()
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "SLDPRT feature {} references a missing output body",
-                        feature.id
-                    ))
-                })?;
-            properties.insert(cadmpeg_core::nonblank_literal!("Scope"), scope.join(","));
+                .filter(|group| {
+                    !record.states_any(group.gate)
+                        && group
+                            .properties
+                            .iter()
+                            .any(|member| moved_properties.contains(*member))
+                })
+                .collect::<Vec<_>>();
+            let group_parameters = groups
+                .iter()
+                .flat_map(|group| group.parameters.iter().copied())
+                .collect::<HashSet<_>>();
+            let group_properties = groups
+                .iter()
+                .flat_map(|group| group.properties.iter().copied())
+                .collect::<HashSet<_>>();
+            parameters = stored_unless_moved(
+                &record.parameters,
+                parameters,
+                &baseline.parameters,
+                &group_parameters,
+            );
+            properties = stored_unless_moved(
+                &record.properties,
+                properties,
+                &baseline.properties,
+                &group_properties,
+            );
+        }
+        if kept {
+            edits.keep_stored_definition(feature)?;
+        }
+        // Without a source feature every field is written.
+        let moved = |unchanged: fn(
+            &cadmpeg_ir::features::Feature,
+            &cadmpeg_ir::features::Feature,
+        ) -> bool| {
+            field_baseline.is_none_or(|original| !unchanged(original, feature))
+        };
+        if moved(|original, feature| original.evaluation.outputs() == feature.evaluation.outputs())
+        {
+            if feature.evaluation.outputs().is_empty() {
+                if existing.is_none() {
+                    properties.remove("Scope");
+                }
+            } else {
+                let scope = feature
+                    .evaluation
+                    .outputs()
+                    .iter()
+                    .map(|body| body_sources.get(body).cloned())
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "SLDPRT feature {} references a missing output body",
+                            feature.id
+                        ))
+                    })?;
+                properties.insert(cadmpeg_core::nonblank_literal!("Scope"), scope.join(","));
+            }
+        } else if let Some(scope) = existing
+            .as_deref()
+            .and_then(|record| record.properties.get("Scope"))
+        {
+            // Unedited output bodies keep the stored scope.
+            properties.insert(cadmpeg_core::nonblank_literal!("Scope"), scope.clone());
         }
         let ordinal = u32::try_from(feature.ordinal)
             .map_err(|_| CodecError::NotImplemented("feature ordinal exceeds u32".into()))?;
@@ -436,30 +651,43 @@ pub(in crate::history) fn sync_neutral_features(
                 None => source_id.map(crate::records::TreeParent::Source),
             }
         });
+        let parent_moved = field_baseline.is_none() || edits.feature_parent_moved(ir, &feature.id);
         if let Some(existing) = existing.as_mut() {
-            if let Some(tag) = &feature.source_tag {
-                existing.xml_tag.clone_from(tag);
+            if let Some(tag) = solidworks_source_tag(feature) {
+                if moved(|original, feature| original.source_tag == feature.source_tag) {
+                    existing.xml_tag.clone_from(tag);
+                }
             }
-            existing.ordinal = ordinal;
-            existing.name = feature.name.clone().unwrap_or_default();
+            if moved(|original, feature| original.ordinal == feature.ordinal) {
+                existing.ordinal = ordinal;
+            }
+            if moved(|original, feature| original.name == feature.name) {
+                existing.name = feature.name.clone().unwrap_or_default();
+            }
             existing.kind = kind;
-            existing.suppressed = suppressed;
-            existing.tree_parent = tree_parent;
+            if moved(|original, feature| original.suppressed == feature.suppressed) {
+                existing.suppressed = suppressed;
+            }
+            if parent_moved {
+                existing.tree_parent = tree_parent;
+            }
             existing.parameters = parameters;
             existing.properties = properties;
-            if existing
-                .content
-                .iter()
-                .all(|item| matches!(item, FeatureContent::Text(_)))
-            {
-                existing.content = feature
-                    .source_text
+            if moved(|original, feature| original.source_text == feature.source_text) {
+                if existing
+                    .content
                     .iter()
-                    .cloned()
-                    .map(FeatureContent::Text)
-                    .collect();
+                    .all(|item| matches!(item, FeatureContent::Text(_)))
+                {
+                    existing.content = feature
+                        .source_text
+                        .iter()
+                        .cloned()
+                        .map(FeatureContent::Text)
+                        .collect();
+                }
+                existing.text.clone_from(&feature.source_text);
             }
-            existing.text.clone_from(&feature.source_text);
         } else {
             let history = &mut native.feature_histories[0];
             history.features.push(Feature {
@@ -485,8 +713,18 @@ pub(in crate::history) fn sync_neutral_features(
                     .collect(),
             });
         }
+        if field_baseline.is_some_and(|original| original.source_content == feature.source_content)
+        {
+            content_kept.insert(feature.id.clone());
+        }
     }
-    synchronize_neutral_feature_content(features, parameters, &record_ids, native)?;
+    let losses = clear_reversals(
+        &cleared,
+        reversed_end_specs.as_ref(),
+        &ir.model.configurations,
+        &mut native.feature_input_lanes,
+    );
+    synchronize_neutral_feature_content(features, parameters, &record_ids, &content_kept, native)?;
     let changed_parameters = native
         .feature_histories
         .iter()
@@ -507,12 +745,133 @@ pub(in crate::history) fn sync_neutral_features(
         &mut native.feature_input_lanes,
         &changed_parameters,
     )?;
+    // The lane scalars hold the edited millimetre values; each edited text
+    // is stated in the scale of the text the record stored.
+    let features_by_record = record_ids
+        .iter()
+        .map(|(feature, record)| (record.as_str(), feature))
+        .collect::<HashMap<_, _>>();
+    for record in native
+        .feature_histories
+        .iter_mut()
+        .flat_map(|history| &mut history.features)
+    {
+        let (Some(stored), Some(feature)) = (
+            original_parameters.get(&record.id),
+            features_by_record.get(record.id.as_str()),
+        ) else {
+            continue;
+        };
+        super::parameters::state_in_stored_scale(
+            stored,
+            |name| source_lengths.get(&(*feature, name)).copied(),
+            &mut record.parameters,
+        );
+    }
     let projected_features = project_features_with_native_inputs(native)?;
     let projected_features = projected_features
         .into_iter()
         .map(|feature| (feature.id.clone(), feature))
         .collect::<HashMap<_, _>>();
+    // An edited leaf of a feature's construction is not written when it
+    // moves no record field, or when the written records read back as the
+    // source states it.
+    let mut dependencies_unwritten = HashSet::new();
     for feature in features {
+        let Some(original) = edits.source_feature(&feature.id) else {
+            continue;
+        };
+        if edits.operands_kept(&feature.id) {
+            let construction = super::edits::construction_edits(original, feature);
+            edits.claim(
+                original,
+                feature,
+                construction.into_iter().map(|edit| (edit, false)),
+                false,
+            );
+            continue;
+        }
+        let Some(construction) = edited_constructions.remove(&feature.id) else {
+            continue;
+        };
+        let written = projected_features.get(&neutral_feature_id(&record_ids[&feature.id])?);
+        let source_dependencies = original
+            .dependencies
+            .iter()
+            .map(|dependency| match record_ids.get(dependency) {
+                Some(record) => neutral_feature_id(record),
+                None => Ok(dependency.clone()),
+            })
+            .collect::<Result<Vec<_>, CodecError>>()?;
+        let dependencies_as_source =
+            written.is_some_and(|written| written.dependencies.as_slice() == source_dependencies);
+        // The definitions in wire form; `None` when one cannot be read back.
+        let definitions = written.and_then(|written| {
+            Some((
+                serde_json::to_value(original.evaluation.definition()).ok()?,
+                written,
+                serde_json::to_value(written.evaluation.definition()).ok()?,
+            ))
+        });
+        let as_source = construction
+            .iter()
+            .map(|(edit, _)| {
+                definitions.as_ref().is_some_and(
+                    |(source_definition, written, written_definition)| {
+                        edit.reads_back_as_source(
+                            (original, source_definition),
+                            (written, written_definition),
+                            dependencies_as_source,
+                        )
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+        let unwritten = construction
+            .iter()
+            .zip(&as_source)
+            .filter(|((_, unmoved), as_source)| *unmoved || **as_source)
+            .map(|((edit, _), _)| edit)
+            .collect::<Vec<_>>();
+        if unwritten.iter().any(|edit| edit.is_dependencies()) {
+            dependencies_unwritten.insert(feature.id.clone());
+        }
+        if !unwritten.is_empty() {
+            edits.construction_reads_back_as_stored(
+                &feature.id,
+                &unwritten
+                    .iter()
+                    .map(|edit| edit.label.clone())
+                    .collect::<Vec<_>>(),
+                unwritten.len() == construction.len(),
+            );
+        }
+        // An edit that moves a record field while the records read back as
+        // the source would leave the record stating what the output does not
+        // carry.
+        let withhold = construction
+            .iter()
+            .zip(&as_source)
+            .any(|((_, unmoved), as_source)| !unmoved && *as_source);
+        edits.claim(
+            original,
+            feature,
+            construction
+                .into_iter()
+                .zip(as_source)
+                .map(|((edit, unmoved), as_source)| (edit, !unmoved && !as_source)),
+            withhold,
+        );
+    }
+    // A stored record keeps its stored operands, and a dependency edit that
+    // reads back as the source is named above. With a decoded source, the
+    // full decoder reads the written part back and judges its dependencies.
+    for feature in features.iter().filter(|feature| {
+        !edits.has_source()
+            && !edits.operands_kept(&feature.id)
+            && !dependencies_unwritten.contains(&feature.id)
+            && !edits.feature_construction_unedited(feature)
+    }) {
         let projected_id = neutral_feature_id(&record_ids[&feature.id])?;
         let expected = feature
             .dependencies
@@ -542,13 +901,143 @@ pub(in crate::history) fn sync_neutral_features(
     }
     synchronize_feature_content_order(native);
     synchronize_history_content_order(native);
-    Ok(renames)
+    Ok(PreparedFeatures { renames, losses })
+}
+
+/// Writes `0` to the end-spec reversal word of each extrusion whose decoded
+/// reversal an edit cleared, each paired with whether its record states the
+/// flag as a Keywords attribute, which the encoder already dropped.
+/// `reversed_end_specs` is `None` where the writer could not scan the stored
+/// end specs. Names each extrusion whose flag the write could not clear, and
+/// each lane outside the active configuration whose flag it cleared. Where
+/// the part has fewer than two configurations, every lane holds the model's
+/// state.
+fn clear_reversals(
+    cleared: &[(&cadmpeg_ir::features::Feature, bool)],
+    reversed_end_specs: Option<&HashMap<String, Vec<EndSpecAnchor>>>,
+    configurations: &[cadmpeg_ir::features::parameters::DesignConfiguration],
+    lanes: &mut [crate::records::FeatureInputLane],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use crate::layout::extrusion_end_spec_header::REVERSAL;
+    use cadmpeg_ir::features::extents::ExtrudeDirection;
+    let lane_configurations =
+        crate::history::configuration::configuration_lane_assignments(configurations, lanes)
+            .into_iter()
+            .map(|(configuration, lane)| (lane, &configurations[configuration]))
+            .collect::<HashMap<_, _>>();
+    let mut losses = Vec::new();
+    for (feature, stated) in cleared {
+        let anchors = feature
+            .native_ref
+            .as_deref()
+            .and_then(|record| reversed_end_specs?.get(record))
+            .map_or(&[][..], Vec::as_slice);
+        let mut unwritten = anchors.is_empty() && (!stated || reversed_end_specs.is_none());
+        let mut configuration_lanes = std::collections::BTreeMap::new();
+        for anchor in anchors {
+            let at = anchor.offset + REVERSAL;
+            match lanes
+                .get_mut(anchor.lane)
+                .and_then(|lane| lane.native_payload.get_mut(at..at + 4))
+            {
+                Some(word) => word.copy_from_slice(&0_u32.to_le_bytes()),
+                None => {
+                    unwritten = true;
+                    continue;
+                }
+            }
+            let lane = &lanes[anchor.lane].id;
+            let place = match lane_configurations.get(&anchor.lane) {
+                Some(configuration) if configuration.active => continue,
+                Some(configuration) => {
+                    let state = match configuration
+                        .feature_states
+                        .get(&feature.id)
+                        .map(|state| state.definition.operation())
+                    {
+                        Some(FeatureOperation::Extrude {
+                            direction: ExtrudeDirection::ProfileNormal {},
+                            ..
+                        }) => "whose state there travels along the normal over that flag: the written flag can change that configuration's extrusion",
+                        Some(FeatureOperation::Extrude {
+                            direction: ExtrudeDirection::ReversedProfileNormal {},
+                            ..
+                        }) => "whose state there travels against the normal: that configuration is written along it",
+                        _ => "which states no resolved travel for it: that configuration is written along it",
+                    };
+                    format!(
+                        "in lane {lane} of configuration {}, {state}",
+                        crate::history::extrude_direction::configuration_label(configuration)
+                    )
+                }
+                None if configurations.len() < 2 => continue,
+                None => format!(
+                    "in lane {lane}, which the writer assigns to no configuration: the configuration that lane holds is written along it"
+                ),
+            };
+            configuration_lanes.insert(anchor.lane, place);
+        }
+        let extrusion = crate::history::extrude_direction::label(feature);
+        if unwritten {
+            let cause = if reversed_end_specs.is_none() {
+                "the writer could not read the end specs of the stored records, so the written record can keep the stored reversal"
+            } else {
+                "the writer found no end-spec reversal flag to clear, so the written record keeps the stored reversal"
+            };
+            losses.push(SldprtLossCode::WriterExtrudeReversalUnwritten.note(format!(
+                "Extrusion {extrusion} is edited to travel along the profile normal, and {cause}."
+            )));
+        }
+        for place in configuration_lanes.into_values() {
+            losses.push(SldprtLossCode::WriterExtrudeReversalConfigurationCleared.note(format!(
+                "Extrusion {extrusion} is edited to travel along the profile normal, and the writer also cleared its end-spec reversal flag {place}."
+            )));
+        }
+    }
+    losses
+}
+
+/// The keys of `written` whose entry differs from `baseline`'s.
+fn moved_keys<V: PartialEq>(
+    written: &BTreeMap<cadmpeg_core::text::NonBlankString, V>,
+    baseline: &BTreeMap<cadmpeg_core::text::NonBlankString, V>,
+) -> HashSet<String> {
+    written
+        .iter()
+        .filter(|(key, value)| baseline.get(*key) != Some(*value))
+        .map(|(key, _)| key.as_str().to_owned())
+        .collect()
+}
+
+/// The stored entries of a record field, with each entry whose encoding
+/// `written` moves from the source feature's encoding `baseline` written as
+/// `written` states it, and each entry of `group` that `written` states
+/// written too: `group` holds the members of the lane-derived groups the
+/// write makes the record state.
+fn stored_unless_moved<V: Clone + PartialEq>(
+    stored: &BTreeMap<cadmpeg_core::text::NonBlankString, V>,
+    written: BTreeMap<cadmpeg_core::text::NonBlankString, V>,
+    baseline: &BTreeMap<cadmpeg_core::text::NonBlankString, V>,
+    group: &HashSet<&str>,
+) -> BTreeMap<cadmpeg_core::text::NonBlankString, V> {
+    let moved = moved_keys(&written, baseline);
+    let mut merged = stored.clone();
+    for key in baseline.keys().filter(|key| !written.contains_key(*key)) {
+        merged.remove(key);
+    }
+    for (key, value) in written {
+        if moved.contains(key.as_str()) || group.contains(key.as_str()) {
+            merged.insert(key, value);
+        }
+    }
+    merged
 }
 
 fn synchronize_neutral_feature_content(
     features: &[cadmpeg_ir::features::Feature],
     parameters: &[DesignParameter],
     record_ids: &HashMap<FeatureId, String>,
+    content_kept: &HashSet<FeatureId>,
     native: &mut crate::native::SldprtNative,
 ) -> Result<(), CodecError> {
     let parameters = parameters
@@ -556,7 +1045,7 @@ fn synchronize_neutral_feature_content(
         .map(|parameter| (&parameter.id, parameter))
         .collect::<HashMap<_, _>>();
     for feature in features {
-        if feature.source_content.is_empty() {
+        if feature.source_content.is_empty() || content_kept.contains(&feature.id) {
             continue;
         }
         let content = feature
@@ -603,6 +1092,36 @@ fn synchronize_neutral_feature_content(
     Ok(())
 }
 
+/// Name in `Dependencies` each dependency of a generated record that none of
+/// its feature-reference properties names, so the record projects with every
+/// dependency its feature states. A dependency with no source id stays
+/// unnamed.
+fn state_unreferenced_dependencies(
+    feature: &cadmpeg_ir::features::Feature,
+    sources: &HashMap<FeatureId, Option<FeatureSource>>,
+    properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+) {
+    let referenced = referenced_sources(properties)
+        .map(str::to_owned)
+        .collect::<HashSet<_>>();
+    let unreferenced = feature
+        .dependencies
+        .iter()
+        .filter_map(|dependency| sources.get(dependency).copied().flatten())
+        .map(String::from)
+        .filter(|source| !referenced.contains(source))
+        .collect::<Vec<_>>();
+    if unreferenced.is_empty() {
+        return;
+    }
+    let key = cadmpeg_core::nonblank_literal!("Dependencies");
+    let value = match properties.get(key.as_str()) {
+        Some(stated) => format!("{stated},{}", unreferenced.join(",")),
+        None => unreferenced.join(","),
+    };
+    properties.insert(key, value);
+}
+
 pub(super) fn synchronize_history_content_order(native: &mut crate::native::SldprtNative) {
     for history in &mut native.feature_histories {
         let configurations = history
@@ -635,7 +1154,7 @@ pub(super) fn synchronize_history_content_order(native: &mut crate::native::Sldp
                         .map_or_else(String::new, |(_, id)| id.clone());
                     feature_index += 1;
                 }
-                HistoryContent::Text(_) => {}
+                HistoryContent::Text(_) | HistoryContent::Element(_) => {}
             }
         }
         history.content.retain(|item| {
@@ -711,10 +1230,8 @@ mod tests {
     use crate::test_support::parasolid::triangle_body;
     use crate::test_support::plan_inherited_write;
     use crate::SldprtCodec;
-    use cadmpeg_core::CodecError;
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::features::FeatureId;
-    use std::collections::HashSet;
     use std::io::Cursor;
 
     /// A document whose one history feature is linked to one serialized object
@@ -803,8 +1320,14 @@ mod tests {
         second.id = format!("{}-second", second.id);
         native.feature_input_lanes.push(second);
 
-        let error = sync_neutral_features(&ir, &[], &[], &mut Some(native))
-            .expect_err("two lanes state the same object name");
+        let error = sync_neutral_features(
+            &ir,
+            &[],
+            &[],
+            &mut Some(native),
+            &mut crate::history::write::edits::SourceEdits::without_source(&ir),
+        )
+        .expect_err("two lanes state the same object name");
         assert_eq!(
             error.to_string(),
             "not implemented yet: SLDPRT feature-input name for \"MatrizL1\" is not uniquely linked"
@@ -822,12 +1345,64 @@ mod tests {
         let mut ir = decoded.ir().clone();
         ir.model.features[0].name = Some(" ".into());
 
-        let error = sync_neutral_features(&ir, &[], &[], &mut Some(sldprt_native(decoded.ir())))
-            .expect_err("a blank object name is not writable");
+        let error = sync_neutral_features(
+            &ir,
+            &[],
+            &[],
+            &mut Some(sldprt_native(decoded.ir())),
+            &mut crate::history::write::edits::SourceEdits::without_source(&ir),
+        )
+        .expect_err("a blank object name is not writable");
         assert_eq!(
             error.to_string(),
             "not implemented yet: SLDPRT feature-input name for \"MatrizL1\" has no non-blank replacement"
         );
+    }
+
+    #[test]
+    fn a_solidworks_source_tag_xml_cannot_hold_keeps_the_record_tag_and_is_named() {
+        let decoded = SldprtCodec
+            .decode(
+                &mut Cursor::new(document_with_one_linked_object_name()),
+                &DecodeOptions::default(),
+            )
+            .expect("the fixture decodes");
+        for (tag, written, named) in [
+            ("Pattern Geometry", "Feature", true),
+            ("PartDesign::Pad", "Feature", true),
+            ("Schlüssel", "Schlüssel", false),
+        ] {
+            let mut ir = decoded.ir().clone();
+            ir.model.features[0].source_tag = Some(tag.into());
+            let mut native = Some(sldprt_native(decoded.ir()));
+            sync_neutral_features(
+                &ir,
+                &ir.model.parameters,
+                &ir.geometry.bodies,
+                &mut native,
+                &mut crate::history::write::edits::SourceEdits::without_source(&ir),
+            )
+            .expect("the history is written");
+            let mut native = native.expect("native history");
+            let notes = crate::writer::keywords_text::readable_keywords(&ir, &mut native);
+            assert_eq!(
+                native.feature_histories[0].features[0].xml_tag, written,
+                "{tag}"
+            );
+            let names = notes
+                .iter()
+                .filter(|note| {
+                    note.code == crate::loss::SldprtLossCode::WriterHistoryNameNotWritten.kind()
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(names.len(), usize::from(named), "{tag}: {notes:?}");
+            assert!(
+                names
+                    .iter()
+                    .all(|note| note.message.contains(&format!("{tag:?} as <Feature>"))),
+                "{names:?}"
+            );
+        }
     }
 
     #[test]
@@ -843,31 +1418,334 @@ mod tests {
         let projected = neutral_feature_id(&record).unwrap();
         assert!(cadmpeg_ir::ids::is_valid_identity(projected.as_str()));
     }
-    #[test]
-    fn the_source_id_allocator_skips_held_ids_and_refuses_an_exhausted_space() {
-        let mut used = HashSet::from([1, 2, 4]);
-        let mut next = Some(1);
-        assert_eq!(
-            super::allocate_feature_source_id(&mut used, &mut next).expect("first free id"),
-            3
-        );
-        assert_eq!(
-            super::allocate_feature_source_id(&mut used, &mut next).expect("second free id"),
-            5
-        );
+    /// Decode `source`, add a datum point named `Added` that has no native
+    /// record, write the part and decode the written bytes.
+    fn written_with_an_added_datum_point(source: &[u8]) -> crate::native::SldprtNative {
+        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
+        let decoded = SldprtCodec
+            .decode(
+                &mut Cursor::new(crate::test_support::container::native_envelope_fixture(
+                    source,
+                )),
+                &DecodeOptions::default(),
+            )
+            .expect("the fixture decodes");
+        let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+        let ordinal = u64::try_from(decoded.ir().model.features.len()).expect("ordinal");
+        decoded.ir_mut().model.features.push(Feature {
+            product_definition: None,
+            id: FeatureId::mint("synthetic:test:feature#added").expect("fixture identity"),
+            ordinal,
+            name: Some("Added".into()),
+            suppressed: Some(false),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::DatumPoint {
+                    position: cadmpeg_ir::features::geometry::FinitePoint3::new(
+                        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    )
+                    .expect("a finite point"),
+                    construction: None,
+                }),
+            ),
+            native_ref: None,
+        });
+        let mut encoded = Vec::new();
+        plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut encoded)
+            .expect("the edited part writes");
+        let written = SldprtCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .expect("the written part decodes");
+        sldprt_native(written.ir())
+    }
 
-        let mut used = HashSet::new();
-        let mut next = Some(u32::MAX);
-        assert_eq!(
-            super::allocate_feature_source_id(&mut used, &mut next).expect("last id"),
-            u32::MAX
+    /// The history source identifiers of the records named `name`.
+    fn source_ids(native: &crate::native::SldprtNative, name: &str) -> Vec<Option<u32>> {
+        native
+            .feature_histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .filter(|record| record.name == name)
+            .map(crate::records::Feature::source_value)
+            .collect()
+    }
+
+    /// An added feature takes an identifier past every identifier the part's
+    /// objects hold: past the history record `132` and past both parameter
+    /// objects, an integer parameter and a parameter with a tolerance, which
+    /// hold their identifiers after the trailer's zero byte and tolerance
+    /// pointer (sldprt.md §2.3). Either parameter can hold the largest.
+    #[test]
+    fn an_added_feature_takes_an_identifier_past_every_identifier_the_part_holds() {
+        use crate::test_support::carchive::{
+            config_object_stream, toleranced_and_integer_parameters_stream,
+        };
+        for (integer, toleranced) in [(135, 134), (134, 135)] {
+            let mut source = sldprt_with_body(&triangle_body());
+            source.extend(make_block(
+                0x42,
+                "Contents/Keywords",
+                br#"<Keywords><Feature Name="MatrizL1" Type="MatrizL" id="132"><Dimension Name="D1">15</Dimension></Feature></Keywords>"#,
+            ));
+            source.extend(make_block(
+                0x20,
+                "Contents/Config-0",
+                &config_object_stream(),
+            ));
+            source.extend(make_block(
+                0x21,
+                "Contents/Config-0-ResolvedFeatures",
+                &toleranced_and_integer_parameters_stream(integer, toleranced),
+            ));
+            let decoded = SldprtCodec
+                .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+                .expect("the fixture decodes");
+            let parameters = sldprt_native(decoded.ir())
+                .feature_input_lanes
+                .iter()
+                .flat_map(|lane| &lane.scalars)
+                .map(|scalar| scalar.archive_object_id)
+                .collect::<Vec<_>>();
+            assert_eq!(parameters, [Some(integer), Some(toleranced)]);
+
+            let written = written_with_an_added_datum_point(&source);
+            assert_eq!(source_ids(&written, "MatrizL1"), [Some(132)]);
+            assert_eq!(source_ids(&written, "Added"), [Some(136)]);
+        }
+    }
+
+    /// A parameter the archive walk does not read (the part holds no
+    /// `Config-0` stream to walk with) holds its identifier after a zero byte
+    /// and a null tolerance pointer, and an added feature takes the identifier
+    /// past it.
+    #[test]
+    fn an_added_feature_takes_an_identifier_past_a_parameter_the_walk_does_not_read() {
+        let mut resolved = resolved_feature_classes_with_ids(&[("moLPattern_c", "MatrizL1", 132)]);
+        resolved.extend(crate::test_support::carchive::parameter_prefix());
+        resolved.extend(0.015_f64.to_le_bytes());
+        let mut trailer = [0_u8; 35];
+        trailer[3..7].copy_from_slice(&133_u32.to_le_bytes());
+        resolved.extend(trailer);
+        let mut source = sldprt_with_body(&triangle_body());
+        source.extend(make_block(
+            0x42,
+            "Contents/Keywords",
+            br#"<Keywords><Feature Name="MatrizL1" Type="MatrizL" id="132"><Dimension Name="D1">15</Dimension></Feature></Keywords>"#,
+        ));
+        source.extend(make_block(
+            0x42,
+            "Contents/Config-0-ResolvedFeatures",
+            &resolved,
+        ));
+        let written = written_with_an_added_datum_point(&source);
+        assert_eq!(source_ids(&written, "MatrizL1"), [Some(132)]);
+        assert_eq!(source_ids(&written, "Added"), [Some(134)]);
+    }
+
+    /// When the part holds `u32::MAX - 1`, no identifier follows the largest,
+    /// and an added feature takes the lowest identifier the part does not hold.
+    #[test]
+    fn an_added_feature_takes_the_lowest_free_identifier_when_none_follows_the_largest() {
+        let mut source = sldprt_with_body(&triangle_body());
+        source.extend(make_block(
+            0x42,
+            "Contents/Keywords",
+            br#"<Keywords><Feature Name="Low" Type="MatrizL" id="1"><Dimension Name="D1">15</Dimension></Feature><Feature Name="High" Type="MatrizL" id="4294967294"><Dimension Name="D1">15</Dimension></Feature></Keywords>"#,
+        ));
+        let written = written_with_an_added_datum_point(&source);
+        assert_eq!(source_ids(&written, "High"), [Some(u32::MAX - 1)]);
+        assert_eq!(source_ids(&written, "Added"), [Some(2)]);
+    }
+
+    /// A projected one-direction join `Extrude` whose record states the
+    /// reversal flag, edited to travel along the profile normal.
+    fn cleared_extrusion() -> cadmpeg_ir::features::Feature {
+        use cadmpeg_ir::features::extents::ExtrudeDirection;
+        use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+        let history: crate::records::FeatureHistory = serde_json::from_value(serde_json::json!({
+            "id":"history", "features":[{
+                "id":"native", "parent":"history", "ordinal":0,
+                "name":"Extrude", "kind":"BossExtrude", "xml_tag":"Extrusion",
+                "input_class":"moExtrusion_c", "parameters":{"Depth":"10mm"},
+                "properties":{"EndCondition":"Blind", "Operation":"Join", "Reverse":"true"}
+            }]
+        }))
+        .expect("synthetic history");
+        let mut feature = crate::history::project::project_features(&[history])
+            .expect("feature projection")
+            .into_iter()
+            .next()
+            .expect("the extrusion");
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Extrude { direction, .. }) =
+                definition
+            {
+                *direction = ExtrudeDirection::ProfileNormal {};
+            }
+        });
+        assert!(crate::history::extrude_direction::cleared_reversal(
+            &feature
+        ));
+        feature
+    }
+
+    /// A cleared reversal with no end-spec flag to clear is named, unless its
+    /// record states the flag as a Keywords attribute, which the encoder
+    /// drops. Where the writer could not scan the stored end specs, every
+    /// cleared reversal is named, the stated one too.
+    #[test]
+    fn a_cleared_reversal_without_a_flag_to_clear_is_named() {
+        use crate::loss::SldprtLossCode;
+        use crate::resolved_features::terminations::EndSpecAnchor;
+        use std::collections::HashMap;
+        let feature = cleared_extrusion();
+        let scanned = HashMap::<String, Vec<EndSpecAnchor>>::new();
+        let unwritten = |stated: bool, end_specs: Option<&HashMap<String, Vec<EndSpecAnchor>>>| {
+            super::clear_reversals(&[(&feature, stated)], end_specs, &[], &mut [])
+                .into_iter()
+                .map(|loss| {
+                    assert_eq!(
+                        loss.code,
+                        SldprtLossCode::WriterExtrudeReversalUnwritten.kind()
+                    );
+                    loss.message
+                })
+                .collect::<Vec<_>>()
+        };
+        let named = unwritten(false, Some(&scanned));
+        assert_eq!(named.len(), 1, "{named:?}");
+        assert!(named[0].contains("Extrusion \"Extrude\" ("), "{named:?}");
+        assert!(unwritten(true, Some(&scanned)).is_empty());
+        for stated in [false, true] {
+            let named = unwritten(stated, None);
+            assert_eq!(named.len(), 1, "{named:?}");
+            assert!(
+                named[0].contains("could not read the end specs")
+                    && named[0].contains("can keep the stored reversal"),
+                "{named:?}"
+            );
+        }
+    }
+
+    /// The write clears the flag in every lane that holds it, and names each
+    /// lane outside the active configuration: a lane of an inactive
+    /// configuration, also where that configuration's state reads along the
+    /// normal over the flag, and a lane that the writer assigns to no
+    /// configuration. A part with one configuration has the model's state in
+    /// every lane.
+    #[test]
+    fn a_cleared_lane_outside_the_active_configuration_is_named() {
+        use crate::layout::extrusion_end_spec_header::REVERSAL;
+        use crate::loss::SldprtLossCode;
+        use crate::resolved_features::terminations::EndSpecAnchor;
+        use cadmpeg_ir::features::parameters::{
+            ConfigurationEvaluation, ConfigurationFeatureState, DesignConfiguration,
+        };
+        use cadmpeg_ir::features::selections::DistinctMembers;
+        use cadmpeg_ir::features::ConfigurationId;
+        use std::collections::{BTreeMap, HashMap};
+        let feature = cleared_extrusion();
+        let configuration = |name: &str, ordinal, active| DesignConfiguration {
+            id: ConfigurationId::mint(format!("synthetic:test:id#{name}"))
+                .expect("identity grammar"),
+            ordinal,
+            active,
+            source_index: None,
+            name: Some(name.to_owned()),
+            material: None,
+            properties: BTreeMap::new(),
+            bodies: None,
+            parameter_values: BTreeMap::new(),
+            parameter_overrides: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
+            native_ref: None,
+        };
+        let mut along = configuration("Along", 2, false);
+        along.feature_states.insert(
+            feature.id.clone(),
+            ConfigurationFeatureState {
+                evaluation: ConfigurationEvaluation::Active {
+                    outputs: DistinctMembers::default(),
+                },
+                dependencies: DistinctMembers::default(),
+                definition: feature.evaluation.definition().clone(),
+            },
         );
-        assert_eq!(next, None);
-        let error = super::allocate_feature_source_id(&mut used, &mut next)
-            .expect_err("exhausted id space");
+        let configurations = [
+            configuration("Default", 0, true),
+            configuration("Alternate", 1, false),
+            along,
+        ];
+        let lane = |id: &str, configuration: Option<&str>| -> crate::records::FeatureInputLane {
+            let payload = format!("{}01{}", "00".repeat(REVERSAL), "00".repeat(31 - REVERSAL));
+            let mut value = serde_json::json!({
+                "id": id,
+                "native_payload": payload,
+                "classes": [],
+                "names": []
+            });
+            if let Some(configuration) = configuration {
+                value["configuration"] = configuration.into();
+            }
+            serde_json::from_value(value).expect("synthetic lane")
+        };
+        let anchors = HashMap::from([(
+            feature.native_ref.clone().expect("the record"),
+            (0..4)
+                .map(|lane| EndSpecAnchor {
+                    lane,
+                    offset: 0,
+                    reversed: true,
+                })
+                .collect::<Vec<_>>(),
+        )]);
+        let named = |configurations: &[DesignConfiguration]| {
+            let mut lanes = [
+                lane("lane-default", Some("0")),
+                lane("lane-alternate", Some("1")),
+                lane("lane-along", Some("2")),
+                lane("lane-shared", None),
+            ];
+            let losses = super::clear_reversals(
+                &[(&feature, false)],
+                Some(&anchors),
+                configurations,
+                &mut lanes,
+            );
+            for lane in &lanes {
+                assert_eq!(lane.native_payload[REVERSAL..REVERSAL + 4], [0; 4]);
+            }
+            losses
+                .into_iter()
+                .map(|loss| {
+                    assert_eq!(
+                        loss.code,
+                        SldprtLossCode::WriterExtrudeReversalConfigurationCleared.kind()
+                    );
+                    loss.message
+                })
+                .collect::<Vec<_>>()
+        };
+        let messages = named(&configurations);
+        assert_eq!(messages.len(), 3, "{messages:?}");
         assert!(
-            matches!(&error, CodecError::NotImplemented(message) if message.contains("exhausted")),
-            "{error:?}"
+            messages[0].contains("lane lane-alternate of configuration \"Alternate\" (")
+                && messages[0].contains("which states no resolved travel for it"),
+            "{messages:?}"
         );
+        assert!(
+            messages[1].contains("lane lane-along of configuration \"Along\" (")
+                && messages[1].contains("travels along the normal over that flag"),
+            "{messages:?}"
+        );
+        assert!(
+            messages[2].contains("lane lane-shared, which the writer assigns to no configuration"),
+            "{messages:?}"
+        );
+        assert!(named(&configurations[..1]).is_empty());
     }
 }

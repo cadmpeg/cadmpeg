@@ -14,11 +14,13 @@ use cadmpeg_core::text::NonBlankString;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use super::expr::Expression;
+use super::dimension::RefTarget;
+use super::expr::{print, Expression, Neutral};
 use super::feature::FeatureDefinition;
-use super::ids::{ArrangementId, PublicationId};
+use super::ids::{ArrangementId, ParameterProgramId, PublicationId};
 use super::ops::body::TransformStep;
-use super::parameter::ParameterValue;
+use super::parameter::{DesignParameter, ParameterDefinition, ParameterValue};
+use super::program::{ParameterProgram, ProgramBody, Statement};
 use super::refs::ConfigurationRef;
 use super::selection::{OccurrencePath, Picked, SetSelection};
 use crate::features::{ConfigurationId, FeatureId, ParameterId};
@@ -68,6 +70,128 @@ pub struct DesignConfiguration {
         deserialize_with = "deserialize_native_ref"
     )]
     pub native_ref: Option<String>,
+}
+
+impl DesignConfiguration {
+    /// Whether the configuration states nothing of its own: no override, no
+    /// arrangement put in force, and no material.
+    pub(crate) fn states_nothing(&self) -> bool {
+        self.overrides == Overrides::default()
+            && self.active_arrangements.is_empty()
+            && self.materials.is_empty()
+    }
+}
+
+/// What the overrides that apply where a parameter is read state, beyond the
+/// parameters they state (§5.13).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Stated {
+    /// Some override, material, or arrangement is stated.
+    pub(crate) anything: bool,
+    /// Some occurrence override is stated.
+    pub(crate) occurrences: bool,
+}
+
+impl Stated {
+    /// What a configuration chain states.
+    pub(crate) fn of(chain: &[&DesignConfiguration]) -> Self {
+        Self {
+            anything: !chain.iter().all(|level| level.states_nothing()),
+            occurrences: chain
+                .iter()
+                .any(|level| !level.overrides.occurrences.is_empty()),
+        }
+    }
+}
+
+/// Whether a parameter's own `value` holds where overrides apply (§5.13):
+/// nothing it rests on can differ there from the base. `overridden` tells
+/// whether an override that applies states a parameter; `parameter` and
+/// `program` look up records of the design.
+///
+/// It does not hold where the parameter's definition reads, directly or
+/// through other parameters, an overridden parameter. Where `stated`
+/// holds anything it also does not hold where the parameter or one it reads
+/// is `Driven`, is assigned by a `Source` program, or has a `Source`
+/// expression; where a definition among them reads a measure or a reference
+/// `through` an occurrence path; or, where `stated` holds an occurrence
+/// override, an `External` reference. An `Assigned` parameter reads what its
+/// `Neutral` program's conditions and assigned values read. A record that
+/// does not resolve or print does not let the value hold.
+pub(crate) fn own_value_holds<'a>(
+    record: &'a DesignParameter,
+    stated: Stated,
+    overridden: &dyn Fn(&ParameterId) -> bool,
+    parameter: &dyn Fn(&ParameterId) -> Option<&'a DesignParameter>,
+    program: &dyn Fn(&ParameterProgramId) -> Option<&'a ParameterProgram>,
+) -> bool {
+    if !stated.anything {
+        return true;
+    }
+    let mut seen = BTreeSet::from([&record.id]);
+    let mut pending = vec![record];
+    while let Some(record) = pending.pop() {
+        let mut nodes = Vec::new();
+        match &record.definition {
+            ParameterDefinition::Driven
+            | ParameterDefinition::Expression(Expression::Source { .. }) => return false,
+            ParameterDefinition::Expression(Expression::Neutral(Neutral(node))) => {
+                nodes.push(node);
+            }
+            ParameterDefinition::Assigned(id) => {
+                let Some(ParameterProgram {
+                    body: ProgramBody::Neutral(statements),
+                    ..
+                }) = program(id)
+                else {
+                    return false;
+                };
+                let mut statements: Vec<&Statement> = statements.iter().collect();
+                while let Some(statement) = statements.pop() {
+                    match statement {
+                        Statement::Assign { value, .. } => nodes.push(&value.0),
+                        Statement::If {
+                            condition,
+                            then,
+                            otherwise,
+                        } => {
+                            nodes.push(&condition.0);
+                            statements.extend(then.iter().chain(otherwise));
+                        }
+                    }
+                }
+            }
+        }
+        for node in nodes {
+            let Ok(printed) = print(node) else {
+                return false;
+            };
+            if !printed.measures.is_empty() {
+                return false;
+            }
+            for reference in printed.refs {
+                if reference.through.is_some() {
+                    return false;
+                }
+                match &reference.target {
+                    RefTarget::External { .. } if stated.occurrences => return false,
+                    RefTarget::External { .. } => {}
+                    RefTarget::Parameter(target) => {
+                        if overridden(target) {
+                            return false;
+                        }
+                        let Some(next) = parameter(target) else {
+                            return false;
+                        };
+                        if seen.insert(&next.id) {
+                            pending.push(next);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    true
 }
 
 /// A configuration's or an arrangement's own values.
@@ -134,7 +258,7 @@ pub struct DefinitionOverride {
 
 /// A configuration's part number: a text of its own, or a rule evaluated at
 /// the configuration that states it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -286,7 +410,7 @@ pub struct MaterialOverride {
 }
 
 /// A material of this document, or by the source's name for it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -358,7 +482,7 @@ pub struct Arrangement {
 }
 
 /// What an arrangement overrides.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -429,7 +553,7 @@ pub struct NestedArrangement {
 }
 
 /// An arrangement of this document, or by the source's name for it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",

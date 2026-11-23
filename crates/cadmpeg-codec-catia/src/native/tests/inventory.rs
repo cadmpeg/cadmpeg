@@ -791,7 +791,7 @@ fn native_namespace_rejects_alias_row_views_disagreeing_with_their_source_bytes(
         rows[0][field] = replacement;
         namespace
             .set_arena(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 "alias_rows",
                 &rows,
             )

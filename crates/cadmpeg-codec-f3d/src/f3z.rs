@@ -6,7 +6,7 @@
 //! [`decode`] classifies every member, decodes the model root, and delegates
 //! occurrence-scoped graph composition to [`merge`].
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::hash::digest::Sha256Digest;
@@ -90,8 +90,22 @@ fn compose(
         .ok_or_else(|| CodecError::malformed("F3Z root has no source metadata"))?;
     inline_given_up_parts(ctx, &mut fidelity, &model_root)?;
     fidelity.decode_digest = Sha256Digest::digest(scan.source_image);
-    fidelity.remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID);
+    let root_untyped = fidelity
+        .remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
+        .map(|image| image.untyped().clone())
+        .unwrap_or_default();
     fidelity.retain_unknown_records("f3d", [crate::decode::preserve_source_image(scan)])?;
+    // The archive image holds the root member's bytes, and with them what that
+    // member's image left undecoded. At container depth no member is decoded,
+    // so it is marked with every class a member's parts can hold.
+    let archive_untyped = if ctx.container_only() {
+        [ArenaClass::Model, ArenaClass::Design].into()
+    } else {
+        root_untyped
+    };
+    if !archive_untyped.is_empty() {
+        fidelity.mark_untyped(crate::ids::FILE_SOURCE_IMAGE_ID, archive_untyped)?;
+    }
     crate::decode::commit_given_up_parts(ctx, scan, &mut ir, &mut fidelity)?;
     if let Some(drawing_root) = &session.omitted_drawing_root {
         push_loss(&mut report.losses, F3dLossCode::DrawingDocumentOmitted, format_args!(
@@ -138,7 +152,13 @@ fn compose(
     report.notes.push(format!(
         "merged {merged} external occurrence(s) from the f3z archive"
     ));
-    crate::scene::bind(ctx, &mut ir, &scene_sources, &mut report.losses)?;
+    crate::scene::bind(
+        ctx,
+        &mut ir,
+        &scene_sources,
+        &instance_scopes,
+        &mut report.losses,
+    )?;
     report.losses.append(&mut outer_losses);
     finalize_result(ctx, ir, source, report, fidelity, &instance_scopes)
 }
@@ -201,6 +221,16 @@ fn finalize_result(
     body.losses
         .extend(crate::tree::own_once(ctx, &mut ir, instance_scopes)?);
     crate::design::owners::release_unbound(&mut ir.model);
+    body.losses
+        .extend(crate::tree::state_root_definition(ctx, &mut ir)?);
+    let depth = body.transfer.depth();
+    cadmpeg_ir::design::projection::project_layer(
+        ctx,
+        "f3d",
+        &mut ir,
+        &mut body.losses,
+        |ir, losses| crate::design_v11::project(ctx, ir, depth, losses),
+    )?;
     ir.finalize();
     let hash = cadmpeg_ir::hash::document_local_sha256(
         ctx,

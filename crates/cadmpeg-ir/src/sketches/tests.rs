@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_test_support::edit;
+use crate::test_support::edit;
 
 use super::{
     SpatialSketchConstraintDefinition, SpatialSketchConstraintDefinitionInput,
@@ -514,8 +514,8 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
 
 #[test]
 fn sketch_regions_round_trip_with_explicit_boundary_roles() {
-    use crate::features::PlanarProfileRef;
-    use crate::features::{ProfileRef, SketchProfileBoundaryUse, SketchProfileRegion};
+    use crate::features::profiles::PlanarProfileRef;
+    use crate::features::profiles::{ProfileRef, SketchProfileBoundaryUse, SketchProfileRegion};
     use crate::sketches::{SketchEntityId, SketchId};
 
     let profile = PlanarProfileRef::sketch_regions(
@@ -526,7 +526,10 @@ fn sketch_regions_round_trip_with_explicit_boundary_roles() {
             SketchProfileRegion::trimmed(
                 vec![SketchProfileBoundaryUse {
                     entity: SketchEntityId::mint("synthetic:test:sketch-entity#curve").unwrap(),
-                    parameter_range: crate::geometry::DirectedParameterRange::new([0.25, 0.75])
+                    parameter_range:
+                        crate::geometry::procedural_curves::DirectedParameterRange::new([
+                            0.25, 0.75,
+                        ])
                         .unwrap(),
                     reversed: true,
                 }],

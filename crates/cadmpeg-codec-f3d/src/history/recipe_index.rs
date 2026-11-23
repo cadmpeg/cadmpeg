@@ -37,7 +37,7 @@ pub(super) fn reference_lane_faces_by(
         references
             .entry(reference.selector_offset)
             .or_default()
-            .push(super::effective_faces(reference));
+            .push(super::face_resolution::effective_faces(reference));
     }
     let mut names = references
         .into_values()
@@ -143,6 +143,48 @@ impl<'a> RecipeTopologyIndex<'a> {
             .map_or(&[], Vec::as_slice)
     }
 
+    pub(super) fn unique_alternate_face(
+        &self,
+        references: &[crate::records::dimensions::DesignRecipeReference],
+        design_reference: i32,
+        active_faces: &[cadmpeg_ir::ids::FaceId],
+        history_source: Option<&str>,
+    ) -> Option<i64> {
+        let [active] = active_faces else {
+            return None;
+        };
+        let source_matches = active.as_str().starts_with("f3d:brep:entity#")
+            || history_source.is_some_and(|source| {
+                super::face_resolution::active_brep_face_matches_source(active, source)
+            });
+        if !source_matches {
+            return None;
+        }
+        let slot = super::body_closures::stable_ref(active.as_str())?;
+        let mut selected = false;
+        for reference in references
+            .iter()
+            .filter(|reference| reference.design_reference == i64::from(design_reference))
+        {
+            for tag_index in self.matching_tags(
+                &reference.token,
+                reference.token_integer,
+                reference.design_reference,
+            ) {
+                let tag = &self.topology.persistent_subentity_tags[*tag_index];
+                if tag.entity_kind == AsmHistoricalEntityKind::Face
+                    && tag.selector != reference.selector
+                {
+                    if tag.entity_ref != slot {
+                        return None;
+                    }
+                    selected = true;
+                }
+            }
+        }
+        selected.then_some(slot)
+    }
+
     pub(super) fn face_tags(&mut self, reference: i64) -> &[usize] {
         let (topology, tokens) = (self.topology, &self.tokens);
         self.faces
@@ -187,9 +229,102 @@ impl<'a> RecipeTopologyCache<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::RecipeTopologyCache;
+    use crate::history::recipe_index::RecipeTopologyCache;
     use crate::history_records::{AsmHistoricalPersistentSubentityTag, AsmHistoricalTopology};
     use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
+
+    #[test]
+    fn alternate_face_requires_one_matching_live_face_in_both_lanes() {
+        use crate::test_support::history::recipe_operand_reference;
+        use cadmpeg_ir::ids::FaceId;
+        let face = |slot| FaceId::mint(format!("f3d:brep:entity#{slot}")).unwrap();
+        let tag = |entity_ref, selector, token_integer, design_reference| {
+            AsmHistoricalPersistentSubentityTag {
+                entity_kind: AsmHistoricalEntityKind::Face,
+                entity_ref,
+                selector,
+                token: "7".into(),
+                token_integer,
+                design_references: vec![design_reference],
+                ordinal: 0,
+            }
+        };
+        let mut reference = recipe_operand_reference(0, "7", 300, &[]);
+        reference.selector = 2;
+        let base = AsmHistoricalTopology {
+            faces: vec![10, 20],
+            persistent_subentity_tags: vec![
+                tag(10, 1, 0, 300),
+                tag(20, 2, 0, 300),
+                tag(20, 1, 8, 300),
+                tag(20, 1, 0, 301),
+                tag(99, 1, 0, 300),
+            ],
+            ..Default::default()
+        };
+        let mut cache = RecipeTopologyCache::default();
+        let index = cache.get(&base);
+        assert_eq!(
+            index.unique_alternate_face(std::slice::from_ref(&reference), 300, &[face(10)], None),
+            Some(10)
+        );
+        for active in [vec![], vec![face(20)], vec![face(10), face(20)]] {
+            assert_eq!(
+                index.unique_alternate_face(std::slice::from_ref(&reference), 300, &active, None),
+                None
+            );
+        }
+        assert_eq!(
+            index.unique_alternate_face(std::slice::from_ref(&reference), 301, &[face(10)], None),
+            None
+        );
+        let mut other_token = reference.clone();
+        other_token.token = "8".into();
+        assert_eq!(
+            index.unique_alternate_face(&[other_token], 300, &[face(10)], None),
+            None
+        );
+        let qualified = FaceId::mint("f3d:brep/input.smbh/brep:entity#10").unwrap();
+        assert_eq!(
+            index.unique_alternate_face(
+                std::slice::from_ref(&reference),
+                300,
+                std::slice::from_ref(&qualified),
+                Some("input.smbh")
+            ),
+            Some(10)
+        );
+        for source in [None, Some("other.smbh")] {
+            assert_eq!(
+                index.unique_alternate_face(
+                    std::slice::from_ref(&reference),
+                    300,
+                    std::slice::from_ref(&qualified),
+                    source
+                ),
+                None
+            );
+        }
+        let mut ambiguous = base.clone();
+        ambiguous.persistent_subentity_tags.push(tag(20, 1, 0, 300));
+        assert_eq!(
+            cache.get(&ambiguous).unique_alternate_face(
+                std::slice::from_ref(&reference),
+                300,
+                &[face(10)],
+                None
+            ),
+            None
+        );
+        let mut absent = base.clone();
+        absent.faces = vec![20];
+        assert_eq!(
+            cache
+                .get(&absent)
+                .unique_alternate_face(&[reference], 300, &[face(10)], None),
+            None
+        );
+    }
 
     #[test]
     fn recipe_reference_aliases_union_references_and_intersect_live_names() {
@@ -216,24 +351,26 @@ mod tests {
             reference(40, 303, &[20, 30, 40]),
         ];
         assert_eq!(
-            super::reference_lane_faces(&lane).faces,
+            crate::history::recipe_index::reference_lane_faces(&lane).faces,
             [face(20), face(30)]
         );
         assert_eq!(
-            super::reference_lane_faces(&lane[..2]).faces,
+            crate::history::recipe_index::reference_lane_faces(&lane[..2]).faces,
             [face(10), face(20), face(30)]
         );
         let missing = [lane[0].clone(), reference(40, 303, &[])];
         assert_eq!(
-            super::reference_lane_faces(&missing).faces,
+            crate::history::recipe_index::reference_lane_faces(&missing).faces,
             [face(10), face(20)]
         );
         let conflict = [lane[0].clone(), reference(40, 303, &[40])];
-        let conflict = super::reference_lane_faces(&conflict);
+        let conflict = crate::history::recipe_index::reference_lane_faces(&conflict);
         assert_eq!(conflict.faces, [face(10), face(20), face(40)]);
         assert!(conflict.disjoint_names);
-        assert!(!super::reference_lane_faces(&lane).disjoint_names);
-        assert!(super::reference_lane_faces(&[]).faces.is_empty());
+        assert!(!crate::history::recipe_index::reference_lane_faces(&lane).disjoint_names);
+        assert!(crate::history::recipe_index::reference_lane_faces(&[])
+            .faces
+            .is_empty());
     }
 
     #[test]
@@ -258,11 +395,14 @@ mod tests {
         // One name with two Design references: the reference that every
         // fragment of the token carries does not widen the name.
         let name = [reference(0, 920, &[10]), reference(0, 934, &[10, 20, 30])];
-        let lane = super::reference_lane_faces_by(&name, super::NameReferences::Common);
+        let lane = crate::history::recipe_index::reference_lane_faces_by(
+            &name,
+            super::NameReferences::Common,
+        );
         assert_eq!(lane.faces, [face(10)]);
         assert!(!lane.disjoint_names);
         assert_eq!(
-            super::reference_lane_faces(&name).faces,
+            crate::history::recipe_index::reference_lane_faces(&name).faces,
             [face(10), face(20), face(30)]
         );
         // A second name of the same operand intersects the first name's faces.
@@ -273,13 +413,21 @@ mod tests {
             reference(40, 934, &[10, 20, 30]),
         ];
         assert_eq!(
-            super::reference_lane_faces_by(&operand, super::NameReferences::Common).faces,
+            crate::history::recipe_index::reference_lane_faces_by(
+                &operand,
+                super::NameReferences::Common
+            )
+            .faces,
             [face(10)]
         );
         // No face carries both references: the name keeps their union.
         let split = [reference(0, 920, &[10]), reference(0, 934, &[20, 30])];
         assert_eq!(
-            super::reference_lane_faces_by(&split, super::NameReferences::Common).faces,
+            crate::history::recipe_index::reference_lane_faces_by(
+                &split,
+                super::NameReferences::Common
+            )
+            .faces,
             [face(10), face(20), face(30)]
         );
     }

@@ -216,7 +216,6 @@ pub(crate) fn validate_native(
     validate_design(&data, ir, &mut findings);
     validate_sketches(&data, ir, &mut findings);
     validate_features(ctx, ir, &data, &mut findings)?;
-    findings.extend(crate::design_v11::validate_operations(ir)?);
     unique(
         &mut findings,
         data.unknowns.iter().map(|record| record.id.as_str()),
@@ -252,6 +251,47 @@ pub(crate) fn validate_native(
             )
         });
     }
+    findings.extend(design_v11_findings(ctx, ir, data)?);
+    Ok(findings)
+}
+
+/// The v11 history of a part at design depth against the history its native
+/// records project, and its states through the IR's state resolver.
+fn design_v11_findings(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    data: NativeData,
+) -> Result<Vec<Finding>, CodecError> {
+    if document_kind(ir) != Some("part") || !ir.scope().design {
+        return Ok(Vec::new());
+    }
+    let mut features = crate::feature::FeatureInventory::default();
+    features.features = data.pm_dc_features;
+    features.pattern_features = data.pm_dc_pattern_features;
+    features.work_planes = data.pm_dc_work_planes;
+    features.properties = data.pm_dc_feature_properties;
+    features.sheet_metal_styles = data.pm_dc_sheet_metal_styles;
+    features.sheet_metal_flanges = data.pm_dc_sheet_metal_flanges;
+    features.sheet_metal_unfold_rules = data.pm_app_sheet_metal_unfold_rules;
+    features.sheet_metal_unfold_selections = data.pm_app_sheet_metal_unfold_selections;
+    let sketches = crate::sketch::SketchInventory {
+        sketches: data.pm_dc_sketches,
+        entities: Vec::new(),
+        transforms: Vec::new(),
+        directions: Vec::new(),
+        constraints: Vec::new(),
+        text_members: Vec::new(),
+        issues: Vec::new(),
+    };
+    let mut findings = crate::design_v11::validate_operations(
+        ctx,
+        ir,
+        &features,
+        &sketches,
+        &data.pm_dc_parameters,
+        &data.pm_dc_units,
+    )?;
+    findings.extend(crate::design_v11::validate_states(ir, &ctx.policy().limits));
     Ok(findings)
 }
 
@@ -1935,6 +1975,11 @@ fn validate_features(
         .iter()
         .map(|entity| (entity.id().as_str(), entity))
         .collect::<HashMap<_, _>>();
+    let producer_records = crate::feature::body_selection::ProducerRecords::new(
+        &data.pm_dc_features,
+        &data.pm_dc_feature_labels,
+        &data.pm_dc_feature_properties,
+    );
     for feature in &ir.model.features {
         if crate::feature::pattern::is_linear_pattern(feature) {
             if feature
@@ -2109,8 +2154,10 @@ fn validate_features(
                 .get(&(token, raw_feature.identity.record_ordinal))
                 .is_some_and(|label| label.class_id() == crate::feature::THREAD_CLASS_ID);
             let selection_matches = collection.is_some_and(|collection| match face {
-                cadmpeg_ir::features::FaceSelection::Native(native) => *native == collection.id(),
-                cadmpeg_ir::features::FaceSelection::Historical { native, .. } => {
+                cadmpeg_ir::features::selections::FaceSelection::Native(native) => {
+                    *native == collection.id()
+                }
+                cadmpeg_ir::features::selections::FaceSelection::Historical { native, .. } => {
                     native.as_str() == collection.id()
                 }
                 _ => false,
@@ -2211,7 +2258,8 @@ fn validate_features(
             // face join is checked by `face_selection::valid`. A Thicken in the
             // face-offset form is a Move Face operation.
             let expected = expected.ok().map(|mut expected| {
-                use cadmpeg_ir::features::{FaceSelection, FeatureOperation};
+                use cadmpeg_ir::features::selections::FaceSelection;
+                use cadmpeg_ir::features::FeatureOperation;
                 let faces_of = |operation: &FeatureOperation| match operation {
                     FeatureOperation::Thicken { faces, .. }
                     | FeatureOperation::MoveFace { faces, .. } => Some(faces.clone()),
@@ -2266,7 +2314,7 @@ fn validate_features(
                     .as_ref()
             };
             let length = |reference| match parameter(reference)? {
-                cadmpeg_ir::features::ParameterValue::Length(value) => Some(*value),
+                cadmpeg_ir::features::parameters::ParameterValue::Length(value) => Some(*value),
                 _ => None,
             };
             let admitted = match operation {
@@ -2287,7 +2335,9 @@ fn validate_features(
                     property,
                     |slot| length(*raw_feature.properties.references().get(slot)?),
                     |slot| match parameter(*raw_feature.properties.references().get(slot)?)? {
-                        cadmpeg_ir::features::ParameterValue::Angle(value) => Some(*value),
+                        cadmpeg_ir::features::parameters::ParameterValue::Angle(value) => {
+                            Some(*value)
+                        }
                         _ => None,
                     },
                 )
@@ -2361,7 +2411,9 @@ fn validate_features(
                         .value
                         .as_ref()?
                     {
-                        cadmpeg_ir::features::ParameterValue::Angle(angle) => Some(*angle),
+                        cadmpeg_ir::features::parameters::ParameterValue::Angle(angle) => {
+                            Some(*angle)
+                        }
                         _ => None,
                     }
                 },
@@ -2585,11 +2637,7 @@ fn validate_features(
                         &ir.model.features,
                         &ir.model.feature_result_topologies,
                         feature,
-                        &crate::feature::body_selection::ProducerRecords {
-                            features: &data.pm_dc_features,
-                            labels: &data.pm_dc_feature_labels,
-                            properties: &data.pm_dc_feature_properties,
-                        },
+                        &producer_records,
                     ),
                 )
             })
@@ -2625,11 +2673,7 @@ fn validate_features(
                         &ir.model.features,
                         &ir.model.feature_result_topologies,
                         feature,
-                        &crate::feature::body_selection::ProducerRecords {
-                            features: &data.pm_dc_features,
-                            labels: &data.pm_dc_feature_labels,
-                            properties: &data.pm_dc_feature_properties,
-                        },
+                        &producer_records,
                     ),
                     crate::feature::body_selection::qualified_split_target(
                         raw_feature,
@@ -3929,19 +3973,48 @@ fn validate_assembly(
             None,
         ));
     }
-    projected
-        .joints
-        .sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
-    let mut expected_joints = ir.model.assembly_joints.clone();
-    expected_joints.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
-    if expected_joints != projected.joints {
+    if !ir.scope().design {
+        if !ir.model.assembly_joints.is_empty() {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor grounding is outside the document's design scope".into(),
+                None,
+            ));
+        }
+        return Ok(());
+    }
+    if !ir.model.assembly_joints.is_empty() {
         findings.push(finding(
             Check::NativeLinks,
-            "Inventor neutral assembly joints do not match the typed assembly records".into(),
+            "Inventor grounding joints remain at design depth".into(),
             None,
         ));
     }
+    if !is_assembly_document(ir) {
+        return Ok(());
+    }
+    findings.extend(assembly_scope_findings(ir, &projected.joints));
     Ok(())
+}
+
+/// The assembly design scope against the one the typed grounding records
+/// project: the same occurrences, grounding, and unproduced bodies.
+pub(crate) fn assembly_scope_findings(
+    ir: &CadIr,
+    joints: &[cadmpeg_ir::products::AssemblyJoint],
+) -> Vec<Finding> {
+    let expected = crate::design_v11::assembly::scope(ir, joints);
+    if expected
+        .as_ref()
+        .is_ok_and(|expected| ir.design.scopes.as_slice() == expected.as_slice())
+    {
+        return Vec::new();
+    }
+    vec![finding(
+        Check::NativeLinks,
+        "Inventor assembly design scope does not match the typed assembly records".into(),
+        None,
+    )]
 }
 
 fn is_assembly_document(ir: &CadIr) -> bool {
@@ -3986,11 +4059,12 @@ fn unique<T: Eq + std::hash::Hash>(
 /// sides of its axis.
 fn revolve_axis_finding(
     feature: &cadmpeg_ir::features::FeatureId,
-    construction: &cadmpeg_ir::features::RevolveConstruction,
+    construction: &cadmpeg_ir::features::revolve::RevolveConstruction,
     sketches: &HashMap<&str, &cadmpeg_ir::sketches::Sketch>,
     entities: &HashMap<&str, &cadmpeg_ir::sketches::SketchEntity>,
 ) -> Option<Finding> {
-    let cadmpeg_ir::features::RevolveConstruction::Resolved { profile, axis, .. } = construction
+    let cadmpeg_ir::features::revolve::RevolveConstruction::Resolved { profile, axis, .. } =
+        construction
     else {
         return None;
     };
@@ -4159,6 +4233,117 @@ fn fillet_continuity_type_error<'a>(
         .and_then(type_at)
         .is_some_and(|type_id| type_id != boolean_type)
         .then_some("Inventor PmDc fillet continuity is not a Boolean record")
+}
+
+#[cfg(test)]
+impl NativeData {
+    /// Native data with every arena empty.
+    pub(crate) fn empty() -> Self {
+        Self {
+            storage_bands: Vec::new(),
+            databases: Vec::new(),
+            database_issues: Vec::new(),
+            registry: Vec::new(),
+            revisions: Vec::new(),
+            pairs: Vec::new(),
+            metadata: Vec::new(),
+            meta_sections: Vec::new(),
+            meta_types: Vec::new(),
+            metadata_issues: Vec::new(),
+            bulk: Vec::new(),
+            records: Vec::new(),
+            bulk_issues: Vec::new(),
+            unpaired: Vec::new(),
+            structural_issues: Vec::new(),
+            property_sets: Vec::new(),
+            property_sections: Vec::new(),
+            properties: Vec::new(),
+            property_issues: Vec::new(),
+            protein: ProteinRecord::Absent { id: String::new() },
+            protein_assets: Vec::new(),
+            protein_rejections: Vec::new(),
+            ufrx: UfrxRecord::Absent { id: String::new() },
+            assembly_occurrences: Vec::new(),
+            assembly_placements: Vec::new(),
+            design_view_representations: Vec::new(),
+            design_view_visibility: Vec::new(),
+            assembly_groundings: Vec::new(),
+            assembly_record_issues: Vec::new(),
+            pm_app_default_styles: Vec::new(),
+            pm_app_rendering_styles: Vec::new(),
+            pm_graphics_faces: Vec::new(),
+            pm_graphics_style_collections: Vec::new(),
+            pm_graphics_primary_color_styles: Vec::new(),
+            face_native_keys: Vec::new(),
+            body_native_keys: Vec::new(),
+            body_wrapper_links: Vec::new(),
+            composite_member_links: Vec::new(),
+            feature_history_states: Vec::new(),
+            presentation_record_issues: Vec::new(),
+            pm_dc_parameters: Vec::new(),
+            pm_dc_expressions: Vec::new(),
+            pm_dc_units: Vec::new(),
+            pm_dc_parameter_tables: Vec::new(),
+            pm_dc_model_roots: Vec::new(),
+            design_record_issues: Vec::new(),
+            pm_dc_sketches: Vec::new(),
+            pm_dc_sketch_entities: Vec::new(),
+            pm_dc_sketch_constraints: Vec::new(),
+            pm_dc_transforms: Vec::new(),
+            pm_dc_directions: Vec::new(),
+            sketch_record_issues: Vec::new(),
+            pm_dc_features: Vec::new(),
+            pm_dc_pattern_features: Vec::new(),
+            pm_dc_pattern_operands: Vec::new(),
+            pm_dc_feature_terminators: Vec::new(),
+            pm_dc_feature_properties: Vec::new(),
+            pm_dc_sheet_metal_styles: Vec::new(),
+            pm_dc_sheet_metal_flanges: Vec::new(),
+            pm_app_sheet_metal_unfold_rules: Vec::new(),
+            pm_app_sheet_metal_unfold_selections: Vec::new(),
+            pm_dc_feature_dimensions: Vec::new(),
+            pm_dc_feature_labels: Vec::new(),
+            pm_dc_thread_definitions: Vec::new(),
+            pm_dc_entity_style_links: Vec::new(),
+            pm_dc_kernel_entity_links: Vec::new(),
+            pm_dc_work_planes: Vec::new(),
+            feature_record_issues: Vec::new(),
+            active_carrier: ActiveCarrierRecord::NotApplicable { id: String::new() },
+            unknowns: Vec::new(),
+        }
+    }
+}
+
+/// [`design_v11_findings`] over the arenas a test document holds: each
+/// absent arena reads as empty.
+#[cfg(test)]
+pub(crate) fn design_v11_findings_from_arenas(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<Vec<Finding>, CodecError> {
+    let mut data = NativeData::empty();
+    if let Some(namespace) = ir.native.namespace("inventor") {
+        let read = |name: &str| namespace.arenas().contains_key(name);
+        macro_rules! fill {
+            ($field:ident) => {
+                if read(stringify!($field)) {
+                    data.$field = namespace.arena_as_for_decode(ctx, stringify!($field))?;
+                }
+            };
+        }
+        fill!(pm_dc_features);
+        fill!(pm_dc_pattern_features);
+        fill!(pm_dc_work_planes);
+        fill!(pm_dc_feature_properties);
+        fill!(pm_dc_sheet_metal_styles);
+        fill!(pm_dc_sheet_metal_flanges);
+        fill!(pm_app_sheet_metal_unfold_rules);
+        fill!(pm_app_sheet_metal_unfold_selections);
+        fill!(pm_dc_sketches);
+        fill!(pm_dc_parameters);
+        fill!(pm_dc_units);
+    }
+    design_v11_findings(ctx, ir, data)
 }
 
 #[cfg(test)]

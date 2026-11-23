@@ -66,6 +66,48 @@ impl InputDescriptor {
         }
     }
 
+    pub(crate) fn scan_zip_match(&self, name: &str) -> bool {
+        match &self.kind {
+            InputKind::Native { native, .. } => {
+                native.zip_scan_probe.is_some_and(|probe| probe(name))
+            }
+            InputKind::Neutral { .. } => false,
+        }
+    }
+
+    pub(crate) fn scan_compound_match(
+        &self,
+        entries: &[cadmpeg_container::compound::scan::ScanCompoundEntry],
+        budget: &cadmpeg_core::scan::ScanBudget<'_>,
+    ) -> Result<bool, cadmpeg_core::scan::StopReason> {
+        if let InputKind::Native { native, .. } = &self.kind {
+            if let Some(probe) = native.compound_scan_probe {
+                return probe(entries, budget);
+            }
+        }
+        Ok(false)
+    }
+
+    pub(crate) fn scan(
+        &self,
+        input: View<'_>,
+        budget: &cadmpeg_core::scan::ScanBudget<'_>,
+    ) -> cadmpeg_core::scan::DesignScan {
+        if let InputKind::Native { native, .. } = &self.kind {
+            if let Some(scan) = native.scanner {
+                return scan(input, budget);
+            }
+        }
+        let mut scan = cadmpeg_core::scan::DesignScan::new(Some(self.format_id().as_str()));
+        scan.finish(
+            budget,
+            Err(cadmpeg_core::scan::StopReason::Unsupported(
+                "reader has no design scan".into(),
+            )),
+        );
+        scan
+    }
+
     /// Decoder and inspector implementation for a native format.
     pub fn codec(&self) -> Option<&dyn Codec> {
         match &self.kind {
@@ -209,6 +251,7 @@ impl InputCatalog {
                         #[cfg(any(
                             feature = "fcstd",
                             feature = "f3d",
+                            feature = "solidedge",
                             feature = "inventor",
                             feature = "sldprt",
                             feature = "catia",
@@ -219,7 +262,9 @@ impl InputCatalog {
                             feature = "iges",
                             feature = "sat",
                             feature = "pvz",
-                            feature = "usd"
+                            feature = "edrawings",
+                            feature = "usd",
+                            feature = "onshape"
                         ))]
                         crate::descriptors::FormatKind::Native(native) => InputKind::Native {
                             native,
@@ -231,6 +276,8 @@ impl InputCatalog {
         }
     }
 
+    /// Every codec's judgement, strongest first. A codec whose judgement
+    /// fails other than on I/O or a resource ceiling does not apply.
     fn ranked(
         &self,
         judge: impl Fn(&dyn Codec) -> Result<Confidence, CodecError>,
@@ -240,7 +287,13 @@ impl InputCatalog {
             let Some(codec) = descriptor.codec() else {
                 continue;
             };
-            let confidence = judge(codec)?;
+            let confidence = match judge(codec) {
+                Ok(confidence) => confidence,
+                Err(error @ (CodecError::Io(_) | CodecError::ResourceLimit(_))) => {
+                    return Err(error)
+                }
+                Err(_) => Confidence::No,
+            };
             if confidence > Confidence::No {
                 matches.push((codec, confidence));
             }
@@ -493,6 +546,9 @@ mod tests {
         if cfg!(feature = "pvz") {
             expected.push("pvz");
         }
+        if cfg!(feature = "onshape") {
+            expected.push("onshape");
+        }
         assert_eq!(
             tie.candidates()
                 .iter()
@@ -502,6 +558,57 @@ mod tests {
         );
     }
 
+    #[cfg(all(feature = "fcstd", feature = "f3d"))]
+    #[test]
+    fn one_codecs_detection_error_leaves_the_other_codecs_judging() {
+        use cadmpeg_core::CodecError;
+        use cadmpeg_ir::codec::{Confidence, FormatId};
+
+        let catalog = InputCatalog::with_builtins();
+        let ranked = catalog
+            .ranked(|codec| match codec.id().as_str() {
+                "fcstd" => Err(CodecError::malformed("truncated archive directory")),
+                "f3d" => Ok(Confidence::High),
+                _ => Ok(Confidence::No),
+            })
+            .expect("a malformed judgement is no match");
+        assert_eq!(
+            ranked
+                .iter()
+                .map(|(codec, confidence)| (codec.id(), *confidence))
+                .collect::<Vec<_>>(),
+            [(FormatId::new("f3d"), Confidence::High)]
+        );
+    }
+
+    #[cfg(feature = "fcstd")]
+    #[test]
+    fn an_io_or_resource_error_in_detection_ends_detection() {
+        use cadmpeg_core::decode::{LimitScope, ResourceDimension, ResourceFailure, ResourceLimit};
+        use cadmpeg_core::CodecError;
+
+        let catalog = InputCatalog::with_builtins();
+        let error = catalog
+            .ranked(|_| Err(CodecError::Io(std::io::Error::other("source closed"))))
+            .err()
+            .expect("I/O ends detection");
+        assert!(matches!(error, CodecError::Io(_)));
+        let limit = ResourceLimit {
+            scope: LimitScope::Session,
+            dimension: ResourceDimension::InputBytes,
+            reason: ResourceFailure::BudgetExceeded,
+            limit: 4,
+            used: 4,
+            additional: 1,
+            operation: "detect",
+        };
+        let error = catalog
+            .ranked(|_| Err(CodecError::ResourceLimit(limit)))
+            .err()
+            .expect("a resource ceiling ends detection");
+        assert!(matches!(error, CodecError::ResourceLimit(found) if found == limit));
+    }
+
     #[cfg(feature = "step")]
     #[test]
     fn step_is_registered_as_a_reader() {
@@ -509,6 +616,21 @@ mod tests {
             .descriptors()
             .any(|descriptor| descriptor.format_id().as_str() == "step"
                 && descriptor.codec().is_some()));
+    }
+
+    #[cfg(feature = "solidedge")]
+    #[test]
+    fn solid_edge_is_registered_as_a_read_only_family_codec() {
+        let catalog = InputCatalog::with_builtins();
+        let descriptor = catalog
+            .descriptors()
+            .find(|descriptor| descriptor.format_id().as_str() == "solidedge")
+            .expect("Solid Edge descriptor exists");
+        assert_eq!(descriptor.extensions(), ["par", "psm", "asm"]);
+        assert!(descriptor.codec().is_some());
+        assert!(crate::Format::from_name("solidedge")
+            .expect("registry loads")
+            .is_none());
     }
 
     #[cfg(feature = "inventor")]
@@ -533,6 +655,45 @@ mod tests {
             .descriptors()
             .any(|descriptor| descriptor.format_id().as_str() == "iges"
                 && descriptor.codec().is_some()));
+    }
+
+    /// A package whose leading member is an `eModel` stream that opens with
+    /// the HSF comment resolves to the read-only eDrawings codec at high
+    /// confidence.
+    #[cfg(feature = "edrawings")]
+    #[test]
+    fn an_edrawings_package_resolves_to_the_read_only_edrawings_codec() {
+        use super::Selection;
+        use cadmpeg_ir::codec::Confidence;
+        use cadmpeg_test_support::zip_fixture::{archive, RawEntry};
+
+        let catalog = InputCatalog::with_builtins();
+        let descriptor = catalog
+            .descriptors()
+            .find(|descriptor| descriptor.format_id().as_str() == "edrawings")
+            .expect("eDrawings descriptor exists");
+        assert_eq!(descriptor.extensions(), ["easm", "eprt"]);
+
+        let package = archive(&[
+            RawEntry::stored(
+                "eModel",
+                b";; HSF V19.10\x20
+synthetic",
+            ),
+            RawEntry::stored("scene.xml", b"<SceneData/>"),
+        ]);
+        let ResolvedSource::Native { codec, selection } =
+            resolve(&catalog, &package, None).expect("detection")
+        else {
+            panic!("an eDrawings package resolves to a native codec");
+        };
+        assert_eq!(codec.id().as_str(), "edrawings");
+        assert_eq!(
+            selection,
+            Selection::Detected {
+                confidence: Confidence::High
+            }
+        );
     }
 
     /// A package whose leading member is a signed `.pvs` member resolves to

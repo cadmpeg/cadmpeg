@@ -693,6 +693,30 @@ and reports that choice. A header metadata loss, an unverified implementation
 level, or an out-of-range schema object identifier retains every header record
 as exact source-fidelity bytes under `step:file:header#<byte-offset>`.
 
+CADIR decision: the first `FILE_DESCRIPTION`, `FILE_NAME`, and `FILE_SCHEMA`
+records supply source attributes. A key names the record and its EXPRESS
+attribute:
+
+| Key                                      | Header attribute                        |
+| ---------------------------------------- | --------------------------------------- |
+| `file_description.description.<n>`      | `FILE_DESCRIPTION.description[n]`       |
+| `file_description.implementation_level`  | `FILE_DESCRIPTION.implementation_level` |
+| `file_name.name`                         | `FILE_NAME.name`                        |
+| `file_name.time_stamp`                   | `FILE_NAME.time_stamp`                  |
+| `file_name.author.<n>`                   | `FILE_NAME.author[n]`                   |
+| `file_name.organization.<n>`             | `FILE_NAME.organization[n]`             |
+| `file_name.preprocessor_version`         | `FILE_NAME.preprocessor_version`        |
+| `file_name.originating_system`           | `FILE_NAME.originating_system`          |
+| `file_name.authorization`                | `FILE_NAME.authorization`               |
+| `file_schema.schema_identifiers.<n>`     | `FILE_SCHEMA.schema_identifiers[n]`     |
+
+`<n>` is the zero-based position in the source list, and every list member
+holding a non-blank decodable string supplies an attribute. A value is the
+whole string after §4 escape decoding, with control characters left out; a
+string longer than its effective length below keeps every character. A string
+that is omitted, does not decode, or holds no non-whitespace character
+supplies no attribute.
+
 `FILE_DESCRIPTION` strings and every `FILE_NAME` string attribute have an
 effective length of at most 256 characters. A non-empty `FILE_NAME` timestamp
 uses the complete extended calendar-date and time-of-day form
@@ -1106,6 +1130,18 @@ or comment. DATA instance names are nonzero and unique across all DATA
 sections. A reference denotes a DATA instance or a REFERENCE binding. A
 duplicate name does not determine a unique reference target.
 An open literal or comment provides no continuation boundary.
+
+CADIR decision: the first statement of a repeated instance name, in file
+order across all DATA sections, is the instance, and every reference by the
+name resolves to it (CADIR §2.2). Each later statement of the name is read
+and not stated: its exact source is retained, and it is charged one
+`step/parse.record-omitted` loss that names the instance name and gives the
+copy's byte span. Where the first statement is unreadable, it is given up as
+its own part with the records that need it (CADIR §3.3), and no later
+statement of the name stands in its place: each later readable statement is
+charged as above. A later unreadable statement is given up as its own part,
+and the first statement stands. The repetition gives up neither the file nor
+the DATA section.
 
 Length values convert to millimetres. Plane-angle values convert to radians.
 `PLANE_ANGLE_MEASURE_WITH_UNIT` requires a `PLANE_ANGLE_UNIT`, and all
@@ -1763,9 +1799,28 @@ shell of the one sheet region. Curve-only and point-only sets remain
 standalone geometry. The writer states a region of a body that is not a
 solid and has no wire topology (a sheet or a general body) as a `GEOMETRIC_SET` of its faces' surfaces in a
 `GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION` when every face of the
-region is a forward face with no loops whose surface either carries no
-procedural construction and has a solved NURBS geometry, or is a rectangular
-parameter subset (written as a `RECTANGULAR_TRIMMED_SURFACE`). Other
+region is a forward face that either has no loops and a surface that carries
+no procedural construction and has a solved NURBS geometry, has no loops and
+a rectangular parameter subset surface (written as a
+`RECTANGULAR_TRIMMED_SURFACE`), or has a curve-bounded surface whose outer
+boundary its loops state and whose boundary curves pair one to one with its
+loops, each loop holding one coedge per segment
+of its boundary, on that segment's curve, in the segments' order or its
+reverse, with no face name and no coedge pcurve (a set member writes neither),
+and that no PMI annotation targets, through the face, an edge of its
+loops, a vertex of those edges, or the point of such a vertex. A set member
+states its own boundaries and no edge or vertex, and each member reads back
+in its own shell, with an edge for each boundary segment and a vertex for
+each segment's start, so a region takes the `OPEN_SHELL` path, which keeps
+the shared edge or vertex and the shell, when an edge is used twice, by one
+loop or by two; when two loops, of one face or of two, share a vertex; when
+a loop passes through a vertex twice, that is when more than two of its
+edge ends name the vertex; or when two faces share the curve of an edge. The
+writer states a curve-bounded face as a `CURVE_BOUNDED_SURFACE` on its support,
+with each boundary composite curve of the construction as a member of its
+boundary list. A boundary that shares a segment curve with the face's outer
+loop is an `OUTER_BOUNDARY_CURVE`; each other boundary is a
+`BOUNDARY_CURVE`. Other
 procedural surfaces, among them an exact NURBS whose retained ranges can make
 the written spline wider than the face and a sub-surface, which the writer
 states by its solved carrier rather than a trim to its ranges, take the
@@ -2693,7 +2748,9 @@ serialization order, record order, numeric entity identifiers, or equal
 transform values from different placement identities. `PLUS_MINUS_TOLERANCE` carries
 numeric lower and upper
 deviations, or the form variance, zone variance, grade, and source fields of
-`LIMITS_AND_FITS`.
+`LIMITS_AND_FITS`. A `TOLERANCE_VALUE` whose `lower_bound` exceeds its
+`upper_bound` holds the upper deviation in `lower_bound` and the lower
+deviation in `upper_bound`.
 
 An `APLL_POINT` or `APLL_POINT_WITH_SURFACE` referenced by an annotation
 placeholder, annotation-to-annotation, annotation-to-model, or auxiliary

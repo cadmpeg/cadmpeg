@@ -438,6 +438,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             unresolved_body_bindings: 0,
             history_only_body_bindings: 0,
             incomplete_features: 6,
+            surface_extend_edges_as_faces: 0,
             native_reference_images: 0,
             assumed_reference_image_flags: 0,
             native_decals: 0,
@@ -471,6 +472,8 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             partially_resolved_edge_members: 1,
             unresolved_edge_selections: 1,
             unrepaired_lost_edge_references: 1,
+            unplaced_linked_scopes: Vec::new(),
+            record_ordered_linked_scopes: Vec::new(),
         }
     );
 
@@ -508,7 +511,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             unreachable!();
         };
         groups[2].edges =
-            cadmpeg_ir::features::EdgeSelection::historical(
+            cadmpeg_ir::features::selections::EdgeSelection::historical(
                 cadmpeg_ir::ids::FeatureInputTopologyId::mint(
                     "test:model:feature-input#history-input",
                 )
@@ -999,6 +1002,7 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
         category: None,
         base_color: Some(material),
         properties: Default::default(),
+        native_ref: None,
     });
     let binding = |id: &str, target: AppearanceTarget| AppearanceBinding {
         id: format!("test:model:appearance-binding#{id}")
@@ -1010,6 +1014,7 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
         object_type: None,
         visible: None,
         channels: Default::default(),
+        native_ref: None,
     };
     ir.model.appearance_bindings = vec![
         binding("body", AppearanceTarget::Body(body)),
@@ -1119,7 +1124,8 @@ fn pattern_seed_plane_and_path_selections_count_as_retained_selections() {
 
 #[test]
 fn unstitch_faces_reports_native_and_absent_selections_as_incomplete() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::selections::FaceSelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     for (faces, expected) in [
         (FaceSelection::Native("native:face-group".into()), 1),
@@ -1142,5 +1148,54 @@ fn unstitch_faces_reports_native_and_absent_selections_as_incomplete() {
         let gaps = design_projection_gaps(&ir, &F3dNative::default());
         assert_eq!(gaps.incomplete_features, expected);
         assert_eq!(gaps.face_selections, expected);
+    }
+}
+
+#[test]
+fn an_extend_surface_with_historical_faces_counts_the_edges_as_faces_gap_and_stays_incomplete() {
+    use cadmpeg_ir::features::selections::FaceSelection;
+
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("test:model:feature#extend")
+        .expect("identity grammar");
+    let prefix = crate::ids::feature_input_prefix(&feature_id, 3);
+    let historical = FaceSelection::historical(
+        crate::ids::feature_input_topology_id(&feature_id, 3),
+        vec![crate::ids::history_input_face_id(&prefix, 8_i64)],
+        "f3d:test:design-record#500".into(),
+    )
+    .expect("historical selection");
+    for (faces, expected) in [
+        (historical, 1),
+        (
+            FaceSelection::Native("f3d:test:design-record#500".into()),
+            0,
+        ),
+    ] {
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        ir.model.features.push(cadmpeg_ir::features::Feature {
+            product_definition: None,
+            id: feature_id.clone(),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: Default::default(),
+            source_properties: Default::default(),
+            source_tag: Some("SurfaceExtend".into()),
+            source_text: None,
+            source_content: Default::default(),
+            evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::ExtendSurface {
+                        faces,
+                        distance: cadmpeg_ir::scalar::PositiveLength::new(5.0),
+                        method: cadmpeg_ir::features::surface_inputs::SurfaceExtension::Natural,
+                    },
+                ),
+            ),
+            native_ref: None,
+        });
+        let gaps = design_projection_gaps(&ir, &F3dNative::default());
+        assert_eq!(gaps.surface_extend_edges_as_faces, expected);
+        assert_eq!(gaps.incomplete_features, 1);
     }
 }

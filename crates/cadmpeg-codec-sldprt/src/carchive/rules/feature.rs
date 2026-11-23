@@ -3,7 +3,7 @@
 //! parameters, dimensions, bodies, fillets, sheet metal, patterns and
 //! geometry records.
 
-use super::super::reader::{bad, ParameterRecord, Ptr, Reader, Res, Stop, V};
+use super::super::reader::{bad, MarkOwner, ParameterRecord, Ptr, Reader, Res, Stop, V};
 use super::{ctx, sketch};
 
 const FFFEFF: [u8; 3] = [0xff, 0xfe, 0xff];
@@ -147,6 +147,9 @@ pub(crate) fn named(r: &mut Reader<'_>) -> Res<V> {
         Ptr::Obj { value, .. } => value,
         other => V::from(other),
     };
+    if let (V::Str(text), Some(&(_, at))) = (&name, r.open.last()) {
+        r.names.insert(at, text.clone());
+    }
     Ok(V::map([
         ("name", name),
         ("fam", V::from(fam)),
@@ -1289,14 +1292,14 @@ pub(crate) fn parameter(r: &mut Reader<'_>, integer: bool) -> Res<V> {
         let oid = if r.byte(r.p)? == 0 && isclass(r, r.p + 1, &["moDimTolerance_c"])? {
             r.skip(1);
             r.ptr(None)?;
-            V::None
+            None
         } else {
             let q = r.p;
             r.skip(23);
             if r.slice(q, 23).len() < 7 {
                 return Err(Stop::End(r.p));
             }
-            V::from(r.pu32(q + 3)?)
+            Some(r.pu32(q + 3)?)
         };
         let Some(j) = r.find(&FFFEFF, r.p, r.p + 2000) else {
             return Err(bad("feature dim placement: no string"));
@@ -1317,8 +1320,12 @@ pub(crate) fn parameter(r: &mut Reader<'_>, integer: bool) -> Res<V> {
         r.cstring()?;
         r.skip(40);
         r.cstring()?;
-        record(r, entry.as_ref(), &name, &val, value_at);
-        return Ok(V::map([("name", name), ("value", val), ("oid", oid)]));
+        record(r, entry.as_ref(), &name, &val, value_at, oid);
+        return Ok(V::map([
+            ("name", name),
+            ("value", val),
+            ("oid", oid.map_or(V::None, V::from)),
+        ]));
     }
     let x = usize::from(ver_or(r, 0) >= 18000);
     r.expect_bytes(&[0], "parameter u8 0")?;
@@ -1369,7 +1376,7 @@ pub(crate) fn parameter(r: &mut Reader<'_>, integer: bool) -> Res<V> {
         }
         ops = ptrs.into_iter().map(V::from).collect();
     }
-    record(r, entry.as_ref(), &name, &val, value_at);
+    record(r, entry.as_ref(), &name, &val, value_at, Some(oid));
     Ok(V::map([
         ("name", name),
         ("value", val),
@@ -1386,6 +1393,7 @@ fn record(
     name: &V,
     val: &V,
     value_at: usize,
+    object_id: Option<u32>,
 ) {
     if let Some(t) = entry {
         r.parameters.push(ParameterRecord {
@@ -1394,6 +1402,7 @@ fn record(
             value: val.as_f64().unwrap_or(f64::NAN),
             at: t.at,
             value_at,
+            object_id,
         });
     }
 }
@@ -2055,8 +2064,21 @@ pub(crate) fn compsolid(r: &mut Reader<'_>) -> Res<V> {
     Ok(V::from(r.ptr(None)?))
 }
 
-/// `moPMarkRecord_c`.
+/// `moPMarkRecord_c`, noted with the named object that holds it.
 pub(crate) fn pmark(r: &mut Reader<'_>) -> Res<V> {
+    let at = r.p;
+    let owner = r.holder_name();
+    let value = pmark_record(r)?;
+    r.marks.push(MarkOwner {
+        at,
+        end: r.p,
+        owner,
+    });
+    Ok(value)
+}
+
+/// The body of a `moPMarkRecord_c`.
+fn pmark_record(r: &mut Reader<'_>) -> Res<V> {
     let big_x = r.u32()?;
     let f = r.u32()?;
     if f == 1 {
@@ -2676,7 +2698,9 @@ pub(crate) fn favhandle(r: &mut Reader<'_>) -> Res<V> {
     Ok(list(s))
 }
 
-/// `moBaseBody_c`.
+/// `moBaseBody_c`: the feature, its body head, its `moPMarkRecord_c` and,
+/// when present, a `CString`, a u32 and the name. The next object follows
+/// directly.
 pub(crate) fn basebody(r: &mut Reader<'_>) -> Res<V> {
     feature(r, "moBaseBody_c")?;
     bodyhead(r, "moBaseBody_c")?;
@@ -2686,9 +2710,6 @@ pub(crate) fn basebody(r: &mut Reader<'_>) -> Res<V> {
         r.cstring()?;
         r.u32()?;
         nm = V::from(r.cstring()?);
-    }
-    if r.p < r.len() {
-        r.expect_zeros(4, "base body u32 0")?;
     }
     Ok(V::map([("name", nm)]))
 }

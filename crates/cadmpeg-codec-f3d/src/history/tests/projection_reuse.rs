@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Projection indexes retain ambiguity and reuse immutable snapshots.
-use crate::history::{
-    cache::SnapshotCache, common_face_vertex, face_boundary_edges, history_state_index,
-    topology_cache::TopologyQueryCache,
-};
+use crate::history::cache::SnapshotCache;
+use crate::history::face_boundaries::face_boundary_edges;
+use crate::history::history_states::history_state_index;
+use crate::history::topology_cache::TopologyQueryCache;
+use crate::history::vertex_recipes::common_face_vertex;
 use crate::history_records::{
     AsmDeltaState, AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalRelation,
     AsmHistoricalTopology,
@@ -138,7 +139,11 @@ fn loop_and_vertex_queries_share_the_endpoint_index() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut cache = TopologyQueryCache::default();
     assert_eq!(common_face_vertex(&[10], &topology, &mut cache), Some(40));
-    let contexts = crate::history::face_boundary_contexts_for_slots(&[10], &topology, &mut cache);
+    let contexts = crate::history::face_boundaries::face_boundary_contexts_for_slots(
+        &[10],
+        &topology,
+        &mut cache,
+    );
     assert_eq!(contexts.len(), 1);
     assert!(
         matches!(&contexts[0].loops[0].boundary, crate::records::topology::historical_context::DesignHistoricalLoopBoundary::Vertices(rows) if rows.len() == 1 && rows[0].vertex_slot == 40)

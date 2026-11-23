@@ -23,10 +23,7 @@
                 "kind": "feature",
                 "value": "creo:depdb:curve_expression_feature#7-269"
               }
-            ],
-            "rollback": {
-              "kind": "end"
-            }
+            ]
           }
         }
       ],
@@ -50,9 +47,22 @@
         {
           "definition": {
             "operation": {
-              "kind": "unresolved",
+              "kind": "extrude",
               "value": {
-                "family": "extrude"
+                "native_options": {},
+                "output": {},
+                "profile": {
+                  "at": {
+                    "kind": "input"
+                  },
+                  "native": [
+                    "creo:featdefs:sketch#917"
+                  ],
+                  "picks": {
+                    "kind": "unread"
+                  }
+                },
+                "source_settings": {}
               }
             }
           },
@@ -210,8 +220,8 @@
               "at": {
                 "kind": "after",
                 "value": {
-                  "kind": "feature",
-                  "value": "creo:depdb:curve_expression_feature#7-269"
+                  "kind": "container",
+                  "value": "creo:model:timeline#root"
                 }
               },
               "bodies": [],
@@ -223,7 +233,8 @@
           "occurrences": {},
           "roots": [
             "creo:model:timeline#root"
-          ]
+          ],
+          "unproduced": []
         }
       ],
       "sheet_metal_rules": [],

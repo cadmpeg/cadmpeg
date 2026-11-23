@@ -54,7 +54,7 @@ fn tree() -> String {
 }
 
 fn ctx() -> cadmpeg_core::decode::DecodeContext<'static> {
-    cadmpeg_test_support::service_decode_context()
+    cadmpeg_core::decode::test_support::service_decode_context()
 }
 
 fn named_block(section: &str, payload: Vec<u8>) -> Block {
@@ -67,7 +67,6 @@ fn named_block(section: &str, payload: Vec<u8>) -> Block {
         payload,
         ps_streams: Vec::new(),
         ps_probe_capped: false,
-        ps_auxiliary_refusal: None,
     }
 }
 
@@ -83,6 +82,8 @@ fn synthetic_scan(
         cache_cells: Vec::new(),
         compound_streams,
         solidworks: crate::container::SolidWorksEnvelopeScan::default(),
+        given_up: Vec::new(),
+        noncanonical: Vec::new(),
     }
 }
 
@@ -505,6 +506,90 @@ fn placed_virtual_documents_decode_into_the_definitions_that_own_them() {
         && loss.message.contains("`Bad^Top`")));
 }
 
+/// A decoded assembly placing one virtual part document whose second block,
+/// named `unread`, fails its CRC.
+fn virtual_part_with_unread_block(unread: &str) -> cadmpeg_ir::codec::DecodeResult {
+    use crate::test_support::container::{make_block, outer_header, sldprt_with_body};
+    use cadmpeg_ir::codec::Codec as _;
+    let mut part = sldprt_with_body(&crate::test_support::parasolid::triangle_body());
+    let mut block = make_block(0x43, unread, b"payload bytes");
+    block[crate::layout::block_frame_header::CRC32] ^= 0xff;
+    part.extend(&block);
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x42,
+        "swXmlContents/COMPINSTANCETREE",
+        virtual_tree().as_bytes(),
+    ));
+    source.extend(make_block(0x42, "VirtualComp/Box-sldprt", &part));
+    crate::SldprtCodec
+        .decode(
+            &mut std::io::Cursor::new(source),
+            &cadmpeg_ir::codec::DecodeOptions::default(),
+        )
+        .expect("decode")
+}
+
+fn virtual_box_bodies(decoded: &cadmpeg_ir::codec::DecodeResult) -> usize {
+    decoded
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.id.as_str() == "sldprt:assembly:model#8")
+        .map_or(0, |definition| definition.bodies.len())
+}
+
+/// The one `record.unreadable` loss, which names a committed stub.
+fn one_unreadable(
+    decoded: &cadmpeg_ir::codec::DecodeResult,
+) -> &cadmpeg_ir::report::loss::LossNote {
+    let code = cadmpeg_ir::unknown::part::record_unreadable_kind();
+    let unreadable = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == code)
+        .collect::<Vec<_>>();
+    let [loss] = unreadable.as_slice() else {
+        panic!("one loss names the component's unread block");
+    };
+    assert!(decoded.ir().native.0["sldprt"].arenas()["unknowns"]
+        .iter()
+        .any(|stub| loss.message.contains(&format!(" record={}: ", stub.id()))));
+    loss
+}
+
+#[test]
+fn a_placed_virtual_document_with_an_unread_part_keeps_its_body() {
+    let decoded = virtual_part_with_unread_block("Contents/Notes");
+    assert_eq!(virtual_box_bodies(&decoded), 1);
+    assert!(one_unreadable(&decoded)
+        .message
+        .contains("part native-block \"Contents/Notes\" stream=\"VirtualComp/Box-sldprt\" "));
+}
+
+#[test]
+fn a_placed_virtual_document_with_an_unread_partition_chooses_no_active_partition() {
+    let decoded = virtual_part_with_unread_block("Contents/Config-1-Partition");
+    assert_eq!(virtual_box_bodies(&decoded), 0);
+    assert!(one_unreadable(&decoded).message.contains(
+        "part native-block \"Contents/Config-1-Partition\" stream=\"VirtualComp/Box-sldprt\" "
+    ));
+    let unread = SldprtLossCode::ConfigActivePartitionUnread.kind();
+    assert!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == unread
+                && loss.message.contains("of VirtualComp/Box-sldprt")
+                && loss.message.contains("Contents/Config-1-Partition")),
+        "{:#?}",
+        decoded.report().losses
+    );
+}
+
 #[test]
 fn a_virtual_component_section_without_a_body_is_reported() {
     let sections =
@@ -896,7 +981,7 @@ fn a_reference_cycle_is_omitted_and_reported() {
 
 #[test]
 fn a_deep_sub_assembly_chain_is_refused_by_the_nesting_limit() {
-    let depth = 10_000;
+    let depth = cadmpeg_core::decode::ResourceLimits::service().max_recursion_depth + 1;
     let mut models = String::new();
     for level in 0..depth {
         let next = reference(&format!("r{level}"), &format!("m{}", level + 1), IDENTITY);

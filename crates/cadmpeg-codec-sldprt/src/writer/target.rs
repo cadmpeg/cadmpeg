@@ -2,7 +2,9 @@
 //! SLDPRT target resolution, write dispatch, and honesty checking.
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{target::ResolvedWrite, EncodeInput, ExportBody, WritePath};
+use cadmpeg_ir::codec::write::{
+    carried_source_losses, target::ResolvedWrite, EncodeInput, ExportBody, WritePath,
+};
 use cadmpeg_ir::Annotations;
 
 use crate::loss::SldprtLossCode;
@@ -29,7 +31,7 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
-    let (written, bytes) = match write(input, resolved.preserves_source()) {
+    let (written, bytes) = match write(input, resolved) {
         Err(error @ CodecError::NotImplemented(_)) if resolved.entry().is_none() => {
             let synthesis_targets = crate::dialect::TARGETS
                 .iter()
@@ -54,7 +56,11 @@ pub(crate) fn plan(
 
 /// Run replay when the target equals the source row; otherwise run the
 /// semantic writer and let its emitted envelope state the resulting row.
-fn write(input: EncodeInput<'_>, replay_eligible: bool) -> Result<(Written, Vec<u8>), CodecError> {
+fn write(
+    input: EncodeInput<'_>,
+    resolved: &ResolvedWrite<'_>,
+) -> Result<(Written, Vec<u8>), CodecError> {
+    let replay_eligible = resolved.preserves_source();
     let mut bytes = Vec::new();
     let written = match input.fidelity {
         Some(value) if replay_eligible => {
@@ -63,6 +69,7 @@ fn write(input: EncodeInput<'_>, replay_eligible: bool) -> Result<(Written, Vec<
                 input.ir,
                 &value.annotations,
                 &records,
+                resolved.target_id(),
                 &mut bytes,
             )?
         }
@@ -127,22 +134,35 @@ fn finish(
         .collect();
     if let Written::Semantic {
         coverage,
-        omitted_envelope_bytes,
+        stale_solid,
+        unwritten_edits,
+        unwritten,
+        losses: written_losses,
         ..
     } = written
     {
-        losses.extend(super::envelope::auxiliary_loss(*omitted_envelope_bytes));
+        losses.extend(stale_solid.iter().cloned());
+        losses.extend(unwritten_edits.iter().cloned());
+        losses.extend(written_losses.iter().cloned());
         // An unknown carrier cannot be generated. A successful semantic write
         // with one therefore retained or patched its native partition.
         let regenerated_brep = coverage.pcurves
             != cadmpeg_ir::codec::write::ArenaDisposition::Written
             && !super::requires_native_partition(input.ir);
         losses.extend(super::accounting::losses(input.ir, regenerated_brep));
+        losses.extend(unwritten.notes());
+    }
+    if let Written::StoredCompoundFile { loss } = written {
+        losses.push(loss.clone());
     }
     if let Some(message) = displacement {
         losses.push(SldprtLossCode::SourceDialectDisplaced.note(message));
     }
+    losses.extend(carried_source_losses(input.fidelity, &write_path));
     let path_note = match &write_path {
+        WritePath::VerbatimReplay if matches!(written, Written::StoredCompoundFile { .. }) => {
+            "preserved compound-file source replayed verbatim without the document's edits"
+        }
         WritePath::VerbatimReplay => "preserved source container replayed verbatim",
         WritePath::Patched { .. } => "preserved source container replayed with semantic patches",
         WritePath::Synthesized { .. } => "source container regenerated from IR",

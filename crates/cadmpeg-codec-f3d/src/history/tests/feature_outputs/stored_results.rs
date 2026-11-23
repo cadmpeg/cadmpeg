@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{history_in_source, native_base_feature};
-use crate::history::bind_feature_outputs;
+use crate::history::feature_outputs::bind_feature_outputs;
 use crate::loss::F3dLossCode;
-use cadmpeg_ir::features::{BodySelection, DistinctMembers, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::selections::{BodySelection, DistinctMembers};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 #[test]
 fn feature_outputs_keep_complete_stored_body_selection() {
@@ -77,7 +78,7 @@ fn feature_outputs_keep_the_copies_of_a_base_feature_copy() {
                     bodies: DistinctMembers::try_from(vec![body.id.clone()]).unwrap(),
                     native: scope.id.clone(),
                 },
-                translation: cadmpeg_ir::features::FiniteVector3::new(
+                translation: cadmpeg_ir::features::geometry::FiniteVector3::new(
                     cadmpeg_ir::math::Vector3::new(0.0, 0.0, 0.0),
                 )
                 .unwrap(),
@@ -107,4 +108,38 @@ fn feature_outputs_keep_the_copies_of_a_base_feature_copy() {
             "{kind:?}"
         );
     }
+}
+
+#[test]
+fn feature_outputs_keep_the_copies_that_a_paste_into_another_component_inserts() {
+    let (mut feature, scope, _, body) = native_base_feature();
+    let copy = cadmpeg_ir::ids::BodyId::mint("test:model:body#9").unwrap();
+    feature
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(
+            FeatureOperation::InsertBodies {
+                bodies: cadmpeg_ir::features::selections::InsertedBodies::Resolved {
+                    native: scope.id.clone(),
+                },
+            },
+        ));
+    feature
+        .evaluation
+        .set_outputs(DistinctMembers::try_from(vec![copy.clone()]).unwrap());
+    // Slot 2 of the chain has no active body, so a re-derived output set
+    // would be partial and charged.
+    let losses = bind_feature_outputs(
+        std::slice::from_mut(&mut feature),
+        std::slice::from_ref(&scope),
+        &mut [history_in_source("selected.smbh", &[1, 2])],
+        std::slice::from_ref(&body),
+        &Default::default(),
+        Some("BREP.selected.smbh"),
+    )
+    .unwrap()
+    .losses;
+    assert_eq!(feature.evaluation.outputs().as_slice(), [copy]);
+    assert!(losses
+        .iter()
+        .all(|loss| loss.code != F3dLossCode::FeatureOutputBodyUnbound.kind()));
 }
