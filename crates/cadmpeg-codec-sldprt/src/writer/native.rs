@@ -45,8 +45,12 @@ const NODE_NAME_CLASS: &str = "moNodeName_c";
 /// The material folder of a part with no material.
 const MATERIAL_NAME: &str = "Material <not specified>";
 
-/// The object identifiers of the default tree's nodes.
-mod ids {
+/// The object identifiers of the default tree's nodes: the first layout and
+/// the first identifier set of sldprt.md §2.3, "Object identifiers". `15`
+/// and `18` stay free: the set's third directional light, which the
+/// skeleton does not write (open item EV-34), and an object the tree does
+/// not hold.
+pub(crate) mod ids {
     pub(super) const ANNOTATIONS: u32 = 1;
     pub(super) const FRONT_PLANE: u32 = 2;
     pub(super) const TOP_PLANE: u32 = 3;
@@ -61,23 +65,84 @@ mod ids {
     pub(super) const AMBIENT: u32 = 12;
     pub(super) const DIRECTIONAL_1: u32 = 13;
     pub(super) const DIRECTIONAL_2: u32 = 14;
-    pub(super) const EQUATIONS: u32 = 15;
-    pub(super) const EXPLODED_VIEWS: u32 = 16;
-    pub(super) const SENSORS: u32 = 17;
-    pub(super) const FAVORITES: u32 = 18;
-    pub(super) const HISTORY: u32 = 19;
-    pub(super) const SELECTION_SETS: u32 = 20;
-    pub(super) const NOTES: u32 = 21;
-    pub(super) const NOTES_END: u32 = 22;
-    pub(super) const MARKUPS: u32 = 23;
+    pub(super) const EQUATIONS: u32 = 16;
+    pub(super) const EXPLODED_VIEWS: u32 = 17;
+    pub(super) const SENSORS: u32 = 19;
+    pub(super) const FAVORITES: u32 = 20;
+    pub(super) const HISTORY: u32 = 21;
+    pub(super) const SELECTION_SETS: u32 = 22;
+    /// The identifier of the first user feature. The history summary
+    /// numbers a generated part's features from it, and the tree writes a
+    /// user feature with the summary's identifier.
+    pub(crate) const FIRST_USER: u32 = 23;
+}
+
+/// The object identifiers of the objects whose count varies with the part.
+/// After the user features, in this order: the stored bodies' features, the
+/// dimension parameters in write order, and the notes folder pair and the
+/// markups folder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct Numbering {
+    /// The first stored body's feature; the next bodies' follow it.
+    pub(super) first_body: u32,
+    /// The first dimension parameter; the next parameters follow it.
+    pub(super) first_parameter: u32,
+    /// The `Notes` folder.
+    pub(super) notes: u32,
+    /// The `Notes1___EndTag___` folder.
+    pub(super) notes_end: u32,
+    /// The `Markups` folder.
+    pub(super) markups: u32,
+}
+
+impl Numbering {
+    /// The numbering of a part whose history summary's largest identifier
+    /// is `last_feature`, with `bodies` stored bodies and the user features
+    /// `features`.
+    pub(super) fn new(
+        last_feature: Option<u32>,
+        bodies: usize,
+        features: &[Feature],
+    ) -> Result<Self, CodecError> {
+        let after = |id: u32, count: usize| {
+            u32::try_from(count)
+                .ok()
+                .and_then(|count| id.checked_add(count))
+        };
+        let parameters = features.iter().map(Feature::parameters).sum();
+        let first_body = last_feature
+            .unwrap_or_default()
+            .max(ids::FIRST_USER - 1)
+            .checked_add(1);
+        let first_parameter = first_body.and_then(|id| after(id, bodies));
+        let notes = first_parameter.and_then(|id| after(id, parameters));
+        let notes_end = notes.and_then(|id| id.checked_add(1));
+        let markups = notes_end.and_then(|id| id.checked_add(1));
+        match (first_body, first_parameter, notes, notes_end, markups) {
+            (
+                Some(first_body),
+                Some(first_parameter),
+                Some(notes),
+                Some(notes_end),
+                Some(markups),
+            ) => Ok(Self {
+                first_body,
+                first_parameter,
+                notes,
+                notes_end,
+                markups,
+            }),
+            _ => Err(CodecError::malformed(
+                "SLDPRT native skeleton: the object count exceeds the identifier space",
+            )),
+        }
+    }
 }
 
 /// What the skeleton states about the part.
 pub(super) struct Facts<'a> {
-    /// What the default tree's object identifiers add to their `ids` values:
-    /// the largest identifier of the history summary, so the two never
-    /// share an identifier.
-    pub(super) id_base: u32,
+    /// The identifiers of the objects whose count varies.
+    pub(super) numbering: Numbering,
     /// The part's name.
     pub(super) name: &'a str,
     /// The name of the configuration the skeleton writes.
@@ -95,6 +160,25 @@ pub(super) enum Feature {
     Extrusion(extrude::Extrusion),
 }
 
+impl Feature {
+    /// The feature's object identifier.
+    pub(super) fn id(&self) -> u32 {
+        match self {
+            Self::Sketch(sketch) => sketch.feature_id,
+            Self::Extrusion(extrusion) => extrusion.feature_id,
+        }
+    }
+
+    /// The count of dimension parameters the feature writes: one per sketch
+    /// dimension, and an extrusion's depth.
+    fn parameters(&self) -> usize {
+        match self {
+            Self::Sketch(sketch) => sketch.dimensions.len(),
+            Self::Extrusion(_) => 1,
+        }
+    }
+}
+
 /// One stored body.
 pub(super) struct Body {
     /// The body identifier: [`config::FIRST_BODY_ID`] and up.
@@ -110,20 +194,18 @@ pub(super) struct Body {
 }
 
 impl Body {
-    /// The `index`-th body (from zero): `Imported<index + 1>`, with
-    /// identifiers after the default tree's (offset by `id_base`) and a GUID
-    /// derived from the part name and index.
+    /// The `index`-th body (from zero): `Imported<index + 1>`, its feature
+    /// numbered by `numbering`, and a GUID derived from the part name and
+    /// index.
     pub(super) fn numbered(
         part: &str,
-        id_base: u32,
+        numbering: &Numbering,
         index: usize,
         sheet: bool,
     ) -> Result<Self, CodecError> {
         let ordinal = u32::try_from(index).ok();
         let id = ordinal.and_then(|ordinal| config::FIRST_BODY_ID.checked_add(ordinal));
-        let feature_id = ordinal
-            .and_then(|ordinal| (ids::MARKUPS + 1).checked_add(ordinal))
-            .and_then(|feature| feature.checked_add(id_base));
+        let feature_id = ordinal.and_then(|ordinal| numbering.first_body.checked_add(ordinal));
         let (Some(id), Some(feature_id)) = (id, feature_id) else {
             return Err(CodecError::malformed(
                 "SLDPRT native skeleton: the body count exceeds the identifier space",

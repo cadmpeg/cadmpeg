@@ -1214,6 +1214,7 @@ fn circle_run_scalar(
             .into_iter()
             .collect(),
         archive_class: None,
+        archive_object_id: None,
     }
 }
 

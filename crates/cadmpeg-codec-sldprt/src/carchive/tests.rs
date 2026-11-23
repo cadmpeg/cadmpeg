@@ -4,6 +4,7 @@ use super::reader::{Reader, Stop};
 use super::Status;
 use crate::test_support::carchive::{
     config_object_stream, integer_parameter_body, real_parameter_body, resolved_features_stream,
+    toleranced_and_integer_parameters_stream,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
 use std::collections::{BTreeMap, HashMap};
@@ -210,6 +211,7 @@ fn every_parameter_class_reports_the_class_and_value_offset() {
         assert_eq!(&*parameter.class, class);
         assert_eq!(parameter.value_at, 38, "{class}");
         assert_eq!(parameter.value, expected, "{class}");
+        assert_eq!(parameter.object_id, Some(1), "{class}");
     }
 
     let mut known = known;
@@ -222,6 +224,38 @@ fn every_parameter_class_reports_the_class_and_value_offset() {
     assert_eq!(&*walk.parameters[0].class, "moIntegerParameter_c");
     assert_eq!(walk.parameters[0].value_at, 38);
     assert_eq!(walk.parameters[0].value, 42.0);
+    assert_eq!(walk.parameters[0].object_id, Some(1));
+}
+
+/// A parameter's identifier follows the trailer's zero byte and tolerance
+/// pointer: after the `moDimTolerance_c` body when the parameter has a
+/// tolerance, and after an integer parameter's four-byte value.
+#[test]
+fn a_parameter_holds_its_identifier_after_its_tolerance() {
+    let arena = DecodeArena::new();
+    let (ctx, _root) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop()).expect("context");
+    let resolved = toleranced_and_integer_parameters_stream(41, 42);
+    let count = crate::archive::resolved_count(&resolved).expect("the leading count");
+    let map = crate::archive::class_index_map(&config_object_stream(), count, &ctx)
+        .expect("the class walk succeeds")
+        .expect("the map reconciles with the leading count");
+    let walk = super::walk_configuration(&ctx, &map, &resolved, Some(17_000))
+        .expect("the walk succeeds")
+        .expect("the stream opens with its count");
+    assert_eq!(walk.status, Status::End);
+    let read = walk
+        .parameters
+        .iter()
+        .map(|parameter| (&*parameter.class, parameter.object_id))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        read,
+        [
+            ("moIntegerParameter_c", Some(41)),
+            ("moLengthParameter_c", Some(42))
+        ]
+    );
 }
 
 /// A counted string that declares more UTF-16 units than the stream carries

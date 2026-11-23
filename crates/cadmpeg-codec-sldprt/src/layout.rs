@@ -2994,6 +2994,8 @@ pub(crate) mod identity_reference_header {
 /// Offsets from the end of the name object's string. A Unicode CString follows at +16.
 /// ```
 pub(crate) mod named_object_header {
+    /// Record length in bytes. Spec §2.3.
+    pub(crate) const LEN: usize = 16;
     /// Offset of `object_id` (`u32`, little-endian). Spec §2.3.
     pub(crate) const OBJECT_ID: usize = 8;
 }

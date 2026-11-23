@@ -279,6 +279,9 @@ pub(crate) struct ParameterRecord {
     pub(crate) at: usize,
     /// Where the value (an f64, or the integer's u32) starts.
     pub(crate) value_at: usize,
+    /// The object identifier after the trailer's zero byte and tolerance
+    /// pointer (§2.3); `None` where the rule reads no identifier.
+    pub(crate) object_id: Option<u32>,
 }
 
 /// The classes whose object writes a sketch feature's `sgSketch`.
