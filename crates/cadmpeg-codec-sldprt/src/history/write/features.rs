@@ -1063,6 +1063,34 @@ mod tests {
         }
     }
 
+    /// A parameter the archive walk does not read (the part holds no
+    /// `Config-0` stream to walk with) holds its identifier after a zero byte
+    /// and a null tolerance pointer, and an added feature takes the identifier
+    /// past it.
+    #[test]
+    fn an_added_feature_takes_an_identifier_past_a_parameter_the_walk_does_not_read() {
+        let mut resolved = resolved_feature_classes_with_ids(&[("moLPattern_c", "MatrizL1", 132)]);
+        resolved.extend(crate::test_support::carchive::parameter_prefix());
+        resolved.extend(0.015_f64.to_le_bytes());
+        let mut trailer = [0_u8; 35];
+        trailer[3..7].copy_from_slice(&133_u32.to_le_bytes());
+        resolved.extend(trailer);
+        let mut source = sldprt_with_body(&triangle_body());
+        source.extend(make_block(
+            0x42,
+            "Contents/Keywords",
+            br#"<Keywords><Feature Name="MatrizL1" Type="MatrizL" id="132"><Dimension Name="D1">15</Dimension></Feature></Keywords>"#,
+        ));
+        source.extend(make_block(
+            0x42,
+            "Contents/Config-0-ResolvedFeatures",
+            &resolved,
+        ));
+        let written = written_with_an_added_datum_point(&source);
+        assert_eq!(source_ids(&written, "MatrizL1"), [Some(132)]);
+        assert_eq!(source_ids(&written, "Added"), [Some(134)]);
+    }
+
     /// When the part holds `u32::MAX - 1`, no identifier follows the largest,
     /// and an added feature takes the lowest identifier the part does not hold.
     #[test]

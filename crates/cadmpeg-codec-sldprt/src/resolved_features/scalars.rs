@@ -16,6 +16,22 @@ use std::collections::HashMap;
 use crate::layout::feature_input_operand_cell12 as operand_cell;
 use crate::records::ObjectId;
 
+/// The object identifier of `scalar`'s parameter object when its trailer
+/// opens with a zero byte and a null tolerance pointer (sldprt.md §2.3): the
+/// u32 at trailer +3.
+pub(crate) fn untoleranced_parameter_id(
+    payload: &[u8],
+    scalar: &FeatureInputScalar,
+) -> Option<u32> {
+    let trailer = usize::try_from(scalar.offset).ok()?.checked_add(8)?;
+    if payload.get(trailer..trailer.checked_add(3)?)? != [0; 3] {
+        return None;
+    }
+    crate::brep::feature_source::FeatureSourceId::try_from(scalar.object_id)
+        .ok()
+        .map(crate::brep::feature_source::FeatureSourceId::value)
+}
+
 pub(crate) fn named_scalars(
     payload: &[u8],
     parent: &str,
