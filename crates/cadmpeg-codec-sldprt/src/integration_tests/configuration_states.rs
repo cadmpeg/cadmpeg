@@ -176,7 +176,9 @@ fn a_stored_configuration_state_writes_its_partition() {
         panic!("one evaluation");
     };
     let stored = &evaluation.content.as_ref().unwrap().delta.records;
-    let sections = crate::writer::configuration_partitions(ir, 0.001, &mut Vec::new()).unwrap();
+    let sections = crate::writer::configuration_partitions(ir, 0.001)
+        .unwrap()
+        .sections;
     let section = format!("Contents/Config-{}-Partition", first.source_index.unwrap());
     let (_, payload) = sections
         .iter()
@@ -240,7 +242,13 @@ fn a_part_written_without_its_source_keeps_every_configuration_state() {
     let result = decode(two_configurations());
     let ir = result.ir();
     assert!(matches!(stored_states(ir).as_slice(), [(1, faces)] if *faces > 0));
-    let (_, written) = write_without_source(ir);
+    let (losses, written) = write_without_source(ir);
+    assert!(
+        !losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "writer.bodies-omitted"),
+        "{losses:#?}"
+    );
     let reread = decode(written);
     let back = reread.ir();
     assert_eq!(back.geometry.bodies.len(), ir.geometry.bodies.len());
@@ -320,4 +328,94 @@ fn a_part_with_no_face_writes_every_partition_bodiless() {
             .any(|loss| loss.code.local_code() == "output.empty"),
         "{losses:#?}"
     );
+}
+
+/// `ir` with its current bodies, its stored bodies, or both made wire bodies,
+/// which the partition encoder cannot write as a solid lump.
+fn with_wire_bodies(ir: &cadmpeg_ir::CadIr, current: bool, stored: bool) -> cadmpeg_ir::CadIr {
+    use cadmpeg_ir::topology::BodyKind;
+    let mut ir = ir.clone();
+    if current {
+        for body in &mut ir.geometry.bodies {
+            body.kind = BodyKind::Wire;
+        }
+    }
+    if stored {
+        for content in ir
+            .design
+            .evaluations
+            .iter_mut()
+            .filter_map(|evaluation| evaluation.content.as_mut())
+        {
+            for body in &mut content.delta.records.bodies {
+                body.kind = BodyKind::Wire;
+            }
+        }
+    }
+    ir
+}
+
+/// The message of the write's note on the bodies it cannot encode.
+fn bodies_omitted(losses: &[cadmpeg_ir::report::loss::LossNote]) -> Option<&str> {
+    losses
+        .iter()
+        .find(|loss| loss.code.local_code() == "writer.bodies-omitted")
+        .map(|loss| loss.message.as_str())
+}
+
+/// A current body the encoder cannot write is left out with a note, and the
+/// stored state of the other configuration is still written.
+#[test]
+fn a_current_body_the_encoder_cannot_write_is_left_out_with_a_note() {
+    let result = decode(two_configurations());
+    let ir = with_wire_bodies(result.ir(), true, false);
+    let (losses, written) = write_without_source(&ir);
+    let note = bodies_omitted(&losses).unwrap_or_else(|| panic!("{losses:#?}"));
+    assert!(note.contains(ir.geometry.bodies[0].id.as_str()), "{note}");
+    let reread = decode(written);
+    assert_eq!(stored_states(reread.ir()), stored_states(&ir));
+}
+
+/// A body of a stored state that the encoder cannot write is left out and
+/// named with its configuration; the rest of the part is written. Through
+/// the configuration partitions, and through the partitions of a part whose
+/// current geometry holds no face.
+#[test]
+fn a_stored_body_the_encoder_cannot_write_is_left_out_with_its_configuration() {
+    for source in [two_configurations(), faceless_active_configuration(true)] {
+        let result = decode(source);
+        let ir = with_wire_bodies(result.ir(), false, true);
+        let first = ir
+            .model
+            .configurations
+            .iter()
+            .find(|configuration| configuration.name.as_deref() == Some("First"))
+            .unwrap();
+        let stored = ir
+            .design
+            .evaluations
+            .iter()
+            .find_map(|evaluation| evaluation.content.as_ref())
+            .unwrap();
+        let [body] = stored.delta.records.bodies.as_slice() else {
+            panic!("one stored body");
+        };
+        let (losses, written) = write_without_source(&ir);
+        let note = bodies_omitted(&losses).unwrap_or_else(|| panic!("{losses:#?}"));
+        assert!(note.contains(body.id.as_str()), "{note}");
+        assert!(note.contains(first.id.as_str()), "{note}");
+        let bodiless = bodiless_note(&losses).unwrap_or_else(|| panic!("{losses:#?}"));
+        assert!(
+            bodiless.contains(&format!(
+                "Contents/Config-{}-Partition",
+                first.source_index.unwrap()
+            )),
+            "{bodiless}"
+        );
+        let reread = decode(written);
+        assert_eq!(reread.ir().geometry.bodies.len(), ir.geometry.bodies.len());
+        assert!(stored_states(reread.ir())
+            .iter()
+            .all(|(bodies, _)| *bodies == 0));
+    }
 }
