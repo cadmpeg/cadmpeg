@@ -19,11 +19,16 @@ mod containers;
 mod dimensions;
 pub(super) mod evaluations;
 mod expressions;
+mod fit;
 #[cfg(test)]
 pub(super) mod fixture;
+mod folds;
 mod index;
 mod linkage;
+mod matching;
+mod materials;
 mod names;
+mod overrides;
 mod parameter_records;
 #[cfg(test)]
 mod parameter_tests;
@@ -153,6 +158,7 @@ pub(super) fn check_design(
     evaluations::check_current_geometry(records, findings);
     resolved::check_resolved_states(ctx, records, ids, findings)?;
     configurations::check_configurations(records, findings);
+    overrides::check(records, findings);
     parameter_records::check_parameter_records(records, findings);
     programs::check_programs(records, findings);
     expressions::check_expressions(ctx, records, findings)?;
@@ -164,9 +170,12 @@ pub(super) fn check_design(
     let held = collect(ctx, ir, &index)?;
     index.add_dependencies(&held);
     let states = states::States::new(ir);
+    let matchers = matching::Matchers::new(&states);
     names::check(ctx, &index, &states, &held, findings)?;
-    selections::check(ctx, &index, &states, &held, findings)?;
+    selections::check(ctx, &index, &matchers, &held, findings)?;
     constructions::check(&index, &held, findings);
+    folds::check(&index, &matchers, &held, findings);
+    materials::check(&index, &matchers, findings);
     Ok(())
 }
 
