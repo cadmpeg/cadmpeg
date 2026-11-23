@@ -29,6 +29,13 @@ pub(super) fn records(data: &NativeData, findings: &mut Vec<Finding>) {
     );
     unique(
         findings,
+        data.pm_dc_sheet_metal_faces
+            .iter()
+            .map(|r| (r.identity.segment_token.as_str(), r.identity.record_ordinal)),
+        "Inventor sheet-metal face",
+    );
+    unique(
+        findings,
         data.pm_app_sheet_metal_unfold_rules
             .iter()
             .map(|r| (r.identity.segment_token.as_str(), r.identity.record_ordinal)),
@@ -77,7 +84,11 @@ pub(super) fn records(data: &NativeData, findings: &mut Vec<Finding>) {
             ));
         }
     }
-    for flange in &data.pm_dc_sheet_metal_flanges {
+    for flange in data
+        .pm_dc_sheet_metal_flanges
+        .iter()
+        .chain(&data.pm_dc_sheet_metal_faces)
+    {
         if !crate::feature::sheet_metal::flange::valid(flange, |ordinal| {
             raw.get(&(flange.identity.segment_token.as_str(), ordinal))
                 .copied()

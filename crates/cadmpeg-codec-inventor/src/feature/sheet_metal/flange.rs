@@ -19,6 +19,11 @@ pub(crate) const CONTOUR_TYPE: [u8; 16] = [
     0xb0, 0x74, 0x38, 0xa0, 0xd4, 0x11, 0x38, 0x12, 0x60, 0x00, 0x18, 0xaa, 0x9d, 0xcc, 0xef, 0xb0,
 ];
 
+/// The sheet-metal face parent. Its payload has the flange layout.
+pub(crate) const FACE_TYPE: [u8; 16] = [
+    0x90, 0x4b, 0xc1, 0xc4, 0xd3, 0x11, 0xff, 0x28, 0x60, 0x00, 0x4d, 0xa9, 0x9d, 0xcc, 0xef, 0xb0,
+];
+
 pub(crate) type Flange = Located<FlangePayload>;
 
 /// The parent operation that owns the plate, bend, and corner children.
@@ -29,13 +34,16 @@ pub(crate) enum FlangeKind {
     /// Type `b07438a0d4113812600018aa9dccefb0`: a contour flange from an
     /// open sketch profile.
     Contour,
+    /// Type `904bc1c4d311ff2860004da99dccefb0`: a sheet-metal face. It
+    /// names the plate, or the plate and bend, that it holds.
+    Face,
 }
 
 impl FlangeKind {
     /// The kind of a parsed parent record.
     pub(crate) fn of(flange: &Flange) -> Option<Self> {
         let type_id = flange.identity.type_id.as_str();
-        [Self::Edge, Self::Contour]
+        [Self::Edge, Self::Contour, Self::Face]
             .into_iter()
             .find(|kind| type_id == crate::pmdc::type_id_string(kind.type_id()))
     }
@@ -45,6 +53,7 @@ impl FlangeKind {
         match self {
             Self::Edge => TYPE,
             Self::Contour => CONTOUR_TYPE,
+            Self::Face => FACE_TYPE,
         }
     }
 }

@@ -62,6 +62,11 @@ pub(super) fn validate_mirrors(
         &data.pm_dc_work_planes,
     )
     .with_generated_nodes(&data.pm_dc_features, &data.pm_dc_feature_labels)
+    .with_sheet_metal_parents(
+        data.pm_dc_sheet_metal_flanges
+            .iter()
+            .chain(&data.pm_dc_sheet_metal_faces),
+    )
     .with_bodies(&bodies)
     .with_record_lengths(checked_lengths(&data.records, &generated_nodes));
     let patterns = unique_index(data.pm_dc_pattern_features.iter().map(|p| (p.id(), p)));
@@ -210,7 +215,14 @@ fn admits(
     let plane_dependency = crate::feature::mirror::supplying_feature(index, history, source);
     if !matches_history(feature, placement, source.header.flags)
         || feature.dependencies.len()
-            != source.participants.references().len() + usize::from(plane_dependency.is_some())
+            != source
+                .participants
+                .references()
+                .iter()
+                .filter_map(|reference| reference.record_ordinal())
+                .map(|ordinal| index.seed_ordinals(token, ordinal).len())
+                .sum::<usize>()
+                + usize::from(plane_dependency.is_some())
     {
         return None;
     }

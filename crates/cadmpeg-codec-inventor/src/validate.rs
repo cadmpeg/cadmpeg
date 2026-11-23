@@ -131,6 +131,7 @@ const OPTIONAL_ARENAS: &[&str] = &[
     "feature_history_states",
     "pm_dc_sheet_metal_styles",
     "pm_dc_sheet_metal_flanges",
+    "pm_dc_sheet_metal_faces",
     "pm_app_sheet_metal_unfold_rules",
     "pm_app_sheet_metal_unfold_selections",
     "drawing_records",
@@ -3123,6 +3124,7 @@ struct NativeData {
     pm_dc_feature_properties: Vec<PmDcFeatureProperty>,
     pm_dc_sheet_metal_styles: Vec<crate::feature::sheet_metal::style::Style>,
     pm_dc_sheet_metal_flanges: Vec<crate::feature::sheet_metal::flange::Flange>,
+    pm_dc_sheet_metal_faces: Vec<crate::feature::sheet_metal::flange::Flange>,
     pm_app_sheet_metal_unfold_rules: Vec<crate::feature::sheet_metal::unfold::Rule>,
     pm_app_sheet_metal_unfold_selections: Vec<crate::feature::sheet_metal::unfold::Selection>,
     pm_dc_feature_dimensions: Vec<crate::feature::revolve::Dimension>,
@@ -3264,6 +3266,8 @@ impl NativeData {
                 .arena_as_for_decode(ctx, "pm_dc_sheet_metal_styles")?,
             pm_dc_sheet_metal_flanges: namespace
                 .arena_as_for_decode(ctx, "pm_dc_sheet_metal_flanges")?,
+            pm_dc_sheet_metal_faces: namespace
+                .arena_as_for_decode(ctx, "pm_dc_sheet_metal_faces")?,
             pm_app_sheet_metal_unfold_rules: namespace
                 .arena_as_for_decode(ctx, "pm_app_sheet_metal_unfold_rules")?,
             pm_app_sheet_metal_unfold_selections: namespace

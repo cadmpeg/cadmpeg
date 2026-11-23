@@ -585,6 +585,13 @@ fn decode_container<'a>(
             &feature_inventory.sheet_metal_flanges,
         )?;
     }
+    if !feature_inventory.sheet_metal_faces.is_empty() {
+        namespace.set_arena(
+            ctx,
+            "pm_dc_sheet_metal_faces",
+            &feature_inventory.sheet_metal_faces,
+        )?;
+    }
     namespace.set_arena(
         ctx,
         "pm_dc_entity_style_links",
@@ -1537,6 +1544,10 @@ fn decode_container<'a>(
         (
             crate::coverage::PM_DC_SHEET_METAL_FLANGES,
             feature_inventory.sheet_metal_flanges.len(),
+        ),
+        (
+            crate::coverage::PM_DC_SHEET_METAL_FACES,
+            feature_inventory.sheet_metal_faces.len(),
         ),
     ];
     let coverage: cadmpeg_ir::report::decode::Coverage = coverage_entries
