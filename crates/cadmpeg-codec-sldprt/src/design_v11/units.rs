@@ -6,7 +6,6 @@
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::design::units::UnitSymbol;
 
-use crate::brep::graph::LINEAR_RESOLUTION_MM;
 use crate::container::{ContainerScan, Section};
 use crate::layout::{
     units_length_unit_block as block, units_length_unit_compound_four_word as four_word,
@@ -27,9 +26,6 @@ const NEW_CLASS: &[u8] = b"\xff\xff\x01\x00";
 const UNIT_CLASS_SUFFIX: &[u8] = b"Units_c";
 /// The unit class besides the length unit that holds a length unit pointer.
 const DENSITY_CLASS: &[u8] = b"moDensityUnits_c";
-/// Relative tolerance within which a displayed number equals one rounding
-/// step, and a rounding step equals the linear resolution.
-const EPS_DISPLAY_STEP: f64 = 1.0e-9;
 
 /// One base form of a unit object: the offsets, from the end of the class
 /// declaration, of the length unit's display decimal places and unit code.
@@ -56,66 +52,22 @@ const BLOCK_BASES: [Base; 1] = [Base {
     unit_code: block::UNIT_CODE,
 }];
 
-/// The unit in which a document displays lengths, and the decimal places to
-/// which Keywords rounds a displayed length.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct LengthUnit {
-    pub(crate) symbol: UnitSymbol,
-    pub(crate) decimals: u32,
-}
-
-impl LengthUnit {
-    /// Whether the displayed number `display` holds no value of the length
-    /// it rounds: it is at most one rounding step from zero, and the step is
-    /// coarser than the linear resolution, `1e-5` mm. A display whose step
-    /// is at or below the linear resolution is exact, zero included.
-    pub(crate) fn withholds(self, display: f64) -> bool {
-        let step = i32::try_from(self.decimals).map_or(0.0, |decimals| 10f64.powi(-decimals));
-        let (millimetres, _) = self.symbol.canonical();
-        step * millimetres > LINEAR_RESOLUTION_MM * (1.0 + EPS_DISPLAY_STEP)
-            && display.abs() <= step * (1.0 + EPS_DISPLAY_STEP)
-    }
-}
-
 /// The length unit every configuration's units table states, or `None`
 /// where a configuration states none or two state different ones.
 pub(crate) fn length_unit(scan: &ContainerScan) -> Option<UnitSymbol> {
-    let mut units = configurations(scan)
-        .map(|(payload, bases)| configuration_length_unit(payload, bases).map(|unit| unit.symbol));
+    let mut units =
+        configurations(scan).map(|(payload, bases)| configuration_length_unit(payload, bases));
     let first = units.next()??;
     units.try_fold(first, |unit, other| (other? == unit).then_some(unit))
 }
 
-/// The decimal places at which a part's configurations show lengths.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct LengthPlaces {
-    /// The most a configuration states, whose allowance is the narrowest: a
-    /// display shows a stored length within half a unit in its last place.
-    pub(crate) largest: u32,
-    /// The fewest a configuration states, whose rounding step is the
-    /// coarsest: a display near zero may round any length below that step.
-    pub(crate) fewest: u32,
-}
-
-/// The decimal places at which the part shows lengths: the largest and the
-/// fewest that its configurations' units tables state. `None` where a
-/// configuration states none.
-pub(crate) fn length_places(scan: &ContainerScan) -> Option<LengthPlaces> {
+/// The number of decimal places at which the part shows lengths: the
+/// largest that a configuration's units table states, whose allowance is the
+/// narrowest. `None` where a configuration states none.
+pub(crate) fn length_places(scan: &ContainerScan) -> Option<u32> {
     configurations(scan)
         .map(|(payload, bases)| configuration_length_places(payload, bases))
-        .try_fold(None, |range: Option<LengthPlaces>, places| {
-            let places = places?;
-            Some(Some(range.map_or(
-                LengthPlaces {
-                    largest: places,
-                    fewest: places,
-                },
-                |range| LengthPlaces {
-                    largest: range.largest.max(places),
-                    fewest: range.fewest.min(places),
-                },
-            )))
-        })
+        .try_fold(None, |largest, places| Some(largest.max(Some(places?))))
         .flatten()
 }
 
@@ -167,14 +119,10 @@ fn length_object<'a>(payload: &'a [u8], bases: &[Base]) -> Option<(&'a [u8], Bas
 }
 
 /// The length unit of one configuration's units table: the u16 unit code
-/// that follows the length unit object's base, and the display decimal
-/// places that open it.
-fn configuration_length_unit(payload: &[u8], bases: &[Base]) -> Option<LengthUnit> {
+/// that follows the length unit object's base.
+fn configuration_length_unit(payload: &[u8], bases: &[Base]) -> Option<UnitSymbol> {
     let (fields, base) = length_object(payload, bases)?;
-    Some(LengthUnit {
-        symbol: unit(View::u16_le_at(fields, base.unit_code)?)?,
-        decimals: View::u32_le_at(fields, base.display_decimals)?,
-    })
+    unit(View::u16_le_at(fields, base.unit_code)?)
 }
 
 /// The length precision of one configuration's units table: the first u32

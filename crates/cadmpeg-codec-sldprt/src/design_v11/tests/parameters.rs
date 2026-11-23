@@ -180,18 +180,9 @@ fn parameters_with_readings(
 /// name, dimension name, and the scalar.
 type NamedScalars<'a> = [(&'a str, &'a str, super::super::parameters::NamedScalar)];
 
-/// The length precision of a part whose every configuration states `places`.
-fn uniform(places: u32) -> super::super::units::LengthPlaces {
-    super::super::units::LengthPlaces {
-        largest: places,
-        fewest: places,
-    }
-}
-
 /// As [`parameters_with_readings`], with the parameters the records of the
 /// scalars `stated` state, the scalars `named` the features hold under their
-/// dimensions' names, and the part's length precision `length_places`, which
-/// every configuration states.
+/// dimensions' names, and the part's length precision `length_places`.
 fn parameters_with_scalars(
     keywords: &[u8],
     readings: &[(
@@ -266,7 +257,7 @@ fn parameters_with_scalars(
                 &super::super::parameters::Readings {
                     decoded,
                     length_unit,
-                    length_places: length_places.map(uniform),
+                    length_places,
                     bound: std::collections::HashMap::new(),
                     measured: std::collections::HashMap::new(),
                     driven: std::collections::HashSet::new(),
@@ -898,8 +889,8 @@ fn a_bare_display_number_states_no_unit() {
     assert_eq!(bare_display_number("17/32\""), None);
 }
 
-/// The v11 parameters and notes of a part in millimetres, whose units tables
-/// state the length precisions `places`, whose equation manager stores the metres of `manager` (feature, dimension, metres) beside
+/// The v11 parameters and notes of a part in millimetres, whose units table
+/// states the length precision `places`, whose equation manager stores the metres of `manager` (feature, dimension, metres) beside
 /// those dimensions, each confirmed by the line that drives it where
 /// `confirmed`, and whose decoder bound the dimensions `pmi` (feature,
 /// dimension) to a PMI record.
@@ -908,7 +899,7 @@ fn parameters_with_manager(
     manager: &[(&str, &str, f64)],
     confirmed: bool,
     pmi: &[(&str, &str)],
-    places: Option<super::super::units::LengthPlaces>,
+    places: Option<u32>,
 ) -> (
     Vec<cadmpeg_ir::design::parameter::DesignParameter>,
     Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -1036,7 +1027,7 @@ fn a_pmi_bound_dimension_takes_no_length_its_line_gives() {
         &[("Sketch1", "D1", third), ("Sketch1", "D2", third)],
         true,
         &[("Sketch1", "D2")],
-        Some(uniform(2)),
+        Some(2),
     );
     let (kind, number) = kind_and_number(&parameters, "D1");
     assert_eq!(kind, ValueKind::Quantity(Quantity::LENGTH));
@@ -1063,13 +1054,12 @@ fn a_line_confirms_a_rounded_length_only_at_the_stored_precision() {
             </Feature>
         </Keywords>"#;
     let manager = [("Sketch1", "D1", 0.007_823), ("Sketch1", "D2", 0.02)];
-    let (parameters, _) = parameters_with_manager(keywords, &manager, true, &[], Some(uniform(0)));
+    let (parameters, _) = parameters_with_manager(keywords, &manager, true, &[], Some(0));
     let (kind, number) = kind_and_number(&parameters, "D1");
     assert_eq!(kind, ValueKind::Quantity(Quantity::LENGTH));
     assert!((number.unwrap() - 7.823).abs() < 1e-9, "{number:?}");
 
-    let (parameters, notes) =
-        parameters_with_manager(keywords, &manager, true, &[], Some(uniform(2)));
+    let (parameters, notes) = parameters_with_manager(keywords, &manager, true, &[], Some(2));
     let (kind, number) = kind_and_number(&parameters, "D2");
     assert_eq!(kind, ValueKind::Quantity(Quantity::LENGTH));
     assert!((number.unwrap() - 20.0).abs() < 1e-9, "{number:?}");
@@ -1087,4 +1077,4 @@ fn a_line_confirms_a_rounded_length_only_at_the_stored_precision() {
     );
 }
 
-mod rounding_step;
+mod display_rounded;

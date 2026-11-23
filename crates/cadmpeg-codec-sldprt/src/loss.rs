@@ -383,9 +383,7 @@ pub(crate) enum SldprtLossCode {
     DesignParameterDisplayRounded,
     /// Parameters whose dimension text is a bare number and that hold no
     /// value: no record types the dimension or binds it to a stored value,
-    /// the part's length unit is not read, or the length is displayed at
-    /// most one rounding step from zero, a step coarser than the linear
-    /// resolution.
+    /// or the part's length unit is not read.
     DesignParameterValueUnread,
     /// Extrudes whose blind depth is bound to their record's only dimension,
     /// whose name is neither `Depth` nor `D1`.

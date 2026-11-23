@@ -16,14 +16,8 @@
 //! a display is a literal in that unit, and an angle dimension's a literal
 //! in degrees (§5.12): the stored value where a record stores one, else the
 //! displayed number, which Keywords rounds to the display precision and the
-//! `design.parameter-display-rounded` note names. A length display at most
-//! one rounding step from zero, at the fewest decimal places a configuration
-//! states, is no cache where that step is coarser than the linear
-//! resolution, `1e-5` mm: it holds no value of the length it rounds. A
-//! display whose step is at or below the linear resolution is exact, zero
-//! included. Where the root
-//! definition states no length unit, a length display is no cache (§5.13).
-//! A parameter that a reference
+//! `design.parameter-display-rounded` note names. Where it states none, a
+//! length display is no cache (§5.13). A parameter that a reference
 //! dimension binds is `Driven` and keeps its value (§6.1). A dimension's kind is the quantity its stored record states: the
 //! archive class of the `ResolvedFeatures` scalar it is bound to, the
 //! parameter class that scalar's own record states, the kind the decoder's
@@ -31,10 +25,9 @@
 //! quantity of the sketch or feature dimension that binds it. A bare display
 //! that none of these types takes the class and stored value of the scalar
 //! its feature holds under its name, where that value shows the display
-//! (Rule H1): a length at the part's length precision, the largest decimal
-//! places its units tables state, where each states them, as Keywords
-//! rounds a length to that many places whether it drops trailing zeros or
-//! keeps them. A bare display that rounds the length
+//! (Rule H1): a length at the part's length precision, where its units table
+//! states one, as Keywords rounds a length to that many places whether it
+//! drops trailing zeros or keeps them. A bare display that rounds the length
 //! the equation manager stores beside the dimension at that precision takes
 //! that length where the line that drives the dimension, evaluated over the
 //! values stored beside its names, gives it, unless the decoder bound it to a
@@ -64,7 +57,6 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 
 use super::tree::Timeline;
-use super::units::{LengthPlaces, LengthUnit};
 use crate::history::literals::dimension_display;
 use crate::history::parameters::eval::exact_integer_f64;
 use crate::history::parameters::{
@@ -512,9 +504,9 @@ struct Entry<'a> {
 pub(super) struct Readings<'a> {
     pub(super) decoded: Decoded<'a>,
     pub(super) length_unit: Option<UnitSymbol>,
-    /// The decimal places at which the part's configurations show lengths,
-    /// where each units table states them.
-    pub(super) length_places: Option<LengthPlaces>,
+    /// The number of decimal places at which the part shows lengths, where
+    /// its units tables state one (the largest, where they differ).
+    pub(super) length_places: Option<u32>,
     pub(super) bound: HashMap<ParameterId, Quantity>,
     /// The parameters a radius or diameter dimension binds, by what it
     /// measures: such a parameter states no display of that measure.
@@ -586,7 +578,6 @@ impl<'a> Entries<'a> {
             .collect::<Vec<_>>();
         if let Some(places) = readings
             .length_places
-            .map(|places| places.largest)
             .filter(|_| !readings.confirmed.is_empty())
         {
             for (entry, reading) in self.list.iter().zip(&mut read_entries) {
@@ -625,17 +616,7 @@ impl<'a> Entries<'a> {
         let unvalued = unvalued
             .into_iter()
             .filter(|(_, named)| !named.is_empty())
-            .map(|(reason, named)| {
-                let why = match (reason, readings.length_places) {
-                    (Unvalued::RoundingStep, Some(LengthPlaces { fewest: places, .. })) => format!(
-                        "lengths displayed at most one rounding step from zero, at the {places} \
-                         decimal places of the part's length unit, a step coarser than the 1e-5 \
-                         mm linear resolution"
-                    ),
-                    _ => reason.why().to_owned(),
-                };
-                format!("{} {why} ({named})", named.count())
-            })
+            .map(|(reason, named)| format!("{} {} ({named})", named.count(), reason.why()))
             .collect::<Vec<_>>();
         if !unvalued.is_empty() {
             losses.push(SldprtLossCode::DesignParameterValueUnread.note(format!(
@@ -738,27 +719,19 @@ enum Unvalued {
     /// The stored values of the scalars under its name differ from its
     /// display or from each other.
     Disagrees,
-    /// The dimension is a length displayed at most one rounding step from
-    /// zero, at the fewest decimal places a configuration states, a step
-    /// coarser than the linear resolution.
-    RoundingStep,
     /// The line that drives it gives the length the equation manager stores,
     /// and its display rounds that length at fewer decimal places than the
-    /// document's length precision. A dimension both this and
-    /// [`Self::RoundingStep`] describe has this reason: it names the stored
-    /// length the decoder refused, where `RoundingStep` names only why the
-    /// display holds none.
+    /// document's length precision.
     Coarse,
 }
 
 impl Unvalued {
-    const ALL: [Self; 7] = [
+    const ALL: [Self; 6] = [
         Self::Kind,
         Self::NoScalar,
         Self::ClassUnread,
         Self::LengthUnit,
         Self::Disagrees,
-        Self::RoundingStep,
         Self::Coarse,
     ];
 
@@ -772,10 +745,6 @@ impl Unvalued {
             }
             Self::LengthUnit => "lengths in a part whose length unit is not read",
             Self::Disagrees => "whose stored values differ from the display or from each other",
-            Self::RoundingStep => {
-                "lengths displayed at most one rounding step from zero, a step coarser than the \
-                 1e-5 mm linear resolution"
-            }
             Self::Coarse => {
                 "whose display rounds the length their equation gives at fewer decimal places than \
                  the document's length precision"
@@ -859,7 +828,7 @@ fn read(
             name,
             shown,
             readings.length_unit,
-            readings.length_places.map(|places| places.largest),
+            readings.length_places,
         ) {
             Some(reading) => reading,
             None => match shown.filter(|_| !references).map(|shown| {
@@ -868,7 +837,7 @@ fn read(
                     name,
                     shown,
                     readings.length_unit,
-                    readings.length_places.map(|places| places.largest),
+                    readings.length_places,
                 )
             }) {
                 Some(Ok((kind, value))) => (kind, Some(value)),
@@ -929,22 +898,7 @@ fn read(
         })
         .filter(|display| readings.measured.get(&entry.id) != Some(display));
     let number = bare.filter(|_| !user && !references);
-    let length = kind == ValueKind::Quantity(Quantity::LENGTH);
-    let below_step = number.is_some_and(|number| {
-        length
-            && value.is_none()
-            && readings
-                .length_unit
-                .zip(readings.length_places)
-                .is_some_and(|(symbol, places)| {
-                    LengthUnit {
-                        symbol,
-                        decimals: places.fewest,
-                    }
-                    .withholds(number)
-                })
-    });
-    if let Some(number) = number.filter(|_| !below_step) {
+    if let Some(number) = number {
         if let Some((node, literal)) =
             displayed_literal(number, &kind, value.as_ref(), readings.length_unit)
         {
@@ -958,12 +912,13 @@ fn read(
             };
         }
     }
-    let unvalued = (number.is_some() && value.is_none()).then_some(match unread {
-        Some(Unvalued::Coarse) => Unvalued::Coarse,
-        _ if below_step => Unvalued::RoundingStep,
-        _ if length && readings.length_unit.is_none() => Unvalued::LengthUnit,
-        _ => unread.unwrap_or(Unvalued::Kind),
-    });
+    let unvalued = (number.is_some() && value.is_none()).then_some(
+        if kind == ValueKind::Quantity(Quantity::LENGTH) && readings.length_unit.is_none() {
+            Unvalued::LengthUnit
+        } else {
+            unread.unwrap_or(Unvalued::Kind)
+        },
+    );
     Reading {
         kind,
         expression: Expression::Source {

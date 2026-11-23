@@ -67,8 +67,9 @@ pub(crate) struct Part<'a> {
     pub(crate) length: Option<UnitSymbol>,
     /// The equation managers of the configuration streams.
     pub(crate) equations: EquationManagers,
-    /// The decimal places at which the part's configurations show lengths.
-    pub(crate) length_places: Option<units::LengthPlaces>,
+    /// The number of decimal places at which the part shows lengths: the
+    /// largest its configurations state.
+    pub(crate) length_places: Option<u32>,
     /// What the stored marks state of the rollback position.
     pub(crate) rollback: Reading,
 }
