@@ -123,6 +123,7 @@ fn run_sketch(policy: &DecodePolicy) -> Result<(), CodecError> {
         &[feature_input_lane("lane", Some("0"))],
         &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
+        &mut crate::resolved_features::compact_reference_planes::TopReferenceSketches::default(),
     )?;
     assert!(losses.is_empty());
     assert_eq!(ir, expected);
