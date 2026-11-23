@@ -187,11 +187,11 @@ pub(super) fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec
                                     .extrude_prologue()
                                     .map(records::feature::extrude::DesignExtrudePrologue::start)
                                     == Some(records::feature::extrude::DesignExtrudeStart::FromFace)
-                                    || design::decode::operands::extrude_has_selected_termination(scope)
+                                    || design::decode::operands::construction_groups::extrude_has_selected_termination(scope)
                                     || (group.extrude_face_role()
                                         == Some(records::topology::extrude_selection::DesignExtrudeFaceRole::Termination)
                                         && group.members().len() == 1
-                                        && design::decode::operands::allows_slotted_extrude_face_targets(scope))
+                                        && design::decode::operands::extrude_roles::allows_slotted_extrude_face_targets(scope))
                             }
                         },
                         records::topology::construction::DesignConstructionOperandRole::Other(role) => {

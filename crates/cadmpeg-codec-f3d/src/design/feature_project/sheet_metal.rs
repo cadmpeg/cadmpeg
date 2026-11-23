@@ -508,7 +508,7 @@ pub(super) fn project_hem(
         groups,
         edge_operands,
         edge_identity_operands,
-        crate::history::effective_scope_previous_history_state_id(scope, histories),
+        crate::history::history_states::effective_scope_previous_history_state_id(scope, histories),
         &crate::ids::neutral_feature_id(scope),
         ctx,
     )?;
@@ -520,21 +520,23 @@ pub(super) fn project_hem(
     })) {
         Some(operand) => crate::design::edge_resolve::resolved_hem_edge_slot(
             operand,
-            crate::history::effective_scope_previous_history_state_id(scope, histories),
+            crate::history::history_states::effective_scope_previous_history_state_id(
+                scope, histories,
+            ),
         ),
         None => None,
     };
     let gap_length_form = edge_slot.and_then(|edge_slot| {
-        crate::history::hem_gap_length_form_for_scope(scope, edge_slot, histories)
+        crate::history::hem_gap_forms::hem_gap_length_form_for_scope(scope, edge_slot, histories)
     });
     let form = match (form, gap_length_form) {
         (
             SheetMetalHemForm::GapLength { gap: _, length },
-            Some(crate::history::HemGapLengthForm::Flat),
+            Some(crate::history::hem_gap_forms::HemGapLengthForm::Flat),
         ) => SheetMetalHemForm::Flat { length },
         (
             SheetMetalHemForm::GapLength { gap, length },
-            Some(crate::history::HemGapLengthForm::Open),
+            Some(crate::history::hem_gap_forms::HemGapLengthForm::Open),
         ) => SheetMetalHemForm::Open { gap, length },
         (form, _) => form,
     };

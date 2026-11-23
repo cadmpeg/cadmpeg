@@ -117,7 +117,7 @@ fn selection_fixture() -> (
 fn bind() -> BodySelection {
     let (scope, groups, operands, mut selection) = selection_fixture();
     let feature = FeatureId::mint("f3d:model:feature#body").unwrap();
-    super::super::bind_body_recipe_body_selection(
+    super::super::body_selections::bind_body_recipe_body_selection(
         &mut selection,
         &feature,
         1,
@@ -173,7 +173,7 @@ fn bind_direct(native_set: bool) -> BodySelection {
                 .unwrap(),
         );
     }
-    let inputs = super::super::FeatureBodySelectionInputs {
+    let inputs = super::super::body_selections::FeatureBodySelectionInputs {
         scopes: std::slice::from_ref(&scope),
         groups: &groups,
         body_recipe_operands: &operands,
@@ -185,7 +185,7 @@ fn bind_direct(native_set: bool) -> BodySelection {
         shells: std::slice::from_ref(&shell),
         faces: std::slice::from_ref(&face),
     };
-    super::super::bind_direct_body_recipe_body_selection(
+    super::super::body_selections::bind_direct_body_recipe_body_selection(
         &mut selection,
         &scope,
         &inputs,
@@ -316,7 +316,7 @@ fn bind_single_native_design_record(
 ) -> BodySelection {
     let (scope, groups, _, _) = selection_fixture();
     let mut selection = selection;
-    let inputs = super::super::FeatureBodySelectionInputs {
+    let inputs = super::super::body_selections::FeatureBodySelectionInputs {
         scopes: std::slice::from_ref(&scope),
         groups: &groups,
         body_recipe_operands: operands,
@@ -328,7 +328,7 @@ fn bind_single_native_design_record(
         shells,
         faces,
     };
-    super::super::bind_direct_body_recipe_body_selection(
+    super::super::body_selections::bind_direct_body_recipe_body_selection(
         &mut selection,
         &scope,
         &inputs,

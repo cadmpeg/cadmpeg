@@ -43,6 +43,13 @@ use crate::records::feature::scope::DesignScopeTailFlags;
 /// The tail flags of the parameter scopes, keyed by stream and record index.
 pub(super) type TailFlags<'a> = HashMap<(&'a str, u64), DesignScopeTailFlags>;
 
+/// The parameter scopes of the decode: the scope records and the tail flags
+/// read from them.
+pub(super) struct ScopeInputs<'a> {
+    pub(super) records: &'a [crate::records::feature::scope::DesignParameterScope],
+    pub(super) tail_flags: &'a TailFlags<'a>,
+}
+
 /// The containers and features of one document's timelines.
 #[derive(Default)]
 pub(super) struct Projected {
@@ -63,10 +70,16 @@ pub(super) fn project(
     features: &[LegacyFeature],
     timelines: &[DesignFeatureTimeline],
     types: &[SegmentType],
-    tail_flags: &TailFlags<'_>,
+    scope_inputs: &ScopeInputs<'_>,
     bodies: &BTreeSet<&str>,
     losses: &mut Vec<LossNote>,
 ) -> Result<BTreeMap<String, Projected>, CodecError> {
+    let tail_flags = scope_inputs.tail_flags;
+    let scopes = scope_inputs
+        .records
+        .iter()
+        .map(|scope| (scope.id.as_str(), scope))
+        .collect::<HashMap<_, _>>();
     let mut streams = BTreeMap::<&str, Vec<&DesignFeatureTimeline>>::new();
     for timeline in timelines {
         if let Some(stream) = native_stream(timeline.id()) {
@@ -101,13 +114,15 @@ pub(super) fn project(
                 ctx.charge_entities(1, "project F3D v11 timeline item")?;
                 let flags = tail_flags.get(&(stream, item.value)).copied();
                 rolled_back.push(flags.map(|flags| flags.rolled_back));
-                let feature = positioned
+                let feature = match positioned
                     .get(&(stream, ordinal))
                     .and_then(|candidates| item_feature(candidates, item.value))
-                    .map_or_else(
-                        || unprojected_item(stream, timeline, item.value, &item_types, flags),
-                        |feature| resolved_item(feature, bodies, losses),
-                    );
+                {
+                    Some(feature) => resolved_item(feature, bodies, &scopes, losses),
+                    None => {
+                        unprojected_item(stream, timeline, item.value, &item_types, flags, losses)
+                    }
+                };
                 members.push(Member::Feature(feature.id.clone()));
                 projected.features.push(feature);
                 ordinal = ordinal
@@ -208,11 +223,24 @@ fn item_feature<'a>(candidates: &[&'a LegacyFeature], record: u64) -> Option<&'a
 fn resolved_item(
     feature: &LegacyFeature,
     bodies: &BTreeSet<&str>,
+    scopes: &HashMap<&str, &crate::records::feature::scope::DesignParameterScope>,
     losses: &mut Vec<LossNote>,
 ) -> Feature {
     let operation = feature.evaluation.definition().operation();
+    let typed_pattern = |losses: &mut Vec<LossNote>| {
+        let scope = scopes.get(feature.native_ref.as_deref()?)?;
+        scope.rectangular_pattern_construction()?;
+        let projected = super::pattern::project(operation, scope, losses);
+        if projected.is_none() {
+            losses.push(F3dLossCode::FeatureRectangularPatternDesignNative.note(format!(
+                "feature {} retains its rectangular pattern in its native record: its direction, seeds, or run cannot be transferred to a v11 linear layout.", feature.id
+            )));
+        }
+        projected
+    };
     let operation = super::datum::project(feature, losses)
         .or_else(|| stored(operation, bodies))
+        .or_else(|| typed_pattern(losses))
         .unwrap_or_else(|| match family(operation) {
             Family::Typed(family) => FeatureOperation::Unresolved { family },
             Family::Native(kind) => native(&kind),
@@ -261,16 +289,23 @@ fn unprojected_item(
     record: u64,
     types: &ItemTypes<'_>,
     flags: Option<DesignScopeTailFlags>,
+    losses: &mut Vec<LossNote>,
 ) -> Feature {
+    let id = item_feature_id(stream, record);
+    if let Some(code) = flags.and_then(|flags| flags.active_without_result()) {
+        losses.push(code.note(format!(
+            "feature {id} stores the no-result flag and no suppression state byte; it is read as an active feature with no current result"
+        )));
+    }
     let operation = match types.guid(record).map(kind_family) {
         Some(Family::Typed(family)) => FeatureOperation::Unresolved { family },
         Some(Family::Native(kind)) => native(&kind),
         None => native("timeline-item"),
     };
     Feature {
-        id: item_feature_id(stream, record),
+        id,
         name: None,
-        suppressed: flags.map(|flags| Dimension::Literal(flags.suppressed)),
+        suppressed: flags.map(|flags| Dimension::Literal(flags.suppressed())),
         definition: FeatureDefinition {
             operation,
             refine: None,

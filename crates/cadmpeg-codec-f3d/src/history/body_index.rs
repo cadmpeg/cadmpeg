@@ -139,7 +139,7 @@ impl<'a> CompleteBodyIndex<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::CompleteBodyIndex;
+    use crate::history::body_index::CompleteBodyIndex;
     use crate::history::cache::SnapshotCache;
     use crate::history_records::{AsmHistoricalRelation, AsmHistoricalTopology};
     #[test]

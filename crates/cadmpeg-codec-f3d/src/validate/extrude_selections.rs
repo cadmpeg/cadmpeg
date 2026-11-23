@@ -223,7 +223,7 @@ pub(super) fn validate_entity_selection_operands(ctx: &Ctx, findings: &mut Vec<F
             header.byte_offset == operand.byte_offset() && header.class_tag == *operand.class_tag()
         }) && (operand.sketch_point().is_none()
             || group.is_some_and(|group| {
-                crate::design::decode::operands::is_loft_point_group(
+                crate::design::decode::operands::entity_selections::is_loft_point_group(
                     group,
                     &native.design_parameter_scopes,
                 )

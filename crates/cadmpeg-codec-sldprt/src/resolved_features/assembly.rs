@@ -2,6 +2,7 @@
 
 use super::markers::{admit_sketch_input_entities, reference_cells, relation_bindings};
 use super::names::{class_declarations, configuration, object_names};
+use super::parameter_classes::ConfigurationMap;
 use super::scalars::named_scalars;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use crate::container::ContainerScan;
@@ -14,6 +15,9 @@ use cadmpeg_ir::Exactness;
 use std::collections::HashMap;
 
 const RESOLVED_FEATURES_SUFFIX: &str = "-resolvedfeatures";
+
+/// The `Config-N` class map each `ResolvedFeatures` lane continues, by lane id.
+pub(crate) type ConfigurationMaps = HashMap<String, ConfigurationMap>;
 
 pub(crate) fn is_supplemental_config_lane(lane: &FeatureInputLane) -> bool {
     lane.id.contains(":config-objects#")
@@ -40,8 +44,9 @@ pub(crate) fn tag_mark_references(lanes: &mut [FeatureInputLane], spans: &MarkSp
 }
 
 /// The feature-input lanes of a part, the exact sketch profiles of each lane,
-/// the archive walk's `moPMarkRecord_c` holders of each configuration, and the
-/// extents of the records.
+/// the archive walk's `moPMarkRecord_c` holders of each configuration, the
+/// extents of the records, and the `Config-N` class map each lane continues,
+/// by lane id.
 pub(crate) fn lanes(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -53,6 +58,7 @@ pub(crate) fn lanes(
         super::profiles::ExactProfiles,
         crate::rollback::MarkOwners,
         MarkSpans,
+        ConfigurationMaps,
     ),
     cadmpeg_core::CodecError,
 > {
@@ -65,6 +71,7 @@ pub(crate) fn lanes(
     let mut exact = super::profiles::ExactProfiles::default();
     let mut mark_owners = crate::rollback::MarkOwners::new();
     let mut mark_spans = MarkSpans::new();
+    let mut configuration_maps = ConfigurationMaps::new();
     for source in scan.sections() {
         let Some(section) = source.name() else {
             continue;
@@ -78,7 +85,7 @@ pub(crate) fn lanes(
         }
         let mut lane = feature_input_lane(ctx, source, section, "resolved-features", annotations)?;
         if has_explicit_lanes {
-            let marks = type_scalars_from_archive(
+            let (marks, configuration) = type_scalars_from_archive(
                 ctx,
                 scan,
                 section,
@@ -99,16 +106,21 @@ pub(crate) fn lanes(
             if let Some(name) = configuration_name(section) {
                 mark_owners.insert(name.to_ascii_lowercase(), marks);
             }
+            if let Some(configuration) = configuration {
+                configuration_maps.insert(lane.id.clone(), configuration);
+            }
         }
         result.push(lane);
     }
-    Ok((result, exact, mark_owners, mark_spans))
+    Ok((result, exact, mark_owners, mark_spans, configuration_maps))
 }
 
 /// Give each scalar of a `Config-N-ResolvedFeatures` lane the class of the
 /// parameter object whose value it is, from the exact walk of the stream.
 /// Scalars the walk did not reach keep no class. Returns the walk's
-/// `moPMarkRecord_c` records with the features that hold them.
+/// `moPMarkRecord_c` records with the features that hold them, and the
+/// classes of the `Config-N` map the lane continues, where a walk of
+/// `Config-N` reconciles with the stream's map count.
 fn type_scalars_from_archive(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -117,9 +129,15 @@ fn type_scalars_from_archive(
     lane: &mut FeatureInputLane,
     exact: &mut super::profiles::ExactProfiles,
     losses: &mut Vec<LossNote>,
-) -> Result<Vec<crate::carchive::reader::MarkOwner>, cadmpeg_core::CodecError> {
+) -> Result<
+    (
+        Vec<crate::carchive::reader::MarkOwner>,
+        Option<ConfigurationMap>,
+    ),
+    cadmpeg_core::CodecError,
+> {
     let Some(config_name) = configuration_name(section) else {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), None));
     };
     let Some(config) = scan.sections().find_map(|other| {
         other
@@ -127,16 +145,23 @@ fn type_scalars_from_archive(
             .filter(|name| name.replace('\\', "/").eq_ignore_ascii_case(&config_name))
             .map(|_| other.payload())
     }) else {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), None));
     };
+    let Some(count) = crate::archive::resolved_count(resolved) else {
+        return Ok((Vec::new(), None));
+    };
+    let Some(map) = crate::archive::class_index_map(config, count, ctx)? else {
+        return Ok((Vec::new(), None));
+    };
+    let configuration = Some(ConfigurationMap::reconciled(count, &map));
     let Some(version) =
         crate::carchive::walk_version(crate::container::declared_sw_version(scan), config)
     else {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), configuration));
     };
-    let Some(mut walk) = crate::carchive::walk_configuration(ctx, config, resolved, Some(version))?
+    let Some(mut walk) = crate::carchive::walk_configuration(ctx, &map, resolved, Some(version))?
     else {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), configuration));
     };
     let marks = std::mem::take(&mut walk.marks);
     if walk.status == crate::carchive::Status::End {
@@ -147,13 +172,13 @@ fn type_scalars_from_archive(
             "the archive walk of {config_name} stopped before the end of the stream, so its \
              scalars keep no parameter class"
         )));
-        return Ok(marks);
+        return Ok((marks, configuration));
     }
     let classes = scalar_archive_classes(&walk);
     for scalar in &mut lane.scalars {
         scalar.archive_class = classes.get(&scalar.offset).copied();
     }
-    Ok(marks)
+    Ok((marks, configuration))
 }
 
 /// The `Config-N` name a `Config-N-ResolvedFeatures` section belongs to.

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Revolve projection and revolve axis binding.
 
-use crate::design::decode::operands::entity_selection_matches_curve;
+use crate::design::decode::operands::entity_selections::entity_selection_matches_curve;
 use crate::design::feature_project::sweep_loft::fixed_boolean_operation;
 use crate::design::feature_project::unique_feature_match;
 use crate::ids;
@@ -567,7 +567,7 @@ pub(crate) fn bind_revolve_face_axes(
                         .map(|face_id| analytic_axis_for_face(face_id, faces, surfaces))
                         .all(|axis| {
                             axis.is_some_and(|axis| {
-                                crate::history::same_axis_line(
+                                crate::history::body_closures::same_axis_line(
                                     (first.origin.get(), first.direction.get()),
                                     (axis.origin.get(), axis.direction.get()),
                                 )
@@ -577,7 +577,7 @@ pub(crate) fn bind_revolve_face_axes(
                 });
             let axis = match (entity_axis, recipe_axis) {
                 (Some(entity), Some(recipe))
-                    if crate::history::same_axis_line(
+                    if crate::history::body_closures::same_axis_line(
                         (entity.origin.get(), entity.direction.get()),
                         (recipe.origin.get(), recipe.direction.get()),
                     ) =>

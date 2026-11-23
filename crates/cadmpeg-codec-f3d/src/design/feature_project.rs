@@ -1319,14 +1319,22 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             str::to_owned,
                         ),
                 ),
-                suppressed: Some(scope.tail_flags.map_or_else(
-                    || {
+                suppressed: Some(match scope.tail_flags {
+                    Some(flags) => {
+                        if let Some(code) = flags.active_without_result() {
+                            projection_losses.push(code.note(format!(
+                                "scope {} stores the no-result flag and no suppression state byte; it is read as an active feature with no current result",
+                                scope.id
+                            )));
+                        }
+                        flags.suppressed()
+                    }
+                    None => {
                         family.is_some_and(stateless_scope_is_suppressed)
                             && scope.history_state_id().is_none()
                             && scope.previous_history_state_id().is_none()
-                    },
-                    |flags| flags.suppressed,
-                )),
+                    }
+                }),
                 dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 source_properties: if promoted_fillet_source.is_some() || promoted_fillet_sets.is_some() || matches!(
                     &definition,
@@ -2158,12 +2166,16 @@ fn project_face_selection(
     histories: &[crate::history_records::AsmHistory],
 ) -> Result<cadmpeg_ir::features::selections::FaceSelection, CodecError> {
     let historical = if let Some(previous_state_id) =
-        crate::history::effective_scope_previous_history_state_id(scope, histories)
+        crate::history::history_states::effective_scope_previous_history_state_id(scope, histories)
     {
         let updated_face_slots = scope
             .history_state_id()
             .and_then(|state_id| {
-                crate::history::unique_history_state_pair(histories, state_id, previous_state_id)
+                crate::history::history_states::unique_history_state_pair(
+                    histories,
+                    state_id,
+                    previous_state_id,
+                )
             })
             .and_then(|(_, state, _)| state.transition.as_ref())
             .map_or(&[][..], |transition| {

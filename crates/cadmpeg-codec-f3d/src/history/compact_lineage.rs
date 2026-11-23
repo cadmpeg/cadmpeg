@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Independent lineage selectors for compact edge-treatment scopes.
-use super::{entity_in_brep_source, historical_brep_source, history_state_pair};
+use super::face_resolution::{entity_in_brep_source, historical_brep_source};
+use super::history_states::history_state_pair;
 use crate::history_records::AsmHistory;
 use crate::ids::same_native_occurrence;
 use crate::records::{

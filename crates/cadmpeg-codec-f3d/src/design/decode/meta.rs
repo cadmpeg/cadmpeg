@@ -1039,7 +1039,7 @@ pub(crate) fn meta_scope_matches_bulk(scope: &str, bulk_entry_name: &str) -> boo
     observed.next().is_none()
 }
 
-fn local_reference(
+pub(crate) fn local_reference(
     reference: &Reference<&str, crate::bytes::utf16::Utf16View<'_>>,
     type_guids_by_entity: &HashMap<u64, Vec<&str>>,
 ) -> Option<u64> {
@@ -1056,7 +1056,7 @@ fn local_reference(
     Some(target)
 }
 
-fn parse_feature_timeline_record(
+pub(crate) fn parse_feature_timeline_record(
     bytes: &[u8],
     stream: &str,
     frame: std::ops::Range<usize>,

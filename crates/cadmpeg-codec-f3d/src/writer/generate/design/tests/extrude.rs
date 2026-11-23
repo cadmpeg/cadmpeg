@@ -4,6 +4,8 @@
 //! "Side-face walk"), decoded back and read from the archive's Design
 //! segment.
 
+use std::collections::BTreeSet;
+
 use cadmpeg_ir::design::construction::Construction;
 use cadmpeg_ir::design::container::Container;
 use cadmpeg_ir::design::dimension::Dimension;
@@ -33,7 +35,7 @@ use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::SketchId;
 
-use super::super::extrude::{ring, LoopEntry};
+use super::super::extrude::profile::{profile, LoopEntry, ProfileLoop};
 use super::super::sketch::{CurveGeometry, OriginPlane, PlannedCurve, PlannedSketch, Support};
 use super::roster::segment;
 use super::sketch::{
@@ -44,6 +46,12 @@ use super::{
     loss, neutral, number, parameter, parameter_id, scoped_cube, write, write_bytes, EXTRUDE,
     SKETCH,
 };
+
+mod arcs;
+mod construction;
+mod faces;
+mod holes;
+mod reversed;
 
 const TOLERANCE: f64 = 1e-9;
 /// The cube's edge, in mm.
@@ -532,6 +540,41 @@ fn every_parameter_record_closes_with_the_trailer_of_its_type_version() {
     }
 }
 
+/// The user parameters and the Extrude's owned parameters store family
+/// discriminator `6`, and the residual note names the value (DR-911).
+#[test]
+fn the_parameter_records_of_an_extrude_design_store_one_discriminator() {
+    let (report, decoded, bytes) = write_bytes(&sketch_and_extrude(blind(), false));
+    let design = segment(&bytes, "FusionDesignSegmentType1");
+    let mut kinds = BTreeSet::new();
+    for (index, _) in design.records_of(super::super::types::PARAMETER.guid) {
+        let record = design.record(index);
+        assert_eq!(u32_at(record, 22), 6, "record {index}");
+        let (_, comment_end) = utf16_at(record, 27);
+        let expression_at = comment_end + 4 + if record[comment_end + 4] == 0 { 1 } else { 11 };
+        let (_, end) = utf16_at(record, expression_at);
+        kinds.insert(utf16_at(record, end + 10).0);
+    }
+    assert!(kinds.contains("User Parameter"), "{kinds:?}");
+    assert!(kinds.contains("AlongDistance"), "{kinds:?}");
+    assert!(decoded
+        .model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.name == "Width" && parameter.owner.is_none()));
+    let notes = loss(&report, "export/record.residual-unavailable")
+        .into_iter()
+        .filter(|message| message.contains("user parameter"))
+        .collect::<Vec<_>>();
+    let [note] = notes.as_slice() else {
+        panic!("one user-parameter note: {:#?}", report.losses);
+    };
+    assert!(
+        note.contains("family discriminator 6") && note.contains("DR-911"),
+        "{note}"
+    );
+}
+
 #[test]
 fn the_extrude_commits_the_head_state() {
     let (_, decoded) = write(&sketch_and_extrude(blind(), false));
@@ -870,6 +913,17 @@ fn planned<'a>(
 
 fn entry(curve: usize, reversed: bool) -> LoopEntry {
     LoopEntry { curve, reversed }
+}
+
+/// The one loop of `sketch`'s profile.
+fn ring(sketch: &PlannedSketch<'_>, tolerance: f64) -> Result<Vec<LoopEntry>, &'static str> {
+    match profile(sketch, tolerance)?.as_slice() {
+        [ProfileLoop {
+            exterior: true,
+            entries,
+        }] => Ok(entries.clone()),
+        other => panic!("one exterior loop: {other:?}"),
+    }
 }
 
 #[test]
