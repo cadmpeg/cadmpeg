@@ -6,14 +6,15 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 
 /// Whether `error` ends the session rather than one record: an I/O error or a
-/// resource refusal, as for `DecodeContext::run_part`.
+/// resource refusal.
 pub(crate) fn is_fatal(error: &CodecError) -> bool {
     matches!(error, CodecError::Io(_) | CodecError::ResourceLimit(_))
 }
 
-/// Contains an error at one record. I/O errors and resource refusals end the
-/// session, as for `DecodeContext::run_part`; every other error becomes a
-/// loss and the record stays in the source archive.
+/// Contains an error at one record. An I/O error or a resource refusal is
+/// returned to the caller and ends the session. Every other error, including
+/// a refusal scoped to a Part, becomes one loss on `losses`, and the record
+/// stays in the source archive; the caller then decodes the next record.
 pub(crate) fn recover<T>(
     result: Result<T, CodecError>,
     losses: &mut Vec<LossNote>,

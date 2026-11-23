@@ -8,7 +8,7 @@ use cadmpeg_ir::math::Point2;
 const EPS_TEXT_ROTATION: f64 = 1.0e-12;
 
 #[test]
-fn skipped_text_charges_no_loss_and_keeps_its_sibling() {
+fn skipped_text_charges_a_loss_and_keeps_its_sibling() {
     use crate::design::test_support::{design_type, primary_record};
 
     let mut unreadable = sketch_text_record(
@@ -45,7 +45,11 @@ fn skipped_text_charges_no_loss_and_keeps_its_sibling() {
         texts[0].placement().unwrap().anchor.get(),
         Point2::new(10.0, 20.0)
     );
-    assert!(losses.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::SketchTextUndecoded.kind()
+    );
 }
 
 use crate::design::decode::sketch::decode_sketch_points_from_stream;

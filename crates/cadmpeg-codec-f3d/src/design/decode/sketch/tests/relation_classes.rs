@@ -10,12 +10,13 @@ use crate::records::sketch_relations::{SketchPatternDefinition, SketchPatternDir
 use crate::test_support::push_reference_u64;
 
 #[test]
-fn skipped_relations_charge_no_loss_and_keep_their_sibling() {
+fn skipped_relations_charge_a_loss_for_a_known_class_and_keep_their_sibling() {
     use crate::design::decode::sketch::{decode_sketch_relation_with_losses, RELATION_TYPE_GUID};
     use crate::records::decal::DesignRecordHeader;
 
-    // A truncated frame and a frame with nonzero padding are skipped without
-    // a loss; only the readable relation is admitted.
+    // A truncated frame and a frame with nonzero padding of a known class
+    // admit no relation and each charge one loss; the readable relation is
+    // admitted.
     let mut padded = relation_record(&[(300, 0)], &[], 201, 1, &[300]);
     padded.push(1);
     let mut records = Vec::new();
@@ -48,6 +49,40 @@ fn skipped_relations_charge_no_loss_and_keep_their_sibling() {
     }
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].record_index, 8);
+    assert_eq!(losses.len(), 2);
+    for loss in &losses {
+        assert_eq!(
+            loss.code,
+            crate::loss::F3dLossCode::SketchRelationUndecoded.kind()
+        );
+    }
+}
+
+#[test]
+fn unknown_relation_class_is_skipped_without_a_loss() {
+    use crate::design::decode::sketch::decode_sketch_relation_with_losses;
+    use crate::records::decal::DesignRecordHeader;
+
+    let payload = relation_record(&[(300, 0)], &[], 201, 1, &[300]);
+    let header = DesignRecordHeader {
+        id: "f3d:BulkStream.dat:design-record-header#7".to_owned(),
+        record_index: 7,
+        class_tag: "298".to_owned().try_into().unwrap(),
+        byte_offset: 0,
+    };
+    let mut records = Vec::new();
+    let mut losses = Vec::new();
+    decode_sketch_relation_with_losses(
+        &mut records,
+        "BulkStream.dat",
+        &header,
+        &payload,
+        "00000000-0000-0000-0000-000000000000",
+        1,
+        &mut losses,
+    )
+    .unwrap();
+    assert!(records.is_empty());
     assert!(losses.is_empty());
 }
 

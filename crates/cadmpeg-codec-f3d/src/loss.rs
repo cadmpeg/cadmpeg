@@ -5167,8 +5167,13 @@ mod tests {
     use super::F3dLossCode;
     use std::collections::BTreeSet;
 
-    /// Every code that records a Design record kept in the source archive
-    /// after a decoding failure.
+    /// The sixteen codes that record a Design record, or its dependent
+    /// state, kept in the source archive after a decoding failure: the
+    /// sketch curve, surface, text, relation, folder, ordinal-collection,
+    /// container and geometry-group codes; the feature-timeline and
+    /// primary-record codes; the configuration projection and document
+    /// codes; the sketch owner-conflict and relation-owner codes; the bend
+    /// settings code; and the body-bounds code.
     const UNREAD_DESIGN_RECORD_CODES: [F3dLossCode; 16] = [
         F3dLossCode::SketchCurveUndecoded,
         F3dLossCode::SketchSurfaceUndecoded,

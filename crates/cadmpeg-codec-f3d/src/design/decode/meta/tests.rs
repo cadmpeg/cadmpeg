@@ -349,6 +349,7 @@ fn primary_header_losses_are_reported_once_for_the_design_stream() {
             losses[0].code,
             crate::loss::F3dLossCode::PrimaryRecordUndecoded.kind()
         );
+        assert!(losses[0].message.contains("record 41"));
     });
 }
 

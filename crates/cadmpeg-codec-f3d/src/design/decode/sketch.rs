@@ -454,6 +454,20 @@ fn decode_sketch_visibilities_in_stream(
         .collect::<HashMap<_, _>>();
     // Containers whose own loss already states that their sketches are unbound.
     let mut unread_containers = std::collections::HashSet::new();
+    let listing_sketches = |container: u64| {
+        let names = out
+            .iter()
+            .filter(|(_, visibility, _)| {
+                visibility.ordinal_collection.map(std::num::NonZeroU64::get) == Some(container)
+            })
+            .map(|(entity, _, _)| entity.to_string())
+            .collect::<Vec<_>>();
+        if names.is_empty() {
+            "no sketch lists it".to_owned()
+        } else {
+            format!("sketches {} list it", names.join(", "))
+        }
+    };
     let mut collections = std::collections::BTreeMap::new();
     for frame in super::meta::typed_primary_frames(
         bytes,
@@ -477,8 +491,9 @@ fn decode_sketch_visibilities_in_stream(
         .flatten();
         let Some(members) = members else {
             losses.push(F3dLossCode::SketchOrdinalCollectionUndecoded.note(format!(
-                "F3D sketch ordinal collection {} remains in the source archive because its member sequence is unread.",
-                frame.entity_id
+                "F3D sketch ordinal collection {} remains in the source archive because its member sequence is unread; {}, and their collection bindings are dropped.",
+                frame.entity_id,
+                listing_sketches(frame.entity_id)
             )));
             unread_containers.insert(frame.entity_id);
             continue;
@@ -506,8 +521,9 @@ fn decode_sketch_visibilities_in_stream(
         .flatten();
         let Some(folder) = folder else {
             losses.push(F3dLossCode::SketchFolderUndecoded.note(format!(
-                "F3D sketch folder {} remains in the source archive because its member sequence is unread.",
-                frame.entity_id
+                "F3D sketch folder {} remains in the source archive because its member sequence is unread; {}, and their collection bindings are dropped.",
+                frame.entity_id,
+                listing_sketches(frame.entity_id)
             )));
             unread_containers.insert(frame.entity_id);
             continue;
@@ -2081,8 +2097,19 @@ fn decode_sketch_relation_with_losses(
     version: u32,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
+    let previous = out.len();
+    let result = decode_sketch_relation_record(out, stream, record, payload, type_guid, version)
+        .and_then(|()| {
+            if out.len() == previous && SketchRelationClass::of(type_guid, version).is_some() {
+                Err(CodecError::malformed(
+                    "F3D sketch relation has an unread member sequence",
+                ))
+            } else {
+                Ok(())
+            }
+        });
     super::record::recover(
-        decode_sketch_relation_record(out, stream, record, payload, type_guid, version),
+        result,
         losses,
         F3dLossCode::SketchRelationUndecoded,
         format_args!("Sketch relation record {} in {stream}", record.record_index),
@@ -2621,7 +2648,7 @@ fn decode_sketch_texts_from_stream(
         };
         let class_tag = frame.class_tag;
         let payload = &bytes[frame.start..frame.end];
-        if let Some(Some(text)) = super::record::recover(
+        if let Some(text) = super::record::recover(
             decode_sketch_text_record(
                 payload,
                 stream,
@@ -2629,7 +2656,12 @@ fn decode_sketch_texts_from_stream(
                 frame.design_type.version,
                 record_index,
                 frame.start,
-            ),
+            )
+            .and_then(|text| {
+                text.ok_or_else(|| {
+                    CodecError::malformed("F3D sketch text has an unread member sequence")
+                })
+            }),
             losses,
             F3dLossCode::SketchTextUndecoded,
             format_args!("Sketch text record {record_index} in {stream}"),
@@ -4244,7 +4276,7 @@ fn decode_sketch_curve_identities_from_stream(
             None
         };
         let (geometry, geometry_offset, planar_z_noise) =
-            parsed_geometry.map_or((None, geometry_shift + 133, None), |parsed| {
+            parsed_geometry.map_or((None, geometry_shift + 144, None), |parsed| {
                 (
                     Some(parsed.geometry),
                     parsed.geometry_offset,
