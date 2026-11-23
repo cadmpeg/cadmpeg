@@ -105,7 +105,7 @@ fn a_partdesign_body_is_an_ordered_body_container_at_its_tip() {
         ]
         .map(feature)
     );
-    assert_eq!(*rollback, Rollback::End);
+    assert_eq!(*rollback, Some(Rollback::End));
     assert_eq!(scope.roots.as_slice(), [body.id().clone()]);
     assert_eq!(design.containers.len(), 1);
     let [current] = scope.current.as_slice() else {
@@ -166,7 +166,7 @@ fn a_tip_before_the_last_member_rolls_the_body_back() {
     };
     assert_eq!(
         *rollback,
-        Rollback::Before(feature("fcstd:design:feature#Second"))
+        Some(Rollback::Before(feature("fcstd:design:feature#Second")))
     );
     assert_eq!(
         ir.design.scopes[0].current[0].at,

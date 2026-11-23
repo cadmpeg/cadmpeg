@@ -243,7 +243,7 @@ fn design(mut ir: CadIr, profile: Source, revolve: Revolve) -> CadIr {
         kind: OrderedKind::Timeline,
         members: vec![Member::Feature(sketch), Member::Feature(revolve.clone())],
         folders: Vec::new(),
-        rollback: Rollback::End,
+        rollback: Some(Rollback::End),
         placement: None,
     });
     let body = ir.geometry.bodies[0].id.clone();

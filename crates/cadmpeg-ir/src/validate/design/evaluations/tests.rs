@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeMap;
+
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 use crate::design::configuration::{FeatureStateOverride, ParameterOverride};
 use crate::design::container::{Container, OrderedKind, Rollback};
 use crate::design::dimension::{Dimension, ParameterRef, RefTarget};
-use crate::design::evaluation::{EvaluationStatus, StateBase};
+use crate::design::evaluation::{CurrentState, EvaluationStatus, StateBase};
 use crate::design::expr::{parse, Expression, ExpressionDialect, ExpressionToken, Neutral, Node};
 use crate::design::feature::{FeatureOperation, OperationFamily, StoredOrigin};
 use crate::design::parameter::{ParameterDefinition, ParameterValue};
@@ -17,7 +19,7 @@ use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 use crate::validate::design::fixture::{
     after, assert_finding, assert_no_design_finding, body, configuration, design_findings,
-    document, evaluation, feature, id, parameter, set_base, stored,
+    document, evaluation, feature, id, parameter, set_base, stored, unresolved,
 };
 
 #[test]
@@ -43,9 +45,18 @@ fn evaluation_keys_and_positions() {
     let mut ir = document();
     ir.design.evaluations[1].of = Evaluated::State(Position::After(Member::Container(id(
         "container",
-        "timeline",
+        "missing",
     ))));
     assert_finding(&ir, "names no member of a container");
+    let mut ir = document();
+    ir.design.evaluations[1].of = Evaluated::State(Position::After(Member::Container(id(
+        "container",
+        "timeline",
+    ))));
+    assert_finding(
+        &ir,
+        "which is the state at that ordered container's rollback position",
+    );
     let mut ir = document();
     ir.design.evaluations[1].of = Evaluated::State(Position::Start(id("container", "missing")));
     assert_finding(&ir, "names no ordered container");
@@ -62,7 +73,7 @@ fn an_evaluation_after_an_ordered_container_is_refused() {
         kind: OrderedKind::Body,
         members: Vec::new(),
         folders: Vec::new(),
-        rollback: Rollback::End,
+        rollback: Some(Rollback::End),
         placement: None,
     });
     let Container::Ordered { members, .. } = &mut ir.design.containers[0] else {
@@ -401,9 +412,115 @@ fn a_current_state_in_an_ordered_container_is_at_its_rollback() {
     ir.design.scopes[0].current[0].at = after("extrude");
     assert_finding(&ir, "not at the rollback position");
     let mut ir = document();
-    ir.design.scopes[0].current[0].at =
-        Position::After(Member::Container(id("container", "timeline")));
-    assert_finding(&ir, "names no member of a container");
+    ir.design.scopes[0].current[0].at = timeline_end();
+    assert_finding(
+        &ir,
+        "a stated rollback position is spelled through its member",
+    );
+    let mut ir = document();
+    set_base(&mut ir, 0, StateBase::Current(timeline_end()));
+    assert_finding(
+        &ir,
+        "a stated rollback position is spelled through its member",
+    );
+}
+
+fn timeline_end() -> Position {
+    Position::After(Member::Container(id("container", "timeline")))
+}
+
+/// The baseline with the timeline's rollback unstated, its current state at
+/// `After(Container(timeline))`, and the evaluation after `extrude` based on
+/// that state.
+fn unstated_rollback() -> CadIr {
+    let mut ir = document();
+    let Container::Ordered { rollback, .. } = &mut ir.design.containers[0] else {
+        unreachable!()
+    };
+    *rollback = None;
+    ir.design.scopes[0].current[0].at = timeline_end();
+    set_base(&mut ir, 0, StateBase::Current(timeline_end()));
+    ir
+}
+
+#[test]
+fn a_root_at_an_unstated_rollback_spells_its_current_state_after_the_container() {
+    assert_no_design_finding(&unstated_rollback());
+    let mut ir = unstated_rollback();
+    ir.design.scopes[0].current[0].at = after("fillet");
+    set_base(&mut ir, 0, StateBase::Current(after("fillet")));
+    assert_finding(
+        &ir,
+        "not at the rollback position of container test:design:container#timeline",
+    );
+    let mut ir = unstated_rollback();
+    ir.design.evaluations[1].of = Evaluated::State(timeline_end());
+    assert_finding(
+        &ir,
+        "which is the state at that ordered container's rollback position",
+    );
+}
+
+/// The baseline with an ordered `Body` container `body`, holding feature
+/// `pad`, as the timeline's last member, rollback `rollback`, and a current
+/// state at `at` holding no body.
+fn nested_body(rollback: Option<Rollback>, at: Position) -> CadIr {
+    let mut ir = document();
+    let Container::Ordered { members, .. } = &mut ir.design.containers[0] else {
+        unreachable!()
+    };
+    members.push(Member::Container(id("container", "body")));
+    ir.design.containers.push(Container::Ordered {
+        id: id("container", "body"),
+        kind: OrderedKind::Body,
+        members: vec![Member::Feature(feature("pad"))],
+        folders: Vec::new(),
+        rollback,
+        placement: None,
+    });
+    ir.design
+        .features
+        .push(unresolved("pad", OperationFamily::Extrude));
+    ir.design.scopes[0].current.push(CurrentState {
+        at,
+        bodies: Vec::new(),
+        poses: BTreeMap::new(),
+        status: EvaluationStatus::Current,
+        native_ref: None,
+    });
+    ir
+}
+
+#[test]
+fn a_nested_container_at_an_unstated_rollback_spells_its_state_after_the_container() {
+    let body = || Position::After(Member::Container(id("container", "body")));
+    assert_no_design_finding(&nested_body(None, body()));
+    assert_finding(
+        &nested_body(None, after("pad")),
+        "not at the rollback position of container test:design:container#body",
+    );
+    assert_finding(
+        &nested_body(Some(Rollback::End), body()),
+        "a stated rollback position is spelled through its member",
+    );
+    assert_no_design_finding(&nested_body(Some(Rollback::End), after("pad")));
+}
+
+#[test]
+fn the_state_leaving_a_container_member_is_spelled_through_the_feature_before_it() {
+    let body = || Position::After(Member::Container(id("container", "body")));
+    for rollback in [
+        Rollback::End,
+        Rollback::Before(Member::Container(id("container", "body"))),
+    ] {
+        let mut ir = nested_body(None, body());
+        let Container::Ordered { rollback: at, .. } = &mut ir.design.containers[0] else {
+            unreachable!()
+        };
+        *at = Some(rollback);
+        assert_eq!(ir.design.scopes[0].current[0].at, after("fillet"));
+        assert_no_design_finding(&ir);
+    }
 }
 
 #[test]

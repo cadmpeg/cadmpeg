@@ -232,11 +232,11 @@ fn part_with_marks(keywords: &[u8], class: &str, record_mark: u32) -> Marked {
     }
 }
 
-fn timeline_rollback(ir: &CadIr) -> &Rollback {
+fn timeline_rollback(ir: &CadIr) -> Option<&Rollback> {
     let [Container::Ordered { rollback, .. }] = ir.design.containers.as_slice() else {
         panic!("one ordered container: {:#?}", ir.design.containers);
     };
-    rollback
+    rollback.as_ref()
 }
 
 #[test]
@@ -244,7 +244,7 @@ fn a_current_mark_at_the_last_feature_mark_reads_the_end() {
     let marked = part_with_marks(MARKED_KEYWORDS, "moPMarkRecord_c", CURRENT_MARK);
     assert_eq!(marked.unread, Vec::<String>::new());
     assert!(marked.inferred.is_empty(), "{:#?}", marked.inferred);
-    assert_eq!(timeline_rollback(&marked.ir), &Rollback::End);
+    assert_eq!(timeline_rollback(&marked.ir), Some(&Rollback::End));
 }
 
 #[test]
@@ -254,11 +254,18 @@ fn a_feature_with_no_mark_record_after_the_last_record_is_reported_unread() {
         marked.unread,
         [
             "The rollback position of the feature tree is not read (feature Sketch2 after the \
-          feature at the current mark holds no mark record); the timeline is stated built \
-          through its last member."
+          feature at the current mark holds no mark record); the timeline's rollback is not \
+          stated."
         ]
     );
-    assert_eq!(timeline_rollback(&marked.ir), &Rollback::End);
+    assert_eq!(timeline_rollback(&marked.ir), None);
+    let [scope] = marked.ir.design.scopes.as_slice() else {
+        panic!("one scope");
+    };
+    assert_eq!(
+        scope.current[0].at,
+        Position::After(Member::Container(scope.roots[0].clone()))
+    );
 }
 
 #[test]
@@ -268,11 +275,11 @@ fn a_current_mark_no_feature_names_is_reported_unread() {
         marked.unread,
         [format!(
             "The rollback position of the feature tree is not read (current mark \
-             {CURRENT_MARK} is the mark of no feature); the timeline is stated built through \
-             its last member."
+             {CURRENT_MARK} is the mark of no feature); the timeline's rollback is not \
+             stated."
         )]
     );
-    assert_eq!(timeline_rollback(&marked.ir), &Rollback::End);
+    assert_eq!(timeline_rollback(&marked.ir), None);
 }
 
 #[test]
@@ -283,5 +290,11 @@ fn a_mark_class_the_class_map_does_not_name_is_noted_as_inferred() {
     };
     assert_eq!(note.severity, cadmpeg_ir::report::Severity::Info);
     assert!(note.message.contains("Contents/Config-0"), "{note:#?}");
-    assert_eq!(timeline_rollback(&marked.ir), &Rollback::End);
+    assert_eq!(
+        marked.unread.len(),
+        1,
+        "no feature holds the record at the current mark: {:#?}",
+        marked.unread
+    );
+    assert_eq!(timeline_rollback(&marked.ir), None);
 }

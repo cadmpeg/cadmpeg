@@ -14,8 +14,9 @@ use crate::design::selection::{OccurrencePath, StepRef};
 use crate::features::ConfigurationId;
 use crate::report::check::Finding;
 
-/// A position names an existing member of a container, or the start of an
-/// existing ordered container (§5.3). Returns whether it does.
+/// A position names an existing member of a container, an ordered container
+/// that is a root of its scope, or the start of an existing ordered
+/// container (§5.3). Returns whether it does.
 pub(in crate::validate) fn check_position(
     index: &DesignRecords<'_>,
     position: PositionKey<'_>,
@@ -35,12 +36,21 @@ pub(in crate::validate) fn check_position(
             ordered
         }
         PositionKey::After(member) => {
-            let listed = index.member_exists(member) && index.parents.contains_key(&member);
+            let ordered_root = matches!(
+                member,
+                MemberKey::Container(id)
+                    if index.roots.contains_key(id)
+                        && matches!(index.containers.get(id), Some(Container::Ordered { .. }))
+            );
+            let listed = ordered_root
+                || (index.member_exists(member) && index.parents.contains_key(&member));
             if !listed {
                 super::error(
                     findings,
                     entity,
-                    format_args!("{position} names no member of a container"),
+                    format_args!(
+                        "{position} names no member of a container and no ordered root container"
+                    ),
                 );
             }
             listed
@@ -216,11 +226,13 @@ pub(super) fn check_evaluations(
             StateBase::Current(position) => {
                 let position = PositionKey::of(position);
                 if check_position(index, position, id, findings) {
-                    if matches!(position, PositionKey::After(MemberKey::Container(_))) {
+                    if matches!(position, PositionKey::After(MemberKey::Container(_)))
+                        && !index.at_unstated_rollback(position)
+                    {
                         super::error(
                             findings,
                             id,
-                            format_args!("state base names {position}; a rollback position is spelled through its member"),
+                            format_args!("state base names {position}; a stated rollback position is spelled through its member"),
                         );
                     }
                     if !current_positions(index, scope).contains(&position) {
@@ -533,8 +545,10 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
     check_stored_features(index, findings);
 }
 
-/// A current state names an existing position through its member, and one
-/// inside an ordered container is at that container's rollback position.
+/// A current state names an existing position, and one inside an ordered
+/// container is at that container's rollback position: spelled through its
+/// member where the rollback is stated, and as `After(Container(c))` where
+/// it is not (§5.3).
 fn check_current_position(
     index: &DesignRecords<'_>,
     at: &Position,
@@ -546,13 +560,15 @@ fn check_current_position(
         return;
     }
     if matches!(at, PositionKey::After(MemberKey::Container(_))) {
-        super::error(
-            findings,
-            entity,
-            format_args!(
-                "current state is at {at}; a rollback position is spelled through its member"
-            ),
-        );
+        if !index.at_unstated_rollback(at) {
+            super::error(
+                findings,
+                entity,
+                format_args!(
+                    "current state is at {at}; a stated rollback position is spelled through its member"
+                ),
+            );
+        }
         return;
     }
     let Some(container) = index.container_of(at) else {

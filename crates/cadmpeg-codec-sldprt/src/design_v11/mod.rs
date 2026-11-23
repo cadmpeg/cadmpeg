@@ -205,20 +205,19 @@ pub(crate) fn project(
         configurations::configurations(histories, ir.source.as_ref(), &definition)?;
     let id = container_id(cadmpeg_ir::identity_key!("timeline"));
     let members = timeline.members();
-    let (built, unread) =
-        stated(&timeline.features, rollback).unwrap_or_else(|unread| (members.len(), Some(unread)));
-    if let Some(unread) = unread {
-        let through = if built == members.len() {
-            "its last member".to_owned()
-        } else {
-            format!("its first {built} members")
-        };
-        losses.push(SldprtLossCode::HistoryRollbackUnread.note(format!(
-            "The rollback position of the feature tree is not read ({unread}); the timeline is \
-             stated built through {through}."
-        )));
-    }
-    let (rollback, at) = built_through(&id, &members, built);
+    let (rollback, at) = match stated(&timeline.features, rollback) {
+        Ok((built, None)) => {
+            let (rollback, at) = built_through(&id, &members, built);
+            (Some(rollback), at)
+        }
+        Ok((_, Some(unread))) | Err(unread) => {
+            losses.push(SldprtLossCode::HistoryRollbackUnread.note(format!(
+                "The rollback position of the feature tree is not read ({unread}); the \
+                 timeline's rollback is not stated."
+            )));
+            (None, Position::After(Member::Container(id.clone())))
+        }
+    };
     let current = (!bodies.is_empty())
         .then(|| current_state(at, bodies.clone()))
         .into_iter()
@@ -307,7 +306,8 @@ pub(crate) fn project(
 /// through the feature at the current mark where a later feature is unbuilt
 /// and unsuppressed, else all of them. A feature between the feature at the
 /// current mark and the first such feature that holds no mark record leaves
-/// the position unread: the count stands, with that reason.
+/// the position unread: the count is then a lower bound, returned with that
+/// reason, and the timeline states no rollback.
 fn stated(features: &[Feature], reading: Reading) -> Result<(usize, Option<Unread>), Unread> {
     let (holder, later, recorded) = match reading {
         Reading::End { last, recorded } => (last, Vec::new(), recorded),

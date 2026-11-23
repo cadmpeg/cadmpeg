@@ -127,6 +127,20 @@ pub(in crate::validate) fn members(container: &Container) -> Vec<&Member> {
     }
 }
 
+/// The one spelling of the state entering the member of ordered container
+/// `container` that `before` precedes (§5.3): `After` the nearest feature of
+/// `before`, else `Start(container)`. A container member has no result in
+/// its parent.
+pub(super) fn entering_at<'a>(container: &'a str, before: &'a [Member]) -> PositionKey<'a> {
+    before
+        .iter()
+        .rev()
+        .find(|member| matches!(member, Member::Feature(_)))
+        .map_or(PositionKey::Start(container), |member| {
+            PositionKey::After(MemberKey::of(member))
+        })
+}
+
 pub(super) fn by_id<'a, T>(
     records: &'a [T],
     id: impl Fn(&'a T) -> &'a str,
@@ -241,9 +255,25 @@ impl<'a> DesignRecords<'a> {
         self.containers.get(id).copied()
     }
 
-    /// The rollback position of an ordered container, spelled through its
-    /// member. `None` for an unordered container, or where `Before` names no
-    /// member of it.
+    /// Whether `position` is `After(Container(c))` for an ordered container
+    /// `c` whose rollback is unstated, the one spelling of the state at it
+    /// (§5.3).
+    pub(in crate::validate) fn at_unstated_rollback(&self, position: PositionKey<'_>) -> bool {
+        matches!(
+            position,
+            PositionKey::After(MemberKey::Container(id))
+                if matches!(
+                    self.containers.get(id),
+                    Some(Container::Ordered { rollback: None, .. })
+                )
+        )
+    }
+
+    /// The rollback position of an ordered container in its one spelling
+    /// (§5.3): through the nearest feature member before it, else `Start` of
+    /// the container; `After(Container(c))` where the rollback is unstated.
+    /// `None` for an unordered container, or where `Before` names no member
+    /// of it.
     pub(in crate::validate) fn rollback_position(
         container: &'a Container,
     ) -> Option<PositionKey<'a>> {
@@ -257,13 +287,11 @@ impl<'a> DesignRecords<'a> {
             return None;
         };
         let at = match rollback {
-            Rollback::End => members.len(),
-            Rollback::Before(member) => members.iter().position(|listed| listed == member)?,
+            None => return Some(PositionKey::After(MemberKey::Container(id.as_str()))),
+            Some(Rollback::End) => members.len(),
+            Some(Rollback::Before(member)) => members.iter().position(|listed| listed == member)?,
         };
-        Some(match at.checked_sub(1) {
-            Some(previous) => PositionKey::After(MemberKey::of(&members[previous])),
-            None => PositionKey::Start(id.as_str()),
-        })
+        Some(entering_at(id.as_str(), &members[..at]))
     }
 
     /// The configuration and its ancestors through `parent`, nearest first,

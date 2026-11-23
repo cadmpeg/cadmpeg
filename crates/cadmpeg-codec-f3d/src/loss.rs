@@ -1372,6 +1372,10 @@ pub(crate) enum F3dLossCode {
     /// An open edge whose source states no range was written over one arc of
     /// a curve that passes one of its vertices twice.
     WriterEdgeRangeAssumed,
+    /// A timeline whose rollback the document does not state was written
+    /// built through its end, with the current geometry as the state after
+    /// its last feature.
+    WriterRollbackAssumed,
     /// An appearance was not written.
     WriterAppearanceOmitted,
     /// The retained source could not carry an edit; the file was regenerated.
@@ -2236,6 +2240,7 @@ impl F3dLossCode {
         Self::WriterFaceOmitted,
         Self::WriterGeometryOmitted,
         Self::WriterEdgeRangeAssumed,
+        Self::WriterRollbackAssumed,
         Self::WriterAppearanceOmitted,
         Self::WriterPatchDeclined,
         Self::WriterAppearanceGuidAllocated,
@@ -3469,6 +3474,7 @@ impl F3dLossCode {
             Self::WriterFaceOmitted => "writer.face-omitted",
             Self::WriterGeometryOmitted => "writer.geometry-omitted",
             Self::WriterEdgeRangeAssumed => "writer.edge-range-assumed",
+            Self::WriterRollbackAssumed => "writer.rollback-assumed",
             Self::WriterAppearanceOmitted => "writer.appearance-omitted",
             Self::WriterPatchDeclined => "writer.patch-declined",
             Self::WriterIntegerAsReal => "writer.integer-as-real",
@@ -3580,6 +3586,7 @@ impl F3dLossCode {
             Self::WriterFaceOmitted => Severity::Error,
             Self::WriterGeometryOmitted => Severity::Warning,
             Self::WriterEdgeRangeAssumed => Severity::Warning,
+            Self::WriterRollbackAssumed => Severity::Warning,
             Self::WriterAppearanceOmitted => Severity::Warning,
             Self::WriterPatchDeclined => Severity::Warning,
             Self::WriterIntegerAsReal => Severity::Info,
@@ -4424,6 +4431,7 @@ impl F3dLossCode {
             Self::WriterFaceOmitted => LossTaxonomy::TopologyNotTransferred,
             Self::WriterGeometryOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterEdgeRangeAssumed => LossTaxonomy::TopologyGaugeSubstituted,
+            Self::WriterRollbackAssumed => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterAppearanceOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::WriterPatchDeclined => LossTaxonomy::PreservedSourceUnavailable,
             Self::WriterIntegerAsReal => LossTaxonomy::ParametricRecordOmitted,
@@ -6102,6 +6110,7 @@ mod tests {
                 "writer.face-omitted",
                 "writer.geometry-omitted",
                 "writer.edge-range-assumed",
+                "writer.rollback-assumed",
                 "writer.appearance-omitted",
                 "writer.patch-declined",
                 "writer.appearance-guid-allocated",

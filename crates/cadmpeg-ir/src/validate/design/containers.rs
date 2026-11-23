@@ -103,7 +103,7 @@ fn check_order(container: &Container, findings: &mut Vec<Finding>) {
         return;
     };
     let id = id.as_str();
-    if let Rollback::Before(member) = rollback {
+    if let Some(Rollback::Before(member)) = rollback {
         if !members.contains(member) {
             super::error(
                 findings,
