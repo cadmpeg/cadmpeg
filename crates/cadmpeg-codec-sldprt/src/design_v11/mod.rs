@@ -22,7 +22,7 @@ mod parameters;
 mod profile_check;
 mod revolve;
 mod sketch;
-mod states;
+pub(crate) mod states;
 mod swept;
 #[cfg(test)]
 mod tests;
@@ -44,6 +44,7 @@ use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::design::units::{UnitSymbol, UnitSystem};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::ConfigurationId;
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
 use cadmpeg_ir::report::loss::LossNote;
@@ -84,20 +85,32 @@ pub(crate) struct Part<'a> {
     pub(crate) outside_profile: &'a HashSet<SketchEntityId>,
 }
 
+/// What [`project`] stated.
+#[derive(Default)]
+pub(crate) struct Projection {
+    /// The number of records added.
+    pub(crate) added: usize,
+    /// The geometry records that the evaluations of the configurations that
+    /// are not active hold and no current body reaches, by id, with the
+    /// configuration whose state holds each. They are no part of the current
+    /// geometry (§5.5).
+    pub(crate) retired: BTreeMap<String, ConfigurationId>,
+}
+
 /// Project the design of a part document into `ir.design`, beside its v10
-/// records, and state the part's root definition. A rollback reading that
-/// does not fix the position, a configuration whose state cannot be stated, a
-/// sketch, extrude or revolve that cannot be typed, a parameter whose literal is a
-/// rounded display, and a dimension whose bare-number text has no value add
-/// their reasons to `losses`. A part whose timeline is empty states no design,
-/// and its equation-manager lines go to `losses`. Returns the number of records
-/// added.
+/// records, and state the part's root definition. Each configuration that is
+/// not active has its stored state as an evaluation of its own. A rollback
+/// reading that does not fix the position, a configuration whose state cannot
+/// be stated, a sketch, extrude or revolve that cannot be typed, a parameter
+/// whose literal is a rounded display, and a dimension whose bare-number text
+/// has no value add their reasons to `losses`. A part whose timeline is empty
+/// states no design, and its equation-manager lines go to `losses`.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     part: Part<'_>,
     losses: &mut Vec<LossNote>,
-) -> Result<usize, CodecError> {
+) -> Result<Projection, CodecError> {
     let Part {
         histories,
         lanes,
@@ -114,7 +127,7 @@ pub(crate) fn project(
     let mut timeline = tree::timeline(histories)?;
     if timeline.features.is_empty() {
         losses.extend(equations::without_design(&managers, active));
-        return Ok(0);
+        return Ok(Projection::default());
     }
     losses.extend(order::regeneration_order(&mut timeline, &ir.model));
     let definition = root_definition();
@@ -207,7 +220,7 @@ pub(crate) fn project(
         .collect();
     let names = names::Names::new(persistent, histories, &timeline.features_by_record);
     let table = names.entries(&ir.geometry, &bodies, |_| true);
-    let (evaluations, state_records) = states::configuration_states(
+    let states = states::configuration_states(
         ctx,
         ir,
         &states::Scope {
@@ -238,8 +251,8 @@ pub(crate) fn project(
         + parameters.len()
         + configurations.records.len()
         + table.len()
-        + evaluations.len()
-        + state_records;
+        + states.evaluations.len()
+        + states.records;
     let mut root = ProductDefinition::root(definition.clone(), ExternalDocument::default());
     root.kind = Some(ProductDefinitionKind::Part);
     root.units = length.map(|length| UnitSystem {
@@ -266,9 +279,12 @@ pub(crate) fn project(
     ir.design.sketch_constraints.extend(sketches.constraints);
     ir.design.parameters.extend(parameters);
     ir.design.configurations.extend(configurations.records);
-    ir.design.evaluations.extend(evaluations);
+    ir.design.evaluations.extend(states.evaluations);
     ir.design.names = NameTable::from(table);
-    Ok(added)
+    Ok(Projection {
+        added,
+        retired: states.retired,
+    })
 }
 
 /// The number of leading timeline features the stored marks state built:

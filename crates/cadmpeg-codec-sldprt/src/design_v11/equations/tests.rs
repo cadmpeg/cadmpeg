@@ -1019,17 +1019,21 @@ const INCH: u16 = 3;
 const EXACT_PLACES: u32 = 8;
 
 /// A configuration stream's units table stating the length unit `code` and
-/// the length precision `places`, in the block container's layout.
+/// the length precision `places`, in the block container's layout: the
+/// length unit, then a number unit whose object is one base long, then the
+/// next class declaration.
 fn units_table(code: u16, places: u32) -> Vec<u8> {
+    let mut base = vec![0xaa; 62];
+    base[..4].copy_from_slice(&places.to_le_bytes());
     let mut bytes = b"\xff\xff\x01\x00\x0e\x00moUnitsTable_c".to_vec();
     bytes.extend(16u16.to_le_bytes());
     bytes.extend(b"\xff\xff\x01\x00\x13\x00moLengthUserUnits_c");
-    let mut fields = vec![0xaa; 62];
-    fields[..4].copy_from_slice(&places.to_le_bytes());
-    fields[44..48].copy_from_slice(&1u32.to_le_bytes());
-    bytes.extend(fields);
+    bytes.extend(&base);
     bytes.extend(code.to_le_bytes());
     bytes.extend([0, 0]);
+    bytes.extend(b"\xff\xff\x01\x00\x13\x00moNumberUserUnits_c");
+    bytes.extend(&base);
+    bytes.extend(b"\xff\xff\x01\x00\x10\x00moDensityUnits_c");
     bytes
 }
 
