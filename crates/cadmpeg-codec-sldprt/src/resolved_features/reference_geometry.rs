@@ -16,7 +16,9 @@ use crate::classification::{
 use crate::records::{FeatureInputLane, FeatureInputName};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::design::units::{Quantity, UnitSymbol};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::Length;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::layout::constructed_reference_plane_fixed_frame as fixed_plane;
@@ -32,6 +34,7 @@ use crate::layout::coordinate_system_ordinal_axis_tail as ordinal_tail;
 use crate::layout::coordinate_system_two_point_separator as two_pt_sep;
 use crate::layout::coordinate_system_two_point_tail as two_pt_tail;
 use crate::layout::coordinate_system_xy_tail as xy_tail;
+use crate::layout::reference_plane_data_head as data_head;
 use crate::layout::reference_point_long_solved_cache as pt_long;
 use crate::layout::reference_point_short_solved_cache as pt_short;
 use crate::records::ObjectId;
@@ -88,12 +91,19 @@ fn plane_frame_source(feature: &crate::records::Feature) -> String {
     }
 }
 
-/// Add validated reference-plane frames to a projection copy of history.
+/// Add validated reference-plane frames to a projection copy of history, and
+/// give each offset reference plane the distance its `D1` parameter object
+/// stores and the point and normal its plane-data object stores
+/// (`sldprt.md` §2). Where no lane stores the distance, a bare `D1` display
+/// is read in the document's length unit `length_unit`.
 pub(crate) fn enrich_history_reference_planes(
     ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
+    length_unit: Option<UnitSymbol>,
 ) -> Result<(), CodecError> {
+    let mut stored_distances = BTreeMap::<(usize, usize), Vec<Length>>::new();
+    let mut data_heads = BTreeMap::<(usize, usize), Vec<(Point3, Vector3)>>::new();
     let mut candidates = BTreeMap::<(usize, usize), Vec<(Point3, Vector3, Vector3)>>::new();
     let mut candidate_sources = BTreeMap::<(usize, usize), Vec<SketchPlaneUAxisSource>>::new();
     let mut reference_candidates = BTreeMap::<(usize, usize), Vec<String>>::new();
@@ -139,7 +149,6 @@ pub(crate) fn enrich_history_reference_planes(
             if classify(feature) != Some(FeatureClass::ReferencePlane)
                 || principal_plane_with_siblings(feature, &histories[history_index].features)
                     .is_some()
-                || feature.states_any(&crate::records::REFERENCE_PLANE_FRAME_PROPERTIES)
             {
                 continue;
             }
@@ -157,6 +166,25 @@ pub(crate) fn enrich_history_reference_planes(
             let Some(bytes) = lane.native_payload.get(start..end) else {
                 continue;
             };
+            let key = (history_index, feature_index);
+            let displayed = feature
+                .parameters
+                .get("D1")
+                .and_then(|value| displayed_offset_distance(value, length_unit));
+            let stored = displayed
+                .zip(feature.parameters.get("D1"))
+                .and_then(|(_, text)| {
+                    stored_offset_distance(lane, (start, end), text, length_unit)
+                });
+            if let Some(distance) = stored {
+                stored_distances.entry(key).or_default().push(distance);
+            }
+            if let Some(head) = displayed.and_then(|_| plane_data_head(lane, start, end)) {
+                data_heads.entry(key).or_default().push(head);
+            }
+            if feature.states_any(&crate::records::REFERENCE_PLANE_FRAME_PROPERTIES) {
+                continue;
+            }
             let self_source = feature.source_value();
             if let Some(source) = offset_plane_reference_source(
                 bytes,
@@ -212,11 +240,7 @@ pub(crate) fn enrich_history_reference_planes(
                     .or_default()
                     .push(native);
             }
-            let offset_frames = feature
-                .parameters
-                .get("D1")
-                .and_then(|value| crate::history::literals::parse_dimension_length_mm(value));
-            let offset_frames = match offset_frames {
+            let offset_frames = match stored.or(displayed) {
                 Some(distance) => offset_reference_plane_frame_pair(bytes, distance),
                 None => None,
             };
@@ -279,6 +303,24 @@ pub(crate) fn enrich_history_reference_planes(
                 .or_default()
                 .push(u_axis_source);
         }
+    }
+    record_offset_plane_distances(histories, &stored_distances, length_unit);
+    for ((history_index, feature_index), heads) in data_heads {
+        let [(point, normal), rest @ ..] = heads.as_slice() else {
+            continue;
+        };
+        if rest.iter().any(|head| head != &(*point, *normal)) {
+            continue;
+        }
+        let feature = &mut histories[history_index].features[feature_index];
+        feature.properties.insert(
+            cadmpeg_core::nonblank_literal!("PlanePoint"),
+            format!("{}mm,{}mm,{}mm", point.x, point.y, point.z),
+        );
+        feature.properties.insert(
+            cadmpeg_core::nonblank_literal!("PlaneNormal"),
+            format!("{},{},{}", normal.x, normal.y, normal.z),
+        );
     }
     let mut face_reference_indices = HashSet::new();
     for &index in face_native_candidates
@@ -508,6 +550,173 @@ pub(crate) fn enrich_history_reference_planes(
         }
     }
     Ok(())
+}
+
+/// The distance a `D1` display shows: a bare number in the document's length
+/// unit `unit` where the part states one, otherwise the literal as
+/// [`crate::history::literals::parse_dimension_length_mm`] reads it.
+fn displayed_offset_distance(text: &str, unit: Option<UnitSymbol>) -> Option<Length> {
+    let literal = crate::history::literals::parse_dimension_length_mm(text)?;
+    let (Ok(number), Some(unit)) = (text.trim().parse::<f64>(), unit) else {
+        return Some(literal);
+    };
+    let (factor, quantity) = unit.canonical();
+    (quantity == Quantity::LENGTH)
+        .then(|| Length::new(number * factor))
+        .flatten()
+}
+
+/// The distance the `D1` parameter object of the reference plane whose object
+/// spans `start..end` stores (`sldprt.md` §2): the first `D1` name record
+/// after the plane's own, its value in metres, where the display `text`
+/// shows it. `D1` is a magnitude.
+fn stored_offset_distance(
+    lane: &FeatureInputLane,
+    (start, end): (usize, usize),
+    text: &str,
+    unit: Option<UnitSymbol>,
+) -> Option<Length> {
+    let name = lane
+        .names
+        .iter()
+        .filter(|name| name.value == "D1")
+        .filter_map(|name| usize::try_from(name.offset).ok())
+        .filter(|offset| *offset > start && *offset < end)
+        .min()?;
+    let cell = super::scalars::scalar_value_offset(&lane.native_payload, name)?;
+    let metres = View::f64_le_at(&lane.native_payload, cell)?;
+    let distance = Length::new(metres.abs() * NATIVE_TO_MM)?;
+    display_shows(text, distance, unit).then_some(distance)
+}
+
+/// Whether the `D1` display `text` shows `distance`: a bare number is
+/// `distance` in the part's length unit `unit`, or in any length unit where
+/// the part states none, rounded to the number's decimal places; a literal
+/// with a unit is `distance`.
+fn display_shows(text: &str, distance: Length, unit: Option<UnitSymbol>) -> bool {
+    let text = text.trim();
+    let Ok(number) = text.parse::<f64>() else {
+        return crate::history::literals::parse_dimension_length_mm(text).is_some_and(|shown| {
+            (shown.get() - distance.get()).abs()
+                <= DISPLAY_LITERAL_TOLERANCE * shown.get().abs().max(1.0)
+        });
+    };
+    let places = text
+        .split_once('.')
+        .map_or(0, |(_, fraction)| fraction.len());
+    let Ok(places) = i32::try_from(places) else {
+        return false;
+    };
+    let half_step = 0.5 / 10_f64.powi(places);
+    let units = match unit {
+        Some(unit) => vec![unit],
+        None => DISPLAY_LENGTH_UNITS.to_vec(),
+    };
+    units.into_iter().any(|unit| {
+        let (factor, quantity) = unit.canonical();
+        quantity == Quantity::LENGTH
+            && (distance.get() / factor - number).abs()
+                <= half_step + DISPLAY_LITERAL_TOLERANCE * number.abs().max(1.0)
+    })
+}
+
+/// The point and unit normal at the head of the plane-data object of the
+/// reference plane whose object spans `start..end` (`sldprt.md` §2): the
+/// first six f64 after the plane's name that follow a class tag, a class
+/// token behind six zero bytes or the declaration of a plane-data class,
+/// whose second triple is a unit vector and whose flag byte is `0` or `1`.
+fn plane_data_head(lane: &FeatureInputLane, start: usize, end: usize) -> Option<(Point3, Vector3)> {
+    let payload: &[u8] = &lane.native_payload;
+    let units = usize::from(*payload.get(start.checked_add(NAME_MARKER.len())?)?);
+    let body = start
+        .checked_add(NAME_MARKER.len() + 1)?
+        .checked_add(units.checked_mul(2)?)?;
+    let declared = lane
+        .classes
+        .iter()
+        .filter(|class| {
+            class.name.ends_with("RefPlnData_c") || class.name.ends_with("RefplaneData_c")
+        })
+        .filter_map(|class| {
+            usize::try_from(class.offset)
+                .ok()?
+                .checked_add(CLASS_MARKER.len() + 2 + class.name.len())
+        })
+        .collect::<HashSet<_>>();
+    let tagged = |at: usize| {
+        declared.contains(&at)
+            || at
+                .checked_sub(PLANE_DATA_TOKEN_ZEROS + 2)
+                .and_then(|zeros| payload.get(zeros..at - 2))
+                .is_some_and(|zeros| zeros.iter().all(|byte| *byte == 0))
+                && View::u16_le_at(payload, at - 2).is_some_and(is_class_token)
+    };
+    let head = |at: usize| {
+        let bytes = payload.get(at..at.checked_add(data_head::LEN)?)?;
+        let scalar = |offset| View::f64_le_at(bytes, offset).filter(|value| value.is_finite());
+        let point = Point3::new(
+            scalar(data_head::POINT)? * NATIVE_TO_MM,
+            scalar(data_head::POINT + 8)? * NATIVE_TO_MM,
+            scalar(data_head::POINT + 16)? * NATIVE_TO_MM,
+        );
+        let normal = Vector3::new(
+            scalar(data_head::NORMAL)?,
+            scalar(data_head::NORMAL + 8)?,
+            scalar(data_head::NORMAL + 16)?,
+        );
+        ((normal.norm() - 1.0).abs() <= REFERENCE_PLANE_FRAME_TOLERANCE
+            && bytes[data_head::FLAG] <= 1)
+            .then_some((point, normal))
+    };
+    (body..end.min(payload.len()))
+        .filter(|at| tagged(*at))
+        .find_map(head)
+}
+
+/// Give each offset reference plane the distance its `D1` parameter object
+/// stores, where every lane that stores it agrees. A plane whose `D1` is a
+/// bare display with no stored distance takes the display in the document's
+/// length unit and keeps the display under `DistanceDisplayed`.
+fn record_offset_plane_distances(
+    histories: &mut [crate::records::FeatureHistory],
+    stored: &BTreeMap<(usize, usize), Vec<Length>>,
+    length_unit: Option<UnitSymbol>,
+) {
+    for (history_index, history) in histories.iter_mut().enumerate() {
+        for (feature_index, feature) in history.features.iter_mut().enumerate() {
+            if classify(feature) != Some(FeatureClass::ReferencePlane) {
+                continue;
+            }
+            let Some(text) = feature.parameters.get("D1").cloned() else {
+                continue;
+            };
+            let agreed = stored
+                .get(&(history_index, feature_index))
+                .and_then(|distances| {
+                    let (first, rest) = distances.split_first()?;
+                    rest.iter().all(|other| other == first).then_some(*first)
+                });
+            if let Some(distance) = agreed {
+                feature.parameters.insert(
+                    cadmpeg_core::nonblank_literal!("D1"),
+                    crate::history::literals::format_length_mm(distance),
+                );
+                continue;
+            }
+            if text.trim().parse::<f64>().is_err() {
+                continue;
+            }
+            if let Some(distance) = displayed_offset_distance(&text, length_unit) {
+                feature.parameters.insert(
+                    cadmpeg_core::nonblank_literal!("D1"),
+                    crate::history::literals::format_length_mm(distance),
+                );
+            }
+            feature
+                .properties
+                .insert(cadmpeg_core::nonblank_literal!("DistanceDisplayed"), text);
+        }
+    }
 }
 
 /// Add solved model-space positions to reference-point history records.
@@ -2333,6 +2542,26 @@ const MINIMAL_REFERENCE_PLANE_FRAME_LEN: usize = 81;
 const COMPACT_REFERENCE_PLANE_FRAME_LEN: usize = 82;
 const ANGLED_REFERENCE_PLANE_FRAME_LEN: usize = 121;
 const REFERENCE_PLANE_FRAME_TOLERANCE: f64 = 1.0e-9;
+
+/// Millimetres per metre: the plane records store metres.
+const NATIVE_TO_MM: f64 = 1000.0;
+
+/// Relative tolerance within which a length literal, or a display at its
+/// decimal places, shows a stored distance.
+const DISPLAY_LITERAL_TOLERANCE: f64 = 1.0e-9;
+
+/// The length units a bare display can be in where the part states none.
+const DISPLAY_LENGTH_UNITS: [UnitSymbol; 5] = [
+    UnitSymbol::Mm,
+    UnitSymbol::Cm,
+    UnitSymbol::M,
+    UnitSymbol::In,
+    UnitSymbol::Ft,
+];
+
+/// The zero bytes that end a reference plane's own bytes before the class
+/// token of its plane-data object in the shorter form (`sldprt.md` §2).
+const PLANE_DATA_TOKEN_ZEROS: usize = 6;
 
 type PlaneFrame = (Point3, Vector3, Vector3);
 

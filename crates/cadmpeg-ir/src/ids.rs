@@ -936,8 +936,21 @@ impl IdentityKeyTail {
 
     /// Escape identity separators, the escape byte, and Unicode whitespace
     /// in one source component.
+    #[inline]
     #[must_use]
     pub fn percent_encode(value: &str) -> Self {
+        if value
+            .bytes()
+            .all(|byte| byte > 0x20 && byte < 0x80 && !matches!(byte, b':' | b'#' | b'%'))
+        {
+            return Self(value.to_owned());
+        }
+        Self::percent_encode_slow(value)
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn percent_encode_slow(value: &str) -> Self {
         let mut encoded = String::with_capacity(value.len());
         for character in value.chars() {
             if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
@@ -1191,6 +1204,7 @@ impl Identity {
     /// Both arguments carry their own grammar, so this operation cannot
     /// refuse and cannot produce a malformed identity.
     #[must_use]
+    #[inline]
     pub fn compose(namespace: &IdentityNamespace, key: impl Into<IdentityKey>) -> Self {
         let key = key.into();
         let mut value = String::with_capacity(

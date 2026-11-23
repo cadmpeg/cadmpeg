@@ -70,6 +70,68 @@ source = "spec"
 anchor = "seven zero bytes at trailer +28"
 
 [[record]]
+name = "feature_input_padded_scalar_cell"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/scalars.rs"
+kind = "byte"
+section = "2"
+anchor = "In a part that writes the 18-byte header, a value-only scalar also begins with that header"
+size = 19
+endianness = "little"
+note = "Offsets from the end of the 14-byte value-only header: the 18-byte header's last four bytes, the f64, and the opening of a trailer of the first form."
+
+[[record.field]]
+name = "padding"
+offset = 0
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes follow the 14-byte value-only header"
+
+[[record.field]]
+name = "value"
+offset = 4
+type = "f64"
+source = "spec"
+anchor = "the f64 begins at the 18-byte header's end"
+
+[[record.field]]
+name = "trailer_zero_prefix"
+offset = 12
+type = "bytes[3]"
+source = "spec"
+anchor = "the trailer begins after the f64"
+
+[[record.field]]
+name = "object_id"
+offset = 15
+type = "u32"
+source = "spec"
+anchor = "three zero bytes and the scalar object identifier"
+
+[[record]]
+name = "feature_input_class_reference_trailer"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/scalars.rs"
+kind = "byte"
+section = "2"
+anchor = "or with a zero byte and a class token or class declaration"
+size = 3
+endianness = "little"
+note = "The opening of a padded value-only scalar's trailer of the second form, at the padded cell's trailer offset. A class declaration's `ff ff` marker can stand where the token is."
+
+[[record.field]]
+name = "zero"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "with a zero byte and a class token"
+
+[[record.field]]
+name = "class_reference"
+offset = 1
+type = "u16"
+source = "spec"
+anchor = "a class token or class declaration"
+
+[[record]]
 name = "feature_input_operand_cell12"
 parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/scalars.rs"
 kind = "byte"
@@ -10438,6 +10500,37 @@ source = "spec"
 anchor = "In the pairwise-orthogonal form, unit in-plane u- and v-axes occupy the unaligned f64 triples at `+49`, `+57`, `+65` and `+73`, `+81`, `+89`"
 
 [[record]]
+name = "reference_plane_data_head"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
+kind = "byte"
+section = "2"
+anchor = "Its head is the plane's point (three f64, metres), its unit normal (three f64) and a flag byte"
+size = 49
+endianness = "little"
+note = "Offsets begin after the plane-data object's class token or class declaration. With flag `1` the head is the first 49 bytes of the 97-byte `constructed_reference_plane_fixed_frame`."
+
+[[record.field]]
+name = "point"
+offset = 0
+type = "f64[3]"
+source = "spec"
+anchor = "Its head is the plane's point (three f64, metres)"
+
+[[record.field]]
+name = "normal"
+offset = 24
+type = "f64[3]"
+source = "spec"
+anchor = "its unit normal (three f64)"
+
+[[record.field]]
+name = "flag"
+offset = 48
+type = "u8"
+source = "spec"
+anchor = "With flag `1` the head continues as the 97-byte frame"
+
+[[record]]
 name = "constructed_reference_plane_matrix_frame"
 kind = "byte"
 section = "2"
@@ -12426,6 +12519,29 @@ source = "spec"
 anchor = "| +12 | little-endian u32 |"
 
 [[record]]
+name = "model_header_log_tail"
+kind = "byte"
+section = "2.3"
+anchor = "After the last `moLogs_c` record come a little-endian u32 time stamp and a little-endian u32"
+size = 8
+endianness = "little"
+note = "Offsets from the end of the last moLogs_c record's name CString in Contents/Config-N-ModelHeader and Header2."
+
+[[record.field]]
+name = "time_stamp"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "come a little-endian u32 time stamp"
+
+[[record.field]]
+name = "next_object_id"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "the part's next object identifier"
+
+[[record]]
 name = "feature_object_block_head"
 kind = "byte"
 section = "2.3"
@@ -12821,72 +12937,156 @@ source = "spec"
 anchor = "| +32 | little-endian u32 |"
 
 [[record]]
-name = "length_user_units_base"
+name = "units_length_unit_compound_three_word"
 parsed_by = "crates/cadmpeg-codec-sldprt/src/design_v11/units.rs"
 kind = "byte"
 section = "Configuration objects"
-anchor = "In its four-word base form"
-size = 48
+anchor = "The base writes u32 display decimal places"
+size = 46
 endianness = "little"
-note = "The four-word base of the `moLengthUserUnits_c` object in a part's `moUnitsTable_c`, at the byte after its class declaration. In a compound document the u16 length unit code follows at +48; in a block-container document `length_user_units_block_base` extends the base. The three-word 44-byte form (DI-72) is another layout, which the decoder does not read."
+note = "A `moLengthUserUnits_c` object after its class declaration, through its unit code, with the three-word base of a compound document. The table's `moNumberUserUnits_c` object is 44 bytes long."
 
 [[record.field]]
-name = "precision"
+name = "display_decimals"
 offset = 0
 type = "u32"
 source = "spec"
-anchor = "The first u32 of a `moLengthUserUnits_c` base is the number of decimal places"
+anchor = "u32 display decimal places"
+note = "The number of decimal places at which the document displays lengths."
 
 [[record.gap]]
 offset = 4
-size = 40
-note = "A u32, the f64 value, two u32, an f64 and three u32. The u32 at +16 holds 4 or 10 and is not the precision. The decoder reads none of them."
+size = 4
+note = "The u32 after the display decimal places."
 
 [[record.field]]
-name = "last_word"
-offset = 44
-type = "u32"
+name = "value"
+offset = 8
+type = "f64"
 source = "spec"
-anchor = "four u32, the last `1`, 48 bytes"
-value = 1
+anchor = "f64 value"
+
+[[record.gap]]
+offset = 16
+size = 16
+note = "Two u32 and an f64. The first u32 is 4 or 10."
+
+[[record.field]]
+name = "words"
+offset = 32
+type = "u32[3]"
+source = "spec"
+anchor = "three or four u32 words"
+
+[[record.field]]
+name = "unit_code"
+offset = 44
+type = "u16"
+source = "spec"
+anchor = "The u16 a `moLengthUserUnits_c` adds after its base is the unit in which the document displays lengths"
 
 [[record]]
-name = "length_user_units_block_base"
+name = "units_length_unit_compound_four_word"
 parsed_by = "crates/cadmpeg-codec-sldprt/src/design_v11/units.rs"
 kind = "byte"
 section = "Configuration objects"
-anchor = "in a block-container document an f64, a u32 and a u16 follow, 62 bytes"
-size = 62
+anchor = "The base writes u32 display decimal places"
+size = 50
 endianness = "little"
-note = "The base of the `moLengthUserUnits_c` object in a block-container document: the four-word base (`length_user_units_base`) and three more fields. The u16 length unit code follows at +62."
+note = "A `moLengthUserUnits_c` object after its class declaration, through its unit code, with the four-word base of a compound document. The table's `moNumberUserUnits_c` object is 48 bytes long."
 
 [[record.field]]
-name = "base"
+name = "display_decimals"
 offset = 0
-type = "bytes[48]"
-source = "spec"
-anchor = "In its four-word base form"
-
-[[record.field]]
-name = "block_real"
-offset = 48
-type = "f64"
-source = "spec"
-anchor = "an f64, a u32 and a u16 follow"
-
-[[record.field]]
-name = "block_word"
-offset = 56
 type = "u32"
 source = "spec"
-anchor = "an f64, a u32 and a u16 follow"
+anchor = "u32 display decimal places"
+note = "The number of decimal places at which the document displays lengths."
+
+[[record.gap]]
+offset = 4
+size = 4
+note = "The u32 after the display decimal places."
 
 [[record.field]]
-name = "block_short"
-offset = 60
+name = "value"
+offset = 8
+type = "f64"
+source = "spec"
+anchor = "f64 value"
+
+[[record.gap]]
+offset = 16
+size = 16
+note = "Two u32 and an f64. The first u32 is 4 or 10."
+
+[[record.field]]
+name = "words"
+offset = 32
+type = "u32[4]"
+source = "spec"
+anchor = "three or four u32 words"
+
+[[record.field]]
+name = "unit_code"
+offset = 48
 type = "u16"
 source = "spec"
-anchor = "an f64, a u32 and a u16 follow"
+anchor = "The u16 a `moLengthUserUnits_c` adds after its base is the unit in which the document displays lengths"
+
+[[record]]
+name = "units_length_unit_block"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/design_v11/units.rs"
+kind = "byte"
+section = "Configuration objects"
+anchor = "The base writes u32 display decimal places"
+size = 64
+endianness = "little"
+note = "A `moLengthUserUnits_c` object after its class declaration, through its unit code, in a block-container document. The table's `moNumberUserUnits_c` object is 62 bytes long."
+
+[[record.field]]
+name = "display_decimals"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "u32 display decimal places"
+note = "The number of decimal places at which the document displays lengths."
+
+[[record.gap]]
+offset = 4
+size = 4
+note = "The u32 after the display decimal places."
+
+[[record.field]]
+name = "value"
+offset = 8
+type = "f64"
+source = "spec"
+anchor = "f64 value"
+
+[[record.gap]]
+offset = 16
+size = 16
+note = "Two u32 and an f64. The first u32 is 4 or 10."
+
+[[record.field]]
+name = "words"
+offset = 32
+type = "u32[4]"
+source = "spec"
+anchor = "three or four u32 words"
+
+[[record.gap]]
+offset = 48
+size = 14
+note = "The f64, u32 and u16 that follow the four words in a block-container document."
+
+[[record.field]]
+name = "unit_code"
+offset = 62
+type = "u16"
+source = "spec"
+anchor = "The u16 a `moLengthUserUnits_c` adds after its base is the unit in which the document displays lengths"
 
 [[record]]
 name = "sketch_record_head"

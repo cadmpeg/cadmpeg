@@ -43,22 +43,8 @@ pub(crate) fn decode_configurations(
         .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::DesignConfig))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let result = (|| {
-            let payload = json::parse_configuration_payload(ctx, &entry.name, bytes)?;
-            let serde_json::Value::Object(payload) = payload else {
-                return Err(CodecError::malformed(
-                    "F3D configuration JSON must be an object",
-                ));
-            };
-            let kind = if entry.name.ends_with(".dsgcfgrule") {
-                DesignConfigurationKind::Rule
-            } else {
-                DesignConfigurationKind::Table
-            };
-            DesignConfiguration::try_new(entry.name.clone(), kind, payload)
-        })();
         if let Some(document) = super::decode::record::recover(
-            result,
+            decode_configuration_document(ctx, &entry.name, bytes),
             losses,
             crate::loss::F3dLossCode::ConfigurationDocumentUndecoded,
             format_args!("Configuration document {}", entry.name),
@@ -83,6 +69,25 @@ pub(crate) fn decode_configurations(
         documents,
         unbound_roots,
     })
+}
+
+fn decode_configuration_document(
+    ctx: &DecodeContext<'_>,
+    name: &str,
+    bytes: &[u8],
+) -> Result<DesignConfiguration, CodecError> {
+    let payload = json::parse_configuration_payload(ctx, name, bytes)?;
+    let serde_json::Value::Object(payload) = payload else {
+        return Err(CodecError::malformed(
+            "F3D configuration JSON must be an object",
+        ));
+    };
+    let kind = if name.ends_with(".dsgcfgrule") {
+        DesignConfigurationKind::Rule
+    } else {
+        DesignConfigurationKind::Table
+    };
+    DesignConfiguration::try_new(name.to_owned(), kind, payload)
 }
 
 /// Attach the active row of the one root record to its table document, and
@@ -220,20 +225,6 @@ impl ConfigurationTargets<'_> {
             }
         }
     }
-}
-
-pub(crate) fn project_configurations_with_losses(
-    native: &[DesignConfiguration],
-    targets: &ConfigurationTargets<'_>,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<Vec<cadmpeg_ir::features::parameters::DesignConfiguration>, CodecError> {
-    Ok(super::decode::record::recover(
-        project_configurations(native, targets),
-        losses,
-        crate::loss::F3dLossCode::ConfigurationProjectionNative,
-        "Configuration projection",
-    )?
-    .unwrap_or_default())
 }
 
 /// Project the rows of the one populated table into the neutral configuration

@@ -4,11 +4,16 @@
 //! equations folder is a user parameter.
 //!
 //! A dimension whose text is one literal holds a `Neutral` expression that
-//! keeps the literal's authored unit. Any other text is a `Source`
-//! expression in the `SolidWorks` dialect, its references to parameters as
-//! reference tokens. A value is the cache the file stores: the literal, the
-//! dimension's stored `Value`, or the value the decoder read from a record
-//! that stores it in a stated unit.
+//! keeps the literal's authored unit. A parameter whose text is one
+//! reference to a parameter of its kind holds that reference as a `Neutral`
+//! link (§5.13). [`link_bare_references`] keeps as one `Text` token a text
+//! that is one reference to a parameter whose kind differs or is not read,
+//! and `equations::bare_references` states its unit-blind tree where that
+//! tree is one reference or the document's values confirm it. Any other
+//! text is a `Source` expression in the `SolidWorks` dialect, its references
+//! to parameters as reference tokens. A value is the cache the file stores:
+//! the literal, the dimension's stored `Value`, or the value the decoder
+//! read from a record that stores it in a stated unit.
 //!
 //! Keywords displays a dimension's number in the document's length unit or
 //! in degrees, with no unit (`docs/formats/sldprt.md`). Where the root
@@ -242,10 +247,11 @@ impl<'a> Decoded<'a> {
     /// in a part whose length unit `unit` is not read, where it drives the
     /// model, a reading that holds on the stored results of typed
     /// dimensions. A driving scalar outranks the others. The scalars that
-    /// count state one parameter, whose class is the kind and whose stored
-    /// value the value, assumed where every one of them is a
-    /// [`Statement::Assumed`]; otherwise the reason the dimension has no
-    /// value.
+    /// count state one parameter where they state one class and values that
+    /// are one number (see [`same_parameter`]); its class is the kind and the
+    /// first counted scalar's stored value the value, assumed where every one
+    /// of them is a [`Statement::Assumed`]. Otherwise the reason the
+    /// dimension has no value.
     fn named_dimension(
         &self,
         feature: &str,
@@ -283,10 +289,11 @@ impl<'a> Decoded<'a> {
             return Err(reason);
         };
         let parameter = |scalar: &NamedScalar| scalar.stated.and_then(Statement::parameter);
-        if counted
-            .iter()
-            .any(|scalar| parameter(scalar) != parameter(first))
-        {
+        if counted.iter().any(|scalar| {
+            !parameter(scalar)
+                .zip(parameter(first))
+                .is_some_and(|(stated, first)| same_parameter(stated, first))
+        }) {
             return Err(Unvalued::Disagrees);
         }
         let (kind, value) = parameter(first)
@@ -417,6 +424,24 @@ impl Shown {
     fn shows(self, value: f64) -> bool {
         (value - self.number).abs()
             <= self.rounding + EPS_STORED_DISPLAY * value.abs().max(self.number.abs())
+    }
+}
+
+/// Whether two stored values are one number within [`EPS_STORED_DISPLAY`],
+/// relative to the larger.
+fn same_stored(a: f64, b: f64) -> bool {
+    (a - b).abs() <= EPS_STORED_DISPLAY * a.abs().max(b.abs())
+}
+
+/// Whether the records `a` and `b` state one parameter: one class, and one
+/// count or real values that are one number (see [`same_stored`]).
+fn same_parameter(a: StatedParameter, b: StatedParameter) -> bool {
+    match (a, b) {
+        (StatedParameter::Length(a), StatedParameter::Length(b))
+        | (StatedParameter::Angle(a), StatedParameter::Angle(b))
+        | (StatedParameter::Scaler(a), StatedParameter::Scaler(b)) => same_stored(a, b),
+        (StatedParameter::Count(a), StatedParameter::Count(b)) => a == b,
+        _ => false,
     }
 }
 
@@ -617,13 +642,15 @@ impl<'a> Entries<'a> {
     }
 
     /// The parameters, their expressions read, the note naming those whose
-    /// literal is a rounded display, and the note naming the dimensions
-    /// whose text is a bare number and that have no value.
+    /// literal is a rounded display, the note naming the dimensions whose
+    /// text is a bare number and that have no value, and the parameters whose
+    /// text is one reference to a parameter whose kind differs or is not read,
+    /// kept as text for `equations::bare_references`.
     pub(super) fn parameters(
         &self,
         scope: &ProductDefinitionId,
         readings: &Readings<'_>,
-    ) -> (Vec<DesignParameter>, Vec<LossNote>) {
+    ) -> (Vec<DesignParameter>, Vec<LossNote>, Vec<ParameterId>) {
         let aliases = Aliases::new(&self.list);
         let mut read_entries = self
             .list
@@ -640,6 +667,7 @@ impl<'a> Entries<'a> {
                 }
             }
         }
+        let as_text = link_bare_references(&self.list, &mut read_entries, &readings.driven);
         let mut rounded = NamedCount::default();
         let mut assumed = NamedCount::default();
         let mut decided = NamedCount::default();
@@ -704,7 +732,7 @@ impl<'a> Entries<'a> {
                 unvalued.join("; ")
             )));
         }
-        (parameters, losses)
+        (parameters, losses, as_text)
     }
 }
 
@@ -1047,6 +1075,65 @@ fn read(
     }
 }
 
+/// Rewrites each `Source` expression whose text is one reference as that
+/// reference where the target has the parameter's kind and that kind is
+/// neutral (§5.13), and returns the parameters whose reference is kept as
+/// text. A parameter that `driven` holds states no expression.
+///
+/// Where the kinds differ or are `Native`, the expression is one `Text`
+/// token, the whole text, until `equations::bare_references` tests the
+/// text's unit-blind tree (§5.13). Interim: part 10 refuses a `Source`
+/// expression that is the reference token alone.
+fn link_bare_references(
+    entries: &[Entry<'_>],
+    readings: &mut [Reading],
+    driven: &HashSet<ParameterId>,
+) -> Vec<ParameterId> {
+    let kinds = entries
+        .iter()
+        .zip(readings.iter())
+        .map(|(entry, reading)| (entry.id.clone(), reading.kind.clone()))
+        .collect::<HashMap<_, _>>();
+    let mut as_text = Vec::new();
+    for (entry, reading) in entries.iter().zip(readings.iter_mut()) {
+        if driven.contains(&entry.id) {
+            continue;
+        }
+        let Some(reference) = bare_reference(&reading.expression).cloned() else {
+            continue;
+        };
+        let linked = match &reference.target {
+            RefTarget::Parameter(target) => kinds
+                .get(target)
+                .is_some_and(|kind| *kind == reading.kind && !matches!(kind, ValueKind::Native(_))),
+            // §5.13: a whole-text external reference is the parameter's own
+            // expression, of the parameter's kind.
+            RefTarget::External { .. } => true,
+        };
+        reading.expression = if linked {
+            Expression::Neutral(Neutral(Node::Reference(reference)))
+        } else {
+            as_text.push(entry.id.clone());
+            Expression::Source {
+                dialect: ExpressionDialect::SolidWorks,
+                tokens: vec![ExpressionToken::Text(entry.text.to_owned())],
+            }
+        };
+    }
+    as_text
+}
+
+/// The reference of a `Source` expression that is one reference token.
+fn bare_reference(expression: &Expression) -> Option<&ParameterRef> {
+    let Expression::Source { tokens, .. } = expression else {
+        return None;
+    };
+    let [ExpressionToken::Reference(reference)] = tokens.as_slice() else {
+        return None;
+    };
+    Some(reference)
+}
+
 /// The length the equation manager's `stored` metres give a dimension whose
 /// text is the bare display `number` and that no record types: the stored
 /// value, where `number` in the part's length unit `unit` is that many
@@ -1054,8 +1141,7 @@ fn read(
 /// radians store (`docs/formats/sldprt.md`).
 fn manager_length(number: f64, stored: f64, unit: Option<UnitSymbol>) -> Option<ParameterValue> {
     let metres = number * canonical(unit?)?.1 / MM_PER_M;
-    let same = |a: f64, b: f64| (a - b).abs() <= EPS_STORED_DISPLAY * a.abs().max(b.abs());
-    (number != 0.0 && same(metres, stored) && !same(number, stored))
+    (number != 0.0 && same_stored(metres, stored) && !same_stored(number, stored))
         .then(|| FiniteReal::new(stored * MM_PER_M).map(ParameterValue::Number))
         .flatten()
 }

@@ -61,6 +61,7 @@ fn circle_dimension_driver_supplies_the_center_operand() {
         role: FeatureInputScalarRole::Native,
         operands,
         archive_class: None,
+        archive_object_id: None,
     };
     let display_operand = operand(2, "display-handle");
     let display = FeatureInputScalar {
@@ -395,6 +396,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         role: FeatureInputScalarRole::Display,
         operands: Vec::new(),
         archive_class: None,
+        archive_object_id: None,
     };
     let lane = FeatureInputLane {
         id: "lane".into(),

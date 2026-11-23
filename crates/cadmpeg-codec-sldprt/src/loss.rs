@@ -66,6 +66,18 @@ pub(crate) enum SldprtLossCode {
     ConfigProjectionWorkCapped,
     /// A configuration's stored state has no design evaluation.
     ConfigStateUnstated,
+    /// A configuration that is not active has no stored partition.
+    ConfigStateNotStored,
+    /// The appearances or tessellations on the records of a state that is not
+    /// current are not stated.
+    ConfigStatePresentationUnstated,
+    /// The imported-feature body streams of a configuration that is not
+    /// active are not taken into its state.
+    ConfigStateImportedBodiesNotTransferred,
+    /// A feature output on a body of a state that is not current, whose
+    /// feature no face name of that body in the state's evaluation names, is
+    /// not stated.
+    ConfigStateOutputsUnstated,
     /// Parameter lacks an evaluated scalar or a regenerable finite value.
     ParameterUnevaluated,
     /// Parameter records have empty, duplicate, or colliding names/ordinals.
@@ -207,11 +219,16 @@ pub(crate) enum SldprtLossCode {
     /// Extrusion start condition is not the sketch plane and has no supported reading.
     FeatureExtrudeStartUnresolved,
     /// An offset reference plane keeps the side its `D1` sign gives: `D1` is a
-    /// magnitude and no stored frame of the object states the side (DI-81).
+    /// magnitude, and neither a stored frame of the object nor the point and
+    /// normal of its plane-data object states the side.
     FeatureOffsetPlaneSideAssumed,
-    /// An offset reference plane stores a frame of its own that is not the
-    /// plane the decoder places from its source plane and `D1` (DI-81).
+    /// An offset reference plane stores a frame, or a point and normal, that
+    /// is not the plane the decoder places from its source plane and `D1`.
     FeatureOffsetPlaneFrameConflict,
+    /// An offset reference plane takes its distance from the `D1` display: the
+    /// decoder reads no value of its `D1` parameter object that the display
+    /// shows.
+    FeatureOffsetPlaneDistanceDisplayed,
     /// A revolution keeps a stored axis that lies outside the plane the
     /// decoder binds its profile sketch to (DI-85).
     FeatureRevolveAxisOffProfilePlane,
@@ -319,7 +336,8 @@ pub(crate) enum SldprtLossCode {
     GeometryParasolidNotTransferred,
     /// Mesh bodies whose facet geometry remains unresolved.
     GeometryMeshBodyNotTransferred,
-    /// Imported-feature body streams that do not decode.
+    /// Imported-feature body streams of the active configuration that do not
+    /// decode or that the decode does not take.
     GeometryImportedBodiesNotTransferred,
     /// B-rep topology graph was not built for this file.
     TopologyGraphNotTransferred,
@@ -387,6 +405,9 @@ pub(crate) enum SldprtLossCode {
     WriterNativeSketchLaneOrphan,
     /// Export writes a native extrusion with no face references and a zero bounding box.
     WriterNativeBodyIdentityOmitted,
+    /// Export generates partitions with no producer or persistent-id
+    /// attribute, so feature outputs and face and body names are not written.
+    WriterProducerAttributesOmitted,
     /// Export writes each native sketch with its profile body, which native top-level sketches
     /// do not hold.
     WriterNativeSketchProfileBodyKept,
@@ -527,6 +548,11 @@ pub(crate) enum SldprtLossCode {
     /// value: no record types the dimension or binds it to a stored value,
     /// or the part's length unit is not read.
     DesignParameterValueUnread,
+    /// Parameters whose text is one reference to a parameter whose kind
+    /// differs or is not read, and whose unit-blind tree does not type or is
+    /// not confirmed by the document's values, hold the text and state no
+    /// dependency on the parameter it names.
+    DesignParameterReferenceAsText,
     /// Extrudes whose blind depth is bound to their record's only dimension,
     /// whose name is neither `Depth` nor `D1`.
     DesignExtrudeDepthAssumed,
@@ -586,6 +612,10 @@ impl SldprtLossCode {
         Self::ConfigIncompleteSnapshot,
         Self::ConfigProjectionWorkCapped,
         Self::ConfigStateUnstated,
+        Self::ConfigStateNotStored,
+        Self::ConfigStatePresentationUnstated,
+        Self::ConfigStateImportedBodiesNotTransferred,
+        Self::ConfigStateOutputsUnstated,
         Self::ParameterUnevaluated,
         Self::ParameterAmbiguousIdentity,
         Self::PmiDimensionUnbound,
@@ -645,6 +675,7 @@ impl SldprtLossCode {
         Self::FeatureExtrudeStartUnresolved,
         Self::FeatureOffsetPlaneSideAssumed,
         Self::FeatureOffsetPlaneFrameConflict,
+        Self::FeatureOffsetPlaneDistanceDisplayed,
         Self::FeatureRevolveAxisOffProfilePlane,
         Self::FeatureRevolveAxisRecordPrefixUnread,
         Self::FeatureThinOperationAmbiguous,
@@ -718,6 +749,7 @@ impl SldprtLossCode {
         Self::WriterNativeStreamsOmitted,
         Self::WriterNativeSketchLaneOrphan,
         Self::WriterNativeBodyIdentityOmitted,
+        Self::WriterProducerAttributesOmitted,
         Self::WriterNativeSketchProfileBodyKept,
         Self::WriterNativeSketchOriginRelationAdded,
         Self::WriterConfigurationIdentityAssigned,
@@ -767,6 +799,7 @@ impl SldprtLossCode {
         Self::DesignFolderDropped,
         Self::DesignParameterDisplayRounded,
         Self::DesignParameterValueUnread,
+        Self::DesignParameterReferenceAsText,
         Self::DesignExtrudeDepthAssumed,
         Self::DesignParameterClassAssumed,
         Self::DesignParameterClassesDisagree,
@@ -793,6 +826,12 @@ impl SldprtLossCode {
             Self::ConfigIncompleteSnapshot => "config.incomplete-snapshot",
             Self::ConfigProjectionWorkCapped => "config.projection-work-capped",
             Self::ConfigStateUnstated => "config.state-unstated",
+            Self::ConfigStateNotStored => "config.state-not-stored",
+            Self::ConfigStatePresentationUnstated => "config.state-presentation-unstated",
+            Self::ConfigStateImportedBodiesNotTransferred => {
+                "config.state-imported-bodies-not-transferred"
+            }
+            Self::ConfigStateOutputsUnstated => "config.state-outputs-unstated",
             Self::ParameterUnevaluated => "parameter.unevaluated",
             Self::ParameterAmbiguousIdentity => "parameter.ambiguous-identity",
             Self::PmiDimensionUnbound => "pmi.dimension-unbound",
@@ -858,6 +897,7 @@ impl SldprtLossCode {
             Self::FeatureExtrudeStartUnresolved => "feature.extrude-start-unresolved",
             Self::FeatureOffsetPlaneSideAssumed => "feature.offset-plane-side-assumed",
             Self::FeatureOffsetPlaneFrameConflict => "feature.offset-plane-frame-conflict",
+            Self::FeatureOffsetPlaneDistanceDisplayed => "feature.offset-plane-distance-displayed",
             Self::FeatureRevolveAxisOffProfilePlane => "feature.revolve-axis-off-profile-plane",
             Self::FeatureRevolveAxisRecordPrefixUnread => {
                 "feature.revolve-axis-record-prefix-unread"
@@ -939,6 +979,7 @@ impl SldprtLossCode {
             Self::WriterNativeStreamsOmitted => "writer.native-streams-omitted",
             Self::WriterNativeSketchLaneOrphan => "writer.native-sketch-lane-orphan",
             Self::WriterNativeBodyIdentityOmitted => "writer.native-body-identity-omitted",
+            Self::WriterProducerAttributesOmitted => "writer.producer-attributes-omitted",
             Self::WriterNativeSketchProfileBodyKept => "writer.native-sketch-profile-body-kept",
             Self::WriterNativeSketchOriginRelationAdded => {
                 "writer.native-sketch-origin-relation-added"
@@ -1014,6 +1055,7 @@ impl SldprtLossCode {
             Self::DesignFolderDropped => "design.folder-dropped",
             Self::DesignParameterDisplayRounded => "design.parameter-display-rounded",
             Self::DesignParameterValueUnread => "design.parameter-value-unread",
+            Self::DesignParameterReferenceAsText => "design.parameter-reference-as-text",
             Self::DesignExtrudeDepthAssumed => "design.extrude-depth-assumed",
             Self::DesignParameterClassAssumed => "design.parameter-class-assumed",
             Self::DesignParameterClassesDisagree => "design.parameter-classes-disagree",
@@ -1040,6 +1082,7 @@ impl SldprtLossCode {
             Self::WriterNativeStreamsOmitted => Severity::Warning,
             Self::WriterNativeSketchLaneOrphan => Severity::Warning,
             Self::WriterNativeBodyIdentityOmitted => Severity::Warning,
+            Self::WriterProducerAttributesOmitted => Severity::Warning,
             Self::WriterNativeSketchProfileBodyKept => Severity::Warning,
             Self::WriterNativeSketchOriginRelationAdded => Severity::Warning,
             Self::WriterConfigurationIdentityAssigned => Severity::Warning,
@@ -1102,6 +1145,10 @@ impl SldprtLossCode {
             | Self::ConfigIncompleteSnapshot
             | Self::ConfigProjectionWorkCapped
             | Self::ConfigStateUnstated
+            | Self::ConfigStateNotStored
+            | Self::ConfigStatePresentationUnstated
+            | Self::ConfigStateImportedBodiesNotTransferred
+            | Self::ConfigStateOutputsUnstated
             | Self::ParameterUnevaluated
             | Self::ParameterAmbiguousIdentity
             | Self::PmiDimensionUnbound
@@ -1155,6 +1202,7 @@ impl SldprtLossCode {
             | Self::FeatureExtrudeStartUnresolved
             | Self::FeatureOffsetPlaneSideAssumed
             | Self::FeatureOffsetPlaneFrameConflict
+            | Self::FeatureOffsetPlaneDistanceDisplayed
             | Self::FeatureRevolveAxisOffProfilePlane
             | Self::FeatureRevolveAxisRecordPrefixUnread
             | Self::FeatureThinOperationAmbiguous
@@ -1223,6 +1271,7 @@ impl SldprtLossCode {
             | Self::DesignFolderDropped
             | Self::DesignParameterDisplayRounded
             | Self::DesignParameterValueUnread
+            | Self::DesignParameterReferenceAsText
             | Self::DesignExtrudeDepthAssumed
             | Self::DesignParameterClassAssumed
             | Self::DesignParameterClassesDisagree
@@ -1259,6 +1308,7 @@ impl SldprtLossCode {
             Self::WriterNativeStreamsOmitted => LossTaxonomy::MetadataNotTransferred,
             Self::WriterNativeSketchLaneOrphan => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterNativeBodyIdentityOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterProducerAttributesOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterNativeSketchProfileBodyKept => LossTaxonomy::MetadataNotTransferred,
             Self::WriterNativeSketchOriginRelationAdded => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterConfigurationIdentityAssigned => LossTaxonomy::MetadataNotTransferred,
@@ -1336,6 +1386,7 @@ impl SldprtLossCode {
                 LossTaxonomy::RecordNotTyped
             }
             Self::DesignFolderDropped => LossTaxonomy::MetadataNotTransferred,
+            Self::DesignParameterReferenceAsText => LossTaxonomy::ParametricRecordOmitted,
             Self::DesignParameterDisplayRounded
             | Self::DesignParameterValueUnread
             | Self::DesignExtrudeDepthAssumed
@@ -1417,6 +1468,10 @@ impl SldprtLossCode {
             | Self::ConfigIncompleteSnapshot
             | Self::ConfigProjectionWorkCapped
             | Self::ConfigStateUnstated
+            | Self::ConfigStateNotStored
+            | Self::ConfigStatePresentationUnstated
+            | Self::ConfigStateImportedBodiesNotTransferred
+            | Self::ConfigStateOutputsUnstated
             | Self::ParameterUnevaluated
             | Self::ParameterAmbiguousIdentity
             | Self::PmiDimensionUnbound
@@ -1462,6 +1517,7 @@ impl SldprtLossCode {
             | Self::FeatureExtrudeStartUnresolved
             | Self::FeatureOffsetPlaneSideAssumed
             | Self::FeatureOffsetPlaneFrameConflict
+            | Self::FeatureOffsetPlaneDistanceDisplayed
             | Self::FeatureRevolveAxisOffProfilePlane
             | Self::FeatureRevolveAxisRecordPrefixUnread
             | Self::FeatureThinOperationAmbiguous
@@ -1671,6 +1727,10 @@ mod tests {
                 "config.incomplete-snapshot",
                 "config.projection-work-capped",
                 "config.state-unstated",
+                "config.state-not-stored",
+                "config.state-presentation-unstated",
+                "config.state-imported-bodies-not-transferred",
+                "config.state-outputs-unstated",
                 "parameter.unevaluated",
                 "parameter.ambiguous-identity",
                 "pmi.dimension-unbound",
@@ -1730,6 +1790,7 @@ mod tests {
                 "feature.extrude-start-unresolved",
                 "feature.offset-plane-side-assumed",
                 "feature.offset-plane-frame-conflict",
+                "feature.offset-plane-distance-displayed",
                 "feature.revolve-axis-off-profile-plane",
                 "feature.revolve-axis-record-prefix-unread",
                 "feature.thin-operation-ambiguous",
@@ -1803,6 +1864,7 @@ mod tests {
                 "writer.native-streams-omitted",
                 "writer.native-sketch-lane-orphan",
                 "writer.native-body-identity-omitted",
+                "writer.producer-attributes-omitted",
                 "writer.native-sketch-profile-body-kept",
                 "writer.native-sketch-origin-relation-added",
                 "writer.configuration-identity-assigned",
@@ -1852,6 +1914,7 @@ mod tests {
                 "design.folder-dropped",
                 "design.parameter-display-rounded",
                 "design.parameter-value-unread",
+                "design.parameter-reference-as-text",
                 "design.extrude-depth-assumed",
                 "design.parameter-class-assumed",
                 "design.parameter-classes-disagree",

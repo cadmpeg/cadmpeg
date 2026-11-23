@@ -157,6 +157,7 @@ pub(crate) fn enrich_history_semantic(
     lanes: &[crate::records::FeatureInputLane],
     pmi_dimensions: &[crate::records::PmiDimension],
     mode: HistoryEnrichment,
+    length_unit: Option<cadmpeg_ir::design::units::UnitSymbol>,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
     crate::resolved_features::terminations::enrich_history_extrusion_terminations(
         ctx, histories, lanes,
@@ -183,7 +184,10 @@ pub(crate) fn enrich_history_semantic(
             enrich_history_cosmetic_thread_diameters_without_hole_constructions(histories, lanes)?;
     }
     crate::resolved_features::reference_geometry::enrich_history_reference_planes(
-        ctx, histories, lanes,
+        ctx,
+        histories,
+        lanes,
+        length_unit,
     )?;
     crate::resolved_features::reference_geometry::enrich_history_reference_points(histories, lanes);
     crate::resolved_features::reference_geometry::enrich_history_coordinate_systems(
@@ -297,6 +301,7 @@ pub(crate) fn project_configuration_design_states(
     lanes: &[crate::records::FeatureInputLane],
     pmi_dimensions: &[crate::records::PmiDimension],
     form_padding: Option<usize>,
+    length_unit: Option<cadmpeg_ir::design::units::UnitSymbol>,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let work_limit = configuration_projection_work_limit(ir.model.configurations.len(), histories);
     project_configuration_design_states_within(
@@ -306,6 +311,7 @@ pub(crate) fn project_configuration_design_states(
             histories,
             lanes,
             pmi_dimensions,
+            length_unit,
         },
         form_padding,
         work_limit,
@@ -318,6 +324,8 @@ struct ConfigurationSources<'a> {
     histories: &'a [FeatureHistory],
     lanes: &'a [crate::records::FeatureInputLane],
     pmi_dimensions: &'a [crate::records::PmiDimension],
+    /// The length unit the part states, in which a bare display reads.
+    length_unit: Option<cadmpeg_ir::design::units::UnitSymbol>,
 }
 
 fn project_configuration_design_states_within(
@@ -331,6 +339,7 @@ fn project_configuration_design_states_within(
         histories,
         lanes,
         pmi_dimensions,
+        length_unit,
     } = sources;
     let mut resolved_base_features = copy_configuration_features(&ir.model.features);
     crate::resolved_features::operations::bind_extrusion_operations(
@@ -397,6 +406,7 @@ fn project_configuration_design_states_within(
             scoped_lanes,
             pmi_dimensions,
             HistoryEnrichment::Write,
+            length_unit,
         )?;
         let mut features = project_features(&projection)?;
         crate::resolved_features::bindings::bind_pattern_inputs(
@@ -438,6 +448,12 @@ fn project_configuration_design_states_within(
         crate::resolved_features::bindings::bind_sweep_profile_inputs(&mut features);
         restore_configuration_tree_node_definitions(&mut features, &ir.model.features);
         let native_features = crate::records::HistoryFeatures::new(histories);
+        let base_features = ir
+            .model
+            .features
+            .iter()
+            .map(|feature| (&feature.id, feature))
+            .collect::<HashMap<_, _>>();
         let mut feature_states = BTreeMap::new();
         for mut feature in features {
             if let Some(base_definition) = base_definitions.get(&feature.id).copied() {
@@ -463,6 +479,14 @@ fn project_configuration_design_states_within(
                         );
                     });
                     result?;
+                    if let Some(base) = base_features.get(&feature.id) {
+                        inherit_hole_construction_dependencies(
+                            &mut feature,
+                            base,
+                            &base_features,
+                            &native_features,
+                        );
+                    }
                 }
             }
             let (id, state) = configuration_feature_state(feature);
@@ -543,23 +567,40 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
     Ok(())
 }
 
-/// Resolve topology operands in configuration-local feature snapshots.
+/// Resolve topology operands and produced bodies in configuration-local
+/// feature snapshots.
+///
+/// A configuration's states name the bodies of its own partition that the
+/// partition's producer and body-modifier attributes assign to each feature,
+/// as the document features do over every decoded body. A configuration
+/// whose body membership is unresolved gains no produced body.
 pub(crate) fn bind_configuration_topology_selections(
     ir: &mut cadmpeg_ir::CadIr,
     histories: &[FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
     face_identities: &[(cadmpeg_ir::ids::FaceId, crate::brep::PersistentFaceIdentity)],
+    outputs: crate::history::bind::FeatureOutputSources<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for (configuration_index, lane_index) in
         configuration_lane_assignments(&ir.model.configurations, lanes)
     {
-        let body_membership_resolved = ir.model.configurations[configuration_index]
+        let held = ir.model.configurations[configuration_index]
             .bodies
-            .is_some();
+            .as_ref()
+            .map(|bodies| bodies.iter().cloned().collect::<HashSet<_>>());
         let scoped_lanes = &lanes[lane_index..=lane_index];
         let states = &ir.model.configurations[configuration_index].feature_states;
         let mut features = copy_configuration_state_features(&ir.model.features, states);
-        if body_membership_resolved {
+        if let Some(held) = held {
+            crate::history::bind::derive_feature_outputs(
+                &mut features,
+                histories,
+                outputs,
+                &ir.geometry.faces,
+                &ir.geometry.shells,
+                &ir.geometry.regions,
+                |body| held.contains(body),
+            )?;
             let topology_selection_inputs = crate::history::selections::TopologySelectionInputs {
                 bodies: &ir.geometry.bodies,
                 faces: &ir.geometry.faces,
@@ -1008,6 +1049,42 @@ fn inherit_configuration_shared_semantics(
     inherit_configuration_hole_semantics(definition, base_definition, true)?;
 
     Ok(())
+}
+
+/// Add to a configuration hole state the dependencies of the document hole on
+/// the sketches its construction's `DissectableChildren` names, which the
+/// state inherits with the construction.
+fn inherit_hole_construction_dependencies(
+    feature: &mut cadmpeg_ir::features::Feature,
+    base: &cadmpeg_ir::features::Feature,
+    base_features: &HashMap<&FeatureId, &cadmpeg_ir::features::Feature>,
+    native_features: &crate::records::HistoryFeatures<'_>,
+) {
+    let Some(children) = base.source_properties.get("DissectableChildren") else {
+        return;
+    };
+    let children = children
+        .split(',')
+        .map(str::trim)
+        .filter(|child| !child.is_empty())
+        .collect::<Vec<_>>();
+    for dependency in &base.dependencies {
+        let Some(record) = base_features
+            .get(dependency)
+            .and_then(|feature| feature.native_ref.as_deref())
+            .and_then(|native_ref| native_features.get(native_ref))
+        else {
+            continue;
+        };
+        if children.iter().any(|child| {
+            *child == record.id
+                || child
+                    .parse::<u32>()
+                    .is_ok_and(|source| record.source_value() == Some(source))
+        }) {
+            feature.dependencies.insert(dependency.clone());
+        }
+    }
 }
 
 fn inherit_configuration_hole_semantics(

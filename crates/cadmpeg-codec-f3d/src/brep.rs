@@ -263,12 +263,14 @@ pub(crate) fn decode_history_with_subtypes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &[Record],
     bytes: &[u8],
+    header: Option<&cadmpeg_asm::kernel_header::KernelHeader>,
     subtypes: &cadmpeg_asm::nurbs::toks::SubtypeTable,
 ) -> Result<Brep, CodecError> {
-    Brep::from_asm(cadmpeg_asm::brep::decode_history_with_subtypes(
+    Brep::from_asm(cadmpeg_asm::brep::decode_history_with_header_and_subtypes(
         ctx,
         records,
         bytes,
+        header,
         crate::ids::ID_FORMAT,
         subtypes,
     )?)

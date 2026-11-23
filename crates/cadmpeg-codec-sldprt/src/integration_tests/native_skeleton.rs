@@ -1222,3 +1222,119 @@ fn a_part_whose_only_sketch_is_spatial_keeps_the_generated_lane() {
         "{entities:?}"
     );
 }
+
+/// The name and header identifier of the named object whose body starts at
+/// `body` (sldprt.md §2.3): its name object, a `moNodeName_c` declaration or
+/// tag and the name's `CString`, then the header, whose identifier is at
+/// +8 and whose string marker is at +16.
+fn named_header(stream: &[u8], body: usize) -> Option<(String, u32)> {
+    let string = if stream.get(body..body + 2)? == [0xff, 0xff] {
+        body + 6 + usize::from(u16::from_le_bytes([stream[body + 4], stream[body + 5]]))
+    } else {
+        body + 2
+    };
+    if stream.get(string..string + 3)? != [0xff, 0xfe, 0xff] {
+        return None;
+    }
+    let units = usize::from(*stream.get(string + 3)?);
+    let end = string + 4 + 2 * units;
+    let name = String::from_utf16(
+        &stream
+            .get(string + 4..end)?
+            .chunks_exact(2)
+            .map(|unit| u16::from_le_bytes([unit[0], unit[1]]))
+            .collect::<Vec<_>>(),
+    )
+    .ok()?;
+    if stream.get(end + 16..end + 19)? != [0xff, 0xfe, 0xff] {
+        return None;
+    }
+    let id = u32::from_le_bytes(stream.get(end + 8..end + 12)?.try_into().ok()?);
+    Some((name, id))
+}
+
+/// The written part's binary objects hold the default nodes' native
+/// identifiers, and a sketch on the Top plane names the plane by feature `3`
+/// and plane word `2` (sldprt.md §2.3).
+#[test]
+fn the_object_streams_hold_the_default_node_identifiers_and_the_top_plane_pair() {
+    let bytes = write(&cube_with_sketches());
+    let (walk, resolved) = walk(&bytes);
+    let mut named = std::collections::BTreeMap::<&str, Vec<(String, u32)>>::new();
+    for object in &walk.trace {
+        if let Some(head) = named_header(&resolved, object.body) {
+            named.entry(&object.class).or_default().push(head);
+        }
+    }
+    let ids = |class: &str| {
+        named
+            .get(class)
+            .map(|heads| heads.iter().map(|(_, id)| *id).collect::<Vec<_>>())
+            .unwrap_or_default()
+    };
+    assert_eq!(
+        named.get("moRefPlane_c").cloned().unwrap_or_default(),
+        [
+            ("Front Plane".to_owned(), 2),
+            ("Top Plane".to_owned(), 3),
+            ("Right Plane".to_owned(), 4)
+        ]
+    );
+    for (class, id) in [
+        ("moDetailCabinet_c", 1),
+        ("moOriginProfileFeature_c", 5),
+        ("moDocsFolder_c", 7),
+        ("moCommentsFolder_c", 8),
+        ("moSolidBodyFolder_c", 9),
+        ("moSurfaceBodyFolder_c", 10),
+        ("moMaterialFolder_c", 11),
+        ("moEqnFolder_c", 16),
+        ("moSensorFolder_c", 19),
+        ("moFavoriteFolder_c", 20),
+        ("moHistoryFolder_c", 21),
+        ("moSelectionSetFolder_c", 22),
+    ] {
+        assert_eq!(ids(class), [id], "{class}");
+    }
+    let mut sketches = ids("moProfileFeature_c");
+    sketches.sort_unstable();
+    assert_eq!(sketches, [23, 24]);
+    // Each sketch's `moCompRefPlane_c` opens with a `moUnitComponent_c`
+    // (79 bytes of body in a part of `swVersion` 14000) and then names a
+    // default plane by its u32 feature number, a u32 time stamp, u16 `0`, the
+    // plane's u16 word, u16 `0` and a flag: `0` for the Front plane, `1` (a
+    // rotation follows) for the Top plane.
+    let mut planes = Vec::new();
+    for (index, object) in walk.trace.iter().enumerate() {
+        if &*object.class != "moCompRefPlane_c" {
+            continue;
+        }
+        let sketch = walk.trace[..index]
+            .iter()
+            .rev()
+            .find(|owner| &*owner.class == "moProfileFeature_c")
+            .and_then(|owner| named_header(&resolved, owner.body))
+            .map(|(name, _)| name);
+        let unit = &walk.trace[index + 1];
+        assert_eq!(&*unit.class, "moUnitComponent_c");
+        assert_eq!(unit.at, object.body);
+        let at = unit.body + 79;
+        let u16_at = |offset: usize| u16::from_le_bytes([resolved[offset], resolved[offset + 1]]);
+        assert_eq!(u16_at(at + 8), 0);
+        assert_eq!(u16_at(at + 12), 0);
+        planes.push((
+            sketch,
+            u32::from_le_bytes(resolved[at..at + 4].try_into().expect("four bytes")),
+            u16_at(at + 10),
+            resolved[at + 14],
+        ));
+    }
+    assert!(
+        planes.contains(&(Some("Rectangle".to_owned()), 2, 3, 0)),
+        "the Rectangle sketch names the Front plane: {planes:?}"
+    );
+    assert!(
+        planes.contains(&(Some("Arcs".to_owned()), 3, 2, 1)),
+        "the Arcs sketch names the Top plane: {planes:?}"
+    );
+}

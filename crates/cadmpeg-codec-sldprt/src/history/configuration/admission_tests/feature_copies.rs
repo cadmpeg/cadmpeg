@@ -77,6 +77,7 @@ fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
         &[feature_input_lane("lane", Some("0"))],
         &[],
         None,
+        None,
     )?;
     assert_eq!(ir.model.features, features);
     assert!(ir.model.configurations[0].feature_states.is_empty());
@@ -105,6 +106,7 @@ fn run_topology() -> Result<(), CodecError> {
         &[],
         &[feature_input_lane("lane", Some("0"))],
         &[],
+        crate::history::bind::FeatureOutputSources::default(),
     )?;
     assert_eq!(ir, expected);
     Ok(())

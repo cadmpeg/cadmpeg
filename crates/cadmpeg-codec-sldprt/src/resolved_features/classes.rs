@@ -711,6 +711,7 @@ mod idless_history_binding_tests {
             &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut histories,
             &[lane],
+            None,
         )
         .unwrap();
 

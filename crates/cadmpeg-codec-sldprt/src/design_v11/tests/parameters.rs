@@ -247,7 +247,7 @@ fn parameters_with_scalars(
             .push(*scalar);
     }
     let timeline = super::super::tree::timeline(&native.feature_histories).unwrap();
-    let (parameters, notes) =
+    let (mut parameters, mut notes, bare) =
         super::super::parameters::Entries::new(&native.feature_histories, &timeline)
             .unwrap()
             .parameters(
@@ -263,6 +263,13 @@ fn parameters_with_scalars(
                     confirmed: std::collections::HashSet::new(),
                 },
             );
+    notes.extend(super::super::equations::bare_references(
+        &mut parameters,
+        &bare,
+        &timeline.features,
+        length_unit,
+        &ir.tolerances,
+    ));
     (ir, parameters, notes)
 }
 
@@ -1050,6 +1057,305 @@ fn a_bound_scalar_shows_a_bare_length_display_at_the_part_length_precision() {
     assert!(reading(&parameters, "D2"), "{parameters:#?}");
 }
 
+/// The neutral expression `text` over `targets`, as a parameter definition.
+fn neutral_definition(
+    text: &str,
+    targets: &[&cadmpeg_ir::features::ParameterId],
+) -> cadmpeg_ir::design::parameter::ParameterDefinition {
+    use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
+    use cadmpeg_ir::design::expr::{parse, Expression, Neutral};
+
+    let references = targets
+        .iter()
+        .map(|target| ParameterRef {
+            target: RefTarget::Parameter((*target).clone()),
+            through: None,
+        })
+        .collect::<Vec<_>>();
+    cadmpeg_ir::design::parameter::ParameterDefinition::Expression(Expression::Neutral(Neutral(
+        parse(text, &references, &[]).unwrap(),
+    )))
+}
+
+#[test]
+fn a_bare_reference_of_the_same_kind_is_a_neutral_link() {
+    let ir = part_with_history(
+        br#"<Keywords Name="Bracket">
+            <Feature Name="Equations" Type="EquationDriven" id="16">
+                <Dimension Name="wall">5</Dimension>
+                <Dimension Name="rib">"wall"</Dimension>
+            </Feature>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7">
+                <Dimension Name="D1">12.5mm</Dimension>
+                <Dimension Name="D2" Value="12.5mm">"D1@Boss"</Dimension>
+                <Dimension Name="D3" Value="12.5mm"> D1 </Dimension>
+            </Extrusion>
+        </Keywords>"#,
+        &[],
+    );
+    let d1 = parameter_named(&ir, "D1").id.clone();
+    for name in ["D2", "D3"] {
+        let parameter = parameter_named(&ir, name);
+        assert_eq!(
+            parameter.definition,
+            neutral_definition("$0", &[&d1]),
+            "{name}"
+        );
+    }
+    let wall = parameter_named(&ir, "wall").id.clone();
+    assert_eq!(
+        parameter_named(&ir, "rib").definition,
+        neutral_definition("$0", &[&wall])
+    );
+    assert_no_design_findings(&ir);
+}
+
+#[test]
+fn a_reference_to_a_parameter_of_another_kind_states_its_tested_unit_blind_tree_or_text() {
+    use cadmpeg_ir::design::expr::{Expression, ExpressionDialect, ExpressionToken};
+    use cadmpeg_ir::design::parameter::ParameterDefinition;
+    use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
+    use cadmpeg_ir::features::parameters::ParameterValue as V10;
+    use cadmpeg_ir::scalar::{Angle, Length};
+
+    let (_, parameters, losses) = parameters_with_readings(
+        br#"<Keywords Name="Bracket">
+            <Feature Name="Equations" Type="EquationDriven" id="16">
+                <Dimension Name="wall">5</Dimension>
+                <Dimension Name="count">"D6@Pattern"</Dimension>
+            </Feature>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7">
+                <Dimension Name="D1" Value="5mm">"wall"</Dimension>
+                <Dimension Name="D2" Value="10deg">"wall"</Dimension>
+                <Dimension Name="D3">"D1@Boss"</Dimension>
+                <Dimension Name="D4"> "D1@Boss" </Dimension>
+                <Dimension Name="D5">"wall"</Dimension>
+            </Extrusion>
+            <Feature Name="Pattern" Type="LPattern" id="12">
+                <Dimension Name="D6">4</Dimension>
+                <Dimension Name="D7">2.5</Dimension>
+                <Dimension Name="D8">"D7@Pattern"</Dimension>
+            </Feature>
+        </Keywords>"#,
+        &[
+            ("Boss", "D1", V10::Length(Length::new(5.0).unwrap()), None),
+            ("Boss", "D2", V10::Angle(Angle::new(0.1).unwrap()), None),
+            ("Boss", "D3", V10::Angle(Angle::new(0.1).unwrap()), None),
+            ("Boss", "D4", V10::Angle(Angle::new(0.1).unwrap()), None),
+            ("Boss", "D5", V10::Length(Length::new(5.0).unwrap()), None),
+            ("Pattern", "D6", V10::Integer(4), Some("scalar-count")),
+        ],
+        &[(
+            "scalar-count",
+            crate::records::ArchiveParameterClass::Integer,
+        )],
+        Some(UnitSymbol::Mm),
+    );
+    let named = |name: &str| {
+        parameters
+            .iter()
+            .find(|parameter| {
+                parameter
+                    .name
+                    .as_ref()
+                    .map(cadmpeg_core::text::NonBlankString::as_str)
+                    == Some(name)
+            })
+            .unwrap_or_else(|| panic!("{name}: {parameters:#?}"))
+    };
+    let text = |text: &str| {
+        ParameterDefinition::Expression(Expression::Source {
+            dialect: ExpressionDialect::SolidWorks,
+            tokens: vec![ExpressionToken::Text(text.to_owned())],
+        })
+    };
+    let wall = named("wall").id.clone();
+    assert_eq!(named("D1").kind, ValueKind::Quantity(Quantity::LENGTH));
+    assert_eq!(
+        named("D1").definition,
+        neutral_definition("$0 * 1[mm]", &[&wall])
+    );
+    for (name, whole) in [
+        ("D2", "\"wall\""),
+        ("D3", "\"D1@Boss\""),
+        ("D4", "\"D1@Boss\""),
+    ] {
+        assert_eq!(
+            named(name).kind,
+            ValueKind::Quantity(Quantity::ANGLE),
+            "{name}"
+        );
+        assert_eq!(named(name).definition, text(whole), "{name}");
+    }
+    assert_eq!(named("D5").kind, ValueKind::Quantity(Quantity::LENGTH));
+    assert_eq!(named("D5").definition, text("\"wall\""));
+    // A global set to a count is one reference, stated with no value to test
+    // it against, as an equation-manager line that is one reference is.
+    assert_eq!(named("count").kind, ValueKind::Quantity(Quantity::REAL));
+    assert_eq!(named("D6").kind, ValueKind::Integer);
+    assert_eq!(
+        named("count").definition,
+        neutral_definition("$0", &[&named("D6").id])
+    );
+    // Two dimensions of the one unread kind, one set to the other.
+    assert!(
+        matches!(&named("D7").kind, ValueKind::Native(_)),
+        "{:?}",
+        named("D7").kind
+    );
+    assert_eq!(named("D8").kind, named("D7").kind);
+    assert_eq!(named("D8").definition, text("\"D7@Pattern\""));
+    // D7's bare number holds no value, which its own note names.
+    let as_text = losses
+        .iter()
+        .filter(|loss| {
+            loss.code == crate::loss::SldprtLossCode::DesignParameterReferenceAsText.kind()
+        })
+        .collect::<Vec<_>>();
+    let [disagrees, untyped, untested] = as_text.as_slice() else {
+        panic!("three notes: {losses:?}");
+    };
+    for loss in [disagrees, untyped, untested] {
+        assert!(
+            loss.message
+                .contains("one reference to a parameter whose kind differs or is not read"),
+            "{}",
+            loss.message
+        );
+    }
+    let id = |name: &str| named(name).id.as_str().to_owned();
+    assert!(
+        disagrees.message.starts_with("1 parameters")
+            && disagrees
+                .message
+                .contains("its evaluation over the decoded values disagrees")
+            && disagrees.message.ends_with(&format!(": {}", id("D2"))),
+        "{}",
+        disagrees.message
+    );
+    assert!(
+        untyped.message.starts_with("3 parameters")
+            && untyped.message.contains("its kinds do not type")
+            && ["D3", "D4", "D8"]
+                .into_iter()
+                .all(|name| untyped.message.contains(&id(name))),
+        "{}",
+        untyped.message
+    );
+    assert!(
+        untested.message.starts_with("1 parameters")
+            && untested
+                .message
+                .contains("no value to test its reading against")
+            && untested.message.ends_with(&format!(": {}", id("D5"))),
+        "{}",
+        untested.message
+    );
+}
+
+#[test]
+fn a_reference_in_an_inch_document_states_its_product_in_inches() {
+    use cadmpeg_ir::design::units::UnitSymbol;
+    use cadmpeg_ir::features::parameters::ParameterValue as V10;
+    use cadmpeg_ir::scalar::Length;
+
+    let (_, parameters, losses) = parameters_with_readings(
+        br#"<Keywords Name="Bracket">
+            <Feature Name="Equations" Type="EquationDriven" id="16">
+                <Dimension Name="wall">5</Dimension>
+            </Feature>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7">
+                <Dimension Name="D1" Value="5in">"wall"</Dimension>
+            </Extrusion>
+        </Keywords>"#,
+        &[("Boss", "D1", V10::Length(Length::new(127.0).unwrap()), None)],
+        &[],
+        Some(UnitSymbol::In),
+    );
+    let named = |name: &str| {
+        parameters
+            .iter()
+            .find(|parameter| {
+                parameter
+                    .name
+                    .as_ref()
+                    .map(cadmpeg_core::text::NonBlankString::as_str)
+                    == Some(name)
+            })
+            .unwrap_or_else(|| panic!("{name}: {parameters:#?}"))
+    };
+    // 5 inches is the stored 127 mm; the same text read in millimetres
+    // would disagree with it.
+    assert_eq!(
+        named("D1").definition,
+        neutral_definition("$0 * 1[in]", &[&named("wall").id])
+    );
+    assert!(losses.is_empty(), "{losses:?}");
+}
+
+#[test]
+fn scalars_one_number_apart_state_one_length_and_further_apart_none() {
+    use super::super::parameters::NamedScalar;
+    use crate::resolved_features::parameter_classes::{StatedParameter, Statement};
+    use cadmpeg_ir::design::parameter::ParameterValue;
+    use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
+
+    let keywords = br#"<Keywords Name="Bracket">
+            <Feature Name="Sketch1" Type="ProfileFeature" id="7">
+                <Dimension Name="D1">37.5</Dimension>
+                <Dimension Name="D2">37.5</Dimension>
+            </Feature>
+        </Keywords>"#;
+    let shown = |metres| NamedScalar {
+        stated: Some(Statement::Parameter(StatedParameter::Length(metres))),
+        driving: false,
+    };
+    // D1's scalars differ in the last bit; D2's by 5e-6 relative, though
+    // the display shows both.
+    let next = f64::from_bits(0.0375f64.to_bits() + 1);
+    let named = [
+        ("Sketch1", "D1", shown(0.0375)),
+        ("Sketch1", "D1", shown(next)),
+        ("Sketch1", "D2", shown(0.0375)),
+        ("Sketch1", "D2", shown(0.037_500_2)),
+    ];
+    let (_, parameters, notes) =
+        parameters_with_scalars(keywords, &[], &[], &[], &named, Some(UnitSymbol::Mm), None);
+    let parameter = |name: &str| {
+        parameters
+            .iter()
+            .find(|parameter| {
+                parameter
+                    .name
+                    .as_ref()
+                    .map(cadmpeg_core::text::NonBlankString::as_str)
+                    == Some(name)
+            })
+            .unwrap_or_else(|| panic!("{name}: {parameters:#?}"))
+    };
+    let d1 = parameter("D1");
+    assert_eq!(d1.kind, ValueKind::Quantity(Quantity::LENGTH));
+    assert!(
+        matches!(&d1.value, Some(ParameterValue::Number(value)) if value.get() == 0.0375 * 1000.0),
+        "the first counted scalar's value: {d1:#?}"
+    );
+    let d2 = parameter("D2");
+    assert!(d2.value.is_none(), "{d2:#?}");
+    let note = note_of(
+        &notes,
+        crate::loss::SldprtLossCode::DesignParameterValueUnread,
+    )
+    .expect("D2 is named");
+    assert!(
+        note.message.contains(&format!(
+            "1 whose stored values differ from the display or from each other ({})",
+            d2.id.as_str()
+        )),
+        "{}",
+        note.message
+    );
+}
+
 #[test]
 fn a_bare_display_number_states_no_unit() {
     use super::super::parameters::bare_display_number;
@@ -1138,21 +1444,23 @@ fn parameters_with_manager(
         );
     }
     let timeline = super::super::tree::timeline(&native.feature_histories).unwrap();
-    super::super::parameters::Entries::new(&native.feature_histories, &timeline)
-        .unwrap()
-        .parameters(
-            &ir.design.scopes[0].definition,
-            &super::super::parameters::Readings {
-                decoded,
-                length_unit: Some(cadmpeg_ir::design::units::UnitSymbol::Mm),
-                length_places: places,
-                bound: std::collections::HashMap::new(),
-                measured: std::collections::HashMap::new(),
-                driven: std::collections::HashSet::new(),
-                manager,
-                confirmed,
-            },
-        )
+    let (parameters, notes, _) =
+        super::super::parameters::Entries::new(&native.feature_histories, &timeline)
+            .unwrap()
+            .parameters(
+                &ir.design.scopes[0].definition,
+                &super::super::parameters::Readings {
+                    decoded,
+                    length_unit: Some(cadmpeg_ir::design::units::UnitSymbol::Mm),
+                    length_places: places,
+                    bound: std::collections::HashMap::new(),
+                    measured: std::collections::HashMap::new(),
+                    driven: std::collections::HashSet::new(),
+                    manager,
+                    confirmed,
+                },
+            );
+    (parameters, notes)
 }
 
 /// The kind and number of the parameter named `name` among `parameters`.
@@ -1452,3 +1760,5 @@ fn the_manager_length_decides_a_dimension_whose_classes_disagree() {
         unvalued.message
     );
 }
+
+mod display_rounded;

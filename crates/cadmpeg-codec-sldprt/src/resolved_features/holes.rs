@@ -1473,6 +1473,7 @@ pub(crate) fn project_hole_position_sketches(
     }
     for feature in features.iter_mut() {
         let mut projection = None;
+        let mut position_sketch = None;
         'feature_edit: {
             if feature.suppressed == Some(true) {
                 break 'feature_edit;
@@ -1482,9 +1483,6 @@ pub(crate) fn project_hole_position_sketches(
             else {
                 break 'feature_edit;
             };
-            if placements.is_some() {
-                break 'feature_edit;
-            }
             let Some(native) = feature
                 .native_ref
                 .as_deref()
@@ -1509,6 +1507,10 @@ pub(crate) fn project_hole_position_sketches(
             else {
                 break 'feature_edit;
             };
+            position_sketch = Some(position_dependency);
+            if placements.is_some() {
+                break 'feature_edit;
+            }
             let Some(sketch) = sketches.iter().find(|sketch| sketch.id == *sketch_id) else {
                 break 'feature_edit;
             };
@@ -1673,10 +1675,10 @@ pub(crate) fn project_hole_position_sketches(
                 resolved.push(HolePlacement::Axis { origin, axis });
             }
             if resolved.len() == authored_markers.len() {
-                projection = Some((resolved, position_dependency));
+                projection = Some(resolved);
             }
         }
-        if let Some((resolved, dependency)) = projection {
+        if let Some(resolved) = projection {
             feature.evaluation.edit(|definition, _| {
                 if let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
                     definition
@@ -1684,6 +1686,8 @@ pub(crate) fn project_hole_position_sketches(
                     *placements = Some(resolved);
                 }
             });
+        }
+        if let Some(dependency) = position_sketch {
             feature.dependencies.insert(dependency.clone());
         }
     }
