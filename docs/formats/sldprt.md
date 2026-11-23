@@ -2423,24 +2423,28 @@ streams. A FACE or EDGE header frames on the sentinel, `0.0`, or a tolerance in
 
 #### Principal-plane profile placement
 
-A marker or compact sketch profile in model space selects its local Top
+A marker or compact sketch profile in model space selects its local principal
 component when these conditions hold:
 
 - The declared reference selects the principal Front source `2`.
 - A complete declared reference record lies inside the profile object or its
   immediately preceding context.
 - One or more complete principal component records lie inside the profile
-  object's byte interval. Each has source/selector `(3,2)`.
+  object's byte interval. All of them have source/selector `(3,2)` (Top), or
+  all of them have `(4,1)` (Right).
 - The generic component-placement count in the profile and enclosing context
   is zero.
 
-The frame is
+The Top frame is
 `origin=(0,0,0)`, `u=(1,0,0)`, `v=(0,0,-1)`, `normal=(0,1,0)`.
+The Right frame is
+`origin=(0,0,0)`, `u=(0,0,-1)`, `v=(0,1,0)`, `normal=(1,0,0)`.
 The stored marker pair `(a,b)` supplies sketch coordinates `(u,v)=(a,b)`.
-A profile point maps to `(a,0,-b)` in model space. The local component selects
-this frame before the declared plane frame. The same coordinate mapping applies
-to profile curves, construction points, dimensions, constraints and
-profile-derived axes.
+A profile point maps to `(a,0,-b)` in model space on Top and to `(0,b,-a)` on
+Right. The local component selects this frame before the declared plane frame.
+The source identifier of the component records names the built-in plane that
+supports the sketch. The same coordinate mapping applies to profile curves,
+construction points, dimensions, constraints and profile-derived axes.
 
 ---
 

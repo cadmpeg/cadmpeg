@@ -157,7 +157,6 @@ fn indexed_profile_frames_resolve_each_record_interval() {
         declared: Vec::new(),
         components: (0..records).map(|i| (i * width, 7)).collect(),
         deferred_principal_components: Vec::new(),
-        top_components: Vec::new(),
         component_frames: (0..records).map(|i| (i * width, frame)).collect(),
     };
     for i in 0..records {
@@ -182,7 +181,6 @@ fn indexed_component_frames_keep_complete_boundaries_and_ambiguity() {
         declared: Vec::new(),
         components: vec![(0, 7), (width, 7), (width * 2, 9)],
         deferred_principal_components: Vec::new(),
-        top_components: Vec::new(),
         component_frames: vec![(0, first), (width, first), (width * 2, second)],
     };
     assert_eq!(index.profile_component_frame(0, 0, width - 1), None);
@@ -226,7 +224,7 @@ fn principal_top_uses_positive_y_normal() {
 }
 
 #[test]
-fn top_component_frame_requires_a_complete_local_unmixed_record() {
+fn principal_component_frame_requires_a_complete_local_unmixed_record() {
     use crate::layout::compact_principal_plane_component as layout;
     let mut record = [0u8; super::COMPACT_COMPONENT_PLANE_RECORD_LEN];
     record[layout::SOURCE..layout::SOURCE + 4].copy_from_slice(&3u32.to_le_bytes());
@@ -245,11 +243,11 @@ fn top_component_frame_requires_a_complete_local_unmixed_record() {
     record[layout::TRAILER_SENTINEL..layout::TRAILER_SENTINEL + 4].fill(0xff);
     let index = CompactReferencePlaneIndex::new(&record);
     assert_eq!(
-        index.principal_top_profile_frame(0, record.len()),
-        Some(principal_top_component_frame())
+        index.principal_component_plane(0, record.len()),
+        Some(PrincipalPlane::Top)
     );
-    assert_eq!(index.principal_top_profile_frame(1, record.len()), None);
-    assert_eq!(index.principal_top_profile_frame(0, record.len() - 1), None);
+    assert_eq!(index.principal_component_plane(1, record.len()), None);
+    assert_eq!(index.principal_component_plane(0, record.len() - 1), None);
     let top = record;
     let mut right = record;
     right[layout::SOURCE..layout::SOURCE + 4].copy_from_slice(&4u32.to_le_bytes());
@@ -261,10 +259,20 @@ fn top_component_frame_requires_a_complete_local_unmixed_record() {
         let offset = layout::BASIS + index * 8;
         right[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
+    assert_eq!(
+        CompactReferencePlaneIndex::new(&right).principal_component_plane(0, right.len()),
+        Some(PrincipalPlane::Right)
+    );
+    let mut both_right = right.to_vec();
+    both_right.extend_from_slice(&right);
+    assert_eq!(
+        CompactReferencePlaneIndex::new(&both_right).principal_component_plane(0, both_right.len()),
+        Some(PrincipalPlane::Right)
+    );
     let mut mixed = top.to_vec();
     mixed.extend_from_slice(&right);
     assert_eq!(
-        CompactReferencePlaneIndex::new(&mixed).principal_top_profile_frame(0, mixed.len()),
+        CompactReferencePlaneIndex::new(&mixed).principal_component_plane(0, mixed.len()),
         None
     );
     let mut custom = top;
@@ -279,12 +287,12 @@ fn top_component_frame_requires_a_complete_local_unmixed_record() {
     let mut mixed = top.to_vec();
     mixed.extend_from_slice(&custom);
     assert_eq!(
-        CompactReferencePlaneIndex::new(&mixed).principal_top_profile_frame(0, mixed.len()),
+        CompactReferencePlaneIndex::new(&mixed).principal_component_plane(0, mixed.len()),
         None
     );
     record[layout::SELECTOR] = 1;
     assert_eq!(
-        CompactReferencePlaneIndex::new(&record).principal_top_profile_frame(0, record.len()),
+        CompactReferencePlaneIndex::new(&record).principal_component_plane(0, record.len()),
         None
     );
 }
