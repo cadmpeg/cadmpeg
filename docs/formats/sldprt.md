@@ -2727,7 +2727,7 @@ Post-magic `00 10` reference cells appear as `[01][hi][lo]` or `[hi][lo][01]` tr
 
 The post-magic cell order has no discriminator byte. A valid `00 10` interpretation has a zero or a curve-carrier attribute in `refs[3]`; a valid `00 11` interpretation has a loop attribute in `refs[1]`, a same-loop coedge in `refs[3]`, a vertex-use attribute in `refs[4]`, and an edge-use attribute in `refs[6]`. The frame is the unique interpretation that satisfies these reference invariants. If more than one interpretation satisfies them, the record has no selected topology interpretation.
 
-A deltas stream is a Parasolid Deltas transmit (`siemens_nx.md` §4.2) that holds the main-line history of the partition in its site. It holds the current mark's delta, then one PMARK section and one map section for each earlier main-line mark down to the initial mark, and ends after the initial mark's PMARK section. Each delta is a change set. Its **change roster** is a section terminator followed by the delta's map prefix:
+A deltas stream is a Parasolid Deltas transmit (`siemens_nx.md` §4.2) that holds the main-line history of the partition in its site. It holds the current mark's delta, then a PMARK section and a map section for each earlier main-line mark down to the mark after the initial mark, and ends at EOF with the initial mark's PMARK section (`siemens_nx.md` §4.2 "**Delta assignment.**"). The sections of marks off the main line can occur between those of main-line marks. Each delta is a change set. Its **change roster** is a section terminator followed by the delta's map prefix:
 
 ```
 00 01 00 01  ( attr u16 BE  class u16 BE )*  00 01  terminal:4

@@ -117,6 +117,14 @@ until their enclosing sequence is established.
 
 **Need.** We must know how the remaining links and the lower node-id field constrain the body and its referenced nodes to assign their semantic roles.
 
+### PS-29. PMARK node counts and forward-delta images
+
+**Question.** What do the PMARK fields `n_new_nodes`, `n_del_nodes`, and `n_copy_mod_nodes` count? Are the map-section images of a forward delta the images at its own mark or at its preceding mark?
+
+**Known.** `siemens_nx.md` §4.2 "**Delta assignment.**" gives each mark's delta its PMARK-section images, map entries, and map-section images. In a backward main-line delta, `n_new_nodes` is equal to or greater than the number of map entries, and `n_del_nodes` is equal to or greater than the number of restored images. `n_copy_mod_nodes` can be smaller than the number of older images. The older images of a backward delta can include an image of the kind-101 node. In a forward delta (§4.2 "**Forward deltas.**"), `n_new_nodes`, `n_del_nodes`, and `n_copy_mod_nodes` are equal to or greater than the numbers of PMARK-section images, map entries, and map-section images. The mark of a forward delta is off the main line; its `preceding` names a main-line mark or the mark of another forward delta.
+
+**Need.** Save a part with a feature history. Roll back to an earlier feature, add a feature there, and save again with the rollback active, so that the Deltas stream holds a forward delta. Make the added feature create, delete, and modify a known set of faces, edges, and vertices. For each delta, compare the three counts with its entries and images. For the forward delta, compare each map-section image with the image of the same node index in the partition saved before the rollback and in the partition saved after it.
+
 ### PS-33. MESH FILE chart layout
 
 **Question.** Which layout, if any, applies to `CHART_s` and `LIMIT` Hvec rows in a `MESH FILE` payload?

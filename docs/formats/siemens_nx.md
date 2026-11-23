@@ -905,8 +905,7 @@ before it.
 
 A Deltas stream holds the main-line history of its paired partition as
 backward deltas; replay (below) gives the state at each main-line mark.
-Every paired or unpaired Deltas stream, including a schema-only stream, has an
-empty semantic view. A paired partition keeps its own input bytes. Raw Deltas
+A paired partition keeps its own input bytes. Raw Deltas
 bytes do not enter Graph, NURBS, intersection, attribute, or native family
 scanners. Primary-only Graph ownership remains a separate obligation.
 
@@ -965,8 +964,7 @@ the exact suffix from that section's start. A failure between sections retains
 from the current cursor. Invalid headers and unsupported bases retain the whole
 input. Type-looking bytes inside consumed fields are payload. No byte search,
 reference match, complement interval, or repaired byte image establishes a
-record start. PMARK counts and map tails frame no production and select no
-current state.
+record start. PMARK counts and map tails frame no production.
 
 Generic native output uses `parasolid_deltas_schemas` and
 `parasolid_deltas_instances`. Enclosing productions use
@@ -1030,32 +1028,37 @@ These relations define the partition's PMARK graph.
 **Delta assignment.** The leading section and the first map section hold the
 delta of the current mark. Each PMARK section and the map section after it
 hold the delta of the section's last PMARK; the section's other PMARKs have
-empty deltas. A PMARK section at the end of the stream has an empty map. The
-delta of a mark `M` has three parts: the node images of its leading or PMARK
-section are the restored nodes, the entries of its map prefix are the
-created nodes, and the node images of its map section are the older images.
-The order of the PMARK sections does not take part in the assignment:
-following `preceding` from the current mark reaches the initial mark through
-every main-line mark once.
+empty deltas. A PMARK section that ends the stream at EOF has the initial mark
+as its last PMARK and holds no node. The delta of a mark `M` has three parts:
+the node images of its leading or PMARK section, the entries of its map
+prefix, and the node images of its map section. Following `preceding` from
+the current mark reaches the initial mark through every main-line mark once.
+The PMARK sections of the main line occur in that order or in the reverse
+order, and the sections of marks off the main line can occur between them.
 
-**Main-line replay.** A main-line delta has `delta_is_forward` `0`. The delta
-of `M` turns the state at `M` into the state at the `preceding` mark `P`: the
-created nodes are present at `M` and absent at `P`, the restored nodes are
-absent at `M` and present at `P`, and the older images are the images at `P`
-of nodes present at both marks. The partition and every delta share one
-node-index space. The state at the current mark is the partition. One step
-removes the node of each map entry, adds each restored image, and then
+**Main-line replay.** Each main-line mark other than the initial mark has
+`delta_is_forward` `0`, and its delta is backward. The backward delta of `M`
+turns the state at `M` into the state at the `preceding` mark `P`. The images
+of its leading or PMARK section are the restored nodes, absent at `M` and
+present at `P`. Its map entries name the created nodes, present at `M` and
+absent at `P`. The images of its map section are the older images: the images
+at `P` of nodes present at both marks. The partition and every delta share
+one node-index space. The state at the current mark is the partition. One
+step removes the node of each map entry, adds each restored image, and then
 replaces each node that has an older image by that image. Before the step,
-each map entry names a present node of the entry's kind, no restored image
-names a node that remains after the removal, each older image names a node
-of its own kind that remains after the removal, and no two restored images
-and no two older images name one node. Every non-null pointer of every state resolves in that
+each map entry names a present node of the entry's kind, each restored image
+names an absent node, each older image names a node of its own kind that
+remains after the removal, and no two restored images and no two older
+images name one node. Every non-null pointer of every state resolves in that
 state, and the state at the initial mark holds no BODY, FACE, EDGE, or VERTEX
-node. A zero-length delta leaves the state unchanged. A merged delta spans
-the changes of deleted intermediate marks, whose states are not stored. A
-mark with `delta_is_forward` `1` is off the main line, and no main-line state
-applies its delta. The PMARK counts, `delta_key`, the map terminal bytes, and
-the pointer status bytes take no part in the step.
+node. A zero-length delta leaves the state unchanged.
+
+**Forward deltas.** A mark with `delta_is_forward` `1` is off the main line.
+Its `preceding` names a main-line mark or another mark off the main line.
+Its delta is forward: it turns the state at `P` into the state at `M`. The
+images of its PMARK section are the nodes present at `M` and absent at `P`.
+Its map entries name the nodes present at `P` and absent at `M`. The images
+of its map section are images of nodes present at both marks.
 
 **Feature join.** The GROUP nodes that the change from `P` to `M` creates are
 the GROUP (kind 90) entries of the map of `M`. An operation body-write frame
@@ -3109,8 +3112,7 @@ not through a source-order reset of an unrelated integer field.
 Equal numeric XMT values in separate partition namespaces do not identify one
 node. A replayed state is a complete node set: its bodies, topology, geometry,
 attributes, and GROUPs read as those of a partition image. Attribute
-definitions stay in the partition and resolve from every state. A replayed
-state does not replace the partition image or a Plain image.
+definitions stay in the partition and resolve from every state.
 
 `RMFastLoad` stores the active object-id set alongside the partition and deltas body records. The membership table contains a little-endian `count:u32` followed by exactly `count` ordered `object_id:u32` words. FACE, EDGE, and VERTEX `node_id` values share this identity space. Membership assigns each represented body image independently; the set may select more than one body. A body image without active membership is retained unless another image has a decisive membership assignment.
 
