@@ -3,8 +3,10 @@
 //!
 //! CADIR and its decode-fidelity sidecar are written as two separate atomic
 //! renames. Those renames are not transactional: a crash between them can leave
-//! a stale sidecar beside a newer CADIR. Digest verification failing closed on
-//! the next load is what saves the caller, not a transactional pair.
+//! a stale sidecar beside a newer CADIR. Digest verification on the next load
+//! is what saves the caller, not a transactional pair: a sidecar that does not
+//! describe the CADIR bytes is ignored with `sidecar.stale`, and the document
+//! loads without it.
 
 use std::fs::File;
 use std::io::{self, BufWriter, Write};

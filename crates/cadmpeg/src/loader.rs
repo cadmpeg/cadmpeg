@@ -6,15 +6,15 @@ use std::path::Path;
 
 use anyhow::{anyhow, Context};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, View};
-use cadmpeg_ir::codec::DecodeOptions;
+use cadmpeg_ir::codec::{Confidence, DecodeOptions};
 use cadmpeg_ir::{CadIr, DecodeSidecar};
 
 use cadmpeg_registry::{
-    ForcedInput, InputCatalog, ResolveSourceError, ResolvedSource, DETECTION_PREFIX_LEN,
+    ForcedInput, InputCatalog, ResolveSourceError, ResolvedSource, Selection, DETECTION_PREFIX_LEN,
 };
 
 use crate::application::artifact_store::{self, SidecarLoad};
-use crate::application::document::LoadedDocument;
+use crate::application::document::{LoadOrigin, LoadedDocument};
 use crate::application::refusal::ApplicationError;
 
 pub(crate) mod companions;
@@ -35,7 +35,42 @@ pub(crate) fn detection_failure(error: &ResolveSourceError) -> anyhow::Error {
 /// An explicit input format bypasses detection. Without one, the registered
 /// codec with the strongest match decodes the file. An input beginning with a
 /// JSON object is parsed as CADIR when no native codec recognizes it.
+///
+/// Every command loads through here, so here is where the load's notices go
+/// to stderr: a decode sidecar the load ignored, and a detection below high
+/// confidence.
 pub(crate) fn load_artifact(
+    catalog: &InputCatalog,
+    path: &Path,
+    options: DecodeOptions,
+    forced: Option<ForcedInput>,
+) -> Result<LoadedDocument, ApplicationError> {
+    let document = load(catalog, path, options, forced)?;
+    print_load_notice(&document);
+    Ok(document)
+}
+
+fn print_load_notice(document: &LoadedDocument) {
+    if let Some(loss) = &document.stale_sidecar {
+        eprintln!("warning: {}: {}", loss.code, loss.message);
+    }
+    let LoadOrigin::Decoded {
+        selection: Selection::Detected { confidence },
+        report,
+        ..
+    } = &document.origin
+    else {
+        return;
+    };
+    if *confidence < Confidence::High {
+        let format_id = report.format();
+        eprintln!(
+            "warning: detected {format_id} with {confidence} confidence; use --input-format to override"
+        );
+    }
+}
+
+fn load(
     catalog: &InputCatalog,
     path: &Path,
     options: DecodeOptions,

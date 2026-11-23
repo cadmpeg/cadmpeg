@@ -355,7 +355,8 @@ pub(crate) struct PreparedConversion {
 ///
 /// Applies destination admission and decode-loss refusal. Runs validation.
 /// Check, plan, and export-loss refusals run in `plan`.
-/// Does not print reports or write destination artifacts.
+/// Prints only the load's notices (see `loader::load_artifact`); does not
+/// print reports or write destination artifacts.
 pub(crate) fn prepare(
     inputs: &InputCatalog,
     source: &SourceRequest<'_>,
