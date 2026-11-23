@@ -2,7 +2,8 @@
 //! Complete edge operands for attached sheet metal.
 
 use cadmpeg_ir::design::selection::{NativeOwner, OrderedSelection, Picks};
-use cadmpeg_ir::features::{EdgeSelection, Feature};
+use cadmpeg_ir::features::selections::EdgeSelection;
+use cadmpeg_ir::features::Feature;
 
 use super::super::{selections, Projected};
 
