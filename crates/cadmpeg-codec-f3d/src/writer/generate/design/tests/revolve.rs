@@ -462,6 +462,11 @@ fn each_group_selection_and_start_record_has_its_own_records_after_it() {
     let owner = reference_at(frame, 39);
     assert_eq!(owner, axis_selection + 4);
     assert_eq!(start, owner + 3);
+    // The scope's record-timestamp table, companion and tracked results
+    // follow the start record's own records.
+    assert_eq!(design.type_of(start + 3).0, stamps);
+    assert_eq!(design.type_of(start + 4).0, companion);
+    assert_eq!(reference_at(frame, TAIL + 19), start + 5);
 }
 
 #[test]

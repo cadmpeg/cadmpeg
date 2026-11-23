@@ -96,11 +96,7 @@ impl RevolveRecords {
     ) -> Result<(Self, u32), CodecError> {
         let records = {
             let mut take = allocator(&mut next, rows);
-            let [scope, scope_stamps, scope_companion] = [
-                take(types::REVOLVE_SCOPE)?,
-                take(types::RECORD_TIMESTAMPS)?,
-                take(types::ITEM_TAIL_COMPANION)?,
-            ];
+            let scope = take(types::REVOLVE_SCOPE)?;
             let profile_group = group(&mut take)?;
             let [selection, selection_stamps, selection_companion, regions] = [
                 take(types::PROFILE_SELECTION)?,
@@ -120,17 +116,21 @@ impl RevolveRecords {
                 take(types::PARAMETER)?,
                 take(types::RECORD_TIMESTAMPS)?,
             ];
-            let [start, start_stamps, start_companion, start_identity] = [
+            let [start, start_stamps, start_companion] = [
                 take(types::REVOLVE_START)?,
                 take(types::RECORD_TIMESTAMPS)?,
                 take(types::ITEM_TAIL_COMPANION)?,
-                take(types::SELECTION_IDENTITY)?,
             ];
-            let tracked = take(types::TRACKED_RESULTS)?;
+            let [scope_stamps, scope_companion, tracked] = [
+                take(types::RECORD_TIMESTAMPS)?,
+                take(types::ITEM_TAIL_COMPANION)?,
+                take(types::TRACKED_RESULTS)?,
+            ];
             let results = ResultRecords::allocate(&mut take, plan.entries().count())?;
-            let [profile_wrapper, axis_wrapper, selection_identity] = [
+            let [profile_wrapper, axis_wrapper, start_identity, selection_identity] = [
                 take(types::PLACEMENT_TRACKING_FLAG)?,
                 take(types::PLACEMENT_TRACKING_FLAG)?,
+                take(types::SELECTION_IDENTITY)?,
                 take(types::SELECTION_IDENTITY)?,
             ];
             let record = take(types::AXIS_CARRIER)?;
@@ -557,7 +557,7 @@ pub(super) fn losses(
             "records 198 to 203 (timeline context counter {COUNTER} = 1, owner collection, B65B5682, dependency table and persistent-id table: the Revolve's members, edges and two persistent identities in the orders f3d-open-items.md DR-882 and DR-891 state for an Extrude)"
         ),
         format!(
-            "records {} to {} (the allocation order of the Revolve's records: the scope, its record-timestamp table and companion, the groups and selections each followed by its own records, the AlongAngle owner, the start record with its own records, the tracked results, then the identity wrappers, the profile selection's identity and the axis tracking carrier)",
+            "records {} to {} (the allocation order of the Revolve's records: the scope, the groups and selections each followed by its own records, the AlongAngle owner, the start record with its own records, the scope's record-timestamp table, companion and tracked results, the side and body entries, then the identity wrappers, the two selection identities and the axis tracking carrier)",
             records.scope.record,
             records.carrier.points[1]
         ),
