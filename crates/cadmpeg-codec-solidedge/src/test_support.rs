@@ -70,7 +70,7 @@ pub(crate) fn with_cluster(cluster: &[u8]) -> Vec<u8> {
     assert!(cluster.len() <= 4096);
     let mut file = compound();
     let directory = &mut file[512..1024];
-    // JGlobal becomes empty so the cluster owns the data chain.
+    // PSMroots becomes empty so the cluster owns the data chain.
     put_u32(directory, 128 + 116, 0xffff_fffe);
     put_u32(directory, 128 + 120, 0);
     put_u32(directory, 256 + 72, 3);
@@ -165,7 +165,7 @@ pub(crate) fn document(streams: &[(&str, Vec<u8>)]) -> Vec<u8> {
         stream: None,
         parent: 0,
     }];
-    for name in ["JGlobal", "JSitesList"] {
+    for name in ["PSMroots", "JSitesList"] {
         nodes.push(Node {
             name: name.into(),
             stream: Some(Vec::new()),
@@ -300,6 +300,7 @@ pub(crate) fn document(streams: &[(&str, Vec<u8>)]) -> Vec<u8> {
         siblings.sort_by_key(|&other| name_key(&nodes[other].name));
         if index == 0 {
             entry[66] = 5;
+            entry[80..96].copy_from_slice(&PART.to_bytes());
             put_u32(
                 entry,
                 116,
