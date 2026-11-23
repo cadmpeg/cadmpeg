@@ -202,39 +202,17 @@ pub(crate) fn decode_body_bounds(
         if repeated.any(|candidate| candidate.0 != values || candidate.1 != value_offsets) {
             continue;
         }
-        let result = (|| {
-            let corner = |start: usize| {
-                FinitePoint3::new(Point3::new(
-                    values[start].get() * 10.0,
-                    values[start + 1].get() * 10.0,
-                    values[start + 2].get() * 10.0,
-                ))
-                .ok_or_else(|| {
-                    CodecError::Malformed("scene bounds maximum and minimum must be finite".into())
-                })
-            };
-            let id = design_record_id(&entry.name, ":design-body-bounds#", entity.byte_offset);
-            DesignBodyBounds::from_parts(crate::records::bodies::DesignBodyBoundsWire {
-                id,
-                entity_suffix: entity.entity_id.suffix(),
-                entity_byte_offset: entity.byte_offset,
-                record_indices,
-                record_byte_offsets: [
-                    u64_from_index(first),
-                    u64_from_index(second),
-                    u64_from_index(third),
-                ],
-                value_byte_offsets: value_offsets.map(u64_from_index),
-                body_binding_ids: Vec::new(),
-                maximum: corner(0)?,
-                minimum: corner(3)?,
-            })
-            .map_err(CodecError::Malformed)
-        })();
         let Some(record) = super::record::recover(
-            result,
+            body_bounds_record(
+                &entry.name,
+                entity,
+                record_indices,
+                [first, second, third],
+                values,
+                value_offsets,
+            ),
             losses,
-            crate::loss::F3dLossCode::BodyBoundsUndecoded,
+            crate::loss::F3dLossCode::DesignBodyBoundsUndecoded,
             format_args!(
                 "Body bounds for Design entity {}",
                 entity.entity_id.suffix()
@@ -247,6 +225,40 @@ pub(crate) fn decode_body_bounds(
     }
     out.sort_by(|a, b| a.id().cmp(b.id()));
     Ok(out)
+}
+
+/// The bounds record the three repeated frames of one body entity state.
+fn body_bounds_record(
+    entry_name: &str,
+    entity: &DesignEntityHeader,
+    record_indices: [u32; 3],
+    record_offsets: [usize; 3],
+    values: [FiniteReal; 6],
+    value_offsets: [usize; 3],
+) -> Result<DesignBodyBounds, CodecError> {
+    let corner = |start: usize| {
+        FinitePoint3::new(Point3::new(
+            values[start].get() * 10.0,
+            values[start + 1].get() * 10.0,
+            values[start + 2].get() * 10.0,
+        ))
+        .ok_or_else(|| {
+            CodecError::Malformed("scene bounds maximum and minimum must be finite".into())
+        })
+    };
+    let id = design_record_id(entry_name, ":design-body-bounds#", entity.byte_offset);
+    DesignBodyBounds::from_parts(crate::records::bodies::DesignBodyBoundsWire {
+        id,
+        entity_suffix: entity.entity_id.suffix(),
+        entity_byte_offset: entity.byte_offset,
+        record_indices,
+        record_byte_offsets: record_offsets.map(u64_from_index),
+        value_byte_offsets: value_offsets.map(u64_from_index),
+        body_binding_ids: Vec::new(),
+        maximum: corner(0)?,
+        minimum: corner(3)?,
+    })
+    .map_err(CodecError::Malformed)
 }
 
 fn indexed_headers_in(
@@ -2879,7 +2891,7 @@ mod tests {
             assert_eq!(losses.len(), 1);
             assert_eq!(
                 losses[0].code,
-                crate::loss::F3dLossCode::BodyBoundsUndecoded.kind()
+                crate::loss::F3dLossCode::DesignBodyBoundsUndecoded.kind()
             );
             assert_eq!(bounds.len(), 1);
             assert_eq!(bounds[0].entity_suffix(), 107);

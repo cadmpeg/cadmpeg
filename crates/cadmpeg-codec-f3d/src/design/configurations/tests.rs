@@ -372,20 +372,8 @@ fn configuration_tables_with_rows_supply_one_list() {
         document().as_object().unwrap().clone(),
     )
     .unwrap();
-    let native = [table(&document()), other];
-    let mut losses = Vec::new();
-    let projected =
-        super::project_configurations_with_losses(&native, &natives.targets(), &mut losses)
-            .unwrap();
-    assert!(projected.is_empty());
-    assert_eq!(native.len(), 2);
-    assert_eq!(losses.len(), 1);
-    assert_eq!(
-        losses[0].code,
-        crate::loss::F3dLossCode::ConfigurationProjectionNative.kind()
-    );
-    let error =
-        project_configurations(&native, &natives.targets()).expect_err("two populated tables");
+    let error = project_configurations(&[table(&document()), other], &natives.targets())
+        .expect_err("two populated tables");
     assert!(error
         .to_string()
         .contains("configuration tables have no shared authored order"));

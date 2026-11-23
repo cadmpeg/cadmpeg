@@ -368,6 +368,7 @@ struct DesignProjectionGaps {
     unresolved_body_bindings: usize,
     history_only_body_bindings: usize,
     incomplete_features: usize,
+    surface_extend_edges_as_faces: usize,
     native_reference_images: usize,
     assumed_reference_image_flags: usize,
     native_decals: usize,
@@ -1786,6 +1787,13 @@ fn design_projection_gaps(
     };
     for feature in &ir.model.features {
         gaps.incomplete_features += usize::from(feature_is_incomplete(feature));
+        gaps.surface_extend_edges_as_faces += usize::from(matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
+                faces: FaceSelection::Historical { .. },
+                ..
+            })
+        ));
         gaps.native_reference_images += usize::from(matches!(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Native {
@@ -2776,6 +2784,14 @@ fn report_design_projection_gaps(
             IncompleteFamilyCounts(&incomplete_families)
         ),
     )?;
+    push(
+        F3dLossCode::FeatureSurfaceExtendEdgesAsFaces,
+        gaps.surface_extend_edges_as_faces,
+        format_args!(
+            "{} SurfaceExtend feature(s) store boundary edges and state the input-state face that carries each edge recipe and has a boundary edge the feature changes; the edge choice on each face stays native.",
+            gaps.surface_extend_edges_as_faces
+        ),
+    )?;
     let mut uninterpreted_scopes = 0;
     for scope in &native.design_parameter_scopes {
         if scope.occurrence_transfer.is_none()
@@ -3691,7 +3707,7 @@ impl<'a> F3dDecodeSession<'a> {
     ) -> Result<design_intent::DesignOutputs, CodecError> {
         let model = &self.ir.model;
         let geometry = &self.ir.geometry;
-        design_intent::decode(&design_intent::DesignInputs {
+        let outputs = design_intent::decode(&design_intent::DesignInputs {
             ctx: self.ctx,
             scan: self.scan,
             prereqs,
@@ -3726,7 +3742,13 @@ impl<'a> F3dDecodeSession<'a> {
                     FinalizePath::Bodyless(_) => design_intent::DesignPath::Bodyless,
                 },
             },
-        })
+        })?;
+        // A record-level recovery turns every other error into a loss. A
+        // resource refusal that one of them swallowed still ends the session.
+        if let Some(limit) = self.ctx.resource_refusal() {
+            return Err(limit.into());
+        }
+        Ok(outputs)
     }
 
     /// Add the phase-2 losses and neutral arenas. Native records wait for
