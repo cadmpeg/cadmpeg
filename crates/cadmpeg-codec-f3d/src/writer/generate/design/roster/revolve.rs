@@ -96,16 +96,43 @@ impl RevolveRecords {
     ) -> Result<(Self, u32), CodecError> {
         let records = {
             let mut take = allocator(&mut next, rows);
-            let scope = ScopeRecords::allocate(&mut take, types::REVOLVE_SCOPE)?;
-            let profile_group = GroupRecords::allocate_closed(&mut take)?;
-            let selection = SelectionRecords::allocate(&mut take)?;
-            let axis_group = GroupRecords::allocate_closed(&mut take)?;
+            let [scope, scope_stamps, scope_companion] = [
+                take(types::REVOLVE_SCOPE)?,
+                take(types::RECORD_TIMESTAMPS)?,
+                take(types::ITEM_TAIL_COMPANION)?,
+            ];
+            let profile_group = group(&mut take)?;
+            let [selection, selection_stamps, selection_companion, regions] = [
+                take(types::PROFILE_SELECTION)?,
+                take(types::RECORD_TIMESTAMPS)?,
+                take(types::ITEM_TAIL_COMPANION)?,
+                take(types::PROFILE_REGIONS)?,
+            ];
+            let axis_group = group(&mut take)?;
             let axis = AxisRecords {
                 record: take(types::DIRECT_SELECTION)?,
                 stamps: take(types::RECORD_TIMESTAMPS)?,
                 companion: take(types::ITEM_TAIL_COMPANION)?,
                 identity: take(types::AXIS_CURVE_IDENTITY)?,
             };
+            let angle = [
+                take(types::PARAMETER_OWNER)?,
+                take(types::PARAMETER)?,
+                take(types::RECORD_TIMESTAMPS)?,
+            ];
+            let [start, start_stamps, start_companion, start_identity] = [
+                take(types::REVOLVE_START)?,
+                take(types::RECORD_TIMESTAMPS)?,
+                take(types::ITEM_TAIL_COMPANION)?,
+                take(types::SELECTION_IDENTITY)?,
+            ];
+            let tracked = take(types::TRACKED_RESULTS)?;
+            let results = ResultRecords::allocate(&mut take, plan.entries().count())?;
+            let [profile_wrapper, axis_wrapper, selection_identity] = [
+                take(types::PLACEMENT_TRACKING_FLAG)?,
+                take(types::PLACEMENT_TRACKING_FLAG)?,
+                take(types::SELECTION_IDENTITY)?,
+            ];
             let record = take(types::AXIS_CARRIER)?;
             let curve_link = take(types::CARRIER_LINK)?;
             let curve = take(types::AXIS_CURVE_IDENTITY)?;
@@ -113,28 +140,42 @@ impl RevolveRecords {
             let start_point = take(types::AXIS_POINT_IDENTITY)?;
             let end_point_link = take(types::CARRIER_LINK)?;
             let end_point = take(types::AXIS_POINT_IDENTITY)?;
-            let carrier = CarrierRecords {
+            let operand_group = |(record, stamps, companion), wrapper| GroupRecords {
                 record,
-                links: [curve_link, start_point_link, end_point_link],
-                curve,
-                points: [start_point, end_point],
+                wrapper,
+                companion,
+                stamps,
             };
-            let angle = [
-                take(types::PARAMETER_OWNER)?,
-                take(types::PARAMETER)?,
-                take(types::RECORD_TIMESTAMPS)?,
-            ];
-            let start = StartRecords::allocate(&mut take, types::REVOLVE_START)?;
-            let results = ResultRecords::allocate(&mut take, plan.entries().count())?;
             Self {
-                scope,
-                profile_group,
-                selection,
-                axis_group,
+                scope: ScopeRecords {
+                    record: scope,
+                    stamps: scope_stamps,
+                    companion: scope_companion,
+                    tracked,
+                },
+                profile_group: operand_group(profile_group, profile_wrapper),
+                selection: SelectionRecords {
+                    record: selection,
+                    stamps: selection_stamps,
+                    companion: selection_companion,
+                    regions,
+                    identity: selection_identity,
+                },
+                axis_group: operand_group(axis_group, axis_wrapper),
                 axis,
-                carrier,
+                carrier: CarrierRecords {
+                    record,
+                    links: [curve_link, start_point_link, end_point_link],
+                    curve,
+                    points: [start_point, end_point],
+                },
                 angle,
-                start,
+                start: StartRecords {
+                    record: start,
+                    identity: start_identity,
+                    companion: start_companion,
+                    stamps: start_stamps,
+                },
                 results,
             }
         };
@@ -222,6 +263,18 @@ impl RevolveRecords {
         ];
         (inputs, dependents)
     }
+}
+
+/// A construction-operand group with its record-timestamp table and item-tail
+/// companion after it.
+fn group(
+    take: &mut impl FnMut(TypeRow) -> Result<u32, CodecError>,
+) -> Result<(u32, u32, u32), CodecError> {
+    Ok((
+        take(types::OPERAND_GROUP)?,
+        take(types::RECORD_TIMESTAMPS)?,
+        take(types::ITEM_TAIL_COMPANION)?,
+    ))
 }
 
 /// Every record of the `Revolve` item of `ctx`.
@@ -462,12 +515,8 @@ pub(super) fn losses(
 ) -> Vec<LossNote> {
     let mut entries = vec![
         format!(
-            "record {} (Revolve scope: the one-sided version-2 frame of a plain-reference stream with its zero u32 at offset 89 and the 78-byte item tail, f3d-open-items.md DR-1043; Project Axis flag {PROJECT_AXIS}; the evaluation epoch {EPOCH} and the duration {DURATION} of its tail, start record, groups and selections, DR-913; its record-timestamp table listing the component, the scope and the start record)",
+            "record {} (Revolve scope: the one-sided version-2 frame of a plain-reference stream with its zero u32 at offset 89 and the 78-byte item tail, f3d-open-items.md DR-1043; Project Axis flag {PROJECT_AXIS}; the evaluation epoch {EPOCH} and the duration {DURATION} of its tail, start record, groups and selections, DR-913; its record-timestamp table listing the scope and the start record after the component)",
             records.scope.record
-        ),
-        format!(
-            "record {} (Revolve start record: its record-timestamp table listing the profile group, the axis group and the AlongAngle owner)",
-            records.start.record
         ),
         format!(
             "record {} (AlongAngle parameter: family discriminator {}, DR-911; the ten-byte expression trailer with every flag 0; the parameter tail naming the parameter collection)",
@@ -487,12 +536,8 @@ pub(super) fn losses(
             records.scope.tracked
         ),
         format!(
-            "records {}, {}, {}, {} and {} (record-timestamp tables of the start record, the two groups and the two selections: the prefix 01 01)",
-            records.start.stamps,
-            records.profile_group.stamps,
-            records.axis_group.stamps,
-            records.selection.stamps,
-            records.axis.stamps
+            "record {} (record-timestamp table of the profile selection: the prefix 01 01)",
+            records.selection.stamps
         ),
         format!(
             "records {} and {} (persistent selection identities: local identities {} and {})",
@@ -512,9 +557,9 @@ pub(super) fn losses(
             "records 198 to 203 (timeline context counter {COUNTER} = 1, owner collection, B65B5682, dependency table and persistent-id table: the Revolve's members, edges and two persistent identities in the orders f3d-open-items.md DR-882 and DR-891 state for an Extrude)"
         ),
         format!(
-            "records {} to {} (the allocation order of the Revolve's records: scope, profile group, profile selection, axis group, axis selection, axis tracking carrier, AlongAngle owner, start record, side entries, body entry)",
+            "records {} to {} (the allocation order of the Revolve's records: the scope, its record-timestamp table and companion, the groups and selections each followed by its own records, the AlongAngle owner, the start record with its own records, the tracked results, then the identity wrappers, the profile selection's identity and the axis tracking carrier)",
             records.scope.record,
-            records.results.body
+            records.carrier.points[1]
         ),
     ];
     let arcs = plan.profile.iter().any(|profile_loop| {

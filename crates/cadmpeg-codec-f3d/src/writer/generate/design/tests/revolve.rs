@@ -436,6 +436,35 @@ fn the_axis_selection_names_the_centreline_and_its_carrier() {
 }
 
 #[test]
+fn each_group_selection_and_start_record_has_its_own_records_after_it() {
+    let (_, _, bytes) = write_bytes(&tube_design());
+    let design = segment(&bytes, "FusionDesignSegmentType1");
+    let [(scope, _)] = design.records_of("E3849A15-2FC6-42A0-AF3A-2F1D7273B406")[..] else {
+        panic!("one Revolve scope");
+    };
+    let frame = design.record(scope);
+    let (profile_group, axis_group, start) = (
+        reference_at(frame, 78),
+        reference_at(frame, 50),
+        reference_at(frame, 62),
+    );
+    let stamps = "6CCF41D5-40BE-48ED-A834-18F3EAED6C57";
+    let companion = "5FBE538E-139B-46D4-BCAF-CC796D1E1F78";
+    for record in [profile_group, axis_group, start] {
+        assert_eq!(design.type_of(record + 1).0, stamps, "{record}");
+        assert_eq!(design.type_of(record + 2).0, companion, "{record}");
+    }
+    let profile_selection = reference_at(design.record(profile_group), 25);
+    assert_eq!(profile_selection, profile_group + 3);
+    assert_eq!(axis_group, profile_selection + 4);
+    let axis_selection = reference_at(design.record(axis_group), 25);
+    assert_eq!(axis_selection, axis_group + 3);
+    let owner = reference_at(frame, 39);
+    assert_eq!(owner, axis_selection + 4);
+    assert_eq!(start, owner + 3);
+}
+
+#[test]
 fn a_profile_line_on_the_axis_takes_no_side_entry() {
     let ir = design(
         revolved(&cylinder()),

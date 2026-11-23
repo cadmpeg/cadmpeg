@@ -45,8 +45,8 @@ const FIRST_SIDE_KEY: u64 = 3;
 #[derive(Clone, Debug)]
 pub(in crate::writer::generate::design) struct ScopeRecords {
     pub(in crate::writer::generate::design) record: u32,
-    stamps: u32,
-    companion: u32,
+    pub(super) stamps: u32,
+    pub(super) companion: u32,
     pub(super) tracked: u32,
 }
 
@@ -70,8 +70,8 @@ impl ScopeRecords {
 #[derive(Clone, Debug)]
 pub(in crate::writer::generate::design) struct GroupRecords {
     pub(in crate::writer::generate::design) record: u32,
-    wrapper: u32,
-    companion: u32,
+    pub(super) wrapper: u32,
+    pub(super) companion: u32,
     pub(super) stamps: u32,
 }
 
@@ -87,24 +87,6 @@ impl GroupRecords {
             stamps: take(types::RECORD_TIMESTAMPS)?,
         })
     }
-
-    /// The records from `take` in the order the decoder reads a closed
-    /// construction-operand group: its record-timestamp table at the group's
-    /// index plus one, its item-tail companion at plus two, then its
-    /// identity wrapper.
-    pub(super) fn allocate_closed(
-        take: &mut impl FnMut(TypeRow) -> Result<u32, CodecError>,
-    ) -> Result<Self, CodecError> {
-        let record = take(types::OPERAND_GROUP)?;
-        let stamps = take(types::RECORD_TIMESTAMPS)?;
-        let companion = take(types::ITEM_TAIL_COMPANION)?;
-        Ok(Self {
-            record,
-            wrapper: take(types::PLACEMENT_TRACKING_FLAG)?,
-            companion,
-            stamps,
-        })
-    }
 }
 
 /// The start record, its selection identity, its item-tail companion and
@@ -113,7 +95,7 @@ impl GroupRecords {
 pub(in crate::writer::generate::design) struct StartRecords {
     pub(in crate::writer::generate::design) record: u32,
     pub(super) identity: u32,
-    companion: u32,
+    pub(super) companion: u32,
     pub(super) stamps: u32,
 }
 
@@ -139,7 +121,7 @@ impl StartRecords {
 pub(in crate::writer::generate::design) struct SelectionRecords {
     pub(in crate::writer::generate::design) record: u32,
     pub(super) stamps: u32,
-    companion: u32,
+    pub(super) companion: u32,
     pub(super) regions: u32,
     pub(super) identity: u32,
 }
