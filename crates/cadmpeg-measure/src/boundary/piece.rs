@@ -4,7 +4,7 @@
 
 use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use cadmpeg_ir::features::geometry::FiniteVector3;
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
@@ -53,11 +53,11 @@ enum Inversion<'ir> {
 #[derive(Clone)]
 pub(crate) enum Source<'ir> {
     /// A 3D curve interval inverted onto the carrier.
-    Curve(Rc<CurveChart<'ir>>),
+    Curve(Arc<CurveChart<'ir>>),
     /// A pcurve use mapped through the carrier.
     Pcurve {
         span: Span<'ir>,
-        chart: Rc<Chart<'ir>>,
+        chart: Arc<Chart<'ir>>,
     },
     /// A straight parameter segment whose image is one model point.
     Segment {
@@ -150,7 +150,7 @@ impl<'ir> Piece<'ir> {
             coedge: Some(use_.coedge),
             source: Source::Pcurve {
                 span,
-                chart: Rc::new(*chart),
+                chart: Arc::new(*chart),
             },
             t0: span.t0,
             t1: span.t1,
@@ -233,7 +233,7 @@ impl<'ir> Piece<'ir> {
     pub(crate) fn inverted(
         eval: &Eval<'_, '_>,
         chart: &Chart<'_>,
-        curve: &Rc<CurveChart<'ir>>,
+        curve: &Arc<CurveChart<'ir>>,
         interval: [f64; 2],
         use_: CoedgeUse<'ir>,
     ) -> Measure<Vec<Self>> {
@@ -241,7 +241,7 @@ impl<'ir> Piece<'ir> {
         let mut pending = vec![interval];
         let mut crossings = 0_usize;
         while let Some([t0, t1]) = pending.pop() {
-            match Self::inverted_interval(eval, chart, Rc::clone(curve), [t0, t1], use_)? {
+            match Self::inverted_interval(eval, chart, Arc::clone(curve), [t0, t1], use_)? {
                 Inversion::Piece(piece) => pieces.push(*piece),
                 Inversion::Crossing(t) => {
                     crossings += 1;
@@ -267,7 +267,7 @@ impl<'ir> Piece<'ir> {
     fn inverted_interval(
         eval: &Eval<'_, '_>,
         chart: &Chart<'_>,
-        curve: Rc<CurveChart<'ir>>,
+        curve: Arc<CurveChart<'ir>>,
         [t0, t1]: [f64; 2],
         use_: CoedgeUse<'ir>,
     ) -> Measure<Inversion<'ir>> {
@@ -452,14 +452,11 @@ impl<'ir> Piece<'ir> {
                 })
             }
             Source::Curve(curve) => {
-                let cacheable = matches!(chart, Chart::Nurbs(_) | Chart::Extrusion(_));
-                if cacheable {
-                    if let Some(&cached) = self.sample_cache.borrow().get(&t.to_bits()) {
-                        return Ok(Sample {
-                            uv: [cached.uv[0] + self.shift[0], cached.uv[1] + self.shift[1]],
-                            duv: cached.duv,
-                        });
-                    }
+                if let Some(&cached) = self.sample_cache.borrow().get(&t.to_bits()) {
+                    return Ok(Sample {
+                        uv: [cached.uv[0] + self.shift[0], cached.uv[1] + self.shift[1]],
+                        duv: cached.duv,
+                    });
                 }
                 let (point, tangent) = curve.point_and_tangent(eval, t)?;
                 let (lifted, singular, maybe_partials) =
@@ -473,7 +470,7 @@ impl<'ir> Piece<'ir> {
                 } else {
                     parameter_velocity(partials.du, partials.dv, tangent)?
                 };
-                if cacheable {
+                {
                     let mut cache = self.sample_cache.borrow_mut();
                     if cache.len() < 512 {
                         cache.insert(t.to_bits(), Sample { uv: lifted, duv });

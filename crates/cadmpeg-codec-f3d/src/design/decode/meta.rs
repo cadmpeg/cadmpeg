@@ -580,6 +580,87 @@ pub(super) fn record_header_class_tag(
     crate::design::decode::text::class_tag_from_view(class_tag).ok()
 }
 
+#[derive(Clone)]
+struct CachedDesignPrimaryFrame {
+    entity_id: u64,
+    class_tag: crate::records::references::DesignClassTag,
+    start: usize,
+    member_end: usize,
+    end: usize,
+    type_ordinal: usize,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct PrimaryFrameCacheKey {
+    bytes_len: usize,
+    records_len: usize,
+    types_len: usize,
+    secondary_len: usize,
+    fingerprint: [u64; 2],
+}
+
+#[inline]
+fn mix64(h: u64, v: u64) -> u64 {
+    // wrapping-exception: 64-bit multiplicative cache-key mixing operates modulo 2^64
+    (h.rotate_left(5) ^ v).wrapping_mul(0x517c_c1b7_2722_0a95)
+}
+
+fn mix_bytes_128(mut lo: u64, mut hi: u64, slice: &[u8]) -> [u64; 2] {
+    let mut chunks = slice.chunks_exact(16);
+    for chunk in &mut chunks {
+        let a = View::u64_le_at(chunk, 0).unwrap_or(0);
+        let b = View::u64_le_at(chunk, 8).unwrap_or(0);
+        lo = mix64(lo, a);
+        hi = mix64(hi, b);
+    }
+    let rem = chunks.remainder();
+    if !rem.is_empty() {
+        let mut tail = [0_u8; 16];
+        tail[..rem.len()].copy_from_slice(rem);
+        let a = View::u64_le_at(&tail, 0).unwrap_or(0);
+        let b = View::u64_le_at(&tail, 8).unwrap_or(0);
+        lo = mix64(lo, a);
+        hi = mix64(hi, b);
+    }
+    [mix64(lo, hi), mix64(hi, lo)]
+}
+
+fn primary_frame_cache_key(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+) -> PrimaryFrameCacheKey {
+    use cadmpeg_core::decode::u64_from_index;
+
+    let [mut lo, mut hi] = mix_bytes_128(
+        mix64(0x9e37_79b9_7f4a_7c15, u64_from_index(bytes.len())),
+        mix64(0xc2b2_ae3d_27d4_eb4f, u64_from_index(meta.records.len())),
+        bytes,
+    );
+    for rec in &meta.records {
+        lo = mix64(lo, rec.entity_id);
+        hi = mix64(hi, rec.bulk_offset);
+    }
+    for rec in &meta.secondary_records {
+        lo = mix64(lo, rec.entity_id);
+        hi = mix64(hi, rec.bulk_offset);
+    }
+    for ty in &meta.types {
+        [lo, hi] = mix_bytes_128(lo, hi, ty.type_guid.as_str().as_bytes());
+        lo = mix64(lo, u64_from_index(ty.entities.len()));
+        for &entity_id in ty.entities.values() {
+            lo = mix64(lo, entity_id);
+            hi = mix64(hi, entity_id.rotate_left(17));
+        }
+    }
+    PrimaryFrameCacheKey {
+        bytes_len: bytes.len(),
+        records_len: meta.records.len(),
+        types_len: meta.types.len(),
+        secondary_len: meta.secondary_records.len(),
+        fingerprint: [lo, hi],
+    }
+}
+
 /// Resolve every live sibling record from the primary index. The primary
 /// header must repeat the indexed entity ID and select a type-table row that
 /// registers that entity. A secondary entry supplies the exact end of the
@@ -590,7 +671,50 @@ pub(super) fn design_primary_frames<'a>(
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
 ) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
-    collect_design_primary_frames(bytes, meta, "", &mut Vec::new())
+    use std::cell::RefCell;
+
+    thread_local! {
+        static CACHE: RefCell<Vec<(PrimaryFrameCacheKey, Vec<CachedDesignPrimaryFrame>)>> =
+            const { RefCell::new(Vec::new()) };
+    }
+
+    let key = primary_frame_cache_key(bytes, meta);
+    if let Some(frames) = CACHE.with(|cache| {
+        let cache = cache.borrow();
+        cache
+            .iter()
+            .find(|(k, _)| *k == key)
+            .and_then(|(_, cached)| {
+                cached
+                    .iter()
+                    .map(|entry| {
+                        Some(DesignPrimaryFrame {
+                            entity_id: entry.entity_id,
+                            class_tag: entry.class_tag.clone(),
+                            start: entry.start,
+                            member_end: entry.member_end,
+                            end: entry.end,
+                            design_type: meta.types.get(entry.type_ordinal)?,
+                        })
+                    })
+                    .collect::<Option<Vec<_>>>()
+            })
+    }) {
+        return Ok(frames);
+    }
+
+    let (frames, cached) =
+        collect_design_primary_frames_with_cache(bytes, meta, "", &mut Vec::new())?;
+    if cached.len() <= 16_384 {
+        CACHE.with(|cache| {
+            let mut cache = cache.borrow_mut();
+            if cache.len() >= 4 {
+                cache.remove(0);
+            }
+            cache.push((key, cached));
+        });
+    }
+    Ok(frames)
 }
 
 /// Resolve the frames as `design_primary_frames` does and charge one loss for
@@ -602,6 +726,15 @@ fn collect_design_primary_frames<'a>(
     stream: &str,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
+    collect_design_primary_frames_with_cache(bytes, meta, stream, losses).map(|(frames, _)| frames)
+}
+
+fn collect_design_primary_frames_with_cache<'a>(
+    bytes: &[u8],
+    meta: &'a crate::metastream::MetaStream,
+    stream: &str,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(Vec<DesignPrimaryFrame<'a>>, Vec<CachedDesignPrimaryFrame>), CodecError> {
     let indexed = crate::metastream::primary_record_frames(meta, bytes.len())?;
     let mut registered_entities = HashSet::new();
     for (ordinal, design_type) in meta.types.iter().enumerate() {
@@ -609,9 +742,10 @@ fn collect_design_primary_frames<'a>(
             registered_entities.insert((ordinal, entity_id));
         }
     }
-    let mut frames = Vec::new();
+    let mut cached = Vec::with_capacity(indexed.len());
+    let mut frames = Vec::with_capacity(indexed.len());
     for frame in indexed {
-        if let Some(frame) = super::record::recover(
+        if let Some((type_ordinal, primary_frame)) = super::record::recover(
             design_primary_frame(bytes, meta, &registered_entities, &frame),
             losses,
             crate::loss::F3dLossCode::PrimaryRecordUndecoded,
@@ -620,10 +754,18 @@ fn collect_design_primary_frames<'a>(
                 frame.entity_id, frame.start
             ),
         )? {
-            frames.push(frame);
+            cached.push(CachedDesignPrimaryFrame {
+                entity_id: primary_frame.entity_id,
+                class_tag: primary_frame.class_tag.clone(),
+                start: primary_frame.start,
+                member_end: primary_frame.member_end,
+                end: primary_frame.end,
+                type_ordinal,
+            });
+            frames.push(primary_frame);
         }
     }
-    Ok(frames)
+    Ok((frames, cached))
 }
 
 /// The frame of one indexed primary record, or the reason its header is
@@ -633,7 +775,7 @@ fn design_primary_frame<'a>(
     meta: &'a crate::metastream::MetaStream,
     registered_entities: &HashSet<(usize, u64)>,
     frame: &crate::metastream::PrimaryRecordFrame,
-) -> Result<DesignPrimaryFrame<'a>, CodecError> {
+) -> Result<(usize, DesignPrimaryFrame<'a>), CodecError> {
     use crate::layout::indexed_design_record_header as header;
     let entity_id = frame.entity_id;
     if frame
@@ -680,14 +822,17 @@ fn design_primary_frame<'a>(
             ));
         }
     }
-    Ok(DesignPrimaryFrame {
-        entity_id,
-        class_tag,
-        start: frame.start,
-        member_end: frame.member_end,
-        end: frame.end,
-        design_type,
-    })
+    Ok((
+        type_ordinal,
+        DesignPrimaryFrame {
+            entity_id,
+            class_tag,
+            start: frame.start,
+            member_end: frame.member_end,
+            end: frame.end,
+            design_type,
+        },
+    ))
 }
 
 pub(crate) fn decode_primary_frame_losses(

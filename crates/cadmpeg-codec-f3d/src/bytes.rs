@@ -126,6 +126,16 @@ pub(crate) fn lp_utf16_bounded_view(
     Some((Utf16View::new(raw)?, end))
 }
 
+/// Read validated non-control UTF-16 text without allocating a decoded copy.
+pub(crate) fn lp_utf16_bounded_view_no_control(
+    bytes: &[u8],
+    at: usize,
+    bounds: RangeInclusive<usize>,
+) -> Option<(Utf16View<'_>, usize)> {
+    let (raw, end) = lp_utf16_raw(bytes, at, bounds)?;
+    Some((Utf16View::new_no_control(raw)?, end))
+}
+
 /// Decode a counted UTF-16 field into an owned string.
 pub(crate) fn lp_utf16_bounded(
     bytes: &[u8],
@@ -133,7 +143,7 @@ pub(crate) fn lp_utf16_bounded(
     bounds: RangeInclusive<usize>,
 ) -> Option<(String, usize)> {
     let (text, end) = lp_utf16_bounded_view(bytes, at, bounds)?;
-    Some((text.to_string(), end))
+    Some((text.to_owned_string(), end))
 }
 
 /// Take a u32-length-prefixed strict-UTF-8 string, advancing `at` past it on

@@ -9,7 +9,7 @@
 //! An edge with no vertex admits its curve record's whole domain where the
 //! record is closed.
 
-use std::rc::Rc;
+use std::sync::Arc;
 
 use cadmpeg_core::decode::ResourceLimit;
 use cadmpeg_ir::ids::VertexId;
@@ -40,7 +40,7 @@ use crate::value::{measured, BoxKind, Errors, Method, Point, Quantity, Scalar, S
 pub(crate) struct EdgeGeometry<'ir> {
     pub(crate) edge: &'ir Edge,
     pub(crate) tau: f64,
-    pub(crate) curve: Outcome<Rc<CurveChart<'ir>>>,
+    pub(crate) curve: Outcome<Arc<CurveChart<'ir>>>,
     /// The interval from the edge's start to its end.
     pub(crate) interval: Outcome<[f64; 2]>,
     pub(crate) length: Outcome<Length>,
@@ -117,7 +117,7 @@ pub(crate) fn measure_edge<'ir>(
         match (body, edge.carrier.curve()) {
             (Err(missing), _) => Err(missing.failure()),
             (Ok(_), Some(curve)) => match owners.curve(curve.as_str()) {
-                Some(record) => CurveChart::new(record, placement).map(Rc::new),
+                Some(record) => CurveChart::new(record, placement).map(Arc::new),
                 None => Err(missing(
                     UnavailableReason::CarrierUnresolved,
                     id,
