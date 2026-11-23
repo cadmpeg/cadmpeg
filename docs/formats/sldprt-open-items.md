@@ -1166,11 +1166,31 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Question.** What does a save that adds or deletes a node write to the creation log and to the next object identifier of `Contents/Config-N-ModelHeader` and `Contents/Header2`?
 
-**Known.** `sldprt.md` §2.3 gives the creation log, a `suObList` of `moLogs_c` records in increasing identifier order, and after it a u32 time stamp and the u32 next object identifier (`model_header_log_tail`). A `moLogs_c` record holds `moStamp_c` objects of kind `0` (created), `1` (modified) and `2` (deleted). The next object identifier is one above the largest `moLogs_c` identifier, or larger.
+**Known.** `sldprt.md` §2.3 gives the creation log, a `suObList` of `moLogs_c` records in increasing identifier order, and after it a u32 time stamp and the u32 next object identifier (`model_header_log_tail`). A `moLogs_c` record holds `moStamp_c` objects of kind `0` (created), `1` (modified) and `2` (deleted). The next object identifier is one above the largest `moLogs_c` identifier, or larger. A parameter object's trailer can hold an identifier at or above the next object identifier (EV-36).
 
 **Need.** Two saves of one part, before and after a feature is added, and two before and after a feature is deleted, with their creation logs and next object identifiers compared: the `moLogs_c` record and stamps of the added or deleted feature, the time stamps, and the change of the next object identifier.
 
 **Conflict.** The writer of an edited part keeps the source part's `ModelHeader` and `Header2` streams, so an added feature has no `moLogs_c` record and the next object identifier does not change. The writer gives an added feature an identifier past every identifier the decoder reads in the part's `KeyWords` records, named-object headers and parameter objects, and it does not read the next object identifier. A part the writer generates holds no `ModelHeader` or `Header2` stream.
+
+### EV-36. Parameter identifiers that other records hold
+
+**Question.** What does the object identifier in a parameter object's trailer name when a `KeyWords` record or another parameter object of the part holds the same identifier?
+
+**Known.** `sldprt.md` §2.3 gives the parameter trailer: a zero byte, the tolerance pointer and the u32 object identifier. Parameter objects can hold identifiers that `KeyWords` records also hold, among them the `moDirectionLight_c` identifiers `13` to `16`, and one identifier can be held by many parameter objects of one part. The parameter objects that hold these identifiers form a block whose identifiers run from `13` to `53`, and the block holds the same values in each part that holds it. An identifier of the block can be at or above the part's next object identifier (EV-35).
+
+**Need.** A part that holds such a block and a save of the same part without the feature or library object that brings the block, with their parameter objects, `KeyWords` records and next object identifiers compared.
+
+**Conflict.** The writer counts every parameter identifier the decoder reads among the part's identifiers when it numbers an added feature, so the block can raise the added feature's identifier above the next object identifier.
+
+### EV-37. The layout of the first identifiers by version
+
+**Question.** What decides which of the two layouts of the first identifiers (`sldprt.md` §2.3) a part of a version other than 14000 holds?
+
+**Known.** In the first layout `1` is the `moDetailCabinet_c`, `2`, `3` and `4` the Front, Top and Right planes and `5` the origin. In the second `2` is the `moEnvFolder_c`, `3`, `4` and `5` the planes and `6` the origin; its origin projection names feature `6` and a `moCompRefPlane_c` names the Front plane by feature `3` with plane word `3`. Parts of `swVersion` 14000 hold the first layout. Parts of other versions from 8000 to 16000 hold either layout.
+
+**Need.** Two parts of one version from 8000 to 16000 that hold different layouts, with their creation logs (EV-35) compared: the version and stamps of each part's first `moLogs_c` records.
+
+**Conflict.** The writer writes `swVersion` 14000 and the first layout.
 
 ### EV-24. Bytes after the last top-level object
 
