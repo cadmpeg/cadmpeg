@@ -12,13 +12,15 @@ use crate::design::feature::{Driver, Feature, FeatureOperation, OperationFamily}
 use crate::design::ops::assembly::{
     AssemblyFeature, ComponentPattern, MirrorComponents, Place, PlaceSet, RigidGroup,
 };
+use crate::design::ops::body::SplitMode;
 use crate::design::ops::dressup::OffsetResult;
 use crate::design::ops::shared::{
     AxisLimits, Bounds, Joint, JointConnector, JointKind, JointMotion, PathAxisControl,
     PathRollControl,
 };
-use crate::design::options::{Boolean, SheetOutput, SolidOutput, Targets};
-use crate::design::selection::{PickContext, PickTarget, Picks, SetSelection, StepRef};
+use crate::design::ops::sheet_metal::SheetMetalKind;
+use crate::design::options::Boolean;
+use crate::design::selection::{PickContext, PickTarget, StepRef};
 use crate::ids::OccurrenceId;
 use crate::report::check::Finding;
 use crate::scalar::{Angle, Length};
@@ -502,32 +504,55 @@ pub(super) fn check_mirror(
     }
 }
 
+/// Part 10 (§6.7): a definition that states `assembly` "is no `Place`,
+/// `PlaceSet`, `Joint`, `RigidGroup`, `ComponentPattern`, `MirrorComponents`,
+/// `Stored`, `DeleteBodies`, `TransformBodies`, `Flex`, `Graft`, `Knit`, or
+/// `Mesh`, and no `Unresolved` whose `family` names one of these; it is no
+/// `Split` in `Mutual` mode and no `SheetMetal` `Convert`; every
+/// `Boolean::Apply.targets` and `Targets` in it, and its
+/// `ShellFeature.bodies`, `Combine.target`, and `SplitMode::ByTools.targets`,
+/// are `None`, and no `Boolean` in it is `NewBody`". §2.5: "an assembly
+/// feature's operation is not itself an assembly feature". `ByTools.targets`
+/// is a required selection in this crate's `SplitMode`, so its `None` is not
+/// tested here.
 pub(super) fn check_assembly_feature(
     site: Site<'_>,
     feature: &AssemblyFeature,
     findings: &mut Vec<Finding>,
 ) {
+    let operation = &*feature.operation;
     if matches!(
-        *feature.operation,
-        FeatureOperation::Place(_)
-            | FeatureOperation::Joint(_)
-            | FeatureOperation::RigidGroup(_)
-            | FeatureOperation::ComponentPattern(_)
-            | FeatureOperation::MirrorComponents(_)
-            | FeatureOperation::AssemblyFeature(_)
-            | FeatureOperation::Stored { .. }
+        operation,
+        FeatureOperation::AssemblyFeature(_)
+            | FeatureOperation::Unresolved {
+                family: OperationFamily::AssemblyFeature
+            }
     ) {
         error(
             findings,
             site.entity,
-            format_args!("an AssemblyFeature's operation is an assembly operation or Stored"),
+            format_args!("an AssemblyFeature's operation is itself an assembly feature"),
         );
     }
-    if states_body_operand(&feature.operation) {
+    if let Some(excluded) = excluded_operation(operation) {
         error(
             findings,
             site.entity,
-            format_args!("an AssemblyFeature's operation states a body operand of its own; participants states what the feature modifies"),
+            format_args!("an AssemblyFeature's operation is {excluded}, which an assembly feature does not run"),
+        );
+    }
+    if let Some(operand) = stated_body_operand(operation) {
+        error(
+            findings,
+            site.entity,
+            format_args!("an AssemblyFeature's operation states a body operand of its own, {operand}; participants states what the feature modifies"),
+        );
+    }
+    if matches!(boolean_of(operation), Some(Boolean::NewBody)) {
+        error(
+            findings,
+            site.entity,
+            format_args!("an AssemblyFeature's operation has a Boolean that is NewBody"),
         );
     }
     if let Some(participants) = picks::named(&feature.participants) {
@@ -544,42 +569,113 @@ pub(super) fn check_assembly_feature(
     }
 }
 
-/// Whether `operation` states, in a field it may leave absent, the bodies
-/// it acts on or combines with: a Boolean's `targets`, a hole's or an
-/// emboss's `targets`, or a shell's `bodies`. The required operands of a
-/// combine, a split, and the body operations are not read, since §6.7's
-/// table runs an assembly split and a CATIA Remove, which state them.
-fn states_body_operand(operation: &FeatureOperation) -> bool {
-    let states = |selection: &SetSelection| {
-        !matches!(selection.picks, Picks::Unread) && !picks::is_empty(selection)
-    };
-    let targets = |targets: Option<&Targets>| match targets {
-        Some(Targets::All) => true,
-        Some(Targets::Selected(selection)) => states(selection),
-        None => false,
-    };
-    let boolean = |boolean: Option<&Boolean>| matches!(boolean, Some(Boolean::Apply { targets: t, .. }) if targets(t.as_ref()));
-    let output = |output: &SolidOutput| boolean(output.boolean.as_ref());
-    let sheet = |output: &SheetOutput| boolean(output.boolean.as_ref());
+/// The name of `operation`, typed or `Unresolved` by its family, where §6.7
+/// excludes it from an assembly feature.
+fn excluded_operation(operation: &FeatureOperation) -> Option<&'static str> {
+    use FeatureOperation as Op;
+    use OperationFamily as Family;
     match operation {
-        FeatureOperation::Extrude(op) => output(&op.output),
-        FeatureOperation::Revolve(op) => output(&op.output),
-        FeatureOperation::Sweep(op) => output(&op.output),
-        FeatureOperation::HelicalSweep(op) => output(&op.output),
-        FeatureOperation::Primitive(op) => output(&op.output),
-        FeatureOperation::Loft(op) => output(&op.output),
-        FeatureOperation::ImplicitSweep(op) => output(&op.output),
-        FeatureOperation::Rib(op) => boolean(op.boolean.as_ref()),
-        FeatureOperation::Thicken(op) => boolean(op.boolean.as_ref()),
-        FeatureOperation::BoundaryFill(op) => boolean(op.boolean.as_ref()),
-        FeatureOperation::Patch(op) => sheet(&op.output),
-        FeatureOperation::Knit(op) => sheet(&op.output),
-        FeatureOperation::Extend(op) => op.output.as_ref().is_some_and(sheet),
-        FeatureOperation::Offset(op) => matches!(&op.result, OffsetResult::Copy(o) if sheet(o)),
-        FeatureOperation::Hole(op) => targets(op.targets.as_ref()),
-        FeatureOperation::Emboss(op) => targets(op.targets.as_ref()),
-        FeatureOperation::Shell(op) => op.bodies.as_ref().is_some_and(states),
-        _ => false,
+        Op::Place(_)
+        | Op::Unresolved {
+            family: Family::Place,
+        } => Some("Place"),
+        Op::PlaceSet(_)
+        | Op::Unresolved {
+            family: Family::PlaceSet,
+        } => Some("PlaceSet"),
+        Op::Joint(_)
+        | Op::Unresolved {
+            family: Family::Joint,
+        } => Some("Joint"),
+        Op::RigidGroup(_)
+        | Op::Unresolved {
+            family: Family::RigidGroup,
+        } => Some("RigidGroup"),
+        Op::ComponentPattern(_)
+        | Op::Unresolved {
+            family: Family::ComponentPattern,
+        } => Some("ComponentPattern"),
+        Op::MirrorComponents(_)
+        | Op::Unresolved {
+            family: Family::MirrorComponents,
+        } => Some("MirrorComponents"),
+        Op::Stored { .. } => Some("Stored"),
+        Op::DeleteBodies(_)
+        | Op::Unresolved {
+            family: Family::DeleteBodies,
+        } => Some("DeleteBodies"),
+        Op::TransformBodies(_)
+        | Op::Unresolved {
+            family: Family::TransformBodies,
+        } => Some("TransformBodies"),
+        Op::Flex(_)
+        | Op::Unresolved {
+            family: Family::Flex,
+        } => Some("Flex"),
+        Op::Graft(_)
+        | Op::Unresolved {
+            family: Family::Graft,
+        } => Some("Graft"),
+        Op::Knit(_)
+        | Op::Unresolved {
+            family: Family::Knit,
+        } => Some("Knit"),
+        Op::Mesh(_)
+        | Op::Unresolved {
+            family: Family::Mesh,
+        } => Some("Mesh"),
+        Op::Split(split) if matches!(split.mode, SplitMode::Mutual { .. }) => {
+            Some("a Split in Mutual mode")
+        }
+        Op::SheetMetal(sheet) if matches!(sheet.kind, SheetMetalKind::Convert(_)) => {
+            Some("a SheetMetal Convert")
+        }
+        _ => None,
+    }
+}
+
+/// The `Boolean` that `operation` states for its result.
+fn boolean_of(operation: &FeatureOperation) -> Option<&Boolean> {
+    match operation {
+        FeatureOperation::Extrude(op) => op.output.boolean.as_ref(),
+        FeatureOperation::Revolve(op) => op.output.boolean.as_ref(),
+        FeatureOperation::Sweep(op) => op.output.boolean.as_ref(),
+        FeatureOperation::HelicalSweep(op) => op.output.boolean.as_ref(),
+        FeatureOperation::Primitive(op) => op.output.boolean.as_ref(),
+        FeatureOperation::Loft(op) => op.output.boolean.as_ref(),
+        FeatureOperation::ImplicitSweep(op) => op.output.boolean.as_ref(),
+        FeatureOperation::Rib(op) => op.boolean.as_ref(),
+        FeatureOperation::Thicken(op) => op.boolean.as_ref(),
+        FeatureOperation::BoundaryFill(op) => op.boolean.as_ref(),
+        FeatureOperation::Patch(op) => op.output.boolean.as_ref(),
+        FeatureOperation::Knit(op) => op.output.boolean.as_ref(),
+        FeatureOperation::Extend(op) => op.output.as_ref()?.boolean.as_ref(),
+        FeatureOperation::Offset(op) => match &op.result {
+            OffsetResult::Copy(output) => output.boolean.as_ref(),
+            OffsetResult::Move {} => None,
+        },
+        _ => None,
+    }
+}
+
+/// The field of `operation` that states bodies it changes, where §6.7
+/// requires `None` in an assembly feature.
+fn stated_body_operand(operation: &FeatureOperation) -> Option<&'static str> {
+    if matches!(
+        boolean_of(operation),
+        Some(Boolean::Apply {
+            targets: Some(_),
+            ..
+        })
+    ) {
+        return Some("Boolean::Apply.targets");
+    }
+    match operation {
+        FeatureOperation::Hole(op) if op.targets.is_some() => Some("Hole.targets"),
+        FeatureOperation::Emboss(op) if op.targets.is_some() => Some("Emboss.targets"),
+        FeatureOperation::Shell(op) if op.bodies.is_some() => Some("ShellFeature.bodies"),
+        FeatureOperation::Combine(op) if op.target.is_some() => Some("Combine.target"),
+        _ => None,
     }
 }
 

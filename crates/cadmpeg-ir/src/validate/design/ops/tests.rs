@@ -18,9 +18,9 @@ use crate::design::ops::assembly::{
     PlaceSet,
 };
 use crate::design::ops::body::{
-    Combine, InstanceChange, InstanceOverride, NewComponent, Pattern, PatternInstances,
-    PatternSeeds, TemplateInput, TemplateInstance, TransformBodies, TransformMode, TransformStep,
-    Transformation,
+    Combine, DeleteBodies, InstanceChange, InstanceOverride, NewComponent, Pattern,
+    PatternInstances, PatternSeeds, Split, SplitMode, TemplateInput, TemplateInstance,
+    TransformBodies, TransformMode, TransformStep, Transformation,
 };
 use crate::design::ops::datum::{Datum, DatumElement};
 use crate::design::ops::dressup::{
@@ -1593,6 +1593,90 @@ fn an_assembly_feature_operation_states_no_body_operand() {
     let bodies = Targets::Selected(named(vec![entity(NameKind::Body, 1)]));
     assert_finding(&with(cutting(Some(bodies))), "a body operand of its own");
     assert_no_finding_containing(&with(cutting(None)), "body operand");
+}
+
+fn in_assembly(operation: FeatureOperation) -> CadIr {
+    with(FeatureOperation::AssemblyFeature(Box::new(
+        AssemblyFeature {
+            participants: unread(),
+            effect: None,
+            operation: Box::new(operation),
+        },
+    )))
+}
+
+#[test]
+fn an_assembly_combine_states_no_target() {
+    let op = |combine| FeatureOperation::Combine(Box::new(combine));
+    assert_no_design_finding(&in_assembly(op(combine(None, BooleanOp::Cut))));
+    let target = Some(named(vec![entity(NameKind::Body, 1)]));
+    assert_finding(
+        &in_assembly(op(combine(target, BooleanOp::Cut))),
+        "a body operand of its own, Combine.target",
+    );
+}
+
+#[test]
+fn an_assembly_feature_makes_no_new_body() {
+    let mut operation = extrude();
+    operation.output.boolean = Some(Boolean::NewBody);
+    assert_finding(
+        &in_assembly(FeatureOperation::Extrude(Box::new(operation))),
+        "has a Boolean that is NewBody",
+    );
+}
+
+#[test]
+fn an_assembly_feature_runs_no_operation_that_states_its_bodies() {
+    let excluded = "which an assembly feature does not run";
+    let place_set = FeatureOperation::PlaceSet(Box::new(PlaceSet {
+        occurrences: Vec::new(),
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    }));
+    assert_finding(&in_assembly(place_set), excluded);
+    let delete = FeatureOperation::DeleteBodies(Box::new(DeleteBodies {
+        bodies: named(vec![entity(NameKind::Body, 1)]),
+        retain: None,
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    }));
+    assert_finding(&in_assembly(delete), excluded);
+    let mutual = FeatureOperation::Split(Box::new(Split {
+        mode: SplitMode::Mutual {
+            elements: named(vec![entity(NameKind::Body, 1), entity(NameKind::Body, 2)]),
+            kept: None,
+        },
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    }));
+    assert_finding(&in_assembly(mutual), excluded);
+    let knit = FeatureOperation::Unresolved {
+        family: OperationFamily::Knit,
+    };
+    assert_finding(&in_assembly(knit), excluded);
+    let split = FeatureOperation::Unresolved {
+        family: OperationFamily::Split,
+    };
+    assert_no_finding_containing(&in_assembly(split), excluded);
+    let nested = FeatureOperation::Unresolved {
+        family: OperationFamily::AssemblyFeature,
+    };
+    assert_finding(&in_assembly(nested), "is itself an assembly feature");
+}
+
+#[test]
+fn a_composite_stage_is_a_linear_circular_mirror_scale_or_native_layout() {
+    let follow = PatternLayout::Follow(named(vec![pick(PickTarget::Feature(feature("fillet")))]));
+    let stages = |stage| PatternLayout::Composite(vec![linear(None, 2), stage]);
+    let refused = "a Composite stage is no Linear";
+    assert_finding(&with(pattern(stages(follow), Vec::new())), refused);
+    let nested = stages(PatternLayout::Composite(vec![
+        linear(None, 2),
+        linear(None, 2),
+    ]));
+    assert_finding(&with(pattern(nested, Vec::new())), refused);
+    assert_no_finding_containing(&with(pattern(stages(linear(None, 2)), Vec::new())), refused);
 }
 
 #[test]

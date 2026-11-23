@@ -552,11 +552,21 @@ pub(super) fn check_layout(
             }
             let mut made: Option<u64> = Some(1);
             for (at, stage) in stages.iter().enumerate() {
-                if matches!(stage, PatternLayout::Composite(_)) {
+                // §6.5: "A stage is a linear, circular, or mirror layout or a
+                // scale", or a `CompositeStage::Native` stage; §2.5: "A
+                // `PatternLayout` does not nest a layout".
+                if !matches!(
+                    stage,
+                    PatternLayout::Linear { .. }
+                        | PatternLayout::Circular { .. }
+                        | PatternLayout::Mirror { .. }
+                        | PatternLayout::Scale { .. }
+                        | PatternLayout::Native(_)
+                ) {
                     error(
                         findings,
                         site.entity,
-                        format_args!("a Composite stage is itself Composite"),
+                        format_args!("a Composite stage is no Linear, Circular, Mirror, Scale, or Native layout"),
                     );
                     continue;
                 }
@@ -893,6 +903,9 @@ pub(super) fn check_template_inputs(index: &DesignRecords<'_>, findings: &mut Ve
     }
 }
 
+/// Part 10 (§6.5): "`target` is `None` only with `Join`, `Intersect`, or
+/// `Compound`, or where the definition states `assembly`". In an assembly
+/// feature `target` is `None` (§6.7), which `check_assembly_feature` checks.
 pub(super) fn check_combine(site: Site<'_>, combine: &Combine, findings: &mut Vec<Finding>) {
     if matches!(combine.op, Some(BooleanOp::Sew)) {
         error(
@@ -925,10 +938,12 @@ pub(super) fn check_combine(site: Site<'_>, combine: &Combine, findings: &mut Ve
                 format_args!("a Compound combine states a target"),
             );
         }
-    } else if matches!(
-        combine.op,
-        Some(BooleanOp::Cut | BooleanOp::Assemble | BooleanOp::UnionTrim | BooleanOp::Sew)
-    ) {
+    } else if !site.in_assembly_feature
+        && matches!(
+            combine.op,
+            Some(BooleanOp::Cut | BooleanOp::Assemble | BooleanOp::UnionTrim | BooleanOp::Sew)
+        )
+    {
         error(
             findings,
             site.entity,

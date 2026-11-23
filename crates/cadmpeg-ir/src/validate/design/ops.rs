@@ -3,11 +3,13 @@
 //! shared option types, and the operations of each family.
 //!
 //! The rules are decided by reference lookup, counting, and arithmetic on
-//! stated values. A rule about operands or names does not fire on an
-//! `Unresolved` or `Native` operation, a `Native` pick, or an `Unread`
-//! selection, and a pick whose geometric kind its target does not state is
-//! not refused by a kind rule. A rule that needs a pick resolved in a stored
-//! state (a chain's connectivity, an edge's incidence) is not checked here.
+//! stated values. A rule about operands does not fire on an `Unresolved` or
+//! `Native` operation, a `Native` pick, or an `Unread` selection, and a pick
+//! whose geometric kind its target does not state is not refused by a kind
+//! rule. A rule about an operation's family reads an `Unresolved` family, and
+//! sketch ownership holds an `Unresolved` definition to the sketches it
+//! names. A rule that needs a pick resolved in a stored state (a chain's
+//! connectivity, an edge's incidence) is not checked here.
 
 mod assembly;
 mod body;
