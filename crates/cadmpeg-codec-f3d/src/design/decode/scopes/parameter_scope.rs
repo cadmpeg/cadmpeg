@@ -1109,10 +1109,11 @@ pub(crate) fn design_primary_frame_offsets(
 /// does not depend on whether history binding ran. Exactly one history-bound
 /// envelope is authoritative. Otherwise, with none history-bound, the later
 /// envelope is authoritative when the envelopes are equivalent or differ only
-/// in their tail state bytes; else the primary-indexed envelope; else the
-/// later envelope when the envelopes differ only in their tail flags. Where that later
-/// envelope stores no flags, it takes the flags of the latest earlier envelope
-/// that stores them before its own start. Groups are resolved in record order,
+/// in their tail state bytes or Thread companion suppression flags; else the
+/// primary-indexed envelope; else the later envelope when the envelopes differ
+/// only in their tail flags. Where that later envelope stores no flags and no
+/// companion suppression flag, it takes the flags of the latest earlier
+/// envelope that stores them before its own start. Groups are resolved in record order,
 /// so their notes and the first unresolved group are the same on every decode.
 /// An unresolved group remains an error.
 pub(crate) fn admit_history_bound_scope_variants(
@@ -1277,9 +1278,9 @@ fn flags_only_group(
 ) -> (Option<scope::DesignScopeTailFlags>, String) {
     let kept = &scopes[keep];
     let kept_at = kept.byte_offset();
-    let carried = match kept.tail_flags {
-        Some(_) => None,
-        None => indices
+    let carried = match (kept.tail_flags, kept.companion_suppressed) {
+        (Some(_), _) | (None, Some(_)) => None,
+        (None, None) => indices
             .iter()
             .map(|index| &scopes[*index])
             .filter_map(|copy| {
@@ -1292,34 +1293,42 @@ fn flags_only_group(
             })
             .max_by_key(|(at, _)| *at),
     };
-    let values = |flags: Option<scope::DesignScopeTailFlags>| {
-        flags.map(|flags| {
-            (
-                flags.suppression,
-                flags.unevaluated,
-                flags.no_result,
-                flags.rolled_back,
-            )
-        })
-    };
-    let spell = |flags: scope::DesignScopeTailFlags| {
-        let [first, second] = flags.suppression.map(u8::from);
-        format!(
-            "state={first}{second}{}, no-result={}, rolled-back={}",
-            u8::from(flags.unevaluated),
-            flags.no_result,
-            flags.rolled_back
+    let values = |flags: Option<scope::DesignScopeTailFlags>, companion: Option<bool>| {
+        (
+            flags.map(|flags| (flags.stored_state(), flags.no_result, flags.rolled_back)),
+            companion,
         )
     };
-    let kept_flags = values(kept.tail_flags.or(carried.map(|(_, flags)| flags)));
+    let spell = |flags: scope::DesignScopeTailFlags| {
+        let [first, second, third] = flags.stored_state();
+        format!(
+            "state={first}{second}{third}, no-result={}, rolled-back={}",
+            flags.no_result, flags.rolled_back
+        )
+    };
+    let companion =
+        |scope: &DesignParameterScope| scope.companion_suppressed.map(|flag| flag.value);
+    let spell_scope = |scope: &DesignParameterScope| match (scope.tail_flags, companion(scope)) {
+        (Some(flags), _) => spell(flags),
+        (None, Some(suppressed)) => format!("companion suppression flag={}", u8::from(suppressed)),
+        (None, None) => "none".to_owned(),
+    };
+    let kept_flags = values(
+        kept.tail_flags.or(carried.map(|(_, flags)| flags)),
+        companion(kept),
+    );
     let kept_clause = match (kept.tail_flags, carried) {
-        (Some(flags), _) => format!(
+        (Some(_), _) => format!(
             "the decoder kept {} from its later envelope at byte {kept_at}",
-            spell(flags)
+            spell_scope(kept)
         ),
         (None, Some((at, flags))) => format!(
             "its later envelope at byte {kept_at} stores no tail state, so the decoder kept {} from the earlier envelope at byte {at}",
             spell(flags)
+        ),
+        (None, None) if kept.companion_suppressed.is_some() => format!(
+            "the decoder kept {} from its later envelope at byte {kept_at}",
+            spell_scope(kept)
         ),
         (None, None) => format!(
             "its later envelope at byte {kept_at} stores no tail state, and no earlier envelope stores it before that byte"
@@ -1329,11 +1338,8 @@ fn flags_only_group(
         .iter()
         .filter(|index| **index != keep)
         .map(|index| &scopes[*index])
-        .filter(|scope| values(scope.tail_flags) != kept_flags)
-        .map(|scope| {
-            let flags = scope.tail_flags.map_or_else(|| "none".to_owned(), spell);
-            format!("at byte {}, {flags}", scope.byte_offset())
-        })
+        .filter(|scope| values(scope.tail_flags, companion(scope)) != kept_flags)
+        .map(|scope| format!("at byte {}, {}", scope.byte_offset(), spell_scope(scope)))
         .collect::<Vec<_>>();
     let others = if differing.is_empty() {
         String::new()
@@ -1355,8 +1361,9 @@ fn flags_only_group(
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(crate) struct SupersededScopeEnvelopes {
     /// Envelopes not decoded because the primary-indexed envelope of their
-    /// record was, and that differ from it in payload or, where several are
-    /// history-bound, in their current or effective preceding history state.
+    /// record was, and that differ from it in payload, including their tail
+    /// state, or, where several are history-bound, in their current or
+    /// effective preceding history state.
     pub(crate) primary_indexed: usize,
     /// One note for each record whose envelopes differ only in their tail
     /// state bytes or lane flags.
@@ -1383,7 +1390,8 @@ impl SupersededScopeEnvelopes {
 enum EnvelopeComparison {
     /// One serialization of the same logical scope.
     Equivalent,
-    /// The envelopes differ only in their tail state bytes.
+    /// The envelopes differ only in their tail state bytes or in the
+    /// suppression flag of their Thread companion tail.
     StateBytes,
     /// The envelopes differ only in their tail state bytes and lane flags,
     /// or only some of them store tail state.
@@ -1449,6 +1457,10 @@ fn compare_scope_variant_payloads(
         if let Some(serde_json::Value::Object(flags)) = value.get_mut("tail_flags") {
             flags.remove("suppression");
             flags.remove("unevaluated");
+            flags.remove("wide_state");
+        }
+        if let serde_json::Value::Object(fields) = value {
+            fields.remove("companion_suppressed");
         }
     }
     if left == right {
@@ -2282,14 +2294,15 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         let reference_table = reference_table?;
         let (reference_count_at, reference_members, reference_member_offsets) = &reference_table;
         let tail = bytes.get(kind_end..paired_at)?;
+        let thread_companion = (kind == scope::DesignFeatureKind::Thread
+            && tail_form == ScopeTailForm::Fixed)
+            .then(|| super::thread::hole_companion_tail(tail, record_index))
+            .flatten();
         let companion_history = match (&kind, tail_form) {
             (scope::DesignFeatureKind::Hole, ScopeTailForm::Named) => {
                 named_reciprocal_hole_history(tail, record_index)
             }
-            (scope::DesignFeatureKind::Thread, ScopeTailForm::Fixed) => {
-                super::thread::hole_companion_history(tail, record_index)
-            }
-            _ => None,
+            _ => thread_companion.map(|companion| companion.previous_history_state),
         };
         let previous_history_state_id_offset = companion_history
             .or_else(|| match tail_form {
@@ -2310,6 +2323,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
             })
             .and_then(|offset| kind_end.checked_add(offset));
         let tail_flags = match tail_form {
+            _ if companion_history.is_some() => None,
             ScopeTailForm::Named => named.as_ref().map(|named| named.state),
             ScopeTailForm::TypedFixed | ScopeTailForm::TypedExtended => typed_scope_tail(
                 bytes,
@@ -2330,9 +2344,14 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                 1 => Some(true),
                 _ => None,
             };
+            let stored: [u8; 3] = bytes.get(state..state.checked_add(3)?)?.try_into().ok()?;
             Some(scope::DesignScopeTailFlags {
-                suppression: [bit(state)?, bit(state.checked_add(1)?)?],
-                unevaluated: bit(state.checked_add(2)?)?,
+                suppression: [stored[0] != 0, stored[1] != 0],
+                unevaluated: stored[2] != 0,
+                wide_state: stored
+                    .iter()
+                    .any(|byte| *byte > 1)
+                    .then_some(cadmpeg_ir::native::bytes::NativeBytes::new(stored)),
                 state_offset: u64_from_index(state),
                 no_result: bit(flags)?,
                 rolled_back: bit(flags.checked_add(1)?)?,
@@ -2555,6 +2574,13 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         .ok()?;
         scope.source_kind = source_kind;
         scope.tail_flags = tail_flags;
+        scope.companion_suppressed = match thread_companion {
+            Some(companion) => Some(crate::records::identity::Located {
+                value: companion.suppressed,
+                offset: u64_from_index(kind_end.checked_add(thread_companion_tail::FLAGS)?),
+            }),
+            None => None,
+        };
         if let Some(prologue) = extrude_prologue {
             {
                 let construction = Some(scope::DesignExtrudeScope {
