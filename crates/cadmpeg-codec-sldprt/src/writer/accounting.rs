@@ -115,24 +115,11 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
         "driven (reference) dimension parameter",
     );
     // A write that reduces a foreign history writes every expression with its
-    // value and names it there (`history_drop`).
-    if !super::history_drop::HistoryDrop::applies(ir) {
-        charge(
-            ir.model
-                .parameters
-                .iter()
-                .filter(|parameter| {
-                    !omitted.contains(&parameter.id)
-                        && parameter
-                            .dependencies
-                            .iter()
-                            .any(|dependency| omitted.contains(dependency))
-                })
-                .count(),
-            SldprtLossCode::WriterParameterExpressionsOmitted,
-            "parameter expression reading an omitted driven (reference) dimension parameter",
-        );
-    }
+    // value, or leaves out one with no value, and names it there
+    // (`history_drop`).
+    let readers = (!super::history_drop::HistoryDrop::applies(ir)).then(|| {
+        crate::history::write::parameters::omitted_readers(&ir.model.parameters, &omitted)
+    });
     let bound = ir
         .model
         .appearance_bindings
@@ -229,6 +216,33 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
                 unwritten_bindings.join(", ")
             )),
         );
+    }
+    if let Some(readers) = readers {
+        let ids = |readers: &[&cadmpeg_ir::features::parameters::DesignParameter]| {
+            readers
+                .iter()
+                .map(|parameter| parameter.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        if !readers.valued.is_empty() {
+            losses.push(
+                SldprtLossCode::WriterParameterExpressionsOmitted.note(format!(
+                    "the SLDPRT writer writes {} parameter(s) with their value in place of an \
+                 expression that reads an omitted driven (reference) dimension parameter: {}",
+                    readers.valued.len(),
+                    ids(&readers.valued)
+                )),
+            );
+        }
+        if !readers.dropped.is_empty() {
+            losses.push(SldprtLossCode::WriterFeaturesOmitted.note(format!(
+                "the SLDPRT writer leaves out {} parameter(s) whose expression reads an omitted \
+                 parameter and that hold no value to write in its place: {}",
+                readers.dropped.len(),
+                ids(&readers.dropped)
+            )));
+        }
     }
     losses
 }
