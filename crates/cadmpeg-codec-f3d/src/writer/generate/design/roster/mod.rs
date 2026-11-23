@@ -15,6 +15,7 @@ pub(super) mod planes;
 mod rows;
 pub(super) mod segment;
 pub(super) mod sketches;
+pub(super) mod swept;
 mod units;
 pub(super) mod values;
 mod views;
@@ -418,7 +419,7 @@ impl Context<'_> {
         self.roster
             .extrude
             .as_ref()
-            .map_or(SCOPE, |records| records.scope)
+            .map_or(SCOPE, |records| records.scope.record)
     }
 
     /// The number of result bodies as a u32.

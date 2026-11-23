@@ -1398,7 +1398,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** Which authored controls establish the Unfold selection slots, all-bends flag, settings-reference layout, rule neutral-axis factor and Refold source association?
 
-**Known.** The Unfold prefix contains a control byte and four ordered references. Both construction groups use role `0x10`. The projection reads the first group as bend faces, the fourth as the stationary face, and control zero/one as selected/all bends. `feature.unfold-selection-slots-assumed` and `feature.unfold-all-bends-flag-assumed` identify these readings. A settings primary can contain present input references before the rule. A unique registered rule target inside the bounded settings frame, whose closing local owner reference names this Unfold, supplies the rule link with `feature.unfold-settings-rule-reference-assumed` when the mask-and-slots form is unresolved. The unique material-trailer scalar of the owning settings rule supplies the neutral-axis factor with `feature.unfold-material-scalar-factor-assumed`. The unique preceding typed Unfold in the same ordered GroupMode supplies the Refold source with `feature.refold-group-source-assumed`. A resolved source must be emitted earlier in the same stream. Missing or ambiguous source links, rule factors, prefixes, selections and control values retain neutral partial constructions with their specific unresolved or native-selection losses.
+**Known.** The Unfold prefix contains a control byte and four ordered references. Both construction groups use role `0x10`. The projection reads the first group as bend faces, the fourth as the stationary face, and control zero/one as selected/all bends. `feature.unfold-selection-slots-assumed` and `feature.unfold-all-bends-flag-assumed` identify these readings. A settings primary can contain present input references before the rule. The rule index of the decoded settings record, whose owner reference names this Unfold, supplies the rule link. A unique registered rule target inside the bounded settings frame, whose closing local owner reference names this Unfold, supplies the rule link with `feature.unfold-settings-rule-reference-assumed` when no decoded settings record exists. The unique material-trailer scalar of the owning settings rule supplies the neutral-axis factor with `feature.unfold-material-scalar-factor-assumed`. The unique preceding typed Unfold in the same ordered GroupMode supplies the Refold source with `feature.refold-group-source-assumed`. A resolved source must be emitted earlier in the same stream. Missing or ambiguous source links, rule factors, prefixes, selections and control values retain neutral partial constructions with their specific unresolved or native-selection losses.
 
 **Need.** Controlled edits of each selection, the all-bends setting, settings input presence and the rule factor, plus a group containing several Unfold operations, must establish these associations.
 
@@ -4105,15 +4105,15 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 ### DR-1029. Version-3 settings reference prefix
 
-**Question.** Where are the override mask and optional inputs in the version-3 sheet-metal settings reference prefix, and which control does its first reference supply?
+**Question.** What does the leading reference of the version-3 sheet-metal settings frame name, and what control does it supply?
 
-**Known.** The settings type GUID is `E75C86D6-76D8-4F1F-BC16-AB8CB74958B0`, version 3. After the primary indexed header and ten zero bytes, the primary frame contains a present local reference, twelve zero bytes, a second present local reference, two zero bytes, a third present local reference, one zero byte, and a fourth present local reference. The first reference targets type `ACE707B5-1490-4837-A69A-724A92CEB69F`, version 0. The second targets rule type `B42ED662-8999-4C1B-A744-759D1D446D55`, version 1. The third targets presentation type `6CCF41D5-40BE-48ED-A834-18F3EAED6C57`, version 1. The fourth targets the owning `Bend` scope. Its same-index paired header is followed by eight zero bytes and a present local reference. The mask-and-slots form in `f3d.md` §3.1 places a u32 mask before the optional inputs and rule reference.
+**Known.** `f3d.md` §3.1 gives the frame. The reference is a present local reference that resolves in the same primary record index.
 
-**Need.** Controlled saves must vary the rule, mask controls, and each optional input independently. Their typed links, indexed frame bounds, and final sheet geometry must establish the field order and input roles.
+**Need.** Controlled saves must vary the record that the reference names. Their typed links and final sheet geometry must establish its target type and role.
 
 **Conflict.** None.
 
-**Note.** The decoder preserves each unread frame in the source archive with `sheet-metal.settings-undecoded` and retains other Design records.
+**Note.** The native settings record keeps the reference; the decoder does not read it as a control. The edge-flange radius derivation uses only frames with mask zero.
 
 ### DR-889. Extrude selection members in sketch text
 

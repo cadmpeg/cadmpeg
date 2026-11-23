@@ -76,6 +76,10 @@ pub(super) struct ProductPrereqs {
     /// binding.
     pub(super) design_parameter_scopes: Vec<DesignParameterScope>,
     pub(super) design_parameter_scope_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// Sheet-metal settings records, decoded before the scopes that link them.
+    pub(super) design_sheet_metal_settings:
+        Vec<crate::records::sheet_metal_settings::DesignSheetMetalSettings>,
+    pub(super) design_sheet_metal_settings_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(super) design_work_plane_inferred_axes: std::collections::HashMap<String, (u64, [u8; 2])>,
     /// Freedoms and limits of the joints whose motion records carry them.
     pub(super) design_joint_motions: Vec<crate::records::feature::joint_motion::DesignJointMotion>,
@@ -147,6 +151,8 @@ impl ProductPrereqs {
             design_component_occurrence_losses: _,
             design_parameter_scopes,
             design_parameter_scope_losses: _,
+            design_sheet_metal_settings: _,
+            design_sheet_metal_settings_losses: _,
             design_work_plane_inferred_axes: _,
             design_joint_motions,
             design_hidden_occurrences: _,
@@ -235,6 +241,11 @@ pub(super) fn decode(
         losses: design_component_occurrence_losses,
         paths: design_component_paths,
     } = crate::design::decode::components::decode_component_occurrences(ctx, scan)?;
+    let mut design_sheet_metal_settings_losses = Vec::new();
+    let design_sheet_metal_settings = crate::design::decode::sheet_metal_settings::decode_settings(
+        scan,
+        &mut design_sheet_metal_settings_losses,
+    )?;
     let crate::design::decode::scopes::parameter_scope::DecodedParameterScopes {
         given_up,
         scopes: mut design_parameter_scopes,
@@ -250,6 +261,7 @@ pub(super) fn decode(
             parameter_owners: &design_parameter_owners,
             component_occurrences: &design_component_occurrences,
             recipes: &construction_recipes,
+            sheet_metal_settings: &design_sheet_metal_settings,
         },
     )?;
     let primary_frames =
@@ -320,6 +332,8 @@ pub(super) fn decode(
         design_component_occurrence_losses,
         design_parameter_scopes,
         design_parameter_scope_losses,
+        design_sheet_metal_settings,
+        design_sheet_metal_settings_losses,
         design_work_plane_inferred_axes,
         design_joint_motions,
         design_hidden_occurrences,

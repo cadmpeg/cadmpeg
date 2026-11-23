@@ -194,7 +194,7 @@ pub(super) fn config(facts: &Facts<'_>) -> Result<(Vec<u8>, ClassMap, PartRefs),
     a.u16(0);
     a.u32(next_id);
     a.u32(1);
-    a.object("moAtom_c");
+    let atom = a.object("moAtom_c");
     atom_head(&mut a);
     a.zeros(ATOM_RUN);
     a.u32(VERSION);
@@ -239,6 +239,7 @@ pub(super) fn config(facts: &Facts<'_>) -> Result<(Vec<u8>, ClassMap, PartRefs),
         map,
         PartRefs {
             environment,
+            atom,
             bodies,
         },
     ))

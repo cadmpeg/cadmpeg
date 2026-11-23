@@ -137,12 +137,20 @@ fn principal_component_coordinates(frame: (Point3, Vector3, Vector3)) -> Option<
 }
 
 /// Records on `feature` that its sketch's marker pairs are sketch
-/// coordinates in the principal component frame `component`.
+/// coordinates in the frame of the principal plane `component`, which the
+/// profile's own principal-plane component record names
+/// (`PlaneBinding::Principal`).
 pub(super) fn record_component_marker_coordinates(
     feature: &mut cadmpeg_ir::features::Feature,
-    component: Option<(Point3, Vector3, Vector3)>,
+    component: Option<cadmpeg_ir::features::PrincipalPlane>,
 ) {
-    if let Some(value) = component.and_then(principal_component_coordinates) {
+    let coordinates = component.and_then(|component| {
+        PRINCIPAL_COMPONENTS
+            .into_iter()
+            .find(|(plane, _)| *plane == component)
+            .map(|(_, coordinates)| coordinates)
+    });
+    if let Some(value) = coordinates {
         feature.source_properties.insert(
             cadmpeg_core::nonblank_literal!("MarkerCoordinateSystem"),
             value.to_owned(),

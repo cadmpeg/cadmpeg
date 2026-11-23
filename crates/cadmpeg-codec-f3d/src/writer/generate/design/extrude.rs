@@ -801,7 +801,7 @@ pub(super) fn stamp(
     };
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::attributes::AttributeTarget;
-    let identity = super::roster::extrude::persistent_id(plan.preceding)?;
+    let identity = super::roster::swept::persistent_id(plan.preceding)?;
     let reference =
         i64::try_from(identity).map_err(|_| CodecError::Malformed("Extrude identity".into()))?;
     native.persistent_design_links.push(PersistentDesignLink {

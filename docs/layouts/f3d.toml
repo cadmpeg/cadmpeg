@@ -26460,6 +26460,33 @@ source = "spec"
 anchor = "ten zero bytes and a u32 override mask"
 
 [[record]]
+name = "sheet_metal_settings_leading_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "stores the leading-reference form"
+size = 33
+note = "Offsets are relative to the end of the variable-length primary indexed header. The rule reference follows this prefix."
+
+[[record.gap]]
+offset = 0
+size = 10
+note = "Ten zero bytes precede the leading reference."
+
+[[record.field]]
+name = "leading_reference"
+offset = 10
+type = "bytes[11]"
+source = "spec"
+anchor = "a present local reference where the mask-and-slots form stores its mask"
+
+[[record.field]]
+name = "zero_run_12"
+offset = 21
+type = "bytes[12]"
+source = "spec"
+anchor = "twelve zero bytes. The rule reference follows"
+
+[[record]]
 name = "sheet_metal_bend_radius_override_prefix"
 kind = "byte"
 section = "3.1"

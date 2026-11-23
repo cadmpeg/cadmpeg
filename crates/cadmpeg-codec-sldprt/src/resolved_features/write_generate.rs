@@ -24,7 +24,7 @@ use cadmpeg_ir::sketches::{
 };
 use std::collections::HashMap;
 
-pub(super) enum GeneratedMarkerRelation<'a> {
+pub(crate) enum GeneratedMarkerRelation<'a> {
     Unary(SketchRelationKind, &'a SketchEntityId),
     Binary(SketchRelationKind, &'a SketchEntityId, &'a SketchEntityId),
     Loci(SketchRelationKind, &'a SketchLocus, &'a SketchLocus),
@@ -33,7 +33,7 @@ pub(super) enum GeneratedMarkerRelation<'a> {
     Symmetric(&'a SketchLocus, &'a SketchLocus, &'a SketchEntityId),
 }
 
-pub(super) fn generated_marker_relations(
+pub(crate) fn generated_marker_relations(
     definition: &SketchConstraintDefinitionInput,
 ) -> Vec<GeneratedMarkerRelation<'_>> {
     match definition {
@@ -123,7 +123,7 @@ pub(super) fn generated_marker_relations(
     }
 }
 
-enum GeneratedDimension<'a> {
+pub(crate) enum GeneratedDimension<'a> {
     PointPoint(
         &'a SketchLocus,
         &'a SketchLocus,
@@ -570,7 +570,7 @@ pub(super) fn dimension_parameter(
 /// Whether `constraint` is a driven (reference) dimension: its record states
 /// it is driven, or the design states its parameter `Driven` (D11). A
 /// generated scalar is driving, so the generated sketch omits it.
-pub(super) fn is_driven_dimension(ir: &cadmpeg_ir::CadIr, constraint: &SketchConstraint) -> bool {
+pub(crate) fn is_driven_dimension(ir: &cadmpeg_ir::CadIr, constraint: &SketchConstraint) -> bool {
     let Some(parameter) = dimension_parameter(constraint.definition.kind()) else {
         return false;
     };
@@ -581,7 +581,7 @@ pub(super) fn is_driven_dimension(ir: &cadmpeg_ir::CadIr, constraint: &SketchCon
         })
 }
 
-fn generated_dimension<'a>(
+pub(crate) fn generated_dimension<'a>(
     ir: &cadmpeg_ir::CadIr,
     definition: &'a SketchConstraintDefinitionInput,
 ) -> Option<Result<GeneratedDimension<'a>, cadmpeg_core::CodecError>> {
@@ -654,7 +654,7 @@ fn generated_dimension<'a>(
     }
 }
 
-pub(super) fn generated_locus_is_point(ir: &cadmpeg_ir::CadIr, entity: &SketchEntityId) -> bool {
+pub(crate) fn generated_locus_is_point(ir: &cadmpeg_ir::CadIr, entity: &SketchEntityId) -> bool {
     ir.model
         .sketch_entities
         .iter()
