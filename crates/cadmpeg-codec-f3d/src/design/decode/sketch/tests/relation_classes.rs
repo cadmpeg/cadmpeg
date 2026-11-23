@@ -10,10 +10,15 @@ use crate::records::sketch_relations::{SketchPatternDefinition, SketchPatternDir
 use crate::test_support::push_reference_u64;
 
 #[test]
-fn unreadable_relation_keeps_its_sibling_relation() {
+fn skipped_relations_charge_a_loss_for_a_known_class_and_keep_their_sibling() {
     use crate::design::decode::sketch::{decode_sketch_relation_with_losses, RELATION_TYPE_GUID};
     use crate::records::decal::DesignRecordHeader;
 
+    // A truncated frame and a frame with nonzero padding of a known class
+    // admit no relation and each charge one loss; the readable relation is
+    // admitted.
+    let mut padded = relation_record(&[(300, 0)], &[], 201, 1, &[300]);
+    padded.push(1);
     let mut records = Vec::new();
     let mut losses = Vec::new();
     for (index, mut payload) in [
@@ -21,6 +26,7 @@ fn unreadable_relation_keeps_its_sibling_relation() {
             7u32,
             relation_record(&[(300, 0)], &[], 201, 1, &[300])[..20].to_vec(),
         ),
+        (9, padded),
         (8, relation_record(&[(300, 0)], &[], 201, 1, &[300])),
     ] {
         payload[7..11].copy_from_slice(&index.to_le_bytes());
@@ -43,11 +49,41 @@ fn unreadable_relation_keeps_its_sibling_relation() {
     }
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].record_index, 8);
-    assert_eq!(losses.len(), 1);
-    assert_eq!(
-        losses[0].code,
-        crate::loss::F3dLossCode::SketchRelationUndecoded.kind()
-    );
+    assert_eq!(losses.len(), 2);
+    for loss in &losses {
+        assert_eq!(
+            loss.code,
+            crate::loss::F3dLossCode::SketchRelationUndecoded.kind()
+        );
+    }
+}
+
+#[test]
+fn unknown_relation_class_is_skipped_without_a_loss() {
+    use crate::design::decode::sketch::decode_sketch_relation_with_losses;
+    use crate::records::decal::DesignRecordHeader;
+
+    let payload = relation_record(&[(300, 0)], &[], 201, 1, &[300]);
+    let header = DesignRecordHeader {
+        id: "f3d:BulkStream.dat:design-record-header#7".to_owned(),
+        record_index: 7,
+        class_tag: "298".to_owned().try_into().unwrap(),
+        byte_offset: 0,
+    };
+    let mut records = Vec::new();
+    let mut losses = Vec::new();
+    decode_sketch_relation_with_losses(
+        &mut records,
+        "BulkStream.dat",
+        &header,
+        &payload,
+        "00000000-0000-0000-0000-000000000000",
+        1,
+        &mut losses,
+    )
+    .unwrap();
+    assert!(records.is_empty());
+    assert!(losses.is_empty());
 }
 
 #[test]

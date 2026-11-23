@@ -951,7 +951,7 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
         assert_eq!(typed.bound.get(parameter), Some(&Quantity::LENGTH));
     }
 
-    let (parameters, _) = entries.parameters(
+    let (parameters, _, _) = entries.parameters(
         &definition,
         &super::parameters::Readings {
             decoded: super::parameters::Decoded::new(
@@ -1163,7 +1163,7 @@ fn a_reference_dimension_makes_the_tree_parameter_it_binds_driven() {
         &constraint.relation,
         SketchRelation::Radial { value: Dimension::Parameter(parameter), .. } if parameter == &hole
     )));
-    let (parameters, _) = entries.parameters(
+    let (parameters, _, _) = entries.parameters(
         &ir.design.scopes[0].definition,
         &super::parameters::Readings {
             decoded: super::parameters::Decoded::new(
