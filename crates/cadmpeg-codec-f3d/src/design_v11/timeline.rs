@@ -80,6 +80,16 @@ pub(super) fn project(
         .iter()
         .map(|scope| (scope.id.as_str(), scope))
         .collect::<HashMap<_, _>>();
+    let companion_suppressed = scope_inputs
+        .records
+        .iter()
+        .filter_map(|scope| {
+            Some((
+                (native_stream(&scope.id)?, u64::from(scope.record_index)),
+                scope.companion_suppressed?.value,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
     let mut streams = BTreeMap::<&str, Vec<&DesignFeatureTimeline>>::new();
     for timeline in timelines {
         if let Some(stream) = native_stream(timeline.id()) {
@@ -119,9 +129,15 @@ pub(super) fn project(
                     .and_then(|candidates| item_feature(candidates, item.value))
                 {
                     Some(feature) => resolved_item(feature, bodies, &scopes, losses),
-                    None => {
-                        unprojected_item(stream, timeline, item.value, &item_types, flags, losses)
-                    }
+                    None => unprojected_item(
+                        stream,
+                        timeline,
+                        item.value,
+                        &item_types,
+                        flags,
+                        companion_suppressed.get(&(stream, item.value)).copied(),
+                        losses,
+                    ),
                 };
                 members.push(Member::Feature(feature.id.clone()));
                 projected.features.push(feature);
@@ -282,20 +298,20 @@ fn stored(operation: &LegacyOperation, bodies: &BTreeSet<&str>) -> Option<Featur
 
 /// The feature of an item the v10 projection did not resolve: its record
 /// type's family, or a native operation named by that type, suppressed as
-/// its scope tail `flags` state.
+/// its scope tail `flags` state or its Thread companion suppression flag
+/// `companion` states.
 fn unprojected_item(
     stream: &str,
     timeline: &DesignFeatureTimeline,
     record: u64,
     types: &ItemTypes<'_>,
     flags: Option<DesignScopeTailFlags>,
+    companion: Option<bool>,
     losses: &mut Vec<LossNote>,
 ) -> Feature {
     let id = item_feature_id(stream, record);
-    if let Some(code) = flags.and_then(|flags| flags.active_without_result()) {
-        losses.push(code.note(format!(
-            "feature {id} stores the no-result flag and no suppression state byte; it is read as an active feature with no current result"
-        )));
+    if let Some(flags) = flags {
+        losses.extend(flags.assumption_notes(&format!("feature {id}")));
     }
     let operation = match types.guid(record).map(kind_family) {
         Some(Family::Typed(family)) => FeatureOperation::Unresolved { family },
@@ -305,7 +321,10 @@ fn unprojected_item(
     Feature {
         id,
         name: None,
-        suppressed: flags.map(|flags| Dimension::Literal(flags.suppressed())),
+        suppressed: flags
+            .map(|flags| flags.suppressed())
+            .or(companion)
+            .map(Dimension::Literal),
         definition: FeatureDefinition {
             operation,
             refine: None,

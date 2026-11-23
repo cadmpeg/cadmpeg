@@ -821,6 +821,8 @@ pub(crate) enum F3dLossCode {
     FeatureUnevaluatedStateAssumed,
     /// A scope tail stores the no-result flag and no suppression state byte; the scope is read as an active feature with no current result.
     FeatureNoResultActiveAssumed,
+    /// A scope tail stores a state byte above `1`; the byte is read as set.
+    FeatureStateByteAboveOne,
     /// Extrude profile selections skipped the sketch arrangement search at a local cap.
     FeatureProfileArrangementCapped,
     FeatureProfileJoinEnvelopeCapped,
@@ -1912,6 +1914,7 @@ impl F3dLossCode {
         Self::FeatureSketchProfileFlagsAssumed,
         Self::FeatureUnevaluatedStateAssumed,
         Self::FeatureNoResultActiveAssumed,
+        Self::FeatureStateByteAboveOne,
         Self::FeatureProfileArrangementCapped,
         Self::FeatureProfileJoinEnvelopeCapped,
         Self::FeatureProfileCrossingRunsCapped,
@@ -2944,6 +2947,7 @@ impl F3dLossCode {
             Self::FeatureSketchProfileFlagsAssumed => "feature.sketch-profile-flags-assumed",
             Self::FeatureUnevaluatedStateAssumed => "feature.unevaluated-state-assumed",
             Self::FeatureNoResultActiveAssumed => "feature.no-result-active-assumed",
+            Self::FeatureStateByteAboveOne => "feature.state-byte-above-one",
             Self::FeatureExtrudeProfileGroupNative => "feature.extrude-profile-group-native",
             Self::FeatureExtrudeSketchTextSkipped => "feature.extrude-sketch-text-skipped",
             Self::FeatureExtrudeProfileGroupUnionAssumed => {
@@ -4033,6 +4037,7 @@ impl F3dLossCode {
             | Self::FeatureSketchProfileFlagsAssumed
             | Self::FeatureUnevaluatedStateAssumed
             | Self::FeatureNoResultActiveAssumed
+            | Self::FeatureStateByteAboveOne
             | Self::FeatureProfileArrangementCapped
             | Self::FeatureProfileJoinEnvelopeCapped
             | Self::FeatureProfileCrossingRunsCapped
@@ -4804,6 +4809,7 @@ impl F3dLossCode {
             | Self::FeatureSketchProfileFlagsAssumed
             | Self::FeatureUnevaluatedStateAssumed
             | Self::FeatureNoResultActiveAssumed
+            | Self::FeatureStateByteAboveOne
             | Self::FeatureProfileArrangementCapped
             | Self::FeatureProfileJoinEnvelopeCapped
             | Self::FeatureProfileCrossingRunsCapped
@@ -5731,6 +5737,7 @@ mod tests {
                 "feature.sketch-profile-flags-assumed",
                 "feature.unevaluated-state-assumed",
                 "feature.no-result-active-assumed",
+                "feature.state-byte-above-one",
                 "feature.profile-arrangement-capped",
                 "feature.profile-join-envelope-capped",
                 "feature.profile-crossing-runs-capped",
