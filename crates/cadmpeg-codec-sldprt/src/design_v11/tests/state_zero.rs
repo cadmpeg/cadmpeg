@@ -15,13 +15,13 @@ use cadmpeg_ir::sketches::SketchEntityId;
 
 use super::{assert_no_design_findings, sketch_and_extrude, timeline_feature};
 
-fn entity(key: &str) -> SketchEntityId {
+pub(super) fn entity(key: &str) -> SketchEntityId {
     SketchEntityId::mint(format!("sldprt:model:sketch-entity#test:{key}")).unwrap()
 }
 
 /// Sets the profile loops of the fixture's sketch, each a list of entity
 /// keys and their `reversed` flags.
-fn set_profiles(ir: &mut CadIr, loops: &[&[(&str, bool)]]) {
+pub(super) fn set_profiles(ir: &mut CadIr, loops: &[&[(&str, bool)]]) {
     let loops = loops
         .iter()
         .map(|uses| {
@@ -38,7 +38,7 @@ fn set_profiles(ir: &mut CadIr, loops: &[&[(&str, bool)]]) {
 /// Projects the fixture's design with `outside` read from curve records of
 /// state `0`, states it in `ir`, and returns the typed extrude and the
 /// projection's notes.
-fn project(
+pub(super) fn project(
     ir: &mut CadIr,
     outside: &HashSet<SketchEntityId>,
 ) -> (Extrude, super::super::typed::Typed) {
@@ -56,6 +56,7 @@ fn project(
         &super::super::typed::Scope {
             definition: &definition,
             outside_profile: outside,
+            surfaces: &ir.geometry.surfaces,
         },
     );
     assert!(typed.loss.is_none(), "{:?}", typed.loss);

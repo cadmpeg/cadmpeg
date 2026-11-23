@@ -524,6 +524,10 @@ pub(crate) enum SldprtLossCode {
     /// Typed extrudes whose `Sketch` pick's closed regions the decoder did
     /// not compare with the stored profile loops.
     DesignExtrudeProfileUnchecked,
+    /// Sketch circles built from a dimension record that the design leaves
+    /// out, its dimension naming the stored curve they lie on, or states
+    /// construction where no face of the solid witnesses them.
+    DesignSketchDimensionCircle,
 }
 
 impl SldprtLossCode {
@@ -730,6 +734,7 @@ impl SldprtLossCode {
         Self::DesignExtrudeProfileDiffers,
         Self::DesignExtrudeSketchEmpty,
         Self::DesignExtrudeProfileUnchecked,
+        Self::DesignSketchDimensionCircle,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -962,6 +967,7 @@ impl SldprtLossCode {
             Self::DesignExtrudeProfileDiffers => "design.extrude-profile-differs",
             Self::DesignExtrudeSketchEmpty => "design.extrude-sketch-empty",
             Self::DesignExtrudeProfileUnchecked => "design.extrude-profile-unchecked",
+            Self::DesignSketchDimensionCircle => "design.sketch-dimension-circle",
         }
     }
 
@@ -1158,7 +1164,8 @@ impl SldprtLossCode {
             | Self::DesignEquationSource
             | Self::DesignSketchConstructionAssumed
             | Self::DesignExtrudeProfileDiffers
-            | Self::DesignExtrudeSketchEmpty => Severity::Warning,
+            | Self::DesignExtrudeSketchEmpty
+            | Self::DesignSketchDimensionCircle => Severity::Warning,
             Self::AssemblyStructureNotTransferred => Severity::Blocking,
             Self::AssemblyPlacementUnresolved => Severity::Error,
             Self::AssemblyComponentsExternal
@@ -1263,7 +1270,8 @@ impl SldprtLossCode {
             | Self::DesignSketchConstructionAssumed
             | Self::DesignExtrudeProfileDiffers
             | Self::DesignExtrudeSketchEmpty
-            | Self::DesignExtrudeProfileUnchecked => LossTaxonomy::DecodeDiagnostic,
+            | Self::DesignExtrudeProfileUnchecked
+            | Self::DesignSketchDimensionCircle => LossTaxonomy::DecodeDiagnostic,
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
             | Self::TopologyOwnershipWithheld
@@ -1767,6 +1775,7 @@ mod tests {
                 "design.extrude-profile-differs",
                 "design.extrude-sketch-empty",
                 "design.extrude-profile-unchecked",
+                "design.sketch-dimension-circle",
             ]
         );
     }

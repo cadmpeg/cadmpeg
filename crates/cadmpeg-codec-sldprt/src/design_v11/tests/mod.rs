@@ -860,6 +860,7 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
         &super::typed::Scope {
             definition: &definition,
             outside_profile: &std::collections::HashSet::new(),
+            surfaces: &ir.geometry.surfaces,
         },
     );
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
@@ -1016,6 +1017,7 @@ fn typed_timeline<'a>(
         &super::typed::Scope {
             definition: &ir.design.scopes[0].definition,
             outside_profile: &std::collections::HashSet::new(),
+            surfaces: &ir.geometry.surfaces,
         },
     );
     (timeline, entries, typed)
@@ -1411,6 +1413,7 @@ fn members_follow_the_features_they_depend_on() {
         &super::typed::Scope {
             definition: &definition,
             outside_profile: &std::collections::HashSet::new(),
+            surfaces: &ir.geometry.surfaces,
         },
     );
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
@@ -1545,6 +1548,7 @@ fn a_configuration_whose_bodies_are_current_bodies_charges_a_loss() {
     assert!(note.message.contains(&first.id.to_string()), "{note:#?}");
 }
 
+mod dimension_curves;
 mod parameters;
 mod rollback;
 mod state_zero;
