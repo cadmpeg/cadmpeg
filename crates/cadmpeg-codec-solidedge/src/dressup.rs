@@ -30,6 +30,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{InteriorAngle, Length, PositiveLength};
 use cadmpeg_ir::units::UnitVector3;
 
+use crate::construction;
 use crate::extents::{
     dimension_value, double_slot, is, measure_slot, model_point, named, real_at, slot,
     DIMENSION_CLASS, KIND_AFTER_NAME_HOLE, KIND_FINITE, KIND_THROUGH_ALL, MM_PER_M, PART_CLASS,
@@ -207,7 +208,7 @@ fn positions(
                 FinitePoint3::new(Point3::new(at.x, at.y, at.z))
                     .ok_or_else(|| "a hole position is not finite".to_owned())?,
             ),
-            ..Construction::default()
+            ..construction::empty()
         });
     }
     if points.is_empty() {
@@ -235,7 +236,7 @@ fn direction(frame: &FrameValue, side: f64) -> Result<Construction<kinds::Direct
     .ok_or_else(|| "the profile normal is not a unit vector".to_owned())?;
     Ok(Construction::<kinds::Direction> {
         resolved: Some(resolved),
-        ..Construction::default()
+        ..construction::empty()
     })
 }
 
