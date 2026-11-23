@@ -58,7 +58,7 @@ use crate::document::CadIr;
 use crate::features::{FeatureId, ParameterId};
 use crate::ids::OccurrenceId;
 use crate::math::Point2;
-use crate::products::Occurrence;
+use crate::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
 use crate::report::Severity;
 use crate::scalar::{Angle, Fraction, Length, PositiveLength};
 use crate::sketches::{SketchConstraintId, SketchEntityId, SketchId};
@@ -1102,6 +1102,43 @@ fn a_component_and_a_driver_name_other_scopes() {
     let mut ir = extruding(|_| {});
     ir.design.features[0].driven_by = Some(Driver::Feature(feature("fillet")));
     assert_finding(&ir, "a feature of its own scope");
+}
+
+#[test]
+fn a_component_names_a_definition_its_scope_spans() {
+    let names = |key: &str| {
+        let mut ir = extruding(|_| {});
+        for (key, storage) in [
+            ("member", Storage::Embedded),
+            ("external", Storage::External(ExternalDocument::default())),
+        ] {
+            ir.model
+                .product_definitions
+                .push(ProductDefinition::new(id("definition", key), storage));
+            let occurrence: OccurrenceId = id("occurrence", key);
+            ir.model.occurrences.push(Occurrence::new(
+                occurrence.clone(),
+                id("definition", key),
+                None,
+            ));
+            ir.model
+                .product_definitions
+                .iter_mut()
+                .find(|definition| definition.id.as_str() == "test:design:definition#part")
+                .unwrap()
+                .occurrences
+                .push(occurrence);
+        }
+        ir.design.features[0].component = Some(id("definition", key));
+        design_findings(&ir).iter().any(|finding| {
+            finding
+                .message
+                .contains("no definition its scope spans beside its own")
+        })
+    };
+    assert!(!names("member"));
+    assert!(!names("part"));
+    assert!(names("external"));
 }
 
 // ----------------------------------------------------------------- sketches
