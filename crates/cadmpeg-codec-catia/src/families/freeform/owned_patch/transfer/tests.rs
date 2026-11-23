@@ -181,7 +181,7 @@ fn owned_sheet_reports_a_fitted_extrusion() {
     );
     let (_, offset) = chart.offset(&offset_bytes).expect("unit directrix offset");
     let surface = chart
-        .surface(&offset, |u| Some(Point3::new(u, 0.0, -1.0)))
+        .surface(&offset, domain[0], |u| Some(Point3::new(u, 0.0, -1.0)))
         .expect("fit the extrusion directrix");
     let carrier = Carrier::Extrusion(Box::new(surface));
     let mut patches = two_face_sheet();
