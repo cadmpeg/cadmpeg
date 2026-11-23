@@ -49,8 +49,10 @@ use cadmpeg_ir::sketches::SketchEntityId;
 
 use crate::loss::SldprtLossCode;
 use crate::records::{FeatureHistory, FeatureInputLane};
+
 use crate::resolved_features::assembly::ConfigurationMaps;
 use crate::rollback::{Reading, Unread};
+pub(crate) use sketch::state_zero_outside;
 
 pub(crate) use equations::{managers as equation_managers, Managers as EquationManagers};
 pub(crate) use names::Persistent;
@@ -77,8 +79,8 @@ pub(crate) struct Part<'a> {
     pub(crate) length_places: Option<u32>,
     /// What the stored marks state of the rollback position.
     pub(crate) rollback: Reading,
-    /// The sketch entities read from a curve record of state `0`: curves
-    /// outside their sketch's profile.
+    /// The sketch entities read as curves outside their sketch's profile
+    /// ([`state_zero_outside`]).
     pub(crate) outside_profile: &'a HashSet<SketchEntityId>,
 }
 

@@ -9,7 +9,9 @@
 //! centre fields are zero-based indices into the point records of its own
 //! sketch, and the sense word selects a line, a counterclockwise arc or a
 //! clockwise arc. A curve record of state `0` stands outside the sketch's
-//! profile. A marker whose record is one of these records takes its geometry
+//! profile, except in a sketch where another curve closes a loop only with
+//! the curves of state `0` ([`crate::design_v11::state_zero_outside`]). A
+//! marker whose record is one of these records takes its geometry
 //! from the record (`docs/formats/sldprt.md` §2, "A marker whose record is a
 //! point record or a curve record").
 

@@ -1162,7 +1162,7 @@ pub(crate) struct HeldMarkerGeometry {
     index_basis_assumptions:
         HashMap<SketchEntityId, (SketchGeometry, cadmpeg_ir::report::loss::LossNote)>,
     /// The entities of the kept marker sketches read from a curve record of
-    /// state `0`.
+    /// state `0` that stand outside their sketch's profile.
     outside_profile: HashSet<SketchEntityId>,
 }
 
@@ -2979,6 +2979,7 @@ pub(crate) fn project_marker_backed_sketches(
                     entity.endpoint_refs = endpoint_refs.clone();
                 }
             }
+            outside_profile = crate::design_v11::state_zero_outside(&projected, &outside_profile);
             let closed = marker_sketch_profiles(
                 &projected,
                 |id| listed_entities.contains_key(id),
@@ -3106,8 +3107,8 @@ fn marker_sketch_id(lane_key: &str, ordinal: u32) -> Option<SketchId> {
 }
 
 /// The closed profiles of a marker sketch's `projected` entities. A curve in
-/// `outside_profile`, read from a curve record of state `0`, joins no
-/// profile. When the curves that `record_read` names close more profiles
+/// `outside_profile`, a curve of state `0` outside the profile
+/// ([`crate::design_v11::state_zero_outside`]), joins no profile. When the curves that `record_read` names close more profiles
 /// alone than together with the curves of the other marker readings, the
 /// profiles are theirs.
 fn marker_sketch_profiles(
