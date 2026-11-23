@@ -208,11 +208,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Does CATIA evaluate the right operand of `and` when the left operand is false, and the right operand of `or` when the left operand is true?
 
-**Known.** `catia.md` §7.3 reads both operators as not evaluating the right operand in those cases. No stored file holds a guard whose right operand fails at the stored inputs. CADIR v11 §5.13 translates CATIA's `and` and `or` as themselves until a file settles the order (part 11, evaluation order of `and` and `or`). The decoder therefore evaluates both operands, and a failure in either operand leaves the formula without a transferable result.
+**Known.** `catia.md` §7.3 gives both operators as not evaluating the right operand in those cases. The decoder checks a stored formula result under that reading, so a formula whose left operand decides the result and whose right operand fails at the stored inputs keeps its text and its stored value. CADIR v11 §5.13 translates CATIA's `and` and `or` as themselves until the order is settled. Under that translation, the neutral expression of such a formula fails at the stored inputs, and the parameter keeps the stored value as its cache.
 
-**Conflict.** `catia.md` §7.3 gives the operators as skipping the right operand. The decoder evaluates both operands.
-
-**Need.** A saved part whose `and` or `or` guards an operand that fails at the stored inputs, with the stored value of the result.
+**Need.** A stored formula whose `and` or `or` has a left operand that decides the result and a right operand that fails at the stored inputs, for example a division by an input whose stored value is zero, with the stored value of the result. A stored result equal to the decided value confirms the reading of `catia.md` §7.3.
 
 ## 3. Standard nested `V5_CFV2`
 

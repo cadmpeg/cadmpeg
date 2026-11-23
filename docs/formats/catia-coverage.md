@@ -230,7 +230,7 @@ current levels require those matrices and representative fixtures.
   Arithmetic evaluation retains length and angle exponents through intermediate
   products, quotients, extrema, linear and cubic interpolation, trigonometric
   calls, absolute values, and square roots. Typed comparisons, Boolean literals,
-  negation, conjunctions and disjunctions that evaluate both operands (DI-33), and equal-dimension numeric or
+  negation, lazy conjunctions and disjunctions, and equal-dimension numeric or
   equal-type nonnumeric lazy ternaries transfer predicate and conditional
   formulas. Unset-formula type checking retains unknown scalar, Boolean, and string
   values, rejects known invalid domains and non-finite constant arithmetic, and
