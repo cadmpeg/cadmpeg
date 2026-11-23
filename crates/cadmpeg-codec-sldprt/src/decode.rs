@@ -3716,15 +3716,14 @@ fn build_geometry_ir(
         &ir.model.parameters,
         sketch_lanes,
     )?;
-    pmi_losses.extend(
+    let mut relation_points =
         crate::resolved_features::relation_geometry::project_relation_point_geometry(
             &mut sketch_entities,
             &sketches,
             &ir.model.features,
             sketch_lanes,
             &solid,
-        ),
-    );
+        );
     crate::resolved_features::dimensions::project_relation_point_dimensioned_circles(
         &mut sketch_entities,
         &ir.model.features,
@@ -3976,19 +3975,19 @@ fn build_geometry_ir(
     let current_bodies = active_partition_bodies(&ir, &configuration_bodies);
     let stored_bodies = stored_partition_bodies(&ir, &configuration_bodies);
     assign_configuration_bodies(&mut ir, configuration_bodies, Some(scan))?;
-    let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
-        ctx,
-        &mut ir,
-        &histories,
-        &all_lanes,
-        &exact_profiles,
-        &mut annotations,
-        &mut plane_bindings,
-    )?;
-    crate::resolved_features::relation_geometry::append_relation_point_notes(
-        &mut pmi_losses,
-        configuration_losses,
-    );
+    let (configuration_losses, configuration_points) =
+        crate::history::configuration::project_configuration_sketch_states(
+            ctx,
+            &mut ir,
+            &histories,
+            &all_lanes,
+            &exact_profiles,
+            &mut annotations,
+            &mut plane_bindings,
+        )?;
+    pmi_losses.extend(configuration_losses);
+    relation_points.extend(configuration_points);
+    pmi_losses.extend(relation_points.into_notes());
     crate::resolved_features::stream_readings::note_stream_readings(
         &ir.model,
         &unbound_readings,
@@ -5187,15 +5186,14 @@ fn build_metadata_ir(
         &ir.model.parameters,
         sketch_lanes,
     );
-    pmi_losses.extend(
+    let mut relation_points =
         crate::resolved_features::relation_geometry::project_relation_point_geometry(
             &mut ir.model.sketch_entities,
             &ir.model.sketches,
             &ir.model.features,
             sketch_lanes,
             &crate::resolved_features::stream_readings::SolidEdges::default(),
-        ),
-    );
+        );
     crate::resolved_features::dimensions::project_relation_point_dimensioned_circles(
         &mut ir.model.sketch_entities,
         &ir.model.features,
@@ -5341,19 +5339,19 @@ fn build_metadata_ir(
     );
     crate::history::bind::bind_bound_sketch_profiles(&mut ir.model.features, &ir.model.sketches);
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
-    let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
-        ctx,
-        &mut ir,
-        &histories,
-        lanes,
-        &exact_profiles,
-        &mut annotations,
-        &mut plane_bindings,
-    )?;
-    crate::resolved_features::relation_geometry::append_relation_point_notes(
-        &mut pmi_losses,
-        configuration_losses,
-    );
+    let (configuration_losses, configuration_points) =
+        crate::history::configuration::project_configuration_sketch_states(
+            ctx,
+            &mut ir,
+            &histories,
+            lanes,
+            &exact_profiles,
+            &mut annotations,
+            &mut plane_bindings,
+        )?;
+    pmi_losses.extend(configuration_losses);
+    relation_points.extend(configuration_points);
+    pmi_losses.extend(relation_points.into_notes());
     crate::resolved_features::stream_readings::note_stream_readings(
         &ir.model,
         &unbound_readings,

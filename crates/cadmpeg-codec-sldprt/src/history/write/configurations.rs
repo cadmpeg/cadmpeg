@@ -23,7 +23,7 @@ use crate::history::parameters::{
 };
 use crate::history::project::project_configurations;
 use crate::resolved_features::relation_geometry::{
-    append_relation_point_notes, is_reference_relation_parameter, is_relation_point_note,
+    is_reference_relation_parameter, RelationPointNotes,
 };
 use crate::resolved_features::scalars::FeatureObjectNames;
 
@@ -131,24 +131,15 @@ pub(crate) fn prepare_configurations_for_write(
     Ok(Vec::new())
 }
 
-/// The losses of a configuration sketch projection when each is a relation
-/// point charge. Such a charge falls on every projection of its sketch, the
-/// decode's as well, and leaves the configuration states as they are; any
-/// other loss refuses the write. Each returned note says that the write
-/// carries the decode's omission.
+/// The notes of the relation points a configuration projection of the
+/// decoded document does not draw. The projection draws no point of a marker
+/// that the document already holds, so each such point is one the decode
+/// omits; each returned note says that the write carries the omission.
 fn relation_point_charges(
-    projection_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
-    if projection_losses
-        .iter()
-        .any(|note| !is_relation_point_note(note))
-    {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT configuration sketch profiles cannot be projected without loss".into(),
-        ));
-    }
-    Ok(projection_losses
-        .into_iter()
+    relation_points: RelationPointNotes,
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    relation_points
+        .into_notes()
         .map(|mut note| {
             note.message = format!(
                 "the decode omits this relation point, and the configuration states this write projects carry the omission: {}",
@@ -156,7 +147,7 @@ fn relation_point_charges(
             );
             note
         })
-        .collect())
+        .collect()
 }
 
 fn sync_configuration_design_state(
@@ -254,7 +245,7 @@ fn sync_configuration_design_state(
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&projection_bytes, &arena, &DecodePolicy::service())?;
-    let projection_losses = project_configuration_sketch_states(
+    let (projection_losses, mut relation_points) = project_configuration_sketch_states(
         &ctx,
         &mut current_projection,
         &native.feature_histories,
@@ -263,7 +254,11 @@ fn sync_configuration_design_state(
         &mut current_annotations,
         &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )?;
-    let mut relation_point_notes = relation_point_charges(projection_losses)?;
+    if !projection_losses.is_empty() {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT configuration sketch profiles cannot be projected without loss".into(),
+        ));
+    }
     let current_parameter_hash =
         configuration_parameter_value_hash(&hash_ctx, &current_projection.model.configurations)?;
     let current_feature_hash =
@@ -273,7 +268,7 @@ fn sync_configuration_design_state(
         && current_feature_hash
             == configuration_feature_state_hash(&hash_ctx, &ir.model.configurations)?;
     if current_matches {
-        return Ok(relation_point_notes);
+        return Ok(relation_point_charges(relation_points));
     }
     let native_design_state_changed = ir.source.as_ref().is_some_and(|source| {
         source
@@ -361,7 +356,7 @@ fn sync_configuration_design_state(
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&projection_bytes, &arena, &DecodePolicy::service())?;
-    let projection_losses = project_configuration_sketch_states(
+    let (projection_losses, projected_points) = project_configuration_sketch_states(
         &ctx,
         &mut projected,
         &native.feature_histories,
@@ -370,10 +365,12 @@ fn sync_configuration_design_state(
         &mut projected_annotations,
         &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )?;
-    append_relation_point_notes(
-        &mut relation_point_notes,
-        relation_point_charges(projection_losses)?,
-    );
+    if !projection_losses.is_empty() {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT configuration sketch profiles cannot be projected without loss".into(),
+        ));
+    }
+    relation_points.extend(projected_points);
     if configuration_parameter_value_hash(&hash_ctx, &projected.model.configurations)?
         != configuration_parameter_value_hash(&hash_ctx, &ir.model.configurations)?
         || configuration_feature_state_hash(&hash_ctx, &projected.model.configurations)?
@@ -383,7 +380,7 @@ fn sync_configuration_design_state(
             "SLDPRT configuration design-state edit has no complete native lane encoding".into(),
         ));
     }
-    Ok(relation_point_notes)
+    Ok(relation_point_charges(relation_points))
 }
 
 fn patch_configuration_parameter_scalars(

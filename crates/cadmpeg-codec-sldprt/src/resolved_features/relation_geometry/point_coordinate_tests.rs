@@ -1,4 +1,4 @@
-use super::{append_relation_point_notes, project_relation_point_geometry};
+use super::{project_relation_point_geometry, RelationPointNotes};
 use crate::history::configuration::{
     align_configuration_parameter_kinds, project_configuration_design_states,
     project_configuration_sketch_states,
@@ -148,7 +148,9 @@ fn project_point(coordinates_m: [f64; 2]) -> (Vec<SketchEntity>, Vec<LossNote>, 
         std::slice::from_ref(&feature),
         std::slice::from_ref(&lane),
         &crate::resolved_features::stream_readings::SolidEdges::default(),
-    );
+    )
+    .into_notes()
+    .collect();
     (entities, losses, point_id)
 }
 
@@ -247,7 +249,7 @@ fn a_configuration_pass_charges_a_subnormal_marker_the_model_pass_does_not_reach
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .unwrap();
-    let losses = project_configuration_sketch_states(
+    let (losses, decisions) = project_configuration_sketch_states(
         &ctx,
         &mut ir,
         &[],
@@ -257,7 +259,9 @@ fn a_configuration_pass_charges_a_subnormal_marker_the_model_pass_does_not_reach
         &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )
     .unwrap();
+    assert!(losses.is_empty(), "{losses:?}");
     assert!(relation_points(&ir.model.sketch_entities, &marker).is_empty());
+    let losses = decisions.into_notes().collect::<Vec<_>>();
     let [loss] = losses.as_slice() else {
         panic!("one loss: {losses:?}");
     };
@@ -266,12 +270,6 @@ fn a_configuration_pass_charges_a_subnormal_marker_the_model_pass_does_not_reach
         SldprtLossCode::SketchPointCoordinatesSubnormal.kind()
     );
     assert!(loss.message.contains(&marker), "{}", loss.message);
-
-    // Where the model pass has charged the marker, the configuration pass's
-    // note joins it as one note.
-    let mut merged = losses.clone();
-    append_relation_point_notes(&mut merged, losses.clone());
-    assert_eq!(merged, losses);
 }
 
 /// The writer projects the configuration states again when they differ from
@@ -380,7 +378,7 @@ fn a_configuration_write_with_a_subnormal_marker_goes_on_and_reports_the_point()
     assert_eq!(unprojected, 0);
     settle_projected_configurations(&mut decoded);
     align_configuration_parameter_kinds(&mut decoded);
-    let decode_losses = project_configuration_sketch_states(
+    let (_, decode_points) = project_configuration_sketch_states(
         &ctx,
         &mut decoded,
         &native.feature_histories,
@@ -390,11 +388,12 @@ fn a_configuration_write_with_a_subnormal_marker_goes_on_and_reports_the_point()
         &mut crate::resolved_features::compact_reference_planes::PlaneBindings::default(),
     )
     .unwrap();
+    let decode_notes = decode_points.into_notes().collect::<Vec<_>>();
     assert!(
-        decode_losses.iter().any(|loss| loss.code
+        decode_notes.iter().any(|loss| loss.code
             == SldprtLossCode::SketchPointCoordinatesSubnormal.kind()
             && loss.message.contains(&marker)),
-        "the configuration pass charges the marker: {decode_losses:?}"
+        "the configuration pass charges the marker: {decode_notes:?}"
     );
     ir.model.configurations = decoded.model.configurations;
 
@@ -415,7 +414,7 @@ fn a_configuration_write_with_a_subnormal_marker_goes_on_and_reports_the_point()
     assert!(loss.message.contains(&marker), "{}", loss.message);
 }
 
-/// What reaches [`fixture`]'s point marker in [`project_between_readings`].
+/// What reaches [`fixture`]'s point marker in [`Readings`].
 #[derive(Clone, Copy, Debug)]
 enum Reach {
     /// The relation operand, as on main.
@@ -424,7 +423,7 @@ enum Reach {
     ListedRecord,
 }
 
-/// What marks one of the two places in [`project_between_readings`].
+/// What marks one of the two places in [`Readings`].
 #[derive(Clone, Copy, Debug)]
 enum Mark {
     /// The centre of a circle of the sketch.
@@ -433,103 +432,149 @@ enum Mark {
     Vertex(Point2),
 }
 
-/// Projects the relation point of [`fixture`]'s marker stored at (3, 9) mm in
-/// a sketch whose three anchors fit the marker transform
-/// `(u, v) -> (v + 100, u + 200)`, which places the point at (109, 203), and
-/// whose frame (origin 0, normal +z, u along +x) reads the pair as it
-/// stands, at (3, 9). A relation point drawn before the pass for a marker
-/// that only a list-read record reaches stands at each of `drawn`.
-fn project_between_readings(
-    reach: Reach,
-    marks: &[Mark],
-    drawn: &[Point2],
-) -> (Vec<SketchEntity>, Vec<LossNote>, String) {
-    let (feature, entities, mut lane, marker_id) = fixture([0.003, 0.009]);
-    if let Reach::ListedRecord = reach {
-        lane.relation_instances.clear();
-        let mut curve = marker("listed-curve", None);
-        curve = curve.with_test_position(curve.ordinal(), 99);
-        curve.reclassify(SketchInputKind::LineOrCircle);
-        curve.listed_curve = Some(crate::records::ListedCurveOverride {
-            form: "line",
-            code: 4,
-            stored: SketchInputKind::Relation(SketchRelationKind::Horizontal),
-        });
-        curve.links = crate::records::SketchInputLinks::new(
-            0,
-            vec![SketchInputLink {
-                local_id: 1,
-                entity_ref: marker_id.clone(),
-            }],
-        );
-        lane.sketch_entities.push(curve);
-    }
-    let sketch = entities[0].sketch.clone();
-    let mut entities = [(100.0, 200.0), (101.0, 202.0), (104.0, 207.0)]
-        .into_iter()
-        .enumerate()
-        .map(|(index, (u, v))| {
-            SketchEntity::new(
-                SketchEntityId::mint(format!("synthetic:test:id#shifted-anchor-{index}")).unwrap(),
-                sketch.clone(),
-                SketchGeometry::try_from(SketchGeometryDefinition::Point {
-                    position: Point2::new(u, v),
-                })
-                .unwrap(),
-            )
-        })
-        .collect::<Vec<_>>();
-    for (index, position) in drawn.iter().enumerate() {
-        entities.push(
-            SketchEntity::new(
-                SketchEntityId::mint(format!(
-                    "sldprt:model:sketch-entity#relation-point:lane:{}",
-                    900 + index
-                ))
-                .unwrap(),
-                sketch.clone(),
-                SketchGeometry::try_from(SketchGeometryDefinition::Point {
-                    position: *position,
-                })
-                .unwrap(),
-            )
-            .with_native_ref(Some(format!("listed-only-marker-{index}"))),
-        );
-    }
-    let mut points = Vec::new();
-    let mut vertices = Vec::new();
-    for (index, mark) in marks.iter().enumerate() {
-        match *mark {
-            Mark::Curve(center) => entities.push(SketchEntity::new(
-                SketchEntityId::mint(format!("synthetic:test:id#witness-{index}")).unwrap(),
-                sketch.clone(),
-                SketchGeometry::try_from(SketchGeometryDefinition::Circle {
-                    center,
-                    radius: Length::new(1.0).unwrap(),
-                })
-                .unwrap(),
-            )),
-            Mark::Vertex(place) => {
-                let point = PointId::mint(format!("synthetic:test:id#point-{index}")).unwrap();
-                points.push(BrepPoint::new(
-                    point.clone(),
-                    cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
-                        place.u, place.v, 0.0,
+/// The class of a relation point drawn before the pass in [`Readings`].
+#[derive(Clone, Copy, Debug)]
+enum Drawn {
+    /// Drawn for a marker that a relation reaches as on main.
+    Main,
+    /// Drawn for a marker that only a list-read record reaches.
+    Listed,
+}
+
+/// The anchors that fit the marker transform `(u, v) -> (v + 100, u + 200)`.
+const SWAPPED_ANCHORS: [Point2; 3] = [
+    Point2 { u: 100.0, v: 200.0 },
+    Point2 { u: 101.0, v: 202.0 },
+    Point2 { u: 104.0, v: 207.0 },
+];
+
+/// [`fixture`]'s marker stored at (3, 9) mm in a sketch whose three anchor
+/// entities stand at `anchors`, and whose frame (origin 0, normal +z, u along
+/// +x) reads the pair as it stands, at (3, 9). With [`SWAPPED_ANCHORS`] the
+/// fit places the point at (109, 203).
+struct Readings {
+    feature: Feature,
+    frame: Sketch,
+    lane: FeatureInputLane,
+    entities: Vec<SketchEntity>,
+    solid: SolidEdges,
+    marker: String,
+}
+
+impl Readings {
+    /// A relation point drawn before the pass, of class `drawn.1`, stands at
+    /// each `drawn.0`; its marker belongs to a lane the pass is not given.
+    fn new(reach: Reach, anchors: [Point2; 3], marks: &[Mark], drawn: &[(Point2, Drawn)]) -> Self {
+        let (feature, entities, mut lane, marker) = fixture([0.003, 0.009]);
+        if let Reach::ListedRecord = reach {
+            lane.relation_instances.clear();
+            lane.sketch_entities
+                .push(listed_curve("listed-curve", &marker));
+        }
+        let sketch = entities[0].sketch.clone();
+        let mut entities = anchors
+            .into_iter()
+            .enumerate()
+            .map(|(index, position)| {
+                SketchEntity::new(
+                    SketchEntityId::mint(format!("synthetic:test:id#placed-anchor-{index}"))
+                        .unwrap(),
+                    sketch.clone(),
+                    SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
+                )
+            })
+            .collect::<Vec<_>>();
+        for (index, (position, class)) in drawn.iter().enumerate() {
+            let class = match class {
+                Drawn::Main => "",
+                Drawn::Listed => "listed:",
+            };
+            entities.push(
+                SketchEntity::new(
+                    SketchEntityId::mint(format!(
+                        "sldprt:model:sketch-entity#relation-point:{class}other-lane:{}",
+                        900 + index
                     ))
                     .unwrap(),
-                    None,
-                ));
-                vertices.push(Vertex {
-                    id: VertexId::mint(format!("synthetic:test:id#vertex-{index}")).unwrap(),
-                    point,
-                    tolerance: None,
-                    native_ref: None,
-                });
+                    sketch.clone(),
+                    SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                        position: *position,
+                    })
+                    .unwrap(),
+                )
+                .with_native_ref(Some(format!("other-lane-marker-{index}"))),
+            );
+        }
+        let mut points = Vec::new();
+        let mut vertices = Vec::new();
+        for (index, mark) in marks.iter().enumerate() {
+            match *mark {
+                Mark::Curve(center) => entities.push(circle(&sketch, index, center)),
+                Mark::Vertex(place) => {
+                    let point = PointId::mint(format!("synthetic:test:id#point-{index}")).unwrap();
+                    points.push(BrepPoint::new(
+                        point.clone(),
+                        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(
+                            place.u, place.v, 0.0,
+                        ))
+                        .unwrap(),
+                        None,
+                    ));
+                    vertices.push(Vertex {
+                        id: VertexId::mint(format!("synthetic:test:id#vertex-{index}")).unwrap(),
+                        point,
+                        tolerance: None,
+                        native_ref: None,
+                    });
+                }
             }
         }
+        Self {
+            feature,
+            frame: framed_sketch(sketch, None),
+            lane,
+            entities,
+            solid: SolidEdges::new(&[], &vertices, &points, &[]),
+            marker,
+        }
     }
-    let frame = Sketch {
-        id: sketch,
+
+    fn project(&mut self) -> RelationPointNotes {
+        project_relation_point_geometry(
+            &mut self.entities,
+            std::slice::from_ref(&self.frame),
+            std::slice::from_ref(&self.feature),
+            std::slice::from_ref(&self.lane),
+            &self.solid,
+        )
+    }
+}
+
+/// A list-read curve record whose stored code is the horizontal relation,
+/// linked to `point`.
+fn listed_curve(id: &str, point: &str) -> crate::records::SketchInputEntity {
+    let mut curve = marker(id, None);
+    curve = curve.with_test_position(curve.ordinal(), 99);
+    curve.reclassify(SketchInputKind::LineOrCircle);
+    curve.listed_curve = Some(crate::records::ListedCurveOverride {
+        form: "line",
+        code: 4,
+        stored: SketchInputKind::Relation(SketchRelationKind::Horizontal),
+    });
+    curve.links = crate::records::SketchInputLinks::new(
+        0,
+        vec![SketchInputLink {
+            local_id: 1,
+            entity_ref: point.to_owned(),
+        }],
+    );
+    curve
+}
+
+/// A sketch whose frame has origin 0, normal +z and u along +x.
+fn framed_sketch(id: SketchId, lane: Option<&str>) -> Sketch {
+    Sketch {
+        id,
         name: None,
         configuration: None,
         visible: None,
@@ -540,16 +585,32 @@ fn project_between_readings(
         )
         .unwrap(),
         profiles: SketchProfiles::default(),
-        native_ref: None,
-    };
-    let losses = project_relation_point_geometry(
-        &mut entities,
-        std::slice::from_ref(&frame),
-        std::slice::from_ref(&feature),
-        std::slice::from_ref(&lane),
-        &SolidEdges::new(&[], &vertices, &points, &[]),
-    );
-    (entities, losses, marker_id)
+        native_ref: lane.map(str::to_owned),
+    }
+}
+
+/// A circle of radius 1 mm about `center`.
+fn circle(sketch: &SketchId, index: usize, center: Point2) -> SketchEntity {
+    SketchEntity::new(
+        SketchEntityId::mint(format!("synthetic:test:id#witness-{index}")).unwrap(),
+        sketch.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+            center,
+            radius: Length::new(1.0).unwrap(),
+        })
+        .unwrap(),
+    )
+}
+
+/// Projects the relation point of [`Readings`] with [`SWAPPED_ANCHORS`].
+fn project_between_readings(
+    reach: Reach,
+    marks: &[Mark],
+    drawn: &[(Point2, Drawn)],
+) -> (Vec<SketchEntity>, Vec<LossNote>, String) {
+    let mut readings = Readings::new(reach, SWAPPED_ANCHORS, marks, drawn);
+    let losses = readings.project().into_notes().collect();
+    (readings.entities, losses, readings.marker)
 }
 
 const FITTED: Point2 = Point2 { u: 109.0, v: 203.0 };
@@ -618,16 +679,26 @@ fn a_listed_record_marker_that_no_mark_or_both_marks_witness_is_named_and_not_dr
     }
 }
 
+/// The frame's readings of the three anchor markers: relation points drawn
+/// there alone fit the unswapped identity, which agrees with the frame.
+const IDENTITY_READINGS: [Point2; 3] = [
+    Point2 { u: 0.0, v: 0.0 },
+    Point2 { u: 2.0, v: 1.0 },
+    Point2 { u: 7.0, v: 4.0 },
+];
+
+fn drawn(class: Drawn) -> Vec<(Point2, Drawn)> {
+    IDENTITY_READINGS
+        .into_iter()
+        .map(|position| (position, class))
+        .collect()
+}
+
 #[test]
 fn relation_points_drawn_before_do_not_vote_in_the_fit_of_an_added_point() {
-    // Drawn at the frame's reading of the three anchor markers, these points
-    // alone would fit the unswapped identity, which agrees with the frame.
-    let drawn = [
-        Point2::new(0.0, 0.0),
-        Point2::new(2.0, 1.0),
-        Point2::new(7.0, 4.0),
-    ];
-    let (entities, losses, marker) = project_between_readings(Reach::ListedRecord, &[], &drawn);
+    // Main's relation points, which vote in the fit of main's geometry.
+    let (entities, losses, marker) =
+        project_between_readings(Reach::ListedRecord, &[], &drawn(Drawn::Main));
     assert!(relation_points(&entities, &marker).is_empty());
     let [loss] = losses.as_slice() else {
         panic!("one loss: {losses:?}");
@@ -636,18 +707,140 @@ fn relation_points_drawn_before_do_not_vote_in_the_fit_of_an_added_point() {
         loss.code,
         SldprtLossCode::SketchRelationPointPlaceUnsettled.kind()
     );
+    assert!(loss.message.contains("(109, 203)"), "{}", loss.message);
 }
 
 #[test]
 fn added_relation_points_do_not_move_a_point_main_places() {
-    // Drawn at the frame's reading of the three anchor markers, these added
-    // points alone would fit the unswapped identity.
-    let drawn = [
-        Point2::new(0.0, 0.0),
-        Point2::new(2.0, 1.0),
-        Point2::new(7.0, 4.0),
-    ];
-    let (entities, losses, marker) = project_between_readings(Reach::Relation, &[], &drawn);
+    let (entities, losses, marker) =
+        project_between_readings(Reach::Relation, &[], &drawn(Drawn::Listed));
     assert_near(drawn_at(&entities, &marker), FITTED);
+    assert!(losses.is_empty(), "{losses:?}");
+}
+
+#[test]
+fn a_point_main_draws_for_a_marker_of_a_lane_the_pass_is_not_given_votes_as_on_main() {
+    // The drawn points' markers belong to a lane the pass is not given. As on
+    // main, they vote with the anchors: two transforms, so the frame places
+    // the point.
+    let (entities, losses, marker) =
+        project_between_readings(Reach::Relation, &[], &drawn(Drawn::Main));
+    assert_near(drawn_at(&entities, &marker), FRAMED);
+    assert!(losses.is_empty(), "{losses:?}");
+}
+
+#[test]
+fn readings_within_the_linear_resolution_place_the_point_together() {
+    let anchors = IDENTITY_READINGS.map(|anchor| Point2::new(anchor.u + 1.0e-8, anchor.v));
+    let mut readings = Readings::new(Reach::ListedRecord, anchors, &[], &[]);
+    let losses = readings.project().into_notes().collect::<Vec<_>>();
+    let position = drawn_at(&readings.entities, &readings.marker);
+    assert!(
+        (position.u - FRAMED.u).hypot(position.v - FRAMED.v) < 1.0e-6,
+        "{position:?}"
+    );
+    assert!(losses.is_empty(), "{losses:?}");
+}
+
+#[test]
+fn a_later_pass_that_draws_a_named_marker_withdraws_the_note() {
+    let mut readings = Readings::new(Reach::ListedRecord, SWAPPED_ANCHORS, &[], &[]);
+    let mut decisions = readings.project();
+    let sketch = readings.entities[0].sketch.clone();
+    // A curve that a later pass draws ends on the fitted place.
+    readings.entities.push(circle(&sketch, 0, FITTED));
+    decisions.extend(readings.project());
+    assert_near(drawn_at(&readings.entities, &readings.marker), FITTED);
+    let losses = decisions.into_notes().collect::<Vec<_>>();
+    assert!(losses.is_empty(), "{losses:?}");
+}
+
+#[test]
+fn a_later_pass_that_names_a_named_marker_again_keeps_one_note() {
+    let mut readings = Readings::new(Reach::ListedRecord, SWAPPED_ANCHORS, &[], &[]);
+    let mut decisions = readings.project();
+    let sketch = readings.entities[0].sketch.clone();
+    readings.entities.push(circle(&sketch, 0, FITTED));
+    readings.entities.push(circle(&sketch, 1, FRAMED));
+    decisions.extend(readings.project());
+    assert!(relation_points(&readings.entities, &readings.marker).is_empty());
+    let losses = decisions.into_notes().collect::<Vec<_>>();
+    let [loss] = losses.as_slice() else {
+        panic!("one loss: {losses:?}");
+    };
+    assert!(
+        loss.message.contains("lies on each of them"),
+        "{}",
+        loss.message
+    );
+}
+
+#[test]
+fn an_added_point_of_a_second_lane_is_drawn_only_in_the_sketch_of_that_lane() {
+    // Two lanes name one feature. The document feature binds the sketch read
+    // from the first lane; the second lane's configuration binds the sketch
+    // read from the second. Each lane holds a point marker that only a
+    // list-read record reaches.
+    let (feature, _, template, _) = fixture([0.003, 0.009]);
+    let lane = |lane_id: &str, prefix: &str| {
+        let point = marker(&format!("{prefix}relation-point"), Some([0.003, 0.009]));
+        let point = point.with_test_position(point.ordinal(), 81);
+        let point_id = point.id().to_owned();
+        let mut lane = template.clone();
+        lane.id = lane_id.into();
+        lane.relation_instances.clear();
+        lane.sketch_entities = vec![
+            point,
+            listed_curve(&format!("{prefix}listed-curve"), &point_id),
+        ];
+        (lane, point_id)
+    };
+    let (first_lane, first_marker) = lane("first-lane", "first-");
+    let (second_lane, second_marker) = lane("second-lane", "second-");
+    let sketches = [
+        framed_sketch(
+            SketchId::mint("synthetic:test:id#first-sketch").unwrap(),
+            Some("first-lane"),
+        ),
+        framed_sketch(
+            SketchId::mint("synthetic:test:id#second-sketch").unwrap(),
+            Some("second-lane"),
+        ),
+    ];
+    let binding = |sketch: &Sketch| {
+        let mut bound = feature.clone();
+        bound.evaluation = cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: SketchFeatureBinding::Planar(Some(sketch.id.clone())),
+            }),
+        );
+        bound
+    };
+    let mut entities = Vec::new();
+    let mut decisions = project_relation_point_geometry(
+        &mut entities,
+        &sketches,
+        &[binding(&sketches[0])],
+        &[first_lane, second_lane.clone()],
+        &SolidEdges::default(),
+    );
+    assert_near(drawn_at(&entities, &first_marker), FRAMED);
+    assert!(relation_points(&entities, &second_marker).is_empty());
+    decisions.extend(project_relation_point_geometry(
+        &mut entities,
+        &sketches,
+        &[binding(&sketches[1])],
+        std::slice::from_ref(&second_lane),
+        &SolidEdges::default(),
+    ));
+    // A relation row of the second lane reads the first entity bound to each
+    // of its operand markers.
+    let operand = entities
+        .iter()
+        .find(|entity| entity.native_ref.as_deref() == Some(second_marker.as_str()))
+        .expect("the second lane's point is drawn");
+    assert_eq!(operand.sketch, sketches[1].id);
+    assert_eq!(relation_points(&entities, &second_marker).len(), 1);
+    let losses = decisions.into_notes().collect::<Vec<_>>();
     assert!(losses.is_empty(), "{losses:?}");
 }

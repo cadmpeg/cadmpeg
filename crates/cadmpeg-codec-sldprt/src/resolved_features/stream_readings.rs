@@ -302,6 +302,12 @@ impl SolidEdges {
             .any(|mark| mark.distance(point) <= LINEAR_RESOLUTION_MM)
     }
 
+    /// Whether the solid holds no vertex and no circular edge that
+    /// [`Self::marks`] compares.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.vertices.is_empty() && self.circles.is_empty()
+    }
+
     fn holds_line(&self, start: Point3, end: Point3) -> bool {
         let middle = start.translated(end.vector_from(start), 0.5);
         self.lines.iter().any(|&(first, last)| {

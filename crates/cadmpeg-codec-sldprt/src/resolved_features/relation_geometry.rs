@@ -47,7 +47,7 @@ use cadmpeg_ir::sketches::{
     SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
     SpatialSketchGeometryDefinition,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 pub(super) const RELATION_PARAMETER_ID_PROPERTY: &str = "sldprt_relation_id";
 pub(super) const RELATION_PARAMETER_ROLE_PROPERTY: &str = "sldprt_relation_parameter_role";
@@ -421,25 +421,29 @@ fn close_over_links<'a>(
     }
 }
 
-/// Whether `note` is the relation point pass's charge of a marker whose
-/// record reads a subnormal coordinate pair, or whose place two readings
-/// leave unsettled.
-pub(crate) fn is_relation_point_note(note: &cadmpeg_ir::report::loss::LossNote) -> bool {
-    note.code == crate::loss::SldprtLossCode::SketchPointCoordinatesSubnormal.kind()
-        || note.code == crate::loss::SldprtLossCode::SketchRelationPointPlaceUnsettled.kind()
-}
+/// The decision of [`project_relation_point_geometry`] on each point marker
+/// it places: the point is drawn, or a note says why it is not.
+#[derive(Debug, Default)]
+pub(crate) struct RelationPointNotes(BTreeMap<String, Option<cadmpeg_ir::report::loss::LossNote>>);
 
-/// Appends `notes` to `losses`, leaving out a relation point note that
-/// `losses` already holds: the model pass and each configuration pass that
-/// reach one marker charge it with the same note.
-pub(crate) fn append_relation_point_notes(
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    notes: Vec<cadmpeg_ir::report::loss::LossNote>,
-) {
-    for note in notes {
-        if !is_relation_point_note(&note) || !losses.contains(&note) {
-            losses.push(note);
-        }
+impl RelationPointNotes {
+    fn draw(&mut self, marker: &str) {
+        self.0.insert(marker.to_owned(), None);
+    }
+
+    fn charge(&mut self, marker: &str, note: cadmpeg_ir::report::loss::LossNote) {
+        self.0.insert(marker.to_owned(), Some(note));
+    }
+
+    /// Takes the decisions of a later pass: its decision on a marker replaces
+    /// the one held, so a marker the later pass draws loses its note.
+    pub(crate) fn extend(&mut self, later: Self) {
+        self.0.extend(later.0);
+    }
+
+    /// The notes of the markers whose points are not drawn, in marker order.
+    pub(crate) fn into_notes(self) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> {
+        self.0.into_values().flatten()
     }
 }
 
@@ -447,9 +451,22 @@ pub(crate) fn append_relation_point_notes(
 /// draws.
 pub(super) const RELATION_POINT_PREFIX: &str = "sldprt:model:sketch-entity#relation-point:";
 
+/// The id prefix of a relation point drawn for a marker that only a
+/// list-read record whose stored code is a relation reaches.
+const LISTED_RELATION_POINT_PREFIX: &str = "sldprt:model:sketch-entity#relation-point:listed:";
+
+/// Whether `entity` is a relation point drawn for a marker that only a
+/// list-read record reaches.
+pub(super) fn is_listed_relation_point(entity: &SketchEntity) -> bool {
+    entity
+        .id()
+        .as_str()
+        .starts_with(LISTED_RELATION_POINT_PREFIX)
+}
+
 /// The markers a relation reaches without a list-read record: each relation
 /// operand, each marker of relation kind, and the markers linked to them.
-pub(super) fn main_relation_reach(lanes: &[FeatureInputLane]) -> HashSet<&str> {
+fn main_relation_reach(lanes: &[FeatureInputLane]) -> HashSet<&str> {
     let mut markers_by_id = HashMap::new();
     let mut reach = HashSet::new();
     for lane in lanes {
@@ -473,39 +490,30 @@ pub(super) fn main_relation_reach(lanes: &[FeatureInputLane]) -> HashSet<&str> {
     reach
 }
 
-/// Whether `entity` is a relation point drawn for a marker outside `reach`,
-/// the markers [`main_relation_reach`] gives.
-pub(super) fn is_added_relation_point(entity: &SketchEntity, reach: &HashSet<&str>) -> bool {
-    entity.id().as_str().starts_with(RELATION_POINT_PREFIX)
-        && entity
-            .native_ref
-            .as_deref()
-            .or(entity.geometry_ref.as_deref())
-            .is_none_or(|marker| !reach.contains(marker))
-}
-
 /// Materialize relation-addressed point geometry omitted from selected profile streams.
 ///
 /// A point marker that a relation reaches as on main (a relation operand, a
 /// marker of relation kind, and the markers linked to them) is placed as on
 /// main: at the unique fitted marker-transform place, else at the sketch
 /// frame's reading. A point marker reached only through a list-read record
-/// whose stored code is a relation (DI-77) is placed where the two readings
-/// agree, or where only one exists, by a fit that leaves out the relation
-/// points already drawn; where they differ, at the one place that
+/// whose stored code is a relation (DI-77) is drawn only in a sketch read
+/// from its own lane. It is placed where the two readings agree within the
+/// linear resolution, or where only one exists, by a fit that leaves out the
+/// relation points already drawn; where they differ, at the one place that
 /// a curve end or centre of its sketch or a vertex or circular-edge centre of
-/// `solid` marks, and nowhere, with a note, where neither or both are marked.
+/// `solid` marks. A marker whose feature's sketch is found and whose point
+/// is not drawn gets a note.
 pub(crate) fn project_relation_point_geometry(
     entities: &mut Vec<SketchEntity>,
     sketches: &[cadmpeg_ir::sketches::Sketch],
     features: &[cadmpeg_ir::features::Feature],
     lanes: &[FeatureInputLane],
     solid: &super::stream_readings::SolidEdges,
-) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+) -> RelationPointNotes {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
 
-    let mut losses = Vec::new();
+    let mut decisions = RelationPointNotes::default();
     let mut sketches_by_feature = HashMap::new();
     for feature in features {
         let cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -524,8 +532,7 @@ pub(crate) fn project_relation_point_geometry(
     }
     let transforms = marker_transform_candidates_by_feature(features, sketches, entities, lanes);
     // The fit of an added point leaves out every relation point drawn before,
-    // which come from the same markers; the fit of every other marker leaves
-    // out the added points (`marker_transform_candidates_by_feature`).
+    // which come from the same markers.
     let added_transforms = entities
         .iter()
         .any(|entity| entity.id().as_str().starts_with(RELATION_POINT_PREFIX))
@@ -649,8 +656,24 @@ pub(crate) fn project_relation_point_geometry(
             {
                 continue;
             }
-            let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
             let main_reach = referenced.contains(marker.id());
+            let record = sketches.iter().find(|candidate| candidate.id == *sketch);
+            if let Some(owner) = record
+                .and_then(|record| record.native_ref.as_deref())
+                .filter(|owner| !main_reach && *owner != lane.id)
+            {
+                decisions.charge(
+                    marker.id(),
+                    crate::loss::SldprtLossCode::SketchRelationPointPlaceUnsettled.note(format!(
+                        "sketch {} marker {}: the sketch that the marker's feature binds is read from feature-input lane {owner}, and the marker belongs to lane {}, so its relation point is not drawn in it",
+                        sketch.as_str(),
+                        marker.id(),
+                        lane.id,
+                    )),
+                );
+                continue;
+            }
+            let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
             let fit = match &added_transforms {
                 Some(added) if !main_reach => added,
                 _ => &transforms,
@@ -667,26 +690,39 @@ pub(crate) fn project_relation_point_geometry(
                     unique_position = Some(position);
                 }
             }
-            let fitted = unique_position.filter(|_| !ambiguous);
+            let to_point = |(position_u, position_v): (i64, i64)| {
+                Some(Point2::new(
+                    f64_from_i64(position_u)? * QUANTUM,
+                    f64_from_i64(position_v)? * QUANTUM,
+                ))
+            };
+            let fitted = unique_position.filter(|_| !ambiguous).and_then(to_point);
             let framed = frame_transforms
                 .entry(sketch)
                 .or_insert_with(|| {
-                    sketches
-                        .iter()
-                        .find(|candidate| candidate.id == *sketch)
-                        .and_then(|sketch| {
-                            feature_sketch_marker_transform(sketch, QUANTUM, features)
-                        })
+                    record.and_then(|sketch| {
+                        feature_sketch_marker_transform(sketch, QUANTUM, features)
+                    })
                 })
-                .and_then(|transform| transform.apply(native));
+                .and_then(|transform| transform.apply(native))
+                .and_then(to_point);
             if fitted.or(framed).is_none() {
+                decisions.charge(
+                    marker.id(),
+                    crate::loss::SldprtLossCode::SketchRelationPointPlaceUnsettled.note(format!(
+                        "sketch {} marker {}: no unique fitted marker transform and no sketch frame places the relation point, so the point is not drawn",
+                        sketch.as_str(),
+                        marker.id(),
+                    )),
+                );
                 continue;
             }
             if [u, v]
                 .into_iter()
                 .any(|value| value != 0.0 && !value.is_normal())
             {
-                losses.push(
+                decisions.charge(
+                    marker.id(),
                     crate::loss::SldprtLossCode::SketchPointCoordinatesSubnormal.note(format!(
                         "sketch marker {}: the 16 bytes its record form reads as a coordinate pair hold a subnormal value ({u:e}, {v:e}), so its relation point is not drawn",
                         marker.id()
@@ -694,17 +730,12 @@ pub(crate) fn project_relation_point_geometry(
                 );
                 continue;
             }
-            let to_point = |(position_u, position_v): (i64, i64)| {
-                Some(Point2::new(
-                    f64_from_i64(position_u)? * QUANTUM,
-                    f64_from_i64(position_v)? * QUANTUM,
-                ))
-            };
-            let fitted = fitted.and_then(to_point);
-            let framed = framed.and_then(to_point);
             let position = match (fitted, framed) {
-                (Some(fitted), Some(framed)) if fitted != framed && !main_reach => {
-                    let record = sketches.iter().find(|candidate| candidate.id == *sketch);
+                (Some(fitted), Some(framed))
+                    if !main_reach
+                        && (fitted.u - framed.u).hypot(fitted.v - framed.v)
+                            > LINEAR_RESOLUTION_MM =>
+                {
                     let witnessed = |position: Point2| {
                         entities
                             .iter()
@@ -734,12 +765,14 @@ pub(crate) fn project_relation_point_geometry(
                         (true, false) => fitted,
                         (false, true) => framed,
                         (both, _) => {
-                            let witnesses = if both {
-                                "a curve end or centre of the sketch, or a vertex or circular-edge centre of the solid, lies on each of them"
-                            } else {
-                                "no curve end or centre of the sketch and no vertex or circular-edge centre of the solid lies on either of them"
+                            let witnesses = match (both, solid.is_empty()) {
+                                (true, false) => "a curve end or centre of the sketch, or a vertex or circular-edge centre of the solid, lies on each of them",
+                                (true, true) => "a curve end or centre of the sketch lies on each of them",
+                                (false, false) => "when the decoder places the sketch's relation points, no curve end or centre of the sketch and no vertex or circular-edge centre of the solid lies on either of them",
+                                (false, true) => "when the decoder places the sketch's relation points, no curve end or centre of the sketch lies on either of them, and the decode holds no solid vertex or circular edge to compare",
                             };
-                            losses.push(
+                            decisions.charge(
+                                marker.id(),
                                 crate::loss::SldprtLossCode::SketchRelationPointPlaceUnsettled
                                     .note(format!(
                                         "sketch {} marker {}: the sketch's fitted marker transform places the relation point at ({}, {}) mm and the sketch frame places it at ({}, {}) mm; {witnesses}, so its place is not settled between the two readings and the point is not drawn",
@@ -758,7 +791,12 @@ pub(crate) fn project_relation_point_geometry(
                 (Some(position), _) | (None, Some(position)) => position,
                 (None, None) => continue,
             };
-            let id_text = format!("{RELATION_POINT_PREFIX}{lane_key}:{}", marker.offset());
+            let id_prefix = if main_reach {
+                RELATION_POINT_PREFIX
+            } else {
+                LISTED_RELATION_POINT_PREFIX
+            };
+            let id_text = format!("{id_prefix}{lane_key}:{}", marker.offset());
             let Ok(id) = SketchEntityId::mint(id_text) else {
                 continue;
             };
@@ -791,6 +829,7 @@ pub(crate) fn project_relation_point_geometry(
                     .with_native_ref(native_ref)
                     .with_geometry_ref(geometry_ref),
             );
+            decisions.draw(marker.id());
         }
         let mut markers_by_id = HashMap::new();
         let mut marker_roster = Vec::new();
@@ -983,7 +1022,7 @@ pub(crate) fn project_relation_point_geometry(
             );
         }
     }
-    losses
+    decisions
 }
 
 fn indexed_geometry_ref_matches(value: &str, owner: &str, kind: &str, index: usize) -> bool {

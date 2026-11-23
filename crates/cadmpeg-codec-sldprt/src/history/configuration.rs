@@ -10,6 +10,9 @@ mod lane_tests;
 #[cfg(test)]
 mod profile_body_tests;
 
+#[cfg(test)]
+mod solid_tests;
+
 use crate::records::FeatureHistory;
 use cadmpeg_ir::features::datums::DatumPlaneReference;
 use cadmpeg_ir::features::extents::LinearTermination;
@@ -652,7 +655,8 @@ pub(super) fn restore_configuration_tree_node_definitions(
     }
 }
 
-/// Apply sketch ownership projection to configuration-local feature snapshots.
+/// Apply sketch ownership projection to configuration-local feature snapshots,
+/// and return its losses and the relation point decisions of its passes.
 pub(crate) fn project_configuration_sketch_states(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
@@ -661,8 +665,16 @@ pub(crate) fn project_configuration_sketch_states(
     exact: &crate::resolved_features::profiles::ExactProfiles,
     annotations: &mut cadmpeg_ir::Annotations,
     plane_bindings: &mut crate::resolved_features::compact_reference_planes::PlaneBindings,
-) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
+) -> Result<
+    (
+        Vec<cadmpeg_ir::report::loss::LossNote>,
+        crate::resolved_features::relation_geometry::RelationPointNotes,
+    ),
+    cadmpeg_core::CodecError,
+> {
     let mut losses = Vec::new();
+    let mut relation_points =
+        crate::resolved_features::relation_geometry::RelationPointNotes::default();
     let solid = crate::resolved_features::stream_readings::SolidEdges::new(
         &ir.geometry.edges,
         &ir.geometry.vertices,
@@ -841,17 +853,14 @@ pub(crate) fn project_configuration_sketch_states(
                 &parameters,
                 scoped_lanes,
             )?;
-            let point_notes =
+            relation_points.extend(
                 crate::resolved_features::relation_geometry::project_relation_point_geometry(
                     &mut ir.model.sketch_entities,
                     &ir.model.sketches,
                     &features,
                     scoped_lanes,
                     &configuration_solid,
-                );
-            crate::resolved_features::relation_geometry::append_relation_point_notes(
-                &mut losses,
-                point_notes,
+                ),
             );
             crate::resolved_features::dimensions::project_relation_point_dimensioned_circles(
                 &mut ir.model.sketch_entities,
@@ -1002,7 +1011,7 @@ pub(crate) fn project_configuration_sketch_states(
         }
     }
 
-    Ok(losses)
+    Ok((losses, relation_points))
 }
 
 fn inherit_configuration_shared_semantics(

@@ -167,9 +167,14 @@ pub(crate) enum SldprtLossCode {
     /// A relation point marker whose record form reads a coordinate pair
     /// that holds a nonzero subnormal value gives no relation point.
     SketchPointCoordinatesSubnormal,
-    /// A relation point marker that the sketch's fitted marker transform and
-    /// its frame place apart, where no curve end or centre of the sketch
-    /// marks exactly one of the two places, gives no relation point.
+    /// A relation point marker gives no relation point where the decode
+    /// does not settle its place: no unique fitted marker transform and no
+    /// sketch frame place it; or, for a marker that only a list-read record
+    /// reaches, the fitted transform and the frame place it more than the
+    /// linear resolution apart and a curve end or centre of the sketch or a
+    /// vertex or circular-edge centre of the solid marks both places or
+    /// neither, or the sketch its feature binds is read from another
+    /// feature-input lane.
     SketchRelationPointPlaceUnsettled,
     /// A profile sketch lies on a plane the decoder assumes (open item
     /// DI-73): the plane that the preceding object's or the lane's plane
