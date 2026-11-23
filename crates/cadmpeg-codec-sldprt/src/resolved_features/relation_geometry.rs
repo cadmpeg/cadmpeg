@@ -422,12 +422,14 @@ fn close_over_links<'a>(
 }
 
 /// The decision of [`project_relation_point_geometry`] on each point marker
-/// it places: the point is drawn, or a note says why it is not.
+/// it reaches: the sketch entities hold the point, or a note says why they
+/// do not.
 #[derive(Debug, Default)]
 pub(crate) struct RelationPointNotes(BTreeMap<String, Option<cadmpeg_ir::report::loss::LossNote>>);
 
 impl RelationPointNotes {
-    fn draw(&mut self, marker: &str) {
+    /// The sketch entities hold the marker's point.
+    fn hold(&mut self, marker: &str) {
         self.0.insert(marker.to_owned(), None);
     }
 
@@ -623,7 +625,10 @@ pub(crate) fn project_relation_point_geometry(
                         marker.kind(),
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                     ))
-                || has_existing_point
+            {
+                continue;
+            }
+            if has_existing_point
                 || entities.iter().any(|entity| {
                     entity
                         .endpoint_refs
@@ -631,6 +636,7 @@ pub(crate) fn project_relation_point_geometry(
                         .any(|reference| reference == marker.id())
                 })
             {
+                decisions.hold(marker.id());
                 continue;
             }
             let (Some(feature), Some([u, v])) = (
@@ -829,7 +835,7 @@ pub(crate) fn project_relation_point_geometry(
                     .with_native_ref(native_ref)
                     .with_geometry_ref(geometry_ref),
             );
-            decisions.draw(marker.id());
+            decisions.hold(marker.id());
         }
         let mut markers_by_id = HashMap::new();
         let mut marker_roster = Vec::new();

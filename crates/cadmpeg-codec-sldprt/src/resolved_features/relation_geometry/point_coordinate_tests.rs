@@ -775,12 +775,14 @@ fn a_later_pass_that_names_a_named_marker_again_keeps_one_note() {
     );
 }
 
-#[test]
-fn an_added_point_of_a_second_lane_is_drawn_only_in_the_sketch_of_that_lane() {
-    // Two lanes name one feature. The document feature binds the sketch read
-    // from the first lane; the second lane's configuration binds the sketch
-    // read from the second. Each lane holds a point marker that only a
-    // list-read record reaches.
+/// Two lanes name one feature. The document feature binds the sketch read
+/// from the first lane; the second lane's configuration binds the sketch read
+/// from the second. Each lane holds a point marker at (3, 9) mm that only a
+/// list-read record reaches. Runs the model pass over both lanes, checks it,
+/// and then the second lane's configuration pass, whose sketch holds a point
+/// bound to the second lane's marker where `held`. Returns the entities, the
+/// decisions of both passes, the second lane's marker and the two sketches.
+fn second_lane_passes(held: bool) -> (Vec<SketchEntity>, RelationPointNotes, String, [Sketch; 2]) {
     let (feature, _, template, _) = fixture([0.003, 0.009]);
     let lane = |lane_id: &str, prefix: &str| {
         let point = marker(&format!("{prefix}relation-point"), Some([0.003, 0.009]));
@@ -826,6 +828,17 @@ fn an_added_point_of_a_second_lane_is_drawn_only_in_the_sketch_of_that_lane() {
     );
     assert_near(drawn_at(&entities, &first_marker), FRAMED);
     assert!(relation_points(&entities, &second_marker).is_empty());
+    if held {
+        entities.push(
+            SketchEntity::new(
+                SketchEntityId::mint("synthetic:test:id#second-lane-point").unwrap(),
+                sketches[1].id.clone(),
+                SketchGeometry::try_from(SketchGeometryDefinition::Point { position: FRAMED })
+                    .unwrap(),
+            )
+            .with_native_ref(Some(second_marker.clone())),
+        );
+    }
     decisions.extend(project_relation_point_geometry(
         &mut entities,
         &sketches,
@@ -833,14 +846,32 @@ fn an_added_point_of_a_second_lane_is_drawn_only_in_the_sketch_of_that_lane() {
         std::slice::from_ref(&second_lane),
         &SolidEdges::default(),
     ));
+    (entities, decisions, second_marker, sketches)
+}
+
+#[test]
+fn an_added_point_of_a_second_lane_is_drawn_only_in_the_sketch_of_that_lane() {
+    let (entities, decisions, marker, sketches) = second_lane_passes(false);
     // A relation row of the second lane reads the first entity bound to each
     // of its operand markers.
     let operand = entities
         .iter()
-        .find(|entity| entity.native_ref.as_deref() == Some(second_marker.as_str()))
+        .find(|entity| entity.native_ref.as_deref() == Some(marker.as_str()))
         .expect("the second lane's point is drawn");
     assert_eq!(operand.sketch, sketches[1].id);
-    assert_eq!(relation_points(&entities, &second_marker).len(), 1);
+    assert_eq!(relation_points(&entities, &marker).len(), 1);
+    let losses = decisions.into_notes().collect::<Vec<_>>();
+    assert!(losses.is_empty(), "{losses:?}");
+}
+
+#[test]
+fn a_point_the_sketch_of_its_own_lane_already_holds_withdraws_the_model_pass_note() {
+    let (entities, decisions, marker, sketches) = second_lane_passes(true);
+    let points = relation_points(&entities, &marker);
+    let [point] = points.as_slice() else {
+        panic!("one point: {points:?}");
+    };
+    assert_eq!(point.sketch, sketches[1].id);
     let losses = decisions.into_notes().collect::<Vec<_>>();
     assert!(losses.is_empty(), "{losses:?}");
 }
