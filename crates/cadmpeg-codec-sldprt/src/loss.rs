@@ -385,9 +385,10 @@ pub(crate) enum SldprtLossCode {
     /// value: no record types the dimension or binds it to a stored value,
     /// or the part's length unit is not read.
     DesignParameterValueUnread,
-    /// Parameters whose text is one reference with no neutral reading of
-    /// their kind hold the text and state no dependency on the parameter it
-    /// names.
+    /// Parameters whose text is one reference to a parameter whose kind
+    /// differs or is not read, and whose unit-blind tree does not type or is
+    /// not confirmed by the document's values, hold the text and state no
+    /// dependency on the parameter it names.
     DesignParameterReferenceAsText,
     /// Extrudes whose blind depth is bound to their record's only dimension,
     /// whose name is neither `Depth` nor `D1`.

@@ -6,12 +6,14 @@
 //! A dimension whose text is one literal holds a `Neutral` expression that
 //! keeps the literal's authored unit. A parameter whose text is one
 //! reference to a parameter of its kind holds that reference as a `Neutral`
-//! link (§5.13). [`link_bare_references`] states the interim form of a text
-//! that is one reference with no such reading. Any other text is a
-//! `Source` expression in the `SolidWorks` dialect, its references to
-//! parameters as reference tokens. A value is the cache the file stores: the
-//! literal, the dimension's stored `Value`, or the value the decoder read
-//! from a record that stores it in a stated unit.
+//! link (§5.13). [`link_bare_references`] keeps as one `Text` token a text
+//! that is one reference to a parameter whose kind differs or is not read,
+//! and `equations::bare_references` states its unit-blind tree where that
+//! tree is one reference or the document's values confirm it. Any other
+//! text is a `Source` expression in the `SolidWorks` dialect, its references
+//! to parameters as reference tokens. A value is the cache the file stores:
+//! the literal, the dimension's stored `Value`, or the value the decoder
+//! read from a record that stores it in a stated unit.
 //!
 //! Keywords displays a dimension's number in the document's length unit or
 //! in degrees, with no unit (`docs/formats/sldprt.md`). Where the root
@@ -568,8 +570,8 @@ impl<'a> Entries<'a> {
     /// The parameters, their expressions read, the note naming those whose
     /// literal is a rounded display, the note naming the dimensions whose
     /// text is a bare number and that have no value, and the parameters whose
-    /// text is one reference to a parameter of another kind, kept as text for
-    /// `equations::bare_references`.
+    /// text is one reference to a parameter whose kind differs or is not read,
+    /// kept as text for `equations::bare_references`.
     pub(super) fn parameters(
         &self,
         scope: &ProductDefinitionId,
