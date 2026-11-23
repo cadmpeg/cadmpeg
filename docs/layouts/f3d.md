@@ -5633,6 +5633,129 @@ Offsets are relative to the curve record's primary indexed header. The record en
 | 85 | 4 | `second_list_count` | `u32` | little | spec | then the count `1` and the primary identity of the loop curve that meets it at its second end · value `1` |
 | 89 | 8 | `second_end_curve_identity` | `u64` | little | spec | then the count `1` and the primary identity of the loop curve that meets it at its second end |
 
+## `sketch_extrude_boolean_scope_frame`
+
+Spec §Records of a design with several sketch-driven Extrudes · layout: byte offsets · size: 371 B
+
+Offsets are relative to the scope's primary indexed header. The feature item tail of 78 + 2L bytes starts at offset 371.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | the prologue, the operation fields, the nullable slots, and the extent fields of the scope frame |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | the prologue, the operation fields, the nullable slots, and the extent fields of the scope frame · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 1 | `flag` | `u8` | little | spec | the prologue, the operation fields, the nullable slots, and the extent fields of the scope frame · value `1` |
+| 21 | 6 | `zero_run_6` | `bytes[6]` | little | spec | the prologue, the operation fields, the nullable slots, and the extent fields of the scope frame · value `[0, 0, 0, 0, 0, 0]` |
+| 27 | 1 | `prologue_byte` | `u8` | little | spec | The byte at offset 27 is `0` or `1` |
+| 28 | 42 | `operation_fields` | `bytes[42]` | little | spec | The layout `current_extrude_operation_fields`: operation 1 or 2, direction 1, face-extend option 2, direction reversal 0 or 1, geometry kind 1, start support 0, three zero bytes, and the unit profile normal. |
+| 70 | 2 | `absent_slots_0_1` | `bytes[2]` | little | spec | The seven nullable slots are two absent slots · value `[0, 0]` |
+| 72 | 11 | `along_distance_owner` | `bytes[11]` | little | spec | the `AlongDistance` owner, the start record, an absent slot |
+| 83 | 11 | `start_record` | `bytes[11]` | little | spec | the `AlongDistance` owner, the start record, an absent slot |
+| 94 | 1 | `absent_slot_4` | `u8` | little | spec | the `AlongDistance` owner, the start record, an absent slot · value `0` |
+| 95 | 11 | `taper_angle_owner` | `bytes[11]` | little | spec | the `TaperAngle` owner, and an absent slot |
+| 106 | 1 | `absent_slot_6` | `u8` | little | spec | the `TaperAngle` owner, and an absent slot · value `0` |
+| 107 | 17 | `extent_fields` | `bytes[17]` | little | spec | The layout `current_extrude_non_target_extent_pair`: first-side extent 1, five zero bytes, target option 0, and second-side extent 0. |
+| 124 | 23 | `zero_run_23` | `bytes[23]` | little | spec | After the extent fields come twenty-three zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 147 | 4 | `profile_group_count` | `u32` | little | spec | the profile-group count `1` and the profile group · value `1` |
+| 151 | 11 | `profile_group` | `bytes[11]` | little | spec | the profile-group count `1` and the profile group |
+| 162 | 4 | `zero_word_162` | `u32` | little | spec | the profile-group count `1` and the profile group, a zero u32 · value `0` |
+| 166 | 4 | `body_node_count` | `u32` | little | spec | When `n` is `0` · value `0` |
+| 170 | 4 | `zero_word_170` | `u32` | little | spec | a zero u32, the body-operand group count `1` · value `0` |
+| 174 | 4 | `body_operand_group_count` | `u32` | little | spec | the body-operand group count at offset 174 · value `1` |
+| 178 | 11 | `body_operand_group` | `bytes[11]` | little | spec | the body-operand group at offset 178 |
+| 189 | 4 | `zero_guid_length` | `u32` | little | spec | the LP-UTF16 zero GUID `00000000-0000-0000-0000-000000000000` · value `36` |
+| 193 | 72 | `zero_guid_utf16` | `u16[36]` | little | spec | the LP-UTF16 zero GUID `00000000-0000-0000-0000-000000000000` |
+| 265 | 3 | `zero_run_3` | `bytes[3]` | little | spec | three zero bytes, the ordered-reference count · value `[0, 0, 0]` |
+| 268 | 4 | `ordered_reference_count` | `u32` | little | spec | the ordered-reference count `7` at offset 268 · value `7` |
+| 272 | 77 | `ordered_references` | `bytes[77]` | little | spec | Seven eleven-byte references: the profile group, the body-operand group, the member of each group, the AlongDistance owner, the start record, and the TaperAngle owner, in ascending record index. |
+| 349 | 4 | `current_history_state` | `u32` | little | spec | the current history-state identity at offset 349 |
+| 353 | 4 | `family_name_length` | `u32` | little | spec | the LP-UTF16 family name `Extrude` or `Extrusion` · value `7` |
+| 357 | 14 | `family_name_utf16` | `u16[7]` | little | spec | the LP-UTF16 family name `Extrude` or `Extrusion` |
+
+## `extrude_body_operand_group`
+
+Spec §Records of a design with several sketch-driven Extrudes · layout: byte offsets · size: 124 B
+
+Offsets are relative to the group's primary indexed header. The paired indexed header starts at offset 124.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | in the layout of `sketch_extrude_profile_group` with the u64 operand role `0x0000000800000000` at offset 53 |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | in the layout of `sketch_extrude_profile_group` with the u64 operand role `0x0000000800000000` at offset 53 · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 4 | `member_count` | `u32` | little | spec | It stores the member count `k` at offset 21 · value `1` |
+| 25 | 11 | `whole_body_member` | `bytes[11]` | little | spec | It stores the member count `k` at offset 21 and `k` references to whole-body members |
+| 36 | 2 | `zero_run_2` | `bytes[2]` | little | spec | in the layout of `sketch_extrude_profile_group` with the u64 operand role `0x0000000800000000` at offset 53 · value `[0, 0]` |
+| 38 | 4 | `one` | `u32` | little | spec | in the layout of `sketch_extrude_profile_group` with the u64 operand role `0x0000000800000000` at offset 53 · value `1` |
+| 42 | 11 | `identity_wrapper` | `bytes[11]` | little | spec | in the layout of `sketch_extrude_profile_group` with the u64 operand role `0x0000000800000000` at offset 53 |
+| 53 | 8 | `operand_role` | `u64` | little | spec | the u64 operand role `0x0000000800000000` at offset 53 · value `34359738368` |
+| 61 | 10 | `zero_run_10_after_role` | `bytes[10]` | little | spec | in the layout of `sketch_extrude_profile_group` with the u64 operand role `0x0000000800000000` at offset 53 · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 71 | 4 | `epoch` | `u32` | little | spec | Both evaluation epochs of the group equal the first evaluation epoch of the item tail |
+| 75 | 8 | `duration` | `f64` | little | spec | in the layout of `sketch_extrude_profile_group` with the u64 operand role `0x0000000800000000` at offset 53 |
+| 83 | 4 | `second_epoch` | `u32` | little | spec | Both evaluation epochs of the group equal the first evaluation epoch of the item tail |
+| 87 | 11 | `companion` | `bytes[11]` | little | spec | record `G + 2` is its 33-byte item-tail companion |
+| 98 | 3 | `flags` | `bytes[3]` | little | spec | in the layout of `sketch_extrude_profile_group` with the u64 operand role `0x0000000800000000` at offset 53 · value `[1, 0, 0]` |
+| 101 | 11 | `timestamp_table` | `bytes[11]` | little | spec | Record `G + 1` is the record-timestamp table of the group |
+| 112 | 1 | `zero` | `u8` | little | spec | in the layout of `sketch_extrude_profile_group` with the u64 operand role `0x0000000800000000` at offset 53 · value `0` |
+| 113 | 11 | `extrude_scope` | `bytes[11]` | little | spec | in the layout of `sketch_extrude_profile_group` with the u64 operand role `0x0000000800000000` at offset 53 |
+
+## `whole_body_member_single_clause`
+
+Spec §Records of a design with several sketch-driven Extrudes · layout: byte offsets · size: 298 B
+
+Offsets are relative to the member's primary indexed header. The paired indexed header starts at offset 298.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | After ten zero bytes it stores the clause count `c` at offset 21 |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | After ten zero bytes it stores the clause count `c` at offset 21 · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 4 | `clause_count` | `u32` | little | spec | After ten zero bytes it stores the clause count `c` at offset 21 · value `1` |
+| 25 | 8 | `clause_identity` | `u64` | little | spec | clauses of a u64 persistent identity and a u32 form |
+| 33 | 4 | `clause_form` | `u32` | little | spec | clauses of a u64 persistent identity and a u32 form |
+| 37 | 11 | `body_recipe` | `bytes[11]` | little | spec | a reference to record `M + 3`, u32 `1` |
+| 48 | 4 | `one` | `u32` | little | spec | a reference to record `M + 3`, u32 `1` · value `1` |
+| 52 | 4 | `asset_guid_length` | `u32` | little | spec | the LP-UTF16 asset GUID of 36 code units · value `36` |
+| 56 | 72 | `asset_guid_utf16` | `u16[36]` | little | spec | the LP-UTF16 asset GUID of 36 code units |
+| 128 | 4 | `context_guid_length` | `u32` | little | spec | the LP-UTF16 context GUID of 36 code units · value `36` |
+| 132 | 72 | `context_guid_utf16` | `u16[36]` | little | spec | the LP-UTF16 context GUID of 36 code units |
+| 204 | 4 | `two` | `u32` | little | spec | u32 `2`, the serialization form `0` or `1` · value `2` |
+| 208 | 4 | `serialization_form` | `u32` | little | spec | u32 `2`, the serialization form `0` or `1` |
+| 212 | 4 | `first_run_count` | `u32` | little | spec | the first-run count `0` · value `0` |
+| 216 | 4 | `second_run_count` | `u32` | little | spec | the second-run count `g` and `g` references to browser-node members · value `1` |
+| 220 | 11 | `browser_node` | `bytes[11]` | little | spec | the second-run count `g` and `g` references to browser-node members |
+| 231 | 4 | `trailing_word` | `u32` | little | spec | the trailing word `8`, ten zero bytes · value `8` |
+| 235 | 10 | `zero_run_10_after_trailing_word` | `bytes[10]` | little | spec | the trailing word `8`, ten zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 245 | 4 | `epoch` | `u32` | little | spec | Both evaluation epochs of the member equal the first evaluation epoch of the item tail |
+| 249 | 8 | `duration` | `f64` | little | spec | the f64 evaluation duration, the second evaluation epoch |
+| 257 | 4 | `second_epoch` | `u32` | little | spec | the f64 evaluation duration, the second evaluation epoch |
+| 261 | 11 | `companion` | `bytes[11]` | little | spec | a reference to its item-tail companion `M + 2` |
+| 272 | 3 | `flags` | `bytes[3]` | little | spec | the bytes `01 00 00`, a reference to its record-timestamp table `M + 1` · value `[1, 0, 0]` |
+| 275 | 11 | `timestamp_table` | `bytes[11]` | little | spec | the bytes `01 00 00`, a reference to its record-timestamp table `M + 1` |
+| 286 | 1 | `zero` | `u8` | little | spec | a zero byte, and a reference to the join or cut scope · value `0` |
+| 287 | 11 | `scope` | `bytes[11]` | little | spec | a zero byte, and a reference to the join or cut scope |
+
+## `body_recipe_single_entry`
+
+Spec §Records of a design with several sketch-driven Extrudes · layout: byte offsets · size: 88 B
+
+Offsets are relative to the recipe's indexed header. The record has no paired header; the next indexed header starts at offset 88.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | After ten zero bytes it stores u32 `1`, u32 `3`, u32 `1` |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | After ten zero bytes it stores u32 `1`, u32 `3`, u32 `1` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 4 | `one` | `u32` | little | spec | After ten zero bytes it stores u32 `1`, u32 `3`, u32 `1` · value `1` |
+| 25 | 4 | `three` | `u32` | little | spec | After ten zero bytes it stores u32 `1`, u32 `3`, u32 `1` · value `3` |
+| 29 | 4 | `one_b` | `u32` | little | spec | After ten zero bytes it stores u32 `1`, u32 `3`, u32 `1` · value `1` |
+| 33 | 4 | `entry_count` | `u32` | little | spec | the entry count `r` at offset 33 · value `1` |
+| 37 | 4 | `identity_text_length` | `u32` | little | spec | Each entry is the LP-ASCII decimal text of a persistent identity · value `3` |
+| 41 | 3 | `identity_text` | `bytes[3]` | little | spec | Each entry is the LP-ASCII decimal text of a persistent identity |
+| 44 | 4 | `key` | `u32` | little | spec | a u32 key, and eight zero bytes |
+| 48 | 8 | `zero_run_8` | `bytes[8]` | little | spec | a u32 key, and eight zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+| 56 | 4 | `further_item_count` | `u32` | little | spec | a u32 count of further items · value `0` |
+| 60 | 4 | `family_name_length` | `u32` | little | spec | the u32 `16`, the ASCII family name `body_recipe_data` · value `16` |
+| 64 | 16 | `family_name` | `bytes[16]` | little | spec | the u32 `16`, the ASCII family name `body_recipe_data` |
+| 80 | 4 | `trailing_zero` | `u32` | little | spec | the trailing bytes are u32 `0` and i32 `-1` · value `0` |
+| 84 | 4 | `trailing_minus_one` | `i32` | little | spec | the trailing bytes are u32 `0` and i32 `-1` · value `-1` |
+
 ## `sketch_revolve_scope_frame`
 
 Spec §Records of a sketch-driven Revolve · layout: byte offsets · size: 287 B
