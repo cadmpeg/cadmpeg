@@ -9,6 +9,42 @@ use std::collections::HashSet;
 
 mod incidence;
 
+/// Whether the piece that each entry of a group's first region names lies on
+/// `boundary`. `first` pairs each entry's curve with its piece ordinal and
+/// piece count, and the other curves of the region divide each line into
+/// pieces.
+pub(in crate::design) fn first_region_pieces_lie_on_boundary(
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    first: &[(cadmpeg_ir::sketches::SketchEntityId, [u32; 2])],
+    boundary: &[cadmpeg_ir::features::profiles::SketchProfileBoundaryUse],
+    tolerance: f64,
+    work: &ProfileGeometryWork,
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    let named = first.iter().map(|(id, _)| id).collect::<HashSet<_>>();
+    let selected = entities
+        .iter()
+        .filter(|entity| named.contains(entity.id()))
+        .cloned()
+        .collect::<Vec<_>>();
+    if selected.len() != named.len() {
+        return Ok(false);
+    }
+    let members = first
+        .iter()
+        .map(|(id, fields)| {
+            (
+                cadmpeg_ir::sketches::SketchEntityUse {
+                    entity: id.clone(),
+                    reversed: false,
+                },
+                *fields,
+            )
+        })
+        .collect::<Vec<_>>();
+    incidence::lie_on_boundary(&selected, &members, boundary, tolerance, work, ctx)
+}
+
 pub(in crate::design) fn resolve(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
