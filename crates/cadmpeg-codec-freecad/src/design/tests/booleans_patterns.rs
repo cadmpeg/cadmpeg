@@ -83,7 +83,7 @@ fn transfers_ordered_part_boolean_operands_and_infers_dependencies() {
         feature("Cut").evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Combine {
-                op: cadmpeg_ir::features::BooleanKind::Cut,
+                op: cadmpeg_ir::features::operation_settings::BooleanKind::Cut,
                 ..
             }
         )
@@ -110,15 +110,18 @@ fn transfers_ordered_part_boolean_operands_and_infers_dependencies() {
     };
     let target = operands.target();
     let tools = operands.tools();
-    assert_eq!(*op, cadmpeg_ir::features::BooleanKind::Join);
+    assert_eq!(
+        *op,
+        cadmpeg_ir::features::operation_settings::BooleanKind::Join
+    );
     assert!(!keep_tools);
     assert!(matches!(
         target,
-        cadmpeg_ir::features::BodySelection::Native(value) if value.ends_with(":link:0")
+        cadmpeg_ir::features::selections::BodySelection::Native(value) if value.ends_with(":link:0")
     ));
     assert!(matches!(
         tools,
-        cadmpeg_ir::features::BodySelection::Native(value) if value.ends_with(":links:1..2")
+        cadmpeg_ir::features::selections::BodySelection::Native(value) if value.ends_with(":links:1..2")
     ));
     assert!(non_placement_losses(result.report()).is_empty());
 }
@@ -158,19 +161,19 @@ pub(crate) fn transfers_partdesign_boolean_base_and_group_rules() {
         definition("Fuse"), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Combine {
             operands,
 
-            op: cadmpeg_ir::features::BooleanKind::Join,
+            op: cadmpeg_ir::features::operation_settings::BooleanKind::Join,
             keep_tools: false,
             ..
-        }) if matches!((operands.target(), operands.tools(),), (cadmpeg_ir::features::BodySelection::Native(target), cadmpeg_ir::features::BodySelection::Native(tools),) if target.ends_with(":Group:link:2")
+        }) if matches!((operands.target(), operands.tools(),), (cadmpeg_ir::features::selections::BodySelection::Native(target), cadmpeg_ir::features::selections::BodySelection::Native(tools),) if target.ends_with(":Group:link:2")
             && tools.ends_with(":Group:links:0..2"))));
     assert!(matches!(
         definition("Cut"), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Combine {
             operands,
 
-            op: cadmpeg_ir::features::BooleanKind::Cut,
+            op: cadmpeg_ir::features::operation_settings::BooleanKind::Cut,
             keep_tools: false,
             ..
-        }) if matches!((operands.target(), operands.tools(),), (cadmpeg_ir::features::BodySelection::Native(target), cadmpeg_ir::features::BodySelection::Native(tools),) if target.ends_with(":BaseFeature") && tools.ends_with(":Group"))));
+        }) if matches!((operands.target(), operands.tools(),), (cadmpeg_ir::features::selections::BodySelection::Native(target), cadmpeg_ir::features::selections::BodySelection::Native(tools),) if target.ends_with(":BaseFeature") && tools.ends_with(":Group"))));
     assert!(non_placement_losses(result.report()).is_empty());
 }
 
@@ -241,7 +244,7 @@ fn distinguishes_absent_and_malformed_partdesign_boolean_type() {
             assert!(matches!(
                 definition,
                 FeatureDefinition::Operation(FeatureOperation::Combine {
-                    op: cadmpeg_ir::features::BooleanKind::Join,
+                    op: cadmpeg_ir::features::operation_settings::BooleanKind::Join,
                     ..
                 })
             ));
@@ -450,7 +453,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
         .native
         .namespace_mut("fcstd")
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "design_census",
             &stale_census,
         )
@@ -1209,7 +1212,7 @@ fn resolves_datum_references_for_polar_and_mirror_patterns() {
             pattern: admitted_pattern,
             ..
         }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::MirrorReference {
-                plane: cadmpeg_ir::features::FaceSelection::Native(plane),
+                plane: cadmpeg_ir::features::selections::FaceSelection::Native(plane),
             } if plane.ends_with(":MirrorPlane"))
     ));
     assert!(non_placement_losses(result.report()).is_empty());
@@ -1279,7 +1282,7 @@ fn rejects_ambiguous_axis_and_plane_reference_carriers() {
             pattern: admitted_pattern,
             ..
         }) if matches!(admitted_pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::MirrorReference {
-                plane: cadmpeg_ir::features::FaceSelection::Native(plane),
+                plane: cadmpeg_ir::features::selections::FaceSelection::Native(plane),
             } if plane.ends_with(":MirrorPlane"))
     ));
     assert_eq!(non_placement_losses(result.report()).len(), 2);

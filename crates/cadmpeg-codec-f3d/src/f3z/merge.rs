@@ -224,57 +224,65 @@ impl MergeSession<'_, '_> {
             references: qualified,
             ..Default::default()
         };
-        let mut left_identity = place_contained_poses_with_protected(
+        let mut left_identity = place_contained_poses_in_members(
             self.ctx,
             parent_ir,
             &legacy_table,
             &mut parent_report.losses,
             &mut self.operation_protected,
-            ContainedPass::Ordered,
-            None,
+            PoseScope {
+                pass: ContainedPass::Ordered,
+                boundary: None,
+                instance_scopes: &*self.instance_scopes,
+            },
         )?;
-        crate::xref::operation_pose::project(
+        crate::xref::operation_pose::project_in_members(
             self.ctx,
             parent_ir,
             &self.operation_poses,
             &self.operation_protected,
             &mut parent_report.losses,
+            self.instance_scopes,
         )?;
-        for (boundary, member_table) in &self.component_path_tables {
-            left_identity += place_contained_poses_with_protected(
-                self.ctx,
-                parent_ir,
-                member_table,
-                &mut parent_report.losses,
-                &mut self.operation_protected,
-                ContainedPass::Ordered,
-                Some(boundary),
-            )?;
-        }
-        left_identity += place_contained_poses_with_protected(
+        left_identity += place_member_boundary_poses(
+            self.ctx,
+            parent_ir,
+            &self.component_path_tables,
+            &mut parent_report.losses,
+            &mut self.operation_protected,
+            self.instance_scopes,
+        )?;
+        left_identity += place_contained_poses_in_members(
             self.ctx,
             parent_ir,
             &qualified_table,
             &mut parent_report.losses,
             &mut self.operation_protected,
-            ContainedPass::Ordered,
-            None,
+            PoseScope {
+                pass: ContainedPass::Ordered,
+                boundary: None,
+                instance_scopes: &*self.instance_scopes,
+            },
         )?;
-        crate::xref::operation_pose::project(
+        crate::xref::operation_pose::project_in_members(
             self.ctx,
             parent_ir,
             &self.operation_poses,
             &self.operation_protected,
             &mut parent_report.losses,
+            self.instance_scopes,
         )?;
-        left_identity += place_contained_poses_with_protected(
+        left_identity += place_contained_poses_in_members(
             self.ctx,
             parent_ir,
             table,
             &mut parent_report.losses,
             &mut std::collections::BTreeSet::new(),
-            ContainedPass::Nested,
-            None,
+            PoseScope {
+                pass: ContainedPass::Nested,
+                boundary: None,
+                instance_scopes: &*self.instance_scopes,
+            },
         )?;
         crate::design::assembly::release_joint_placed(&mut parent_report.losses, left_identity);
         // A document that a member definition now stands for at every
@@ -1352,6 +1360,7 @@ fn contained_frames_agree(
         })
 }
 
+#[cfg(test)]
 fn place_contained_poses_with_protected(
     ctx: &DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
@@ -1361,9 +1370,83 @@ fn place_contained_poses_with_protected(
     pass: ContainedPass,
     boundary: Option<&cadmpeg_ir::ids::OccurrenceId>,
 ) -> Result<usize, CodecError> {
+    place_contained_poses_in_members(
+        ctx,
+        ir,
+        table,
+        losses,
+        protected,
+        PoseScope {
+            pass,
+            boundary,
+            instance_scopes: &InstanceScopes::new(),
+        },
+    )
+}
+
+/// Places the occurrences inside each archive member placement by the
+/// component-path carriers of the member's own design (`tables`, each with
+/// the occurrence that places the member). A carrier states its pose in the
+/// frame of that placement. The occurrences of a nested member that several
+/// occurrences place sit in the placement whose instance scope
+/// (`instance_scopes`) they are in.
+fn place_member_boundary_poses(
+    ctx: &DecodeContext<'_>,
+    ir: &mut cadmpeg_ir::CadIr,
+    tables: &[(cadmpeg_ir::ids::OccurrenceId, XrefTable)],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    protected: &mut std::collections::BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
+    instance_scopes: &InstanceScopes,
+) -> Result<usize, CodecError> {
+    let mut left_identity = 0usize;
+    for (boundary, table) in tables {
+        left_identity += place_contained_poses_in_members(
+            ctx,
+            ir,
+            table,
+            losses,
+            protected,
+            PoseScope {
+                pass: ContainedPass::Ordered,
+                boundary: Some(boundary),
+                instance_scopes,
+            },
+        )?;
+    }
+    Ok(left_identity)
+}
+
+/// Which carriers one placement pass reads and how it resolves the placement
+/// of an occurrence.
+#[derive(Clone, Copy)]
+struct PoseScope<'a> {
+    pass: ContainedPass,
+    /// The occurrence whose member's own placements the pass reads.
+    boundary: Option<&'a cadmpeg_ir::ids::OccurrenceId>,
+    /// The member instance scope each placing occurrence names.
+    instance_scopes: &'a InstanceScopes,
+}
+
+/// [`place_contained_poses_with_protected`] for a model that places archive
+/// member instances, whose `instance_scopes` name the placement each member
+/// occurrence sits in.
+fn place_contained_poses_in_members(
+    ctx: &DecodeContext<'_>,
+    ir: &mut cadmpeg_ir::CadIr,
+    table: &XrefTable,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    protected: &mut std::collections::BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
+    scope: PoseScope<'_>,
+) -> Result<usize, CodecError> {
     use crate::records::feature::assembly_features::DesignComponentOccurrence;
     use cadmpeg_ir::transform::Transform;
     use std::collections::{BTreeMap, BTreeSet};
+
+    let PoseScope {
+        pass,
+        boundary,
+        instance_scopes,
+    } = scope;
 
     if !table
         .references
@@ -1395,7 +1478,11 @@ fn place_contained_poses_with_protected(
         .enumerate()
         .map(|(position, occurrence)| (occurrence.id.clone(), position))
         .collect::<BTreeMap<_, _>>();
-    let parents = crate::tree::parent_ids(&ir.model.product_definitions, &ir.model.occurrences);
+    let parents = crate::tree::parent_ids_in_members(
+        &ir.model.product_definitions,
+        &ir.model.occurrences,
+        instance_scopes,
+    );
     let parent_positions = ir
         .model
         .occurrences
@@ -1963,6 +2050,20 @@ fn define_member(
             .product_definitions
             .retain(|definition| !definition.id.as_str().ends_with(STORED_FRAME_GROUP_SUFFIX));
     }
+    let (top_level, tessellations, mut identity) = ir
+        .model
+        .product_definitions
+        .iter()
+        .position(|row| row.id == crate::tree::file_root_id())
+        .map(|position| {
+            let root = ir.model.product_definitions.remove(position);
+            let document = match root.storage {
+                Storage::File { document, .. } => document,
+                _ => ExternalDocument::default(),
+            };
+            (root.occurrences, root.tessellations, document)
+        })
+        .unwrap_or_default();
     let owned = ir
         .model
         .product_definitions
@@ -1989,18 +2090,10 @@ fn define_member(
         .filter(|sketch| !owned_sketches.contains(&sketch.id))
         .map(|sketch| sketch.id.clone())
         .collect();
-    // The member file's own root definition is the member definition: it is
-    // stored in its own file of the archive, and holds the member's top level.
-    let top_level = ir
-        .model
-        .product_definitions
-        .iter()
-        .position(|row| row.id == crate::tree::file_root_id())
-        .map(|position| ir.model.product_definitions.remove(position).occurrences)
-        .unwrap_or_default();
+    identity.path = cadmpeg_core::text::NonBlankString::new(document);
     let storage = match ir.source.clone() {
         Some(source) => Storage::File {
-            document: ExternalDocument::path(document.to_owned()),
+            document: identity,
             source: Some(source),
         },
         None => Storage::Embedded,
@@ -2016,6 +2109,7 @@ fn define_member(
         definition.sketches.extend(sketches);
         definition.label = (!label.trim().is_empty()).then(|| label.to_owned());
         definition.occurrences.extend(top_level);
+        definition.tessellations.extend(tessellations);
         definition.storage = storage;
         return Ok(id);
     }
@@ -2025,6 +2119,7 @@ fn define_member(
     definition.bodies = bodies;
     definition.sketches = sketches;
     definition.occurrences = top_level;
+    definition.tessellations = tessellations;
     ir.model.product_definitions.push(definition);
     Ok(id)
 }
@@ -2033,10 +2128,10 @@ fn define_member(
 /// The container is an entity the member decode did not admit, so it is
 /// charged here.
 fn scope_document_parameters(ctx: &DecodeContext<'_>, model: &mut Model) -> Result<(), CodecError> {
-    use cadmpeg_ir::features::{
-        DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
-        FeatureOperation, FeatureTreeNodeRole, TreeChildren,
-    };
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::selections::DistinctMembers;
+    use cadmpeg_ir::features::tree::{FeatureTreeNodeRole, TreeChildren};
+    use cadmpeg_ir::features::{Feature, FeatureContent, FeatureDefinition, FeatureOperation};
 
     if model
         .parameters
@@ -2227,10 +2322,9 @@ fn native_record_targets(
 }
 
 fn rescope_partial_pattern_sources(model: &mut Model, occurrence: &str) {
-    use cadmpeg_ir::features::{
-        patterns::{PatternSeed, PatternTransform},
-        FeatureDefinition, FeatureOperation, PathRef,
-    };
+    use cadmpeg_ir::features::patterns::{PatternSeed, PatternTransform};
+    use cadmpeg_ir::features::profiles::PathRef;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     for feature in &mut model.features {
         feature.evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
@@ -2565,7 +2659,7 @@ mod tests {
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
         ir.model.product_definitions.clear();
         ir.geometry.bodies[0].transform = Some(transform);
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
         assert_eq!(ir.geometry.bodies[0].transform, Some(transform));
         assert_eq!(
@@ -2605,11 +2699,73 @@ mod tests {
                 general_tolerance: None,
                 active: None,
             });
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let id = define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
         assert_eq!(ir.model.product_definitions.len(), 1);
         assert_eq!(ir.model.product_definitions[0].id, id);
         assert_eq!(ir.model.product_definitions[0].bodies, [body]);
+    }
+
+    #[test]
+    fn member_definition_takes_the_scopeless_meshes_of_the_member_root() {
+        let mesh =
+            cadmpeg_ir::tessellation::TessellationId::mint("f3d:test:mesh-body#scopeless").unwrap();
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        crate::tree::file_root(&mut ir.model)
+            .tessellations
+            .push(mesh.clone());
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+        let id = define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
+        let [definition] = ir.model.product_definitions.as_slice() else {
+            panic!("one member definition");
+        };
+        assert_eq!(definition.id, id);
+        assert_eq!(definition.tessellations, [mesh]);
+    }
+
+    #[test]
+    fn scoped_member_mesh_keeps_the_stated_root_as_owner() {
+        let scoped =
+            cadmpeg_ir::tessellation::TessellationId::mint("f3d:test:mesh-body#scoped").unwrap();
+        let scopeless =
+            cadmpeg_ir::tessellation::TessellationId::mint("f3d:test:mesh-body#scopeless").unwrap();
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.model.tessellations.push(
+            cadmpeg_ir::tessellation::Tessellation::new(
+                scoped.clone(),
+                cadmpeg_ir::tessellation::TessellationMesh::List {
+                    vertices: vec![
+                        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                        cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+                        cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
+                    ],
+                    triangles: vec![[0, 1, 2]],
+                },
+                Vec::new(),
+            )
+            .unwrap(),
+        );
+        crate::tree::file_root(&mut ir.model)
+            .tessellations
+            .push(scopeless.clone());
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+        let member = define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
+        ir.state_root_definition(
+            &ctx,
+            crate::tree::file_root_id(),
+            cadmpeg_ir::products::ExternalDocument::default(),
+        )
+        .unwrap();
+        let owners = |mesh: &cadmpeg_ir::tessellation::TessellationId| {
+            ir.model
+                .product_definitions
+                .iter()
+                .filter(|definition| definition.tessellations.contains(mesh))
+                .map(|definition| definition.id.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(owners(&scopeless), [member]);
+        assert_eq!(owners(&scoped), [crate::tree::file_root_id()]);
     }
 
     #[test]

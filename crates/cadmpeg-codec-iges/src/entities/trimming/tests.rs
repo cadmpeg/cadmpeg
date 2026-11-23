@@ -11,9 +11,9 @@ use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::draft::ModelDraft;
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
 use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::geometry::CurveGeometry;
-use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::geometry::Surface;
@@ -254,10 +254,8 @@ fn decode_reports_a_pcurve_support_check_over_the_blend_limit() {
 
 #[test]
 fn decode_checks_a_pcurve_shared_by_many_faces_like_a_single_reference() {
-    // 256 spans of degree 63 need 2^20 blends; repeating the support check
-    // per face would cost that once for each of the 256 faces.
-    let last = 63 + 256 - 1;
-    let pcurve = planar_nurbs_parameters(63, 256, true, |index| {
+    let last = 3 + 4 - 1;
+    let pcurve = planar_nurbs_parameters(3, 4, true, |index| {
         if index == 0 || index == last {
             [0.2, 0.2]
         } else {
@@ -265,14 +263,19 @@ fn decode_checks_a_pcurve_shared_by_many_faces_like_a_single_reference() {
         }
     });
     let decode = |faces| {
-        IgesCodec
+        super::SUPPORT_BOUNDS_CHECKS.with(|checks| checks.set(0));
+        let result = IgesCodec
             .decode(
                 &mut Cursor::new(subrange_nurbs_surfaces_sharing_pcurve_file(
                     2, &pcurve, faces,
                 )),
                 &DecodeOptions::default(),
             )
-            .unwrap()
+            .unwrap();
+        (
+            result,
+            super::SUPPORT_BOUNDS_CHECKS.with(std::cell::Cell::get),
+        )
     };
     let face_losses = |result: &cadmpeg_ir::codec::DecodeResult, sequence: usize| {
         let tag = format!("directory_entry:D{sequence}");
@@ -291,7 +294,8 @@ fn decode_checks_a_pcurve_shared_by_many_faces_like_a_single_reference() {
         messages.sort();
         messages
     };
-    let single = decode(1);
+    let (single, single_checks) = decode(1);
+    assert!(single_checks > 0);
     let expected = face_losses(&single, 9);
     assert!(
         single
@@ -304,8 +308,9 @@ fn decode_checks_a_pcurve_shared_by_many_faces_like_a_single_reference() {
         single.report().losses
     );
 
-    let faces = 256;
-    let shared = decode(faces);
+    let faces = 3;
+    let (shared, shared_checks) = decode(faces);
+    assert_eq!(shared_checks, single_checks);
     for face in 0..faces {
         let sequence = 9 + 2 * face;
         assert!(
@@ -552,7 +557,7 @@ fn boundary_vertex_clustering_rejects_non_transitive_tolerance_neighborhoods() {
 
     assert!(matches!(
         cluster_boundary_positions(
-            &points.map(|point| cadmpeg_ir::features::FinitePoint3::new(point).unwrap()),
+            &points.map(|point| cadmpeg_ir::features::geometry::FinitePoint3::new(point).unwrap()),
             cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),
         ),
         Err(BoundaryVertexCreationError::Cluster(
@@ -570,7 +575,7 @@ fn boundary_vertex_clustering_uses_canonical_representatives() {
         Point3::new(0.0, 0.0, 0.0),
     ];
     let clusters = cluster_boundary_positions(
-        &points.map(|point| cadmpeg_ir::features::FinitePoint3::new(point).unwrap()),
+        &points.map(|point| cadmpeg_ir::features::geometry::FinitePoint3::new(point).unwrap()),
         cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),
     )
     .unwrap();
@@ -598,12 +603,14 @@ fn boundary_vertex_creation_retains_every_source_endpoint() {
         BoundaryVertexSourceEndpoint {
             edge: "iges:model:edge#source-a".into(),
             endpoint: BoundaryEndpoint::Start,
-            position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).unwrap(),
+            position: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                .unwrap(),
         },
         BoundaryVertexSourceEndpoint {
             edge: "iges:model:edge#source-b".into(),
             endpoint: BoundaryEndpoint::End,
-            position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+            position: cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .unwrap(),
         },
     ];
 
@@ -717,25 +724,25 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
     ir.geometry.points.extend([
         Point::new(
             PointId::mint("test:model:point#wrong-point-start").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(10.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(10.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
         Point::new(
             PointId::mint("test:model:point#wrong-point-end").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(11.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(11.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
         Point::new(
             PointId::mint("test:model:point#matching-point-start").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
         Point::new(
             PointId::mint("test:model:point#matching-point-end").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
@@ -1603,7 +1610,9 @@ fn boundary_clustering_chain_uses_no_call_stack_depth() {
     let points: Vec<_> = (0..=m)
         .map(|i| f64::from(i) * 1.5)
         .chain((0..m).rev().map(|i| f64::from(i) * 1.5 + 0.75))
-        .map(|x| cadmpeg_ir::features::FinitePoint3::new(Point3::new(x, 0.0, 0.0)).unwrap())
+        .map(|x| {
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(x, 0.0, 0.0)).unwrap()
+        })
         .collect();
     assert!(matches!(
         cluster_boundary_positions(&points, cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap()),

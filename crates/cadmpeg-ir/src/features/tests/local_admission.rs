@@ -1,11 +1,20 @@
-use cadmpeg_test_support::edit;
+use crate::test_support::edit;
 
+use crate::features::binders::BinderTarget;
+use crate::features::direct_edit::SplitFacePlanes;
+use crate::features::operation_settings::FuzzyTolerance;
+use crate::features::profiles::{
+    GeometryImportPath, LoftPointSection, PathRef, PlanarProfileRef, ProfileRef,
+    ThreePointSelection,
+};
+use crate::features::selections::{
+    BodyMembers, BodySelection, NonEmptyMembers, SelectionMembers, VertexSelection,
+};
+use crate::features::tree::TreeChildren;
 use crate::features::FeatureOperation;
 use crate::features::{
-    BinderTarget, BodyMembers, BodySelection, CombineOperands, Feature, FeatureDefinition,
-    FeatureId, FuzzyTolerance, GeometryImportPath, LoftPointSection, NonEmptyMembers, PathRef,
-    PlanarProfileRef, ProfileRef, SectionOperands, SelectionMembers, SewBodySelection,
-    SplitFacePlanes, ThreePointSelection, TreeChildren, TrimBodyOperands, VertexSelection,
+    CombineOperands, Feature, FeatureDefinition, FeatureId, SectionOperands, SewBodySelection,
+    TrimBodyOperands,
 };
 use crate::ids::{BodyId, FeatureInputTopologyId, HistoricalVertexId};
 
@@ -69,7 +78,7 @@ fn local_collection_admission_preserves_order_and_rejects_invalid_membership() {
     assert!({
         let active = Some(second.clone());
         edit::replace(&mut children, |previous| {
-            crate::features::TreeChildren::new(previous.to_vec(), active)
+            crate::features::tree::TreeChildren::new(previous.to_vec(), active)
         })
     }
     .is_err());
@@ -80,7 +89,7 @@ fn local_collection_admission_preserves_order_and_rejects_invalid_membership() {
     {
         let active = Some(second);
         edit::replace(&mut children, |previous| {
-            crate::features::TreeChildren::new(previous.to_vec(), active)
+            crate::features::tree::TreeChildren::new(previous.to_vec(), active)
         })
     }
     .unwrap();
@@ -89,16 +98,19 @@ fn local_collection_admission_preserves_order_and_rejects_invalid_membership() {
 #[test]
 fn selection_owners_enforce_local_arity_and_atomic_nonoverlap() {
     let first = BodySelection::Bodies(
-        crate::features::DistinctMembers::try_from(vec![body_id("first")])
+        crate::features::selections::DistinctMembers::try_from(vec![body_id("first")])
             .expect("distinct bodies"),
     );
     let second = BodySelection::Bodies(
-        crate::features::DistinctMembers::try_from(vec![body_id("second")])
+        crate::features::selections::DistinctMembers::try_from(vec![body_id("second")])
             .expect("distinct bodies"),
     );
     let pair = BodySelection::Bodies(
-        crate::features::DistinctMembers::try_from(vec![body_id("first"), body_id("second")])
-            .expect("distinct bodies"),
+        crate::features::selections::DistinctMembers::try_from(vec![
+            body_id("first"),
+            body_id("second"),
+        ])
+        .expect("distinct bodies"),
     );
     assert!(SewBodySelection::try_from(first.clone()).is_err());
     assert!(SewBodySelection::try_from(pair.clone()).is_ok());
@@ -140,22 +152,24 @@ fn resolved_body_selection_wire_rejects_repeated_bodies_before_sew_arity() {
 fn feature_evaluation_rejects_duplicate_outputs_at_admission() {
     let body = body_id("output");
     let duplicate = vec![body.clone(), body.clone()];
-    assert!(crate::features::DistinctMembers::try_from(duplicate.clone(),).is_err());
+    assert!(crate::features::selections::DistinctMembers::try_from(duplicate.clone(),).is_err());
 
     let definition = FeatureDefinition::Operation(FeatureOperation::BaseFeature {
         bodies: BodySelection::Unresolved,
     });
-    let mut evaluation = crate::features::FeatureEvaluation::new(
+    let mut evaluation = crate::features::evaluation::FeatureEvaluation::new(
         definition.clone(),
-        crate::features::DistinctMembers::try_from(vec![body.clone()]).unwrap(),
+        crate::features::selections::DistinctMembers::try_from(vec![body.clone()]).unwrap(),
     );
     evaluation.edit(|_, outputs| {
         assert!(!outputs.insert(body.clone(),));
     });
     assert_eq!(evaluation.outputs(), &vec![body.clone()]);
-    evaluation.set_outputs(crate::features::DistinctMembers::try_from(vec![body.clone()]).unwrap());
+    evaluation.set_outputs(
+        crate::features::selections::DistinctMembers::try_from(vec![body.clone()]).unwrap(),
+    );
     let prior = evaluation.clone();
-    assert!(crate::features::DistinctMembers::try_from(duplicate,).is_err());
+    assert!(crate::features::selections::DistinctMembers::try_from(duplicate,).is_err());
     assert_eq!(evaluation, prior);
 }
 
@@ -208,12 +222,12 @@ fn historical_body_overlap_spans_direct_and_paired_member_selections() {
     let overlapping = BodySelection::HistoricalSet {
         state: state.clone(),
         members: BodyMembers::try_from_rows(vec![
-            crate::features::BodyMember::new(
+            crate::features::selections::BodyMember::new(
                 HistoricalBodyId::mint("test:body:2").expect("valid identity"),
                 cadmpeg_core::text::NonBlankString::new("tool-a")
                     .expect("valid historical body selection row"),
             ),
-            crate::features::BodyMember::new(
+            crate::features::selections::BodyMember::new(
                 HistoricalBodyId::mint("test:body:4").expect("valid identity"),
                 cadmpeg_core::text::NonBlankString::new("tool-b")
                     .expect("valid historical body selection row"),
@@ -223,7 +237,7 @@ fn historical_body_overlap_spans_direct_and_paired_member_selections() {
     };
     let disjoint = BodySelection::HistoricalSet {
         state,
-        members: BodyMembers::try_from_rows(vec![crate::features::BodyMember::new(
+        members: BodyMembers::try_from_rows(vec![crate::features::selections::BodyMember::new(
             HistoricalBodyId::mint("test:body:5").expect("valid identity"),
             cadmpeg_core::text::NonBlankString::new("tool")
                 .expect("valid historical body selection row"),
@@ -276,7 +290,7 @@ fn three_point_admission_compares_targets_and_historical_states() {
 fn an_inserted_body_selection_does_not_restate_the_feature_outputs() {
     let body = body_id("inserted");
     let definition = FeatureDefinition::Operation(FeatureOperation::InsertBodies {
-        bodies: crate::features::InsertedBodies::Resolved {
+        bodies: crate::features::selections::InsertedBodies::Resolved {
             native: "copied".into(),
         },
     });
@@ -286,18 +300,18 @@ fn an_inserted_body_selection_does_not_restate_the_feature_outputs() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
-        evaluation: crate::features::FeatureEvaluation::from_definition(definition),
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     };
     assert!(feature.evaluation.outputs().is_empty());
-    feature
-        .evaluation
-        .set_outputs(crate::features::DistinctMembers::try_from(vec![body.clone()]).unwrap());
+    feature.evaluation.set_outputs(
+        crate::features::selections::DistinctMembers::try_from(vec![body.clone()]).unwrap(),
+    );
     let wire = serde_json::to_value(&feature).unwrap();
     assert!(wire.get("evaluation").is_none());
     assert_eq!(wire["outputs"], serde_json::json!([body.as_str()]));
@@ -469,15 +483,15 @@ fn selection_operand_parts_move_retained_storage() {
     let targets_pointer = targets_text.as_ptr();
     let replacements_pointer = replacements_text.as_ptr();
     let operands = crate::features::replace_face::ReplaceFaceOperands::new(
-        crate::features::FaceSelection::Native(targets_text),
-        crate::features::FaceSelection::Native(replacements_text),
+        crate::features::selections::FaceSelection::Native(targets_text),
+        crate::features::selections::FaceSelection::Native(replacements_text),
     )
     .unwrap();
     let (targets, replacements) = (operands.targets(), operands.replacements());
-    let crate::features::FaceSelection::Native(targets) = targets else {
+    let crate::features::selections::FaceSelection::Native(targets) = targets else {
         panic!("native targets");
     };
-    let crate::features::FaceSelection::Native(replacements) = replacements else {
+    let crate::features::selections::FaceSelection::Native(replacements) = replacements else {
         panic!("native replacements");
     };
     assert_eq!(targets.as_ptr(), targets_pointer);
@@ -489,7 +503,7 @@ fn tree_children_wire_and_decode_share_membership_validation() {
     use crate::features::FeatureCollectionError;
     let first = feature_id("first");
     let second = feature_id("second");
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for (children, active, message) in [
         (
             vec![first.clone(), first.clone()],
@@ -528,7 +542,9 @@ fn tree_children_wire_and_decode_share_membership_validation() {
 
 #[test]
 fn feature_result_members_keep_lane_order_and_name_the_repeated_lane() {
-    use crate::features::{FeatureResultMemberError, FeatureResultMembers, FeatureResultTopology};
+    use crate::features::evaluation::{
+        FeatureResultMemberError, FeatureResultMembers, FeatureResultTopology,
+    };
     for lane in 0..4 {
         let mut lanes = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
         lanes[lane] = vec![
@@ -576,7 +592,7 @@ fn feature_result_members_keep_lane_order_and_name_the_repeated_lane() {
 
 #[test]
 fn three_point_selection_moves_its_points_and_names_a_repeated_target() {
-    use crate::features::GeneratedVertexRef;
+    use crate::features::selections::GeneratedVertexRef;
     let producer = feature_id("producer");
     let state = FeatureInputTopologyId::mint("test:model:feature-input#state").unwrap();
     for kind in 0..3 {
@@ -633,9 +649,10 @@ fn tree_children_keep_source_order_and_the_active_child() {
 
 #[test]
 fn selection_reference_constructors_keep_padded_text() {
-    use crate::features::{
-        BodySelectionError, EdgeSelection, FaceSelection, GeneratedBodyRef, GeneratedCurveRef,
-        GeneratedEdgeRef, GeneratedFaceRef, GeneratedVertexRef, SelectionReference,
+    use crate::features::profiles::GeneratedCurveRef;
+    use crate::features::selections::{
+        BodySelectionError, EdgeSelection, FaceSelection, GeneratedBodyRef, GeneratedEdgeRef,
+        GeneratedFaceRef, GeneratedVertexRef, SelectionReference,
     };
 
     fn finish<T>(result: Result<T, BodySelectionError>) -> Result<(), BodySelectionError> {

@@ -25,9 +25,9 @@ use crate::records::{
 use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent};
-use cadmpeg_ir::features::{
-    DecalMapping, FaceSelection, Feature, FeatureDefinition, FeatureOperation,
-};
+use cadmpeg_ir::features::datums::DecalMapping;
+use cadmpeg_ir::features::selections::FaceSelection;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 
 const TYPED_ASSET_REFERENCE_TYPE: &str = "9A9B75AF-D286-4548-9301-28910E24EA20";
 const TYPED_TARGET_GROUP_REFERENCE_TYPE: &str = "2CA5A1CD-C99B-4C9B-91AF-57989148E841";
@@ -641,9 +641,11 @@ mod tests {
     use crate::records::decal::{DesignDecalImage, DesignDecalScopeLayout};
     use crate::records::feature::scope::DesignParameterScope;
     use cadmpeg_ir::assets::{Asset, AssetContent};
+    use cadmpeg_ir::features::datums::DecalMapping;
+    use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::selections::FaceSelection;
     use cadmpeg_ir::features::{
-        DecalMapping, FaceSelection, Feature, FeatureDefinition, FeatureEvaluation,
-        FeatureOperation, SketchFeatureBinding,
+        Feature, FeatureDefinition, FeatureOperation, SketchFeatureBinding,
     };
     use cadmpeg_ir::report::loss::LossNote;
     use std::collections::BTreeMap;
@@ -922,7 +924,7 @@ mod tests {
         let mut losses = Vec::new();
         crate::test_support::zip_test::with_scan(&archive(true), |scan| {
             super::project_decal_images(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
                 std::slice::from_ref(&scope),
                 std::slice::from_ref(&image),
@@ -954,7 +956,7 @@ mod tests {
         let mut losses = Vec::new();
         crate::test_support::zip_test::with_scan(&archive(true), |scan| {
             super::project_decal_images(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
                 std::slice::from_ref(&scope),
                 std::slice::from_ref(&image),
@@ -1017,7 +1019,7 @@ mod tests {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
@@ -1053,7 +1055,7 @@ mod tests {
         let mut losses = Vec::new();
         let assets = crate::test_support::zip_test::with_scan(archive, |scan| {
             super::project_decal_images(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
                 std::slice::from_ref(&scope),
                 std::slice::from_ref(image),
@@ -1358,7 +1360,7 @@ mod tests {
         let mut losses = Vec::new();
         crate::test_support::zip_test::with_scan(&archive, |scan| {
             super::project_decal_images(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
                 &[scope],
                 &[],
@@ -1405,7 +1407,7 @@ mod tests {
         let mut losses = Vec::new();
         let assets = crate::test_support::zip_test::with_scan(&archive(false), |scan| {
             super::project_decal_images(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
                 std::slice::from_ref(&scope),
                 &[],

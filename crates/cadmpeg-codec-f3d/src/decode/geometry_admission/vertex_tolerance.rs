@@ -6,12 +6,12 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::{decode::curve_point, finite_or_refusal};
-use cadmpeg_ir::geometry::ProceduralCurveDefinition;
+use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 use cadmpeg_ir::index::{ModelIndex, StandardIndex};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::PositiveReal;
-use cadmpeg_ir::units::COINCIDENCE_TOLERANCE;
+use cadmpeg_ir::units::coincidence_allowance;
 use cadmpeg_ir::CadIr;
 
 use crate::loss::F3dLossCode;
@@ -86,7 +86,7 @@ pub(super) fn admit(
         });
         let fit = construction
             .and_then(cadmpeg_ir::geometry::ProceduralCurve::cache_fit_tolerance)
-            .map_or(0.0, cadmpeg_ir::geometry::FitTolerance::get);
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get);
         for (side, id) in edge.vertices().enumerate() {
             if !candidates.contains(id.as_str()) {
                 continue;
@@ -115,15 +115,11 @@ pub(super) fn admit(
             let vertex_tolerance = index
                 .vertices(id.as_str(), StandardIndex)
                 .and_then(|vertex| vertex.tolerance)
-                .map_or(0.0, PositiveReal::get);
-            let allowance = ir
-                .tolerances
-                .linear
-                .get()
-                .max(COINCIDENCE_TOLERANCE)
-                .max(edge.tolerance.map_or(0.0, PositiveReal::get))
-                .max(vertex_tolerance)
-                .max(fit);
+                .map(PositiveReal::get);
+            let allowance = coincidence_allowance(
+                ir.tolerances.linear,
+                &[edge.tolerance.map(PositiveReal::get), vertex_tolerance, fit],
+            );
             entry.exact_miss |= exact && miss > allowance;
         }
     }

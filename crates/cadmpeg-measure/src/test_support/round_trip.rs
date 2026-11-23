@@ -162,6 +162,21 @@ pub fn measures_agree(
     after: &CadIr,
 ) -> Result<(Comparison, MeasureReport, MeasureReport), RoundTripError> {
     let before_report = measured(label, before)?;
+    measures_agree_with(label, before, before_report, after)
+}
+
+/// [`measures_agree`] for a `before` document that is already measured, as
+/// [`measures_decide`] returns its report.
+///
+/// # Errors
+///
+/// Returns [`RoundTripError`] as [`measures_agree`] does.
+pub fn measures_agree_with(
+    label: &str,
+    before: &CadIr,
+    before_report: MeasureReport,
+    after: &CadIr,
+) -> Result<(Comparison, MeasureReport, MeasureReport), RoundTripError> {
     let after_report = measured(label, after)?;
     let comparison = compared(label, before, &before_report, after, &after_report)?;
     if comparison.verdict() != Verdict::Agree {
@@ -176,22 +191,23 @@ pub fn measures_agree(
     Ok((comparison, before_report, after_report))
 }
 
-/// Whether `ir` compared with itself gives [`Verdict::Agree`] over at least
-/// one body pair.
+/// The report of `ir` when `ir` compared with itself gives
+/// [`Verdict::Agree`] over at least one body pair, else `None`.
 ///
 /// A document whose bodies measure no comparable quantity, or whose
 /// occurrences place its bodies, leaves every comparison inconclusive. A
-/// round-trip test selects its fixtures with this check before it calls
-/// [`measures_agree`].
+/// round-trip test selects its fixtures with this check and passes the
+/// report to [`measures_agree_with`].
 ///
 /// # Errors
 ///
 /// Returns [`RoundTripError`] when the measurement fails or the comparison
 /// exceeds its pair allowance.
-pub fn measures_decide(label: &str, ir: &CadIr) -> Result<bool, RoundTripError> {
+pub fn measures_decide(label: &str, ir: &CadIr) -> Result<Option<MeasureReport>, RoundTripError> {
     let report = measured(label, ir)?;
     let comparison = compared(label, ir, &report, ir, &report)?;
-    Ok(comparison.verdict() == Verdict::Agree && !comparison.pairs().is_empty())
+    let decides = comparison.verdict() == Verdict::Agree && !comparison.pairs().is_empty();
+    Ok(decides.then_some(report))
 }
 
 /// The quantity names, sides and causes that keep `comparison` from

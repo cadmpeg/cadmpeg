@@ -162,7 +162,7 @@ fn a_synthesized_export_states_the_target_it_wrote() {
         let mut ir = CadIr::empty();
         ir.geometry.points.push(Point::new(
             PointId::mint(format!("test:model:point#{id}")).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+            cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
                 .expect("a finite position is a point"),
             None,
         ));
@@ -244,7 +244,7 @@ fn encode_reports_a_digest_mismatch_as_degraded_fidelity() {
     let mut edited = decoded.ir().clone();
     edited.geometry.points.push(Point::new(
         PointId::mint("test:model:point#edited").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(Point3::new(7.0, 8.0, 9.0))
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(7.0, 8.0, 9.0))
             .expect("a finite position is a point"),
         None,
     ));

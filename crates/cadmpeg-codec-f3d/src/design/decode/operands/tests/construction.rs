@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
+
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::design::decode::operands::construction_operand_group_is_retained;
-use crate::design::decode::operands::ConstructionOperandGroupParse;
-use crate::design::decode::operands::RecordFrame;
+use crate::design::decode::operands::construction_groups::ConstructionOperandGroupParse;
+use crate::design::decode::operands::construction_groups::RecordFrame;
+use crate::design::decode::operands::face_operand_frames::construction_operand_group_is_retained;
+use crate::design::feature_project::direct_face::project_split;
 use crate::design::feature_project::project_parameter_design_with_edge_identities;
-use crate::design::feature_project::project_split;
 use crate::records::decal::DesignRecordHeader;
 use crate::records::dimensions::DesignRecipeReference;
 use crate::records::entity_header::DesignFeatureTimeline;
@@ -22,12 +23,12 @@ use crate::records::topology::extrude_selection::DesignOperandRole;
 use crate::records::topology::face::DesignFaceOperand;
 use crate::test_support::indexed_header;
 use crate::test_support::push_marked_reference;
-use cadmpeg_ir::features::FaceSelection;
+use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::ids::FaceId;
 
-use crate::design::decode::operands::parse_construction_operand_group;
+use crate::design::decode::operands::construction_groups::parse_construction_operand_group;
 
 #[test]
 fn localized_edge_treatment_group_retention_is_language_independent() {
@@ -122,7 +123,7 @@ fn legacy_extrude_group_accepts_its_independent_empty_tail_record() {
     indexed_header(&mut bytes, *b"262", header.record_index);
 
     let parse = |bytes: &[u8], scope: &DesignParameterScope| {
-        super::super::parse_construction_operand_group_in_stream(
+        super::super::construction_groups::parse_construction_operand_group_in_stream(
             bytes,
             scope,
             0,
@@ -386,7 +387,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     .expect("counted Extrude start-face group");
     assert_eq!(start_face.role(), DesignOperandRole::ROLE_0X5);
     assert_eq!(start_face.extrude_role(), None);
-    crate::design::decode::operands::assign_extrude_face_roles(
+    crate::design::decode::operands::extrude_roles::assign_extrude_face_roles(
         &from_face_scope,
         std::slice::from_mut(&mut start_face),
         None,
@@ -437,7 +438,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     .expect("counted Extrude legacy to-face group");
     assert_eq!(legacy_to_face.role(), DesignOperandRole::ROLE_0X12);
     assert_eq!(legacy_to_face.extrude_role(), None);
-    crate::design::decode::operands::assign_extrude_face_roles(
+    crate::design::decode::operands::extrude_roles::assign_extrude_face_roles(
         &to_face_scope,
         std::slice::from_mut(&mut legacy_to_face),
         None,
@@ -483,7 +484,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         )
         .complete()
         .expect("counted Extrude face group");
-        crate::design::decode::operands::assign_extrude_face_roles(
+        crate::design::decode::operands::extrude_roles::assign_extrude_face_roles(
             &scope,
             std::slice::from_mut(&mut group),
             seventh_slot_record_index,
@@ -667,7 +668,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert!(auxiliary.frame.trailing_records().is_empty());
     assert_eq!(auxiliary.role(), DesignOperandRole::FACES);
     assert_eq!(auxiliary.extrude_role(), None);
-    crate::design::decode::operands::assign_extrude_face_roles(
+    crate::design::decode::operands::extrude_roles::assign_extrude_face_roles(
         &scope,
         std::slice::from_mut(&mut auxiliary),
         None,
@@ -741,8 +742,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::SplitFace {
-            targets: cadmpeg_ir::features::FaceSelection::Native(targets),
-            tool: cadmpeg_ir::features::SplitFaceTool::Native(tool),
+            targets: cadmpeg_ir::features::selections::FaceSelection::Native(targets),
+            tool: cadmpeg_ir::features::direct_edit::SplitFaceTool::Native(tool),
             ..
         }) if targets.ends_with("#400") && tool.ends_with("#100")
     ));
@@ -902,7 +903,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert!(matches!(
         plane_split.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::SplitFace {
-            tool: cadmpeg_ir::features::SplitFaceTool::Planes { planes },
+            tool: cadmpeg_ir::features::direct_edit::SplitFaceTool::Planes { planes },
             ..
         }) if planes[..] == expected_planes
     ));
@@ -1024,8 +1025,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert!(matches!(
         project_split(&split_body_scope, &[], &split_groups, &[], std::slice::from_ref(&split_tool), &[], &mut Vec::new(),).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::SplitBody {
-            targets: cadmpeg_ir::features::BodySelection::Native(ref targets),
-            tool: cadmpeg_ir::features::SplitBodyTool::Faces(cadmpeg_ir::features::FaceSelection::Native(ref tool)),
+            targets: cadmpeg_ir::features::selections::BodySelection::Native(ref targets),
+            tool: cadmpeg_ir::features::direct_edit::SplitBodyTool::Faces(cadmpeg_ir::features::selections::FaceSelection::Native(ref tool)),
             ..
         })) if targets.ends_with("#400") && tool.ends_with("#200")
     ));
@@ -1059,7 +1060,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert!(matches!(
         project_split(&historical_split_scope, &[], &split_groups, &[], std::slice::from_ref(&historical_split_tool), &[], &mut Vec::new(),).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::SplitBody {
-            tool: cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Historical { faces, native, .. }),
+            tool: cadmpeg_ir::features::direct_edit::SplitBodyTool::Faces(FaceSelection::Historical { faces, native, .. }),
             ..
         })) if faces.len() == 1 && native.as_str() == historical_split_tool.id
     ));
@@ -1136,7 +1137,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert!(matches!(
         project_split(&construction_tool_scope, &[], &[split_target_group.clone(), construction_tool], &[], &[], &[], &mut Vec::new(),).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::SplitBody {
-            tool: cadmpeg_ir::features::SplitBodyTool::Faces(cadmpeg_ir::features::FaceSelection::Native(ref tool)),
+            tool: cadmpeg_ir::features::direct_edit::SplitBodyTool::Faces(cadmpeg_ir::features::selections::FaceSelection::Native(ref tool)),
             ..
         })) if tool.ends_with("#100")
     ));
@@ -1293,7 +1294,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(
         *features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteFace {
-            faces: cadmpeg_ir::features::FaceSelection::Native(delete_group.id.clone()),
+            faces: cadmpeg_ir::features::selections::FaceSelection::Native(delete_group.id.clone()),
             heal: true,
         })
     );
@@ -1420,7 +1421,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(
         *features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteFace {
-            faces: cadmpeg_ir::features::FaceSelection::Native(delete_group.id.clone()),
+            faces: cadmpeg_ir::features::selections::FaceSelection::Native(delete_group.id.clone()),
             heal: false,
         })
     );
@@ -1688,14 +1689,16 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             DesignOperandRole::BODIES_A,
         );
     assert_eq!(
-        crate::design::feature_project::project_remove_body(
+        crate::design::feature_project::body_ops::project_remove_body(
             &remove_scope,
             std::slice::from_ref(&remove_group),
         ),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::DeleteBody {
-                bodies: cadmpeg_ir::features::BodySelection::Native(remove_group.id.clone()),
-                mode: cadmpeg_ir::features::BodyRetentionMode::DeleteSelected,
+                bodies: cadmpeg_ir::features::selections::BodySelection::Native(
+                    remove_group.id.clone()
+                ),
+                mode: cadmpeg_ir::features::operation_settings::BodyRetentionMode::DeleteSelected,
             }
         ))
     );
@@ -1737,13 +1740,13 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             DesignOperandRole::ROLE_0X5,
         );
     assert_eq!(
-        crate::design::feature_project::project_surface_stitch(
+        crate::design::feature_project::surface_edit::project_surface_stitch(
             &stitch_scope,
             std::slice::from_ref(&stitch_group),
         ),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::KnitSurface {
-                faces: cadmpeg_ir::features::FaceSelection::Native(stitch_scope.id),
+                faces: cadmpeg_ir::features::selections::FaceSelection::Native(stitch_scope.id),
                 merge_entities: Some(true),
                 create_solid: Some(true),
                 gap_tolerance: Some(cadmpeg_ir::scalar::NonNegativeLength::new(0.1).unwrap()),
@@ -1952,31 +1955,37 @@ fn remove_body_group_with_a_three_byte_discriminant_names_its_bodies() {
         [2184]
     );
     assert_eq!(group.paired_byte_offset, u64_from_index(bytes.len() - 11));
-    assert!(crate::design::feature_project::project_remove_body(
-        &scope,
-        std::slice::from_ref(&group)
-    )
-    .is_some());
+    assert!(
+        crate::design::feature_project::body_ops::project_remove_body(
+            &scope,
+            std::slice::from_ref(&group)
+        )
+        .is_some()
+    );
 }
 
 #[test]
 fn remove_body_group_refuses_empty_groups_wrong_roles_and_truncation() {
     let empty = remove_body_group_bytes(2181, 2180, 0, 0x0000_0004_0000_0000);
     if let Some((scope, group)) = remove_body_group_fixture(&empty, 2181, 2180) {
-        assert!(crate::design::feature_project::project_remove_body(
-            &scope,
-            std::slice::from_ref(&group)
-        )
-        .is_none());
+        assert!(
+            crate::design::feature_project::body_ops::project_remove_body(
+                &scope,
+                std::slice::from_ref(&group)
+            )
+            .is_none()
+        );
     }
 
     let wrong_role = remove_body_group_bytes(2181, 2180, 1, 0x0000_0005_0000_0000);
     let (scope, group) = remove_body_group_fixture(&wrong_role, 2181, 2180).expect("parses");
-    assert!(crate::design::feature_project::project_remove_body(
-        &scope,
-        std::slice::from_ref(&group)
-    )
-    .is_none());
+    assert!(
+        crate::design::feature_project::body_ops::project_remove_body(
+            &scope,
+            std::slice::from_ref(&group)
+        )
+        .is_none()
+    );
 
     let complete = remove_body_group_bytes(2181, 2180, 1, 0x0000_0004_0000_0000);
     let mut truncated = complete[..complete.len() - 12].to_vec();

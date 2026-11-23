@@ -147,7 +147,7 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
     let mut candidate = CadIr::empty();
     candidate
         .set_native_unknowns(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "rhino",
             &[NativeUnknownRecord {
                 id: unknown.clone(),
@@ -173,7 +173,7 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
         .commit(
             &mut candidate,
             &mut cadmpeg_ir::Annotations::default(),
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
         )
         .unwrap()
         .expect("commit fallback carrier");
@@ -215,7 +215,7 @@ fn colliding_staged_ids_are_rejected_without_mutating_the_candidate() {
         .commit(
             &mut candidate,
             &mut cadmpeg_ir::Annotations::default(),
-            &cadmpeg_test_support::service_decode_context()
+            &cadmpeg_core::decode::test_support::service_decode_context()
         )
         .unwrap()
         .is_err());
@@ -290,7 +290,7 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
     assert_eq!(
         geometry.pcurves[0]
             .fit_tolerance()
-            .map(cadmpeg_ir::geometry::FitTolerance::get),
+            .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
         Some(0.02)
     );
     let PcurveGeometry::Nurbs { nurbs } = &geometry.pcurves[0].geometry else {
@@ -304,7 +304,7 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
     let mut candidate = CadIr::empty();
     candidate
         .set_native_unknowns(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "rhino",
             &[NativeUnknownRecord {
                 id: unknown.clone(),
@@ -317,7 +317,7 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
         .commit(
             &mut candidate,
             &mut cadmpeg_ir::Annotations::default(),
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
         )
         .unwrap()
         .expect("commit staged plane B-rep");
@@ -383,7 +383,7 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
     let mut candidate = CadIr::empty();
     candidate
         .set_native_unknowns(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "rhino",
             &[NativeUnknownRecord {
                 id: unknown,
@@ -396,7 +396,7 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
         .commit(
             &mut candidate,
             &mut cadmpeg_ir::Annotations::default(),
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
         )
         .unwrap()
         .expect("commit Brep with an isolated vertex");

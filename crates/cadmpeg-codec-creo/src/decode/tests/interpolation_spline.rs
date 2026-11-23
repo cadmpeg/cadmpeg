@@ -32,11 +32,18 @@ use crate::decode::uniqueness::unique_feature_profile_definition;
 use crate::feature::schema::SchemaClass;
 use crate::lane_refusal::LaneRefusals;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::direct_edit::ThickenSide;
+use cadmpeg_ir::features::edge_treatments::ChamferSpec;
+use cadmpeg_ir::features::extents::{
+    AngularTermination, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, LinearTermination,
+};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::selections::{EdgeSelection, FaceSelection};
+use cadmpeg_ir::features::surface_inputs::SurfaceBoundary;
 use cadmpeg_ir::features::{
-    edge_treatments::ChamferSpec, AngularTermination, BooleanOp, EdgeSelection, ExtrudeDirection,
-    ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition,
-    FeatureId as IrFeatureId, FeatureOperation as IrFeatureOperation, LinearTermination, PathRef,
-    PlanarProfileRef, ProfileRef, SurfaceBoundary, ThickenSide, UnresolvedFamily,
+    Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
+    FeatureOperation as IrFeatureOperation, UnresolvedFamily,
 };
 use cadmpeg_ir::geometry::{
     pcurve::PcurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
@@ -732,7 +739,7 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
             )
         ).expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::Extrude {
-            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
+            direction: cadmpeg_ir::features::extents::ExtrudeDirection::Explicit {
                 vector: direction,
                 ..
             },
@@ -1163,7 +1170,7 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
         Ok(Some(IrFeatureDefinition::Operation(IrFeatureOperation::Revolve {
             ref construction,
             ..
-        }))) if matches!(construction.extent(), Some(cadmpeg_ir::features::RevolveExtent::OneSided {
+        }))) if matches!(construction.extent(), Some(cadmpeg_ir::features::revolve::RevolveExtent::OneSided {
                     termination: AngularTermination::Angle { angle: value },
                 }) if (value.get() - std::f64::consts::TAU).abs() < EPS_FULL_TURN)
     ));
@@ -1497,7 +1504,7 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
         ))
         .expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::DatumPlane {
-            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+            frame: cadmpeg_ir::features::geometry::FeatureDatumPlaneFrame::new(
                 Point3::new(0.0, 1.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0)
@@ -1517,7 +1524,7 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
         ))
         .expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::DatumPlane {
-            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+            frame: cadmpeg_ir::features::geometry::FeatureDatumPlaneFrame::new(
                 Point3::new(0.0, 1.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0)
@@ -1597,7 +1604,7 @@ fn datum_feature_preserves_its_unique_transferred_plane_chart() {
         ))
         .expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::DatumPlane {
-            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+            frame: cadmpeg_ir::features::geometry::FeatureDatumPlaneFrame::new(
                 Point3::new(0.0, 1.0, 0.0),
                 Vector3::new(0.0, 1.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0)
@@ -1661,7 +1668,7 @@ fn datum_feature_uses_its_unique_complete_local_system() {
         ))
         .expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::DatumPlane {
-            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+            frame: cadmpeg_ir::features::geometry::FeatureDatumPlaneFrame::new(
                 Point3::new(3.0, 4.0, 5.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0)
@@ -1725,7 +1732,7 @@ fn coordinate_system_feature_uses_its_unique_complete_local_system() {
         ))
         .expect("valid test fixture"),
         IrFeatureDefinition::Operation(IrFeatureOperation::DatumCoordinateSystem {
-            frame: cadmpeg_ir::features::FeatureCoordinateFrame::new(
+            frame: cadmpeg_ir::features::geometry::FeatureCoordinateFrame::new(
                 Point3::new(5.0, 6.0, 7.0),
                 Vector3::new(0.0, 1.0, 0.0),
                 Vector3::new(-1.0, 0.0, 0.0),
@@ -1821,7 +1828,7 @@ fn coordinate_system_feature_rejects_a_local_system_outside_the_record_tolerance
 
     // The normalized columns reach the IR frame constructor as unit vectors whose largest
     // pairwise dot is 1.0e-10, and that constructor admits them.
-    assert!(cadmpeg_ir::features::FeatureCoordinateFrame::new(
+    assert!(cadmpeg_ir::features::geometry::FeatureCoordinateFrame::new(
         Point3::new(5.0, 6.0, 7.0),
         Vector3::new(1.0, 0.0, 0.0),
         Vector3::new(1.0e-10, 1.0, 0.0),
@@ -1854,15 +1861,15 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::new(
             definition,
-            cadmpeg_ir::features::DistinctMembers::try_from(outputs)
+            cadmpeg_ir::features::selections::DistinctMembers::try_from(outputs)
                 .expect("distinct output fixture"),
         ),
         native_ref: None,
@@ -1870,7 +1877,7 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
     let mut ir = CadIr::empty();
     ir.model.features.push(feature(
         IrFeatureDefinition::Operation(IrFeatureOperation::Chamfer {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(
+            groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(
                 cadmpeg_ir::features::edge_treatments::ChamferGroup {
                     edges: EdgeSelection::Unresolved,
                     spec: ChamferSpec::Unresolved { form: None },
@@ -1883,7 +1890,7 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
     assert!(!preceding_features_establish_body(&ir));
 
     ir.model.features[0].evaluation.set_outputs(
-        cadmpeg_ir::features::DistinctMembers::try_from(vec![BodyId::mint(
+        cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![BodyId::mint(
             "creo:model:body#1".to_string(),
         )
         .expect("identity grammar")])
@@ -1894,7 +1901,7 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
     ir.model.features[0] = feature(
         IrFeatureDefinition::Operation(IrFeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Native("creo:section#1".to_string())),
-            direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
+            direction: cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {},
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
@@ -1905,7 +1912,7 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
                 },
             },
             op: BooleanOp::NewBody,
-            start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
+            start: cadmpeg_ir::features::extents::ExtrudeStart::ProfilePlane {},
             solid: Some(true),
             face_maker: None,
             inner_wire_taper: None,

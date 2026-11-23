@@ -11,8 +11,8 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    carried_source_losses, target::ResolvedWrite, ArenaCoverage, Consumption, EncodeInput,
-    ExportBody, PatchConsumption, WritePath, WriterLossCode,
+    carried_source_losses, edit_unverified, target::ResolvedWrite, ArenaCoverage, Consumption,
+    EncodeInput, ExportBody, PatchConsumption, WritePath,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
@@ -185,7 +185,7 @@ fn finish(
     };
     let mut losses = carried_source_losses(fidelity, &write_path);
     if baseline == Baseline::Unrecorded {
-        losses.push(WriterLossCode::EditUnverified.note(format!(
+        losses.push(edit_unverified(format!(
             "the FCStd source records no `{DOCUMENT_LOCAL_DIGEST_ATTRIBUTE}` baseline, so edits \
              since decode are not known; the file patches the retained Document.xml with the \
              carried native records and holds no other edit"

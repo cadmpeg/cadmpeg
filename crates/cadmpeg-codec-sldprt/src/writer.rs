@@ -1,39 +1,49 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Semantic SLDPRT writer for analytic B-reps.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::io::Write;
 use std::num::NonZeroU16;
 
 mod accounting;
-mod configuration_manager;
+mod body_drop;
 mod default_properties;
 mod edge_direction;
 mod envelope;
+mod history_drop;
+pub(crate) mod keywords_text;
+mod materials;
+mod metadata_owners;
+pub(crate) mod native;
 mod ownership;
+mod read_back;
+mod reduce;
 pub(crate) mod target;
 
+pub(crate) use accounting::{Held, Unwritten, UnwrittenAttributes};
+
 use crate::native::SldprtNative;
-use cadmpeg_core::convert::{f32_from_f64, truncate_f64_to_u8};
+use cadmpeg_core::convert::f32_from_f64;
 use cadmpeg_core::decode::{index_from_u32, DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::attributes::AttributeValue;
+use cadmpeg_ir::codec::write::capacity::{TextCapacity, TextUnit};
 use cadmpeg_ir::codec::write::{ArenaDisposition, ArenaDispositions};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::features::parameters::DesignConfiguration;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface},
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::scalar::FiniteReal;
-use cadmpeg_ir::topology::{BodyKind, Color, Sense};
+use cadmpeg_ir::topology::{BodyKind, Color, LoopBoundary, Sense};
 use cadmpeg_ir::Annotations;
 
 use crate::SourceRecord;
 
 use crate::container::MARKER;
-use crate::history::write::xml::valid_xml_name;
 
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 const TYPED_BODY_LINEAR_RESOLUTION: f64 = 1.0e-8;
@@ -69,7 +79,10 @@ pub(crate) struct SemanticOutput {
     pub(crate) dialect: cadmpeg_core::dialect::DialectId,
     /// Which model arenas the written document carries.
     pub(crate) coverage: ArenaDispositions,
-    pub(crate) omitted_envelope_bytes: usize,
+    /// The metadata attributes the write did not write, each with why.
+    pub(crate) unwritten: UnwrittenAttributes,
+    /// The write's other losses.
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 /// Writes a semantic document and returns the dialect and arena coverage it
@@ -88,27 +101,45 @@ pub(crate) fn write_semantic_with_records(
         .namespace("sldprt")
         .map(|namespace| SldprtNative::load(namespace).map_err(CodecError::from))
         .transpose()?;
+    // A feature history or feature-input lane the input already holds comes
+    // from a SolidWorks part; the write generates its own for any other source.
+    let solidworks_history = native.as_ref().is_some_and(|native| {
+        !native.feature_histories.is_empty() || !native.feature_input_lanes.is_empty()
+    });
     let input_active_configuration = active_configuration_intent(ir);
+    let source_features = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| native::from_ir::SourceFeature {
+            id: feature.id.as_str().to_owned(),
+            outputs: feature
+                .evaluation
+                .outputs()
+                .iter()
+                .map(|body| body.as_str().to_owned())
+                .collect(),
+        })
+        .collect::<Vec<_>>();
     let mut normalized = ir.clone();
     normalized.model.configurations = configurations_without_synthesized_snapshot(&normalized);
     sort_arenas(&mut normalized);
-    // Export precondition on the normalized input. Keeps full validate_neutral:
-    // writer refusal depends on non-core Checks (e.g. Counts for duplicate
-    // configuration source indices). SLDPRT_EXPORT_PRECONDITION_CHECKS records
-    // the draft/topology floor; narrowing further needs reject-fixture coverage.
-    // The postcondition after bake/prepare (below) also keeps full validate_neutral.
-    let validation = cadmpeg_ir::validate::validate_neutral(&normalized, Vec::new())?;
-    if !validation.is_ok() {
-        let detail = validation
-            .findings
-            .iter()
-            .find(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)
-            .map_or("IR validation failed", |finding| finding.message.as_str());
-        return Err(CodecError::Malformed(detail.into()));
-    }
+    let mut content_losses =
+        reduce::unwritable_content(&mut normalized, !retained_records.is_empty())?;
+    content_losses.extend(reduce::unwritable_carriers(&mut normalized, false)?);
     crate::writer_transform::bake(&mut normalized)?;
     sort_arenas(&mut normalized);
-    assign_configuration_indices(&mut normalized.model.configurations)?;
+    let assigned = assign_configuration_indices(&mut normalized.model.configurations)?;
+    if !assigned.is_empty() {
+        content_losses.push(
+            crate::loss::SldprtLossCode::WriterConfigurationIdentityAssigned.note(format!(
+            "{} configuration name(s) or partition index(es) SLDPRT cannot store as stated are \
+             written as the writer assigned them: {}",
+            assigned.len(),
+            assigned.join("; ")
+        )),
+        );
+    }
     let source_arena = DecodeArena::new();
     let source_context = source_image(retained_records)
         .map(|bytes| DecodeContext::from_root_bytes(bytes, &source_arena, &DecodePolicy::desktop()))
@@ -125,120 +156,162 @@ pub(crate) fn write_semantic_with_records(
             "SLDPRT semantic writes require parsed retained auxiliary Parasolid owners".into(),
         ));
     }
+    let member_records = source_scan
+        .as_ref()
+        .map(|scan| member_records(scan, retained_records, annotations))
+        .transpose()?
+        .flatten();
+    let (retained_records, annotations): (&[SourceRecord<'_>], &Annotations) = match &member_records
+    {
+        Some((records, annotations)) => (records.as_slice(), annotations),
+        None => (retained_records, annotations),
+    };
     let mut source_baseline = None;
-    if default_properties::requires_guard(&normalized, source_scan.as_ref()) {
-        let scan = source_scan.as_ref().ok_or_else(|| {
-            CodecError::NotImplemented(
-                "SLDPRT saved properties require their retained source carrier".into(),
-            )
-        })?;
-        let baseline = retained_source_baseline(&mut source_baseline, source_context.as_ref())?
-            .ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "SLDPRT saved properties require their retained source document".into(),
-                )
-            })?;
-        default_properties::validate(&normalized, &baseline.ir, scan)?;
-        default_properties::validate_retention(scan, retained_records, annotations)?;
+    let mut unwritten = UnwrittenAttributes::default();
+    let mut losses = content_losses;
+    // `export:value.unwritable` entries: texts cut to their field's width.
+    let mut cut = Vec::new();
+    for (id, held) in default_properties::unwritten(&normalized, retained_records, annotations)? {
+        unwritten.record(&id, Unwritten::SavedProperty, held);
     }
     let retained_partition =
         retained_partition(&normalized, source_scan.as_ref(), native.as_ref())?;
-    let feature_name_changes =
-        crate::history::write::feature_name_changes(&normalized, native.as_ref());
-    let feature_parameter_changes_authorized = !feature_name_changes.is_empty()
-        && crate::history::write::native_parameters_match_source(&normalized, native.as_ref())?;
-    crate::history::write::apply_feature_name_changes(
-        &mut normalized.model.parameters,
-        &feature_name_changes,
-    );
-    let ir = &normalized;
-    let feature_input_renames = crate::history::write::prepare_features_for_write(ir, &mut native)?;
-    crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, &mut native)?;
-    crate::history::write::parameters::prepare_parameters_for_write(
-        ir,
-        &mut native,
-        feature_parameter_changes_authorized,
-    )?;
-    // The configuration states are projected again with the profile bodies
-    // the decode bound, read from the retained source image.
-    crate::history::write::configurations::prepare_configurations_for_write(
-        ir,
-        &mut native,
-        annotations,
-        |lanes| {
-            source_image(retained_records)
-                .map(|image| {
-                    crate::resolved_features::assembly::source_image_profiles(image, lanes)
-                })
-                .transpose()
-        },
-    )?;
-    let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new())?;
-    if !validation.is_ok() {
-        let detail = validation
-            .findings
-            .iter()
-            .find(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)
-            .map_or("transformed IR validation failed", |finding| {
-                finding.message.as_str()
-            });
-        return Err(CodecError::Malformed(detail.into()));
-    }
-    check_semantic_support(ir, annotations)?;
-    if ir.geometry.faces.is_empty() {
-        return Err(CodecError::NotImplemented(
-            "semantic SLDPRT writing requires a B-rep".into(),
-        ));
-    }
     // The IR stores canonical millimetres; Parasolid stores metres.
     let length_scale = 0.001;
     let patched_partition = if retained_partition.is_none() {
-        crate::writer_patch::patch_partition(ir, annotations, retained_records, length_scale)?
+        crate::writer_patch::patch_partition(
+            &normalized,
+            annotations,
+            retained_records,
+            length_scale,
+        )?
     } else {
         None
     };
-    let coverage = semantic_coverage(!retained_records.is_empty(), retained_partition.is_some());
     let retain_native_brep = retained_partition.is_some() || patched_partition.is_some();
-    if !retain_native_brep && requires_native_partition(ir) {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT cannot regenerate opaque curve or surface records without a retained native partition".into(),
-        ));
+    if !retain_native_brep {
+        losses.extend(reduce::unwritable_carriers(&mut normalized, true)?);
     }
+    losses.extend(history_drop::foreign_native_operations(&mut normalized));
+    let reducible = history_drop::HistoryDrop::applies(&normalized);
+    let mut displayed_values = history_drop::DisplayedValues::default();
+    let mut renamed = history_drop::Renamed::default();
+    let mut source_definitions = None;
+    if reducible {
+        source_definitions = Some(read_back::SourceDefinitions::of(&normalized));
+        history_drop::clear_foreign_native_refs(&mut normalized, native.as_ref());
+        let (displayed, notes) = history_drop::equations_as_displayed_values(&mut normalized);
+        displayed_values = displayed;
+        losses.extend(notes);
+        renamed = history_drop::foreign_records_as_keywords(&mut normalized);
+    }
+    let mut dropped_history = history_drop::HistoryDrop::default();
+    let feature_input_renames = loop {
+        let snapshot = reducible.then(|| (normalized.model.parameters.clone(), native.clone()));
+        let mut attempt_cut = Vec::new();
+        match prepare_history(
+            &mut normalized,
+            &mut native,
+            annotations,
+            retained_records,
+            &mut attempt_cut,
+        ) {
+            Ok(prepared) => {
+                cut.extend(attempt_cut);
+                losses.extend(prepared.losses);
+                break prepared.renames;
+            }
+            Err(error) => {
+                let Some((parameters, source_native)) = snapshot else {
+                    return Err(error);
+                };
+                normalized.model.parameters = parameters;
+                native = source_native;
+                dropped_history.degrade(&mut normalized, error)?;
+            }
+        }
+    };
+    losses.extend(dropped_history.finish());
+    losses.extend(displayed_values.note(&normalized));
+    losses.extend(renamed.note(&normalized));
+    if let Some(native) = native.as_mut() {
+        losses.extend(keywords_text::readable_keywords(&normalized, native));
+    }
+    if let Some(source_definitions) = &source_definitions {
+        losses.extend(source_definitions.notes(&normalized, native.as_ref()));
+    }
+    let validation = validate_with_model_snapshot(&mut normalized)?;
+    let ir = &normalized;
+    losses.extend(reduce::invalid_records(ir, &validation));
+    if !retain_native_brep {
+        losses.extend(
+            reduce::edge_ranges_omitted(ir, annotations).map_err(CodecError::ResourceLimit)?,
+        );
+        losses.extend(reduce::producer_attributes_omitted(ir));
+    }
+    losses.extend(reduce::empty_output(ir));
+    let brep_empty = ir.geometry.faces.is_empty();
+    let coverage = semantic_coverage(retained_partition.is_some());
+    let mut bodiless_partitions = Vec::new();
+    let mut encodable = None;
     let partition_sections = if let Some(retained) = retained_partition {
         vec![retained]
     } else if let Some(patched) = patched_partition {
         vec![patched]
-    } else if !ir.model.configurations.is_empty() {
-        configuration_partitions(ir, length_scale)?
-    } else {
-        let schema_32001 = ir
-            .geometry
-            .bodies
-            .iter()
-            .any(|body| body.kind == BodyKind::Sheet);
-        let body = brep_body(ir, length_scale, schema_32001)?;
-        let schema = if schema_32001 {
-            "SCH_SW_32001_11000"
+    } else if brep_empty {
+        losses.extend(reduce::faceless_bodies(ir));
+        if source_scan
+            .as_ref()
+            .is_some_and(|scan| crate::container::select_active_parasolid_site(scan).is_none())
+        {
+            // The source holds no partition either.
+            Vec::new()
         } else {
-            "SCH_SW_33103_11000"
-        };
-        vec![(
-            "Contents/Config-0-Partition".to_string(),
-            parasolid_stream(&body, schema)?,
-        )]
+            let generated = faceless_partitions(ir, length_scale)?;
+            bodiless_partitions.extend(generated.bodiless);
+            losses.extend(generated.losses);
+            generated.sections
+        }
+    } else {
+        let encoded = body_drop::encode_without_unwritable_bodies(ir, None, |ir| {
+            generated_partitions(ir, length_scale)
+        })?;
+        losses.extend(encoded.losses);
+        let written = encoded.reduced.as_ref().unwrap_or(ir);
+        losses.extend(reduce::cache_tolerances_omitted(written));
+        losses.extend(reduce::unchained_face_loops(written));
+        encodable = encoded.reduced;
+        let generated = encoded.partitions;
+        bodiless_partitions.extend(generated.bodiless);
+        losses.extend(generated.losses);
+        generated.sections
     };
+    let ir = encodable.as_ref().unwrap_or(ir);
+    losses.extend(cadmpeg_ir::codec::write::record_residual_unavailable(
+        "SLDPRT",
+        "writes each of these partitions, which hold no body, as a partition and a deltas \
+         stream of the schema header alone; sldprt.md states no form for a partition with no body",
+        bodiless_partitions,
+    ));
     let mut generated_partition_sections = partition_sections
         .iter()
         .map(|(section, _)| section.clone())
         .collect::<HashSet<_>>();
     let mut sections = partition_sections;
-    let materials = materials_payload(ir)?;
-    let mut retained_swobjects = retained_swobjects_sections(ir, retained_records, annotations)?;
-    require_named_metadata_members(&retained_swobjects, source_scan.as_ref())?;
-    let original_metadata_sections = retained_swobjects.clone();
-    let replay_swobjects = if retained_swobjects.is_empty() {
-        false
-    } else {
+    let materials = materials::materials_payload(ir)?;
+    let owners = metadata_owners::metadata_owners(
+        ir,
+        retained_records,
+        annotations,
+        source_scan.as_ref(),
+        &generated_partition_sections,
+    );
+    let mut retained_swobjects = owners.patchable.clone();
+    let mut members = MetadataMembers {
+        originals: owners.patchable.iter().cloned().collect(),
+        written: BTreeMap::new(),
+    };
+    let replay_swobjects = if owners.replay() {
         let baseline = ir
             .source
             .as_ref()
@@ -250,76 +323,103 @@ pub(crate) fn write_semantic_with_records(
                     .attributes
                     .get(SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE)
             });
-            let identity_baseline = ir.source.as_ref().and_then(|source| {
-                source
-                    .attributes
-                    .get(SWOBJECTS_METADATA_IDENTITY_LOCAL_DIGEST_ATTRIBUTE)
-            });
-            if material_baseline != Some(&swobjects_material_local_sha256(&digest_ctx, ir)?)
-                || identity_baseline
-                    != Some(&swobjects_metadata_identity_local_sha256(&digest_ctx, ir)?)
-            {
-                return Err(CodecError::NotImplemented(
-                    "SLDPRT writer cannot edit retained SWObjects semantics without replacing opaque record bytes"
-                        .into(),
+            if material_baseline != Some(&swobjects_material_local_sha256(&digest_ctx, ir)?) {
+                let baseline =
+                    retained_source_baseline(&mut source_baseline, source_context.as_ref())?;
+                losses.extend(materials::retained_materials_kept(
+                    ir,
+                    baseline.map(|baseline| &baseline.ir),
                 ));
             }
-            patch_retained_swobjects_metadata(
+            members.written = patch_retained_swobjects_metadata(
                 ir,
                 annotations,
+                &owners,
                 &mut retained_swobjects,
                 length_scale,
-            )?;
+                &mut unwritten,
+            );
+        }
+        if !materials.omitted.is_empty() {
+            // A source that does not decode leaves the note saying the write
+            // cannot tell; it does not refuse the write.
+            let baseline = retained_source_baseline(&mut source_baseline, source_context.as_ref())
+                .ok()
+                .flatten();
+            losses.extend(materials::retained_materials_omitted(
+                ir,
+                baseline.map(|baseline| &baseline.ir),
+            ));
+        }
+        for attribute in metadata_attributes(ir) {
+            if attribute.name != "source_linear_unit_code"
+                && annotations
+                    .provenance
+                    .get(attribute.id.as_str())
+                    .is_some_and(|provenance| owners.unavailable.contains(provenance.stream()))
+            {
+                unwritten.record(
+                    attribute.id.as_str(),
+                    Unwritten::OwnerUnavailable,
+                    Held::Nothing,
+                );
+            }
         }
         true
+    } else {
+        false
     };
-    configuration_manager::validate(ir, annotations, &retained_swobjects)?;
-    let (objects, units) = metadata_payloads(ir, length_scale, replay_swobjects)?;
+    let (objects, units) =
+        metadata_payloads(ir, length_scale, replay_swobjects, &mut unwritten, &mut cut);
     if replay_swobjects {
         generated_partition_sections
             .extend(retained_swobjects.iter().map(|(name, _)| name.clone()));
         for (name, payload) in retained_swobjects {
-            push_generated_metadata_member(
-                &mut sections,
-                &original_metadata_sections,
-                name,
-                payload,
-            )?;
+            members.push(&mut sections, &mut unwritten, name, payload);
         }
     } else {
-        if !materials.is_empty() {
-            sections.push(("SWObjects".into(), materials));
+        if !materials.bytes.is_empty() {
+            sections.push(("SWObjects".into(), materials.bytes));
         }
+        cut.extend(materials.cut);
+        losses.extend(materials.omitted);
         if !objects.is_empty() {
             sections.push(("SWObjects/DocumentMetadata".into(), objects));
         }
     }
     if let Some(units) = units {
-        push_generated_metadata_member(
-            &mut sections,
-            &original_metadata_sections,
-            "Units".into(),
-            units,
-        )?;
+        losses.push(crate::loss::SldprtLossCode::WriterUnitsMemberGenerated.note(
+            "the document's linear unit code is written as SW_UnitsLinear in a generated Units \
+             member, a member no SolidWorks file is known to hold; SolidWorks files state it as \
+             SW_UnitsLinear of the default saved-property carrier",
+        ));
+        members.push(&mut sections, &mut unwritten, "Units".into(), units);
     }
     if !ir.model.tessellations.is_empty() {
         let baseline = retained_source_baseline(&mut source_baseline, source_context.as_ref())?;
         if let Some(retained) = retained_display_sections(ir, baseline, source_scan.as_ref())? {
             for (section, payload) in retained {
-                push_generated_metadata_member(
-                    &mut sections,
-                    &original_metadata_sections,
-                    section,
-                    payload,
-                )?;
+                members.push(&mut sections, &mut unwritten, section, payload);
             }
         } else {
-            push_generated_metadata_member(
+            let (payload, omitted) = tessellation_payload(ir, length_scale)?;
+            if !omitted.is_empty() {
+                losses.push(
+                    crate::loss::SldprtLossCode::WriterTessellationMetadataOmitted.note(format!(
+                        "{} tessellation(s) state auxiliary channels other than the three the \
+                         SLDPRT display-list table carries after the strip, position and normal \
+                         channels; they are written with the table's default channels: {}",
+                        omitted.len(),
+                        omitted.join(", ")
+                    )),
+                );
+            }
+            members.push(
                 &mut sections,
-                &original_metadata_sections,
+                &mut unwritten,
                 "Contents/DisplayLists".into(),
-                tessellation_payload(ir, length_scale)?,
-            )?;
+                payload,
+            );
         }
     }
     let retained_histories = if native
@@ -334,6 +434,8 @@ pub(crate) fn write_semantic_with_records(
     } else {
         Vec::new()
     };
+    let mut history_members = Vec::new();
+    let mut stored_sections = HashMap::<String, usize>::new();
     for (index, history) in native
         .iter()
         .flat_map(|native| &native.feature_histories)
@@ -343,32 +445,49 @@ pub(crate) fn write_semantic_with_records(
             || format!("Contents/Keywords-{index}"),
             |provenance| provenance.stream().to_owned(),
         );
-        push_generated_metadata_member(
-            &mut sections,
-            &original_metadata_sections,
-            section.clone(),
-            retained_history_payload(history, &section, &retained_histories)?,
-        )?;
+        let source_blocks = retained_blocks(retained_records, annotations, &section);
+        match crate::history::write::keywords::history_member(
+            history,
+            &section,
+            &retained_histories,
+            &source_blocks,
+            &mut losses,
+        )? {
+            Some(payload) => history_members.push((section, history.id.as_str(), payload)),
+            None => {
+                let stored = source_blocks.iter().flatten().count();
+                if stored != 0 {
+                    stored_sections.insert(section, stored);
+                }
+            }
+        }
+    }
+    for (section, history, payload) in history_members {
+        if let Some(stored) = stored_sections.get(&section) {
+            losses.push(
+                crate::loss::SldprtLossCode::WriterHistoryRegenerationRefused.note(format!(
+                    "Keywords member {section}: another history of the member is not \
+                     regenerated, so the {stored} retained source block(s) of the member are \
+                     written as stored in place of every member generated for it; history \
+                     {history} is in the file only as those blocks hold it, so its edits are not \
+                     written"
+                )),
+            );
+            continue;
+        }
+        members.push(&mut sections, &mut unwritten, section, payload);
     }
     for lane in native.iter().flat_map(|native| &native.feature_input_lanes) {
-        let section = lane.configuration.as_ref().map_or_else(
-            || {
-                annotations.provenance.get(&lane.id).map_or_else(
-                    || "Contents/ResolvedFeatures".into(),
-                    |provenance| provenance.stream().to_owned(),
-                )
-            },
-            |configuration| format!("Contents/Config-{configuration}-ResolvedFeatures"),
-        );
+        let section = lane_section(lane, annotations);
         let histories = native
             .as_ref()
             .map_or(&[][..], |native| native.feature_histories.as_slice());
-        push_generated_metadata_member(
+        members.push(
             &mut sections,
-            &original_metadata_sections,
+            &mut unwritten,
             section,
             resolved_feature_payload(lane, histories, &feature_input_renames)?,
-        )?;
+        );
     }
     let patch_active_configuration = if input_active_configuration.is_some() {
         let baseline = retained_source_baseline(&mut source_baseline, source_context.as_ref())?;
@@ -378,10 +497,10 @@ pub(crate) fn write_semantic_with_records(
     } else {
         false
     };
-    let emitted_sections = sections
-        .iter()
-        .map(|(name, _)| name.clone())
-        .collect::<HashSet<_>>();
+    let mut emitted_sections = HashMap::<String, usize>::new();
+    for (name, _) in &sections {
+        *emitted_sections.entry(name.clone()).or_default() += 1;
+    }
     let opaque = opaque_blocks(
         ir,
         retained_records,
@@ -392,68 +511,422 @@ pub(crate) fn write_semantic_with_records(
         patch_active_configuration,
     )?;
     let document_envelope = crate::container::first_solidworks_envelope(
-        opaque.iter().map(|(_, payload)| payload.as_slice()),
+        opaque.blocks.iter().map(|(_, payload)| payload.as_slice()),
     );
+    let skeleton = retained_records.is_empty() && {
+        let kept = ir
+            .model
+            .features
+            .iter()
+            .map(|feature| feature.id.as_str())
+            .collect::<HashSet<_>>();
+        let left_out = source_features
+            .iter()
+            .filter(|feature| !kept.contains(feature.id.as_str()))
+            .cloned()
+            .collect::<Vec<_>>();
+        let written = native_skeleton(
+            ir,
+            native.as_ref(),
+            solidworks_history,
+            &left_out,
+            &mut sections,
+        );
+        let skeleton = written.is_ok();
+        losses.extend(written.unwrap_or_else(|reason| {
+            vec![crate::loss::SldprtLossCode::WriterNativeSkeletonOmitted
+                .note(format!("the native skeleton is not written: {reason}"))]
+        }));
+        skeleton
+    };
     if let Some(active) = ir.model.configurations.iter().find(|value| value.active) {
         let active_name = active.name.as_deref().ok_or_else(|| {
             CodecError::Malformed("active SLDPRT configuration has no resolved name".into())
         })?;
-        if document_envelope.is_none() {
-            push_generated_metadata_member(
+        if document_envelope.is_none() && !skeleton {
+            members.push(
                 &mut sections,
-                &original_metadata_sections,
+                &mut unwritten,
                 "Contents/SolidWorks".into(),
                 generated_solidworks_xml(ir, active_name),
-            )?;
+            );
         }
     }
-    for (section, payload) in opaque {
-        push_generated_metadata_member(
-            &mut sections,
-            &original_metadata_sections,
-            section,
-            payload,
-        )?;
+    for (section, payload) in opaque.blocks {
+        members.push(&mut sections, &mut unwritten, section, payload);
     }
     let written_declaration = document_envelope.and_then(|envelope| envelope.sw_version);
     let written_dialect =
         crate::dialect::SldprtDialect::from_declaration(written_declaration.as_deref()).id();
 
-    if let Some(scan) = source_scan.as_ref() {
-        default_properties::validate_emitted(scan, &sections)?;
-    }
-    let type_ids = section_type_ids(source_scan.as_ref(), &sections)?;
+    let type_ids = section_type_ids(source_scan.as_ref(), &sections);
     let envelope = envelope::build(&sections, &type_ids, source_scan.as_ref())?;
     writer.write_all(&envelope.bytes)?;
+    losses.extend(envelope.losses());
+    let written_streams = sections
+        .iter()
+        .map(|(name, _)| name.as_str())
+        .chain(generated_partition_sections.iter().map(String::as_str))
+        .collect::<HashSet<_>>();
+    losses.extend(cadmpeg_ir::codec::write::native_records_omitted(
+        "SLDPRT",
+        "because a native envelope holds no compound-file stream",
+        retained_records
+            .iter()
+            .filter(|record| {
+                record
+                    .id
+                    .as_str()
+                    .starts_with("sldprt:file:compound-stream#")
+            })
+            .filter(|record| {
+                annotations
+                    .provenance
+                    .get(record.id.as_str())
+                    .is_none_or(|provenance| !written_streams.contains(provenance.stream()))
+            })
+            .map(|record| record.id.as_str()),
+    ));
+    losses.extend(cadmpeg_ir::codec::write::value_unwritable(
+        "SLDPRT",
+        "cuts these texts at a character boundary to their field's width",
+        cut,
+    ));
+    losses.extend(cadmpeg_ir::codec::write::native_records_omitted(
+        "SLDPRT",
+        "because the write generates fewer members of their stream than the source stores",
+        opaque.replaced,
+    ));
+    losses.extend(cadmpeg_ir::codec::write::native_records_omitted(
+        "SLDPRT",
+        "because the source fidelity holds no bytes of them",
+        opaque.unavailable,
+    ));
     Ok(SemanticOutput {
         dialect: written_dialect,
         coverage,
-        omitted_envelope_bytes: envelope.omitted_envelope_bytes,
+        unwritten,
+        losses,
     })
 }
 
-/// What the semantic writer does with each model arena.
-/// `subds` are `Dropped` because `check_semantic_support` refuses them when
-/// non-empty.
+/// The `ResolvedFeatures` stream the skeleton's default tree opens, ahead of
+/// a generated sketch lane already written there.
+const SKELETON_RESOLVED: &str = "Contents/Config-0-ResolvedFeatures";
+
+/// Add the native object structure of a generated part (`writer::native`)
+/// to `sections`. A generated sketch lane already in
+/// [`SKELETON_RESOLVED`] follows the default tree there. Returns the losses
+/// the skeleton states, or why it is not written; `sections` is then
+/// unchanged.
 ///
-/// `patched` states that retained source records fed the write; `retained_brep`
-/// states that the retained Parasolid partition was replayed because
-/// `brep_local_sha256` still matches. Only that partition carries pcurves and
-/// procedural constructions: the generated and patched partitions do not
-/// encode them. Retained semantic PMI is carried only by the retained
-/// `PMISemanticDataDB` block, which exists only on the patched path;
-/// `check_semantic_support` refuses PMI that differs from its baseline. Design
+/// `left_out` holds the source features the write leaves out.
+/// `solidworks_history` states that the input holds a feature history or
+/// lane of a `SolidWorks` part. Its lane's class tags index the class map of
+/// that part's `Contents/Config-0`, which a write without the source's
+/// bytes does not hold; a skeleton `Contents/Config-0` would give them
+/// another map, and its tree would stand in front of the lane's objects.
+fn native_skeleton(
+    ir: &CadIr,
+    native: Option<&SldprtNative>,
+    solidworks_history: bool,
+    left_out: &[native::from_ir::SourceFeature],
+    sections: &mut Vec<(String, Vec<u8>)>,
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, String> {
+    if solidworks_history {
+        return Err(
+            "the document's feature history or feature-input lanes come from a \
+                    SolidWorks part, whose lanes refer to the class map of a Contents/Config-0 \
+                    stream the write does not hold"
+                .into(),
+        );
+    }
+    let name = ir
+        .source
+        .as_ref()
+        .and_then(|source| source.attributes.get("sw_name"))
+        .map(|name| native_part_name(name))
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "Part1".to_owned());
+    let active = ir
+        .model
+        .configurations
+        .iter()
+        .find(|value| value.active)
+        .and_then(|value| value.name.clone())
+        .unwrap_or_else(|| "Default".to_owned());
+    // The skeleton's stored bodies, parameters and last folders take
+    // identifiers after the history summary's, so the decoder binds no
+    // summary feature to a skeleton object.
+    let last_feature = native
+        .iter()
+        .flat_map(|native| &native.feature_histories)
+        .flat_map(|history| &history.features)
+        .filter_map(crate::records::Feature::source_value)
+        .max();
+    let (features, unwritten_extrusion, lane_reason) =
+        match native::from_ir::features(ir, native, left_out).map_err(|error| error.to_string())? {
+            native::from_ir::Features::Native {
+                features,
+                unwritten_extrusion,
+            } => (features, unwritten_extrusion, None),
+            native::from_ir::Features::Lane(reason) => (Vec::new(), None, Some(reason)),
+        };
+    // The body a native extrusion makes is not also written as a stored body.
+    let extruded = features
+        .iter()
+        .any(|feature| matches!(feature, native::Feature::Extrusion(_)));
+    let stored = if extruded {
+        0
+    } else {
+        ir.geometry.bodies.len()
+    };
+    let streams = native::Numbering::new(last_feature, stored, &features)
+        .and_then(|numbering| {
+            let bodies = ir
+                .geometry
+                .bodies
+                .iter()
+                .take(stored)
+                .enumerate()
+                .map(|(index, body)| {
+                    native::Body::numbered(&name, &numbering, index, body.kind == BodyKind::Sheet)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            native::skeleton(&native::Facts {
+                numbering,
+                name: &name,
+                active: &active,
+                features: &features,
+                bodies: &bodies,
+            })
+        })
+        .map_err(|error| error.to_string())?;
+    let native_features = features
+        .iter()
+        .map(native::Feature::id)
+        .collect::<HashSet<_>>();
+    if let Some((stream, _)) = streams.iter().find(|(stream, _)| {
+        stream != SKELETON_RESOLVED && sections.iter().any(|(candidate, _)| candidate == stream)
+    }) {
+        return Err(format!("the write already holds a {stream} stream"));
+    }
+    let mut lane_merged = false;
+    for (stream, payload) in streams {
+        if let Some((_, existing)) = sections
+            .iter_mut()
+            .find(|(candidate, _)| *candidate == stream)
+        {
+            // The generated lane holds the sketches' marker records; the
+            // tree holds them as native sketches when it writes them.
+            let mut merged = payload;
+            if lane_reason.is_some() {
+                merged.append(existing);
+                lane_merged = true;
+            }
+            *existing = merged;
+        } else {
+            sections.push((stream, payload));
+        }
+    }
+    let summaries = sections
+        .iter()
+        .map(|(stream, _)| stream.as_str())
+        .filter(|stream| stream.starts_with("Contents/Keywords"))
+        .collect::<Vec<_>>();
+    let summarized_features = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| !native_feature_written(native, feature, &native_features))
+        .map(|feature| feature.id.as_str().to_owned())
+        .collect::<Vec<_>>();
+    let summarized = (!summaries.is_empty() && !summarized_features.is_empty()).then(|| {
+        (
+            summaries.join(", "),
+            summarized_features,
+            unwritten_extrusion,
+        )
+    });
+    let origin_relations = features
+        .iter()
+        .filter_map(|feature| match feature {
+            native::Feature::Sketch(sketch) if native::sketch::one_circle_about_origin(sketch) => {
+                Some(sketch.name.clone())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    Ok(native_skeleton_losses(
+        summarized,
+        lane_reason.filter(|_| lane_merged),
+        !features.is_empty(),
+        &origin_relations,
+        extruded.then_some(left_out),
+    ))
+}
+
+/// Whether the native tree writes `feature`: its history record's source id
+/// is one of `written`.
+fn native_feature_written(
+    native: Option<&SldprtNative>,
+    feature: &cadmpeg_ir::features::Feature,
+    written: &HashSet<u32>,
+) -> bool {
+    let record = feature.native_ref.clone().unwrap_or_else(|| {
+        crate::history::write::features::generated_feature_record_id(&feature.id)
+    });
+    native
+        .iter()
+        .flat_map(|native| &native.feature_histories)
+        .flat_map(|history| &history.features)
+        .find(|candidate| candidate.id == record)
+        .and_then(crate::records::Feature::source_value)
+        .is_some_and(|source| written.contains(&source))
+}
+
+/// The part name a `sw_name` attribute states: its last path component
+/// without the `.sldprt` extension.
+fn native_part_name(name: &str) -> String {
+    let base = name.rsplit(['/', '\\']).next().unwrap_or(name);
+    let stem = base
+        .len()
+        .checked_sub(".sldprt".len())
+        .filter(|&cut| base.is_char_boundary(cut) && base[cut..].eq_ignore_ascii_case(".sldprt"))
+        .map_or(base, |cut| &base[..cut]);
+    stem.to_owned()
+}
+
+/// The losses of a written native skeleton. `summarized` holds the history
+/// summary streams and the features written only in them, when the write
+/// holds one. `features` states that the tree writes native sketches;
+/// `origin_relations` names those it writes with the centre's coincidence
+/// with the origin point; `extruded` holds, when it writes a native
+/// extrusion, the source features the write leaves out.
+fn native_skeleton_losses(
+    summarized: Option<(String, Vec<String>, Option<String>)>,
+    lane_follows: Option<String>,
+    features: bool,
+    origin_relations: &[String],
+    extruded: Option<&[native::from_ir::SourceFeature]>,
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use crate::loss::SldprtLossCode;
+    let mut losses = Vec::new();
+    if let Some((streams, features, unwritten_extrusion)) = summarized {
+        losses.push(SldprtLossCode::WriterNativeHistorySummary.note(format!(
+            "{} source feature(s) are written only in the cadmpeg history summary {streams}, \
+             a stream SolidWorks parts do not hold; the native feature tree holds the default \
+             tree, the features it writes natively and one moBaseBody_c stored body per body it \
+             makes no extrusion of: {}{}",
+            features.len(),
+            features.join(", "),
+            unwritten_extrusion
+                .map(|reason| format!("; the tree writes no extrusion natively because {reason}"))
+                .unwrap_or_default()
+        )));
+    }
+    let (runs, bytes) = native::detailing_zero_runs();
+    losses.extend([
+        SldprtLossCode::WriterNativeSkeletonUnlaidRuns.note(format!(
+            "the native skeleton writes as zero bytes the byte runs whose fields sldprt.md does \
+             not lay out, and native parts of swVersion 14000 hold values in most of them: {runs} \
+             runs ({bytes} bytes) of the moRelMgr_c detailing settings (EV-19), {}{}; \
+             swXmlContents/Features declares no swVersion, so the part names 14000 only in the \
+             _MO_VERSION_14000 storage name and in moPart_c's version word",
+            native::OTHER_ZERO_RUNS,
+            if features {
+                format!("; {}", native::sketch::FEATURE_ZERO_RUNS)
+            } else {
+                String::new()
+            }
+        )),
+        SldprtLossCode::WriterNativeStreamsOmitted.note(format!(
+            "the native skeleton leaves out these streams, which every native part of \
+             swVersion 14000 holds: {}; and the streams native parts hold in some files \
+             (PreviewPNG, Contents/Config-0-GhostPartition, swXmlContents/MATERIALTREE, \
+             swXmlContents/Tables, the ThirdPty and _DL_VERSION streams), and the object \
+             streams of configurations other than the first",
+            native::OMITTED_STREAMS.join(", ")
+        )),
+    ]);
+    if let Some(reason) = lane_follows {
+        losses.push(SldprtLossCode::WriterNativeSketchLaneOrphan.note(format!(
+            "the generated sketch marker records follow the native feature tree in \
+             Contents/Config-0-ResolvedFeatures with no owning moProfileFeature_c object, so an \
+             exact walk of the stream stops at the first of them; the tree writes no sketch \
+             natively because {reason}"
+        )));
+    }
+    if features {
+        losses.push(SldprtLossCode::WriterNativeSketchProfileBodyKept.note(
+            "each native sketch writes, after its u32 3, flag byte 0, its profile body and no \
+             edge reference, a form no native sketch of swVersion 14000 holds: a native top-level \
+             sketch writes flag byte 1 and no body, and a sketch written in place writes flag \
+             byte 0, the body and one or more edge references; the body stays because cadmpeg \
+             reads a written sketch's geometry and placement from it",
+        ));
+    }
+    if !origin_relations.is_empty() {
+        losses.push(
+            SldprtLossCode::WriterNativeSketchOriginRelationAdded.note(format!(
+                "{} native sketch(es) hold one circle whose centre lies at the origin; each is \
+                 written as native sketches of one circle about the origin are, with the origin \
+                 point's projection and a coincidence (relation type 9) of the projection and \
+                 the circle's centre, a relation the document does not state: {}",
+                origin_relations.len(),
+                origin_relations.join(", ")
+            )),
+        );
+    }
+    let Some(left_out) = extruded else {
+        return losses;
+    };
+    if !left_out.is_empty() {
+        losses.push(SldprtLossCode::WriterBodiesOmitted.note(format!(
+            "the native extrusion makes the written part's one body; {} source feature(s) the \
+             write leaves out made only bodies it omits with them, which the native tree does \
+             not hold: {}",
+            left_out.len(),
+            left_out
+                .iter()
+                .map(|feature| format!("{} made {}", feature.id, feature.outputs.join(", ")))
+                .collect::<Vec<_>>()
+                .join("; ")
+        )));
+    }
+    losses.push(SldprtLossCode::WriterNativeBodyIdentityOmitted.note(
+        "the native extrusion names no face of the body it makes: its moPerBodyChooserData_c \
+         holds no face reference, where native parts of swVersion 14000 hold two whose hops name \
+         the extrusion and a sketch entity, and the partition's faces carry no FACE_ID_2001 \
+         attribute naming the feature that made them; its moBBoxCenterData_c writes a zero point, \
+         a zero length and identifier 0, where native parts hold the centre of the body's box, a \
+         non-zero length and a non-zero identifier",
+    ));
+    losses
+}
+
+/// What the semantic writer does with each model arena.
+/// `subds` are `Dropped`: `WriterSubdOmitted` names every subdivision surface.
+///
+/// `retained_brep` states that the retained Parasolid partition was replayed
+/// because `brep_local_sha256` still matches. Only that partition carries
+/// pcurves and procedural constructions: the generated and patched partitions
+/// do not encode them. `pmi` is `Reported`: the retained `PMISemanticDataDB`
+/// block carries the PMI its baseline digests, `WriterPmiOmitted` names PMI
+/// with no such block or baseline, and `export:edit.dropped` names PMI that
+/// differs from its baseline. Design
 /// records reach the output through the native history lanes, synchronized
 /// from the neutral arenas declared `Written`; the other document arenas are
 /// not read.
 /// `appearances`, `appearance_bindings` and `attributes` are `Reported` because
-/// `WriterUnboundAppearancesOmitted`, `WriterAppearanceBindingsOmitted` and
-/// `WriterAttributesOmitted` account for their withheld records, respectively.
+/// `WriterUnboundAppearancesOmitted`, `WriterAppearanceBindingsOmitted`, and
+/// `WriterAttributesOmitted` with `export:edit.dropped` account for their
+/// withheld records, respectively.
 /// `curves` is `Reported` unless `retained_brep` is true because
 /// `WriterSphereSeamCurvesOmitted` accounts for withheld degenerate sphere-seam curves.
 /// `tessellations` stays `Written`: every mesh is written, and
 /// `WriterTessellationMetadataOmitted` charges only fields of written meshes.
-fn semantic_coverage(patched: bool, retained_brep: bool) -> ArenaDispositions {
+fn semantic_coverage(retained_brep: bool) -> ArenaDispositions {
     use ArenaDisposition::{Dropped, Ignored, Omitted, Reported, Written};
     let brep_carried = if retained_brep { Written } else { Omitted };
     ArenaDispositions {
@@ -498,7 +971,7 @@ fn semantic_coverage(patched: bool, retained_brep: bool) -> ArenaDispositions {
         appearances: Reported,
         appearance_bindings: Reported,
         attributes: Reported,
-        pmi: if patched { Written } else { Omitted },
+        pmi: Reported,
         presentation_layers: Omitted,
         physical_materials: Omitted,
         mass_properties: Omitted,
@@ -513,32 +986,44 @@ fn semantic_coverage(patched: bool, retained_brep: bool) -> ArenaDispositions {
     }
 }
 
+/// Give each configuration the distinct name and partition index SLDPRT
+/// stores, and return an entry for each one the writer assigned.
 fn assign_configuration_indices(
-    configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
-) -> Result<(), CodecError> {
+    configurations: &mut [cadmpeg_ir::features::parameters::DesignConfiguration],
+) -> Result<Vec<String>, CodecError> {
+    let mut assigned = Vec::new();
     let mut used = HashSet::new();
     let mut names = HashSet::new();
-    for configuration in configurations.iter() {
-        let Some(name) = configuration.name.as_deref() else {
-            return Err(CodecError::Malformed(
-                "SLDPRT configuration has no resolved name".into(),
-            ));
-        };
-        if name.trim().is_empty() {
-            return Err(CodecError::Malformed(
-                "SLDPRT configuration has an empty name".into(),
-            ));
+    for (position, configuration) in configurations.iter_mut().enumerate() {
+        let stated = configuration
+            .name
+            .clone()
+            .filter(|name| !name.trim().is_empty());
+        let base = stated
+            .clone()
+            .unwrap_or_else(|| format!("Configuration {}", position + 1));
+        let mut name = base.clone();
+        let mut copy = 2_usize;
+        while names.contains(&name) {
+            name = format!("{base} ({copy})");
+            copy += 1;
         }
-        if !names.insert(name) {
-            return Err(CodecError::malformed(format_args!(
-                "SLDPRT repeats configuration name {name:?}"
-            )));
+        if stated.as_deref() != Some(name.as_str()) {
+            assigned.push(format!(
+                "{} name {:?} written as {name:?}",
+                configuration.id.as_str(),
+                configuration.name.as_deref().unwrap_or_default()
+            ));
+            configuration.name = Some(name.clone());
         }
+        names.insert(name);
         if let Some(index) = configuration.source_index {
             if !used.insert(index) {
-                return Err(CodecError::malformed(format_args!(
-                    "duplicate SLDPRT configuration source index {index}"
-                )));
+                assigned.push(format!(
+                    "{} source index {index} repeats another configuration's and is reassigned",
+                    configuration.id.as_str()
+                ));
+                configuration.source_index = None;
             }
         }
     }
@@ -553,7 +1038,7 @@ fn assign_configuration_indices(
                 Some(reserve_configuration_index(&mut used, &mut next)?);
         }
     }
-    Ok(())
+    Ok(assigned)
 }
 
 fn generated_solidworks_xml(ir: &CadIr, active: &str) -> Vec<u8> {
@@ -588,7 +1073,7 @@ fn push_xml_attribute_value(output: &mut String, value: &str) {
 /// Nothing in the file encodes that snapshot, so it cannot be written back.
 pub(crate) fn configurations_without_synthesized_snapshot(
     ir: &CadIr,
-) -> Vec<cadmpeg_ir::features::DesignConfiguration> {
+) -> Vec<cadmpeg_ir::features::parameters::DesignConfiguration> {
     let mut configurations = ir.model.configurations.clone();
     let Some(id) = ir.source.as_ref().and_then(|source| {
         source
@@ -605,6 +1090,45 @@ pub(crate) fn configurations_without_synthesized_snapshot(
         }
     }
     configurations
+}
+
+/// Validate `ir` as its written part decodes when the model suppresses a
+/// feature: the decoder restates the synthesized active snapshot from the
+/// model, and validation requires the active configuration to state each
+/// suppression. The snapshot is cleared again for the write.
+fn validate_with_model_snapshot(
+    ir: &mut CadIr,
+) -> Result<cadmpeg_ir::report::check::ValidationReport, CodecError> {
+    let synthesized = ir.source.as_ref().and_then(|source| {
+        source
+            .attributes
+            .get("sldprt_configuration_snapshot_synthesized")
+    });
+    let Some(index) = synthesized
+        .and_then(|id| {
+            ir.model
+                .configurations
+                .iter()
+                .position(|configuration| configuration.id.as_str() == id)
+        })
+        .filter(|_| {
+            ir.model
+                .features
+                .iter()
+                .any(|feature| feature.suppressed == Some(true))
+        })
+    else {
+        return cadmpeg_ir::validate::validate_neutral(ir, Vec::new());
+    };
+    let snapshot = crate::decode::model_snapshot(&ir.model);
+    let configuration = &mut ir.model.configurations[index];
+    configuration.parameter_values = snapshot.parameter_values;
+    configuration.feature_states = snapshot.feature_states;
+    let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new());
+    let configuration = &mut ir.model.configurations[index];
+    configuration.parameter_values.clear();
+    configuration.feature_states.clear();
+    validation
 }
 
 fn sort_arenas(ir: &mut CadIr) {
@@ -634,6 +1158,70 @@ fn sort_arenas(ir: &mut CadIr) {
     ir.model
         .appearance_bindings
         .sort_by(|left, right| left.id.cmp(&right.id));
+}
+
+/// `retained` and a record of each member of the source image that no
+/// retained record holds, with the provenance the decode notes for a retained
+/// member; `None` when every member has a record. A record holds the member
+/// of its id, or else a member of its provenance stream. A part decoded with
+/// no face keeps records of its source image and active Parasolid site; with
+/// these records the write carries or names each of its other members as it
+/// does for a part with faces.
+fn member_records<'a>(
+    scan: &'a crate::container::ContainerScan<'_>,
+    retained: &[SourceRecord<'a>],
+    annotations: &Annotations,
+) -> Result<Option<(Vec<SourceRecord<'a>>, Annotations)>, CodecError> {
+    let members = scan
+        .sections()
+        .map(|member| (member.native_id(), member))
+        .collect::<Vec<_>>();
+    let member_ids = members
+        .iter()
+        .map(|(id, _)| id.as_str())
+        .collect::<HashSet<_>>();
+    let record_ids = retained
+        .iter()
+        .map(|record| record.id.as_str())
+        .collect::<HashSet<_>>();
+    let mut unplaced = HashMap::<&str, usize>::new();
+    for record in retained
+        .iter()
+        .filter(|record| !member_ids.contains(record.id.as_str()))
+    {
+        if let Some(provenance) = annotations.provenance.get(record.id.as_str()) {
+            *unplaced.entry(provenance.stream()).or_default() += 1;
+        }
+    }
+    let mut unrecorded = Vec::new();
+    for (id, member) in members {
+        if record_ids.contains(id.as_str()) {
+            continue;
+        }
+        match unplaced.get_mut(member.source_stream().as_str()) {
+            Some(count) if *count > 0 => *count -= 1,
+            _ => unrecorded.push((id, member)),
+        }
+    }
+    if unrecorded.is_empty() {
+        return Ok(None);
+    }
+    let mut annotations = annotations.clone();
+    let mut records = retained
+        .iter()
+        .map(|record| SourceRecord {
+            id: record.id.clone(),
+            data: record.data,
+        })
+        .collect::<Vec<_>>();
+    for (id, member) in unrecorded {
+        crate::annotations::note_member_record(&mut annotations, member)?;
+        records.push(SourceRecord {
+            id,
+            data: Some(member.stored_payload()),
+        });
+    }
+    Ok(Some((records, annotations)))
 }
 
 fn source_image<'a>(records: &[SourceRecord<'a>]) -> Option<&'a [u8]> {
@@ -696,10 +1284,12 @@ fn remapped_partition_section(ir: &CadIr, native: &SldprtNative, section: &str) 
     Some(format!("Contents/Config-{new_index}-Partition"))
 }
 
+/// Each section's time/date word: the next one the source stores for a
+/// member of its name, `None` past them.
 fn section_type_ids(
     source_scan: Option<&crate::container::ContainerScan<'_>>,
     sections: &[(String, Vec<u8>)],
-) -> Result<Vec<u32>, CodecError> {
+) -> Vec<Option<u32>> {
     let mut source_ids: HashMap<String, VecDeque<u32>> = HashMap::new();
     if let Some(scan) = source_scan {
         for block in &scan.blocks {
@@ -713,161 +1303,8 @@ fn section_type_ids(
     }
     sections
         .iter()
-        .enumerate()
-        .map(|(index, (section, _))| {
-            source_ids
-                .get_mut(section)
-                .and_then(VecDeque::pop_front)
-                .map_or_else(
-                    || {
-                        0x20u32
-                            .checked_add(u32::try_from(index).map_err(|_| {
-                                CodecError::NotImplemented(
-                                    "SLDPRT section count exceeds type-id space".into(),
-                                )
-                            })?)
-                            .ok_or_else(|| {
-                                CodecError::NotImplemented("SLDPRT type-id overflow".into())
-                            })
-                    },
-                    Ok,
-                )
-        })
+        .map(|(section, _)| source_ids.get_mut(section).and_then(VecDeque::pop_front))
         .collect()
-}
-
-fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), CodecError> {
-    let pmi_baseline = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get(PMI_LOCAL_DIGEST_ATTRIBUTE));
-    if (pmi_baseline.is_some() || !ir.model.pmi.is_empty())
-        && pmi_baseline != Some(&pmi_local_sha256(ir)?)
-    {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT writer cannot edit retained SWIFT semantic PMI".into(),
-        ));
-    }
-    if ir.source.as_ref().is_some_and(|source| {
-        source
-            .attributes
-            .contains_key("sldprt_active_partition_unresolved")
-    }) && ir
-        .model
-        .configurations
-        .iter()
-        .all(|configuration| !configuration.active)
-    {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT semantic writing requires an active partition identity for a multi-partition source"
-                .into(),
-        ));
-    }
-    if !ir.model.configurations.is_empty()
-        && ir
-            .model
-            .configurations
-            .iter()
-            .filter(|configuration| configuration.active)
-            .count()
-            != 1
-    {
-        return Err(CodecError::Malformed(
-            "SLDPRT writing requires exactly one active configuration".into(),
-        ));
-    }
-    if !ir.geometry.subds.is_empty() {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT semantic writer does not support SubD surfaces".into(),
-        ));
-    }
-    for surface in &ir.geometry.surfaces {
-        match &surface.geometry {
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-                let ratio = cone_surface.ratio().get();
-                let half_angle = cone_surface.half_angle().get();
-                if ratio != 1.0 {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT surface {} has elliptical cone ratio {}; compact cone carriers encode circular cones only",
-                        surface.id.as_str(), ratio
-                    )));
-                }
-                if !(half_angle > 0.0 && half_angle < std::f64::consts::FRAC_PI_2) {
-                    return Err(CodecError::NotImplemented(format!(
-                        "SLDPRT surface {} has cone half-angle {}; compact cone carriers require an acute positive half-angle",
-                        surface.id.as_str(), half_angle
-                    )));
-                }
-            }
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
-                if {
-                    let radius = sphere_surface.radius().get();
-                    radius < 0.0
-                } =>
-            {
-                let radius = sphere_surface.radius().get();
-                return Err(CodecError::NotImplemented(format!(
-                    "SLDPRT surface {} has signed sphere radius {}; compact sphere carriers require a positive radius",
-                    surface.id.as_str(), radius
-                )));
-            }
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
-                if {
-                    let major_radius = torus_surface.major_radius().get();
-                    let minor_radius = torus_surface.minor_radius().get();
-                    !(major_radius > minor_radius && minor_radius > 0.0)
-                } =>
-            {
-                let major_radius = torus_surface.major_radius().get();
-                let minor_radius = torus_surface.minor_radius().get();
-                return Err(CodecError::NotImplemented(format!(
-                    "SLDPRT surface {} has torus radii ({}, {}); compact torus carriers require major > minor > 0",
-                    surface.id.as_str(), major_radius, minor_radius
-                )));
-            }
-            _ => {}
-        }
-    }
-    for body in &ir.geometry.bodies {
-        if body.name.is_some() && body.color.is_none() {
-            return Err(CodecError::NotImplemented(
-                "SLDPRT semantic writer cannot encode a body name without a material".into(),
-            ));
-        }
-    }
-    if ir.geometry.faces.iter().any(|face| face.name.is_some()) {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT semantic writer does not encode face names".into(),
-        ));
-    }
-    if ir.geometry.edges.iter().any(|edge| {
-        edge.param_range().is_some()
-            && annotations
-                .exactness()
-                .get(edge.id.as_str())
-                .is_none_or(|note| {
-                    note.entity() != cadmpeg_ir::Exactness::Derived
-                        && note.fields().get("carrier.param_range")
-                            != Some(&cadmpeg_ir::Exactness::Derived)
-                })
-    }) {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT semantic writer does not encode explicit edge parameter ranges".into(),
-        ));
-    }
-    for appearance in &ir.model.appearances {
-        if appearance.asset_guid.is_some()
-            || appearance.visual_guid.is_some()
-            || appearance.physical_token.is_some()
-            || appearance.category.is_some()
-            || !appearance.properties.is_empty()
-        {
-            return Err(CodecError::NotImplemented(
-                "SLDPRT semantic writer supports appearance names and base colors only".into(),
-            ));
-        }
-    }
-    Ok(())
 }
 
 pub(crate) fn pmi_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
@@ -876,10 +1313,60 @@ pub(crate) fn pmi_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
     Ok(cadmpeg_ir::hash::sha256_hex(&bytes))
 }
 
-fn configuration_partitions(
+/// Named member payloads.
+type Sections = Vec<(String, Vec<u8>)>;
+
+/// The partitions the writer generates, the sections of those that hold no
+/// body, and the losses of the stored states they write.
+#[derive(Default)]
+pub(crate) struct Generated {
+    pub(crate) sections: Sections,
+    bodiless: Vec<String>,
+    losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+}
+
+/// The partitions the writer generates from the document's bodies.
+fn generated_partitions(ir: &CadIr, length_scale: f64) -> Result<Generated, CodecError> {
+    if ir.geometry.faces.is_empty() {
+        return faceless_partitions(ir, length_scale);
+    }
+    if !ir.model.configurations.is_empty() {
+        return configuration_partitions(ir, length_scale);
+    }
+    Ok(Generated {
+        sections: vec![partition(ir, 0, length_scale)?],
+        ..Generated::default()
+    })
+}
+
+/// The `Config-<index>-Partition` section that holds the bodies of
+/// `document`.
+fn partition(
+    document: &CadIr,
+    index: u32,
+    length_scale: f64,
+) -> Result<(String, Vec<u8>), CodecError> {
+    let schema_32001 = document
+        .geometry
+        .bodies
+        .iter()
+        .any(|body| body.kind == BodyKind::Sheet);
+    let body = brep_body(document, length_scale, schema_32001)?;
+    let schema = if schema_32001 {
+        "SCH_SW_32001_11000"
+    } else {
+        "SCH_SW_33103_11000"
+    };
+    Ok((
+        format!("Contents/Config-{index}-Partition"),
+        parasolid_stream(&body, schema)?,
+    ))
+}
+
+pub(crate) fn configuration_partitions(
     ir: &CadIr,
     length_scale: f64,
-) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
+) -> Result<Generated, CodecError> {
     let configured = ir
         .model
         .configurations
@@ -906,48 +1393,63 @@ fn configuration_partitions(
     }
     let mut configurations = ir.model.configurations.iter().collect::<Vec<_>>();
     configurations.sort_by_key(|configuration| configuration.ordinal);
-    configurations
-        .into_iter()
-        .filter_map(|configuration| {
-            configuration
-                .bodies
-                .as_deref()
-                .map(|bodies| (configuration, bodies))
-        })
-        .map(|(configuration, bodies)| {
-            let index = configuration.source_index.ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "SLDPRT configuration {} has no assigned source index",
-                    configuration.id.as_str()
-                ))
-            })?;
-            if bodies.is_empty() {
-                let mut payload = parasolid_stream(&[], "SCH_SW_33103_11000")?;
-                payload.extend(parasolid_stream_named(
-                    &[],
-                    "SCH_SW_33103_11000",
-                    "deltas body",
-                )?);
-                return Ok((format!("Contents/Config-{index}-Partition"), payload));
-            }
-            let subset = body_subset(ir, bodies)?;
-            let schema_32001 = subset
-                .geometry
-                .bodies
-                .iter()
-                .any(|body| body.kind == BodyKind::Sheet);
-            let body = brep_body(&subset, length_scale, schema_32001)?;
-            let schema = if schema_32001 {
-                "SCH_SW_32001_11000"
-            } else {
-                "SCH_SW_33103_11000"
-            };
-            Ok((
-                format!("Contents/Config-{index}-Partition"),
-                parasolid_stream(&body, schema)?,
+    let mut generated = Generated::default();
+    for configuration in configurations {
+        let stored = match configuration.bodies.as_deref() {
+            Some(_) => None,
+            None => match stored_state(ir, configuration) {
+                Some(state) => Some(state),
+                None => continue,
+            },
+        };
+        let index = configuration.source_index.ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "SLDPRT configuration {} has no assigned source index",
+                configuration.id.as_str()
             ))
-        })
-        .collect()
+        })?;
+        match (configuration.bodies.as_deref(), stored) {
+            (_, Some(state)) => {
+                stored_partition(&state, configuration, index, length_scale, &mut generated)?;
+            }
+            (Some(bodies), None) if !bodies.is_empty() => {
+                let section = partition(&body_subset(ir, bodies)?, index, length_scale)?;
+                generated.sections.push(section);
+            }
+            _ => {
+                let section = bodiless_partition(index, &mut generated.bodiless)?;
+                generated.sections.push(section);
+            }
+        }
+    }
+    Ok(generated)
+}
+
+/// The partition of configuration `index` written from `state`, the state the
+/// design stores for `configuration`. The bodies the encoder cannot write are
+/// left out and named with the configuration, as the current bodies are, and
+/// a state left with no body is written as a partition that holds none.
+fn stored_partition(
+    state: &CadIr,
+    configuration: &DesignConfiguration,
+    index: u32,
+    length_scale: f64,
+    generated: &mut Generated,
+) -> Result<(), CodecError> {
+    let encoded =
+        body_drop::encode_without_unwritable_bodies(state, Some(&configuration.id), |state| {
+            if state.geometry.bodies.is_empty() {
+                return Ok(None);
+            }
+            partition(state, index, length_scale).map(Some)
+        })?;
+    generated.losses.extend(encoded.losses);
+    let section = match encoded.partitions {
+        Some(section) => section,
+        None => bodiless_partition(index, &mut generated.bodiless)?,
+    };
+    generated.sections.push(section);
+    Ok(())
 }
 
 pub(super) fn reserve_configuration_index(
@@ -970,6 +1472,67 @@ pub(super) fn reserve_configuration_index(
     }
 }
 
+/// A document of the geometry of the state the design stores for a
+/// configuration whose body list the decoder moved into its evaluation:
+/// all that [`brep_body`] reads. Its faces carry their own colours.
+fn stored_state(ir: &CadIr, configuration: &DesignConfiguration) -> Option<CadIr> {
+    let (_, state) = crate::decode::retired_states::stored_state(ir, configuration)?;
+    let mut subset = CadIr::empty();
+    subset.geometry = state.records.clone();
+    Some(subset)
+}
+
+/// The partitions of a document whose geometry holds no face: one per
+/// indexed configuration, or `Config-0`. A configuration whose evaluation
+/// holds the state the design stores for it writes that state, as
+/// [`configuration_partitions`] does; every other partition holds no body.
+/// A file with no partition is not an SLDPRT part its readers detect.
+fn faceless_partitions(ir: &CadIr, length_scale: f64) -> Result<Generated, CodecError> {
+    let mut indices = BTreeMap::<u32, Option<(CadIr, &DesignConfiguration)>>::new();
+    for configuration in &ir.model.configurations {
+        let Some(index) = configuration.source_index else {
+            continue;
+        };
+        let state = indices.entry(index).or_default();
+        if state.is_none() {
+            *state = stored_state(ir, configuration).map(|stored| (stored, configuration));
+        }
+    }
+    if indices.is_empty() {
+        indices.insert(0, None);
+    }
+    let mut generated = Generated::default();
+    for (index, state) in indices {
+        match state {
+            Some((state, configuration)) => {
+                stored_partition(&state, configuration, index, length_scale, &mut generated)?;
+            }
+            None => {
+                let section = bodiless_partition(index, &mut generated.bodiless)?;
+                generated.sections.push(section);
+            }
+        }
+    }
+    Ok(generated)
+}
+
+/// The partition of configuration `index` that holds no body, recorded in
+/// `bodiless`.
+fn bodiless_partition(
+    index: u32,
+    bodiless: &mut Vec<String>,
+) -> Result<(String, Vec<u8>), CodecError> {
+    let section = format!("Contents/Config-{index}-Partition");
+    let mut payload = parasolid_stream(&[], "SCH_SW_33103_11000")?;
+    payload.extend(parasolid_stream_named(
+        &[],
+        "SCH_SW_33103_11000",
+        "deltas body",
+    )?);
+    bodiless.push(section.clone());
+    Ok((section, payload))
+}
+
 fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr, CodecError> {
     let selected = selected.iter().cloned().collect::<HashSet<_>>();
     if let Some(id) = selected
@@ -986,6 +1549,9 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .geometry
         .bodies
         .retain(|body| selected.contains(&body.id));
+    for definition in &mut subset.model.product_definitions {
+        definition.bodies.retain(|body| selected.contains(body));
+    }
     subset
         .geometry
         .regions
@@ -1046,6 +1612,9 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
     for shell in &subset.geometry.shells {
         vertices.extend(shell.free_vertices().cloned());
     }
+    for loop_ in &subset.geometry.loops {
+        vertices.extend(loop_.vertices().cloned());
+    }
     subset
         .geometry
         .vertices
@@ -1094,419 +1663,412 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
     Ok(subset)
 }
 
+/// The bytes of each retained source block of `section`, `None` for a block
+/// the source fidelity holds no bytes of.
+fn retained_blocks<'a>(
+    records: &[SourceRecord<'a>],
+    annotations: &Annotations,
+    section: &str,
+) -> Vec<Option<&'a [u8]>> {
+    records
+        .iter()
+        .filter(|record| {
+            record.id.as_str().starts_with("sldprt:file:block#")
+                && annotations
+                    .provenance
+                    .get(record.id.as_str())
+                    .is_some_and(|provenance| provenance.stream() == section)
+        })
+        .map(|record| record.data)
+        .collect()
+}
+
+/// The retained blocks the output holds as stored, and the retained blocks it
+/// omits.
 fn opaque_blocks(
     ir: &CadIr,
     records: &[SourceRecord<'_>],
     annotations: &Annotations,
     generated_partitions: &HashSet<String>,
-    emitted_sections: &HashSet<String>,
+    emitted_sections: &HashMap<String, usize>,
     retain_native_brep: bool,
     patch_active_configuration: bool,
-) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
+) -> Result<OpaqueBlocks, CodecError> {
     let native = ir
         .native
         .namespace("sldprt")
         .map(SldprtNative::load)
         .transpose()
         .map_err(CodecError::from)?;
+    let active_name = match ir
+        .model
+        .configurations
+        .iter()
+        .find(|value| value.active && patch_active_configuration)
+    {
+        Some(active) => Some(active.name.as_deref().ok_or_else(|| {
+            CodecError::Malformed("active SLDPRT configuration has no resolved name".into())
+        })?),
+        None => None,
+    };
     let mut seen = HashSet::new();
-    records
+    let mut blocks = Vec::new();
+    let mut unavailable = Vec::new();
+    let mut replaced = HashMap::<&str, Vec<&str>>::new();
+    for record in records
         .iter()
         .filter(|record| record.id.as_str().starts_with("sldprt:file:block#"))
-        .filter_map(|record| {
-            let provenance = annotations.provenance.get(record.id.as_str())?;
-            let section = provenance.stream();
-            let lower = section.to_ascii_lowercase();
-            if generated_partitions.contains(section) {
-                return None;
-            }
-            if lower.ends_with("-partition")
-                && native
-                    .as_ref()
-                    .and_then(|native| remapped_partition_section(ir, native, section))
-                    .is_some_and(|remapped| generated_partitions.contains(&remapped))
-            {
-                return None;
-            }
-            if lower.contains("deltas") && !retain_native_brep {
-                return None;
-            }
-            if emitted_sections.contains(section) {
-                if records
-                    .iter()
-                    .filter(|candidate| {
-                        candidate.id.as_str().starts_with("sldprt:file:block#")
-                            && annotations
-                                .provenance
-                                .get(candidate.id.as_str())
-                                .is_some_and(|source| source.stream() == section)
-                    })
-                    .count()
-                    != 1
-                {
-                    return Some(Err(CodecError::NotImplemented(format!(
-                        "SLDPRT generated member {section} has ambiguous retained owners"
-                    ))));
-                }
-                return None;
-            }
-            let mut payload = record.data?.to_vec();
-            if lower.contains("pmisemanticdatadb") {
-                if let Err(error) = crate::pmi::patch_payload(ir, record.id.as_str(), &mut payload)
-                {
-                    return Some(Err(error));
-                }
-            }
-            if let Some(active) = ir
-                .model
-                .configurations
-                .iter()
-                .find(|value| value.active && patch_active_configuration)
-            {
-                let Some(active_name) = active.name.as_deref() else {
-                    return Some(Err(CodecError::Malformed(
-                        "active SLDPRT configuration has no resolved name".into(),
-                    )));
-                };
-                match patch_active_configuration_xml(&payload, active_name) {
-                    Ok(Some(patched)) => payload = patched,
-                    Ok(None) => {}
-                    Err(error) => return Some(Err(error)),
-                }
-            }
-            if !seen.insert(record.id.as_str()) {
-                return Some(Err(CodecError::Malformed(
-                    "duplicate retained SLDPRT source record identity".into(),
-                )));
-            }
-            Some(Ok((section.to_string(), payload)))
-        })
-        .collect()
-}
-
-fn retained_swobjects_sections(
-    ir: &CadIr,
-    records: &[SourceRecord<'_>],
-    annotations: &Annotations,
-) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
-    let metadata_streams = metadata_attributes(ir)
-        .into_iter()
-        .filter(|attribute| attribute.name != "source_linear_unit_code")
-        .filter_map(|attribute| {
-            annotations
-                .provenance
-                .get(attribute.id.as_str())
-                .map(cadmpeg_ir::Provenance::stream)
-        })
-        .collect::<HashSet<_>>();
-    let mut sections = records
-        .iter()
-        .filter_map(|record| {
-            let provenance = annotations.provenance.get(record.id.as_str())?;
-            let section = provenance.stream();
-            (section.to_ascii_lowercase().contains("swobjects")
-                || metadata_streams.contains(section))
-            .then_some((section, record))
-        })
-        .collect::<Vec<_>>();
-    sections.sort_by_key(|(section, _)| *section);
-    let mut seen = HashMap::new();
-    let mut retained = Vec::new();
-    for (section, record) in sections {
-        if let Some(previous) = seen.insert(section, &record.id) {
-            if previous == &record.id {
-                continue;
-            }
-            return Err(CodecError::NotImplemented(format!(
-                "SLDPRT metadata owner {section} has ambiguous retained members"
-            )));
-        }
-        let data = record.data.ok_or_else(|| {
-            CodecError::Malformed("retained SLDPRT SWObjects section has no bytes".into())
-        })?;
-        retained.push((section.to_string(), data.to_vec()));
-    }
-    for stream in metadata_streams {
-        if !seen.contains_key(stream) {
-            return Err(CodecError::malformed(format_args!(
-                "SLDPRT metadata owner {stream} has no retained source member"
-            )));
-        }
-    }
-    Ok(retained)
-}
-
-fn require_named_metadata_members(
-    members: &[(String, Vec<u8>)],
-    source: Option<&crate::container::ContainerScan<'_>>,
-) -> Result<(), CodecError> {
-    if members.is_empty() {
-        return Ok(());
-    }
-    let source = source.ok_or_else(|| CodecError::NotImplemented(
-        "SLDPRT retained metadata editing requires the original native envelope and named members".into(),
-    ))?;
-    for (name, payload) in members {
-        let mut candidates = source
-            .sections()
-            .filter(|section| section.source_stream().as_str() == name);
-        let Some(member) = candidates.next() else {
-            return Err(CodecError::malformed(format_args!(
-                "SLDPRT metadata owner {name} is absent from the retained source envelope"
-            )));
+    {
+        let Some(provenance) = annotations.provenance.get(record.id.as_str()) else {
+            continue;
         };
-        if candidates.next().is_some() {
-            return Err(CodecError::NotImplemented(format!(
-                "SLDPRT metadata owner {name} has ambiguous source envelope members"
-            )));
+        let section = provenance.stream();
+        let lower = section.to_ascii_lowercase();
+        if generated_partitions.contains(section) {
+            continue;
         }
-        if member.name() != Some(name.as_str()) {
-            return Err(CodecError::NotImplemented(
-                "SLDPRT anonymous metadata owner has no supported output member identity".into(),
-            ));
-        }
-        if member.payload() != payload.as_slice() {
-            return Err(CodecError::malformed(format_args!(
-                "SLDPRT metadata owner {name} bytes do not match the retained source envelope"
-            )));
-        }
-    }
-    Ok(())
-}
-
-fn push_generated_metadata_member(
-    sections: &mut Vec<(String, Vec<u8>)>,
-    originals: &[(String, Vec<u8>)],
-    name: String,
-    generated: Vec<u8>,
-) -> Result<(), CodecError> {
-    let mut candidates = originals.iter().filter(|(candidate, _)| *candidate == name);
-    let Some((_, original)) = candidates.next() else {
-        sections.push((name, generated));
-        return Ok(());
-    };
-    if candidates.next().is_some() {
-        return Err(CodecError::NotImplemented(format!(
-            "SLDPRT metadata owner {name} has ambiguous retained members"
-        )));
-    }
-    let mut outputs = sections
-        .iter_mut()
-        .filter(|(candidate, _)| *candidate == name);
-    let Some((_, patched)) = outputs.next() else {
-        sections.push((name, generated));
-        return Ok(());
-    };
-    if outputs.next().is_some() {
-        return Err(CodecError::NotImplemented(format!(
-            "SLDPRT metadata owner {name} has ambiguous output members"
-        )));
-    }
-    if &generated == original || generated == *patched {
-        return Ok(());
-    }
-    if *patched == *original {
-        *patched = generated;
-        return Ok(());
-    }
-    Err(CodecError::NotImplemented(format!(
-        "SLDPRT metadata owner {name} has conflicting metadata and generated payload edits"
-    )))
-}
-
-fn patch_retained_swobjects_metadata(
-    ir: &CadIr,
-    annotations: &Annotations,
-    sections: &mut [(String, Vec<u8>)],
-    length_scale: f64,
-) -> Result<(), CodecError> {
-    use std::cmp::Reverse;
-
-    let mut attributes = metadata_attributes(ir)
-        .into_iter()
-        .filter(|attribute| attribute.name != "source_linear_unit_code")
-        .map(|attribute| {
-            let provenance = annotations
-                .provenance
-                .get(attribute.id.as_str())
-                .ok_or_else(|| {
-                    CodecError::NotImplemented(format!(
-                        "SLDPRT metadata attribute {} has no retained record provenance",
-                        attribute.id
-                    ))
-                })?;
-            Ok((provenance.stream().to_owned(), provenance.offset, attribute))
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    attributes.sort_by(|left, right| (&left.0, Reverse(left.1)).cmp(&(&right.0, Reverse(right.1))));
-
-    for (stream, offset, attribute) in attributes {
-        let payload = sections
-            .iter_mut()
-            .find_map(|(candidate, payload)| (*candidate == stream).then_some(payload))
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "SLDPRT metadata attribute {} references a missing SWObjects section",
-                    attribute.id
-                ))
-            })?;
-        let offset = usize::try_from(offset).map_err(|_| {
-            CodecError::Malformed("SLDPRT metadata offset exceeds address space".into())
-        })?;
-        // The retained record's token and unit-name marker are checked once
-        // the values have the record's shape and before they are admitted.
-        let retained = |token: &'static [u8]| {
-            require_token(payload, offset, token)?;
-            if token == UNIT_NAME_TOKEN {
-                resident_unit_name_len(payload, offset + token.len())?;
-            }
-            Ok(())
-        };
-        if attribute.name == "configuration_manager"
-            && attribute.target.entity == cadmpeg_ir::attributes::AttributeTarget::Document
-            && crate::metadata::configuration_manager::values(payload, offset)
-                .is_some_and(|values| attribute.values == values.map(AttributeValue::Integer))
+        if lower.ends_with("-partition")
+            && native
+                .as_ref()
+                .and_then(|native| remapped_partition_section(ir, native, section))
+                .is_some_and(|remapped| generated_partitions.contains(&remapped))
         {
             continue;
         }
-        match MetadataRecord::project(attribute, length_scale, retained)? {
-            Some(MetadataRecord::BoundingEnvelope(values)) => {
-                let [AttributeValue::Vector(current)] = attribute.values.as_slice() else {
-                    return Err(CodecError::Malformed(
-                        "invalid retained bounding envelope".into(),
-                    ));
-                };
-                let current = current.iter().map(|value| value.get()).collect::<Vec<_>>();
-                patch_retained_metadata_reals(
-                    payload,
-                    offset + BOUNDING_ENVELOPE_TOKEN.len() + 4,
-                    &values,
-                    &current,
-                    4,
-                    length_scale,
-                )?;
-            }
-            Some(MetadataRecord::DefaultReferencePlane { origin, frame }) => {
-                let [AttributeValue::Vector(current_origin), AttributeValue::Vector(current_frame)] =
-                    attribute.values.as_slice()
-                else {
-                    return Err(CodecError::Malformed(
-                        "invalid retained default plane".into(),
-                    ));
-                };
-                let current = current_origin
-                    .iter()
-                    .chain(current_frame)
-                    .map(|value| value.get())
-                    .collect::<Vec<_>>();
-                let values = origin.into_iter().chain(frame).collect::<Vec<_>>();
-                patch_retained_metadata_reals(
-                    payload,
-                    offset + DEFAULT_REFERENCE_PLANE_TOKEN.len(),
-                    &values,
-                    &current,
-                    3,
-                    length_scale,
-                )?;
-            }
-            Some(MetadataRecord::TransformedReferenceEnclosure {
-                center,
-                upper,
-                lower,
-                radius,
-            }) => {
-                let Some(resident) = crate::metadata::transformed_enclosure(payload, offset) else {
-                    return Err(CodecError::NotImplemented(
-                        "SLDPRT enclosure edit requires a retained complete present record".into(),
-                    ));
-                };
-                let [AttributeValue::Vector(ir_center), AttributeValue::Vector(ir_upper), AttributeValue::Vector(ir_lower), AttributeValue::Float(ir_radius)] =
-                    attribute.values.as_slice()
-                else {
-                    return Err(CodecError::Malformed(
-                        "SLDPRT enclosure attribute has an invalid value shape".into(),
-                    ));
-                };
-                let ir_values = ir_center
-                    .iter()
-                    .chain(ir_upper)
-                    .chain(ir_lower)
-                    .map(|v| v.get())
-                    .chain([ir_radius.get()]);
-                let source_values = center.into_iter().chain(upper).chain(lower).chain([radius]);
-                let mut bytes = Vec::with_capacity(80);
-                for ((value, current), original) in source_values.zip(ir_values).zip(resident) {
-                    let value = if original * (1.0 / length_scale) == current {
-                        original
-                    } else {
-                        value
-                    };
-                    bytes.extend(value.to_le_bytes());
-                }
-                overwrite_bytes(
-                    payload,
-                    offset
-                        + TRANSFORMED_REFERENCE_PLANE_TOKEN.len()
-                        + crate::layout::transformed_reference_plane_metadata::LEN,
-                    &bytes,
-                )?;
-            }
-            Some(MetadataRecord::PartRecord {
-                first_word,
-                trailing_word,
-            }) => {
-                let crate::metadata::part::Root::Supported(resident) =
-                    crate::metadata::part::parse(payload)
-                else {
-                    return Err(CodecError::NotImplemented(
-                        "SLDPRT Part edit requires a supported root scalar prefix".into(),
-                    ));
-                };
-                if offset != resident.token_offset
-                    || trailing_word.is_some() != resident.trailing_word.is_some()
-                {
-                    return Err(CodecError::NotImplemented(
-                        "SLDPRT Part edit cannot change root ownership or scalar form".into(),
-                    ));
-                }
-                overwrite_bytes(payload, resident.body_offset, &first_word.to_le_bytes())?;
-                if let Some(word) = trailing_word {
-                    overwrite_bytes(
-                        payload,
-                        resident.body_offset + crate::layout::part_root_long::TRAILING_WORD,
-                        &word.to_le_bytes(),
-                    )?;
-                }
-            }
-            Some(MetadataRecord::SourceLinearUnitName { units, byte_len }) => {
-                let marker = offset + UNIT_NAME_TOKEN.len();
-                let old_len = resident_unit_name_len(payload, marker)?;
-                if usize::from(byte_len) != old_len {
-                    return Err(CodecError::NotImplemented(
-                        "SLDPRT writer cannot resize a retained source linear unit name".into(),
-                    ));
-                }
-                let mut replacement = vec![0xff, 0xfe, 0xff, byte_len];
-                replacement.extend(units.into_iter().flat_map(u16::to_le_bytes));
-                let end = marker.checked_add(4 + old_len).ok_or_else(|| {
-                    CodecError::Malformed("retained SLDPRT unit-name range overflow".into())
-                })?;
-                if end > payload.len() {
-                    return Err(CodecError::Malformed(
-                        "truncated retained SLDPRT unit name".into(),
-                    ));
-                }
-                payload.splice(marker..end, replacement);
-            }
-            Some(MetadataRecord::SourceLinearUnitCode(_)) | None => {
-                return Err(CodecError::NotImplemented(format!(
-                    "unsupported retained SLDPRT metadata attribute {}",
-                    attribute.name
-                )));
+        if lower.contains("deltas") && !retain_native_brep {
+            continue;
+        }
+        if emitted_sections.contains_key(section) {
+            replaced
+                .entry(section)
+                .or_default()
+                .push(record.id.as_str());
+            continue;
+        }
+        let Some(data) = record.data else {
+            unavailable.push(format!("{section} ({})", record.id.as_str()));
+            continue;
+        };
+        let mut payload = data.to_vec();
+        if lower.contains("pmisemanticdatadb") {
+            crate::pmi::patch_payload(ir, record.id.as_str(), &mut payload)?;
+        }
+        if let Some(active_name) = active_name {
+            if let Some(patched) = patch_active_configuration_xml(&payload, active_name)? {
+                payload = patched;
             }
         }
+        if !seen.insert(record.id.as_str()) {
+            return Err(CodecError::Malformed(
+                "duplicate retained SLDPRT source record identity".into(),
+            ));
+        }
+        blocks.push((section.to_string(), payload));
     }
-    Ok(())
+    let replaced = replaced
+        .into_iter()
+        .flat_map(|(section, ids)| {
+            let written = emitted_sections.get(section).copied().unwrap_or_default();
+            ids.into_iter().skip(written).map(str::to_owned)
+        })
+        .collect();
+    Ok(OpaqueBlocks {
+        blocks,
+        replaced,
+        unavailable,
+    })
+}
+
+/// [`opaque_blocks`]'s result.
+struct OpaqueBlocks {
+    /// The blocks written as stored, with their streams.
+    blocks: Vec<(String, Vec<u8>)>,
+    /// The ids of retained blocks of a generated stream past the number of
+    /// members the write generates for it.
+    replaced: Vec<String>,
+    /// Each retained block whose bytes the source fidelity does not hold,
+    /// as its stream and id.
+    unavailable: Vec<String>,
+}
+
+/// The patchable metadata members of one write, as the source stores them,
+/// and the attribute ids the patch wrote into each.
+struct MetadataMembers {
+    originals: BTreeMap<String, Vec<u8>>,
+    written: BTreeMap<String, Vec<String>>,
+}
+
+impl MetadataMembers {
+    /// Add `generated` as member `name`. Where the patch already wrote that
+    /// member, the generated payload replaces it unless it equals the
+    /// original or the patched payload; each attribute the patch wrote into a
+    /// replaced member is charged.
+    fn push(
+        &self,
+        sections: &mut Vec<(String, Vec<u8>)>,
+        unwritten: &mut UnwrittenAttributes,
+        name: String,
+        generated: Vec<u8>,
+    ) {
+        let Some(original) = self.originals.get(&name) else {
+            sections.push((name, generated));
+            return;
+        };
+        let Some(patched) = sections
+            .iter_mut()
+            .find_map(|(candidate, payload)| (*candidate == name).then_some(payload))
+        else {
+            sections.push((name, generated));
+            return;
+        };
+        if generated == *original || generated == *patched {
+            return;
+        }
+        if patched != original {
+            for id in self.written.get(&name).into_iter().flatten() {
+                unwritten.record(id, Unwritten::OwnerRegenerated, Held::Source);
+            }
+        }
+        *patched = generated;
+    }
+}
+
+/// Patch each metadata attribute into its retained member in `sections`,
+/// and record each one the patch does not write. Returns the attribute ids
+/// written into each member.
+fn patch_retained_swobjects_metadata(
+    ir: &CadIr,
+    annotations: &Annotations,
+    owners: &metadata_owners::MetadataOwners,
+    sections: &mut [(String, Vec<u8>)],
+    length_scale: f64,
+    unwritten: &mut UnwrittenAttributes,
+) -> BTreeMap<String, Vec<String>> {
+    use std::cmp::Reverse;
+
+    let mut attributes = Vec::new();
+    for attribute in metadata_attributes(ir) {
+        if attribute.name == "source_linear_unit_code" {
+            continue;
+        }
+        let provenance = annotations.provenance.get(attribute.id.as_str());
+        if let Some(reason) = unwritable(attribute) {
+            // The retained bytes stay only where the output holds the member.
+            let held = provenance.map_or(Held::Nothing, |provenance| {
+                owners
+                    .unpatched(provenance.stream())
+                    .map_or(Held::Source, |(_, held)| held)
+            });
+            unwritten.record(attribute.id.as_str(), reason, held);
+            continue;
+        }
+        let Some(provenance) = provenance else {
+            // No retained record holds it, and none can be inserted.
+            let reason = MetadataRecord::project(attribute, length_scale, |_| Ok(()))
+                .err()
+                .unwrap_or(Unwritten::NoSerializer);
+            unwritten.record(attribute.id.as_str(), reason, Held::Nothing);
+            continue;
+        };
+        if let Some((reason, held)) = owners.unpatched(provenance.stream()) {
+            unwritten.record(attribute.id.as_str(), reason, held);
+            continue;
+        }
+        attributes.push((provenance.stream().to_owned(), provenance.offset, attribute));
+    }
+    attributes.sort_by(|left, right| (&left.0, Reverse(left.1)).cmp(&(&right.0, Reverse(right.1))));
+
+    let mut written = BTreeMap::<String, Vec<String>>::new();
+    for (stream, offset, attribute) in attributes {
+        let id = attribute.id.as_str();
+        let Some(payload) = sections
+            .iter_mut()
+            .find_map(|(candidate, payload)| (*candidate == stream).then_some(payload))
+        else {
+            unwritten.record(id, Unwritten::OwnerUnavailable, Held::Nothing);
+            continue;
+        };
+        let result = usize::try_from(offset)
+            .map_err(|_| Unwritten::RetainedMismatch)
+            .and_then(|offset| patch_retained_record(payload, offset, attribute, length_scale));
+        match result {
+            Ok(()) => written.entry(stream).or_default().push(id.to_owned()),
+            Err(reason) => unwritten.record(id, reason, Held::Source),
+        }
+    }
+
+    // A record the document no longer states keeps its retained bytes.
+    let stated = metadata_attributes(ir)
+        .into_iter()
+        .map(|attribute| attribute.id.as_str())
+        .collect::<HashSet<_>>();
+    for (id, provenance) in &annotations.provenance {
+        let stream = provenance.stream();
+        if id.starts_with("sldprt:metadata:")
+            && !id.starts_with("sldprt:metadata:source_linear_unit_code#")
+            && !stated.contains(id.as_str())
+            && (owners.carried.contains(stream) || sections.iter().any(|(name, _)| name == stream))
+        {
+            unwritten.record(id, Unwritten::Removed, Held::Source);
+        }
+    }
+    written
+}
+
+/// Write `attribute` into its retained record at `offset` of `payload`, or
+/// leave the record untouched and say why it was not written.
+fn patch_retained_record(
+    payload: &mut Vec<u8>,
+    offset: usize,
+    attribute: &cadmpeg_ir::attributes::SourceAttribute,
+    length_scale: f64,
+) -> Result<(), Unwritten> {
+    if attribute.name == "configuration_manager"
+        && crate::metadata::configuration_manager::values(payload, offset).is_some_and(|values| {
+            attribute.values == values.map(|value| Some(AttributeValue::Integer(value)))
+        })
+    {
+        return Ok(());
+    }
+    // The retained record's token and unit-name marker are checked once
+    // the values have the record's shape and before they are admitted.
+    let retained = |token: &'static [u8]| {
+        require_token(payload, offset, token)?;
+        if token == UNIT_NAME_TOKEN {
+            resident_unit_name_len(payload, offset + token.len())?;
+        }
+        Ok(())
+    };
+    let mismatch = |_: CodecError| Unwritten::RetainedMismatch;
+    match MetadataRecord::project(attribute, length_scale, retained)? {
+        MetadataRecord::BoundingEnvelope(values) => {
+            let [Some(AttributeValue::Vector(current))] = attribute.values.as_slice() else {
+                return Err(Unwritten::Unrepresentable);
+            };
+            let current = current.iter().map(|value| value.get()).collect::<Vec<_>>();
+            patch_retained_metadata_reals(
+                payload,
+                offset + BOUNDING_ENVELOPE_TOKEN.len() + 4,
+                &values,
+                &current,
+                4,
+                length_scale,
+            )
+            .map_err(mismatch)
+        }
+        MetadataRecord::DefaultReferencePlane { origin, frame } => {
+            let [Some(AttributeValue::Vector(current_origin)), Some(AttributeValue::Vector(current_frame))] =
+                attribute.values.as_slice()
+            else {
+                return Err(Unwritten::Unrepresentable);
+            };
+            let current = current_origin
+                .iter()
+                .chain(current_frame)
+                .map(|value| value.get())
+                .collect::<Vec<_>>();
+            let values = origin.into_iter().chain(frame).collect::<Vec<_>>();
+            patch_retained_metadata_reals(
+                payload,
+                offset + DEFAULT_REFERENCE_PLANE_TOKEN.len(),
+                &values,
+                &current,
+                3,
+                length_scale,
+            )
+            .map_err(mismatch)
+        }
+        MetadataRecord::TransformedReferenceEnclosure {
+            center,
+            upper,
+            lower,
+            radius,
+        } => {
+            let resident = crate::metadata::transformed_enclosure(payload, offset)
+                .ok_or(Unwritten::NoSerializer)?;
+            let [Some(AttributeValue::Vector(ir_center)), Some(AttributeValue::Vector(ir_upper)), Some(AttributeValue::Vector(ir_lower)), Some(AttributeValue::Float(ir_radius))] =
+                attribute.values.as_slice()
+            else {
+                return Err(Unwritten::Unrepresentable);
+            };
+            let ir_values = ir_center
+                .iter()
+                .chain(ir_upper)
+                .chain(ir_lower)
+                .map(|v| v.get())
+                .chain([ir_radius.get()]);
+            let source_values = center.into_iter().chain(upper).chain(lower).chain([radius]);
+            let mut bytes = Vec::with_capacity(80);
+            for ((value, current), original) in source_values.zip(ir_values).zip(resident) {
+                let value = if original * (1.0 / length_scale) == current {
+                    original
+                } else {
+                    value
+                };
+                bytes.extend(value.to_le_bytes());
+            }
+            overwrite_bytes(
+                payload,
+                offset
+                    + TRANSFORMED_REFERENCE_PLANE_TOKEN.len()
+                    + crate::layout::transformed_reference_plane_metadata::LEN,
+                &bytes,
+            )
+            .map_err(mismatch)
+        }
+        MetadataRecord::PartRecord {
+            first_word,
+            trailing_word,
+        } => {
+            let crate::metadata::part::Root::Supported(resident) =
+                crate::metadata::part::parse(payload)
+            else {
+                return Err(Unwritten::NoSerializer);
+            };
+            // The Part edit cannot change root ownership or scalar form.
+            if offset != resident.token_offset
+                || trailing_word.is_some() != resident.trailing_word.is_some()
+            {
+                return Err(Unwritten::NoSerializer);
+            }
+            // The trailing word lies past the first, so a truncated record
+            // fails before anything is written.
+            if let Some(word) = trailing_word {
+                overwrite_bytes(
+                    payload,
+                    resident.body_offset + crate::layout::part_root_long::TRAILING_WORD,
+                    &word.to_le_bytes(),
+                )
+                .map_err(mismatch)?;
+            }
+            overwrite_bytes(payload, resident.body_offset, &first_word.to_le_bytes())
+                .map_err(mismatch)
+        }
+        MetadataRecord::SourceLinearUnitName {
+            units,
+            byte_len,
+            cut,
+        } => {
+            if cut.is_some() {
+                return Err(Unwritten::Unrepresentable);
+            }
+            let marker = offset + UNIT_NAME_TOKEN.len();
+            let old_len = resident_unit_name_len(payload, marker).map_err(mismatch)?;
+            if usize::from(byte_len) != old_len {
+                // The writer cannot resize a retained unit name.
+                return Err(Unwritten::NoSerializer);
+            }
+            let end = marker
+                .checked_add(4 + old_len)
+                .filter(|end| *end <= payload.len())
+                .ok_or(Unwritten::RetainedMismatch)?;
+            let mut replacement = vec![0xff, 0xfe, 0xff, byte_len];
+            replacement.extend(units.into_iter().flat_map(u16::to_le_bytes));
+            payload.splice(marker..end, replacement);
+            Ok(())
+        }
+        MetadataRecord::SourceLinearUnitCode(_) => Err(Unwritten::NoSerializer),
+    }
 }
 
 fn patch_retained_metadata_reals(
@@ -1522,6 +2084,9 @@ fn patch_retained_metadata_reals(
             "invalid retained metadata real fields".into(),
         ));
     }
+    // Every field is read before any is written, so a refused record is
+    // left as it was.
+    let mut writes = Vec::with_capacity(values.len());
     for (index, (&value, &current)) in values.iter().zip(current).enumerate() {
         let offset = index
             .checked_mul(8)
@@ -1536,8 +2101,11 @@ fn patch_retained_metadata_reals(
             original
         };
         if projected != current {
-            overwrite_bytes(payload, offset, &value.to_le_bytes())?;
+            writes.push((offset, value));
         }
+    }
+    for (offset, value) in writes {
+        overwrite_bytes(payload, offset, &value.to_le_bytes())?;
     }
     Ok(())
 }
@@ -1617,6 +2185,124 @@ fn patch_active_configuration_xml(
     output.push('"');
     output.push_str(&text[range.end..]);
     Ok(Some(output.into_bytes()))
+}
+
+/// A feature-input object name: a `CString` whose u8 count counts UTF-16
+/// code units.
+const FEATURE_INPUT_OBJECT_NAME: TextCapacity =
+    TextCapacity::new("feature-input object name", TextUnit::Utf16CodeUnit, 255);
+
+/// The resident unit name of `moLengthUserUnits_c`: a u8 byte count of
+/// UTF-16 code units.
+const UNIT_NAME: TextCapacity = TextCapacity::new("unit name", TextUnit::Utf16CodeUnit, 127);
+
+/// Every text field this writer fits to its width (§3.4). The widths test
+/// checks each against its stored count.
+#[cfg(test)]
+pub(crate) const CAPACITY_FIELDS: &[TextCapacity] = &[
+    materials::MATERIAL_NAME,
+    FEATURE_INPUT_OBJECT_NAME,
+    UNIT_NAME,
+    crate::resolved_features::write_prepare::GENERATED_NAME,
+];
+
+/// Synchronize the native history, sketches, parameters and configuration
+/// states with the document, and return the feature-input renames to write
+/// and the losses of the prepared features.
+fn prepare_history(
+    normalized: &mut CadIr,
+    native: &mut Option<SldprtNative>,
+    annotations: &Annotations,
+    retained_records: &[SourceRecord<'_>],
+    cut: &mut Vec<String>,
+) -> Result<crate::history::write::features::PreparedFeatures, CodecError> {
+    let feature_name_changes =
+        crate::history::write::feature_name_changes(normalized, native.as_ref());
+    let feature_parameter_changes_authorized = !feature_name_changes.is_empty()
+        && crate::history::write::native_parameters_match_source(normalized, native.as_ref())?;
+    crate::history::write::apply_feature_name_changes(
+        &mut normalized.model.parameters,
+        &feature_name_changes,
+    );
+    let ir = &*normalized;
+    let mut prepared = crate::history::write::prepare_features_for_write(ir, native)?;
+    fit_feature_input_renames(&mut prepared.renames, cut);
+    crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, native, cut)?;
+    crate::history::write::parameters::prepare_parameters_for_write(
+        ir,
+        native,
+        feature_parameter_changes_authorized,
+    )?;
+    // The configuration states are projected again with the profile bodies
+    // the decode bound, read from the retained source image.
+    crate::history::write::configurations::prepare_configurations_for_write(
+        ir,
+        native,
+        annotations,
+        |lanes| {
+            source_image(retained_records)
+                .map(|image| {
+                    crate::resolved_features::assembly::source_image_profiles(image, lanes)
+                })
+                .transpose()
+        },
+    )?;
+    Ok(prepared)
+}
+
+/// Cut each rename to [`FEATURE_INPUT_OBJECT_NAME`]. A rename whose cut is
+/// blank is not written.
+fn fit_feature_input_renames(
+    renames: &mut Vec<crate::history::write::features::FeatureInputRename>,
+    cut: &mut Vec<String>,
+) {
+    renames.retain_mut(|rename| {
+        let fitted = FEATURE_INPUT_OBJECT_NAME.fit(rename.value.as_str());
+        let Some(entry) = fitted.unwritable_entry(&format!(
+            "{} object name {}",
+            rename.lane, rename.name_index
+        )) else {
+            return true;
+        };
+        cut.push(entry);
+        match cadmpeg_core::text::NonBlankString::new(fitted.text) {
+            Some(value) => {
+                rename.value = value;
+                true
+            }
+            None => false,
+        }
+    });
+}
+
+/// The member a feature-input lane is written to. A lane with provenance goes
+/// to the stream it was decoded from, with the configuration index the write
+/// gave the lane. A lane with no provenance (a write with no decode sidecar)
+/// goes to the member its family names: a config-objects lane is the whole
+/// `Contents/Config-N` member, any other lane of a configuration is its
+/// `Config-N-ResolvedFeatures` member. The family name also serves a lane
+/// whose source stream names no configuration but whose document gives it one.
+fn lane_section(lane: &crate::records::FeatureInputLane, annotations: &Annotations) -> String {
+    let family_section = |configuration: &str| {
+        if crate::resolved_features::assembly::is_supplemental_config_lane(lane) {
+            format!("Contents/Config-{configuration}")
+        } else {
+            format!("Contents/Config-{configuration}-ResolvedFeatures")
+        }
+    };
+    let source = annotations
+        .provenance
+        .get(&lane.id)
+        .map(cadmpeg_ir::Provenance::stream);
+    match (source, lane.configuration.as_deref()) {
+        (Some(stream), None) => stream.to_owned(),
+        (Some(stream), Some(configuration)) => {
+            crate::resolved_features::names::renumbered_section(stream, configuration)
+                .unwrap_or_else(|| family_section(configuration))
+        }
+        (None, Some(configuration)) => family_section(configuration),
+        (None, None) => "Contents/ResolvedFeatures".into(),
+    }
 }
 
 /// The bytes written for one feature-input lane.
@@ -1961,52 +2647,57 @@ enum MetadataRecord {
     /// Source linear unit code.
     SourceLinearUnitCode(i64),
     /// A non-empty UTF-16 unit name and its byte length.
-    SourceLinearUnitName { units: Vec<u16>, byte_len: u8 },
+    SourceLinearUnitName {
+        units: Vec<u16>,
+        byte_len: u8,
+        /// The `export:value.unwritable` entry when the name was cut.
+        cut: Option<String>,
+    },
 }
 
 impl MetadataRecord {
-    /// Admit one metadata attribute, or `None` for a name no writer states.
+    /// Admit one metadata attribute, or say why it has no record.
     ///
     /// The values' shape is checked first. `retained` then receives the
     /// record's `SWObjects` token, and the values are admitted after it
-    /// returns.
+    /// returns; its refusal is [`Unwritten::RetainedMismatch`].
     fn project(
         attribute: &cadmpeg_ir::attributes::SourceAttribute,
         length_scale: f64,
         retained: impl FnOnce(&'static [u8]) -> Result<(), CodecError>,
-    ) -> Result<Option<Self>, CodecError> {
+    ) -> Result<Self, Unwritten> {
         use cadmpeg_ir::attributes::AttributeValue;
 
-        let invalid = |kind: &str| CodecError::malformed(format_args!("invalid {kind}"));
+        let invalid = Unwritten::Unrepresentable;
+        let retained = |token| retained(token).map_err(|_| Unwritten::RetainedMismatch);
         let values = attribute.values.as_slice();
-        Ok(Some(match attribute.name.as_str() {
+        Ok(match attribute.name.as_str() {
             "bounding_envelope" => {
-                let kind = "bounding envelope";
-                let [AttributeValue::Vector(values)] = values else {
-                    return Err(invalid(kind));
+                let [Some(AttributeValue::Vector(values))] = values else {
+                    return Err(invalid);
                 };
-                let values = ratios::<4>(values).ok_or_else(|| invalid(kind))?;
+                let values = ratios::<4>(values).ok_or(invalid)?;
                 retained(BOUNDING_ENVELOPE_TOKEN)?;
-                Self::BoundingEnvelope(scaled(values, length_scale).ok_or_else(|| invalid(kind))?)
+                Self::BoundingEnvelope(scaled(values, length_scale).ok_or(invalid)?)
             }
             "default_reference_plane" => {
-                let kind = "default reference plane";
-                let [AttributeValue::Vector(origin), AttributeValue::Vector(frame)] = values else {
-                    return Err(invalid(kind));
+                let [Some(AttributeValue::Vector(origin)), Some(AttributeValue::Vector(frame))] =
+                    values
+                else {
+                    return Err(invalid);
                 };
                 let (Some(origin), Some(frame)) = (ratios::<3>(origin), ratios(frame)) else {
-                    return Err(invalid(kind));
+                    return Err(invalid);
                 };
                 retained(DEFAULT_REFERENCE_PLANE_TOKEN)?;
-                let origin = scaled(origin, length_scale).ok_or_else(|| invalid(kind))?;
+                let origin = scaled(origin, length_scale).ok_or(invalid)?;
                 Self::DefaultReferencePlane { origin, frame }
             }
             "transformed_reference_enclosure" => {
-                let kind = "transformed reference enclosure";
-                let [AttributeValue::Vector(center), AttributeValue::Vector(upper), AttributeValue::Vector(lower), AttributeValue::Float(radius)] =
+                let [Some(AttributeValue::Vector(center)), Some(AttributeValue::Vector(upper)), Some(AttributeValue::Vector(lower)), Some(AttributeValue::Float(radius))] =
                     values
                 else {
-                    return Err(invalid(kind));
+                    return Err(invalid);
                 };
                 let (Some(center), Some(upper), Some(lower), Some([radius])) = (
                     ratios::<3>(center).and_then(|v| scaled(v, length_scale)),
@@ -2014,14 +2705,14 @@ impl MetadataRecord {
                     ratios::<3>(lower).and_then(|v| scaled(v, length_scale)),
                     scaled([radius.get()], length_scale),
                 ) else {
-                    return Err(invalid(kind));
+                    return Err(invalid);
                 };
                 let values = [
                     center[0], center[1], center[2], upper[0], upper[1], upper[2], lower[0],
                     lower[1], lower[2], radius,
                 ];
                 if !crate::metadata::valid_transformed_enclosure(&values) {
-                    return Err(invalid(kind));
+                    return Err(invalid);
                 }
                 retained(TRANSFORMED_REFERENCE_PLANE_TOKEN)?;
                 Self::TransformedReferenceEnclosure {
@@ -2034,50 +2725,50 @@ impl MetadataRecord {
             "part_record" => {
                 retained(PART_RECORD_TOKEN)?;
                 let (first, trailing) = match values {
-                    [AttributeValue::Integer(first)] => (*first, None),
-                    [AttributeValue::Integer(first), AttributeValue::Integer(last)] => {
+                    [Some(AttributeValue::Integer(first))] => (*first, None),
+                    [Some(AttributeValue::Integer(first)), Some(AttributeValue::Integer(last))] => {
                         (*first, Some(*last))
                     }
-                    _ => return Err(invalid("part scalar prefix")),
+                    _ => return Err(invalid),
                 };
                 Self::PartRecord {
-                    first_word: u32::try_from(first).map_err(|_| invalid("Part first word"))?,
+                    first_word: u32::try_from(first).map_err(|_| Unwritten::TooWide)?,
                     trailing_word: trailing
                         .map(u32::try_from)
                         .transpose()
-                        .map_err(|_| invalid("Part trailing word"))?,
+                        .map_err(|_| Unwritten::TooWide)?,
                 }
             }
-            "configuration_manager" => {
-                return Err(CodecError::NotImplemented(
-                    "SLDPRT configuration-manager edits and generation require an owned version-specific serializer and proven scalar roles".into(),
-                ));
-            }
+            // No serializer owns the version-specific manager fields or
+            // their scalar roles, so the record is neither edited nor
+            // generated.
+            "configuration_manager" => return Err(Unwritten::NoSerializer),
             "source_linear_unit_code" => {
-                let [AttributeValue::Integer(code)] = values else {
-                    return Err(invalid("source linear unit code"));
+                let [Some(AttributeValue::Integer(code))] = values else {
+                    return Err(invalid);
                 };
                 Self::SourceLinearUnitCode(*code)
             }
             "source_linear_unit_name" => {
-                let [AttributeValue::String(name)] = values else {
-                    return Err(invalid("source linear unit name"));
+                let [Some(AttributeValue::String(name))] = values else {
+                    return Err(invalid);
                 };
                 retained(UNIT_NAME_TOKEN)?;
-                let units = name.encode_utf16().collect::<Vec<_>>();
-                // The resident u16 vector occupies two bytes per unit.
-                let byte_len = u8::try_from(units.len() * 2).map_err(|_| {
-                    CodecError::NotImplemented("source linear unit name is too long".into())
-                })?;
-                if units.is_empty() {
-                    return Err(CodecError::Malformed(
-                        "source linear unit name is empty".into(),
-                    ));
+                let fitted = UNIT_NAME.fit(name);
+                if fitted.units == 0 {
+                    return Err(invalid);
                 }
-                Self::SourceLinearUnitName { units, byte_len }
+                let units = fitted.text.encode_utf16().collect::<Vec<_>>();
+                // The resident u16 vector occupies two bytes per unit.
+                let byte_len = u8::try_from(units.len() * 2).map_err(|_| Unwritten::TooWide)?;
+                Self::SourceLinearUnitName {
+                    units,
+                    byte_len,
+                    cut: fitted.unwritable_entry(attribute.id.as_str()),
+                }
             }
-            _ => return Ok(None),
-        }))
+            _ => return Err(Unwritten::UnknownName),
+        })
     }
 }
 
@@ -2094,6 +2785,18 @@ fn scaled<const N: usize>(values: [f64; N], scale: f64) -> Option<[f64; N]> {
         .iter()
         .all(|product| product.is_finite())
         .then_some(products)
+}
+
+/// Why no metadata record can hold `attribute`, judged from the attribute
+/// alone: a null at some position, or a target other than the document.
+fn unwritable(attribute: &cadmpeg_ir::attributes::SourceAttribute) -> Option<Unwritten> {
+    if attribute.values.iter().any(Option::is_none) {
+        Some(Unwritten::NoValue)
+    } else if attribute.target.entity != cadmpeg_ir::attributes::AttributeTarget::Document {
+        Some(Unwritten::EntityTarget)
+    } else {
+        None
+    }
 }
 
 /// This codec's document attributes, ordered by source payload position.
@@ -2117,70 +2820,70 @@ fn metadata_attributes(ir: &CadIr) -> Vec<&cadmpeg_ir::attributes::SourceAttribu
         .collect()
 }
 
+/// The generated `SWObjects` metadata records and the `Units` member.
+///
+/// With `retained_swobjects` the retained section holds every record but the
+/// unit code, replayed or patched in place, so only the unit code is
+/// generated. An attribute already in `unwritten` is not generated.
 fn metadata_payloads(
     ir: &CadIr,
     length_scale: f64,
     retained_swobjects: bool,
-) -> Result<(Vec<u8>, Option<Vec<u8>>), CodecError> {
-    use cadmpeg_ir::attributes::AttributeTarget;
-
+    unwritten: &mut UnwrittenAttributes,
+    cut: &mut Vec<String>,
+) -> (Vec<u8>, Option<Vec<u8>>) {
     let mut objects = Vec::new();
     let mut unit_code = None;
     for attribute in metadata_attributes(ir) {
-        if attribute.target.entity != AttributeTarget::Document {
-            return Err(CodecError::NotImplemented(
-                "SLDPRT semantic writer does not support entity attributes".into(),
-            ));
-        }
-        if retained_swobjects && attribute.name == "configuration_manager" {
+        let id = attribute.id.as_str();
+        if (retained_swobjects && attribute.name != "source_linear_unit_code")
+            || unwritten.contains(id)
+        {
             continue;
         }
-        match MetadataRecord::project(attribute, length_scale, |_| Ok(()))? {
-            Some(MetadataRecord::BoundingEnvelope(values)) => {
+        if let Some(reason) = unwritable(attribute) {
+            unwritten.record(id, reason, Held::Nothing);
+            continue;
+        }
+        match MetadataRecord::project(attribute, length_scale, |_| Ok(())) {
+            Ok(MetadataRecord::BoundingEnvelope(values)) => {
                 objects.extend_from_slice(BOUNDING_ENVELOPE_TOKEN);
                 objects.extend_from_slice(&1u32.to_le_bytes());
                 for value in values {
                     objects.extend_from_slice(&value.to_le_bytes());
                 }
             }
-            Some(MetadataRecord::DefaultReferencePlane { origin, frame }) => {
+            Ok(MetadataRecord::DefaultReferencePlane { origin, frame }) => {
                 objects.extend_from_slice(DEFAULT_REFERENCE_PLANE_TOKEN);
                 for value in origin.into_iter().chain(frame) {
                     objects.extend_from_slice(&value.to_le_bytes());
                 }
             }
-            Some(MetadataRecord::TransformedReferenceEnclosure { .. }) if retained_swobjects => {}
-            Some(MetadataRecord::TransformedReferenceEnclosure { .. }) => {
-                return Err(CodecError::NotImplemented(
-                    "SLDPRT enclosure generation requires a retained opaque serializer prologue"
-                        .into(),
-                ));
-            }
-            Some(MetadataRecord::PartRecord { .. }) if retained_swobjects => {}
-            Some(MetadataRecord::PartRecord { .. }) => {
-                return Err(CodecError::NotImplemented(
-                    "SLDPRT Part generation requires a retained supported root serializer".into(),
-                ));
-            }
-            Some(MetadataRecord::SourceLinearUnitCode(code)) => unit_code = Some(code),
-            Some(MetadataRecord::SourceLinearUnitName { units, byte_len }) => {
+            // The enclosure's opaque serializer prologue and the Part root
+            // serializer exist only as retained bytes.
+            Ok(
+                MetadataRecord::TransformedReferenceEnclosure { .. }
+                | MetadataRecord::PartRecord { .. },
+            ) => unwritten.record(id, Unwritten::NoSerializer, Held::Nothing),
+            Ok(MetadataRecord::SourceLinearUnitCode(code)) => unit_code = Some(code),
+            Ok(MetadataRecord::SourceLinearUnitName {
+                units,
+                byte_len,
+                cut: name_cut,
+            }) => {
+                cut.extend(name_cut);
                 objects.extend_from_slice(UNIT_NAME_TOKEN);
                 objects.extend_from_slice(&[0xff, 0xfe, 0xff, byte_len]);
                 objects.extend(units.into_iter().flat_map(u16::to_le_bytes));
             }
-            None => {
-                return Err(CodecError::NotImplemented(format!(
-                    "unsupported SLDPRT attribute {}",
-                    attribute.name
-                )))
-            }
+            Err(reason) => unwritten.record(id, reason, Held::Nothing),
         }
     }
     let units = unit_code.map(|code| {
         format!("<Metadata><Property Name=\"SW_UnitsLinear\" Value=\"{code}\"/></Metadata>")
             .into_bytes()
     });
-    Ok((objects, units))
+    (objects, units)
 }
 
 pub(crate) fn swobjects_local_sha256(
@@ -2189,7 +2892,7 @@ pub(crate) fn swobjects_local_sha256(
 ) -> Result<String, CodecError> {
     let mut attributes = metadata_attributes(ir);
     attributes.retain(|attribute| attribute.name != "source_linear_unit_code");
-    let views = (attributes, swobjects_materials(ir)?);
+    let views = (attributes, materials::swobjects_materials(ir).digest_view());
     Ok(cadmpeg_ir::hash::canonical_json_sha256(ctx, &views)?)
 }
 
@@ -2197,7 +2900,7 @@ pub(crate) fn swobjects_material_local_sha256(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
 ) -> Result<String, CodecError> {
-    let materials = swobjects_materials(ir)?;
+    let materials = materials::swobjects_materials(ir).digest_view();
     Ok(cadmpeg_ir::hash::canonical_json_sha256(ctx, &materials)?)
 }
 
@@ -2299,7 +3002,7 @@ fn retained_display_sections(
 fn retained_history_sections(
     baseline: &cadmpeg_ir::codec::Decoded,
     scan: &crate::container::ContainerScan<'_>,
-) -> Result<Vec<(crate::records::FeatureHistory, String, Vec<u8>)>, CodecError> {
+) -> Result<Vec<crate::history::write::keywords::RetainedHistory>, CodecError> {
     // Compare the same source-only decode stage that supplied the caller's
     // native records. In particular, decoding infers configuration source
     // indices from the active partition after parsing the Keywords XML.
@@ -2330,106 +3033,9 @@ fn retained_history_sections(
         .collect()
 }
 
-fn retained_history_payload(
-    history: &crate::records::FeatureHistory,
-    section: &str,
-    retained: &[(crate::records::FeatureHistory, String, Vec<u8>)],
-) -> Result<Vec<u8>, CodecError> {
-    let mut originals = retained
-        .iter()
-        .filter(|(original, name, _)| original.id == history.id && name == section);
-    let original = originals.next();
-    if originals.next().is_some() {
-        return Err(CodecError::NotImplemented(
-            "ambiguous retained SLDPRT history".into(),
-        ));
-    }
-    if let Some((original, _, payload)) = original {
-        if original == history {
-            return Ok(payload.clone());
-        }
-    }
-    history_payload(history)
-}
-
-fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, CodecError> {
-    validate_feature_graph(&history.features)?;
-    let mut out = String::from("<Keywords");
-    if let Some(name) = &history.part_name {
-        xml_attribute(&mut out, "Name", name);
-    }
-    for (name, value) in &history.properties {
-        xml_attribute(&mut out, name.as_str(), value);
-    }
-    out.push('>');
-    let write_configuration = |out: &mut String, configuration: &crate::records::Configuration| {
-        out.push_str("<Configuration");
-        xml_attribute(out, "Name", &configuration.name);
-        if let Some(source_index) = configuration.source_index {
-            xml_attribute(out, "SourceIndex", &source_index.to_string());
-        }
-        if let Some(material) = &configuration.material {
-            xml_attribute(out, "Material", material);
-        }
-        for (name, value) in &configuration.properties {
-            xml_attribute(out, name.as_str(), value);
-        }
-        out.push_str("/>");
-    };
-    let mut roots = history
-        .features
-        .iter()
-        .filter(|feature| feature.tree_parent.is_none())
-        .collect::<Vec<_>>();
-    roots.sort_by_key(|feature| feature.ordinal);
-    let mut emitted_configurations = HashSet::new();
-    let mut emitted_features = HashSet::new();
-    for item in &history.content {
-        match item {
-            crate::records::HistoryContent::Configuration(id) => {
-                if let Some(configuration) = history
-                    .configurations
-                    .iter()
-                    .find(|configuration| configuration.id == *id)
-                {
-                    write_configuration(&mut out, configuration);
-                    emitted_configurations.insert(configuration.id.as_str());
-                }
-            }
-            crate::records::HistoryContent::Feature(id) => {
-                if let Some(feature) = roots.iter().find(|feature| feature.id == *id) {
-                    write_feature_xml(&mut out, feature, &history.features);
-                    emitted_features.insert(feature.id.as_str());
-                }
-            }
-            crate::records::HistoryContent::Text(text) => xml_text(&mut out, text),
-        }
-    }
-    for configuration in &history.configurations {
-        if emitted_configurations.insert(configuration.id.as_str()) {
-            write_configuration(&mut out, configuration);
-        }
-    }
-    for feature in roots {
-        if emitted_features.insert(feature.id.as_str()) {
-            write_feature_xml(&mut out, feature, &history.features);
-        }
-    }
-    out.push_str("</Keywords>");
-    Ok(out.into_bytes())
-}
-
 pub(crate) fn validate_feature_graph(
     features: &[crate::records::Feature],
 ) -> Result<(), CodecError> {
-    if features
-        .iter()
-        .any(|feature| !valid_xml_name(&feature.xml_tag))
-    {
-        return Err(CodecError::Malformed(
-            "invalid feature XML element name".into(),
-        ));
-    }
     let mut by_id = HashMap::new();
     for feature in features {
         if let Some(id) = feature.source_id {
@@ -2478,121 +3084,12 @@ pub(crate) fn validate_feature_graph(
     Ok(())
 }
 
-fn write_feature_xml(
-    out: &mut String,
-    feature: &crate::records::Feature,
-    features: &[crate::records::Feature],
-) {
-    out.push('<');
-    out.push_str(&feature.xml_tag);
-    if let Some(id) = feature.source_id {
-        xml_attribute(out, "id", &String::from(id));
-    }
-    xml_attribute(out, "Name", &feature.name);
-    xml_attribute(out, "Type", &feature.kind);
-    if feature.suppressed {
-        xml_attribute(out, "Suppressed", "true");
-    }
-    for (name, value) in &feature.properties {
-        xml_attribute(out, name.as_str(), value);
-    }
-    out.push('>');
-    let write_dimension = |out: &mut String, name: &str, value: &str| {
-        out.push_str("<Dimension");
-        xml_attribute(out, "Name", name);
-        if let Some(properties) = feature.dimension_properties.get(name) {
-            for (property, value) in properties {
-                xml_attribute(out, property.as_str(), value);
-            }
-        }
-        out.push('>');
-        xml_text(out, value);
-        out.push_str("</Dimension>");
-    };
-    let mut children = features
-        .iter()
-        .filter(|child| {
-            child.tree_parent_record_id() == Some(feature.id.as_str())
-                || (child.tree_parent_record_id().is_none()
-                    && child.parent_source_id() == feature.source_id
-                    && feature.source_id.is_some())
-        })
-        .collect::<Vec<_>>();
-    children.sort_by_key(|child| child.ordinal);
-    let mut emitted_dimensions = HashSet::new();
-    let mut emitted_children = HashSet::new();
-    if feature.content.is_empty() {
-        for (name, value) in &feature.parameters {
-            write_dimension(out, name.as_str(), value);
-            emitted_dimensions.insert(name.as_str());
-        }
-        if let Some(text) = &feature.text {
-            xml_text(out, text);
-        }
-    } else {
-        for item in &feature.content {
-            match item {
-                crate::records::FeatureContent::Dimension(name) => {
-                    if let Some(value) = feature.parameters.get(name.as_str()) {
-                        write_dimension(out, name, value);
-                        emitted_dimensions.insert(name.as_str());
-                    }
-                }
-                crate::records::FeatureContent::Feature(id) => {
-                    if let Some(child) = children.iter().find(|child| child.id == *id) {
-                        write_feature_xml(out, child, features);
-                        emitted_children.insert(child.id.as_str());
-                    }
-                }
-                crate::records::FeatureContent::Text(text) => xml_text(out, text),
-            }
-        }
-    }
-    for (name, value) in &feature.parameters {
-        if emitted_dimensions.insert(name.as_str()) {
-            write_dimension(out, name.as_str(), value);
-        }
-    }
-    for child in children {
-        if !emitted_children.insert(child.id.as_str()) {
-            continue;
-        }
-        write_feature_xml(out, child, features);
-    }
-    out.push_str("</");
-    out.push_str(&feature.xml_tag);
-    out.push('>');
-}
-
-fn xml_attribute(out: &mut String, name: &str, value: &str) {
-    out.push(' ');
-    out.push_str(name);
-    out.push_str("=\"");
-    for character in value.chars() {
-        match character {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '"' => out.push_str("&quot;"),
-            '\r' => out.push_str("&#13;"),
-            '\n' => out.push_str("&#10;"),
-            _ => out.push(character),
-        }
-    }
-    out.push('"');
-}
-
-fn xml_text(out: &mut String, value: &str) {
-    for character in value.chars() {
-        match character {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            _ => out.push(character),
-        }
-    }
-}
-
-fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecError> {
+/// The display-list member, and the meshes whose auxiliary channels it does
+/// not hold.
+fn tessellation_payload(
+    ir: &CadIr,
+    length_scale: f64,
+) -> Result<(Vec<u8>, Vec<String>), CodecError> {
     type AuxiliaryWriter = fn(&mut Vec<u8>, &[u32]) -> Result<(), CodecError>;
     let meshes = ir
         .model
@@ -2600,6 +3097,7 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
         .iter()
         .map(sequential_tessellation)
         .collect::<Result<Vec<_>, _>>()?;
+    let mut omitted = Vec::new();
     let mut out = b"uoTempBodyTessData_c".to_vec();
     out.extend_from_slice(&[0; 8]);
     out.extend_from_slice(b"uoTempFaceTessData_c");
@@ -2641,9 +3139,9 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
         descriptor(&mut out, 12, 100, 2, mesh.vertex_normals().len(), &normals)?;
         // `has_core_tessellation_channels` matches at least three channels, so
         // the remainder after the core three is the complete auxiliary run.
-        // The display-list table carries exactly three auxiliary channels; the
-        // consistency check below refuses any other number rather than
-        // truncating the run the mesh states.
+        // The display-list table carries exactly three auxiliary channels; a
+        // run of another shape is left out whole and the table's defaults are
+        // written.
         let auxiliary_start = usize::from(has_core_tessellation_channels(mesh.channels())) * 3;
         let auxiliary = &mesh.channels()[auxiliary_start..];
         let strip_lengths = mesh
@@ -2652,15 +3150,14 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
             .map(|run| usize::try_from(*run))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| CodecError::Malformed("tessellation strip length overflow".into()))?;
-        if !auxiliary.is_empty()
-            && !crate::tessellation::auxiliary_channels_are_consistent(&strip_lengths, auxiliary)
+        let auxiliary = if auxiliary.is_empty()
+            || crate::tessellation::auxiliary_channels_are_consistent(&strip_lengths, auxiliary)
         {
-            return Err(CodecError::InvalidInput(
-                "tessellation channels: the SLDPRT display-list table carries exactly three \
-                 auxiliary channels after the strip, position and normal channels"
-                    .into(),
-            ));
-        }
+            auxiliary
+        } else {
+            omitted.push(mesh.id.as_str().to_owned());
+            &[]
+        };
         for channel in auxiliary {
             descriptor(
                 &mut out,
@@ -2701,7 +3198,7 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
             append(&mut out, &list_c)?;
         }
     }
-    Ok(out)
+    Ok((out, omitted))
 }
 
 fn has_core_tessellation_channels(
@@ -2716,17 +3213,6 @@ fn has_core_tessellation_channels(
 fn sequential_tessellation(
     mesh: &cadmpeg_ir::tessellation::Tessellation,
 ) -> Result<cadmpeg_ir::tessellation::Tessellation, CodecError> {
-    if !mesh.triangle_groups().is_empty() || !mesh.texture_assignments().is_empty() {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT display tessellation triangle groups and texture assignments are not writable"
-                .into(),
-        ));
-    }
-    if !mesh.feature_edges().is_empty() {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT display tessellation feature edges are not writable".into(),
-        ));
-    }
     if matches!(
         mesh.mesh(),
         cadmpeg_ir::tessellation::TessellationMesh::Strips { .. }
@@ -2812,8 +3298,14 @@ fn sequential_tessellation(
             |strips| cadmpeg_ir::tessellation::TessellationMesh::ShadedStrips { strips },
         )
     };
+    // The display list holds no face grouping, texture or feature-edge
+    // record; the export accounting charges each.
     mesh.clone()
-        .with_mesh(rows, channels)
+        .with_triangle_groups(Vec::new())
+        .and_then(|mesh| mesh.with_texture_assignments(Vec::new()))
+        .and_then(|mesh| mesh.with_texture_coordinates(Vec::new()))
+        .and_then(|mesh| mesh.with_feature_edges(Vec::new()))
+        .and_then(|mesh| mesh.with_mesh(rows, channels))
         .map_err(|err| CodecError::Malformed(err.to_string()))
 }
 
@@ -2857,122 +3349,36 @@ fn descriptor(
     Ok(())
 }
 
-fn body_material(ir: &CadIr) -> Result<Option<(&str, Color)>, CodecError> {
-    let appearances = ir
-        .model
-        .appearances
-        .iter()
-        .map(|appearance| (&appearance.id, appearance))
-        .collect::<HashMap<_, _>>();
-    let mut selected: Option<(&str, Color)> = None;
-    for binding in &ir.model.appearance_bindings {
-        let AppearanceTarget::Body(_) = &binding.target.entity else {
-            continue;
-        };
-        let appearance = appearances.get(&binding.appearance).ok_or_else(|| {
-            CodecError::Malformed("body binding references missing appearance".into())
-        })?;
-        let color = appearance.base_color.ok_or_else(|| {
-            CodecError::NotImplemented("SLDPRT body appearance has no base color".into())
-        })?;
-        let material = (appearance.name.as_deref().unwrap_or("Material"), color);
-        if selected
-            .as_ref()
-            .is_some_and(|current| current != &material)
-        {
-            return Err(CodecError::NotImplemented(
-                "SLDPRT writer cannot encode distinct body materials in SWObjects".into(),
-            ));
+/// `error` with the record it concerns named as a whole token (§3.2), so the
+/// encode retry can find the body that owns it.
+fn named_record(error: CodecError, id: &str) -> CodecError {
+    match error {
+        CodecError::NotImplemented(message) => {
+            CodecError::NotImplemented(format!("{message}: {id}"))
         }
-        selected = Some(material);
+        CodecError::Malformed(message) => CodecError::malformed(format_args!("{message}: {id}")),
+        CodecError::InvalidInput(message) => CodecError::InvalidInput(format!("{message}: {id}")),
+        other => other,
     }
-    if selected.is_none() {
-        for body in &ir.geometry.bodies {
-            let Some(color) = body.color else {
-                continue;
-            };
-            let material = (body.name.as_deref().unwrap_or("Material"), color);
-            if selected
-                .as_ref()
-                .is_some_and(|current| current != &material)
-            {
-                return Err(CodecError::NotImplemented(
-                    "SLDPRT writer cannot encode distinct body materials in SWObjects".into(),
-                ));
-            }
-            selected = Some(material);
-        }
-    }
-    Ok(selected)
-}
-
-fn materials_payload(ir: &CadIr) -> Result<Vec<u8>, CodecError> {
-    let mut payload = Vec::new();
-    for (name, color) in swobjects_materials(ir)? {
-        payload.extend(material_payload(name, color)?);
-    }
-    Ok(payload)
-}
-
-fn swobjects_materials(ir: &CadIr) -> Result<Vec<(&str, Color)>, CodecError> {
-    let mut materials = Vec::new();
-    if let Some(material) = body_material(ir)? {
-        materials.push(material);
-    }
-    for appearance in &ir.model.appearances {
-        if appearance.schema.as_deref() != Some("moVisualProperties_c") {
-            continue;
-        }
-        let Some(color) = appearance.base_color else {
-            return Err(CodecError::NotImplemented(
-                "SLDPRT material appearance has no base color".into(),
-            ));
-        };
-        let material = (appearance.name.as_deref().unwrap_or("Material"), color);
-        if !materials.contains(&material) {
-            materials.push(material);
-        }
-    }
-    Ok(materials)
-}
-
-fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, CodecError> {
-    let name = name.encode_utf16().collect::<Vec<_>>();
-    let length = u8::try_from(name.len())
-        .map_err(|_| CodecError::NotImplemented("SLDPRT material name is too long".into()))?;
-    if name.is_empty() {
-        return Err(CodecError::Malformed(
-            "SLDPRT material name is empty".into(),
-        ));
-    }
-    let mut out = b"moVisualProperties_c".to_vec();
-    // Every `Color` construction path admits components in [0, 1], so the
-    // rounded product is in [0, 255].
-    let component = |value: f64| {
-        truncate_f64_to_u8((value * 255.0).round()).ok_or_else(|| {
-            CodecError::Malformed("SLDPRT material color component is out of range".into())
-        })
-    };
-    out.extend_from_slice(&[
-        component(color.r())?,
-        component(color.g())?,
-        component(color.b())?,
-        0,
-    ]);
-    out.extend_from_slice(&0u32.to_le_bytes());
-    out.extend_from_slice(&0x00c0_c0c0u32.to_le_bytes());
-    out.extend_from_slice(&[0xff, 0xfe, 0xff, 0x00]);
-    out.extend_from_slice(&[0xff, 0xfe, 0xff, length]);
-    for unit in name {
-        out.extend_from_slice(&unit.to_le_bytes());
-    }
-    Ok(out)
 }
 
 pub(crate) fn brep_body(
     ir: &CadIr,
     length_scale: f64,
     schema_32001: bool,
+) -> Result<Vec<u8>, CodecError> {
+    brep_body_from(ir, length_scale, schema_32001, FIRST_NODE_INDEX)
+}
+
+/// The first node index of a stream (`parasolid.md` §1).
+const FIRST_NODE_INDEX: u32 = 2;
+
+/// The partition body with its attributes allocated from `first`.
+pub(crate) fn brep_body_from(
+    ir: &CadIr,
+    length_scale: f64,
+    schema_32001: bool,
+    first: u32,
 ) -> Result<Vec<u8>, CodecError> {
     if let Some(body) = ir
         .geometry
@@ -2985,7 +3391,7 @@ pub(crate) fn brep_body(
             body.kind, body.id
         )));
     }
-    let mut next = 2u16;
+    let mut next = first;
     let derived_sphere_seam_curves = ir
         .geometry
         .curves
@@ -3038,6 +3444,17 @@ pub(crate) fn brep_body(
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
+    // The sole FIN of each vertex loop (§4, coedge `00 11` marker `0x3f`).
+    let vertex_loop_fins = ir
+        .geometry
+        .loops
+        .iter()
+        .filter_map(|item| match &item.boundary {
+            LoopBoundary::Vertex { vertex, .. } => Some((item, vertex)),
+            LoopBoundary::Ring(_) => None,
+        })
+        .map(|(item, vertex)| Ok((item.id.clone(), (take_attr(&mut next)?, vertex))))
+        .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let loops = ir
         .geometry
         .loops
@@ -3057,10 +3474,18 @@ pub(crate) fn brep_body(
         .map(|body| Ok((body.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let vertex_owners = ownership::vertex_body_owners(ir, &body_attrs)?;
-    let reversed_edges = edge_direction::reversed_compact_edges(ir)?;
+    let reversed_edges = edge_direction::reversed_edges(ir)?;
     let mut out = Vec::new();
     for surface in &ir.geometry.surfaces {
-        if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) = &surface.geometry {
+        // A procedural carrier is written as the solved shape the source
+        // retains for it; its construction is charged by the arena coverage.
+        let solved = surface.geometry.solved().ok_or_else(|| {
+            CodecError::NotImplemented(format!(
+                "carrier has no solved geometry: {}",
+                surface.id.as_str()
+            ))
+        })?;
+        if let SolvedSurfaceGeometry::Nurbs(nurbs) = solved {
             write_nurbs_surface(
                 &mut out,
                 surfaces[&surface.id],
@@ -3071,34 +3496,51 @@ pub(crate) fn brep_body(
             )?;
             continue;
         }
-        let reference = surface_reference(surface.geometry.solved().ok_or_else(|| {
-            cadmpeg_core::CodecError::NotImplemented("carrier has no solved geometry".into())
-        })?);
-        let (kind, values) = surface_values(&surface.geometry, reference, length_scale)?;
+        let (kind, values) = surface_values(
+            &SurfaceGeometry::Solved(solved.clone()),
+            surface_reference(solved),
+            length_scale,
+        )
+        .map_err(|error| named_record(error, surface.id.as_str()))?;
         compact(
             &mut out,
             kind,
             surfaces[&surface.id],
-            SURFACE_MARKER,
+            surface_marker(solved),
             &values,
-        );
+        )?;
     }
     for curve in &ir.geometry.curves {
         if derived_sphere_seam_curves.contains(&curve.id) {
             continue;
         }
-        if let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = &curve.geometry {
+        let solved = curve.geometry.solved().ok_or_else(|| {
+            CodecError::NotImplemented(format!(
+                "carrier has no solved geometry: {}",
+                curve.id.as_str()
+            ))
+        })?;
+        if let SolvedCurveGeometry::Nurbs(nurbs) = solved {
+            // A curve whose edges are all stored reversed runs along them.
+            let nurbs = if reversed_edges.curves.contains(&curve.id) {
+                let mut reversed = nurbs.clone();
+                reversed.reverse_parameterization();
+                std::borrow::Cow::Owned(reversed)
+            } else {
+                std::borrow::Cow::Borrowed(nurbs)
+            };
             write_nurbs_curve(
                 &mut out,
                 curves[&curve.id],
-                nurbs,
+                &nurbs,
                 &mut next,
                 length_scale,
                 curve.id.as_str(),
             )?;
             continue;
         }
-        let (kind, values) = curve_values(&curve.geometry, length_scale)?;
+        let (kind, values) = curve_values(&CurveGeometry::Solved(solved.clone()), length_scale)
+            .map_err(|error| named_record(error, curve.id.as_str()))?;
         compact(
             &mut out,
             kind,
@@ -3109,7 +3551,7 @@ pub(crate) fn brep_body(
                 CURVE_ALONG_EDGES_MARKER
             },
             &values,
-        );
+        )?;
     }
     let face_owners = ir
         .geometry
@@ -3117,7 +3559,7 @@ pub(crate) fn brep_body(
         .iter()
         .map(|face| Ok((face.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
-    let face_colors = face_colors(ir)?;
+    let face_colors = face_colors(ir);
     let mut colored_faces = face_colors.keys().collect::<Vec<_>>();
     colored_faces.sort();
     let color_attrs = colored_faces
@@ -3133,7 +3575,7 @@ pub(crate) fn brep_body(
     };
     for point in &ir.geometry.points {
         tag(&mut out, 0x1d);
-        be16(&mut out, points[&point.id]);
+        pointer(&mut out, points[&point.id])?;
         be32(&mut out, 0);
         out.extend_from_slice(&[0; 8]);
         for value in [
@@ -3146,41 +3588,57 @@ pub(crate) fn brep_body(
     }
     for vertex in &ir.geometry.vertices {
         tag(&mut out, 0x12);
-        be16(&mut out, vertices[&vertex.id]);
+        pointer(&mut out, vertices[&vertex.id])?;
         be32(&mut out, 0);
         for value in [0, 0, 0, 0, points[&vertex.point]] {
-            be16(&mut out, value);
+            pointer(&mut out, value)?;
         }
         if let Some(tolerance) = vertex.tolerance {
             let value = tolerance.get() * length_scale;
             if !value.is_finite() || value <= 0.0 {
-                return Err(CodecError::NotImplemented(
-                    "SLDPRT vertex tolerance is outside the finite positive source range".into(),
-                ));
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT vertex tolerance is outside the finite positive source range: {}",
+                    vertex.id
+                )));
             }
             bef64(&mut out, value);
         } else {
             out.extend_from_slice(&MAGIC);
         }
-        be16(&mut out, vertex_owners[&vertex.id]);
+        pointer(&mut out, vertex_owners[&vertex.id])?;
+    }
+    let mut canonical_fins = HashMap::new();
+    for coedge in &ir.geometry.coedges {
+        if reversed_edges.stored_sense(&coedge.edge, coedge.sense) == Sense::Forward {
+            canonical_fins
+                .entry(&coedge.edge)
+                .or_insert(coedges[&coedge.id]);
+        }
     }
     for edge in &ir.geometry.edges {
-        let ends = edge_ends(edge)?;
-        let owner = vertex_owners
-            .get(&ends.start)
-            .ok_or_else(|| CodecError::Malformed("SLDPRT EDGE start has no BODY owner".into()))?;
+        let ends = edge_ends(edge).map_err(|error| named_record(error, edge.id.as_str()))?;
+        let owner = vertex_owners.get(&ends.start).ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "SLDPRT EDGE start has no BODY owner: {}",
+                edge.id
+            ))
+        })?;
         if vertex_owners.get(&ends.end) != Some(owner) {
-            return Err(CodecError::NotImplemented(
-                "SLDPRT EDGE endpoints do not have one BODY owner".into(),
-            ));
+            return Err(CodecError::NotImplemented(format!(
+                "SLDPRT EDGE endpoints do not have one BODY owner: {}",
+                edge.id
+            )));
         }
         tag(&mut out, 0x10);
-        be16(&mut out, edges[&edge.id]);
+        pointer(&mut out, edges[&edge.id])?;
         be32(&mut out, 0);
-        be16(&mut out, 0);
+        pointer(&mut out, 0)?;
         out.extend_from_slice(&MAGIC);
+        // The canonical forward FIN, stated so that an edge with several
+        // forward FINs still names one (§4).
+        let canonical = canonical_fins.get(&edge.id).copied().unwrap_or(0);
         for value in [
-            0,
+            canonical,
             0,
             0,
             edge.curve()
@@ -3190,34 +3648,48 @@ pub(crate) fn brep_body(
             0,
             0,
         ] {
-            be16(&mut out, value);
+            pointer(&mut out, value)?;
         }
-        be16(&mut out, *owner);
+        pointer(&mut out, *owner)?;
+    }
+    let mut edges_by_id = HashMap::new();
+    for edge in &ir.geometry.edges {
+        edges_by_id.entry(&edge.id).or_insert(edge);
+    }
+    let mut loops_by_id = HashMap::<_, Vec<_>>::new();
+    for lp in &ir.geometry.loops {
+        loops_by_id.entry(&lp.id).or_default().push(lp);
+    }
+    let mut faces_by_id = HashMap::new();
+    for face in &ir.geometry.faces {
+        faces_by_id.entry(&face.id).or_insert(face);
     }
     for coedge in &ir.geometry.coedges {
         tag(&mut out, 0x11);
-        be16(&mut out, coedges[&coedge.id]);
-        let edge = ir
-            .geometry
-            .edges
-            .iter()
-            .find(|edge| edge.id == coedge.edge)
-            .ok_or_else(|| CodecError::Malformed("coedge references missing edge".into()))?;
-        let ends = edge_ends(edge)?;
+        pointer(&mut out, coedges[&coedge.id])?;
+        let edge = edges_by_id.get(&coedge.edge).copied().ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "coedge references missing edge: {}",
+                coedge.id
+            ))
+        })?;
+        let ends = edge_ends(edge).map_err(|error| named_record(error, edge.id.as_str()))?;
         let forward_vertex = if coedge.sense == Sense::Forward {
             &ends.end
         } else {
             &ends.start
         };
-        let (next, previous) =
-            cadmpeg_ir::topology::coedge_ring_neighbors(&ir.geometry.loops, coedge).ok_or_else(
-                || {
-                    CodecError::malformed(format_args!(
-                        "coedge {} is absent from its owning loop ring",
-                        coedge.id
-                    ))
-                },
-            )?;
+        let (next, previous) = loops_by_id
+            .get(&coedge.owner_loop)
+            .into_iter()
+            .flatten()
+            .find_map(|lp| lp.ring_neighbors_of(coedge))
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "coedge {} is absent from its owning loop ring",
+                    coedge.id
+                ))
+            })?;
         for value in [
             0,
             loops[&coedge.owner_loop],
@@ -3229,7 +3701,7 @@ pub(crate) fn brep_body(
             0,
             0,
         ] {
-            be16(&mut out, value);
+            pointer(&mut out, value)?;
         }
         out.push(
             if reversed_edges.stored_sense(&coedge.edge, coedge.sense) == Sense::Forward {
@@ -3240,50 +3712,66 @@ pub(crate) fn brep_body(
         );
     }
     for lp in &ir.geometry.loops {
-        let face = ir
-            .geometry
-            .faces
-            .iter()
-            .find(|face| face.id == lp.face)
-            .ok_or_else(|| CodecError::Malformed("loop references missing face".into()))?;
+        let Some((fin, vertex)) = vertex_loop_fins.get(&lp.id) else {
+            continue;
+        };
+        let vertex = vertices.get(*vertex).copied().ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "vertex loop references a missing vertex: {}",
+                lp.id
+            ))
+        })?;
+        tag(&mut out, 0x11);
+        pointer(&mut out, *fin)?;
+        for value in [0, loops[&lp.id], *fin, *fin, vertex, 0, 0, 0, 0] {
+            pointer(&mut out, value)?;
+        }
+        out.push(0x3f);
+    }
+    for lp in &ir.geometry.loops {
+        let face = faces_by_id.get(&lp.face).copied().ok_or_else(|| {
+            CodecError::malformed(format_args!("loop references missing face: {}", lp.id))
+        })?;
         let position = face
             .loops
             .iter()
             .position(|id| id == &lp.id)
-            .ok_or_else(|| CodecError::Malformed("face does not own referenced loop".into()))?;
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("face does not own referenced loop: {}", lp.id))
+            })?;
         let next_loop = face
             .loops
             .iter()
             .nth(position + 1)
             .map_or(0, |id| loops[id]);
+        let first_fin = match vertex_loop_fins.get(&lp.id) {
+            Some((fin, _)) => *fin,
+            None => {
+                coedges[lp
+                    .coedges()
+                    .first()
+                    .ok_or_else(|| CodecError::malformed(format_args!("empty loop: {}", lp.id)))?]
+            }
+        };
         tag(&mut out, 0x0f);
-        be16(&mut out, loops[&lp.id]);
+        pointer(&mut out, loops[&lp.id])?;
         be32(&mut out, 0);
-        for value in [
-            0,
-            coedges[lp
-                .coedges()
-                .first()
-                .ok_or_else(|| CodecError::Malformed("empty loop".into()))?],
-            faces[&lp.face],
-            next_loop,
-        ] {
-            be16(&mut out, value);
+        for value in [0, first_fin, faces[&lp.face], next_loop] {
+            pointer(&mut out, value)?;
         }
     }
     for face in &ir.geometry.faces {
         tag(&mut out, 0x0e);
-        be16(&mut out, faces[&face.id]);
+        pointer(&mut out, faces[&face.id])?;
         be32(&mut out, 0);
-        be16(&mut out, face_owners[&face.id]);
+        pointer(&mut out, face_owners[&face.id])?;
         out.extend_from_slice(&MAGIC);
-        let first = face
-            .loops
-            .iter()
-            .next()
-            .ok_or_else(|| CodecError::Malformed("face has no loop".into()))?;
+        let first =
+            face.loops.iter().next().ok_or_else(|| {
+                CodecError::malformed(format_args!("face has no loop: {}", face.id))
+            })?;
         for value in [0, 0, loops[first], 0, surfaces[&face.surface]] {
-            be16(&mut out, value);
+            pointer(&mut out, value)?;
         }
         out.push(if face.sense == Sense::Forward {
             0x2b
@@ -3309,7 +3797,7 @@ pub(crate) fn brep_body(
     let mut colored_faces = face_colors.into_iter().collect::<Vec<_>>();
     colored_faces.sort_by(|(left, _), (right, _)| left.cmp(right));
     for (face, color) in colored_faces {
-        entity53(&mut out, color_attrs[&face], color);
+        entity53(&mut out, color_attrs[&face], color)?;
     }
     Ok(out)
 }
@@ -3318,19 +3806,19 @@ pub(crate) fn brep_body(
 /// hierarchy writers share.
 #[derive(Clone, Copy)]
 struct HierarchyIdentities<'a> {
-    body_attrs: &'a HashMap<cadmpeg_ir::ids::BodyId, u16>,
-    faces: &'a HashMap<cadmpeg_ir::ids::FaceId, u16>,
-    surfaces: &'a HashMap<cadmpeg_ir::ids::SurfaceId, u16>,
-    face_owners: &'a HashMap<cadmpeg_ir::ids::FaceId, u16>,
-    color_attrs: &'a HashMap<cadmpeg_ir::ids::FaceId, u16>,
-    face_color_definition: Option<(u16, u16)>,
+    body_attrs: &'a HashMap<cadmpeg_ir::ids::BodyId, u32>,
+    faces: &'a HashMap<cadmpeg_ir::ids::FaceId, u32>,
+    surfaces: &'a HashMap<cadmpeg_ir::ids::SurfaceId, u32>,
+    face_owners: &'a HashMap<cadmpeg_ir::ids::FaceId, u32>,
+    color_attrs: &'a HashMap<cadmpeg_ir::ids::FaceId, u32>,
+    face_color_definition: Option<(u32, u32)>,
     schema_32001: bool,
 }
 
 fn write_body_hierarchy(
     ir: &CadIr,
     identities: &HierarchyIdentities<'_>,
-    next: &mut u16,
+    next: &mut u32,
     out: &mut Vec<u8>,
 ) -> Result<(), CodecError> {
     let HierarchyIdentities {
@@ -3354,9 +3842,10 @@ fn write_body_hierarchy(
         let mut native_regions = Vec::new();
         for region in ir.geometry.body_regions(&body.id) {
             if body.kind == BodyKind::Sheet && region.shells.len() != 1 {
-                return Err(CodecError::NotImplemented(
-                    "SLDPRT sheet regions require exactly one shell".into(),
-                ));
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT sheet regions require exactly one shell: {}",
+                    body.id
+                )));
             }
             let native_region = take_attr(next)?;
             native_regions.push(native_region);
@@ -3404,18 +3893,23 @@ fn write_body_hierarchy(
                     1,
                     native_region,
                     0x001b,
-                    &fixed_refs(&native_lumps, "SLDPRT region has more than six shells")?,
+                    &fixed_refs(&native_lumps, "SLDPRT region has more than six shells")
+                        .map_err(|error| named_record(error, body.id.as_str()))?,
                 )?;
             }
         }
         let mut root_refs = [0; 6];
         if native_regions.is_empty() {
-            return Err(CodecError::Malformed("SLDPRT body has no regions".into()));
+            return Err(CodecError::malformed(format_args!(
+                "SLDPRT body has no regions: {}",
+                body.id
+            )));
         }
         if native_regions.len() > 5 {
-            return Err(CodecError::NotImplemented(
-                "SLDPRT body has more than five regions".into(),
-            ));
+            return Err(CodecError::NotImplemented(format!(
+                "SLDPRT body has more than five regions: {}",
+                body.id
+            )));
         }
         root_refs[1..=native_regions.len()].copy_from_slice(&native_regions);
         entity51(out, 2, root, 0x0017, &root_refs)?;
@@ -3459,10 +3953,10 @@ fn write_body_hierarchy(
 /// without a second identity map.
 fn write_typed_body_hierarchy(
     ir: &CadIr,
-    faces: &HashMap<cadmpeg_ir::ids::FaceId, u16>,
-    surfaces: &HashMap<cadmpeg_ir::ids::SurfaceId, u16>,
-    body_attrs: &HashMap<cadmpeg_ir::ids::BodyId, u16>,
-    next: &mut u16,
+    faces: &HashMap<cadmpeg_ir::ids::FaceId, u32>,
+    surfaces: &HashMap<cadmpeg_ir::ids::SurfaceId, u32>,
+    body_attrs: &HashMap<cadmpeg_ir::ids::BodyId, u32>,
+    next: &mut u32,
     out: &mut Vec<u8>,
 ) -> Result<(), CodecError> {
     let region_attrs = ir
@@ -3509,17 +4003,17 @@ fn write_typed_body_hierarchy(
                         "SLDPRT typed topology node index exceeds the 32-bit range".into(),
                     )
                 })?,
-        );
+        )?;
         for value in [5_u32, 6, 1, 1, 1, 1] {
-            typed_ref(out, value)?;
+            pointer(out, value)?;
         }
         bef64(out, 1000.0);
         bef64(out, TYPED_BODY_LINEAR_RESOLUTION);
         for value in [1_u32, 1, 1] {
-            typed_ref(out, value)?;
+            pointer(out, value)?;
         }
         out.push(1);
-        typed_ref(out, 2_u32)?;
+        pointer(out, 2_u32)?;
         out.push(match body.kind {
             BodyKind::Solid => 1,
             BodyKind::Wire => 2,
@@ -3528,10 +4022,10 @@ fn write_typed_body_hierarchy(
         });
         out.push(1);
         for value in [first_shell, 1, 1, 1, 1, 1, 1] {
-            typed_ref(out, value)?;
+            pointer(out, value)?;
         }
         for value in [first_region, 1, 1, 1] {
-            typed_ref(out, value)?;
+            pointer(out, value)?;
         }
     }
 
@@ -3561,9 +4055,24 @@ fn write_typed_body_hierarchy(
                         "SLDPRT typed topology node index exceeds the 32-bit range".into(),
                     )
                 })?,
-        );
-        for value in [1, body_attrs[body], 1, 1, 1, 1, region_attrs[&region.id], 1] {
-            typed_ref(out, value)?;
+        )?;
+        let next_shell = region
+            .shells
+            .iter()
+            .skip_while(|candidate| *candidate != &shell.id)
+            .nth(1)
+            .map_or(1, |id| shell_attrs[id]);
+        for value in [
+            1,
+            body_attrs[body],
+            next_shell,
+            1,
+            1,
+            1,
+            region_attrs[&region.id],
+            1,
+        ] {
+            pointer(out, value)?;
         }
     }
 
@@ -3602,9 +4111,9 @@ fn write_typed_body_hierarchy(
                         "SLDPRT typed topology node index exceeds the 32-bit range".into(),
                     )
                 })?,
-        );
+        )?;
         for value in [1, body, next_region, previous_region, shell_head] {
-            typed_ref(out, value)?;
+            pointer(out, value)?;
         }
         out.push(b'S');
     }
@@ -3626,11 +4135,11 @@ fn write_typed_body_hierarchy(
                         "SLDPRT typed topology node index exceeds the 32-bit range".into(),
                     )
                 })?,
-        );
-        typed_ref(out, 1_u32)?;
+        )?;
+        pointer(out, 1_u32)?;
         out.extend_from_slice(&MAGIC);
         for value in [1, 1, 0, shell, surfaces[&face.surface]] {
-            typed_ref(out, value)?;
+            pointer(out, value)?;
         }
         out.push(match face.sense {
             Sense::Forward => 0x2b,
@@ -3640,21 +4149,22 @@ fn write_typed_body_hierarchy(
     Ok(())
 }
 
-fn typed_prefix(out: &mut Vec<u8>, kind: u8, attr: u16, node_id: u32) {
+fn typed_prefix(out: &mut Vec<u8>, kind: u8, attr: u32, node_id: u32) -> Result<(), CodecError> {
     tag(out, kind);
-    out.push(0xff);
-    be16(out, attr);
+    pointer(out, attr)?;
     be32(out, node_id);
+    Ok(())
 }
 
-/// Emit one Parasolid XT pointer in its shortest encoded form (`parasolid.md` §1).
-fn typed_ref(out: &mut Vec<u8>, value: impl Into<u32>) -> Result<(), CodecError> {
-    cadmpeg_parasolid::pointer::write(out, value.into()).ok_or_else(|| {
-        CodecError::NotImplemented("SLDPRT typed reference exceeds the XT pointer range".into())
+/// Emit one node index or node pointer in its shortest XMT form
+/// (`parasolid.md` §1): one word through `0x7fff`, two words past it.
+fn pointer(out: &mut Vec<u8>, value: u32) -> Result<(), CodecError> {
+    cadmpeg_parasolid::pointer::write(out, value).ok_or_else(|| {
+        CodecError::NotImplemented("SLDPRT pointer exceeds the XT pointer range".into())
     })
 }
 
-fn fixed_refs(values: &[u16], message: &str) -> Result<[u16; 6], CodecError> {
+fn fixed_refs(values: &[u32], message: &str) -> Result<[u32; 6], CodecError> {
     if values.len() > 6 {
         return Err(CodecError::NotImplemented(message.into()));
     }
@@ -3663,9 +4173,18 @@ fn fixed_refs(values: &[u16], message: &str) -> Result<[u16; 6], CodecError> {
     Ok(refs)
 }
 
-pub(crate) fn face_colors(
+/// The colour of each face that states one: its own colour, else that of its
+/// first face appearance binding with a base colour.
+pub(crate) fn face_colors(ir: &CadIr) -> HashMap<cadmpeg_ir::ids::FaceId, Color> {
+    face_colors_and_unwritten_bindings(ir).0
+}
+
+/// The face colours, and the face appearance bindings the colours do not
+/// hold: one whose appearance is missing or states no base colour, or whose
+/// colour differs from one the face already states.
+pub(super) fn face_colors_and_unwritten_bindings(
     ir: &CadIr,
-) -> Result<HashMap<cadmpeg_ir::ids::FaceId, Color>, CodecError> {
+) -> (HashMap<cadmpeg_ir::ids::FaceId, Color>, Vec<String>) {
     let appearances = ir
         .model
         .appearances
@@ -3678,41 +4197,39 @@ pub(crate) fn face_colors(
         .iter()
         .filter_map(|face| face.color.map(|color| (face.id.clone(), color)))
         .collect::<HashMap<_, _>>();
+    let mut unwritten = Vec::new();
     for binding in &ir.model.appearance_bindings {
         let AppearanceTarget::Face(face) = &binding.target.entity else {
             continue;
         };
-        let appearance = appearances.get(&binding.appearance).ok_or_else(|| {
-            CodecError::Malformed("face binding references missing appearance".into())
-        })?;
-        let color = appearance.base_color.ok_or_else(|| {
-            CodecError::NotImplemented("SLDPRT face appearance has no base color".into())
-        })?;
-        if colors
-            .insert(face.clone(), color)
-            .is_some_and(|old| old != color)
-        {
-            return Err(CodecError::Malformed(
-                "face has conflicting appearance colors".into(),
-            ));
+        let Some(color) = appearances
+            .get(&binding.appearance)
+            .and_then(|appearance| appearance.base_color)
+        else {
+            unwritten.push(binding.id.as_str().to_owned());
+            continue;
+        };
+        if *colors.entry(face.clone()).or_insert(color) != color {
+            unwritten.push(binding.id.as_str().to_owned());
         }
     }
-    Ok(colors)
+    (colors, unwritten)
 }
 
-fn entity53(out: &mut Vec<u8>, attr: u16, color: Color) {
+fn entity53(out: &mut Vec<u8>, attr: u32, color: Color) -> Result<(), CodecError> {
     tag(out, 0x53);
     be32(out, 3);
-    be16(out, attr);
+    pointer(out, attr)?;
     for value in [color.r(), color.g(), color.b()] {
         bef64(out, value);
     }
+    Ok(())
 }
 
 fn attribute_definition(
     out: &mut Vec<u8>,
-    key_node: u16,
-    definition_node: u16,
+    key_node: u32,
+    definition_node: u32,
 ) -> Result<(), CodecError> {
     const FAMILY: &[u8] = b"SDL/TYSA_COLOUR";
     tag(out, 0x4f);
@@ -3722,16 +4239,16 @@ fn attribute_definition(
             CodecError::NotImplemented("SLDPRT attribute family name is too long".into())
         })?,
     );
-    be16(out, key_node);
+    pointer(out, key_node)?;
     out.extend_from_slice(FAMILY);
     tag(out, 0x50);
     be32(out, 1);
-    be16(out, definition_node);
-    be16(out, 1);
-    be16(out, key_node);
+    pointer(out, definition_node)?;
+    pointer(out, 1)?;
+    pointer(out, key_node)?;
     be32(out, 8001);
     out.extend([0; 8]);
-    be16(out, 1);
+    pointer(out, 1)?;
     let mut legal_owners = [0; 14];
     legal_owners[4] = 1;
     out.extend(legal_owners);
@@ -3741,10 +4258,10 @@ fn attribute_definition(
 
 fn write_face_list(
     out: &mut Vec<u8>,
-    owners: &[u16],
-    next: &mut u16,
-    disc: u16,
-) -> Result<u16, CodecError> {
+    owners: &[u32],
+    next: &mut u32,
+    disc: u32,
+) -> Result<u32, CodecError> {
     let chunks = owners.chunks(5).collect::<Vec<_>>();
     // The list always states a head node: an empty owner run writes the one
     // node that names no face. The head is a value, so the answer is not an
@@ -3754,7 +4271,7 @@ fn write_face_list(
         .chain((1..chunks.len()).map(|_| take_attr(next)))
         .collect::<Result<Vec<_>, CodecError>>()?;
     for (index, attr) in attrs.iter().enumerate() {
-        let mut refs = [0u16; 6];
+        let mut refs = [0u32; 6];
         refs[0] = attrs.get(index + 1).copied().unwrap_or(0);
         if let Some(chunk) = chunks.get(index) {
             refs[1..=chunk.len()].copy_from_slice(chunk);
@@ -3767,9 +4284,9 @@ fn write_face_list(
 fn entity51(
     out: &mut Vec<u8>,
     flags: u8,
-    attr: u16,
-    disc: u16,
-    refs: &[u16; 6],
+    attr: u32,
+    disc: u32,
+    refs: &[u32; 6],
 ) -> Result<(), CodecError> {
     if !(1..=0x20).contains(&flags) {
         return Err(CodecError::NotImplemented(
@@ -3778,14 +4295,14 @@ fn entity51(
     }
     tag(out, 0x51);
     be32(out, u32::from(flags));
-    be16(out, attr);
+    pointer(out, attr)?;
     be32(out, 1);
-    be16(out, disc);
+    pointer(out, disc)?;
     for reference in refs {
-        be16(out, *reference);
+        pointer(out, *reference)?;
     }
     for _ in 1..flags {
-        be16(out, 1);
+        pointer(out, 1)?;
     }
     Ok(())
 }
@@ -3872,12 +4389,9 @@ pub(super) fn surface_values(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
             let center = sphere_surface.center().get();
             let axis = sphere_surface.frame().axis().as_raw();
-            let radius = sphere_surface.radius().get();
-            if radius < 0.0 {
-                return Err(CodecError::NotImplemented(
-                    "SLDPRT compact sphere carriers require a positive radius".into(),
-                ));
-            }
+            // A negative radius is the same sphere with its normal reversed,
+            // which the orientation marker states (`surface_marker`).
+            let radius = sphere_surface.radius().get().abs();
             let axis = *axis;
             (
                 0x35,
@@ -3899,12 +4413,10 @@ pub(super) fn surface_values(
             let center = torus_surface.center().get();
             let axis = torus_surface.frame().axis().as_raw();
             let major_radius = torus_surface.major_radius().get();
-            let minor_radius = torus_surface.minor_radius().get();
-            if !(major_radius > minor_radius && minor_radius > 0.0) {
-                return Err(CodecError::NotImplemented(
-                    "SLDPRT compact torus carriers require major > minor > 0".into(),
-                ));
-            }
+            // A negative tube radius is the same torus with its minor angle
+            // moved by a half turn; its natural normal still points out of
+            // the tube, so the magnitude keeps the face sense.
+            let minor_radius = torus_surface.minor_radius().get().abs();
             (
                 0x36,
                 vec![
@@ -3929,9 +4441,16 @@ pub(super) fn surface_values(
             | SolvedSurfaceGeometry::Unknown { .. },
         )
         | SurfaceGeometry::Procedural { .. } => {
-            return Err(CodecError::NotImplemented(
-                "semantic SLDPRT writer does not support this surface carrier".into(),
-            ))
+            let kind = match geometry {
+                SurfaceGeometry::Procedural { .. } => "procedural",
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)) => "nurbs",
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(_)) => "polygonal",
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(_)) => "transformed",
+                SurfaceGeometry::Solved(_) => "unknown",
+            };
+            return Err(CodecError::NotImplemented(format!(
+                "semantic SLDPRT writer does not support this surface carrier ({kind})"
+            )));
         }
     };
     Ok(result)
@@ -3939,17 +4458,12 @@ pub(super) fn surface_values(
 
 fn write_nurbs_curve(
     out: &mut Vec<u8>,
-    wrapper: u16,
+    wrapper: u32,
     nurbs: &NurbsCurve,
-    next: &mut u16,
+    next: &mut u32,
     length_scale: f64,
     entity: &str,
 ) -> Result<(), CodecError> {
-    if nurbs.periodic() {
-        return Err(CodecError::NotImplemented(
-            "semantic SLDPRT writer does not support periodic NURBS curves".into(),
-        ));
-    }
     let descriptor = take_attr(next)?;
     let control = take_attr(next)?;
     let multiplicity = take_attr(next)?;
@@ -3973,19 +4487,22 @@ fn write_nurbs_curve(
     })?;
     let rational = nurbs.weights().is_some();
     tag(out, 0x86);
-    be16(out, wrapper);
-    be16(out, descriptor);
-    out.extend_from_slice(&[0; 8]);
+    pointer(out, wrapper)?;
+    be32(out, 0);
+    out.extend_from_slice(&[0; 10]);
+    out.push(b'+');
+    pointer(out, descriptor)?;
+    pointer(out, 0)?;
     tag(out, 0x88);
-    be16(out, descriptor);
+    pointer(out, descriptor)?;
     be16(out, degree);
     be32(out, control_count);
     be16(out, if rational { 4 } else { 3 });
     be32(out, knot_count);
     out.push(0);
-    out.extend_from_slice(&[0, 0, u8::from(rational), 0]);
+    out.extend_from_slice(&[u8::from(nurbs.periodic()), 0, u8::from(rational), 0]);
     for attr in [control, multiplicity, knots] {
-        be16(out, attr);
+        pointer(out, attr)?;
     }
     let poles = homogeneous_poles(nurbs.pole_rows(), length_scale)?;
     f64_array(out, 0x2d, control, poles.into_iter(), entity)?;
@@ -4007,17 +4524,12 @@ fn write_nurbs_curve(
 
 fn write_nurbs_surface(
     out: &mut Vec<u8>,
-    wrapper: u16,
+    wrapper: u32,
     nurbs: &NurbsSurface,
-    next: &mut u16,
+    next: &mut u32,
     length_scale: f64,
     entity: &str,
 ) -> Result<(), CodecError> {
-    if nurbs.u_periodic() || nurbs.v_periodic() {
-        return Err(CodecError::NotImplemented(
-            "semantic SLDPRT writer does not support periodic NURBS surfaces".into(),
-        ));
-    }
     let u_degree = u16::try_from(nurbs.u_degree()).map_err(|_| {
         CodecError::NotImplemented(format!(
             "SLDPRT NURBS surface {entity} u degree exceeds the native u16 field"
@@ -4064,15 +4576,15 @@ fn write_nurbs_surface(
     let u_knots = take_attr(next)?;
     let v_knots = take_attr(next)?;
     tag(out, 0x7c);
-    be16(out, wrapper);
+    pointer(out, wrapper)?;
     be32(out, 1);
     out.extend_from_slice(&[0; 10]);
     out.push(if nurbs.normal_reversed() { b'-' } else { b'+' });
-    be16(out, descriptor);
-    be16(out, 0);
+    pointer(out, descriptor)?;
+    pointer(out, 0)?;
     tag(out, 0x7e);
-    be16(out, descriptor);
-    out.extend_from_slice(&[0, 0]);
+    pointer(out, descriptor)?;
+    out.extend_from_slice(&[u8::from(nurbs.u_periodic()), u8::from(nurbs.v_periodic())]);
     be16(out, u_degree);
     be16(out, v_degree);
     be32(out, u_count);
@@ -4085,7 +4597,7 @@ fn write_nurbs_surface(
     out.push(0x0c);
     be16(out, dimension);
     for attr in [control, u_multiplicity, v_multiplicity, u_knots, v_knots] {
-        be16(out, attr);
+        pointer(out, attr)?;
     }
     f64_array(out, 0x2d, control, poles.into_iter(), entity)?;
     u16_array(
@@ -4117,17 +4629,25 @@ fn write_nurbs_surface(
     Ok(())
 }
 
-fn take_attr(next: &mut u16) -> Result<u16, CodecError> {
-    let attr = *next;
-    // Bare records receive each attr and reference as a one-word cell.
-    if attr > 0x7fff {
+/// Whether the XMT cell of `value` begins with the byte `ff`: the two-word
+/// form whose remainder magnitude is at most 256 (`parasolid.md` §1).
+fn cell_begins_ff(value: u32) -> bool {
+    value > 0x7fff && (value - 1) % 32_767 < 256
+}
+
+fn take_attr(next: &mut u32) -> Result<u32, CodecError> {
+    let mut attr = *next;
+    // After a type tag such a cell also reads from the byte after its `ff`
+    // (§4), so the writer leaves those indices unused.
+    if cell_begins_ff(attr) {
+        attr += 256 - (attr - 1) % 32_767;
+    }
+    if attr > cadmpeg_parasolid::pointer::MAX_VALUE {
         return Err(CodecError::NotImplemented(
-            "SLDPRT attribute space exhausted".into(),
+            "SLDPRT attribute space exhausted: the XT pointer range ends at 1073709056".into(),
         ));
     }
-    *next = next
-        .checked_add(1)
-        .ok_or_else(|| CodecError::NotImplemented("SLDPRT attribute space exhausted".into()))?;
+    *next = attr + 1;
     Ok(attr)
 }
 
@@ -4233,7 +4753,7 @@ fn unique_knots(knots: &[f64], entity: &str) -> Result<Vec<(f64, NonZeroU16)>, C
 fn f64_array(
     out: &mut Vec<u8>,
     kind: u8,
-    attr: u16,
+    attr: u32,
     values: impl ExactSizeIterator<Item = f64>,
     entity: &str,
 ) -> Result<(), CodecError> {
@@ -4245,7 +4765,7 @@ fn f64_array(
     tag(out, kind);
     out.push(0x2b);
     be32(out, count);
-    be16(out, attr);
+    pointer(out, attr)?;
     for value in values {
         bef64(out, value);
     }
@@ -4254,7 +4774,7 @@ fn f64_array(
 
 fn u16_array(
     out: &mut Vec<u8>,
-    attr: u16,
+    attr: u32,
     values: impl ExactSizeIterator<Item = u16>,
     entity: &str,
 ) -> Result<(), CodecError> {
@@ -4266,7 +4786,7 @@ fn u16_array(
     tag(out, 0x7f);
     out.push(0x2b);
     be32(out, count);
-    be16(out, attr);
+    pointer(out, attr)?;
     for value in values {
         be16(out, value);
     }
@@ -4427,6 +4947,22 @@ pub(super) fn surface_reference(geometry: &SolvedSurfaceGeometry) -> cadmpeg_ir:
 
 /// Orientation marker of a written compact surface.
 const SURFACE_MARKER: u8 = 0x2b;
+const SURFACE_REVERSED_MARKER: u8 = 0x2d;
+
+/// The orientation marker of a compact surface record (sldprt.md §7.1):
+/// `0x2d` reverses the natural normal of the stored carrier. A sphere of
+/// negative radius has its natural normal pointing at its centre, so its
+/// magnitude is written reversed. A torus of negative tube radius keeps its
+/// normal pointing out of the tube and needs no reversal.
+fn surface_marker(surface: &SolvedSurfaceGeometry) -> u8 {
+    let reversed =
+        matches!(surface, SolvedSurfaceGeometry::Sphere(sphere) if sphere.radius().get() < 0.0);
+    if reversed {
+        SURFACE_REVERSED_MARKER
+    } else {
+        SURFACE_MARKER
+    }
+}
 
 /// Orientation marker of a written compact curve whose stored edges run along
 /// its parameter.
@@ -4436,15 +4972,22 @@ const CURVE_ALONG_EDGES_MARKER: u8 = 0x2b;
 /// its parameter.
 const CURVE_AGAINST_EDGES_MARKER: u8 = 0x2d;
 
-fn compact(out: &mut Vec<u8>, kind: u8, attr: u16, marker: u8, values: &[f64]) {
+fn compact(
+    out: &mut Vec<u8>,
+    kind: u8,
+    attr: u32,
+    marker: u8,
+    values: &[f64],
+) -> Result<(), CodecError> {
     tag(out, kind);
-    be16(out, attr);
+    pointer(out, attr)?;
     be32(out, 0);
     out.extend_from_slice(&[0; 10]);
     out.push(marker);
     for value in values {
         bef64(out, *value);
     }
+    Ok(())
 }
 fn parasolid_stream(body: &[u8], schema: &str) -> Result<Vec<u8>, CodecError> {
     parasolid_stream_named(body, schema, "partition body")
@@ -4472,7 +5015,7 @@ pub(crate) fn parasolid_stream_named(
     out.extend_from_slice(body);
     Ok(out)
 }
-fn block(payload: &[u8], section: &str, type_id: u32) -> Result<Vec<u8>, CodecError> {
+pub(crate) fn block(payload: &[u8], section: &str, type_id: u32) -> Result<Vec<u8>, CodecError> {
     use flate2::write::DeflateEncoder;
     let mut encoder = DeflateEncoder::new(Vec::new(), flate2::Compression::default());
     encoder.write_all(payload)?;
@@ -4518,18 +5061,17 @@ fn bef64(out: &mut Vec<u8>, value: f64) {
 #[cfg(test)]
 mod nurbs_write_tests {
     use super::{
-        check_semantic_support, pmi_local_sha256, take_attr, typed_ref, unique_knots,
-        write_nurbs_surface, PMI_LOCAL_DIGEST_ATTRIBUTE,
+        pmi_local_sha256, pointer, take_attr, unique_knots, write_nurbs_surface,
+        PMI_LOCAL_DIGEST_ATTRIBUTE,
     };
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::nurbs::NurbsSurface;
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     use cadmpeg_ir::math::Point3;
-    use cadmpeg_ir::Annotations;
 
     #[test]
-    fn retained_swift_pmi_requires_an_unchanged_semantic_baseline() {
+    fn pmi_without_its_baseline_is_dropped_and_named_and_an_edit_of_it_is_named() {
         let mut ir = CadIr::empty();
         ir.model.pmi.push(cadmpeg_ir::PmiAnnotation {
             id: cadmpeg_ir::ids::PmiId::mint("sldprt:model:pmi#A1").expect("identity grammar"),
@@ -4559,7 +5101,10 @@ mod nurbs_write_tests {
                 hash,
             )]),
         ));
-        assert!(check_semantic_support(&ir, &Annotations::default()).is_ok());
+        assert!(super::reduce::unwritable_content(&mut ir, true)
+            .expect("PMI digest")
+            .is_empty());
+        assert_eq!(ir.model.pmi.len(), 1);
 
         let cadmpeg_ir::PmiDefinition::Datum { identification } =
             &mut ir.model.pmi.first_mut().expect("PMI annotation").definition
@@ -4567,16 +5112,26 @@ mod nurbs_write_tests {
             panic!("datum definition");
         };
         *identification = "B".into();
-        assert!(matches!(
-            check_semantic_support(&ir, &Annotations::default()),
-            Err(CodecError::NotImplemented(message)) if message.contains("SWIFT semantic PMI")
-        ));
+        let losses = super::reduce::unwritable_content(&mut ir, true).expect("PMI digest");
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.local_code(), "edit.dropped");
+        assert!(losses[0].message.contains("sldprt:model:pmi#A1"));
+        assert_eq!(ir.model.pmi.len(), 1);
 
-        ir.model.pmi.clear();
-        assert!(matches!(
-            check_semantic_support(&ir, &Annotations::default()),
-            Err(CodecError::NotImplemented(message)) if message.contains("SWIFT semantic PMI")
-        ));
+        // Without the retained SWIFT block, no PMI is written.
+        let mut unretained = ir.clone();
+        let losses = super::reduce::unwritable_content(&mut unretained, false).expect("PMI digest");
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.local_code(), "writer.pmi-omitted");
+        assert!(losses[0].message.contains("sldprt:model:pmi#A1"));
+        assert!(unretained.model.pmi.is_empty());
+
+        ir.source = None;
+        let losses = super::reduce::unwritable_content(&mut ir, true).expect("PMI digest");
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.local_code(), "writer.pmi-omitted");
+        assert!(losses[0].message.contains("sldprt:model:pmi#A1"));
+        assert!(ir.model.pmi.is_empty());
     }
 
     #[test]
@@ -4677,21 +5232,36 @@ mod nurbs_write_tests {
             (32_768 * 32_767_u32, vec![0x80, 0x01, 0x7f, 0xff]),
         ] {
             let mut bytes = Vec::new();
-            typed_ref(&mut bytes, value).expect("reference is representable");
+            pointer(&mut bytes, value).expect("reference is representable");
             assert_eq!(bytes, expected, "encoded reference {value:#x}");
         }
 
         assert!(matches!(
-            typed_ref(&mut Vec::new(), cadmpeg_parasolid::pointer::MAX_VALUE + 1),
+            pointer(&mut Vec::new(), cadmpeg_parasolid::pointer::MAX_VALUE + 1),
             Err(CodecError::NotImplemented(message))
                 if message.contains("XT pointer range")
         ));
     }
 
     #[test]
-    fn attribute_space_ends_at_the_one_word_cell_range() {
+    fn attribute_space_ends_at_the_xt_pointer_range() {
         let mut next = 0x7fff;
         assert_eq!(take_attr(&mut next).expect("one-word attr"), 0x7fff);
+        // 0x8000 through 33 023 have cells that begin `ff`.
+        assert_eq!(take_attr(&mut next).expect("two-word attr"), 33_024);
+        let mut next = 65_534;
+        assert_eq!(take_attr(&mut next).expect("two-word attr"), 65_534);
+        assert_eq!(take_attr(&mut next).expect("two-word attr"), 65_791);
+        for value in 0x8000..0x2_0000 {
+            let mut cell = Vec::new();
+            pointer(&mut cell, value).expect("representable");
+            assert_eq!(super::cell_begins_ff(value), cell[0] == 0xff, "{value}");
+        }
+        let mut next = cadmpeg_parasolid::pointer::MAX_VALUE;
+        assert_eq!(
+            take_attr(&mut next).expect("largest attr"),
+            cadmpeg_parasolid::pointer::MAX_VALUE
+        );
         assert!(matches!(
             take_attr(&mut next),
             Err(CodecError::NotImplemented(message)) if message.contains("attribute space")

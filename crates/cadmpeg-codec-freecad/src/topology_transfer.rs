@@ -11,14 +11,17 @@ use locations::{Located, Locations};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::nurbs::NurbsError;
+use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry, PcurveNurbs};
 use cadmpeg_ir::geometry::pcurve::{PcurveMetadata, PcurveNurbsPoles, WeightedPole2};
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use cadmpeg_ir::geometry::sampled::{
+    PolygonalSurface, PolylineCurve, PolylineSamples, PolylineVertex,
+};
 use cadmpeg_ir::geometry::{
-    pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
-    sampled::{PolygonalSurface, PolylineCurve, PolylineSamples, PolylineVertex},
-    Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
@@ -763,7 +766,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                 retain_wire_edges(&ir.geometry.coedges[coedge_start..], &mut wire_edges);
                 if faces.is_empty() && wire_edges.is_empty() {
                     return Err(cadmpeg_core::CodecError::Malformed(
-                        cadmpeg_ir::features::BodySelectionError::Empty.to_string(),
+                        cadmpeg_ir::features::selections::BodySelectionError::Empty.to_string(),
                     ));
                 }
                 ir.geometry.shells.push(Shell::with_members(
@@ -844,7 +847,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
         retain_wire_edges(&ir.geometry.coedges[coedge_start..], &mut wire_edges);
         if faces.is_empty() && wire_edges.is_empty() {
             return Err(cadmpeg_core::CodecError::Malformed(
-                cadmpeg_ir::features::BodySelectionError::Empty.to_string(),
+                cadmpeg_ir::features::selections::BodySelectionError::Empty.to_string(),
             ));
         }
         ir.geometry.shells.push(Shell::with_members(
@@ -1131,7 +1134,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                                 pcurve,
                                 isoparametric: None,
                                 parameter_range: (parameter_range)
-                                    .map(cadmpeg_ir::geometry::DirectedParameterRange::from_finite_endpoints)
+                                    .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::from_finite_endpoints)
                                     .transpose()
                                     .map_err(CodecError::malformed)?,
                             })
@@ -2185,7 +2188,7 @@ fn uniform_scale(transform: Transform) -> Result<cadmpeg_ir::scalar::PositiveRea
         CodecError::Malformed("B-rep location is not a finite similarity transform".into())
     })?;
     let lengths = columns.map(|column| column.norm());
-    let units = columns.map(cadmpeg_ir::features::FiniteVector3::unit_nonzero);
+    let units = columns.map(cadmpeg_ir::features::geometry::FiniteVector3::unit_nonzero);
     if lengths.iter().any(|length| {
         !length.is_finite()
             || (*length / scale.get() - 1.0).abs() > EPS_TOPOLOGY_TRANSFER_DEGENERATE
@@ -2639,7 +2642,8 @@ fn occt_subset_local_range(
         .geometry
         .procedural_construction()?;
     let procedural = positions.procedural_curve(ir, construction)?;
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(subset) = procedural.definition()
+    let cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(subset) =
+        procedural.definition()
     else {
         return None;
     };

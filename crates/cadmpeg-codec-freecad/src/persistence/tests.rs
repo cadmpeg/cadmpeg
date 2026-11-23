@@ -410,16 +410,18 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     }
     assert_eq!(result.ir().geometry.procedural_curves.len(), 2);
     match result.ir().geometry.procedural_curves[0].definition() {
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(definition_payload) => {
+        cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Subset(
+            definition_payload,
+        ) => {
             let parameter_range = definition_payload.parameter_range();
             assert_eq!(parameter_range.endpoints(), [0.0, 5.0]);
         }
         other => panic!("unexpected trimmed construction {other:?}"),
     }
     match result.ir().geometry.procedural_curves[1].definition() {
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(payload) => {
+        cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Offset(payload) => {
             let distance = wire::field::<f64>(&payload, "distance");
-            let cadmpeg_ir::geometry::OffsetSide::Direction {
+            let cadmpeg_ir::geometry::curve_offsets::OffsetSide::Direction {
                 direction,
                 support: None,
             } = payload.side()
@@ -448,18 +450,21 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert_eq!(result.ir().geometry.procedural_surfaces.len(), 4);
     assert!(matches!(
         result.ir().geometry.procedural_surfaces[0].definition(),
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(_)
+        cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Extrusion(_)
     ));
     assert!(
         match result.ir().geometry.procedural_surfaces[1].definition() {
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(matched_payload) =>
-                matches!((&matched_payload.parameter_interval(),), (None,)),
+            cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Revolution(
+                matched_payload,
+            ) => matches!((&matched_payload.parameter_interval(),), (None,)),
             _ => false,
         }
     );
     assert!(
         match result.ir().geometry.procedural_surfaces[2].definition() {
-            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(matched_payload) => matches!(
+            cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Offset(
+                matched_payload,
+            ) => matches!(
                 (matched_payload.u_sense(), matched_payload.v_sense(),),
                 (None, None,)
             ),
@@ -468,7 +473,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     );
     assert!(matches!(
         result.ir().geometry.procedural_surfaces[3].definition(),
-        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(_)
+        cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition::Subset(_)
     ));
     match &result.ir().geometry.surfaces[1].geometry {
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
@@ -566,7 +571,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .native
         .namespace_mut("fcstd")
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "logical_ledger",
             &missing_payload,
         )
@@ -690,7 +695,7 @@ fn native_validation_rejects_duplicate_extension_identity() {
         .native
         .namespace_mut("fcstd")
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "extensions",
             &extensions,
         )

@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use crate::examples::unit_cube;
-use crate::features::ExtrudeDirection;
+use crate::features::extents::ExtrudeDirection;
 use crate::math::{Point3, Vector3};
 use crate::report::check::Check;
 use crate::validate::validate_neutral;
@@ -12,10 +12,10 @@ use crate::CadIr;
 
 #[test]
 fn historical_vertex_selection_requires_input_state_membership() {
-    use crate::features::{
-        DatumPointConstruction, Feature, FeatureDefinition, FeatureId, FeatureInputTopology,
-        FeatureOperation, VertexSelection,
-    };
+    use crate::features::datums::DatumPointConstruction;
+    use crate::features::evaluation::FeatureInputTopology;
+    use crate::features::selections::VertexSelection;
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use crate::ids::{FeatureInputTopologyId, HistoricalVertexId};
     use crate::schema::EntitySchema;
 
@@ -30,11 +30,13 @@ fn historical_vertex_selection_requires_input_state_membership() {
         .push(FeatureInputTopology {
             id: state_id.clone(),
             input_of: feature_id.clone(),
-            bodies: crate::features::DistinctMembers::try_from(Vec::new()).unwrap(),
-            faces: crate::features::DistinctMembers::try_from(Vec::new()).unwrap(),
-            edges: crate::features::DistinctMembers::try_from(Vec::new()).unwrap(),
-            vertices: crate::features::DistinctMembers::try_from(vec![historical_vertex.clone()])
-                .unwrap(),
+            bodies: crate::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
+            faces: crate::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
+            edges: crate::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
+            vertices: crate::features::selections::DistinctMembers::try_from(vec![
+                historical_vertex.clone(),
+            ])
+            .unwrap(),
             edge_geometry: Vec::new(),
             native_ref: None,
         });
@@ -44,15 +46,15 @@ fn historical_vertex_selection_requires_input_state_membership() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumPoint {
-                position: crate::features::FinitePoint3::new(crate::math::Point3::new(
+                position: crate::features::geometry::FinitePoint3::new(crate::math::Point3::new(
                     1.0, 2.0, 3.0,
                 ))
                 .unwrap(),
@@ -72,7 +74,7 @@ fn historical_vertex_selection_requires_input_state_membership() {
     let mut references = Vec::new();
     ir.model.features[0]
         .visit_references(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut |reference| {
                 references.push(reference.to_owned());
                 Ok(())
@@ -117,10 +119,10 @@ fn historical_vertex_selection_requires_input_state_membership() {
 
 #[test]
 fn neutral_features_resolve_sketch_profile_and_path_operands() {
-    use crate::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId,
-        FeatureOperation, LinearTermination, PathRef, PlanarProfileRef, ProfileRef,
-    };
+    use crate::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+    use crate::features::operation_settings::BooleanOp;
+    use crate::features::profiles::{PathRef, PlanarProfileRef, ProfileRef};
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use crate::sketches::SketchId;
 
     let sketch = SketchId::mint("synthetic:test:sketch#missing").unwrap();
@@ -128,7 +130,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
         FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Sketch(sketch.clone())),
             direction: ExtrudeDirection::ProfileNormal {},
-            start: crate::features::ExtrudeStart::ProfilePlane {},
+            start: crate::features::extents::ExtrudeStart::ProfilePlane {},
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::Blind {
@@ -145,11 +147,13 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
             allow_multi_profile_faces: None,
         }),
         FeatureDefinition::Operation(FeatureOperation::Sweep {
-            shape: crate::features::SweepShape::sheet_sections(
-                crate::features::SweepMode::Solid {
-                    op: crate::features::SolidSweepOperation::NewBody,
+            shape: crate::features::sweeps::SweepShape::sheet_sections(
+                crate::features::sweeps::SweepMode::Solid {
+                    op: crate::features::sweeps::SolidSweepOperation::NewBody,
                 },
-                crate::features::SweepSection::Profile(PlanarProfileRef::Sketch(sketch.clone())),
+                crate::features::sweeps::SweepSection::Profile(PlanarProfileRef::Sketch(
+                    sketch.clone(),
+                )),
                 Vec::new(),
             ),
 
@@ -181,13 +185,15 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
-        evaluation: crate::features::FeatureEvaluation::from_definition(definitions[1].clone()),
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
+            definitions[1].clone(),
+        ),
         native_ref: None,
     });
     ir.finalize();
@@ -204,10 +210,12 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
 
 #[test]
 fn feature_history_rejects_dangling_and_forward_dependencies() {
+    use crate::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+    use crate::features::operation_settings::BooleanOp;
+    use crate::features::profiles::{PlanarProfileRef, ProfileRef};
+    use crate::features::selections::FaceSelection;
     use crate::features::{
-        BooleanOp, ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureDefinition,
-        FeatureId, FeatureOperation, FeatureSourceContent, LinearTermination, ParameterId,
-        PlanarProfileRef, ProfileRef,
+        Feature, FeatureDefinition, FeatureId, FeatureOperation, FeatureSourceContent, ParameterId,
     };
     use crate::ids::{BodyId, FaceId};
     use std::collections::BTreeMap;
@@ -220,7 +228,10 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: crate::features::DistinctMembers::try_from(vec![feature_id.clone()]).unwrap(),
+        dependencies: crate::features::selections::DistinctMembers::try_from(vec![
+            feature_id.clone()
+        ])
+        .unwrap(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
@@ -233,14 +244,14 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         .try_into()
         .unwrap(),
 
-        evaluation: crate::features::FeatureEvaluation::new(
+        evaluation: crate::features::evaluation::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(PlanarProfileRef::Faces(vec![FaceId::mint(
                     "synthetic:test:face#profile-missing",
                 )
                 .expect("valid identity")])),
                 direction: ExtrudeDirection::ProfileNormal {},
-                start: crate::features::ExtrudeStart::ProfilePlane {},
+                start: crate::features::extents::ExtrudeStart::ProfilePlane {},
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::ToFace {
@@ -260,7 +271,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
                 length_along_profile_normal: None,
                 allow_multi_profile_faces: None,
             }),
-            crate::features::DistinctMembers::try_from(vec![BodyId::mint(
+            crate::features::selections::DistinctMembers::try_from(vec![BodyId::mint(
                 "synthetic:test:body#missing",
             )
             .expect("valid identity")])
@@ -274,13 +285,13 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Marker".into(),
                 parameters: BTreeMap::new(),
@@ -311,9 +322,8 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
 
 #[test]
 fn feature_parameters_require_unique_names_and_ordinals() {
-    use crate::features::{
-        DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
-    };
+    use crate::features::parameters::DesignParameter;
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId};
     use std::collections::BTreeMap;
 
     let mut ir = unit_cube().expect("valid unit cube fixture");
@@ -324,13 +334,13 @@ fn feature_parameters_require_unique_names_and_ordinals() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Test".into(),
                 parameters: BTreeMap::new(),
@@ -349,7 +359,7 @@ fn feature_parameters_require_unique_names_and_ordinals() {
             expression: "1mm".into(),
             display: None,
             value: None,
-            dependencies: crate::features::DistinctMembers::default(),
+            dependencies: crate::features::selections::DistinctMembers::default(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -369,9 +379,8 @@ fn feature_parameters_require_unique_names_and_ordinals() {
 
 #[test]
 fn parameter_dependencies_must_exist_and_precede_consumers() {
-    use crate::features::{
-        DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
-    };
+    use crate::features::parameters::DesignParameter;
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId};
     use std::collections::BTreeMap;
 
     let mut ir = unit_cube().expect("valid unit cube fixture");
@@ -383,13 +392,13 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Test".into(),
                 parameters: BTreeMap::new(),
@@ -416,7 +425,8 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
             expression: String::new(),
             display: None,
             value: None,
-            dependencies: crate::features::DistinctMembers::try_from(dependencies).unwrap(),
+            dependencies: crate::features::selections::DistinctMembers::try_from(dependencies)
+                .unwrap(),
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,
@@ -455,9 +465,8 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
 
 #[test]
 fn document_parameters_can_feed_feature_parameters() {
-    use crate::features::{
-        DesignParameter, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
-    };
+    use crate::features::parameters::DesignParameter;
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId};
     use std::collections::BTreeMap;
 
     let mut ir = unit_cube().expect("valid unit cube fixture");
@@ -468,13 +477,13 @@ fn document_parameters_can_feed_feature_parameters() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "Test".into(),
                 parameters: BTreeMap::new(),
@@ -493,7 +502,7 @@ fn document_parameters_can_feed_feature_parameters() {
         expression: "60 mm".into(),
         display: None,
         value: None,
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -507,7 +516,8 @@ fn document_parameters_can_feed_feature_parameters() {
         expression: "Width / 2".into(),
         display: None,
         value: None,
-        dependencies: crate::features::DistinctMembers::try_from(vec![document]).unwrap(),
+        dependencies: crate::features::selections::DistinctMembers::try_from(vec![document])
+            .unwrap(),
         properties: BTreeMap::new(),
         pmi: None,
         native_ref: None,
@@ -521,10 +531,9 @@ fn document_parameters_can_feed_feature_parameters() {
 
 #[test]
 fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
-    use crate::{
-        features::{DatumPlaneReference, Feature, FeatureDefinition, FeatureId, FeatureOperation},
-        scalar::Length,
-    };
+    use crate::features::datums::DatumPlaneReference;
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+    use crate::scalar::Length;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -536,12 +545,12 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
-        evaluation: crate::features::FeatureEvaluation::from_definition(definition),
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     };
     ir.model.features.push(feature(
@@ -558,7 +567,7 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
         principal.as_str(),
         1,
         FeatureDefinition::Operation(FeatureOperation::DatumPlane {
-            frame: crate::features::FeatureDatumPlaneFrame::new(
+            frame: crate::features::geometry::FeatureDatumPlaneFrame::new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
@@ -618,10 +627,13 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
 
 #[test]
 fn generated_termination_vertices_require_declared_feature_dependencies() {
+    use crate::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+    use crate::features::operation_settings::BooleanOp;
+    use crate::features::parameters::{ConfigurationFeatureState, DesignConfiguration};
+    use crate::features::profiles::{PlanarProfileRef, ProfileRef};
+    use crate::features::selections::{GeneratedVertexRef, VertexSelection};
     use crate::features::{
-        BooleanOp, ConfigurationFeatureState, ConfigurationId, DesignConfiguration, ExtrudeExtent,
-        ExtrudeSide, Feature, FeatureDefinition, FeatureId, FeatureOperation, GeneratedVertexRef,
-        LinearTermination, PlanarProfileRef, ProfileRef, VertexSelection,
+        ConfigurationId, Feature, FeatureDefinition, FeatureId, FeatureOperation,
     };
     use std::collections::BTreeMap;
 
@@ -634,15 +646,16 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumPoint {
-                position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                position: crate::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .unwrap(),
                 construction: None,
             }),
         ),
@@ -654,17 +667,17 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         ordinal: 1,
         name: None,
         suppressed: Some(false),
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(PlanarProfileRef::Native("test:profile".into())),
                 direction: ExtrudeDirection::ProfileNormal {},
-                start: crate::features::ExtrudeStart::ProfilePlane {},
+                start: crate::features::extents::ExtrudeStart::ProfilePlane {},
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::ToVertex {
@@ -709,10 +722,10 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         feature_states: BTreeMap::from([(
             extrude.clone(),
             ConfigurationFeatureState {
-                evaluation: crate::features::ConfigurationEvaluation::Active {
-                    outputs: crate::features::DistinctMembers::default(),
+                evaluation: crate::features::parameters::ConfigurationEvaluation::Active {
+                    outputs: crate::features::selections::DistinctMembers::default(),
                 },
-                dependencies: crate::features::DistinctMembers::default(),
+                dependencies: crate::features::selections::DistinctMembers::default(),
                 definition: ir.model.features[1].evaluation.definition().clone(),
             },
         )]),
@@ -760,15 +773,16 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::DatumPoint {
-                position: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+                position: crate::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .unwrap(),
                 construction: None,
             }),
         ),
@@ -780,19 +794,21 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         ordinal: 1,
         name: None,
         suppressed: Some(false),
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: vec![PatternSeed::Feature(seed.clone())],
                 pattern: PatternKind::new(PatternTransform::Mirror {
-                    plane_origin: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                        .unwrap(),
-                    plane_normal: crate::features::FeatureDirection3::new(Vector3::new(
+                    plane_origin: crate::features::geometry::FinitePoint3::new(Point3::new(
+                        0.0, 0.0, 0.0,
+                    ))
+                    .unwrap(),
+                    plane_normal: crate::features::geometry::FeatureDirection3::new(Vector3::new(
                         1.0, 0.0, 0.0,
                     ))
                     .unwrap(),
@@ -822,16 +838,18 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
 
 #[test]
 fn definition_references_must_be_declared_dependencies_in_every_configuration() {
-    use crate::{
-        features::{
-            patterns::{PatternKind, PatternSeed, PatternTransform},
-            BooleanOp, ConfigurationFeatureState, ConfigurationId, DatumPlaneReference,
-            DesignConfiguration, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
-            Feature, FeatureDefinition, FeatureId, FeatureOperation, GeneratedCurveRef,
-            LinearTermination, PlanarProfileRef, ProfileRef,
-        },
-        scalar::Length,
+    use crate::features::datums::DatumPlaneReference;
+    use crate::features::extents::{
+        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
     };
+    use crate::features::operation_settings::BooleanOp;
+    use crate::features::parameters::{ConfigurationFeatureState, DesignConfiguration};
+    use crate::features::patterns::{PatternKind, PatternSeed, PatternTransform};
+    use crate::features::profiles::{GeneratedCurveRef, PlanarProfileRef, ProfileRef};
+    use crate::features::{
+        ConfigurationId, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+    };
+    use crate::scalar::Length;
     use std::collections::{BTreeMap, HashSet};
 
     let mut ir = unit_cube().expect("valid unit cube fixture");
@@ -849,13 +867,13 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         ordinal,
         name: None,
         suppressed: Some(false),
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
-        evaluation: crate::features::FeatureEvaluation::from_definition(definition),
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(definition),
         native_ref: None,
     };
     ir.model.features = vec![
@@ -863,7 +881,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
             source.clone(),
             0,
             FeatureDefinition::Operation(FeatureOperation::DatumPlane {
-                frame: crate::features::FeatureDatumPlaneFrame::new(
+                frame: crate::features::geometry::FeatureDatumPlaneFrame::new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(0.0, 0.0, 1.0),
                     Vector3::new(1.0, 0.0, 0.0),
@@ -894,9 +912,11 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: vec![PatternSeed::Feature(source.clone())],
                 pattern: PatternKind::new(PatternTransform::Mirror {
-                    plane_origin: crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                        .unwrap(),
-                    plane_normal: crate::features::FeatureDirection3::new(Vector3::new(
+                    plane_origin: crate::features::geometry::FinitePoint3::new(Point3::new(
+                        0.0, 0.0, 0.0,
+                    ))
+                    .unwrap(),
+                    plane_normal: crate::features::geometry::FeatureDirection3::new(Vector3::new(
                         1.0, 0.0, 0.0,
                     ))
                     .unwrap(),
@@ -974,10 +994,10 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
             (
                 feature,
                 ConfigurationFeatureState {
-                    evaluation: crate::features::ConfigurationEvaluation::Active {
-                        outputs: crate::features::DistinctMembers::default(),
+                    evaluation: crate::features::parameters::ConfigurationEvaluation::Active {
+                        outputs: crate::features::selections::DistinctMembers::default(),
                     },
-                    dependencies: crate::features::DistinctMembers::default(),
+                    dependencies: crate::features::selections::DistinctMembers::default(),
                     definition: ir.model.features[index].evaluation.definition().clone(),
                 },
             )
@@ -1035,10 +1055,9 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
 
 #[test]
 fn generated_body_selection_must_name_a_declared_producer_result() {
-    use crate::features::{
-        BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
-        FeatureResultTopology, GeneratedBodyRef,
-    };
+    use crate::features::evaluation::FeatureResultTopology;
+    use crate::features::selections::{BodySelection, GeneratedBodyRef};
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use crate::ids::FeatureResultTopologyId;
 
     let mut ir = CadIr::empty();
@@ -1049,13 +1068,13 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         ordinal: 0,
         name: None,
         suppressed: Some(false),
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "producer".into(),
                 parameters: BTreeMap::default(),
@@ -1064,7 +1083,7 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         native_ref: None,
     });
     ir.model.feature_result_topologies.push(
-        crate::features::FeatureResultMembers::new(
+        crate::features::evaluation::FeatureResultMembers::new(
             vec![cadmpeg_core::nonblank_literal!("body#declared")],
             Vec::new(),
             Vec::new(),
@@ -1087,13 +1106,16 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         ordinal: 1,
         name: None,
         suppressed: Some(false),
-        dependencies: crate::features::DistinctMembers::try_from(vec![producer.clone()]).unwrap(),
+        dependencies: crate::features::selections::DistinctMembers::try_from(
+            vec![producer.clone()],
+        )
+        .unwrap(),
         source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::generated(
                     vec![GeneratedBodyRef {
@@ -1158,25 +1180,25 @@ fn reference_images_require_valid_assets_and_plane_placements() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::ReferenceImage {
                 asset: asset_id,
                 visible: true,
                 mirror_u: false,
                 mirror_v: false,
-                frame: crate::features::FeatureUnitPlaneFrame::new(
+                frame: crate::features::geometry::FeatureUnitPlaneFrame::new(
                     Point3::new(0.0, 0.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
                 )
                 .unwrap(),
-                bounds: crate::features::FeatureImageBounds::new([
+                bounds: crate::features::geometry::FeatureImageBounds::new([
                     Point2::new(-10.0, -5.0),
                     Point2::new(10.0, 5.0),
                 ])
@@ -1206,9 +1228,9 @@ fn reference_images_require_valid_assets_and_plane_placements() {
 #[test]
 fn decals_require_valid_assets_faces_and_opacity() {
     use crate::assets::{Asset, AssetContent, AssetId};
-    use crate::features::{
-        DecalMapping, FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
-    };
+    use crate::features::datums::DecalMapping;
+    use crate::features::selections::FaceSelection;
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
     let asset_id = AssetId::mint("synthetic:test:asset#decal").expect("identity grammar");
     let feature_id = FeatureId::mint("synthetic:test:feature#decal").expect("identity grammar");
@@ -1232,13 +1254,13 @@ fn decals_require_valid_assets_faces_and_opacity() {
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: crate::features::DistinctMembers::default(),
+        dependencies: crate::features::selections::DistinctMembers::default(),
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
 
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Decal {
                 asset: asset_id,
                 faces: FaceSelection::Faces(vec![face_id]),
@@ -1256,10 +1278,10 @@ fn decals_require_valid_assets_faces_and_opacity() {
 
 #[test]
 fn input_edge_geometry_names_its_own_state_members_once() {
-    use crate::features::{
-        DistinctMembers, Feature, FeatureDefinition, FeatureId, FeatureInputTopology, FinitePoint3,
-        HistoricalEdgeGeometry,
-    };
+    use crate::features::evaluation::{FeatureInputTopology, HistoricalEdgeGeometry};
+    use crate::features::geometry::FinitePoint3;
+    use crate::features::selections::DistinctMembers;
+    use crate::features::{Feature, FeatureDefinition, FeatureId};
     use crate::ids::{FeatureInputTopologyId, HistoricalEdgeId, HistoricalFaceId};
 
     let feature_id = FeatureId::mint("test:model:feature#fillet").expect("identity grammar");
@@ -1272,6 +1294,8 @@ fn input_edge_geometry_names_its_own_state_members_once() {
         start: FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)),
         end: FinitePoint3::new(Point3::new(0.0, 0.0, 10.0)),
         faces: DistinctMembers::try_from(vec![HistoricalFaceId::mint(face).unwrap()]).unwrap(),
+        carrier: None,
+        supports: Vec::new(),
     };
     let mut ir = CadIr::empty();
     ir.model
@@ -1297,7 +1321,7 @@ fn input_edge_geometry_names_its_own_state_members_once() {
         source_tag: None,
         source_text: None,
         source_content: crate::features::FeatureContent::default(),
-        evaluation: crate::features::FeatureEvaluation::from_definition(
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(crate::features::FeatureOperation::Native {
                 kind: "Fillet".into(),
                 parameters: BTreeMap::new(),
@@ -1329,10 +1353,13 @@ fn input_edge_geometry_names_its_own_state_members_once() {
 
 #[test]
 fn revolve_validator_limits_fixed_angles_and_two_side_sum() {
-    use crate::features::{
-        AngularTermination, BooleanOp, Feature, FeatureDefinition, FeatureEvaluation, FeatureId,
-        FeatureOperation, PartialRevolveConstruction, RevolveConstruction, RevolveExtent,
+    use crate::features::evaluation::FeatureEvaluation;
+    use crate::features::extents::AngularTermination;
+    use crate::features::operation_settings::BooleanOp;
+    use crate::features::revolve::{
+        PartialRevolveConstruction, RevolveConstruction, RevolveExtent,
     };
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use crate::scalar::PositiveAngle;
     use std::f64::consts::{PI, TAU};
 
@@ -1398,7 +1425,7 @@ fn revolve_validator_limits_fixed_angles_and_two_side_sum() {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: crate::features::DistinctMembers::default(),
+            dependencies: crate::features::selections::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,

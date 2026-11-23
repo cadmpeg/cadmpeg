@@ -10,16 +10,25 @@ mod cc0_controller;
 mod configuration_parameters;
 mod design_containment;
 mod design_parameters;
+mod design_v11;
+mod document_identity;
 mod emboss_operands;
 mod external_placement;
 mod f30_placements;
 mod fillet_projection;
+mod fusion_circular_patterns;
+mod fusion_combine_middle_lists;
+mod fusion_combine_patterns;
 mod fusion_combine_tools;
 mod fusion_copy_paste;
 mod fusion_mirror_remove;
 mod fusion_patterns;
 mod fusion_profile_regions;
+mod fusion_reverse_normal;
+mod fusion_surface_loft;
 mod fusion_surface_revolve;
+mod fusion_tessellate;
+mod fusion_timeline_state;
 mod history_deltas;
 mod history_scale;
 mod inconsistent_records;
@@ -32,6 +41,7 @@ mod procedural_support;
 mod product_owners;
 mod profile_region_selection;
 mod reference_rows;
+mod scan;
 mod scene;
 mod sketch_regions;
 mod split_face_binding;
@@ -236,7 +246,7 @@ fn preserved_source_pipeline_applies_semantic_geometry_edits_without_losing_arch
     let mut edited = decoded.ir().clone();
     let moved = edited.geometry.points[0].position().get();
     edited.geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             2.5, moved.y, moved.z,
         ))
         .expect("a finite position is a point"),
@@ -525,41 +535,41 @@ fn inherit_replays_an_off_catalog_dialect_and_names_it() {
     assert_eq!(written, source);
 }
 
-/// A dialect this codec reads but cannot generate refuses under `Inherit` once
-/// its retained image is gone. There is no fall-through to the catalog row: a
-/// same-format conversion never silently changes what the archive is, and the
-/// refusal names both the source's dialect and the escape.
+/// A dialect this codec reads but cannot generate is written as the catalog
+/// default under `Inherit` once its retained image is gone. The report names
+/// the default as the target and charges the displacement of the source's
+/// dialect.
 #[test]
-fn inherit_refuses_an_off_catalog_source_dialect_with_no_retained_image() {
+fn inherit_writes_an_off_catalog_source_dialect_with_no_retained_image_as_the_default() {
     let result = decode(f3d_with_smbh_and_manifest_version(
         &synthetic_geometry_smbh(),
         "3-3-0-0",
     ));
-    let error = plan(&result, false, TargetRequest::Inherit)
-        .expect_err("f3d:unknown is not a synthesis target");
-    let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
-    };
-    assert_eq!(refusal.format(), "f3d");
-    assert_eq!(
-        ({
-            let wire = serde_json::to_value(refusal).expect("serialize refusal");
-            wire["refusal"]
-                .get("requested")
-                .or_else(|| wire["refusal"].get("source"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        })
-        .as_deref(),
-        Some("f3d:unknown")
+    let report = crate::test_support::assert_written_with_loss(
+        result.ir(),
+        None,
+        &crate::loss::F3dLossCode::SourceDialectDisplaced
+            .kind()
+            .to_string(),
+        "f3d:unknown",
     );
     assert!(
-        refusal
-            .available()
+        report
+            .losses
             .iter()
-            .any(|target| target.id.as_str() == "f3d:manifest-3-2-0-0"),
-        "{:?}",
-        refusal.available()
+            .any(|loss| loss.message.contains("f3d:manifest-3-2-0-0")),
+        "{:#?}",
+        report.losses
+    );
+    assert_eq!(
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &report,
+            "identity/target"
+        )
+        .as_ref()
+        .map(cadmpeg_core::dialect::DialectId::as_str),
+        Some(crate::dialect::TARGETS[0].id.as_str()),
+        "the report names the row the bytes are written as"
     );
 }
 
@@ -627,7 +637,7 @@ fn the_patch_path_names_the_preserved_dialect() {
     let mut edited = result.ir().clone();
     let moved = edited.geometry.points[0].position().get();
     edited.geometry.points[0].set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,
             moved.y,
             moved.z,

@@ -12,26 +12,24 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::history::active_brep_face_matches_source;
-use crate::history::admit_history_binding;
-use crate::history::archived_active_record_count;
 use crate::history::bind_snapshot_revision_ids;
-use crate::history::body_revision_without_topology_change;
-use crate::history::combine_recipe_family_tool_slots;
-use crate::history::grouped_reference_face_candidate;
-use crate::history::historical_body_slot;
+use crate::history::body_selections::{
+    body_revision_without_topology_change, combine_recipe_family_tool_slots, historical_body_slot,
+    pattern_combine_tool_slots, singleton_body_revision_across_state_chain,
+    singleton_revised_input_body_across_state_chain, TopologyStableBodyRevision,
+};
+use crate::history::face_resolution::active_brep_face_matches_source;
+use crate::history::face_resolution::grouped_reference_face_candidate;
 use crate::history::historical_record_archive;
 use crate::history::insert_only_active_record_count;
 use crate::history::materialize_record_table;
-use crate::history::pattern_combine_tool_slots;
-use crate::history::profile_face_group_cardinality_candidates;
+use crate::history::profile_face_groups::profile_face_group_cardinality_candidates;
 use crate::history::selection::bind_edge_identity_history;
 use crate::history::selection::bind_hole_selection_history;
 use crate::history::selection::complete_compact_edge_treatment_deletions;
 use crate::history::selection::entity_selection_face_candidates;
-use crate::history::singleton_body_revision_across_state_chain;
-use crate::history::singleton_revised_input_body_across_state_chain;
-use crate::history::TopologyStableBodyRevision;
+use crate::history::selection::per_history_identities;
+use crate::history::{admit_history_binding, archived_active_record_count};
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,
     AsmHistoricalCarrierBinding, AsmHistoricalOptionalCarrierBinding, AsmHistoricalRelation,
@@ -107,7 +105,10 @@ fn entity_selection_face_proofs_preserve_history_namespaces() {
     );
 
     assert_eq!(
-        entity_selection_face_candidates(18044, &[unrelated, selected]),
+        entity_selection_face_candidates(
+            18044,
+            &per_history_identities(&[unrelated, selected], &[18044])
+        ),
         [
             crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate {
                 history_id: "selected".into(),
@@ -120,6 +121,71 @@ fn entity_selection_face_proofs_preserve_history_namespaces() {
             }
         ]
     );
+}
+
+#[test]
+fn entity_selection_face_candidates_do_not_depend_on_other_requested_identities() {
+    let state = |state_id, record_ref| {
+        (
+            AsmDeltaState {
+                id: format!("history-state-{state_id}"),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(AsmHistoricalTopology {
+                faces: vec![30],
+                ..AsmHistoricalTopology::default()
+            }),
+            vec![AsmEntityVersion {
+                entity_ref: 30,
+                record_ref,
+            }],
+        )
+    };
+    let histories = [crate::test_support::history::history(
+        "history".into(),
+        0,
+        None,
+        false,
+        vec![state(2, 800), state(1, 700)],
+    )];
+    let candidate =
+        |state_id| crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate {
+            history_id: "history".into(),
+            historical: crate::records::topology::fillet::HistoricalBinding {
+                kind: AsmHistoricalEntityKind::Face,
+                entity_ref: 30,
+                state_ids: vec![state_id],
+            },
+            face_slot: 30,
+        };
+    for (local_id, expected) in [(700, candidate(1)), (800, candidate(2))] {
+        assert_eq!(
+            entity_selection_face_candidates(
+                local_id,
+                &per_history_identities(&histories, &[local_id])
+            ),
+            [expected.clone()]
+        );
+        assert_eq!(
+            entity_selection_face_candidates(
+                local_id,
+                &per_history_identities(&histories, &[700, 800])
+            ),
+            [expected]
+        );
+    }
 }
 
 #[test]
@@ -338,7 +404,7 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
         &mut operands,
         &[],
         std::slice::from_ref(&scope),
-        crate::history::BindingHistories::Shared(std::slice::from_ref(&history)),
+        crate::history::binding_histories::BindingHistories::Shared(std::slice::from_ref(&history)),
         &HashMap::from([(scope.id.clone(), history.id.clone())]),
         &HashSet::new(),
     );
@@ -370,7 +436,7 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
         std::slice::from_mut(&mut lineage_operand),
         &[],
         std::slice::from_ref(&scope),
-        crate::history::BindingHistories::Shared(std::slice::from_ref(&history)),
+        crate::history::binding_histories::BindingHistories::Shared(std::slice::from_ref(&history)),
         &HashMap::from([(scope.id.clone(), history.id.clone())]),
         &HashSet::new(),
     );
@@ -380,7 +446,7 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
         std::slice::from_mut(&mut lineage_operand),
         &[],
         std::slice::from_ref(&scope),
-        crate::history::BindingHistories::Shared(std::slice::from_ref(&history)),
+        crate::history::binding_histories::BindingHistories::Shared(std::slice::from_ref(&history)),
         &HashMap::from([(scope.id.clone(), history.id.clone())]),
         &HashSet::from([scope.id.clone()]),
     );
@@ -742,7 +808,7 @@ fn combine_external_scope() -> crate::records::feature::scope::DesignParameterSc
     {
         slot.operation = Some(crate::records::feature::combine::DesignCombineOperation {
             form: crate::records::feature::combine::DesignCombineForm::ExtendedReference,
-            operation: cadmpeg_ir::features::BooleanKind::Join,
+            operation: cadmpeg_ir::features::operation_settings::BooleanKind::Join,
             operation_offset: 0,
             keep_tools: false,
             keep_tools_offset: 0,
@@ -754,6 +820,8 @@ fn combine_external_scope() -> crate::records::feature::scope::DesignParameterSc
             },
 
             destination: Default::default(),
+            created_body_nodes: Vec::new(),
+            consumed_body_nodes: Vec::new(),
         });
     }
     scope
@@ -761,7 +829,7 @@ fn combine_external_scope() -> crate::records::feature::scope::DesignParameterSc
 
 #[test]
 fn combine_external_tools_retain_complete_occurrence_local_identities() {
-    use cadmpeg_ir::features::BodySelection;
+    use cadmpeg_ir::features::selections::BodySelection;
 
     let tool = |record_index, occurrence_reference| {
         crate::records::feature::combine::DesignCombineBodySelection {
@@ -772,7 +840,8 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
     };
     let mut scope = combine_external_scope();
     let BodySelection::Local { bodies, native } =
-        super::super::combine_external_local_tools(&scope).expect("complete local tool identity")
+        super::super::body_selections::combine_external_local_tools(&scope)
+            .expect("complete local tool identity")
     else {
         panic!("local body selection");
     };
@@ -785,7 +854,7 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
         .expect("Combine operation")
         .tools
         .additional[0] = tool(13, 500);
-    assert!(super::super::combine_external_local_tools(&scope).is_none());
+    assert!(super::super::body_selections::combine_external_local_tools(&scope).is_none());
 }
 
 #[test]
@@ -1017,7 +1086,7 @@ fn insert_only_history_uses_the_active_record_table_as_revisions() {
 
     assert_eq!(insert_only_active_record_count(&states), Some(4));
     admit_history_binding(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &states,
         &mut { u64::MAX },
     )
@@ -1401,7 +1470,7 @@ fn reverse_history_builds_complete_entity_version_maps() {
         .into();
 
     admit_history_binding(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &states,
         &mut { u64::MAX },
     )
@@ -1601,7 +1670,8 @@ mod operand_list_combine {
         DesignCombineOperation, DesignCombineTools,
     };
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
-    use cadmpeg_ir::features::{BodySelection, FeatureId};
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::FeatureId;
 
     const STREAM: &str = "f3d:Design/BulkStream.dat";
 
@@ -1684,7 +1754,7 @@ mod operand_list_combine {
                 });
         DesignCombineOperation {
             form: DesignCombineForm::OperandLists,
-            operation: cadmpeg_ir::features::BooleanKind::Join,
+            operation: cadmpeg_ir::features::operation_settings::BooleanKind::Join,
             operation_offset: 21,
             keep_tools: false,
             keep_tools_offset: 29,
@@ -1696,6 +1766,8 @@ mod operand_list_combine {
             },
 
             destination: Default::default(),
+            created_body_nodes: Vec::new(),
+            consumed_body_nodes: Vec::new(),
         }
     }
 
@@ -1715,12 +1787,25 @@ mod operand_list_combine {
         (BodySelection, BodySelection),
         Vec<cadmpeg_ir::report::loss::LossNote>,
     ) {
+        let (selections, losses, _) = bind_with_outcome(operation, history, scopes);
+        (selections, losses)
+    }
+
+    fn bind_with_outcome(
+        operation: DesignCombineOperation,
+        history: &crate::history_records::AsmHistory,
+        scopes: &[DesignParameterScope],
+    ) -> (
+        (BodySelection, BodySelection),
+        Vec<cadmpeg_ir::report::loss::LossNote>,
+        Option<bool>,
+    ) {
         let combine_state = i64::try_from(history.states().len()).unwrap() - 1;
         let combine = scope(400, combine_state);
         let mut target = BodySelection::Native(format!("{STREAM}:design-record#11"));
         let mut tools = BodySelection::Native(format!("{STREAM}:design-record#12"));
-        let mut losses = Vec::new();
-        super::super::super::bind_operand_list_combine_bodies(
+        let mut refusals = Vec::new();
+        let shared_body = super::super::super::body_selections::bind_operand_list_combine_bodies(
             (&mut target, &mut tools),
             &combine,
             &operation,
@@ -1729,9 +1814,13 @@ mod operand_list_combine {
                 combine_state - 1,
             ),
             (std::slice::from_ref(history), scopes),
-            &mut losses,
+            &mut refusals,
         );
-        ((target, tools), losses)
+        let losses = refusals
+            .iter()
+            .map(crate::history::body_selections::CombineOperandRefusal::note)
+            .collect();
+        ((target, tools), losses, shared_body)
     }
 
     fn input_body_slots(selection: &BodySelection) -> Vec<i64> {
@@ -1745,7 +1834,7 @@ mod operand_list_combine {
             other => panic!("expected a historical selection, got {other:?}"),
         };
         ids.iter()
-            .map(|id| crate::history::historical_body_slot(id).unwrap())
+            .map(|id| crate::history::body_selections::historical_body_slot(id).unwrap())
             .collect()
     }
 
@@ -1776,6 +1865,19 @@ mod operand_list_combine {
         assert_eq!(input_body_slots(&tools), [3, 1]);
     }
 
+    #[test]
+    fn tools_that_name_one_browser_node_select_one_body() {
+        let history = history(&[&[], &[1], &[1, 2], &[1, 2, 3], &[2]]);
+        let ((target, tools), losses) = bind_with_losses(
+            operation(node(200), &[node(300), node(100), node(300)]),
+            &history,
+            &creators(),
+        );
+        assert_eq!(input_body_slots(&target), [2]);
+        assert_eq!(input_body_slots(&tools), [3, 1]);
+        assert_eq!(operand_refusals(&losses), 0);
+    }
+
     fn assert_target_only(selections: &(BodySelection, BodySelection), slot: i64) {
         assert_eq!(input_body_slots(&selections.0), [slot], "{selections:?}");
         assert!(
@@ -1800,12 +1902,12 @@ mod operand_list_combine {
             (node(200), vec![None, node(100)], 2),
             (node(200), vec![node(300), None], 2),
             (node(200), vec![node(300), node(999)], 2),
-            (node(200), vec![node(300), node(300)], 2),
         ] {
-            let (selections, losses) =
-                bind_with_losses(operation(target, &tools), &history, &creators());
+            let (selections, losses, shared_body) =
+                bind_with_outcome(operation(target, &tools), &history, &creators());
             assert_target_only(&selections, target_slot);
             assert_eq!(operand_refusals(&losses), 1);
+            assert_ne!(shared_body, Some(true));
         }
         for target in [None, node(999)] {
             let ((target, tools), losses) = bind_with_losses(
@@ -1823,10 +1925,11 @@ mod operand_list_combine {
     fn a_tool_that_names_the_target_body_leaves_both_selections_native() {
         let history = history(&[&[], &[1], &[1, 2], &[1, 2, 3], &[2]]);
         for tools in [vec![node(200), node(100)], vec![node(300), node(200)]] {
-            let (selections, losses) =
-                bind_with_losses(operation(node(200), &tools), &history, &creators());
+            let (selections, losses, shared_body) =
+                bind_with_outcome(operation(node(200), &tools), &history, &creators());
             assert_native(&selections);
             assert_eq!(operand_refusals(&losses), 1);
+            assert_eq!(shared_body, Some(true));
         }
     }
 

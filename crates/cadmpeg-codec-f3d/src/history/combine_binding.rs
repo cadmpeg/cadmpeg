@@ -3,16 +3,19 @@
 
 use std::collections::BTreeSet;
 
-use cadmpeg_ir::features::{BodyMember, BodySelection, FeatureId};
+use cadmpeg_ir::features::selections::{BodyMember, BodySelection};
+use cadmpeg_ir::features::{CombineOperands, FeatureId};
 use cadmpeg_ir::report::loss::LossNote;
 
-use super::{
-    bind_direct_body_recipe_body_selection, bind_operand_list_combine_bodies, body_member,
-    combine_external_local_tools, combine_recipe_family_tool_slots,
-    effective_scope_previous_history_state_id, historical_brep_source, pattern_combine_tool_slots,
+use super::body_selections::{
+    bind_direct_body_recipe_body_selection, bind_operand_list_combine_bodies,
+    combine_external_local_tools, combine_recipe_family_tool_slots, pattern_combine_tool_slots,
     singleton_revised_input_body_across_state_chain, unique_feature_history_states,
-    unique_history_state_pair, BodyCandidates, FeatureBodySelectionInputs,
+    CombineOperandRefusal, CombineOperandSide, FeatureBodySelectionInputs,
 };
+use super::face_resolution::{body_member, historical_brep_source};
+use super::history_states::{effective_scope_previous_history_state_id, unique_history_state_pair};
+use crate::history::body_candidates::BodyCandidates;
 use crate::records::feature::scope::DesignParameterScope;
 
 /// Bind `target` and `tools` in the history state before the scope.
@@ -20,7 +23,8 @@ use crate::records::feature::scope::DesignParameterScope;
 /// A scope with no current or preceding history state binds both operands
 /// through its direct body recipes. When the preceding state comes from the
 /// history header, an operand that the historical binding leaves native also
-/// binds through its direct body recipe.
+/// binds through its direct body recipe. An operand-list operand that its
+/// browser node leaves native binds through the body recipes of the scope.
 pub(super) fn bind_combine_operands<'a>(
     (target, tools): (&mut BodySelection, &mut BodySelection),
     scope: &DesignParameterScope,
@@ -28,7 +32,7 @@ pub(super) fn bind_combine_operands<'a>(
     pattern_bodies: Option<&BTreeSet<i64>>,
     inputs: &FeatureBodySelectionInputs<'a>,
     body_candidates: &mut BodyCandidates<'a>,
-    losses: &mut Vec<LossNote>,
+    (refusals, losses): (&mut Vec<CombineOperandRefusal>, &mut Vec<LossNote>),
 ) {
     let (Some(state_id), Some(previous_state_id)) = (
         scope.history_state_id(),
@@ -53,7 +57,7 @@ pub(super) fn bind_combine_operands<'a>(
         pattern_bodies,
         inputs,
         body_candidates,
-        losses,
+        (refusals, losses),
     );
     if scope.previous_history_state_id().is_none() {
         for operand in [target, tools] {
@@ -74,29 +78,176 @@ fn bind_historical_combine_operands<'a>(
     pattern_bodies: Option<&BTreeSet<i64>>,
     inputs: &FeatureBodySelectionInputs<'a>,
     body_candidates: &mut BodyCandidates<'a>,
-    losses: &mut Vec<LossNote>,
+    (operand_refusals, losses): (&mut Vec<CombineOperandRefusal>, &mut Vec<LossNote>),
 ) {
-    let histories = inputs.histories;
-    let body_recipe_operands = inputs.body_recipe_operands;
     if let Some(local) = combine_external_local_tools(scope) {
         *tools = local;
     }
-    if let Some(operation) = scope.combine_operation().filter(|operation| {
+    let Some(operation) = scope.combine_operation().filter(|operation| {
         operation.form == crate::records::feature::combine::DesignCombineForm::OperandLists
-    }) {
-        bind_operand_list_combine_bodies(
+    }) else {
+        bind_recipe_combine_operands(
             (target, tools),
             scope,
-            operation,
-            (feature_id, previous_state_id),
-            (histories, inputs.scopes),
-            losses,
+            (feature_id, state_id, previous_state_id),
+            pattern_bodies,
+            (inputs, body_candidates),
+            false,
         );
         return;
-    }
-    let BodySelection::Native(native) = target else {
-        return;
     };
+    let (mut recipe_target, mut recipe_tools) = (target.clone(), tools.clone());
+    let mut refusals = Vec::new();
+    let shared_body = bind_operand_list_combine_bodies(
+        (&mut *target, &mut *tools),
+        scope,
+        operation,
+        (feature_id, previous_state_id),
+        (inputs.histories, inputs.scopes),
+        &mut refusals,
+    ) == Some(true);
+    if shared_body {
+        operand_refusals.extend(refusals);
+        return;
+    }
+    bind_recipe_combine_operands(
+        (&mut recipe_target, &mut recipe_tools),
+        scope,
+        (feature_id, state_id, previous_state_id),
+        pattern_bodies,
+        (inputs, body_candidates),
+        true,
+    );
+    let (merged_target, merged_tools) = merge_operand_list_bindings(
+        (target.clone(), tools.clone()),
+        (recipe_target, recipe_tools),
+    );
+    operand_refusals.extend(unbound_refusals((&merged_target, &merged_tools), refusals));
+    losses.extend(tool_replacement_loss(feature_id, tools, &merged_tools));
+    *target = merged_target;
+    *tools = merged_tools;
+}
+
+fn native_operand(selection: &BodySelection) -> bool {
+    matches!(
+        selection,
+        BodySelection::Native(_) | BodySelection::NativeSet(_)
+    )
+}
+
+fn names_model_bodies(selection: &BodySelection) -> bool {
+    matches!(
+        selection,
+        BodySelection::Bodies(_)
+            | BodySelection::Resolved { .. }
+            | BodySelection::ResolvedSet { .. }
+    )
+}
+
+/// Merge the browser-node slot binding of an operand-list `Combine` with the
+/// binding that its body recipes give.
+///
+/// The target keeps its slot binding and takes the recipe binding when its
+/// slot leaves it native. The tools take the recipe binding when it names
+/// model bodies or when their slots leave them native. A pair whose target
+/// and tools overlap is refused: the tools then keep their slot binding, and
+/// when that pair also overlaps, both operands keep their slot bindings.
+fn merge_operand_list_bindings(
+    (slot_target, slot_tools): (BodySelection, BodySelection),
+    (recipe_target, recipe_tools): (BodySelection, BodySelection),
+) -> (BodySelection, BodySelection) {
+    let target = if native_operand(&slot_target) {
+        recipe_target
+    } else {
+        slot_target.clone()
+    };
+    let tools = if names_model_bodies(&recipe_tools) || native_operand(&slot_tools) {
+        recipe_tools
+    } else {
+        slot_tools.clone()
+    };
+    [(target.clone(), tools), (target, slot_tools.clone())]
+        .into_iter()
+        .find(|(target, tools)| CombineOperands::new(target.clone(), tools.clone()).is_ok())
+        .unwrap_or((slot_target, slot_tools))
+}
+
+/// The loss for merged tools that replace slot tools that bind.
+fn tool_replacement_loss(
+    feature_id: &FeatureId,
+    slot_tools: &BodySelection,
+    merged_tools: &BodySelection,
+) -> Option<LossNote> {
+    (!native_operand(slot_tools) && merged_tools != slot_tools).then(|| {
+        crate::loss::F3dLossCode::FeatureCombineToolRecipeReplacementAssumed.note(format!(
+            "Combine {feature_id}: the body recipe tools {:?} replace the slot tools {:?}",
+            selection_bodies(merged_tools),
+            selection_bodies(slot_tools),
+        ))
+    })
+}
+
+/// The body identities of `selection`, or its native expression.
+fn selection_bodies(selection: &BodySelection) -> Vec<&str> {
+    match selection {
+        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies
+            .as_slice()
+            .iter()
+            .map(cadmpeg_ir::ids::BodyId::as_str)
+            .collect(),
+        BodySelection::ResolvedSet { members } => members
+            .bodies()
+            .map(cadmpeg_ir::ids::BodyId::as_str)
+            .collect(),
+        BodySelection::Historical { bodies, .. } => bodies
+            .as_slice()
+            .iter()
+            .map(cadmpeg_ir::ids::HistoricalBodyId::as_str)
+            .collect(),
+        BodySelection::HistoricalSet { members, .. } => members
+            .bodies()
+            .map(cadmpeg_ir::ids::HistoricalBodyId::as_str)
+            .collect(),
+        BodySelection::Native(native) => vec![native.as_str()],
+        _ => Vec::new(),
+    }
+}
+
+/// The slot refusals of the operands that stay native.
+fn unbound_refusals(
+    (target, tools): (&BodySelection, &BodySelection),
+    refusals: Vec<CombineOperandRefusal>,
+) -> Vec<CombineOperandRefusal> {
+    refusals
+        .into_iter()
+        .filter(|refusal| {
+            native_operand(match refusal.side {
+                CombineOperandSide::Target => target,
+                CombineOperandSide::Tools => tools,
+            })
+        })
+        .collect()
+}
+
+/// Bind the operands that the history state of the scope and its body
+/// recipes determine. With `operand_lists`, only native operands change.
+fn bind_recipe_combine_operands<'a>(
+    (target, tools): (&mut BodySelection, &mut BodySelection),
+    scope: &DesignParameterScope,
+    (feature_id, state_id, previous_state_id): (&FeatureId, i64, i64),
+    pattern_bodies: Option<&BTreeSet<i64>>,
+    (inputs, body_candidates): (&FeatureBodySelectionInputs<'a>, &mut BodyCandidates<'a>),
+    operand_lists: bool,
+) {
+    let histories = inputs.histories;
+    let body_recipe_operands = inputs.body_recipe_operands;
+    let target_native = match &*target {
+        BodySelection::Native(native) => Some(native.clone()),
+        _ => None,
+    };
+    if target_native.is_none() && !(operand_lists && native_operand(tools)) {
+        return;
+    }
     let Some((history, state, _)) =
         unique_history_state_pair(histories, state_id, previous_state_id)
     else {
@@ -114,14 +265,17 @@ fn bind_historical_combine_operands<'a>(
     let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
     let input_state = crate::ids::history_input_state_id(&prefix);
     let body_id = crate::ids::history_input_body_id(&prefix, body);
-    let native_id = native.to_owned();
-    let target_bodies = vec![body_id];
-    if let Ok(historical) = cadmpeg_ir::features::BodySelection::historical(
-        crate::ids::history_input_state_id(&prefix),
-        target_bodies,
-        native_id,
-    ) {
-        *target = historical;
+    if let Some(native_id) = target_native {
+        if let Ok(historical) = cadmpeg_ir::features::selections::BodySelection::historical(
+            crate::ids::history_input_state_id(&prefix),
+            vec![body_id],
+            native_id,
+        ) {
+            *target = historical;
+        }
+    }
+    if operand_lists && !native_operand(tools) {
+        return;
     }
     let Some(stream) = crate::ids::native_stream(&scope.id) else {
         return;
@@ -193,7 +347,8 @@ fn bind_historical_combine_operands<'a>(
         direct_tool_rows.push(row);
     }
     if historical_tool_rows.len() == native_tools.len() {
-        let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_rows(historical_tool_rows)
+        let Ok(members) =
+            cadmpeg_ir::features::selections::BodyMembers::try_from_rows(historical_tool_rows)
         else {
             return;
         };
@@ -208,12 +363,14 @@ fn bind_historical_combine_operands<'a>(
             };
             let (body, native) = row.into_parts();
             let selected = vec![body];
-            let Ok(bodies) = cadmpeg_ir::features::DistinctMembers::try_from(selected) else {
+            let Ok(bodies) = cadmpeg_ir::features::selections::DistinctMembers::try_from(selected)
+            else {
                 return;
             };
             BodySelection::Resolved { bodies, native }
         } else {
-            let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_rows(direct_tool_rows)
+            let Ok(members) =
+                cadmpeg_ir::features::selections::BodyMembers::try_from_rows(direct_tool_rows)
             else {
                 return;
             };
@@ -239,7 +396,8 @@ fn bind_historical_combine_operands<'a>(
             let Some(rows) = combine_historical_rows(&prefix, tool_slots, native_tools) else {
                 return;
             };
-            let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_rows(rows) else {
+            let Ok(members) = cadmpeg_ir::features::selections::BodyMembers::try_from_rows(rows)
+            else {
                 return;
             };
             *tools = BodySelection::HistoricalSet {
@@ -257,7 +415,8 @@ fn bind_historical_combine_operands<'a>(
             let Some(rows) = combine_historical_rows(&prefix, tool_slots, native_tools) else {
                 return;
             };
-            let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_rows(rows) else {
+            let Ok(members) = cadmpeg_ir::features::selections::BodyMembers::try_from_rows(rows)
+            else {
                 return;
             };
             *tools = BodySelection::HistoricalSet {
@@ -272,7 +431,7 @@ fn combine_historical_rows(
     prefix: &cadmpeg_ir::ids::IdentityKey,
     slots: Vec<i64>,
     native_tools: Vec<String>,
-) -> Option<Vec<cadmpeg_ir::features::BodyMember<cadmpeg_ir::ids::HistoricalBodyId>>> {
+) -> Option<Vec<cadmpeg_ir::features::selections::BodyMember<cadmpeg_ir::ids::HistoricalBodyId>>> {
     let mut rows = Vec::new();
     for (slot, native) in slots.into_iter().zip(native_tools) {
         let body = crate::ids::history_input_body_id(prefix, slot);
@@ -282,3 +441,6 @@ fn combine_historical_rows(
     }
     Some(rows)
 }
+
+#[cfg(test)]
+mod tests;

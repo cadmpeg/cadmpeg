@@ -133,6 +133,7 @@ fn timeline(features: Vec<Feature>) -> CadIr {
         active_arrangements: BTreeSet::new(),
         occurrences: BTreeMap::new(),
         current: Vec::new(),
+        unproduced: BTreeSet::default(),
     });
     ir.design.features = features;
     ir.design
@@ -845,7 +846,7 @@ fn the_walk_at_the_construction_ceiling_runs_on_a_small_stack() {
 
 #[test]
 fn the_walk_reaches_a_selection_inside_an_operation() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let feature = feature(
         "a",
         json!({"kind": "extract", "value": {

@@ -15,7 +15,8 @@ use crate::feature::schema::SchemaClass;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{EdgeSelection, GeneratedEdgeRef};
+use cadmpeg_ir::features::selections::{EdgeSelection, GeneratedEdgeRef};
+use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::ids::{BodyId, EdgeId};
 use cadmpeg_ir::topology::BodyKind;
 use std::collections::{BTreeMap, BTreeSet};
@@ -24,22 +25,92 @@ pub(in super::super) fn copy_body_id(body: &BodyId) -> Result<BodyId, CodecError
     BodyId::mint(body.as_str().to_owned()).map_err(CodecError::malformed)
 }
 
-pub(in super::super) fn feature_output_bodies(
-    ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
-    ir: &CadIr,
-    feature_id: u32,
-) -> Result<Vec<BodyId>, CodecError> {
-    feature_output_bodies_with_history(ctx, scan, ir, feature_id, &mut BTreeSet::new())
+/// The output bodies of features over one state of the scan and the IR, with
+/// the lookups that each feature repeats indexed once.
+pub(in super::super) struct FeatureOutputIndex<'a, 's> {
+    scan: &'a ContainerScan<'s>,
+    ir: &'a CadIr,
+    surface_rows: BTreeMap<u32, Vec<u32>>,
+    entity_tables: BTreeMap<u32, Vec<&'a crate::feature::entity::FeatureEntityTable>>,
+    /// The body of each face whose shell and region are unique, by the face's
+    /// surface and in face order.
+    surface_bodies: BTreeMap<&'a str, Vec<&'a BodyId>>,
+    /// `None` marks an identity that two or more features carry.
+    features: BTreeMap<&'a str, Option<&'a Feature>>,
+}
+
+impl<'a, 's> FeatureOutputIndex<'a, 's> {
+    pub(in super::super) fn new(scan: &'a ContainerScan<'s>, ir: &'a CadIr) -> Self {
+        let mut surface_rows = BTreeMap::<u32, Vec<u32>>::new();
+        for row in &scan.surfaces.rows {
+            surface_rows.entry(row.feature_id).or_default().push(row.id);
+        }
+        let mut entity_tables = BTreeMap::<u32, Vec<_>>::new();
+        for table in &scan.features.entity_tables {
+            entity_tables
+                .entry(table.feature_id)
+                .or_default()
+                .push(table);
+        }
+        let shells = unique_by_identity(&ir.geometry.shells, |shell| shell.id.as_str());
+        let regions = unique_by_identity(&ir.geometry.regions, |region| region.id.as_str());
+        let mut surface_bodies = BTreeMap::<&str, Vec<&BodyId>>::new();
+        for face in &ir.geometry.faces {
+            let Some(shell) = shells.get(face.shell.as_str()).copied().flatten() else {
+                continue;
+            };
+            let Some(region) = regions.get(shell.region.as_str()).copied().flatten() else {
+                continue;
+            };
+            surface_bodies
+                .entry(face.surface.as_str())
+                .or_default()
+                .push(&region.body);
+        }
+        Self {
+            scan,
+            ir,
+            surface_rows,
+            entity_tables,
+            surface_bodies,
+            features: unique_by_identity(&ir.model.features, |feature| feature.id.as_str()),
+        }
+    }
+
+    pub(in super::super) fn output_bodies(
+        &self,
+        ctx: &DecodeContext<'_>,
+        feature_id: u32,
+    ) -> Result<Vec<BodyId>, CodecError> {
+        feature_output_bodies_with_history(ctx, self, feature_id, &mut BTreeSet::new())
+    }
+}
+
+fn unique_by_identity<'a, T>(
+    items: impl IntoIterator<Item = &'a T>,
+    identity: impl Fn(&'a T) -> &'a str,
+) -> BTreeMap<&'a str, Option<&'a T>> {
+    let mut indexed = BTreeMap::new();
+    for item in items {
+        match indexed.entry(identity(item)) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                entry.insert(None);
+            }
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(Some(item));
+            }
+        }
+    }
+    indexed
 }
 
 fn feature_output_bodies_with_history(
     ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
-    ir: &CadIr,
+    index: &FeatureOutputIndex<'_, '_>,
     feature_id: u32,
     visiting: &mut BTreeSet<u32>,
 ) -> Result<Vec<BodyId>, CodecError> {
+    let (scan, ir) = (index.scan, index.ir);
     let _depth = ctx.enter_nested("creo feature output history")?;
     if visiting.contains(&feature_id) {
         return Ok(Vec::new());
@@ -50,17 +121,19 @@ fn feature_output_bodies_with_history(
         &scan.features.replay_affected_ids,
         feature_id,
     );
-    let generated_surfaces = scan
-        .surfaces
-        .rows
-        .iter()
-        .filter(|row| row.feature_id == feature_id)
-        .map(|row| row.id)
+    let generated_surfaces = index
+        .surface_rows
+        .get(&feature_id)
+        .into_iter()
+        .flatten()
+        .copied()
         .chain(
-            scan.features
+            index
                 .entity_tables
-                .iter()
-                .filter(|table| table.feature_id == feature_id)
+                .get(&feature_id)
+                .into_iter()
+                .flatten()
+                .copied()
                 .flat_map(crate::feature::entity::FeatureEntityTable::surface_ids_iter),
         )
         .chain(affected_geometry.into_iter().flatten().copied());
@@ -68,38 +141,22 @@ fn feature_output_bodies_with_history(
     let edge_outputs = match feature_edge_selection(scan, ir, feature_id)? {
         Some(EdgeSelection::Resolved { edges, .. }) => bodies_containing_edges(ir, &edges)?,
         Some(EdgeSelection::Generated { edges, .. }) => {
-            generated_edge_output_bodies(ctx, scan, ir, &edges, visiting)?
+            generated_edge_output_bodies(ctx, index, &edges, visiting)?
         }
         _ => Vec::new(),
     };
-    let generated_input_outputs =
-        generated_input_output_bodies(ctx, scan, ir, feature_id, visiting)?;
+    let generated_input_outputs = generated_input_output_bodies(ctx, index, feature_id, visiting)?;
     for surface_id in generated_surfaces {
         let surface = format!("creo:visibgeom:surface#{surface_id}");
-        for face in ir
-            .geometry
-            .faces
-            .iter()
-            .filter(|face| face.surface.as_str() == surface)
+        for body in index
+            .surface_bodies
+            .get(surface.as_str())
+            .into_iter()
+            .flatten()
+            .copied()
         {
-            let Some(shell) = exactly_one(
-                ir.geometry
-                    .shells
-                    .iter()
-                    .filter(|shell| shell.id == face.shell),
-            ) else {
-                continue;
-            };
-            let Some(region) = exactly_one(
-                ir.geometry
-                    .regions
-                    .iter()
-                    .filter(|region| region.id == shell.region),
-            ) else {
-                continue;
-            };
-            if !outputs.contains(&region.body) {
-                let body = copy_body_id(&region.body)?;
+            if !outputs.contains(body) {
+                let body = copy_body_id(body)?;
                 outputs.push(body);
             }
         }
@@ -115,18 +172,17 @@ fn feature_output_bodies_with_history(
 
 fn generated_input_output_bodies(
     ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
-    ir: &CadIr,
+    index: &FeatureOutputIndex<'_, '_>,
     feature_id: u32,
     visiting: &mut BTreeSet<u32>,
 ) -> Result<Vec<BodyId>, CodecError> {
     let feature_id_text = format!("creo:model:feature#{feature_id}");
-    let Some(feature) = exactly_one(
-        ir.model
-            .features
-            .iter()
-            .filter(|feature| feature.id.as_str() == feature_id_text),
-    ) else {
+    let Some(feature) = index
+        .features
+        .get(feature_id_text.as_str())
+        .copied()
+        .flatten()
+    else {
         return Ok(Vec::new());
     };
     drop(feature_id_text);
@@ -139,7 +195,7 @@ fn generated_input_output_bodies(
         else {
             continue;
         };
-        for body in feature_output_bodies_with_history(ctx, scan, ir, producer_id, visiting)? {
+        for body in feature_output_bodies_with_history(ctx, index, producer_id, visiting)? {
             if !outputs.contains(&body) {
                 outputs.push(body);
             }
@@ -150,8 +206,7 @@ fn generated_input_output_bodies(
 
 fn generated_edge_output_bodies(
     ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
-    ir: &CadIr,
+    index: &FeatureOutputIndex<'_, '_>,
     edges: &[GeneratedEdgeRef],
     visiting: &mut BTreeSet<u32>,
 ) -> Result<Vec<BodyId>, CodecError> {
@@ -165,7 +220,7 @@ fn generated_edge_output_bodies(
         else {
             continue;
         };
-        for body in feature_output_bodies_with_history(ctx, scan, ir, producer_id, visiting)? {
+        for body in feature_output_bodies_with_history(ctx, index, producer_id, visiting)? {
             if !outputs.contains(&body) {
                 outputs.push(body);
             }

@@ -26,10 +26,16 @@ use cadmpeg_core::target::TargetCatalog;
 use cadmpeg_core::CodecError;
 
 pub mod approximation;
+pub mod capacity;
 mod carried;
 mod coverage;
 pub mod edge_recovery;
 mod loss;
+pub use loss::{
+    carried_source_losses, edit_dropped, edit_unverified, evaluation_missing, evaluation_stale,
+    native_records_omitted, output_empty, parameter_flattened, parameter_renamed, record_invalid,
+    record_residual_unavailable, rule_invalid, value_unwritable,
+};
 mod scene;
 pub mod subset_lowering;
 pub mod target;
@@ -39,7 +45,6 @@ pub use coverage::{
     ArenaCoverage, ArenaDisposition, ArenaDispositions, DesignArenaDispositions,
     ProcessArenaDispositions,
 };
-pub use loss::{carried_source_losses, TargetLossCode, WriterLossCode};
 pub use scene::{SceneOptions, UpAxis};
 use target::{DialectFree, TargetDomain, TargetRequest, TargetResolution};
 
@@ -126,6 +131,7 @@ impl<E: EncoderBackend> Encoder for E {
     ) -> Result<ExportPlan, CodecError> {
         let target = E::TARGET.resolve(input.ir, request, E::FORMAT)?;
         let identity = target.export_target().cloned();
+        let synthesized_identity = target.synthesized_target().cloned();
         let body = self.plan_resolved(input, target)?;
         let ExportBody {
             bytes,
@@ -145,6 +151,10 @@ impl<E: EncoderBackend> Encoder for E {
                 E::REQUEST
             ));
         }
+        let identity = match write_path {
+            WritePath::Synthesized { .. } => synthesized_identity,
+            WritePath::Patched { .. } | WritePath::VerbatimReplay => identity,
+        };
         let write_path = write_path.into_report(input.fidelity.is_some());
         let report = match identity {
             None => ExportReport::cadir(census, write_path, losses, notes),

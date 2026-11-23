@@ -236,8 +236,10 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
     let mut ir = CadIr::empty();
     ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         cadmpeg_ir::ids::PointId::mint("cadir:model:point#honesty").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
-            .expect("a finite position is a point"),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            1.0, 2.0, 3.0,
+        ))
+        .expect("a finite position is a point"),
         None,
     ));
 

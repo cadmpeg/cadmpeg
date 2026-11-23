@@ -3,11 +3,11 @@
 use super::{helix_nurbs, helix_surface_nurbs};
 use crate::eval::admission::EvaluationAdmission;
 use crate::eval::decode::{nurbs_curve_point_at, nurbs_surface_point};
-use crate::geometry::nurbs::NurbsCurve;
-use crate::geometry::{
+use crate::geometry::helix::{
     HelixCircleProfile, HelixCurveConstruction, HelixFrame, HelixLineProfile,
     HelixPathConstruction, HelixSurfaceConstruction, HelixSurfaceProfile,
 };
+use crate::geometry::nurbs::NurbsCurve;
 use crate::math::{Point3, Vector3};
 use crate::scalar::PositiveLength;
 
@@ -90,7 +90,7 @@ fn distance(a: Point3, b: Point3) -> f64 {
 }
 
 fn max_deviation(helix: &Helix, spline: &NurbsCurve) -> f64 {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let [start, end] = helix.angle_range;
     (0..=DENSE_SAMPLES)
         .map(|index| {
