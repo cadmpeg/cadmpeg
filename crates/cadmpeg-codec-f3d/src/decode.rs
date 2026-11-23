@@ -2627,11 +2627,12 @@ fn report_design_projection_gaps(
             ),
         );
     }
-    let recipe_search_skips = crate::design::decode::operands::recipe_side_searches_exhausted(
-        ctx,
-        &native.design_edge_operands,
-        &native.design_face_operands,
-    )?;
+    let recipe_search_skips =
+        crate::design::decode::operands::recipe_structure::recipe_side_searches_exhausted(
+            ctx,
+            &native.design_edge_operands,
+            &native.design_face_operands,
+        )?;
     for cap in crate::records::feature::patterns::RectangularPatternSearchCap::ALL {
         let capped_pattern_searches = native
             .design_parameter_scopes
@@ -2659,7 +2660,7 @@ fn report_design_projection_gaps(
             F3dLossCode::RecipeSideSearchBudgetExceeded,
             format_args!(
                 "{recipe_search_skips} Design recipe program(s) retain no recipe structure because their side-sequence search exceeded the local work cap RECIPE_SIDE_SEARCH_WORK ({}).",
-                crate::design::decode::operands::RECIPE_SIDE_SEARCH_WORK,
+                crate::design::decode::operands::recipe_structure::RECIPE_SIDE_SEARCH_WORK,
             ),
         );
     }

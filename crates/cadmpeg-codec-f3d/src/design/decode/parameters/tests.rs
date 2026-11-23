@@ -325,7 +325,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
             parse_design_parameter_record(&earlier_distance)
                 .expect("earlier feature parameter")
                 .family_discriminator()
-                .map(|value| value.value.code()),
+                .map(|value| u64::from(value.value.code())),
             Some(discriminator)
         );
     }

@@ -871,9 +871,11 @@ fn dimension_recipe_edge_matches(
     if native_stream(&operand.id) != native_stream(&record.id) {
         return false;
     }
-    let Some(prelude_length) = super::operands::edge_recipe_prelude_length(
+    let Some(prelude_length) = super::operands::recipe_structure::edge_recipe_prelude_length(
         &operand.recipe_program,
-        &cadmpeg_core::decode::WorkBudget::new(super::operands::RECIPE_SIDE_SEARCH_WORK),
+        &cadmpeg_core::decode::WorkBudget::new(
+            super::operands::recipe_structure::RECIPE_SIDE_SEARCH_WORK,
+        ),
     ) else {
         return false;
     };

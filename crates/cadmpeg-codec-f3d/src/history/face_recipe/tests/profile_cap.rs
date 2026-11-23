@@ -63,7 +63,7 @@ fn cap_operand(cap: i64, wall: i64) -> DesignFaceOperand {
     operand.changed_candidate_faces = operand.candidate_faces.clone();
     let fields = [1, -1, 0, -1, 1, -1, 2, 1, -1, 0, -1, 0, 0, -1];
     let structure = crate::test_support::with_decode_context(|ctx| {
-        crate::design::decode::operands::face_recipe_structure(ctx, &fields)
+        crate::design::decode::operands::recipe_structure::face_recipe_structure(ctx, &fields)
             .unwrap()
             .unwrap()
     });
@@ -117,7 +117,8 @@ fn closed_profile_boundary_requires_the_complete_cap_and_incident_pair() {
 
 #[test]
 fn extrude_history_binding_replaces_changed_wall_with_selected_cap() {
-    use crate::history::{bind_face_operand_history_candidates, BindingHistories};
+    use crate::history::binding_histories::BindingHistories;
+    use crate::history::face_operand_history::bind_face_operand_history_candidates;
     use crate::history_records::{
         AsmDeltaState, AsmEntityVersion, AsmHistoricalPersistentSubentityTag,
     };

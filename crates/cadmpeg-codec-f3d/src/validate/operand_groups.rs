@@ -24,7 +24,7 @@ pub(super) fn validate_edge_identity_operands<'a>(
     let operand_groups_by_index = &ctx.operand_groups_by_index;
     let mut expected_edge_identity_operands =
         reload_native_arena(decode, ctx.ir, "design_edge_identity_operands")?;
-    let scope_histories = history::bind_scope_histories(
+    let scope_histories = history::scope_histories::bind_scope_histories(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
@@ -36,7 +36,7 @@ pub(super) fn validate_edge_identity_operands<'a>(
         &mut expected_edge_identity_operands,
         &native.design_construction_operand_identities,
         &native.design_parameter_scopes,
-        history::BindingHistories::Shared(&native.asm_histories),
+        history::binding_histories::BindingHistories::Shared(&native.asm_histories),
         &scope_histories,
         &HashSet::new(),
     );
@@ -100,7 +100,7 @@ pub(super) fn validate_body_recipe_operands<'a>(
     let operand_groups_by_index = &ctx.operand_groups_by_index;
     let recipes_by_id = &ctx.recipes_by_id;
     let mut expected_operands = reload_native_arena(decode, ctx.ir, "design_body_recipe_operands")?;
-    design::decode::operands::bind_body_recipe_operand_candidates(
+    design::decode::operands::body_recipes::bind_body_recipe_operand_candidates(
         &mut expected_operands,
         &native.construction_recipes,
         &native.persistent_subentity_tags,
@@ -110,7 +110,7 @@ pub(super) fn validate_body_recipe_operands<'a>(
         &mut expected_operands,
         &native.construction_recipes,
         &native.design_parameter_scopes,
-        history::BindingHistories::Shared(&native.asm_histories),
+        history::binding_histories::BindingHistories::Shared(&native.asm_histories),
     )?;
     let expected_operands = expected_operands
         .iter()

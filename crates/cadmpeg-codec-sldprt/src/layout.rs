@@ -3583,6 +3583,18 @@ pub(crate) mod extrusion_compact_operation_trailer {
     pub(crate) const ZERO_TAIL: usize = 36;
 }
 
+/// Byte offsets for the `extrusion_end_spec_header` record.
+///
+/// Spec §2. Record length 26 B.
+///
+/// ```text
+/// Offsets from the end-spec anchor: the class token, or the final `_c` bytes of a direct `moEndSpec_c` declaration. The compact blind form omits the second-direction word and begins its display-distance dimension child at +22; the other forms begin their continuation at +26.
+/// ```
+pub(crate) mod extrusion_end_spec_header {
+    /// Offset of `reversal` (`u32`, little-endian). Spec §2.
+    pub(crate) const REVERSAL: usize = 12;
+}
+
 /// Byte offsets for the `pmark_record_head` record.
 ///
 /// Spec §3.4. Record length 12 B.

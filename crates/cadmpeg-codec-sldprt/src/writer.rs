@@ -73,6 +73,8 @@ pub(crate) struct SemanticOutput {
     pub(crate) omitted_envelope_bytes: usize,
     /// The metadata attributes the write did not write, each with why.
     pub(crate) unwritten: UnwrittenAttributes,
+    /// The losses of the history the write prepared.
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 /// Writes a semantic document and returns the dialect and arena coverage it
@@ -156,7 +158,10 @@ pub(crate) fn write_semantic_with_records(
         &feature_name_changes,
     );
     let ir = &normalized;
-    let feature_input_renames = crate::history::write::prepare_features_for_write(ir, &mut native)?;
+    let crate::history::write::features::PreparedFeatures {
+        renames: feature_input_renames,
+        losses: history_losses,
+    } = crate::history::write::prepare_features_for_write(ir, &mut native)?;
     crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, &mut native)?;
     crate::history::write::parameters::prepare_parameters_for_write(
         ir,
@@ -427,6 +432,7 @@ pub(crate) fn write_semantic_with_records(
         coverage,
         omitted_envelope_bytes: envelope.omitted_envelope_bytes,
         unwritten,
+        losses: history_losses,
     })
 }
 

@@ -10,7 +10,7 @@ use cadmpeg_ir::features::{FeatureId, FeatureOperation};
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use super::stable_ref;
+use super::body_closures::stable_ref;
 
 pub(super) const EPS_HISTORY_BODY_BBOX_GROWTH_E3: f64 = 1.0e-3;
 pub(super) const EPS_HISTORY_BODY_BBOX_UNCHANGED_E4: f64 = 1.0e-4;

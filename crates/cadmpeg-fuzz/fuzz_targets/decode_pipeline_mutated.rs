@@ -12,6 +12,8 @@ use std::io::Cursor;
 use cadmpeg_codec_catia::CatiaCodec;
 #[cfg(feature = "creo")]
 use cadmpeg_codec_creo::CreoCodec;
+#[cfg(feature = "edrawings")]
+use cadmpeg_codec_edrawings::EdrawingsCodec;
 #[cfg(feature = "f3d")]
 use cadmpeg_codec_f3d::F3dCodec;
 #[cfg(feature = "freecad")]
@@ -98,6 +100,8 @@ fuzz_target!(|data: &[u8]| {
         Box::new(SatCodec),
         #[cfg(feature = "pvz")]
         Box::new(PvzCodec),
+        #[cfg(feature = "edrawings")]
+        Box::new(EdrawingsCodec),
         #[cfg(feature = "usd")]
         Box::new(UsdCodec),
         #[cfg(feature = "step")]

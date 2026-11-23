@@ -271,7 +271,7 @@ pub(super) fn validate_face_operands<'a>(
                                             .program
                                             .get(3..)
                                             .map(|program| {
-                                                design::decode::operands::face_recipe_structure(
+                                                design::decode::operands::recipe_structure::face_recipe_structure(
                                                     ctx.decode, program,
                                                 )
                                             })
@@ -487,7 +487,7 @@ pub(super) fn validate_face_operands<'a>(
                                     records::recipes::ConstructionRecipeKind::BoundedFace | records::recipes::ConstructionRecipeKind::Face)
                             }
                             None if group.is_some_and(|group| {
-                                design::decode::operands::is_surface_untrim_face_group(scope, group)
+                                design::decode::operands::edge_operands::is_surface_untrim_face_group(scope, group)
                             }) =>
                             {
                                 matches!(
@@ -703,7 +703,7 @@ pub(super) fn validate_face_group_member_resolution(
 
 /// Validate retained Face source carriers and their persistent identities.
 pub(super) fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
-    use design::decode::operands::{
+    use design::decode::operands::face_sources::{
         face_source_carrier_spec, face_source_profile_pair_count, face_source_record_is_registered,
         FaceSourceType,
     };
