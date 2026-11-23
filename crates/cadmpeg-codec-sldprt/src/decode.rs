@@ -4677,7 +4677,8 @@ fn build_geometry_ir(
 /// State the v11 design of a part document beside its v10 records, with the
 /// rollback position its stored marks give, and remove from the model what
 /// it says of the records that moved into the states of configurations that
-/// are not active.
+/// are not active. A projection that fails is given up as one part: the
+/// design layer stays as it was, and no record is removed.
 fn project_design(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -4686,15 +4687,20 @@ fn project_design(
     part: crate::design_v11::Part<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
-    let projection = crate::design_v11::project(ctx, ir, part, losses)?;
-    ctx.charge_entities(
-        u64_from_index(projection.added),
-        "admit SLDPRT design records",
-    )?;
-    if projection.retired.is_empty() {
+    let mut retired = std::collections::BTreeMap::new();
+    cadmpeg_ir::design::projection::project_layer(ctx, "sldprt", ir, losses, |ir, losses| {
+        let projection = crate::design_v11::project(ctx, ir, part, losses)?;
+        ctx.charge_entities(
+            u64_from_index(projection.added),
+            "admit SLDPRT design records",
+        )?;
+        retired = projection.retired;
+        Ok(())
+    })?;
+    if retired.is_empty() {
         return Ok(());
     }
-    retired_states::retire(ir, annotations, unknowns, &projection.retired, losses);
+    retired_states::retire(ir, annotations, unknowns, &retired, losses);
     stamp_feature_baseline(ctx, ir)
 }
 

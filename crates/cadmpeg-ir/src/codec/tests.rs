@@ -193,7 +193,7 @@ impl CodecBackend for CyclicModelCodec {
         _ctx: &DecodeContext<'_>,
         _root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        panic!("the cycle admission test does not inspect")
+        panic!("the cyclic decode test does not inspect")
     }
 
     fn decode_impl(
@@ -322,21 +322,100 @@ fn sealed_decode_rejects_a_document_authored_for_another_format() {
 }
 
 #[test]
-fn sealed_decode_refuses_a_cyclic_model_as_malformed() {
+fn sealed_decode_keeps_a_cyclic_model_and_validation_reports_the_cycle() {
     let (_, curve, surface) = crate::test_support::evaluation_cycles::cyclic_model();
-    let error = CyclicModelCodec
+    let result = CyclicModelCodec
         .decode(
             &mut Cursor::new(vec![1u8, 2, 3, 4]),
             &DecodeOptions::default(),
         )
-        .expect_err("a cyclic model cannot leave the codec");
-    let DecodeFailure::Codec(CodecError::Malformed(message)) = error else {
-        panic!("expected a malformed cycle refusal, got {error:?}")
-    };
-    assert_eq!(
-        message,
-        format!("malformed curve/surface reference cycle: {curve} -> {surface} -> {curve}")
-    );
+        .expect("a cycle between records does not refuse the decode");
+    assert_eq!(result.ir().geometry.curves.len(), 1);
+    assert_eq!(result.ir().geometry.surfaces.len(), 2);
+    let report = crate::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("validate the decoded model");
+    let expected =
+        format!("malformed curve/surface reference cycle: {curve} -> {surface} -> {curve}");
+    assert!(report
+        .findings
+        .iter()
+        .any(|finding| finding.entity.as_deref() == Some(curve.as_str())
+            && finding.message == expected));
+}
+
+struct DesignProjectionFailureCodec;
+
+impl CodecBackend for DesignProjectionFailureCodec {
+    const FORMAT: FormatId = FormatId::new("test");
+
+    fn detect_impl(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        Ok(Confidence::No)
+    }
+
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        panic!("the design projection test does not inspect")
+    }
+
+    fn decode_impl(&self, ctx: &DecodeContext<'_>, _root: View<'_>) -> Result<Decoded, CodecError> {
+        let mut decoded = decoded(with_parameter(
+            unit_cube().expect("valid unit cube fixture"),
+        ));
+        crate::design::projection::project_layer(
+            ctx,
+            "test",
+            &mut decoded.ir,
+            &mut decoded.body.losses,
+            |ir, _| {
+                ir.design.scopes.push(crate::design::scope::DesignScope {
+                    definition: crate::ids::ProductDefinitionId::mint(
+                        "test:model:product-definition#root",
+                    )
+                    .unwrap(),
+                    roots: Vec::new(),
+                    active_configuration: None,
+                    active_arrangements: std::collections::BTreeSet::new(),
+                    occurrences: BTreeMap::new(),
+                    current: Vec::new(),
+                    unproduced: std::collections::BTreeSet::new(),
+                });
+                Err(CodecError::malformed("design record has no frame"))
+            },
+        )?;
+        Ok(decoded)
+    }
+}
+
+#[test]
+fn sealed_decode_keeps_the_geometry_when_the_design_projection_fails() {
+    let result = DesignProjectionFailureCodec
+        .decode(
+            &mut Cursor::new(vec![1u8, 2, 3, 4]),
+            &DecodeOptions::default(),
+        )
+        .expect("a design projection error does not refuse the decode");
+    let cube = with_parameter(unit_cube().unwrap());
+    assert_eq!(result.ir().geometry.bodies, cube.geometry.bodies);
+    assert_eq!(result.ir().geometry.faces.len(), cube.geometry.faces.len());
+    assert_eq!(result.ir().model.parameters, cube.model.parameters);
+    assert!(result.ir().design.scopes.is_empty());
+    let unreadable = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::unknown::part::record_unreadable_kind())
+        .collect::<Vec<_>>();
+    assert_eq!(unreadable.len(), 1);
+    assert!(unreadable[0]
+        .message
+        .starts_with("test v11 design layer is not stated: "));
 }
 
 fn strict_options(depth: DecodeDepth) -> DecodeOptions {

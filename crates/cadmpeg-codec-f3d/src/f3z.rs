@@ -209,7 +209,14 @@ fn finalize_result(
     crate::design::owners::release_unbound(&mut ir.model);
     body.losses
         .extend(crate::tree::state_root_definition(ctx, &mut ir)?);
-    crate::design_v11::project(ctx, &mut ir, body.transfer.depth(), &mut body.losses)?;
+    let depth = body.transfer.depth();
+    cadmpeg_ir::design::projection::project_layer(
+        ctx,
+        "f3d",
+        &mut ir,
+        &mut body.losses,
+        |ir, losses| crate::design_v11::project(ctx, ir, depth, losses),
+    )?;
     ir.finalize();
     let hash = cadmpeg_ir::hash::document_local_sha256(
         ctx,

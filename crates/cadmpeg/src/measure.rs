@@ -27,8 +27,8 @@ pub(crate) use args::SelectionArgs;
 use crate::application::artifact_store::FileDestination;
 use crate::application::document::{LoadOrigin, LoadedDocument};
 use crate::application::refusal::{ApplicationError, ConversionRefusal, DepthReport, RefusalStage};
+use crate::commands::report_failure;
 use crate::commands::reporting::{command_report_json, print_decode_report, write_json_report};
-use crate::commands::{print_load_notice, report_failure};
 use crate::loader;
 
 /// How the command prints its result.
@@ -104,7 +104,6 @@ pub(crate) fn measure(
             );
         }
         let loaded = loader::load_artifact(inputs, command.path, command.options, command.forced)?;
-        print_load_notice(&loaded);
         if let Some(report) = loaded.decode_report() {
             print_decode_report(&mut io::stderr(), report)?;
         }
