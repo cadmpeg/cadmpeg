@@ -644,11 +644,13 @@ pub(crate) fn bind_extrude_profile_selections(
                                 }
                                 break 'feature_edit;
                             }
-                            if let Some(selection) = resolve_profile_curve_arrangement_regions(
-                                group,
-                                path_resolution,
-                                scoped_resolution,
-                            )? {
+                            if let Some(selection) =
+                                resolve_profile_curve_arrangement_regions_without_unions(
+                                    group,
+                                    path_resolution,
+                                    scoped_resolution,
+                                )?
+                            {
                                 *profile = selection;
                                 break 'feature_edit;
                             }
@@ -701,6 +703,20 @@ pub(crate) fn bind_extrude_profile_selections(
                                             "Feature {} uses the closed boundary of its surviving typed profile members, certified by its stored transition, with stale curve identities retained in the native selection.", feature.id
                                         )));
                                     }
+                                    break 'feature_edit;
+                                }
+                            }
+                        }
+                        // A group whose first region is the union of its further
+                        // regions resolves only when no certified reading does.
+                        if matches!(&*profile, ProfileRef::Planar(PlanarProfileRef::Native(_))) {
+                            for &(group, path_resolution) in &candidates {
+                                if let Some(selection) = resolve_profile_curve_arrangement_regions(
+                                    group,
+                                    path_resolution,
+                                    scoped_resolution,
+                                )? {
+                                    *profile = selection;
                                     break 'feature_edit;
                                 }
                             }
@@ -5256,11 +5272,38 @@ fn resolve_profile_curve_arrangement_regions(
     resolve_profile_curve_arrangement_regions_with_policy(group, resolution, scoped, true)
 }
 
+/// As `resolve_profile_curve_arrangement_regions`, except that a group whose
+/// first region resolves to no face stays unresolved instead of taking the
+/// union of its further regions.
+fn resolve_profile_curve_arrangement_regions_without_unions(
+    group: &DesignConstructionOperandGroup,
+    resolution: &EntitySelectionPathResolution<'_>,
+    scoped: ScopedExtrudeProfileResolution<'_>,
+) -> Result<Option<cadmpeg_ir::features::profiles::ProfileRef>, CodecError> {
+    resolve_profile_curve_arrangement_regions_with_unions(group, resolution, scoped, true, false)
+}
+
 fn resolve_profile_curve_arrangement_regions_with_policy(
     group: &DesignConstructionOperandGroup,
     resolution: &EntitySelectionPathResolution<'_>,
     scoped: ScopedExtrudeProfileResolution<'_>,
     allow_assumptions: bool,
+) -> Result<Option<cadmpeg_ir::features::profiles::ProfileRef>, CodecError> {
+    resolve_profile_curve_arrangement_regions_with_unions(
+        group,
+        resolution,
+        scoped,
+        allow_assumptions,
+        true,
+    )
+}
+
+fn resolve_profile_curve_arrangement_regions_with_unions(
+    group: &DesignConstructionOperandGroup,
+    resolution: &EntitySelectionPathResolution<'_>,
+    scoped: ScopedExtrudeProfileResolution<'_>,
+    allow_assumptions: bool,
+    resolve_unions: bool,
 ) -> Result<Option<cadmpeg_ir::features::profiles::ProfileRef>, CodecError> {
     use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
     let Some(stream) = native_stream(&group.id) else {
@@ -5392,7 +5435,8 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
                     if !single_exterior {
                         return Ok(None);
                     }
-                    let union_candidate = position == 0 && !group.further.is_empty();
+                    let union_candidate =
+                        resolve_unions && position == 0 && !group.further.is_empty();
                     if !allow_assumptions {
                         if let Some(rings) = stored_loop_rings(loops, program) {
                             if let [members] = rings.as_slice() {
@@ -5440,7 +5484,18 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
                         )?
                     else {
                         if union_candidate {
-                            unresolved_first = Some(program);
+                            unresolved_first = Some(
+                                program
+                                    .iter()
+                                    .zip(&loops[0].entries)
+                                    .map(|(curve, entry)| {
+                                        (
+                                            curve.clone(),
+                                            [entry.entry_fields[1], entry.entry_fields[2]],
+                                        )
+                                    })
+                                    .collect::<Vec<_>>(),
+                            );
                             continue;
                         }
                         return Ok(None);
@@ -5468,10 +5523,12 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
             if let Some(first) = unresolved_first {
                 if !group_union::further_regions_compose_first(
                     &further_found,
-                    first,
+                    &first,
                     resolution.sketch_entities,
                     scoped.linear_tolerance,
-                ) {
+                    scoped.profile_work,
+                    scoped.ctx,
+                )? {
                     return Ok(None);
                 }
                 continue;

@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::design::geometry::ProfileGeometryWork;
 use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
-use cadmpeg_ir::sketches::SketchEntityId;
+use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::sketches::{SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId};
 use std::f64::consts::PI;
 
 fn edge(id: &str, range: [f64; 2], reversed: bool) -> SketchProfileBoundaryUse {
@@ -108,58 +110,141 @@ fn a_first_region_that_added_no_region_or_several_is_kept() {
 /// The linear tolerance of these regions, in centimetres.
 const EPS_SAME_POINT: f64 = 1.0e-7;
 
+fn line(id: &str, start: (f64, f64), end: (f64, f64)) -> SketchEntity {
+    SketchEntity::new(
+        SketchEntityId::mint(format!("synthetic:test:edge#{id}")).unwrap(),
+        SketchId::mint("synthetic:test:id#union").unwrap(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: Point2::new(start.0, start.1),
+            end: Point2::new(end.0, end.1),
+        })
+        .unwrap(),
+    )
+}
+
+/// A 4 by 4 square, the line `mid` across it at height 2, and the line
+/// `over` that runs along the top side past both ends.
+fn square_lines() -> Vec<SketchEntity> {
+    vec![
+        line("bottom", (0.0, 0.0), (4.0, 0.0)),
+        line("right", (4.0, 0.0), (4.0, 4.0)),
+        line("top", (4.0, 4.0), (0.0, 4.0)),
+        line("left", (0.0, 4.0), (0.0, 0.0)),
+        line("mid", (0.0, 2.0), (4.0, 2.0)),
+        line("over", (-1.0, 4.0), (5.0, 4.0)),
+    ]
+}
+
+/// The two halves of the square that `mid` divides.
+fn square_halves() -> Vec<SketchProfileRegion> {
+    vec![
+        region(vec![
+            edge("bottom", [0.0, 1.0], false),
+            edge("right", [0.0, 0.5], false),
+            edge("mid", [0.0, 1.0], true),
+            edge("left", [0.5, 1.0], false),
+        ]),
+        region(vec![
+            edge("mid", [0.0, 1.0], false),
+            edge("right", [0.5, 1.0], false),
+            edge("top", [0.0, 1.0], false),
+            edge("left", [0.0, 0.5], false),
+        ]),
+    ]
+}
+
+/// The first region's entries: the curve, the piece ordinal, and the piece
+/// count.
+fn entries(entries: &[(&str, [u32; 2])]) -> Vec<(SketchEntityId, [u32; 2])> {
+    entries
+        .iter()
+        .map(|(id, fields)| (edge_id(id), *fields))
+        .collect()
+}
+
 fn edge_id(id: &str) -> SketchEntityId {
     SketchEntityId::mint(format!("synthetic:test:edge#{id}")).unwrap()
 }
 
+const SIDES: [(&str, [u32; 2]); 4] = [
+    ("bottom", [1, 1]),
+    ("right", [1, 1]),
+    ("top", [1, 1]),
+    ("left", [1, 1]),
+];
+
+fn composes(further: &[SketchProfileRegion], first: &[(&str, [u32; 2])]) -> bool {
+    let work = ProfileGeometryWork::new();
+    crate::test_support::with_decode_context(|ctx| {
+        further_regions_compose_first(
+            further,
+            &entries(first),
+            &square_lines(),
+            EPS_SAME_POINT,
+            &work,
+            ctx,
+        )
+    })
+    .unwrap()
+}
+
 #[test]
 fn further_regions_compose_a_first_region_that_names_their_union_boundary() {
-    let halves = divided_disc().split_off(1);
-    assert!(further_regions_compose_first(
-        &halves,
-        &[edge_id("circle")],
-        &[],
-        EPS_SAME_POINT
-    ));
+    assert!(composes(&square_halves(), &SIDES));
+}
+
+#[test]
+fn further_regions_compose_a_first_region_with_a_coincident_line() {
+    let mut first = SIDES.to_vec();
+    first.push(("over", [2, 3]));
+    assert!(composes(&square_halves(), &first));
+}
+
+#[test]
+fn further_regions_compose_no_first_region_with_a_line_piece_off_the_boundary() {
+    let mut first = SIDES.to_vec();
+    first.push(("over", [1, 3]));
+    assert!(!composes(&square_halves(), &first));
+    first.pop();
+    first.push(("over", [3, 3]));
+    assert!(!composes(&square_halves(), &first));
+}
+
+#[test]
+fn further_regions_compose_no_first_region_with_a_wrong_piece_count() {
+    let mut first = SIDES.to_vec();
+    first.push(("over", [2, 2]));
+    assert!(!composes(&square_halves(), &first));
+    first.pop();
+    first.push(("over", [2, 4]));
+    assert!(!composes(&square_halves(), &first));
+    first.pop();
+    first.push(("over", [0, 3]));
+    assert!(!composes(&square_halves(), &first));
 }
 
 #[test]
 fn further_regions_compose_no_first_region_that_names_an_interior_curve() {
-    let halves = divided_disc().split_off(1);
-    assert!(!further_regions_compose_first(
-        &halves,
-        &[edge_id("circle"), edge_id("line")],
-        &[],
-        EPS_SAME_POINT
-    ));
+    // The side pieces below `mid` lie on the boundary; `mid` does not.
+    let first = [
+        ("bottom", [1, 1]),
+        ("right", [1, 2]),
+        ("top", [1, 1]),
+        ("left", [1, 2]),
+        ("mid", [1, 1]),
+    ];
+    assert!(!composes(&square_halves(), &first));
 }
 
 #[test]
 fn further_regions_compose_no_first_region_that_misses_a_boundary_curve() {
-    let halves = divided_disc().split_off(1);
-    assert!(!further_regions_compose_first(
-        &halves,
-        &[edge_id("other")],
-        &[],
-        EPS_SAME_POINT
-    ));
+    assert!(!composes(&square_halves(), &SIDES[..3]));
 }
 
 #[test]
 fn one_further_region_composes_no_first_region() {
-    let mut halves = divided_disc().split_off(1);
-    halves.truncate(1);
-    assert!(!further_regions_compose_first(
-        &halves,
-        &[edge_id("circle"), edge_id("line")],
-        &[],
-        EPS_SAME_POINT
-    ));
+    let halves = square_halves();
+    assert!(!composes(&halves[..1], &SIDES));
     let repeated = vec![halves[0].clone(), halves[0].clone()];
-    assert!(!further_regions_compose_first(
-        &repeated,
-        &[edge_id("circle"), edge_id("line")],
-        &[],
-        EPS_SAME_POINT
-    ));
+    assert!(!composes(&repeated, &SIDES));
 }

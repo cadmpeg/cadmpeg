@@ -2,6 +2,9 @@
 //! A typed-reference region group whose first region is the union of its
 //! further regions.
 
+use crate::design::geometry::ProfileGeometryWork;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::profiles::{SketchProfileBoundaryUse, SketchProfileRegion};
 use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId};
 
@@ -44,19 +47,22 @@ pub(super) fn remove_union_first_region(
 /// stored region when that region's loop resolves to no face of the Sketch.
 ///
 /// `further` are the regions the further stored regions resolve to, each
-/// distinct region counted once, and `first`
-/// names the curve of each entry of the first region's single exterior loop.
-/// The further regions are at least two, no region has holes, and the directed
-/// outer intervals of the further regions remain after opposite uses of the
-/// same interval cancel. Every remaining interval belongs to a curve that
-/// `first` names. Every curve that `first` names has a remaining interval or
-/// shares a positive-length interval with one, as a coincident curve does.
+/// distinct region counted once, and `first` names the curve of each entry of
+/// the first region's single exterior loop with the entry's piece ordinal and
+/// piece count. The further regions are at least two, no region has holes,
+/// and the directed outer intervals of the further regions remain after
+/// opposite uses of the same interval cancel. At least one interval remains,
+/// and every remaining interval belongs to a curve that `first` names. The
+/// piece that each entry of `first` names lies on the remaining intervals, as
+/// a coincident curve does.
 pub(super) fn further_regions_compose_first(
     further: &[SketchProfileRegion],
-    first: &[SketchEntityId],
+    first: &[(SketchEntityId, [u32; 2])],
     entities: &[SketchEntity],
     tolerance: f64,
-) -> bool {
+    work: &ProfileGeometryWork,
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
     let mut distinct: Vec<SketchProfileRegion> = Vec::new();
     for region in further {
         if !distinct.contains(region) {
@@ -64,26 +70,22 @@ pub(super) fn further_regions_compose_first(
         }
     }
     if distinct.len() < 2 || first.is_empty() {
-        return false;
+        return Ok(false);
     }
     let Some(remaining) = union_outer_uses(&distinct) else {
-        return false;
+        return Ok(false);
     };
-    !remaining.is_empty()
-        && remaining.iter().all(|use_| first.contains(&use_.entity))
-        && first.iter().all(|curve| {
-            remaining.iter().any(|use_| use_.entity == *curve)
-                || entities
-                    .iter()
-                    .find(|entity| entity.id() == curve)
-                    .is_some_and(|entity| {
-                        remaining.iter().any(|use_| {
-                            crate::design::geometry::curve_overlaps_boundary_use(
-                                entity, use_, entities, tolerance,
-                            )
-                        })
-                    })
-        })
+    if remaining.is_empty()
+        || !remaining
+            .iter()
+            .all(|use_| first.iter().any(|(curve, _)| *curve == use_.entity))
+    {
+        return Ok(false);
+    }
+    let boundary = remaining.into_iter().cloned().collect::<Vec<_>>();
+    crate::design::geometry::member_loop_union::first_region_pieces_lie_on_boundary(
+        entities, first, &boundary, tolerance, work, ctx,
+    )
 }
 
 /// The directed outer intervals of `regions` that remain after opposite uses

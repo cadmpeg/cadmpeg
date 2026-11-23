@@ -704,6 +704,33 @@ fn a_first_region_with_a_fragmented_line_piece_is_the_union_of_its_further_regio
 }
 
 #[test]
+fn a_first_region_with_a_line_piece_off_the_union_boundary_stays_unresolved() {
+    // Piece 1 of 3 runs from (-1, 4) to (0, 4), outside the square; piece 3
+    // runs from (4, 4) to (5, 4).
+    for piece in [1, 3] {
+        assert!(resolve_divided_square(
+            ((-1.0, 4.0), (5.0, 4.0)),
+            (6, [1, piece, 3]),
+            Some((6, [1, 2, 3])),
+        )
+        .is_none());
+    }
+}
+
+#[test]
+fn a_first_region_with_a_wrong_piece_count_stays_unresolved() {
+    // The other curves of the loop cut the line into three pieces.
+    for (piece, count) in [(2, 2), (2, 4), (0, 3), (4, 3)] {
+        assert!(resolve_divided_square(
+            ((-1.0, 4.0), (5.0, 4.0)),
+            (6, [1, piece, count]),
+            Some((6, [1, 2, 3])),
+        )
+        .is_none());
+    }
+}
+
+#[test]
 fn a_first_region_that_names_a_line_off_the_union_boundary_stays_unresolved() {
     // The extra line is parallel to the top side and outside the square.
     assert!(resolve_divided_square(((4.0, 5.0), (0.0, 5.0)), (6, [0, 1, 1]), None,).is_none());
