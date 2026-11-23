@@ -471,3 +471,27 @@ pub(crate) fn chart_partition(scale: f64) -> Vec<u8> {
     bytes.extend_from_slice(&[0, 1, 0, 1]);
     bytes
 }
+
+/// The chart partition plus trimmed curves: node 8 restricts the
+/// intersection, node 9 restricts node 8, node 10 restricts itself and node 11
+/// restricts a node that is absent.
+pub(crate) fn trimmed_chart_partition() -> Vec<u8> {
+    let mut bytes = chart_partition(1.0);
+    bytes.truncate(bytes.len() - 4);
+    for (index, basis) in [(8, 2), (9, 8), (10, 10), (11, 99)] {
+        node(&mut bytes, 133, index);
+        integer(&mut bytes, 0);
+        for _ in 0..5 {
+            pointer(&mut bytes, 1);
+        }
+        bytes.push(b'+');
+        pointer(&mut bytes, basis);
+        for _ in 0..6 {
+            real(&mut bytes, 0.0);
+        }
+        real(&mut bytes, 0.0);
+        real(&mut bytes, 1.0);
+    }
+    bytes.extend_from_slice(&[0, 1, 0, 1]);
+    bytes
+}

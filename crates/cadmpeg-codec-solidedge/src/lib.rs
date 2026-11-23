@@ -15,6 +15,7 @@ mod intersection;
 mod isocurve;
 mod loss;
 mod partition;
+mod sp_curve;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;

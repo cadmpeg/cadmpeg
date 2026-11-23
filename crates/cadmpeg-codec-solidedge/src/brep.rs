@@ -212,6 +212,7 @@ pub(crate) fn project(
     }
     let mut fins = BTreeSet::new();
     let mut edges = BTreeSet::new();
+    let mut fit_tolerances: BTreeMap<CurveId, f64> = BTreeMap::new();
     let mut vertices = BTreeSet::new();
     let mut surfaces = BTreeSet::new();
     for face_index in faces {
@@ -305,6 +306,7 @@ pub(crate) fn project(
             .and_then(|edge| ptr(*edge, "curve"))
             .and_then(|curve| nodes.get(&curve))
             .copied()
+            .map(|curve| geometry::trim_basis(&nodes, curve))
             .filter(|curve| curve.kind() == kind::INTERSECTION)
         {
             if let Some(supports) = source.pointer_array::<2>("surface") {
@@ -433,8 +435,9 @@ pub(crate) fn project(
                 let mut reason = "carrier fields are unsupported";
                 let mut projected = geometry::curve(&nodes, source);
                 let mut interior_isoline = false;
-                if projected.is_none() && source.kind() == kind::INTERSECTION {
-                    projected = crate::intersection::nurbs_isoline(ctx, &nodes, source)?;
+                let construction = geometry::trim_basis(&nodes, source);
+                if projected.is_none() && construction.kind() == kind::INTERSECTION {
+                    projected = crate::intersection::nurbs_isoline(ctx, &nodes, construction)?;
                     interior_isoline = projected.is_some();
                     if interior_isoline {
                         losses.push(SolidEdgeLossCode::IntersectionNurbsIsolineAssumed.note(
@@ -442,11 +445,15 @@ pub(crate) fn project(
                         ));
                     }
                 }
-                if projected.is_none() && source.kind() == kind::INTERSECTION {
-                    match crate::chart::project(ctx, &nodes, source) {
+                if projected.is_none() && construction.kind() == kind::INTERSECTION {
+                    match crate::chart::project(ctx, &nodes, construction) {
                         Ok(chart)
                             if chart.supports.iter().all(|index| nodes.contains_key(index)) =>
                         {
+                            if let Some(fit) = &chart.fit {
+                                fit_tolerances
+                                    .insert(curve_id(stream, curve_index), fit.fit_tolerance.get());
+                            }
                             let context = cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext::try_new(
                                 chart.supports.map(|support| {
                                     cadmpeg_ir::geometry::intersection_curves::IntcurveSupportSide {
@@ -501,7 +508,7 @@ pub(crate) fn project(
                 let geometry = projected.unwrap_or_else(|| {
                     losses.push(SolidEdgeLossCode::CurveUnsupported.note(format!(
                         "curve node type {} has an unsupported carrier with support types {:?}: {reason}",
-                        source.kind(), crate::intersection::support_kinds(&nodes, source),
+                        source.kind(), crate::intersection::support_kinds(&nodes, construction),
                     )));
                     CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None })
                 });
@@ -520,6 +527,24 @@ pub(crate) fn project(
                 }
             }
             carrier = EdgeCarrier::Curve(curve_id(stream, curve_index));
+        } else if let Some((sp, stated, range)) = crate::sp_curve::locate(&nodes, first) {
+            if let Some(sampled) = crate::sp_curve::sample(ctx, &nodes, sp, range)? {
+                let owner = curve_id(stream, stated);
+                if !ir.geometry.curves.iter().any(|curve| curve.id == owner) {
+                    fit_tolerances.insert(owner.clone(), sampled.fit_tolerance);
+                    ir.geometry.curves.push(Curve {
+                        id: owner.clone(),
+                        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(sampled.curve)),
+                        parameter_range: None,
+                        source_object: None,
+                        native_ref: None,
+                    });
+                    losses.push(SolidEdgeLossCode::EdgeCarrierSampled.note(
+                        "a tolerant edge states its curve in the parameter space of its support surface; the model-space carrier is that curve sampled through the support",
+                    ));
+                }
+                carrier = EdgeCarrier::Curve(owner);
+            }
         }
         let ends = match endpoints {
             Some([start, end]) => Some(EdgeEnds::new(
@@ -536,7 +561,7 @@ pub(crate) fn project(
             native_ref: None,
         });
     }
-    trim_edges(ctx, &mut ir, losses)?;
+    trim_edges(ctx, &mut ir, &fit_tolerances, losses)?;
     if let Some(linear) = linear {
         ir.tolerances.linear = linear;
     }
@@ -595,9 +620,14 @@ fn ring_vertex(
     Ok(Some(EdgeEnds::new(vertex.clone(), vertex)))
 }
 
+/// Places each edge's endpoints on its carrier. A carrier fitted through a
+/// native chart admits its stated fit tolerance as the endpoint residual,
+/// because the chart polyline departs from the exact intersection by that
+/// amount; other carriers admit the document tolerance.
 fn trim_edges(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
+    fit_tolerances: &BTreeMap<CurveId, f64>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
@@ -631,19 +661,26 @@ fn trim_edges(
             })
             .collect();
         let range = if let Some(positions) = positions {
-            let start = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
+            let admitted = fit_tolerances
+                .get(curve)
+                .map_or(ir.tolerances.linear.get(), |fit| {
+                    fit.max(ir.tolerances.linear.get())
+                });
+            let start = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index_with_tolerance(
                 ctx,
                 &index,
                 curve,
                 positions[0],
                 0.0,
+                admitted,
             )?;
-            let end = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
+            let end = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index_with_tolerance(
                 ctx,
                 &index,
                 curve,
                 positions[1],
                 start.map_or(0.0, cadmpeg_ir::scalar::FiniteReal::get),
+                admitted,
             )?;
             start.zip(end).map(|(start, end)| [start.get(), end.get()])
         } else {
