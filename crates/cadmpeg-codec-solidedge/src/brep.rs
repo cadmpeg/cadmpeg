@@ -572,11 +572,11 @@ pub(crate) fn project(
     Ok(ir)
 }
 
-/// A `SWEPT_SURF` as the linear sweep of its section curve. The stored sweep
-/// is a unit direction and a length scale in metres, or a null scale for unit
-/// parameter speed; the section curve joins
-/// the model when no edge has introduced it yet. A section that has no curve
-/// carrier or a degenerate sweep vector leaves the surface unsolved.
+/// A `SWEPT_SURF` with a null scale as the linear sweep of its section curve
+/// along its unit direction, at unit parameter speed. The section curve joins
+/// the model when no edge has introduced it yet. A stated scale, a section
+/// that has no curve carrier, or a degenerate sweep vector leaves the surface
+/// unsolved.
 fn swept_surface(
     nodes: &Nodes<'_>,
     ir: &mut CadIr,
@@ -584,20 +584,15 @@ fn swept_surface(
     index: u32,
     node: Node<'_>,
 ) -> Result<bool, CodecError> {
-    let (Some(section), Some(direction), Some(scale)) = (
-        ptr(node, "section"),
-        node.vector("sweep"),
-        node.real("scale"),
-    ) else {
+    let (Some(section), Some(direction)) = (ptr(node, "section"), node.vector("sweep")) else {
         return Ok(false);
     };
     // A null scale leaves the sweep parameter equal to the distance along the
-    // unit direction, in the document length unit.
-    let length = if node.is_null("scale") == Some(true) {
-        1.0
-    } else {
-        scale * MM_PER_METRE
-    };
+    // unit direction. The role of a stated scale is open (DR-1053), so such a
+    // surface keeps an unsupported carrier.
+    if node.is_null("scale") != Some(true) {
+        return Ok(false);
+    }
     let curve = curve_id(stream, section);
     if !ir.geometry.curves.iter().any(|value| value.id == curve) {
         let Some(geometry) = nodes
@@ -617,11 +612,7 @@ fn swept_surface(
     let Ok(definition) =
         cadmpeg_ir::geometry::surface_payloads::LinearSweepSurfaceConstruction::try_new(
             curve,
-            cadmpeg_ir::math::Vector3::new(
-                direction[0] * length,
-                direction[1] * length,
-                direction[2] * length,
-            ),
+            cadmpeg_ir::math::Vector3::new(direction[0], direction[1], direction[2]),
         )
     else {
         return Ok(false);
