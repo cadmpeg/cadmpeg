@@ -449,6 +449,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-codec-solidedge"
+version = "0.6.12"
+dependencies = [
+ "cadmpeg-container",
+ "cadmpeg-core",
+ "cadmpeg-ir",
+ "cadmpeg-test-support",
+]
+
+[[package]]
 name = "cadmpeg-codec-step"
 version = "0.6.12"
 dependencies = [
@@ -603,6 +613,7 @@ dependencies = [
  "cadmpeg-codec-rhino",
  "cadmpeg-codec-sat",
  "cadmpeg-codec-sldprt",
+ "cadmpeg-codec-solidedge",
  "cadmpeg-codec-step",
  "cadmpeg-codec-usd",
  "cadmpeg-container",
