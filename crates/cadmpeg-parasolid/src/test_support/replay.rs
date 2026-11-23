@@ -1,17 +1,50 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Plain-schema 13006 partition and Deltas streams built from POINT, GROUP,
-//! and LIMIT nodes, for main-line replay tests.
+//! 13006 partition and Deltas streams built from POINT, GROUP, LIMIT, and
+//! field-less nodes, for main-line replay tests. A stream uses the plain base
+//! schema, or an embedded schema whose first node of each type declares its
+//! field list.
+
+use std::collections::BTreeSet;
 
 use crate::pointer;
 use crate::records::node_type::{GROUP, LIMIT, POINT};
 
 const SCHEMA: &[u8] = b"SCH_1_13006";
+const EMBEDDED_SCHEMA: &[u8] = b"SCH_1_1_13006";
+/// The maximum node type an embedded-schema header declares.
+const EMBEDDED_MAXIMUM: u16 = 250;
+/// The first-use declaration of a type's base field list.
+const BASE_DECLARATION: &[u8] = &[0xff];
+/// The first-use declaration of an empty field list: count `0`, then `Z`.
+const EMPTY_DECLARATION: &[u8] = &[0, b'Z'];
 
-/// One POINT or GROUP node. `value` is the POINT's `pvec` x or the GROUP's
-/// `type` byte, so two images of one node can differ.
+/// The declarations an embedded-schema stream has written.
+#[derive(Debug, Clone, Default)]
+struct Declared(Option<BTreeSet<u16>>);
+
+impl Declared {
+    fn embedded() -> Self {
+        Self(Some(BTreeSet::new()))
+    }
+
+    /// Write `declaration` when the stream is embedded and `kind` is new.
+    fn write(&mut self, out: &mut Vec<u8>, kind: u16, declaration: &[u8]) {
+        if self
+            .0
+            .as_mut()
+            .is_some_and(|declared| declared.insert(kind))
+        {
+            out.extend_from_slice(declaration);
+        }
+    }
+}
+
+/// One POINT or GROUP node, or a node of any type with no field. `value` is
+/// the POINT's `pvec` x or the GROUP's `type` byte, so two images of one node
+/// can differ.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TestNode {
-    /// Node type, POINT or GROUP.
+    /// Node type: POINT or GROUP, or any type for a bare node.
     pub kind: u16,
     /// Node index.
     pub xmt: u32,
@@ -19,6 +52,10 @@ pub struct TestNode {
     pub next: u32,
     /// Distinguishing value of the image.
     pub value: u8,
+    /// Whether the node stores only its identity. Its type's first use
+    /// declares an empty field list, so it belongs in an embedded-schema
+    /// stream.
+    pub bare: bool,
 }
 
 impl TestNode {
@@ -30,6 +67,7 @@ impl TestNode {
             xmt,
             next,
             value,
+            bare: false,
         }
     }
 
@@ -41,10 +79,23 @@ impl TestNode {
             xmt,
             next,
             value: 0,
+            bare: false,
         }
     }
 
-    fn write(self, out: &mut Vec<u8>, status: bool) {
+    /// A node of type `kind` that stores only its identity.
+    #[must_use]
+    pub const fn bare(kind: u16, xmt: u32) -> Self {
+        Self {
+            kind,
+            xmt,
+            next: 1,
+            value: 0,
+            bare: true,
+        }
+    }
+
+    fn write(self, out: &mut Vec<u8>, status: bool, declared: &mut Declared) {
         let reference = |out: &mut Vec<u8>, value: u32| {
             pointer::write(out, value).unwrap_or_default();
             if status {
@@ -52,7 +103,16 @@ impl TestNode {
             }
         };
         out.extend(self.kind.to_be_bytes());
+        let declaration = if self.bare {
+            EMPTY_DECLARATION
+        } else {
+            BASE_DECLARATION
+        };
+        declared.write(out, self.kind, declaration);
         pointer::write(out, self.xmt).unwrap_or_default();
+        if self.bare {
+            return;
+        }
         out.extend(self.xmt.to_be_bytes());
         for target in [1, 1, self.next, 1] {
             reference(out, target);
@@ -79,8 +139,9 @@ pub struct TestLimit {
 }
 
 impl TestLimit {
-    fn write(&self, out: &mut Vec<u8>, deltas: bool) {
+    fn write(&self, out: &mut Vec<u8>, deltas: bool, declared: &mut Declared) {
         out.extend(LIMIT.to_be_bytes());
+        declared.write(out, LIMIT, BASE_DECLARATION);
         out.extend(
             u32::try_from(self.rows.len())
                 .unwrap_or(u32::MAX)
@@ -101,25 +162,40 @@ impl TestLimit {
     }
 }
 
-fn header(description: &[u8]) -> Vec<u8> {
+fn header(description: &[u8], declared: &Declared) -> Vec<u8> {
+    let embedded = declared.0.is_some();
+    let schema = if embedded { EMBEDDED_SCHEMA } else { SCHEMA };
     let mut bytes = b"PS".to_vec();
-    for text in [description, SCHEMA] {
+    for text in [description, schema] {
         bytes.extend(u32::try_from(text.len()).unwrap_or(u32::MAX).to_be_bytes());
         bytes.extend(text);
+    }
+    if embedded {
+        bytes.extend(EMBEDDED_MAXIMUM.to_be_bytes());
     }
     bytes.extend(0_u32.to_be_bytes());
     bytes
 }
 
-/// A partition stream holding `nodes`.
-#[must_use]
-pub fn partition(nodes: &[TestNode]) -> Vec<u8> {
-    let mut bytes = header(b": TRANSMIT FILE (partition) created by test");
+fn partition_with(nodes: &[TestNode], mut declared: Declared) -> Vec<u8> {
+    let mut bytes = header(b": TRANSMIT FILE (partition) created by test", &declared);
     for node in nodes {
-        node.write(&mut bytes, false);
+        node.write(&mut bytes, false, &mut declared);
     }
     bytes.extend([0, 1, 0, 1]);
     bytes
+}
+
+/// A plain-schema partition stream holding `nodes` in stream order.
+#[must_use]
+pub fn partition(nodes: &[TestNode]) -> Vec<u8> {
+    partition_with(nodes, Declared::default())
+}
+
+/// An embedded-schema partition stream holding `nodes` in stream order.
+#[must_use]
+pub fn embedded_partition(nodes: &[TestNode]) -> Vec<u8> {
+    partition_with(nodes, Declared::embedded())
 }
 
 /// One PMARK.
@@ -136,6 +212,10 @@ pub struct Mark {
 impl Mark {
     fn write(self, out: &mut Vec<u8>, forward: bool) {
         out.extend(4_u16.to_be_bytes());
+        self.write_fields(out, forward);
+    }
+
+    fn write_fields(self, out: &mut Vec<u8>, forward: bool) {
         for value in [self.xmt, self.preceding, 1, 1, 1] {
             pointer::write(out, value).unwrap_or_default();
         }
@@ -149,26 +229,39 @@ impl Mark {
 
 /// A Deltas stream under construction, section by section.
 #[derive(Debug, Clone)]
-pub struct DeltasStream(Vec<u8>);
+pub struct DeltasStream(Vec<u8>, Declared);
 
 impl DeltasStream {
-    /// The header and the partition prefix naming `current`.
+    /// The plain-schema header and the partition prefix naming `current`.
     #[must_use]
     pub fn new(current: Mark) -> Self {
-        let mut bytes = header(b": TRANSMIT FILE (deltas) created by test");
+        Self::with(current, Declared::default())
+    }
+
+    /// The embedded-schema header and the partition prefix naming `current`.
+    #[must_use]
+    pub fn embedded(current: Mark) -> Self {
+        Self::with(current, Declared::embedded())
+    }
+
+    fn with(current: Mark, mut declared: Declared) -> Self {
+        let mut bytes = header(b": TRANSMIT FILE (deltas) created by test", &declared);
         bytes.extend(3_u16.to_be_bytes());
+        declared.write(&mut bytes, 3, BASE_DECLARATION);
         pointer::write(&mut bytes, 2).unwrap_or_default();
         pointer::write(&mut bytes, current.xmt).unwrap_or_default();
         bytes.extend(current.identifier.to_be_bytes());
-        current.write(&mut bytes, false);
-        Self(bytes)
+        bytes.extend(4_u16.to_be_bytes());
+        declared.write(&mut bytes, 4, BASE_DECLARATION);
+        current.write_fields(&mut bytes, false);
+        Self(bytes, declared)
     }
 
     /// Status-framed images of `nodes`.
     #[must_use]
     pub fn nodes(mut self, nodes: &[TestNode]) -> Self {
         for node in nodes {
-            node.write(&mut self.0, true);
+            node.write(&mut self.0, true, &mut self.1);
         }
         self
     }
@@ -177,7 +270,7 @@ impl DeltasStream {
     #[must_use]
     pub fn limits(mut self, limits: &[TestLimit]) -> Self {
         for limit in limits {
-            limit.write(&mut self.0, true);
+            limit.write(&mut self.0, true, &mut self.1);
         }
         self
     }

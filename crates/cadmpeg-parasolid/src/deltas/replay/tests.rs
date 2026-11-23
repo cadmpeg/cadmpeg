@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{MainLine, MainLineError, Replay, ReplayError, StateNode};
-use crate::records::node_type::{GROUP, POINT};
+use super::{MainLine, MainLineError, Replay, ReplayError, StateNode, TransmitError};
+use crate::records::node_type::{BODY, GROUP, POINT};
 use crate::records::{DeltasRecords, NodeFields, PrimaryRecords};
-use crate::test_support::replay::{partition, DeltasStream, Mark, TestLimit, TestNode};
+use crate::test_support::replay::{
+    embedded_partition, partition, DeltasStream, Mark, TestLimit, TestNode,
+};
 use crate::test_support::with_decode_context;
 
 const C: Mark = Mark {
@@ -76,8 +78,15 @@ fn image(node: &impl NodeFields) -> Image {
     )
 }
 
+fn state_image(node: &StateNode<'_>) -> Image {
+    match node {
+        StateNode::Partition(node) => image(node),
+        StateNode::Delta(node) => image(node),
+    }
+}
+
 fn images(replay: &Replay<'_, '_>) -> Vec<Image> {
-    replay.state().nodes().map(image).collect()
+    replay.state().nodes().map(state_image).collect()
 }
 
 /// The identifier and node images of every state, from the current mark.
@@ -170,7 +179,7 @@ fn restored_and_older_images_come_from_the_deltas_stream() {
             assert_eq!(node.as_delta().is_some(), from_deltas, "node {xmt}");
             assert_eq!(matches!(node, StateNode::Partition(_)), !from_deltas);
         }
-        assert_eq!(state.get(11).map(NodeFields::kind), None);
+        assert_eq!(state.get(11).map(StateNode::kind), None);
         assert_eq!(state.count(POINT), 2);
         assert!(state.is_empty_part());
         assert_eq!(
@@ -198,7 +207,7 @@ fn a_group_joins_the_delta_whose_change_creates_it() {
 }
 
 #[test]
-fn a_merged_delta_spans_both_changes() {
+fn one_delta_can_create_the_nodes_of_several_changes() {
     let merged = DeltasStream::new(Mark {
         preceding: A.xmt,
         ..C
@@ -302,7 +311,7 @@ fn first_step(stream: &[u8]) -> (Result<(), ReplayError>, usize, u32) {
 
 #[test]
 fn an_inconsistent_delta_is_refused_and_the_state_stays_at_its_mark() {
-    let cases: [Case<'_>; 9] = [
+    let cases: [Case<'_>; 10] = [
         (
             &[],
             &[(14, POINT)],
@@ -337,6 +346,12 @@ fn an_inconsistent_delta_is_refused_and_the_state_stays_at_its_mark() {
             &[],
             &[],
             ReplayError::RestoredPresent { mark: 9, xmt: 10 },
+        ),
+        (
+            &[TestNode::group(11, 1)],
+            &[(11, POINT)],
+            &[],
+            ReplayError::RestoredPresent { mark: 9, xmt: 11 },
         ),
         (
             &[],
@@ -380,18 +395,6 @@ fn an_inconsistent_delta_is_refused_and_the_state_stays_at_its_mark() {
     });
 }
 
-#[test]
-fn a_node_removed_and_restored_by_one_delta_changes_type() {
-    let stream = DeltasStream::new(C)
-        .delta(&[TestNode::group(11, 1)], &[(11, POINT)], &[])
-        .marks(&[INITIAL_B])
-        .terminator()
-        .finish();
-    with_decode_context(|_ctx| {
-        assert_eq!(first_step(&stream), (Ok(()), 3, 6));
-    });
-}
-
 fn main_line_error(stream: &[u8]) -> MainLineError {
     let records = DeltasRecords::read(stream).unwrap();
     MainLine::read(&records).unwrap_err()
@@ -409,6 +412,7 @@ fn a_broken_main_line_is_a_typed_error() {
             preceding: C.xmt,
             ..B
         }])
+        .delta(&[], &[], &[])
         .terminator()
         .finish();
     let mut incomplete = delta_c(DeltasStream::new(C))
@@ -423,6 +427,14 @@ fn a_broken_main_line_is_a_typed_error() {
         .finish();
     let forward = delta_b(delta_c(DeltasStream::new(C)).forward_marks(&[B]))
         .marks(&[A])
+        .terminator()
+        .finish();
+    let cut_downward = delta_c(DeltasStream::new(C))
+        .marks(&[B])
+        .terminator()
+        .finish();
+    let cut_upward = delta_c(DeltasStream::new(C))
+        .marks(&[A, B])
         .terminator()
         .finish();
     with_decode_context(|_ctx| {
@@ -447,6 +459,12 @@ fn a_broken_main_line_is_a_typed_error() {
             main_line_error(&forward),
             MainLineError::ForwardDelta { identifier: 6 }
         );
+        for cut in [cut_downward, cut_upward] {
+            assert_eq!(
+                main_line_error(&cut),
+                MainLineError::IncompleteDelta { identifier: 6 }
+            );
+        }
         assert_eq!(main_line_error(b"XX"), MainLineError::MissingPrefix);
     });
 }
@@ -470,34 +488,56 @@ fn a_partition_that_does_not_frame_whole_starts_no_replay() {
     });
 }
 
+/// The states from the current mark to the initial mark, or the first
+/// refusal.
+fn replayed(partition: &PrimaryRecords<'_>, deltas: &[u8]) -> Option<Vec<(u32, Vec<Image>)>> {
+    let records = DeltasRecords::read(deltas).ok()?;
+    let line = MainLine::read(&records).ok()?;
+    let mut replay = line.replay(partition).ok()?;
+    let mut out = vec![(replay.mark().identifier(), images(&replay))];
+    while let Some(mark) = replay.step().ok()? {
+        out.push((mark.identifier(), images(&replay)));
+    }
+    Some(out)
+}
+
 #[test]
-fn truncated_and_corrupted_streams_end_in_a_state_or_a_typed_error() {
+fn a_truncated_stream_gives_its_true_states_or_a_typed_error() {
     let partition_bytes = partition(&current());
     with_decode_context(|_ctx| {
         let partition = PrimaryRecords::read(&partition_bytes).unwrap().unwrap();
         for stream in [solidworks(), nx()] {
-            let mut inputs: Vec<Vec<u8>> = (0..stream.len())
-                .map(|end| stream[..end].to_vec())
-                .collect();
+            for end in 0..stream.len() {
+                if let Some(states) = replayed(&partition, &stream[..end]) {
+                    assert_eq!(states, expected_states(), "cut at {end}");
+                }
+            }
+        }
+    });
+}
+
+#[test]
+fn a_corrupted_stream_ends_in_a_state_or_a_typed_error() {
+    let partition_bytes = partition(&current());
+    with_decode_context(|_ctx| {
+        let partition = PrimaryRecords::read(&partition_bytes).unwrap().unwrap();
+        for stream in [solidworks(), nx()] {
             for at in 0..stream.len() {
                 for flip in [0x01, 0x80, 0xff] {
                     let mut bytes = stream.clone();
                     bytes[at] ^= flip;
-                    inputs.push(bytes);
+                    let Ok(records) = DeltasRecords::read(&bytes) else {
+                        continue;
+                    };
+                    let Ok(line) = MainLine::read(&records) else {
+                        continue;
+                    };
+                    let Ok(mut replay) = line.replay(&partition) else {
+                        continue;
+                    };
+                    while let Ok(Some(_)) = replay.step() {}
+                    replay.state().dangling().for_each(drop);
                 }
-            }
-            for bytes in inputs {
-                let Ok(records) = DeltasRecords::read(&bytes) else {
-                    continue;
-                };
-                let Ok(line) = MainLine::read(&records) else {
-                    continue;
-                };
-                let Ok(mut replay) = line.replay(&partition) else {
-                    continue;
-                };
-                while let Ok(Some(_)) = replay.step() {}
-                let _ = replay.state().dangling().count();
             }
         }
     });
@@ -551,11 +591,104 @@ fn a_restored_hvec_image_writes_the_rows_a_partition_stores() {
         let partition = PrimaryRecords::read(&partition_bytes).unwrap().unwrap();
         let mut replay = line.replay(&partition).unwrap();
         replay.step().unwrap();
-        let state = replay.state().get(14).unwrap();
+        let state = replay.state().get(14).unwrap().as_delta().unwrap();
         assert_eq!(state.hvec_points("hvec"), Some(rows.clone()));
         let bytes = replay.transmit().unwrap();
         let written = PrimaryRecords::read(&bytes).unwrap().unwrap();
         let limit = written.nodes().find(|node| node.index() == 14).unwrap();
         assert_eq!(limit.hvec_points("hvec"), Some(rows));
+    });
+}
+
+#[test]
+fn an_embedded_schema_state_declares_each_type_at_its_first_written_node() {
+    let [p10, p11, g12] = current();
+    let partition_bytes = embedded_partition(&[g12, p11, p10]);
+    let deltas = delta_b(delta_c(DeltasStream::embedded(C)).marks(&[B]))
+        .marks(&[A])
+        .terminator()
+        .finish();
+    with_decode_context(|_ctx| {
+        let records = DeltasRecords::read(&deltas).unwrap();
+        let line = MainLine::read(&records).unwrap();
+        let partition = PrimaryRecords::read(&partition_bytes).unwrap().unwrap();
+        let mut replay = line.replay(&partition).unwrap();
+        assert_eq!(replay.transmit().unwrap(), partition_bytes);
+        let mut states = vec![(replay.mark().identifier(), images(&replay))];
+        while let Some(mark) = replay.step().unwrap() {
+            assert_eq!(written_images(&replay.transmit().unwrap()), images(&replay));
+            states.push((mark.identifier(), images(&replay)));
+        }
+        assert_eq!(states, expected_states());
+    });
+}
+
+#[test]
+fn a_pointer_to_a_removed_node_dangles() {
+    let stream = DeltasStream::new(C)
+        .delta(&[], &[(11, POINT)], &[])
+        .marks(&[INITIAL_B])
+        .terminator()
+        .finish();
+    let partition_bytes = partition(&current());
+    with_decode_context(|_ctx| {
+        let records = DeltasRecords::read(&stream).unwrap();
+        let line = MainLine::read(&records).unwrap();
+        let partition = PrimaryRecords::read(&partition_bytes).unwrap().unwrap();
+        let mut replay = line.replay(&partition).unwrap();
+        assert_eq!(replay.state().dangling().count(), 0);
+        replay.step().unwrap();
+        assert_eq!(replay.state().dangling().collect::<Vec<_>>(), [(10, 11)]);
+    });
+}
+
+#[test]
+fn a_state_that_holds_a_body_is_not_an_empty_part() {
+    let partition_bytes =
+        embedded_partition(&[TestNode::bare(BODY, 15), TestNode::point(10, 1, 0)]);
+    let stream = DeltasStream::new(C)
+        .delta(&[], &[(15, BODY)], &[])
+        .marks(&[INITIAL_B])
+        .terminator()
+        .finish();
+    with_decode_context(|_ctx| {
+        let records = DeltasRecords::read(&stream).unwrap();
+        let line = MainLine::read(&records).unwrap();
+        let partition = PrimaryRecords::read(&partition_bytes).unwrap().unwrap();
+        let mut replay = line.replay(&partition).unwrap();
+        assert_eq!(replay.state().count(BODY), 1);
+        assert!(!replay.state().is_empty_part());
+        replay.step().unwrap();
+        assert_eq!(replay.state().len(), 1);
+        assert!(replay.state().is_empty_part());
+    });
+}
+
+#[test]
+fn a_state_that_does_not_write_as_a_partition_is_a_typed_error() {
+    let mismatch = DeltasStream::embedded(C)
+        .delta(&[TestNode::bare(POINT, 13)], &[], &[])
+        .marks(&[INITIAL_B])
+        .terminator()
+        .finish();
+    let misframed = DeltasStream::embedded(C)
+        .delta(&[TestNode::group(14, 1)], &[], &[])
+        .marks(&[INITIAL_B])
+        .terminator()
+        .finish();
+    let partition_bytes = partition(&[TestNode::point(10, 1, 0)]);
+    with_decode_context(|_ctx| {
+        let partition = PrimaryRecords::read(&partition_bytes).unwrap().unwrap();
+        for (stream, error) in [
+            (mismatch, TransmitError::SchemaMismatch { kind: POINT }),
+            (misframed, TransmitError::Reframe),
+        ] {
+            let records = DeltasRecords::read(&stream).unwrap();
+            let line = MainLine::read(&records).unwrap();
+            let mut replay = line.replay(&partition).unwrap();
+            assert_eq!(replay.transmit().unwrap(), partition_bytes);
+            replay.step().unwrap();
+            assert_eq!(replay.transmit(), Err(error));
+        }
     });
 }

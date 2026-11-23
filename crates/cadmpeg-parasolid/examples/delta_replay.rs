@@ -62,18 +62,12 @@ fn replay(partition: &[u8], deltas: &[u8]) -> Value {
         .iter()
         .filter(|delta| delta.created_groups().next().is_some())
         .count();
-    let forward = line
-        .deltas()
-        .iter()
-        .filter(|delta| delta.mark().delta_is_forward())
-        .count();
     let mut out = json!({
         "deltas_end": end,
         "marks": marks,
         "off_line": line.off_line(),
         "nonempty": nonempty,
         "creating_groups": groups,
-        "forward": forward,
     });
     let primary = match PrimaryRecords::read(partition) {
         Ok(Some(primary)) => primary,

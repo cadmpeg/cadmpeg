@@ -5,10 +5,9 @@
 //! state at the mark's preceding mark. The partition and its deltas share one
 //! node-index space, so one step removes the nodes the delta's map lists, adds
 //! the images it restores, and overwrites shared nodes with their older
-//! images. No geometry is evaluated.
+//! images.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::ops::Range;
 
 use super::pmark_state::PmarkState;
 use super::section::{MapEntry, SectionKind};
@@ -16,7 +15,7 @@ use crate::records::deltas::node::DeltasNode;
 use crate::records::deltas::{DeltasEnd, DeltasRecords, EventContent, Metadata};
 use crate::records::node_type::{BODY, EDGE, FACE, GROUP, VERTEX};
 use crate::records::primary::Node;
-use crate::records::{NodeFields, PrimaryRecords, SchemaPlan};
+use crate::records::{PrimaryRecords, SchemaPlan};
 
 /// Why a Deltas stream yields no main line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,7 +37,9 @@ pub enum MainLineError {
         /// Node index of the revisited mark.
         xmt: u32,
     },
-    /// The stream stopped before the sections of a main-line delta closed.
+    /// The stream stopped before the sections of a main-line delta closed,
+    /// or ended after a PMARK section whose last mark is not the initial
+    /// mark.
     IncompleteDelta {
         /// Identifier of the mark whose delta is incomplete.
         identifier: u32,
@@ -358,7 +359,8 @@ impl<'r> MainLine<'r> {
     /// The leading section and the first map section hold the current mark's
     /// delta. Each PMARK section's nodes and the map section after it hold
     /// the delta of the section's last mark; its other marks have empty
-    /// deltas.
+    /// deltas. A PMARK section that ends the stream holds the initial mark
+    /// last.
     ///
     /// # Errors
     ///
@@ -404,7 +406,7 @@ impl<'r> MainLine<'r> {
                     removed: map.map,
                     older: map.nodes,
                 }),
-                None if complete => Some(Content {
+                None if complete && last.preceding().is_none() => Some(Content {
                     restored: section.nodes,
                     ..Content::default()
                 }),
@@ -549,12 +551,12 @@ impl<'r> StateNode<'r> {
         }
     }
 
-    /// The encoded indices of a variable pointer field; the null index is `1`.
+    /// The node type.
     #[must_use]
-    pub fn pointer_list(&self, name: &str) -> Option<Vec<u32>> {
+    pub fn kind(&self) -> u16 {
         match self {
-            Self::Partition(node) => node.pointer_list(name),
-            Self::Delta(node) => node.pointer_list(name),
+            Self::Partition(node) => node.kind(),
+            Self::Delta(node) => node.kind(),
         }
     }
 
@@ -566,72 +568,6 @@ impl<'r> StateNode<'r> {
             Self::Partition(node) => node.pointer_targets(),
             Self::Delta(node) => node.pointer_targets(),
         }
-    }
-}
-
-macro_rules! either {
-    ($self:ident, $node:ident => $body:expr) => {
-        match $self {
-            StateNode::Partition($node) => $body,
-            StateNode::Delta($node) => $body,
-        }
-    };
-}
-
-impl NodeFields for StateNode<'_> {
-    fn kind(&self) -> u16 {
-        either!(self, node => node.kind())
-    }
-    fn index(&self) -> u32 {
-        either!(self, node => node.index())
-    }
-    fn range(&self) -> Range<usize> {
-        either!(self, node => node.range())
-    }
-    fn field_range(&self, name: &str) -> Option<Range<usize>> {
-        either!(self, node => node.field_range(name))
-    }
-    fn pointer(&self, name: &str) -> Option<u32> {
-        either!(self, node => node.pointer(name))
-    }
-    fn integer(&self, name: &str) -> Option<u32> {
-        either!(self, node => node.integer(name))
-    }
-    fn byte(&self, name: &str) -> Option<u8> {
-        either!(self, node => node.byte(name))
-    }
-    fn char(&self, name: &str) -> Option<u8> {
-        either!(self, node => node.char(name))
-    }
-    fn real(&self, name: &str) -> Option<f64> {
-        either!(self, node => node.real(name))
-    }
-    fn is_null(&self, name: &str) -> Option<bool> {
-        either!(self, node => node.is_null(name))
-    }
-    fn vector(&self, name: &str) -> Option<[f64; 3]> {
-        either!(self, node => node.vector(name))
-    }
-    fn short(&self, name: &str) -> Option<u16> {
-        either!(self, node => node.short(name))
-    }
-    fn logical(&self, name: &str) -> Option<bool> {
-        either!(self, node => node.logical(name))
-    }
-    fn reals(&self, name: &str) -> Option<Vec<f64>> {
-        either!(self, node => node.reals(name))
-    }
-    fn shorts(&self, name: &str) -> Option<Vec<u16>> {
-        either!(self, node => node.shorts(name))
-    }
-    fn hvec_points(&self, name: &str) -> Option<Vec<[f64; 3]>> {
-        either!(self, node => node.hvec_points(name))
-    }
-    fn real_array<const N: usize>(&self, name: &str) -> Option<[f64; N]> {
-        either!(self, node => node.real_array::<N>(name))
-    }
-    fn pointer_array<const N: usize>(&self, name: &str) -> Option<[u32; N]> {
-        either!(self, node => node.pointer_array::<N>(name))
     }
 }
 
@@ -724,8 +660,7 @@ impl<'r> State<'r> {
         let mut restored = BTreeSet::new();
         for node in &delta.content.restored {
             let xmt = node.index();
-            let present = self.nodes.contains_key(&xmt) && !removed.contains_key(&xmt);
-            if present || !restored.insert(xmt) {
+            if self.nodes.contains_key(&xmt) || !restored.insert(xmt) {
                 return Err(ReplayError::RestoredPresent { mark, xmt });
             }
         }
