@@ -10,9 +10,12 @@
 //! assembly's own folder, which the decode does not know. A moniker that does
 //! not read leaves the definition without a path. An occurrence that does not
 //! read adds `assembly.occurrence-unread`, a site whose link does not read adds
-//! `assembly.reference-unread`, and the display state, which the layout does
-//! not state, adds `assembly.visibility-unread` once. The state word states
-//! whether the occurrence is grounded, so an occurrence states no suppression. A document with no
+//! `assembly.reference-unread`. The occurrence structure list (§9.4) states
+//! each occurrence's display state and suppression: an occurrence it does not
+//! list is suppressed, and a listed occurrence is hidden where its flags say
+//! so. A document without a readable list states neither and adds
+//! `assembly.visibility-unread` once. The state word states whether the
+//! occurrence is grounded, so it states no suppression. A document with no
 //! references collection adds nothing.
 //!
 //! Stored lengths are metres and CADIR states millimetres. The stored rotation
@@ -32,7 +35,10 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
 
 use crate::extents::MM_PER_M;
-use crate::layout::{assembly_reference, file_moniker, references_collection};
+use crate::layout::{
+    assembly_reference, file_moniker, occurrence_structure_entry, occurrence_structure_header,
+    references_collection,
+};
 use crate::loss::SolidEdgeLossCode;
 use crate::psm::{Cluster, SpaceMap, TypeTable, SPACE_MAP_STREAM, TYPE_TABLE_STREAM};
 
@@ -50,6 +56,10 @@ const ABSOLUTE_UP_LEVEL: u16 = 0;
 const RELATIVE_UP_LEVEL: u16 = 1;
 /// The word that follows a moniker path (§9.3).
 const PATH_END: u16 = 0xFFFF;
+/// The stream that lists the occurrences of an assembly (§9.4).
+const STRUCTURE_STREAM: &str = "Preview/Structure/IOT";
+/// The flag of a structure entry that marks a hidden occurrence (§9.4).
+const HIDDEN_FLAG: u32 = 0x2;
 
 /// Largest deviation of a rotation entry from an orthonormal matrix.
 const EPS_ORTHO: f64 = 1e-6;
@@ -241,6 +251,30 @@ fn link_path(bytes: &[u8]) -> Option<NonBlankString> {
     moniker(bytes, from.checked_add(found)?, RELATIVE_UP_LEVEL).map(|(path, _)| path)
 }
 
+/// The flags of each entry of an occurrence structure list (§9.4) by occurrence
+/// object, or `None` where the stream is not 20 + 20·`n` bytes long for its
+/// stated count `n`.
+fn structure_flags(bytes: &[u8]) -> Option<BTreeMap<u32, u32>> {
+    let count =
+        usize::try_from(View::u32_le_at(bytes, occurrence_structure_header::COUNT)?).ok()?;
+    let body = count.checked_mul(occurrence_structure_entry::LEN)?;
+    if occurrence_structure_header::LEN.checked_add(body)? != bytes.len() {
+        return None;
+    }
+    let mut flags = BTreeMap::new();
+    for index in 0..count {
+        let at = index
+            .checked_mul(occurrence_structure_entry::LEN)?
+            .checked_add(occurrence_structure_header::LEN)?;
+        let object = View::u32_le_at(bytes, at.checked_add(occurrence_structure_entry::OBJECT)?)?;
+        let entry = View::u32_le_at(bytes, at.checked_add(occurrence_structure_entry::FLAGS)?)?;
+        if flags.insert(object, entry).is_some() {
+            return None;
+        }
+    }
+    Some(flags)
+}
+
 fn site_stream(site: u32) -> String {
     format!("JSite{site}/\u{1}Ole")
 }
@@ -340,15 +374,32 @@ pub(crate) fn project<'a>(
                 None
             }
         };
-        occurrences.push(Occurrence::new(occurrence_id(id), prototype, transform));
+        occurrences.push((id, Occurrence::new(occurrence_id(id), prototype, transform)));
     }
     if occurrences.is_empty() {
         return Ok(());
     }
-    losses.push(
-        SolidEdgeLossCode::AssemblyVisibilityUnread
-            .note("the display state of the occurrences is not read; they state no visibility"),
-    );
+    let structure = snapshot
+        .stream(STRUCTURE_STREAM)
+        .and_then(|entry| snapshot.open(ctx, entry).ok())
+        .and_then(|view| structure_flags(view.window()));
+    match &structure {
+        Some(flags) => {
+            for (id, occurrence) in &mut occurrences {
+                let entry = flags.get(id);
+                occurrence.suppressed = Some(entry.is_none());
+                occurrence.visible = entry.map(|bits| bits & HIDDEN_FLAG == 0);
+            }
+        }
+        None => losses.push(SolidEdgeLossCode::AssemblyVisibilityUnread.note(
+            "the occurrence structure list does not read; the occurrences state no suppression \
+             or visibility",
+        )),
+    }
+    let occurrences: Vec<Occurrence> = occurrences
+        .into_iter()
+        .map(|(_, occurrence)| occurrence)
+        .collect();
     if let Some(owner) = ir
         .model
         .product_definitions

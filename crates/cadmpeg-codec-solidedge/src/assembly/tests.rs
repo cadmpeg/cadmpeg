@@ -8,7 +8,8 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::products::{Occurrence, ProductDefinition, Storage};
 
 use crate::test_support::{
-    assembly_document, mirror_document, MirrorSpec, OccurrenceSpec, SiteSpec,
+    assembly_document, assembly_document_with_structure, mirror_document, structure_stream,
+    MirrorSpec, OccurrenceSpec, SiteSpec,
 };
 use crate::SolidEdgeCodec;
 
@@ -260,6 +261,65 @@ fn site_that_is_not_a_site_object_is_not_transferred() {
     ));
     assert_eq!(occurrences(&result).len(), 1);
     assert_eq!(count(&result, "assembly.occurrence-unread"), 1);
+}
+
+const SHOWN: u32 = 0x4000_0001;
+const HIDDEN: u32 = 0x4000_0003;
+
+/// Two occurrences, objects 20 and 22, with the structure list `structure`.
+fn pair(structure: Option<Vec<u8>>) -> DecodeResult {
+    decode(assembly_document_with_structure(
+        &[20, 22],
+        &[
+            OccurrenceSpec::at_identity(20, SITE),
+            OccurrenceSpec::at_identity(22, SITE),
+        ],
+        &[site()],
+        structure,
+    ))
+}
+
+#[test]
+fn structure_list_states_shown_hidden_and_suppressed() {
+    let result = pair(Some(structure_stream(&[(SHOWN, 20), (HIDDEN, 22)])));
+    let [first, second] = occurrences(&result) else {
+        panic!("two occurrences")
+    };
+    assert_eq!((first.suppressed, first.visible), (Some(false), Some(true)));
+    assert_eq!(
+        (second.suppressed, second.visible),
+        (Some(false), Some(false))
+    );
+    assert_eq!(count(&result, "assembly.visibility-unread"), 0);
+
+    let result = pair(Some(structure_stream(&[(SHOWN, 20)])));
+    let [first, second] = occurrences(&result) else {
+        panic!("two occurrences")
+    };
+    assert_eq!((first.suppressed, first.visible), (Some(false), Some(true)));
+    assert_eq!(second.suppressed, Some(true));
+    assert_eq!(second.visible, None);
+    assert_eq!(count(&result, "assembly.visibility-unread"), 0);
+}
+
+#[test]
+fn structure_list_of_the_wrong_length_states_nothing() {
+    let mut stream = structure_stream(&[(SHOWN, 20), (SHOWN, 22)]);
+    stream.pop();
+    let result = pair(Some(stream));
+    for occurrence in occurrences(&result) {
+        assert_eq!((occurrence.suppressed, occurrence.visible), (None, None));
+    }
+    assert_eq!(count(&result, "assembly.visibility-unread"), 1);
+}
+
+#[test]
+fn structure_list_naming_an_occurrence_twice_states_nothing() {
+    let result = pair(Some(structure_stream(&[(SHOWN, 20), (HIDDEN, 20)])));
+    for occurrence in occurrences(&result) {
+        assert_eq!(occurrence.suppressed, None);
+    }
+    assert_eq!(count(&result, "assembly.visibility-unread"), 1);
 }
 
 #[test]
