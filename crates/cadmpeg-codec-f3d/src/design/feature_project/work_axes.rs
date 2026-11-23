@@ -443,9 +443,9 @@ pub(super) fn project(
         if origin.is_some() && line_origin.is_none()
             || displacement.is_some() && line_direction.is_none()
         {
-            losses.push(F3dLossCode::FeatureWorkAxisGeometryUnrepresentable.note(format!("WorkAxis scope {} states no solved line because its source origin conversion or nonzero direction admission is unresolved; the stored values remain in its native evidence.", scope.id)));
+            losses.push(F3dLossCode::FeatureWorkAxisGeometryUnrepresentable.note(format!("WorkAxis scope {} states no solved line because its source origin conversion or nonzero direction admission is unresolved; every component read remains typed in the scope's native record.", scope.id)));
         } else if origin.is_some() != displacement.is_some() {
-            losses.push(F3dLossCode::FeatureWorkAxisPartialLineNative.note(format!("WorkAxis scope {} states no solved line because only its {} was read; the part read remains in its native evidence.", scope.id, if origin.is_some() { "origin" } else { "direction" })));
+            losses.push(F3dLossCode::FeatureWorkAxisPartialLineNative.note(format!("WorkAxis scope {} states no solved line because only its {} was read; the part read remains typed in the scope's native record.", scope.id, if origin.is_some() { "origin" } else { "direction" })));
         }
         if let (Some(line_origin), Some(line_direction)) = (line_origin, line_direction) {
             axis.origin = Some(line_origin);

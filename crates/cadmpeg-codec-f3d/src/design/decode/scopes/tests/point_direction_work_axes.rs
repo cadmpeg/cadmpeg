@@ -555,6 +555,13 @@ fn malformed_scalar_retains_later_fields_and_commits_one_real_unknown_part() {
     assert!(read.axis().unwrap().origin().is_none());
     assert!(read.axis().unwrap().direction().is_none());
     assert!(read.has_loss(F3dLossCode::FeatureWorkAxisPartialLineNative));
+    assert_eq!(
+        read.evidence.candidates[0]
+            .origin
+            .map(|field| field.value().map(|value| value.get())),
+        [Some(1.0), Some(2.0), Some(3.0)],
+        "the origin read stays in the scope's native record"
+    );
     assert!(
         matches!(&read.evidence.candidates[0].source, Some(DesignWorkAxisSource::PointDirection {point_parameters, reference_type: ReadField::Value(19), ..}) if point_parameters[0].value().is_some_and(|value| (value.get() + 1.5).abs() < 1.0e-12))
     );
