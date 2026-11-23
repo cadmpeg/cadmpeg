@@ -1290,8 +1290,9 @@ impl CodecBackend for FcstdCodec {
         )? {
             root.bodies.retain(product::is_shape_body);
         }
-        // Only the FCStd writer reads this digest, and it admits only a `Full`
-        // document. The serialization and hash are too costly to pay below that.
+        // Only the FCStd writer reads this digest. Below `Full` it patches
+        // without one and reports the edits unverified, so the serialization and
+        // hash are not paid there.
         if ctx.depth() == DecodeDepth::Full {
             let document_digest = writer::target::document_local_sha256(ctx, &ir)?;
             if let Some(source) = &mut ir.source {
