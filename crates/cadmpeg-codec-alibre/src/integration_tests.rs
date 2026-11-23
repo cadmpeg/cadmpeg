@@ -129,8 +129,7 @@ fn assert_box(body: &BodyMeasures, min: [f64; 3], max: [f64; 3]) {
         for (actual, expected) in [corner.x, corner.y, corner.z].into_iter().zip(expected) {
             assert!(
                 (actual - expected).abs() <= allowed,
-                "box coordinate {actual}, expected {}",
-                expected
+                "box coordinate {actual}, expected {expected}"
             );
         }
     }
