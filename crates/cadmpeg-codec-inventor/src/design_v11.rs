@@ -87,8 +87,8 @@ pub(crate) fn timeline_produces(ir: &CadIr, timeline: &Container) -> Result<bool
         return Ok(false);
     };
     let end = match rollback {
-        Rollback::End => members.len(),
-        Rollback::Before(member) => members
+        None | Some(Rollback::End) => members.len(),
+        Some(Rollback::Before(member)) => members
             .iter()
             .position(|candidate| candidate == member)
             .ok_or_else(|| CodecError::malformed("Inventor v11 rollback names no member"))?,
