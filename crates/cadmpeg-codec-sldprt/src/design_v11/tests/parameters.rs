@@ -954,6 +954,10 @@ fn a_reference_to_a_parameter_of_another_kind_states_its_tested_unit_blind_tree_
                 <Dimension Name="D4"> "D1@Boss" </Dimension>
                 <Dimension Name="D5">"wall"</Dimension>
             </Extrusion>
+            <Feature Name="Pattern" Type="LPattern" id="12">
+                <Dimension Name="D7">2.5</Dimension>
+                <Dimension Name="D8">"D7@Pattern"</Dimension>
+            </Feature>
         </Keywords>"#,
         &[
             ("Boss", "D1", V10::Length(Length::new(5.0).unwrap()), None),
@@ -1003,13 +1007,30 @@ fn a_reference_to_a_parameter_of_another_kind_states_its_tested_unit_blind_tree_
     }
     assert_eq!(named("D5").kind, ValueKind::Quantity(Quantity::LENGTH));
     assert_eq!(named("D5").definition, text("\"wall\""));
-    let [disagrees, untyped, untested] = losses.as_slice() else {
+    // Two dimensions of the one unread kind, one set to the other.
+    assert!(
+        matches!(&named("D7").kind, ValueKind::Native(_)),
+        "{:?}",
+        named("D7").kind
+    );
+    assert_eq!(named("D8").kind, named("D7").kind);
+    assert_eq!(named("D8").definition, text("\"D7@Pattern\""));
+    // D7's bare number holds no value, which its own note names.
+    let as_text = losses
+        .iter()
+        .filter(|loss| {
+            loss.code == crate::loss::SldprtLossCode::DesignParameterReferenceAsText.kind()
+        })
+        .collect::<Vec<_>>();
+    let [disagrees, untyped, untested] = as_text.as_slice() else {
         panic!("three notes: {losses:?}");
     };
     for loss in [disagrees, untyped, untested] {
-        assert_eq!(
-            loss.code,
-            crate::loss::SldprtLossCode::DesignParameterReferenceAsText.kind()
+        assert!(
+            loss.message
+                .contains("one reference to a parameter whose kind differs or is not read"),
+            "{}",
+            loss.message
         );
     }
     let id = |name: &str| named(name).id.as_str().to_owned();
@@ -1023,11 +1044,11 @@ fn a_reference_to_a_parameter_of_another_kind_states_its_tested_unit_blind_tree_
         disagrees.message
     );
     assert!(
-        untyped.message.starts_with("2 parameters")
+        untyped.message.starts_with("3 parameters")
             && untyped.message.contains("its kinds do not type")
-            && untyped
-                .message
-                .ends_with(&format!(": {}, {}", id("D3"), id("D4"))),
+            && ["D3", "D4", "D8"]
+                .into_iter()
+                .all(|name| untyped.message.contains(&id(name))),
         "{}",
         untyped.message
     );

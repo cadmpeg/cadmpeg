@@ -595,9 +595,9 @@ pub(super) fn bare_references(
         .iter()
         .map(|(why, named)| {
             SldprtLossCode::DesignParameterReferenceAsText.note(format!(
-                "{} parameters whose text is one reference to a parameter of another kind hold \
-                 the text as one `Text` token and state no dependency on the parameter it \
-                 names, because {}: {named}",
+                "{} parameters whose text is one reference to a parameter whose kind differs or \
+                 is not read hold the text as one `Text` token and state no dependency on the \
+                 parameter it names, because {}: {named}",
                 named.count(),
                 why.reason()
             ))
