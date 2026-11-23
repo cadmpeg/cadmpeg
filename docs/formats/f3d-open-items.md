@@ -895,6 +895,14 @@ option `2`, and side extents `[1, 0]`.
 
 **Need.** `Revolve` features with a sketch-line axis saved in a stream with serializer magic `1234`, before and after an edit of the axis selection and of the profile, with the form of each record compared.
 
+### DR-1042. The 76-byte item tail of a Revolve
+
+**Question.** What selects the 76-byte item tail of a `Revolve` over the 77-byte item tail in a plain-reference stream?
+
+**Known.** `f3d.md` §3.1 "**Revolve item tail.**" gives the forms. The 76-byte tail stores the family ordinal at tail offset 0, the custom-label count at 8, the state bytes at 16, the tracked-results table at 19, the preceding history-state identity at 30, the evaluation epoch at 34, the evaluation duration at 38, the second evaluation epoch at 46, the item-tail companion at 50, the no-result flag at 61, the rolled-back flag at 62, the record-timestamp table at 63, and two zero bytes at 74. A stream that stores the 76-byte tail for its `Revolve` item stores it for its `Sketch` and `Extrude` items, and its MetaStream header stores serializer magic `134223416` and one further u32. The streams that store the 77-byte or the 87-byte tail for a `Revolve` item store serializer magic `134224764` or a larger value.
+
+**Need.** One design of a `Sketch`, an `Extrude`, and a `Revolve`, saved by builds that write serializer magic values on each side of `134224764`: the item tail of each scope compared.
+
 ### DR-884. Sketch placement without a tracked identity
 
 **Question.** What does a sketch placement path name when it references no tracked entity identity?
