@@ -23,6 +23,97 @@ use crate::history::parameters::{
 use crate::history::project::neutral_feature_id;
 use crate::resolved_features::relation_geometry::is_reference_relation_parameter;
 
+/// The parameters of a write that leaves out `omitted` whose expression
+/// reads a parameter the write leaves out. `valued` are written with their
+/// value in place of the expression. `dropped` hold no value a record entry
+/// can hold, so they are left out too, and a parameter that reads one of
+/// them is in turn valued or dropped.
+pub(crate) struct OmittedReaders<'a> {
+    pub(crate) valued: Vec<&'a DesignParameter>,
+    pub(crate) dropped: Vec<&'a DesignParameter>,
+}
+
+pub(crate) fn omitted_readers<'a>(
+    parameters: &'a [DesignParameter],
+    omitted: &HashSet<&ParameterId>,
+) -> OmittedReaders<'a> {
+    let mut unavailable = omitted.iter().copied().collect::<HashSet<&ParameterId>>();
+    let mut valued_ids = HashSet::new();
+    let mut readers = OmittedReaders {
+        valued: Vec::new(),
+        dropped: Vec::new(),
+    };
+    loop {
+        let mut dropped_more = false;
+        for parameter in parameters {
+            if unavailable.contains(&parameter.id)
+                || valued_ids.contains(&parameter.id)
+                || !parameter
+                    .dependencies
+                    .iter()
+                    .any(|dependency| unavailable.contains(dependency))
+            {
+                continue;
+            }
+            if value_literal(parameter).is_some() {
+                valued_ids.insert(&parameter.id);
+                readers.valued.push(parameter);
+            } else {
+                unavailable.insert(&parameter.id);
+                readers.dropped.push(parameter);
+                dropped_more = true;
+            }
+        }
+        if !dropped_more {
+            return readers;
+        }
+    }
+}
+
+/// The literal of `parameter`'s value, when a record entry can hold it.
+fn value_literal(parameter: &DesignParameter) -> Option<String> {
+    parameter
+        .value
+        .as_ref()
+        .map(format_parameter_value)
+        .filter(|text| parse_parameter_literal(text).is_some())
+}
+
+/// `parameters` without those of `omitted` and the [`omitted_readers`] it
+/// drops, each valued reader written with its value in place of its
+/// expression, since the record the expression names is left out.
+fn without_omitted_driven(
+    parameters: Vec<DesignParameter>,
+    omitted: &HashSet<&ParameterId>,
+) -> Vec<DesignParameter> {
+    let readers = omitted_readers(&parameters, omitted);
+    let ids = |readers: &[&DesignParameter]| {
+        readers
+            .iter()
+            .map(|parameter| parameter.id.clone())
+            .collect::<HashSet<_>>()
+    };
+    let valued = ids(&readers.valued);
+    let dropped = ids(&readers.dropped);
+    parameters
+        .into_iter()
+        .filter(|parameter| !omitted.contains(&parameter.id) && !dropped.contains(&parameter.id))
+        .map(|mut parameter| {
+            if let Some(literal) = valued
+                .contains(&parameter.id)
+                .then(|| value_literal(&parameter))
+                .flatten()
+            {
+                parameter.display = dimension_display(&literal);
+                parameter.expression = literal;
+                parameter.dependencies =
+                    cadmpeg_ir::features::selections::DistinctMembers::default();
+            }
+            parameter
+        })
+        .collect()
+}
+
 pub(crate) fn prepare_parameters_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
@@ -190,10 +281,7 @@ fn sync_neutral_parameters(
     // dimension whose reference relation the write does not write stays out
     // of its feature's record; the export charges it.
     let omitted = crate::resolved_features::write_prepare::omitted_driven_parameters(ir);
-    let parameters = parameters
-        .into_iter()
-        .filter(|parameter| !omitted.contains(&parameter.id))
-        .collect::<Vec<_>>();
+    let parameters = without_omitted_driven(parameters, &omitted);
     let features = ir
         .model
         .features
@@ -838,5 +926,89 @@ pub(super) fn restore_equivalent_parameter_expressions(
         if desired_value == evaluated_value {
             desired.clone_from(expression);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{omitted_readers, without_omitted_driven};
+    use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+    use cadmpeg_ir::features::ParameterId;
+    use std::collections::HashSet;
+
+    fn parameter(
+        key: &str,
+        expression: &str,
+        value: Option<f64>,
+        reads: &[&ParameterId],
+    ) -> DesignParameter {
+        DesignParameter {
+            product_definition: None,
+            id: ParameterId::mint(format!("synthetic:test:parameter#{key}")).expect("id"),
+            owner: None,
+            ordinal: 0,
+            name: key.into(),
+            expression: expression.into(),
+            display: None,
+            value: value.map(|millimetres| {
+                ParameterValue::Length(
+                    cadmpeg_ir::scalar::Length::new(millimetres).expect("length"),
+                )
+            }),
+            dependencies: reads.iter().map(|&id| id.clone()).collect(),
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        }
+    }
+
+    /// The driven parameter is left out; a parameter that reads it is
+    /// written with its value and reads nothing; another keeps its
+    /// expression. A reader with no value is left out too, and its own
+    /// readers are valued or left out in turn.
+    #[test]
+    fn a_parameter_reading_an_omitted_driven_one_is_written_with_its_value() {
+        let driven = parameter("D2", "6mm", Some(6.0), &[]);
+        let width = parameter("D1", "4mm", Some(4.0), &[]);
+        let twice = parameter("D3", "\"D2@Driven\" * 2", Some(12.0), &[&driven.id]);
+        let wide = parameter("D4", "\"D1@Driven\" + 1mm", Some(5.0), &[&width.id]);
+        let valueless = parameter("D5", "\"D2@Driven\" * 3", None, &[&driven.id]);
+        let after = parameter("D6", "\"D5@Driven\" + 1mm", Some(19.0), &[&valueless.id]);
+        let unvalued = parameter("D7", "\"D5@Driven\" * 2", None, &[&valueless.id]);
+        let omitted = HashSet::from([&driven.id]);
+        let all = vec![
+            driven.clone(),
+            width.clone(),
+            twice,
+            wide.clone(),
+            valueless,
+            after,
+            unvalued,
+        ];
+        let readers = omitted_readers(&all, &omitted);
+        let names = |readers: &[&DesignParameter]| {
+            let mut names = readers
+                .iter()
+                .map(|parameter| parameter.name.clone())
+                .collect::<Vec<_>>();
+            names.sort_unstable();
+            names
+        };
+        assert_eq!(names(&readers.valued), ["D3", "D6"]);
+        assert_eq!(names(&readers.dropped), ["D5", "D7"]);
+
+        let written = without_omitted_driven(all, &omitted);
+        let by_name = |name: &str| written.iter().find(|parameter| parameter.name == name);
+        for left_out in ["D2", "D5", "D7"] {
+            assert!(by_name(left_out).is_none(), "{left_out} in {written:?}");
+        }
+        let valued = |name: &str| by_name(name).unwrap_or_else(|| panic!("{name} in {written:?}"));
+        assert_eq!(valued("D3").expression, "12mm");
+        assert!(valued("D3").dependencies.is_empty());
+        assert_eq!(valued("D6").expression, "19mm");
+        assert!(valued("D6").dependencies.is_empty());
+        assert_eq!(valued("D4").expression, wide.expression);
+        assert_eq!(valued("D4").dependencies, wide.dependencies);
+        assert_eq!(*valued("D1"), width);
     }
 }

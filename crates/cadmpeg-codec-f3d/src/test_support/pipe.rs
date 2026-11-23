@@ -373,6 +373,7 @@ impl Fixture {
                         parameter_owners: &native.design_parameter_owners,
                         component_occurrences: &[],
                         recipes: &[],
+                        sheet_metal_settings: &[],
                     },
                 )?
                 .scopes;
