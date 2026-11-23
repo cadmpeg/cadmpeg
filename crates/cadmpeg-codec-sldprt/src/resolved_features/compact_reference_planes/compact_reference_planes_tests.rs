@@ -325,6 +325,46 @@ fn top_component_frame_requires_a_complete_local_unmixed_record() {
     );
 }
 
+/// The padded form writes the plane's feature number one word before the
+/// record, a time stamp at +0 and a zero word at +4 (`sldprt.md` §2). Its
+/// selector names the plane as in the first form.
+#[test]
+fn padded_principal_component_record_names_its_plane_by_the_selector() {
+    use crate::layout::compact_principal_plane_component_padded as layout;
+    let mut record = [0u8; 142];
+    record[layout::FEATURE_NUMBER..layout::FEATURE_NUMBER + 4].copy_from_slice(&4u32.to_le_bytes());
+    record[layout::TIME_STAMP..layout::TIME_STAMP + 4]
+        .copy_from_slice(&0x4d5e_6f70u32.to_le_bytes());
+    record[layout::PADDING..layout::PADDING + 4]
+        .copy_from_slice(&layout::PADDING_VALUE.to_le_bytes());
+    record[layout::SELECTOR..layout::SELECTOR + 4].copy_from_slice(&1u32.to_le_bytes());
+    record[layout::MATRIX_PRESENT] = 1;
+    for (index, value) in [
+        0.0f64, 0.0, 1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let offset = layout::BASIS + index * 8;
+        record[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    record[layout::TRAILER_KIND..layout::TRAILER_KIND + 4].copy_from_slice(&4u32.to_le_bytes());
+    record[layout::TRAILER_SENTINEL..layout::TRAILER_SENTINEL + 4].fill(0xff);
+    let index = CompactReferencePlaneIndex::new(&record);
+    // The 138-byte record starts at the time stamp, so an object that starts
+    // there holds it whole.
+    for start in [0, layout::TIME_STAMP] {
+        assert_eq!(
+            index.principal_profile_plane(start, record.len()),
+            Some(PrincipalPlane::Right)
+        );
+    }
+    assert_eq!(
+        index.principal_profile_plane(layout::TIME_STAMP + 1, record.len()),
+        None
+    );
+}
+
 /// A lane that writes the `moCompRefPlane_c` class name writes it once, so a
 /// later profile's own declared record follows the name without holding it; it
 /// is still that profile's own record. The decoder reads no declared record in

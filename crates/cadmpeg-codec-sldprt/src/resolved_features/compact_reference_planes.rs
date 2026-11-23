@@ -349,8 +349,9 @@ fn compact_principal_reference_plane_record(
     {
         return None;
     }
-    // The selector names the plane; the source is the plane's feature number,
-    // which differs between parts.
+    // The selector names the plane. The nonzero u32 at +0 is the plane's
+    // feature number, which differs between parts, or the time stamp of the
+    // padded form (`sldprt.md` §2).
     let plane = if selector == 2 {
         cadmpeg_ir::features::PrincipalPlane::Top
     } else {
@@ -493,7 +494,8 @@ fn compact_component_plane_frame_record(bytes: &[u8]) -> Option<PlaneFrame> {
 
 /// The frame the decoder keeps for a Front reference whose profile holds
 /// principal-plane component records that `principal_profile_frame` does not
-/// bind (`sldprt-open-items.md` SF-01). No support plane stores it.
+/// bind, and for a sketch block definition whose own object holds such
+/// records (`sldprt-open-items.md` SF-01). No support plane stores it.
 fn front_lane_fallback_frame() -> PlaneFrame {
     (
         Point3::new(0.0, 0.0, 0.0),
@@ -551,7 +553,7 @@ pub(crate) enum PlaneBinding {
     LaneFrame,
     /// The Front lane fallback frame (SF-01): a Front reference whose
     /// profile's principal-plane component records `principal_profile_frame`
-    /// does not bind.
+    /// does not bind, or that a sketch block definition holds.
     FrontFallback,
 }
 
@@ -704,11 +706,13 @@ impl PlaneBindings {
             routes.push(format!(
                 "{} lie on the Front lane fallback frame (origin 0,0,0, normal -Y, u-axis -Z), \
                  which no plane of the part stores, because their reference names the Front \
-                 plane and the principal-plane component records of their own object bind \
-                 them to no plane by sldprt.md §2: the records name two planes, a \
-                 component frame record lies from the preceding object through the profile, \
-                 or their own object holds a plane reference other than a declared Front \
-                 record, open item SF-01 ({front_fallback})",
+                 plane, their own object holds principal-plane component records, and the \
+                 decoder binds them to no plane by those records (sldprt.md §2): the records \
+                 name two planes, a component frame record lies from the preceding object \
+                 through the profile, their own object holds a plane reference other than a \
+                 declared Front record, or the sketch is a sketch block definition, whose \
+                 frame the decoder takes from its plane reference, open item SF-01 \
+                 ({front_fallback})",
                 front_fallback.count(),
             ));
         }
