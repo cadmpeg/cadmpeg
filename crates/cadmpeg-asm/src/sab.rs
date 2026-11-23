@@ -634,8 +634,7 @@ pub fn frame(
         limit,
         ref_width,
         declared_entities,
-        false,
-        false,
+        FrameMode::default(),
     )
 }
 
@@ -662,8 +661,10 @@ pub fn frame_for_header(
         limit,
         ref_width,
         header.entity_count,
-        eof_terminates_final_record,
-        intern_names,
+        FrameMode {
+            eof_terminates_final_record,
+            intern_names,
+        },
     )
 }
 
@@ -684,9 +685,20 @@ pub fn frame_history(
         limit,
         ref_width,
         declared_entities,
-        true,
-        false,
+        FrameMode {
+            eof_terminates_final_record: true,
+            intern_names: false,
+        },
     )
+}
+
+/// How one framing pass treats the stream end and identifiers.
+#[derive(Clone, Copy, Default)]
+struct FrameMode {
+    /// The final record ends at the stream boundary without a `0x11` terminator.
+    eof_terminates_final_record: bool,
+    /// Identifiers are resolved through the save format's intern table.
+    intern_names: bool,
 }
 
 fn frame_impl(
@@ -696,9 +708,12 @@ fn frame_impl(
     limit: usize,
     ref_width: RefWidth,
     declared_entities: Option<u64>,
-    eof_terminates_final_record: bool,
-    intern_names: bool,
+    mode: FrameMode,
 ) -> Result<Vec<Record>, StreamFailure> {
+    let FrameMode {
+        eof_terminates_final_record,
+        intern_names,
+    } = mode;
     let Some(bytes) = bytes.get(..limit) else {
         return Err(StreamError {
             format: StreamFormat::Binary,
@@ -728,7 +743,7 @@ fn frame_impl(
     let mut index = 0usize;
     let mut names = NameTable {
         enabled: intern_names,
-        entries: Default::default(),
+        entries: std::collections::BTreeMap::new(),
     };
 
     while pos < limit {
