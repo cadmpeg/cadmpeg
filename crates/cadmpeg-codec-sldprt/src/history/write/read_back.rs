@@ -14,7 +14,9 @@ use cadmpeg_ir::features::{Feature, FeatureId, ParameterId};
 use serde_json::Value;
 
 use super::brep_agreement::stale_after_edit;
-use super::edits::{listed, ConstructionLeaf, FeatureClaims, UnwrittenEdits, UnwrittenPart};
+use super::edits::{
+    listed, ConstructionLeaf, FeatureClaims, UnwrittenEdits, UnwrittenPart, RESTATES,
+};
 use crate::history::extrude_direction::{
     reversal_flag, settled_travel, written_reversal_flag, REVERSE, REVERSE_DECODED,
 };
@@ -947,10 +949,7 @@ impl<'a> Scope<'a> {
             .find_map(|key| reshaped.get(key.trim_end_matches('\'')))
             .filter(|_| restating)
         {
-            return Class::Reshaped(
-                claim.clone(),
-                format!("restates it in {}", difference.label()),
-            );
+            return Class::Reshaped(claim.clone(), format!("{RESTATES}{}", difference.label()));
         }
         if let Some(class) = self.configured_state(difference, &segments) {
             return class;
@@ -1126,7 +1125,7 @@ impl<'a> Scope<'a> {
         match self.reshaping_claim(difference) {
             Some(claim) => Class::Reshaped(
                 claim.id.clone(),
-                format!("restates it in {}", difference.label()),
+                format!("{RESTATES}{}", difference.label()),
             ),
             None => Class::General,
         }
@@ -1189,7 +1188,7 @@ impl<'a> Scope<'a> {
         } else if claim.reshapes() {
             Class::Reshaped(
                 claim.id.clone(),
-                format!("restates it in {}", difference.label()),
+                format!("{RESTATES}{}", difference.label()),
             )
         } else {
             Class::General

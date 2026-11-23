@@ -420,9 +420,25 @@ impl UnwrittenLosses {
             }),
         );
         notes.extend(read_back.reshaped.iter().map(|(id, changes)| {
+            let mut parts = changes
+                .iter()
+                .filter(|change| !change.starts_with(RESTATES))
+                .cloned()
+                .collect::<Vec<_>>();
+            let restated = changes
+                .iter()
+                .filter_map(|change| change.strip_prefix(RESTATES))
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+            if !restated.is_empty() {
+                parts.push(format!(
+                    "restates it in {}",
+                    super::read_back::by_arena(&restated).join("; ")
+                ));
+            }
             SldprtLossCode::WriterFeatureRecordReshaped.note(format!(
                 "SLDPRT feature {id} is written in the record shape of its edited variant, which {}.",
-                listed(changes)
+                parts.join(", ")
             ))
         }));
         if !read_back.changed.is_empty() {
@@ -445,6 +461,9 @@ impl UnwrittenLosses {
         notes
     }
 }
+
+/// The start of a reshape change that names a record restating the variant.
+pub(super) const RESTATES: &str = "restates it in ";
 
 /// Pushes a definition leaf for each place where `current` differs from
 /// `original`. `pointer` is the JSON pointer of the place and `path` the
