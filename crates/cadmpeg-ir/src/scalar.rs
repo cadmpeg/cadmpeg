@@ -80,17 +80,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// A finite IEEE-754 binary32 value in its source precision.
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(transparent))]
-pub struct FiniteBinary32(f32);
-
-impl Serialize for FiniteBinary32 {
-    /// Writes negative zero as zero (§2.5).
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_f32(self.0 + 0.0)
-    }
-}
+#[serde(transparent)]
+pub struct FiniteBinary32(#[serde(serialize_with = "crate::math::serialize_one_zero_f32")] f32);
 
 impl FiniteBinary32 {
     /// Zero in source precision.
@@ -143,17 +136,10 @@ impl From<FiniteBinary32> for FiniteReal {
 }
 
 /// A finite binary32 fraction in the closed unit interval.
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(transparent))]
-pub struct UnitBinary32(f32);
-
-impl Serialize for UnitBinary32 {
-    /// Writes negative zero as zero (§2.5).
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_f32(self.0 + 0.0)
-    }
-}
+#[serde(transparent)]
+pub struct UnitBinary32(#[serde(serialize_with = "crate::math::serialize_one_zero_f32")] f32);
 
 impl UnitBinary32 {
     /// Admit a binary32 fraction in the closed unit interval.
@@ -253,18 +239,11 @@ impl From<PositiveI64> for i64 {
 macro_rules! checked_scalar {
     ($(#[$attribute:meta])* $name:ident, $value:ident, $condition:expr, $error:literal) => {
         $(#[$attribute])*
-        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize)]
         #[cfg_attr(feature = "schema", derive(JsonSchema))]
-        #[cfg_attr(feature = "schema", schemars(transparent))]
-        pub struct $name(f64);
+        #[serde(transparent)]
+        pub struct $name(#[serde(serialize_with = "crate::math::serialize_one_zero")] f64);
         rewrite_scalar!($name);
-
-        impl Serialize for $name {
-            /// Writes negative zero as zero (§2.5).
-            fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-                serializer.serialize_f64(self.0 + 0.0)
-            }
-        }
 
         impl $name {
             /// Admits a value within the scalar's domain.

@@ -1060,8 +1060,9 @@ impl TryFrom<[f64; 2]> for ParameterInterval {
 }
 
 impl From<ParameterInterval> for [f64; 2] {
+    /// The endpoints as written, negative zero as zero (§2.5).
     fn from(value: ParameterInterval) -> Self {
-        value.0
+        value.0.map(|endpoint| endpoint + 0.0)
     }
 }
 
@@ -1131,8 +1132,9 @@ impl TryFrom<[f64; 2]> for IncreasingParameterInterval {
 }
 
 impl From<IncreasingParameterInterval> for [f64; 2] {
+    /// The endpoints as written, negative zero as zero (§2.5).
     fn from(value: IncreasingParameterInterval) -> Self {
-        value.0
+        value.0.map(|endpoint| endpoint + 0.0)
     }
 }
 
@@ -1525,6 +1527,11 @@ mod tests {
             .expect("strictly increasing endpoints");
         assert_eq!(interval.lower().to_bits(), (-0.0_f64).to_bits());
         assert_eq!(interval.upper().to_bits(), f64::MAX.to_bits());
+        let wire = serde_json::to_value(interval).expect("an interval serializes");
+        assert_eq!(wire[0].as_f64().map(f64::to_bits), Some(0));
+        let wire = serde_json::to_value(super::ParameterInterval::from(interval))
+            .expect("an interval serializes");
+        assert_eq!(wire[0].as_f64().map(f64::to_bits), Some(0));
         assert!(IncreasingParameterInterval::from_finite_endpoints(
             FiniteVector::new([1.0, 1.0]).expect("finite endpoints")
         )

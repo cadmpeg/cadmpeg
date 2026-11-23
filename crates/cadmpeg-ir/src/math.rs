@@ -19,12 +19,20 @@ pub mod portable;
 pub mod solve;
 pub(crate) mod sum;
 
-/// Writes a coordinate, negative zero as zero: a number has one zero (§2.5).
-fn serialize_one_zero<T: Copy + Into<f64>, S: serde::Serializer>(
+/// Writes a float, negative zero as zero: a number has one zero (§2.5).
+pub(crate) fn serialize_one_zero<T: Copy + Into<f64>, S: serde::Serializer>(
     value: &T,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
     serializer.serialize_f64((*value).into() + 0.0)
+}
+
+/// Writes a binary32 float, negative zero as zero (§2.5).
+pub(crate) fn serialize_one_zero_f32<T: Copy + Into<f32>, S: serde::Serializer>(
+    value: &T,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_f32((*value).into() + 0.0)
 }
 
 /// A point in 3D model space, in the document's length unit.
