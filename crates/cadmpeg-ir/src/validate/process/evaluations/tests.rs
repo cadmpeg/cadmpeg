@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, LimitScope, ResourceLimit};
+use cadmpeg_core::CodecError;
 
 use crate::design::dimension::{Dimension, ParamRef};
 use crate::design::evaluation::{EvaluationStatus, StateBase};
@@ -8,9 +9,10 @@ use crate::design::feature::FeatureOperation;
 use crate::document::CadIr;
 use crate::process::state::{ProcessBase, ProcessStateOf};
 use crate::report::check::{Check, Finding};
+use crate::report::Severity;
 use crate::validate::design::fixture as design;
 use crate::validate::process::fixture::{
-    assert_error, assert_no_process_finding, document, id, state,
+    assert_error, assert_no_process_finding, document, id, process_findings, state,
 };
 
 #[test]
@@ -139,17 +141,17 @@ fn process_bases_resolve_to_states_with_content() {
     assert_error(&ir, "is an evaluation with no content");
 }
 
-/// The process findings of `ir` under `policy`.
-fn findings_under(ir: &CadIr, policy: &DecodePolicy) -> Vec<Finding> {
+/// The process findings of `ir` under `policy`, or the validation's refusal.
+fn findings_under(ir: &CadIr, policy: &DecodePolicy) -> Result<Vec<Finding>, CodecError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy).unwrap();
-    let report = crate::validate::validate_neutral_for_decode(&ctx, ir, Vec::new()).unwrap();
+    let report = crate::validate::validate_neutral_for_decode(&ctx, ir, Vec::new());
     ctx.finish_session().unwrap();
-    report
+    Ok(report?
         .findings
         .into_iter()
         .filter(|finding| finding.check == Check::Process)
-        .collect()
+        .collect())
 }
 
 #[test]
@@ -179,22 +181,20 @@ fn process_bases_form_a_forest_within_the_reader_ceiling() {
         chained.configuration = Some(design::id("configuration", &key(at)));
         ir.process.states.push(chained);
     }
-    let findings = findings_under(&ir, &policy);
+    let refusal = findings_under(&ir, &policy).unwrap_err();
     assert!(
-        findings
-            .iter()
-            .any(|finding| finding.message.contains(&format!(
-                "chain of state bases is {} deep, past the ceiling of {ceiling}",
-                ceiling + 1
-            ))),
-        "the chain past the ceiling is not refused"
+        matches!(
+            refusal,
+            CodecError::ResourceLimit(ResourceLimit {
+                scope: LimitScope::Session,
+                limit,
+                ..
+            }) if limit == ceiling
+        ),
+        "{refusal:?}"
     );
-    assert!(
-        !findings
-            .iter()
-            .any(|finding| finding.message.contains(&format!("is {ceiling} deep"))),
-        "the chain at the ceiling is refused"
-    );
+    ir.process.states.pop();
+    assert!(findings_under(&ir, &policy).is_ok());
 }
 
 #[test]
@@ -214,6 +214,7 @@ fn a_state_feature_is_a_removal_states_feature_of_the_scope() {
     );
     ir.process.states[1].content = None;
     ir.process.states[1].feature = Some(design::feature("extrude"));
+    ir.design.features[0].definition.operation = FeatureOperation::MaterialRemoval;
     assert_no_process_finding(&ir);
     ir.process.states[1].feature = Some(design::feature("missing"));
     assert_error(&ir, "which is no feature of its setup's scope");
@@ -276,4 +277,70 @@ fn a_resolved_process_state_names_what_it_holds() {
         &ir,
         "owner entry names test:design:body#missing, which is no body of the resolved state",
     );
+}
+
+#[test]
+fn a_process_state_meets_the_rules_of_one_topology() {
+    let mut ir = document();
+    let first = ir.geometry.coedges[0].clone();
+    let other = ir
+        .geometry
+        .coedges
+        .iter()
+        .find(|coedge| coedge.edge != first.edge)
+        .unwrap()
+        .id
+        .clone();
+    let mut crossing = first.clone();
+    crossing.radial_next = other;
+    let stock = ir
+        .process
+        .states
+        .iter()
+        .position(|state| state.id.as_str().ends_with("#stock"))
+        .unwrap();
+    if let Some(content) = &mut ir.process.states[stock].content {
+        content.delta.records.coedges.push(crossing);
+    }
+    let message = format!(
+        "resolved state: record {}: radial ring crosses edges",
+        first.id.as_str()
+    );
+    let found: Vec<_> = process_findings(&ir)
+        .into_iter()
+        .filter(|finding| finding.message == message)
+        .collect();
+    assert_eq!(found.len(), 1, "{found:#?}");
+    assert_eq!(found[0].severity, Severity::Error);
+    assert_eq!(
+        found[0].entity.as_deref(),
+        Some(ir.process.states[stock].id.as_str())
+    );
+}
+
+/// Part 10: `ProcessState.feature` names a `MaterialRemoval` feature.
+#[test]
+fn a_removal_states_feature_is_a_material_removal_feature() {
+    let removal = |operation: FeatureOperation| {
+        let mut ir = document();
+        ir.design.features[0].definition.operation = operation;
+        ir.process.states.insert(
+            1,
+            state(
+                "removal",
+                ProcessStateOf::Removal(id("operation", "mill")),
+                ProcessBase::Design(StateBase::Empty),
+            ),
+        );
+        ir.process.states[1].content = None;
+        ir.process.states[1].feature = Some(design::feature("extrude"));
+        ir
+    };
+    assert_error(
+        &removal(FeatureOperation::Unresolved {
+            family: crate::design::feature::OperationFamily::Extrude,
+        }),
+        "which is no `MaterialRemoval` feature",
+    );
+    assert_no_process_finding(&removal(FeatureOperation::MaterialRemoval));
 }

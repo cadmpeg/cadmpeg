@@ -769,11 +769,12 @@ The Fixed ASCII reader retains every physical card and every Directory/Parameter
 
 ## Decode admission
 
-A successful semantic decode has no error-severity neutral-validation finding.
-The reader validates referential integrity, geometry domains, topology
-ownership, endpoint agreement, pcurve agreement, transforms, and document
-invariants before it returns the document. A failed candidate does not commit
-partial topology.
+The reader validates the projected document before it returns it: referential
+integrity, geometry domains, topology ownership, endpoint agreement, pcurve
+agreement, transforms, and document invariants. Each error-severity finding
+records one `iges/projection.invalid` loss that names the finding's check,
+record, and message, and the reader returns the document. A failed candidate
+does not commit partial topology.
 
 Every non-null Directory Entry has one retained native identity and one
 `transfer_ledger` disposition, and so does every quarantined record. A

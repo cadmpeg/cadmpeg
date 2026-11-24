@@ -26,6 +26,7 @@ mod composite;
 mod datums;
 pub(super) mod graphs;
 pub(super) mod nested;
+pub(super) mod procedural_owners;
 mod sheet_metal;
 
 fn check_split_face_input_run(
@@ -263,8 +264,11 @@ pub(super) fn check_tolerances(ir: &CadIr, findings: &mut Vec<Finding>) {
 
 /// In a Catmull–Clark cage every face side holds one edge use, and the edges
 /// that state a knot interval state one value.
-pub(super) fn check_subdivision_schemes(ir: &CadIr, findings: &mut Vec<Finding>) {
-    for surface in &ir.geometry.subds {
+pub(super) fn check_subdivision_schemes(
+    geometry: &crate::document::Topology,
+    findings: &mut Vec<Finding>,
+) {
+    for surface in &geometry.subds {
         if surface.scheme != crate::subd::SubdScheme::CatmullClark {
             continue;
         }
