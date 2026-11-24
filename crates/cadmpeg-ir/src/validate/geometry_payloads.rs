@@ -34,29 +34,28 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
             add(asset.id.as_str(), ());
         }
     });
+    let definitions: std::collections::BTreeMap<&str, &crate::products::ProductDefinition> = ir
+        .model
+        .product_definitions
+        .iter()
+        .map(|definition| (definition.id.as_str(), definition))
+        .collect();
+    let pmi: std::collections::BTreeMap<&str, &crate::pmi::PmiAnnotation> = ir
+        .model
+        .pmi
+        .iter()
+        .map(|annotation| (annotation.id.as_str(), annotation))
+        .collect();
     for mesh in &ir.model.tessellations {
-        if let Some(body) = &mesh.body {
-            if !bodies.contains(body.as_str()) {
-                super::record_finding(
-                    findings,
-                    Check::Tessellation,
-                    Severity::Error,
-                    Some(mesh.id.as_str()),
-                    format_args!("references a missing tessellation body"),
-                );
-            }
-        }
-        for face in &mesh.faces {
-            if !faces.contains(face.as_str()) {
-                super::record_finding(
-                    findings,
-                    Check::Tessellation,
-                    Severity::Error,
-                    Some(mesh.id.as_str()),
-                    format_args!("references a missing tessellation face"),
-                );
-                break;
-            }
+        if let Some(message) = meshed_error(mesh, &bodies, &faces, &face_bodies, &definitions, &pmi)
+        {
+            super::record_finding(
+                findings,
+                Check::Tessellation,
+                Severity::Error,
+                Some(mesh.id.as_str()),
+                format_args!("{message}"),
+            );
         }
         if let Some(message) = triangle_group_face_error(mesh, &face_bodies) {
             super::record_finding(
@@ -82,6 +81,63 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
 }
 
+/// The first rule of part 10 that what a tessellation is breaks: a `Body`
+/// mesh names a body and faces of it; a `Display` or `Definition` mesh names a
+/// definition whose storage is not `External`; a `Pmi` mesh names a
+/// presentation annotation; an `Unresolved` mesh states no `state`.
+fn meshed_error(
+    mesh: &crate::tessellation::Tessellation,
+    bodies: &crate::index::identities::BorrowedIdentities<'_, ()>,
+    faces: &crate::index::identities::BorrowedIdentities<'_, ()>,
+    face_bodies: &std::collections::BTreeMap<&str, &str>,
+    definitions: &std::collections::BTreeMap<&str, &crate::products::ProductDefinition>,
+    pmi: &std::collections::BTreeMap<&str, &crate::pmi::PmiAnnotation>,
+) -> Option<&'static str> {
+    use crate::tessellation::Meshed;
+    match &mesh.of {
+        Meshed::Body {
+            body,
+            faces: covered,
+        } => {
+            if !bodies.contains(body.as_str()) {
+                return Some("references a missing tessellation body");
+            }
+            if covered.iter().any(|face| !faces.contains(face.as_str())) {
+                return Some("references a missing tessellation face");
+            }
+            covered
+                .iter()
+                .any(|face| face_bodies.get(face.as_str()) != Some(&body.as_str()))
+                .then_some("covers a face outside the tessellation body")
+        }
+        Meshed::Display { definition } | Meshed::Definition { definition, .. } => {
+            match definitions.get(definition.as_str()) {
+                None => Some("references a missing tessellation product definition"),
+                Some(found) if matches!(found.storage, crate::products::Storage::External(_)) => {
+                    Some("references an external tessellation product definition")
+                }
+                Some(_) => None,
+            }
+        }
+        Meshed::Pmi { pmi: annotation } => match pmi.get(annotation.as_str()) {
+            None => Some("references a missing tessellation PMI annotation"),
+            Some(found)
+                if !matches!(
+                    found.definition,
+                    crate::pmi::PmiDefinition::Presentation { .. }
+                ) =>
+            {
+                Some("references a tessellation PMI annotation that is not a presentation")
+            }
+            Some(_) => None,
+        },
+        Meshed::Unresolved => mesh
+            .state
+            .is_some()
+            .then_some("states a state on an unresolved tessellation"),
+    }
+}
+
 /// The first rule that a triangle group's face breaks: a group names a face
 /// of the tessellation's body, and one of its `faces` when it lists any.
 fn triangle_group_face_error(
@@ -93,13 +149,13 @@ fn triangle_group_face_error(
         .iter()
         .filter_map(|group| group.face.as_ref())
     {
-        let Some(body) = &mesh.body else {
+        let Some(body) = mesh.of.body() else {
             return Some("has a triangle group face and no tessellation body");
         };
         if face_bodies.get(face.as_str()) != Some(&body.as_str()) {
             return Some("has a triangle group face outside the tessellation body");
         }
-        if !mesh.faces.is_empty() && !mesh.faces.contains(face) {
+        if !mesh.of.faces().is_empty() && !mesh.of.faces().contains(face) {
             return Some("has a triangle group face outside the tessellation faces");
         }
     }

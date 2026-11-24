@@ -57,7 +57,7 @@ fn staged_document() -> CadIr {
             .namespace_mut(crate::design::names::CodecId::new(format).expect("a codec id"))
             .arenas_mut()
             .insert(
-                arena.into(),
+                cadmpeg_core::text::NonBlankString::new(arena).expect("an arena name"),
                 vec![NativeRecord::new(
                     crate::ids::Identity::new(format!("test:append:record#{key}"))
                         .expect("valid identity"),
@@ -77,7 +77,7 @@ fn rejected_append_restores_neutral_native_and_parent_state() {
         .namespace_mut(crate::codec_id!("test"))
         .arenas_mut()
         .insert(
-            "existing".into(),
+            cadmpeg_core::nonblank_literal!("existing"),
             vec![NativeRecord::new(
                 crate::ids::Identity::new("test:append:record#original").expect("valid identity"),
                 serde_json::Map::new(),

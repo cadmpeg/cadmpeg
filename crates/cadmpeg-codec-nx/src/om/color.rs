@@ -124,7 +124,7 @@ impl ColorComponent {
         if component.raw().len() != raw.len() {
             return Err("raw_components: trailing bytes after color atom");
         }
-        if value.to_bits() != component.value().to_bits() {
+        if value != component.value() {
             return Err("rgb: differs from raw_components");
         }
         Ok(component)

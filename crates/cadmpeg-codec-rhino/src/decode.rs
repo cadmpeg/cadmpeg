@@ -22,6 +22,7 @@ use cadmpeg_ir::ids::{IdentityKey, UnknownId};
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::report::{loss::LossNote, Severity};
 use cadmpeg_ir::scalar::PositiveReal;
+use cadmpeg_ir::tessellation::Meshed;
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Color, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -405,6 +406,17 @@ pub(crate) struct DecodeContext<'a> {
     definition_candidates: HashMap<crate::wire::Uuid, usize>,
     expansion_budget: ExpansionBudget,
     expansion_undo: Option<ExpansionUndo>,
+    /// The mesh objects committed, by tessellation id: each is a mesh body of
+    /// the root, stated with its own name, colour, and visibility once the
+    /// root exists.
+    mesh_bodies: HashMap<String, MeshBody>,
+}
+
+/// A mesh object's own display name, colour, and visibility flag.
+struct MeshBody {
+    name: Option<cadmpeg_core::text::NonBlankString>,
+    color: Option<Color>,
+    visible: Option<bool>,
 }
 
 impl<'a> DecodeContext<'a> {
@@ -449,6 +461,7 @@ impl<'a> DecodeContext<'a> {
             definition_candidates,
             expansion_budget: ExpansionBudget::new(),
             expansion_undo: None,
+            mesh_bodies: HashMap::new(),
         };
         context.retain_object_records()?;
         context.retain_opaque_records()?;
@@ -2667,11 +2680,24 @@ impl<'a> DecodeContext<'a> {
             self.retain_opaque_record(&source)?;
         }
         let document = self.session.document_mut()?;
-        document.state_root_definition(
+        if let Some(root) = document.state_root_definition(
             ctx,
             crate::product::root_definition_id(),
             cadmpeg_ir::products::ExternalDocument::default(),
-        )?;
+        )? {
+            let root = root.id.clone();
+            for mesh in &mut document.model.tessellations {
+                if let Some(body) = self.mesh_bodies.remove(mesh.id.as_str()) {
+                    mesh.of = Meshed::Definition {
+                        definition: root.clone(),
+                        name: body.name,
+                        color: body.color,
+                        visible: body.visible,
+                    };
+                }
+            }
+            document.display_unresolved_meshes(&root);
+        }
         document.finalize();
         let mut losses: Vec<LossNote> = Vec::new();
         let outcomes = self.class_outcomes()?;
@@ -3623,6 +3649,14 @@ impl<'a> DecodeContext<'a> {
         let id = mesh.tessellation.id.to_string();
         let mut tessellation = mesh.tessellation;
         tessellation.source_object = Some(self.source_association(identity)?);
+        self.mesh_bodies.insert(
+            id.clone(),
+            MeshBody {
+                name: cadmpeg_core::text::NonBlankString::new(identity.name.clone()),
+                color: identity.own_color.map(color),
+                visible: identity.own_visible,
+            },
+        );
         self.session
             .append_model_mut()?
             .tessellations

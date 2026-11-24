@@ -259,7 +259,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .arenas()
                 .iter()
                 .filter(|(_, records)| !records.is_empty())
-                .map(|(name, _)| name.clone()),
+                .map(|(name, _)| name.to_string()),
         );
         let has_gui = namespace
             .arenas()

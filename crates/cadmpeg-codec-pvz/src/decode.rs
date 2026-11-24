@@ -178,26 +178,27 @@ fn decode_model(
         };
         let meshes = ir.model.tessellations.len();
         transferred |= !exact.is_empty();
-        let primary = exact.first().cloned();
-        let body = crate::model::display_geometry(ctx, name, &geometry, primary, ir, losses)?;
+        let definition = match owners.get(name).map(Vec::as_slice) {
+            Some([index]) => ir
+                .model
+                .product_definitions
+                .get(*index)
+                .map(|definition| definition.id.clone()),
+            _ => None,
+        };
+        crate::model::display_geometry(
+            ctx,
+            name,
+            &geometry,
+            exact.first().cloned(),
+            definition,
+            ir,
+            losses,
+        )?;
         transferred |= ir.model.tessellations.len() > meshes;
-        for extra in exact.iter().skip(1) {
-            if let Some(written) = ir
-                .geometry
-                .bodies
-                .iter_mut()
-                .rev()
-                .find(|written| written.id == *extra)
-            {
-                written.name = Some(name.to_owned());
-            }
-        }
-        if let Some(body) = body {
-            for index in owners.get(name).into_iter().flatten() {
-                if let Some(definition) = ir.model.product_definitions.get_mut(*index) {
-                    definition.bodies.push(body.clone());
-                    definition.bodies.extend(exact.iter().skip(1).cloned());
-                }
+        for index in owners.get(name).into_iter().flatten() {
+            if let Some(definition) = ir.model.product_definitions.get_mut(*index) {
+                definition.bodies.extend(exact.iter().cloned());
             }
         }
     }

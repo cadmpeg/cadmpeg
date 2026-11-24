@@ -437,10 +437,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": [
-            "step:tessellation:mesh#7"
-          ]
+          }
         }
       ],
       "rigid_bodies": [],
@@ -455,9 +452,7 @@
       "spreadsheets": [],
       "tessellations": [
         {
-          "body": "step:data:body#38",
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "step:tessellation:mesh#4",
           "mesh": {
@@ -508,13 +503,17 @@
               }
             ]
           },
+          "of": {
+            "body": "step:data:body#38",
+            "faces": [],
+            "kind": "body"
+          },
           "texture_assignments": [],
           "texture_coordinates": [],
           "triangle_groups": []
         },
         {
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "step:tessellation:mesh#7",
           "mesh": {
@@ -586,6 +585,9 @@
                 }
               }
             ]
+          },
+          "of": {
+            "kind": "unresolved"
           },
           "source_object": {
             "format": "step",

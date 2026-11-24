@@ -13,7 +13,7 @@ fn model_entity_wins_when_native_id_collides() {
     let id = ir.geometry.points[0].id.as_str().to_owned();
     let mut namespace = NativeNamespace::default();
     namespace.arenas_mut().insert(
-        "records".into(),
+        cadmpeg_core::nonblank_literal!("records"),
         vec![NativeRecord::new(
             crate::ids::Identity::new(id.clone()).expect("valid identity"),
             Map::from_iter([("native_only".into(), Value::Bool(true))]),
@@ -73,7 +73,7 @@ fn native_topology_link_must_resolve() {
         .namespace_mut(crate::codec_id!("f3d"))
         .arenas_mut()
         .insert(
-            "sketch_curve_links".into(),
+            cadmpeg_core::nonblank_literal!("sketch_curve_links"),
             vec![NativeRecord::new(
                 crate::ids::Identity::new("native:test:link#0").expect("valid identity"),
                 serde_json::from_value(serde_json::json!({"links": ["missing"]})).unwrap(),
@@ -238,7 +238,7 @@ fn native_annotation_paths_report_only_unresolvable_paths() {
         .namespace_mut(crate::codec_id!("test"))
         .arenas_mut()
         .insert(
-            "records".into(),
+            cadmpeg_core::nonblank_literal!("records"),
             vec![NativeRecord::new(
                 crate::ids::Identity::new(id).unwrap(),
                 Map::from_iter([
@@ -299,7 +299,7 @@ fn many_native_annotation_paths_parse_their_record_once() {
         .namespace_mut(crate::codec_id!("test"))
         .arenas_mut()
         .insert(
-            "records".into(),
+            cadmpeg_core::nonblank_literal!("records"),
             vec![NativeRecord::new(
                 crate::ids::Identity::new(id).unwrap(),
                 (0..FIELDS)

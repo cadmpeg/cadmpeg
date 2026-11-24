@@ -14,7 +14,7 @@ fn committed_native_identity_cache_borrows_text_from_document() {
         .namespace_mut(crate::codec_id!("test"))
         .arenas_mut()
         .insert(
-            "records".into(),
+            cadmpeg_core::nonblank_literal!("records"),
             vec![NativeRecord::new(Identity::new(&id).unwrap(), serde_json::Map::new()).unwrap()],
         );
     let arena = DecodeArena::new();
@@ -43,7 +43,10 @@ fn committed_native_identity_positions_cover_namespaces_arenas_and_rows() {
             ir.native
                 .namespace_mut(crate::design::names::CodecId::new(namespace).expect("a codec id"))
                 .arenas_mut()
-                .insert(arena.into(), records);
+                .insert(
+                    cadmpeg_core::text::NonBlankString::new(arena).expect("an arena name"),
+                    records,
+                );
         }
     }
     let arena = DecodeArena::new();
@@ -70,7 +73,7 @@ fn committed_native_cache_keeps_paths_when_earlier_map_keys_are_inserted() {
     ir.native
         .namespace_mut(crate::codec_id!("zeta"))
         .arenas_mut()
-        .insert("last".into(), vec![record()]);
+        .insert(cadmpeg_core::nonblank_literal!("last"), vec![record()]);
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut session = CommitSession::new(ir, &ctx, None).unwrap();
     assert!(session.contains(target).unwrap());
@@ -86,7 +89,7 @@ fn committed_native_cache_keeps_paths_when_earlier_map_keys_are_inserted() {
         .native
         .namespace_mut(crate::codec_id!("zeta"))
         .arenas_mut()
-        .insert("first".into(), Vec::new());
+        .insert(cadmpeg_core::nonblank_literal!("first"), Vec::new());
     assert!(session.contains(target).unwrap());
     assert!(session.contains(target).unwrap());
     assert!(!session.contains("test:native:record#missing").unwrap());
@@ -103,7 +106,7 @@ fn committed_native_cache_checks_identity_after_path_hash_matches() {
         .namespace_mut(crate::codec_id!("native"))
         .arenas_mut()
         .insert(
-            "records".into(),
+            cadmpeg_core::nonblank_literal!("records"),
             vec![
                 NativeRecord::new(Identity::new(stored).unwrap(), serde_json::Map::new()).unwrap(),
             ],

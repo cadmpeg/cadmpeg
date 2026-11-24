@@ -1202,9 +1202,10 @@ fn pmi_patch_admits_records_at_the_maximum_field_depth() {
     )
     .unwrap();
     let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("sldprt"));
-    namespace
-        .arenas_mut()
-        .insert("pmi_dimensions".into(), vec![record]);
+    namespace.arenas_mut().insert(
+        cadmpeg_core::nonblank_literal!("pmi_dimensions"),
+        vec![record],
+    );
     // The fixture is not a complete dimension record; only the absence of a resource refusal
     // is asserted.
     if let Err(error) = crate::native::SldprtNative::load(namespace) {

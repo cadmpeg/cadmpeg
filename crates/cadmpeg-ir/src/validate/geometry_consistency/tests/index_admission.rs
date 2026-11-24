@@ -11,7 +11,7 @@ fn geometric_checks_reuse_the_prepared_index_without_copying_native_identities()
         .namespace_mut(crate::codec_id!("test"))
         .arenas_mut()
         .insert(
-            "records".into(),
+            cadmpeg_core::nonblank_literal!("records"),
             (0..1_000)
                 .map(|ordinal| {
                     crate::NativeRecord::new(
