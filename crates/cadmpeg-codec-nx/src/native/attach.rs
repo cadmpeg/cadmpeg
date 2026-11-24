@@ -819,6 +819,7 @@ fn attach_display_jt_color(
         id: binding_id,
         target: AppearanceTarget::Tessellation(tessellation.to_owned()).into(),
         appearance: id,
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,
