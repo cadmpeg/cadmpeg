@@ -15,7 +15,7 @@ mod assembly;
 mod body;
 mod dressup;
 mod options;
-mod picks;
+pub(in crate::validate) mod picks;
 mod sheet_metal;
 mod sketches;
 mod surface;
