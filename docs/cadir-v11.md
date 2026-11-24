@@ -127,7 +127,7 @@ Some `None` fields decide how a stored number is read: a measure, a side count, 
 
 ### 2.5 Wire form
 
-The JSON form of a document, and of its `SourceFidelity` sidecar, is the serde form of the types this document states (§2.7, Annex A), under the rules below. The rules on numbers, keys, and depth bind every JSON value the document holds, a native record's fields included. The rules on types bind those types, the `Native` map, its namespaces and arenas, and each native record's `id`. A native record's other fields are its codec's: its codec alone writes and reads them (§3.1, Linkage; §3.4), and it writes each record as one object, `id` first and then its fields in key order by code point, as is every object inside a field.
+The JSON form of a document, and of its `SourceFidelity` sidecar, is the serde form of the types this document states (§2.7, Annexes A and B), under the rules below. The rules on numbers, keys, and depth bind every JSON value the document holds, a native record's fields included. The rules on types bind those types, the `Native` map, its namespaces and arenas, and each native record's `id`. A native record's other fields are its codec's: its codec alone writes and reads them (§3.1, Linkage; §3.4), and it writes each record as one object, `id` first and then its fields in key order by code point, as is every object inside a field.
 
 - Field and variant names are snake_case. No struct or enum has a member this document does not state: a reader ignores one and reports it (§3.3, Reading CADIR), and no writer writes one.
 - An enum whose variants hold no data serializes as the variant's name (`"semi_finish"`).
@@ -192,7 +192,7 @@ pub struct Native(BTreeMap<CodecId, BTreeMap<NonBlankString, Vec<NativeRecord>>>
 - **`BundleMetadata`** is a fragment's reproduction metadata (§2.6). `signature` identifies the finding the fragment reproduces. `check` is the wire name of the check that found it, an open name, so that a new check is no change of wire. `numbers` holds each number the finding's message stated, with the band inside which a reproduction agrees; `hash` is the first eight bytes of the SHA-256 of the signature's other fields less `numbers`, in lower-case hexadecimal. `entity_kind` is the entity's kind and may be empty. `roots` are the stripped root identities, and `context` is the caller's opaque data. `manifest` lists each arena the cut keeps, with its row count and its serialized size. `incomplete_reason` states why a bounded cut is incomplete.
 - **`Native`** maps a codec id (§2.2) to that codec's arenas, and each arena name to its records, sorted by id. A record is an object whose first field is `id`; its other fields are its codec's (§2.5).
 
-The types this document names and does not state here or in its parts are listed in Annex A. These are the carrier geometry (`SolvedSurfaceGeometry`, `SolvedCurveGeometry`, `PcurveGeometry` with `PcurveNurbs`, `ProceduralSurfaceDefinition`, `ProceduralCurveDefinition` and the records they hold) and the fields of a model-class record that §8 does not list. Annex A is part of this document.
+The types this document names and does not state here or in its parts are listed in Annex A, and the types of `SourceFidelity` in Annex B. These are the carrier geometry (`SolvedSurfaceGeometry`, `SolvedCurveGeometry`, `PcurveGeometry` with `PcurveNurbs`, `ProceduralSurfaceDefinition`, `ProceduralCurveDefinition` and the records they hold) and the fields of a model-class record that §8 does not list. Annex A is part of this document.
 
 ### 2.8 Checked types and rules
 
@@ -245,6 +245,8 @@ A source's encoding of content the document states (kernel delta chains, byte la
 **Unrepresented.** `SourceFidelity.unrepresented` is the union of the `untyped` classes of retained records. A decoder marks a retained record `untyped`, with the classes its bytes can hold, where it keeps the record without decoding it: an unknown record type, a skipped region, a part of a class the request excluded, or a given-up part. Where the undecoded bytes have no retained record of their own and lie in a retained record that the decoder decodes in part, such as a whole-file source image, that retained record is marked `untyped`, with the classes those bytes can hold. The mark is set with `RetainedSourceRecord::with_untyped` or `SourceFidelity::mark_untyped`, never derived from a loss or from scope.
 
 **Rule B: no source layout in neutral records.** A neutral record holds no source byte offset, length, record size, or digest of source bytes. A native record keeps the offsets and lengths that its writer's patch path uses, as typed fields, and no others. A count of source records is not stored. The sidecar holds one digest per file of the decode: `SourceFidelity.decode_digest: Sha256Digest` is the root file's, and `SourceFidelity.file_digests: BTreeMap<ProductDefinitionId, Sha256Digest>` holds the digest of each component file, keyed by its `File` definition; the root definition, whose file `decode_digest` covers, has no entry (§8.1). A sidecar is stale when `decode_digest` or an entry of `file_digests` differs from its file. `SourceFidelity.content_digest: Sha256Digest` is the SHA-256 of the canonical JSON (§2.5) of the whole document the decode returned, `scope` and `repro` included, taken by the decode wrapper after it sets `scope` and normalizes (§2.1). A document is edited when the SHA-256 of its canonical JSON differs from `content_digest`. Neither the document nor `SourceMeta.attributes` holds a digest of the document. `SourceFidelity.codec_digests: BTreeMap<NonBlankString, Sha256Digest>` holds the narrower digests by which a codec's patch path finds what changed, under keys its format specification lists; only that codec reads them. Writers that replay (F3D, SolidWorks, IGES) keep each file's source image for replay; the FreeCAD writer patches from the archive entries its native records hold and keeps no image; decode-only codecs keep none.
+
+**The sidecar file.** A decode sidecar is one JSON object with four fields, in this order: `ir_version`, the `IrVersion` (§2.7); `ir_sha256`, the `Sha256Digest` of the exact CADIR bytes it describes; `report`, the decode's report, a JSON object whose form is the CLI's report contract and is no part of the wire; and `fidelity`, the decode's `SourceFidelity`, whose types Annex B states. A reader ignores a sidecar that it cannot read or whose `ir_sha256` differs from the SHA-256 of the CADIR bytes it reads with it, and charges `sidecar.stale`.
 
 ### 3.2 Report
 
@@ -18160,5 +18162,367 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       ]
     }
   ]
+}
+```
+
+## Annex B. Sidecar types stated by schema
+
+Each type below is given by the JSON Schema of its wire form in the decode sidecar (§3.1, The sidecar file): `SourceFidelity` and each type it holds that this document does not state elsewhere. The types are generated from the reference implementation when this document was released and frozen with it, under the opening paragraph of Annex A; a change to one is a change of wire (§3.6). Annex B is part of this document.
+
+### `AnnotationProvenance`
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "offset": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "stream": {
+      "$ref": "#/$defs/StreamName"
+    },
+    "tag": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "stream",
+    "offset"
+  ]
+}
+```
+
+### `Annotations`
+
+```json
+{
+  "description": "Document-wide provenance and exactness tables keyed by globally unique\nentity id.\n\nAn entity absent from `exactness` is byte-exact.",
+  "type": "object",
+  "properties": {
+    "exactness": {
+      "description": "Non-byte-exact entity or field annotations.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/ExactnessNote"
+      }
+    },
+    "provenance": {
+      "description": "Source location for each annotated entity.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/AnnotationProvenance"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "provenance",
+    "exactness"
+  ]
+}
+```
+
+### `Exactness`
+
+```json
+{
+  "description": "How an entity or field value was established from its source.",
+  "oneOf": [
+    {
+      "description": "Read verbatim from the source stream with no transformation beyond\ndocumented unit conversion.",
+      "type": "string",
+      "const": "byte_exact"
+    },
+    {
+      "description": "Computed deterministically from byte-exact inputs.",
+      "type": "string",
+      "const": "derived"
+    },
+    {
+      "description": "Filled in from context or convention rather than an explicit source field.",
+      "type": "string",
+      "const": "inferred"
+    },
+    {
+      "description": "Origin or trustworthiness could not be established.",
+      "type": "string",
+      "const": "unknown"
+    }
+  ]
+}
+```
+
+### `ExactnessNote`
+
+```json
+{
+  "description": "Exactness for an entity and sparse overrides for its serialized fields.",
+  "oneOf": [
+    {
+      "description": "The entity itself is not byte-exact; listed fields override it.",
+      "type": "object",
+      "properties": {
+        "entity": {
+          "description": "Exactness of the entity except where overridden by `fields`.",
+          "$ref": "#/$defs/Inexactness"
+        },
+        "fields": {
+          "description": "Exactness overrides keyed by serde field path.",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "[\\s\\S]": {
+              "$ref": "#/$defs/Exactness"
+            }
+          }
+        },
+        "kind": {
+          "type": "string",
+          "const": "entity"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "entity",
+        "fields"
+      ]
+    },
+    {
+      "description": "The entity is byte-exact apart from the listed fields.",
+      "type": "object",
+      "properties": {
+        "fields": {
+          "description": "Exactness overrides keyed by serde field path.",
+          "$ref": "#/$defs/NonEmptyMap"
+        },
+        "kind": {
+          "type": "string",
+          "const": "fields"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "fields"
+      ]
+    }
+  ]
+}
+```
+
+### `Inexactness`
+
+```json
+{
+  "description": "Exactness of an entity that is not byte-exact.",
+  "oneOf": [
+    {
+      "description": "Computed deterministically from byte-exact inputs.",
+      "type": "string",
+      "const": "derived"
+    },
+    {
+      "description": "Filled in from context or convention rather than an explicit source field.",
+      "type": "string",
+      "const": "inferred"
+    },
+    {
+      "description": "Origin or trustworthiness could not be established.",
+      "type": "string",
+      "const": "unknown"
+    }
+  ]
+}
+```
+
+### `NonEmptyMap`
+
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "minProperties": 1,
+  "patternProperties": {
+    "[\\s\\S]": {
+      "$ref": "#/$defs/Exactness"
+    }
+  }
+}
+```
+
+### `RetainedBytes`
+
+```json
+{
+  "description": "The retained image of a source record: its bytes, or the length and digest\nof bytes that are not retained.",
+  "oneOf": [
+    {
+      "description": "The source bytes themselves. Their length and digest are functions of\nthem, so neither is stored.",
+      "type": "object",
+      "properties": {
+        "data": {
+          "description": "Retained source bytes.",
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "const": "inline"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "data"
+      ]
+    },
+    {
+      "description": "Unavailable source bytes, described by their length and digest.",
+      "type": "object",
+      "properties": {
+        "byte_len": {
+          "description": "Number of source bytes.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "kind": {
+          "type": "string",
+          "const": "digest"
+        },
+        "sha256": {
+          "description": "Lowercase hexadecimal SHA-256 of the source bytes.",
+          "$ref": "#/$defs/Sha256Digest"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "byte_len",
+        "sha256"
+      ]
+    }
+  ]
+}
+```
+
+### `RetainedSourceRecord`
+
+```json
+{
+  "description": "Source bytes retained for native recovery or replay.\n\nThe record is addressed by its id in\n[`SourceFidelity::retained_records`], so it carries no id of its own.",
+  "type": "object",
+  "properties": {
+    "bytes": {
+      "description": "Retained image of the source bytes.",
+      "$ref": "#/$defs/RetainedBytes"
+    },
+    "offset": {
+      "description": "First byte offset in the source stream.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "stream": {
+      "description": "Source stream containing the record.",
+      "type": "string"
+    },
+    "untyped": {
+      "description": "Content classes the bytes can hold where the decoder keeps the record\nwithout decoding it.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "stream",
+    "offset",
+    "bytes",
+    "untyped"
+  ]
+}
+```
+
+### `SourceFidelity`
+
+```json
+{
+  "description": "Decode-time source digests, annotations, and retained native records.\n\nRetained identities are admitted only through checked insertion.\n\n```compile_fail\nuse cadmpeg_ir::hash::digest::Sha256Digest;\nlet mut fidelity = cadmpeg_ir::SourceFidelity::new(Sha256Digest::digest(b\"source\"));\nfidelity.retained_records().clear();\n```",
+  "type": "object",
+  "properties": {
+    "annotations": {
+      "description": "Sparse source locations and conversion exactness.",
+      "$ref": "#/$defs/Annotations"
+    },
+    "codec_digests": {
+      "description": "The decoding codec's narrower digests, keyed as its format\nspecification lists.",
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+          "$ref": "#/$defs/Sha256Digest"
+        }
+      }
+    },
+    "content_digest": {
+      "description": "SHA-256 of the canonical JSON of the document the decode returned.",
+      "$ref": "#/$defs/Sha256Digest"
+    },
+    "decode_digest": {
+      "description": "SHA-256 of the decode's root file.",
+      "$ref": "#/$defs/Sha256Digest"
+    },
+    "file_digests": {
+      "description": "SHA-256 of each component file, keyed by its `File` definition.",
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^(?:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+:){2}[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+#[^#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])": {
+          "$ref": "#/$defs/Sha256Digest"
+        }
+      }
+    },
+    "retained_records": {
+      "description": "Native records retained for recovery or replay, keyed by record id.",
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^(?:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+:){2}[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+#[^#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])": {
+          "$ref": "#/$defs/RetainedSourceRecord"
+        }
+      }
+    },
+    "unrepresented": {
+      "description": "Union of the retained records' untyped classes.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "decode_digest",
+    "file_digests",
+    "content_digest",
+    "codec_digests",
+    "unrepresented",
+    "annotations",
+    "retained_records"
+  ]
+}
+```
+
+### `StreamName`
+
+```json
+{
+  "type": "string",
+  "minLength": 1
 }
 ```
