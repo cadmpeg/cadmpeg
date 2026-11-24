@@ -93,12 +93,23 @@ fn shape(function: &str) -> Option<Shape> {
     })
 }
 
-/// The sketch a feature owns: its identifier, frame and model-space sample
-/// points of its curves in millimetres.
+/// The sketch a feature owns: its identifier, frame, the model-space end
+/// points of its lines and its circular curves, in millimetres.
 struct Profile {
     id: SketchId,
     frame: FrameValue,
     points: Vec<Vector3>,
+    arcs: Vec<ModelArc>,
+}
+
+/// A circle or arc in model space: the points `centre + u cos t + v sin t`
+/// for `t` from `start` through `sweep` radians.
+struct ModelArc {
+    centre: Vector3,
+    u: Vector3,
+    v: Vector3,
+    start: f64,
+    sweep: f64,
 }
 
 pub(crate) fn is(value: f64, code: f64) -> bool {
@@ -324,20 +335,45 @@ fn axis(
 /// The sign of the rotation about `axis` that moves the profile towards its
 /// normal `A`. A profile point `p` off the axis moves in direction
 /// `D x (p - c)` under a positive rotation about `D` through `c`, so the
-/// sign is that of `A . (D x (p - c))`. `Err` where the profile has no point
-/// off the axis or points on both sides of it.
+/// sign is that of `A . (D x (p - c))`. Along an arc that value is
+/// `k0 + k1 cos t + k2 sin t`, so its ends and the two extremes inside its
+/// span bound it. `Err` where the profile has no point off the axis or points
+/// on both sides of it.
 fn towards_normal(axis: &AxisValue, profile: &Profile) -> Result<f64, String> {
     let normal = Vector3::from(profile.frame.z_axis);
     let direction = Vector3::from(axis.direction);
     let centre = axis.origin.get();
     let (mut positive, mut negative) = (false, false);
-    for point in &profile.points {
-        let offset = Vector3::new(point.x - centre.x, point.y - centre.y, point.z - centre.z);
-        let sense = normal.dot(direction.cross(offset));
+    let mut classify = |sense: f64| {
         if sense > EPS_ON_AXIS {
             positive = true;
         } else if sense < -EPS_ON_AXIS {
             negative = true;
+        }
+    };
+    let side = |vector: Vector3| normal.dot(direction.cross(vector));
+    for point in &profile.points {
+        classify(side(Vector3::new(
+            point.x - centre.x,
+            point.y - centre.y,
+            point.z - centre.z,
+        )));
+    }
+    for arc in &profile.arcs {
+        let k0 = side(Vector3::new(
+            arc.centre.x - centre.x,
+            arc.centre.y - centre.y,
+            arc.centre.z - centre.z,
+        ));
+        let (k1, k2) = (side(arc.u), side(arc.v));
+        let at = |t: f64| k0 + k1 * t.cos() + k2 * t.sin();
+        classify(at(arc.start));
+        classify(at(arc.start + arc.sweep));
+        let peak = k2.atan2(k1);
+        for extreme in [peak, peak + std::f64::consts::PI] {
+            if (extreme - arc.start).rem_euclid(std::f64::consts::TAU) <= arc.sweep {
+                classify(at(extreme));
+            }
         }
     }
     match (positive, negative) {
@@ -424,6 +460,9 @@ fn profile_of(ir: &CadIr, owner: &cadmpeg_ir::features::FeatureId) -> Option<Pro
     };
     let frame = plane.resolved.clone()?;
     let mut points = Vec::new();
+    let mut arcs = Vec::new();
+    let (x, y) = (Vector3::from(frame.x_axis), Vector3::from(frame.y_axis));
+    let scaled = |axis: Vector3, r: f64| Vector3::new(axis.x * r, axis.y * r, axis.z * r);
     for entity in ir
         .design
         .sketch_entities
@@ -441,10 +480,13 @@ fn profile_of(ir: &CadIr, owner: &cadmpeg_ir::features::FeatureId) -> Option<Pro
             }
             PlanarCurve::Circle { center, radius } => {
                 let (c, r) = (center.get(), radius.get());
-                at(c.u + r, c.v);
-                at(c.u - r, c.v);
-                at(c.u, c.v + r);
-                at(c.u, c.v - r);
+                arcs.push(ModelArc {
+                    centre: model_point(&frame, c.u, c.v),
+                    u: scaled(x, r),
+                    v: scaled(y, r),
+                    start: 0.0,
+                    sweep: std::f64::consts::TAU,
+                });
             }
             PlanarCurve::Arc {
                 center,
@@ -453,9 +495,13 @@ fn profile_of(ir: &CadIr, owner: &cadmpeg_ir::features::FeatureId) -> Option<Pro
                 end,
             } => {
                 let (c, r) = (center.get(), radius.get());
-                for angle in [start.get(), end.get()] {
-                    at(c.u + r * angle.cos(), c.v + r * angle.sin());
-                }
+                arcs.push(ModelArc {
+                    centre: model_point(&frame, c.u, c.v),
+                    u: scaled(x, r),
+                    v: scaled(y, r),
+                    start: start.get(),
+                    sweep: (end.get() - start.get()).rem_euclid(std::f64::consts::TAU),
+                });
             }
             _ => {}
         }
@@ -464,6 +510,7 @@ fn profile_of(ir: &CadIr, owner: &cadmpeg_ir::features::FeatureId) -> Option<Pro
         id: sketch.id.clone(),
         frame,
         points,
+        arcs,
     })
 }
 
