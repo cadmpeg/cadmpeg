@@ -1,6 +1,6 @@
 # Alibre Design part: Open Items
 
-This document lists the parts of the Alibre Design `.AD_PRT` format that we do not know. The specification `alibre.md` gives the parts that we know.
+This document lists the parts of the Alibre Design `.AD_PRT` and `.AD_ASM` formats that we do not know. The specification `alibre.md` gives the parts that we know.
 
 Each item has these parts:
 
@@ -46,13 +46,13 @@ This document uses ASD-STE100 Simplified Technical English.
 
 ## 3. Documents other than parts
 
-### ALB-04. Assemblies and sheet metal
+### ALB-04. Sheet metal
 
-**Question.** How do `.AD_ASM` assemblies and sheet-metal parts store their geometry?
+**Question.** How do sheet-metal parts store their geometry and their flat pattern?
 
-**Known.** An assembly file holds the streams `STEP_DATA`, `CONSTITUENTS`, `PROP_DATA`, `VERSION`, `GLOBAL_PARAMETER_DATA_CACHE`, and `LIGHT_CONFIGURATION_DATA`, and holds no `SAB_DATA` stream. The decoder does not claim these files.
+**Known.** `alibre.md` §2 and §4 describe a solid part. The decoder reads a sheet-metal part as it reads a solid part, and it has no specimen of one.
 
-**Need.** An assembly of two parts with a known placement, and a part with one flange, with the `CONSTITUENTS` stream and the sheet-metal entities compared.
+**Need.** A part with one flange, with its `SAB_DATA` records and its `STEP_DATA` entities compared against a plain extrusion.
 
 ### ALB-05. Entity base integers
 
@@ -61,3 +61,35 @@ This document uses ASD-STE100 Simplified Technical English.
 **Known.** The extra base integer is `-1` in every record. The `body` integer is `0`. The decoder removes both before it reads the class fields.
 
 **Need.** A save of a part with several bodies, with the `body` integers compared.
+
+### ALB-09. Assembly constraints
+
+**Question.** How does an assembly store its constraints (mates)?
+
+**Known.** `alibre.md` §5.2 lists the assembly entities. The `DESIGNASSEMBLY` entity has three lists, at attributes 21 to 23, that are empty in every specimen. The specimens hold no constraint, and the anchor of an occurrence is the logical at attribute 7 of its `DESIGNINCLUSION`. The decoder reports a non-empty list and every entity name that it does not know as `alibre/assembly.entities-unread`.
+
+**Need.** Assemblies with one constraint of each kind (coincident, parallel, distance, angle, concentric), with the new entities and the three lists compared.
+
+### ALB-10. Component references and document streams of an assembly
+
+**Question.** How are the records of `CONSTITUENTS` framed, and what do the integers after the document GUID mean?
+
+**Known.** `alibre.md` §5.3 gives the text of a record. Each record follows a byte `01` and one more byte, and the text repeats the reference, the second time after `:?/`. The two integers after the document GUID are 1 and 1 for a part and 2 and 1 for a subassembly; the `REPOSITORYVERSIONREFERENCE` states them at attributes 6 and 7. `PROP_DATA`, `VERSION`, and the two cache streams of an assembly are not read.
+
+**Need.** An assembly that places a part from another drive and a part that is a new version of a stored part, with the framing bytes and the integers compared.
+
+### ALB-11. Assembly configurations
+
+**Question.** How do the configurations of an assembly differ in the state they give to each occurrence, and what does the configuration name of an inclusion select?
+
+**Known.** `alibre.md` §5.2 gives the suppressed and hidden lists of the `DESIGNASSEMBLYCONFIGURATION`. Every specimen holds one configuration, `Config<1>`, and every inclusion names `Config<1>`. The decoder states the state of the active configuration on the occurrences and reports `alibre/assembly.configuration-unmapped`.
+
+**Need.** An assembly with a second configuration that suppresses and moves one occurrence, and a component with a second configuration that an inclusion selects, with the entities compared.
+
+### ALB-12. Flexible subassemblies and the state of nested occurrences
+
+**Question.** How does an inclusion of a subassembly state the hidden, suppressed, and placed state of the components below it, and which attribute makes a subassembly flexible?
+
+**Known.** An inclusion of a subassembly lists `DESIGNMEMBER` entities whose attribute 6 names a member of the subassembly. A specimen holds two such members, both visible. The decoder reports a hidden nested member as `alibre/assembly.nested-member-state-unread`. A subassembly occurrence has no own member in the specimen, so its own hidden state is not read. Attribute 10 of the inclusion is false in every specimen and may state flexibility.
+
+**Need.** A subassembly with one hidden component and one suppressed component, and a flexible subassembly with a moved component, with the members and the attribute 10 compared.

@@ -617,17 +617,19 @@ These gaps remain:
 | Dialect                  | Read     | Write |
 | ------------------------ | -------- | ----- |
 | `alibre:cfb-acis-binary` | detected | none  |
+| `alibre:cfb-assembly`    | detected | none  |
 | `alibre:unknown`         | refused  | none  |
 
 <!-- /generated: dialects alibre -->
 
-The codec detects a part from the streams `SAB_DATA` and `STEP_DATA`, frames the ACIS binary stream with the identifier table and the extended entity base (`alibre.md` §2), and decodes it through the shared ASM/ACIS decoders into a connected B-rep with analytic and B-spline carriers in millimetres. A part becomes one body under one root product definition.
+The codec detects a part from the streams `SAB_DATA` and `STEP_DATA`, frames the ACIS binary stream with the identifier table and the extended entity base (`alibre.md` §2), and decodes it through the shared ASM/ACIS decoders into a connected B-rep with analytic and B-spline carriers in millimetres. A part becomes one body under one root product definition. An `.AD_ASM` assembly becomes a root assembly definition whose occurrences place the parts and subassemblies it names, decoded from the files beside it.
 
 These gaps remain:
 
 - Faces of a lofted solid keep the solved B-spline cache as carrier, and their edges have no typed 3D curve (ALB-01, `alibre/geometry.procedural-surface-untyped`).
 - The feature model of `STEP_DATA` and every other stream do not transfer (ALB-02, ALB-03, `alibre/source.streams-undecoded`).
-- Assemblies and sheet-metal parts are not claimed (ALB-04).
+- Sheet-metal parts are not claimed (ALB-04).
+- Assembly constraints, the configurations of an assembly, and flexible subassemblies do not transfer (ALB-09, ALB-11, ALB-12, `alibre/assembly.entities-unread`, `alibre/assembly.configuration-unmapped`).
 
 ### Read profile
 - **Container and versions: Partial.** The codec admits the compound file, requires the two body streams, and classifies the ACIS save format on the kernel layer.

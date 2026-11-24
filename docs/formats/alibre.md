@@ -74,3 +74,73 @@ The stream is STEP Part 21 text with the schema names `ALIBRE_SCHEMA` and `CONFI
 - Document profile: `PROFILE` with `INTEGERVALUEPAIR`, `REALVALUEPAIR`, `STRINGVALUEPAIR`, `BOOLEANVALUEPAIR`, and `MEASUREMENTFORMAT` entities.
 
 The decoder does not read this stream.
+
+## 5. Assemblies (`.AD_ASM`)
+
+An Alibre assembly is a compound file of the same kind as a part. It holds no `SAB_DATA` stream and no geometry: it places component files, each a part or another assembly, and the components hold the bodies.
+
+### 5.1 Streams
+
+| Stream | Content |
+| --- | --- |
+| `STEP_DATA` | The assembly as STEP Part 21 text in the Alibre schema (§5.2). |
+| `CONSTITUENTS` | The component references as framed text records (§5.3). |
+| `PROP_DATA` | Document properties. |
+| `VERSION` | An XML element with the repository identity, followed by a path and identifiers. |
+| `GLOBAL_PARAMETER_DATA_CACHE` | 20 bytes, all zero in the specimens. |
+| `LIGHT_CONFIGURATION_DATA` | 48 bytes. |
+
+The decoder detects an assembly from the streams `CONSTITUENTS` and `STEP_DATA` and the absence of `SAB_DATA`, and reports the dialect `alibre:cfb-assembly`, admitted, with no kernel layer.
+
+### 5.2 Assembly entities in `STEP_DATA`
+
+The stream follows §4. Lengths are in centimetres, the API unit of Alibre; the decoder multiplies them by 10 and states millimetres. Attribute positions count from 0.
+
+| Entity | Attributes |
+| --- | --- |
+| `DESIGNASSEMBLY` | 1: the origin datums; 18: `PRODUCT`; 20: the list of `DESIGNINCLUSION`, one for each placed occurrence, in placement order; 21 to 23: lists that are empty when the assembly has no relation; 25: the list of `DESIGNASSEMBLYCONFIGURATION`; 26: the active configuration. |
+| `PRODUCT` | 1: the product name. |
+| `DESIGNINCLUSION` | 1: the list of `DESIGNMEMBER`; 2: the component path with forward slashes and no extension; 3: `REPOSITORYVERSIONREFERENCE`; 5: `CARTESIAN_TRANSFORMATION_OPERATOR_3D`; 7: a logical that is true for an anchored occurrence; 9: the occurrence GUID; 11: a `PROFILE`; 14: the name of the component configuration that the occurrence uses. Attributes 0, 4, 6, 8, 10, 12, and 13 hold the empty list, null, false, or 0 in every specimen. |
+| `REPOSITORYVERSIONREFERENCE` | 1: the drive letter; 2: the path without extension; 3: the GUID of the component document. |
+| `DESIGNMEMBER` | 3: a logical that is true for a hidden member; 5: the member GUID; 6: the GUID of the member of the subassembly that this member names, or null for a member of the inclusion itself. |
+| `CARTESIAN_TRANSFORMATION_OPERATOR_3D` | 3: `DIRECTION` of the image of the x axis; 4: `DIRECTION` of the image of the y axis; 5: `CARTESIAN_POINT` of the local origin; 6: the scale; 7: `DIRECTION` of the image of the z axis. Attributes 0 to 2 are null. |
+| `DESIGNASSEMBLYCONFIGURATION` | 0: the configuration name; 8: the list of suppressed `DESIGNINCLUSION`; 9: the list of hidden `DESIGNMEMBER`. |
+
+The placement of an occurrence maps a point of the component by the three axis images, the scale, and the origin. The specimens place components with identity rotations. The occurrence name that Alibre shows, `asm_box<2>`, is not stored: it follows from the component name and the order of the inclusions of that component.
+
+The configuration name `Config<1>` of an inclusion names a configuration of the component, not of the assembly.
+
+### 5.3 The `CONSTITUENTS` stream
+
+The stream holds one record for each distinct component. A record carries the repository element `<Repository Guid="…" Name="C" V3Name="" Type="File"/>`, a colon, the component path without extension, a bar, the component document GUID, and integers separated by bars, and then a second copy of the same reference. The records repeat what the `REPOSITORYVERSIONREFERENCE` entities state. The decoder does not read the stream. The framing bytes before each record are not decoded (ALB-10).
+
+### 5.4 Decode
+
+The decoder reads one occurrence for each `DESIGNINCLUSION`, in list order:
+
+- The occurrence places the product definition of the component. Two inclusions of one component file place one definition, and the file is decoded once.
+- The transform is the rotation, scale, and translation of the operator, in millimetres.
+- The occurrence is suppressed when the active configuration lists its inclusion. It is not visible when one of its own members is hidden by the member flag or by the active configuration.
+- An anchored inclusion becomes a grounded joint at the occurrence.
+- The occurrence name is the file name of the path, an index starting at 1 for each component, in angle brackets.
+
+The decoder resolves a component by the file name of its path, with the extension `AD_PRT` and then `AD_ASM`, in the directory of the assembly, through the companion file source of the decode context. The drive and the directories of the stored path are not read. A part decodes as §3 states, and a subassembly decodes by this section, recursively. The decoder places the identities of each component file under the scope `alibre:xref/m<n>/`, so that two files do not share an identity. A component that is not available, does not decode, lies past the nesting limit, or is a file that is already being decoded stays an external product definition with the path and the document GUID of the inclusion.
+
+A decode reports these losses, each with the code `alibre/<code>`:
+
+| Code | Meaning |
+| --- | --- |
+| `assembly.member-unavailable` | A component file is not beside the assembly. |
+| `assembly.member-undecoded` | A component file is available and does not decode. |
+| `assembly.member-cycle` | A component file contains the assembly that places it. |
+| `assembly.expansion-truncated` | A subassembly lies past the nesting limit, or occurrences lie past the occurrence limit. |
+| `assembly.member-design-unmerged` | A component carries design records that the merge leaves out. |
+| `assembly.placement-unreadable` | An inclusion has no readable placement. |
+| `assembly.inclusion-field-unmapped` | An inclusion states an attribute that the occurrence does not carry. |
+| `assembly.nested-member-state-unread` | An inclusion hides a component below its subassembly. |
+| `assembly.configuration-unmapped` | An occurrence names a component configuration, or the assembly holds more than one configuration. The occurrences carry the state of the active configuration only. |
+| `assembly.member-dialect-unverified` | A component file declares an ACIS save format outside the verified bands, as `alibre/source.kernel-dialect-unverified` states for a part. The assembly has no kernel layer of its own. |
+| `assembly.entities-unread` | The stream holds an entity name that the reader does not know, or the relation lists of the assembly are not empty. |
+| `source.streams-undecoded` | `CONSTITUENTS`, `PROP_DATA`, `VERSION`, and the two cache streams carry no decoded content. |
+
+The decoder does not read assembly constraints, the configurations other than the active one, the configuration of the component that an inclusion uses, or flexible subassemblies (ALB-09 to ALB-12).
