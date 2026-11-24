@@ -1186,6 +1186,7 @@ impl CodecBackend for FcstdCodec {
                 &intermediate,
                 &graph.objects,
                 &graph.properties,
+                &mut transfer_losses,
             )?;
             // A persistent name binds the record of the current model it names;
             // the records of other states are not bound.

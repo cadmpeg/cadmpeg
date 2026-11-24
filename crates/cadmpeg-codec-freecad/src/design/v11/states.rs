@@ -32,15 +32,16 @@ use cadmpeg_ir::design::evaluation::{
 };
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ids::EvaluationId;
-use cadmpeg_ir::design::refs::{Evaluated, Member, Position, RecordRef, StateRef};
+use cadmpeg_ir::design::refs::{Evaluated, Member, Position, RecordRef};
 use cadmpeg_ir::document::{CadIr, Topology};
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
-use cadmpeg_ir::tessellation::Meshed;
+use cadmpeg_ir::report::loss::LossNote;
 use serde_json::{Map, Value};
 
 use super::Source;
 use crate::design::IntermediatePayload;
+use crate::loss::FreecadLossCode;
 use crate::native::{id_key, payload_of, ObjectRecord, PropertyRecord};
 
 /// Where a shape the document keeps beside its current model is stated.
@@ -152,6 +153,7 @@ pub(crate) fn state(
     intermediate: &[IntermediatePayload<'_>],
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     if intermediate.is_empty() {
         return Ok(());
@@ -229,10 +231,11 @@ pub(crate) fn state(
     let mut drained = drain(&mut ir.geometry, &moving);
 
     let mut evaluations = Vec::new();
-    // Each moved record's id in its state, and that state.
-    let mut moved = HashMap::<String, (String, StateRef)>::new();
-    // Each moved payload's state.
-    let mut payload_states = HashMap::<String, StateRef>::new();
+    // Each record a state holds, by its id in the payload, and its id in
+    // the state.
+    let mut moved = HashMap::<String, String>::new();
+    // The payloads whose shapes are states.
+    let mut payload_states = HashSet::<String>::new();
     if let Some(design) = &design {
         let states = homes
             .iter()
@@ -275,15 +278,9 @@ pub(crate) fn state(
                 ctx.charge_entities(1, "state a FreeCAD Body state")?;
                 let snapshot = snapshot(&topology, base.as_ref())?;
                 let of = Evaluated::State(Position::After(Member::Feature(feature.clone())));
-                let state = StateRef {
-                    configuration: None,
-                    of: of.clone(),
-                };
                 let id = evaluation_id(key)?;
-                for (old, new) in snapshot.renamed {
-                    moved.insert(old, (new, state.clone()));
-                }
-                payload_states.insert((*key).to_owned(), state);
+                moved.extend(snapshot.renamed);
+                payload_states.insert((*key).to_owned());
                 evaluations.push(Evaluation {
                     id: id.clone(),
                     scope: design.scope.clone(),
@@ -320,14 +317,8 @@ pub(crate) fn state(
             }
             ctx.charge_entities(1, "state a FreeCAD tool body")?;
             let of = Evaluated::Tool(feature.clone());
-            let state = StateRef {
-                configuration: None,
-                of: of.clone(),
-            };
-            for id in record_ids(&topology) {
-                moved.insert(id.clone(), (id, state.clone()));
-            }
-            payload_states.insert(key.clone(), state);
+            moved.extend(record_ids(&topology).into_iter().map(|id| (id.clone(), id)));
+            payload_states.insert(key.clone());
             evaluations.push(Evaluation {
                 id: evaluation_id(key)?,
                 scope: design.scope.clone(),
@@ -348,7 +339,7 @@ pub(crate) fn state(
     // Every payload not stated as a state is kept by its native record.
     let native = moving
         .iter()
-        .filter(|key| !payload_states.contains_key(**key))
+        .filter(|key| !payload_states.contains(**key))
         .map(|key| (*key).to_owned())
         .collect::<HashSet<_>>();
     ir.design.evaluations.extend(evaluations);
@@ -360,6 +351,7 @@ pub(crate) fn state(
         &native,
         design.as_ref(),
         &homes,
+        losses,
     )
 }
 
@@ -943,89 +935,58 @@ fn snapshot(topology: &Topology, base: Option<&Base>) -> Result<Snapshot, CodecE
 }
 
 /// Restate the model-class and design records that name a record the pass
-/// moved out of the geometry: an appearance binding or a tessellation of a
-/// stated state names that state (§8, `InstanceTarget.state`,
-/// `Tessellation.state`); one of a payload only its native record keeps is
-/// no longer stated; a legacy feature lists only the bodies of the current
-/// model it produces; and a stored-geometry feature names the bodies of the
-/// state after it (§5.10).
+/// moved out of the geometry: an appearance binding or a tessellation of it
+/// stays in its source record, with a loss; a legacy feature lists only the
+/// bodies of the current model it produces; and a stored-geometry feature
+/// names the bodies of the state after it (§5.10).
 fn restate_references(
     ir: &mut CadIr,
-    moved: &HashMap<String, (String, StateRef)>,
-    payload_states: &HashMap<String, StateRef>,
+    moved: &HashMap<String, String>,
+    payload_states: &HashSet<String>,
     native: &HashSet<String>,
     design: Option<&Design>,
     homes: &BTreeMap<String, (Home, &IntermediatePayload<'_>)>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let dropped = |id: &str| payload_of(id, |key| native.contains(key)).is_some();
-    let state_of = |id: &str| {
-        payload_of(id, |key| payload_states.contains_key(key)).map(|key| &payload_states[key])
+    // The presentation records of a moved shape stay in the GUI document and
+    // the shape payload record: the validator resolves a model-class record's
+    // target in the current geometry.
+    let away = |id: &str| {
+        payload_of(id, |key| {
+            native.contains(key) || payload_states.contains(key)
+        })
+        .is_some()
     };
-    let mut bindings = Vec::with_capacity(ir.model.appearance_bindings.len());
-    for mut binding in std::mem::take(&mut ir.model.appearance_bindings) {
+    let before = ir.model.appearance_bindings.len();
+    ir.model.appearance_bindings.retain(|binding| {
         let entity = match &binding.target.entity {
-            AppearanceTarget::Body(id) => Some(id.as_str()),
-            AppearanceTarget::Face(id) => Some(id.as_str()),
-            AppearanceTarget::Edge(id) => Some(id.as_str()),
-            AppearanceTarget::Vertex(id) => Some(id.as_str()),
-            AppearanceTarget::Surface(id) => Some(id.as_str()),
-            AppearanceTarget::Curve(id) => Some(id.as_str()),
-            AppearanceTarget::Point(id) => Some(id.as_str()),
+            AppearanceTarget::Body(id) => id.as_str(),
+            AppearanceTarget::Face(id) => id.as_str(),
+            AppearanceTarget::Edge(id) => id.as_str(),
+            AppearanceTarget::Vertex(id) => id.as_str(),
+            AppearanceTarget::Surface(id) => id.as_str(),
+            AppearanceTarget::Curve(id) => id.as_str(),
+            AppearanceTarget::Point(id) => id.as_str(),
             AppearanceTarget::Tessellation(id)
             | AppearanceTarget::TriangleGroup {
                 tessellation: id, ..
-            } => Some(id.as_str()),
-            _ => None,
+            } => id.as_str(),
+            _ => return true,
         };
-        let Some(entity) = entity else {
-            bindings.push(binding);
-            continue;
-        };
-        if dropped(entity) {
-            continue;
-        }
-        if let Some((id, state)) = moved.get(entity) {
-            let id = id.clone();
-            binding.target.entity = match binding.target.entity {
-                AppearanceTarget::Body(_) => AppearanceTarget::Body(mint(id)?),
-                AppearanceTarget::Face(_) => AppearanceTarget::Face(mint(id)?),
-                AppearanceTarget::Edge(_) => AppearanceTarget::Edge(mint(id)?),
-                AppearanceTarget::Vertex(_) => AppearanceTarget::Vertex(mint(id)?),
-                AppearanceTarget::Surface(_) => AppearanceTarget::Surface(mint(id)?),
-                AppearanceTarget::Curve(_) => AppearanceTarget::Curve(mint(id)?),
-                AppearanceTarget::Point(_) => AppearanceTarget::Point(mint(id)?),
-                other => other,
-            };
-            binding.target.state = Some(state.clone());
-        } else if let Some(state) = state_of(entity) {
-            // A tessellation of a stated state stays in the model.
-            binding.target.state = Some(state.clone());
-        }
-        bindings.push(binding);
+        !away(entity)
+    });
+    let bindings = before - ir.model.appearance_bindings.len();
+    let before = ir.model.tessellations.len();
+    ir.model
+        .tessellations
+        .retain(|tessellation| !away(tessellation.id.as_str()));
+    let tessellations = before - ir.model.tessellations.len();
+    if bindings + tessellations > 0 {
+        losses.push(FreecadLossCode::AppearanceStateNotTransferred.note(format!(
+            "{bindings} appearance binding(s) and {tessellations} tessellation(s) of shapes held outside the current geometry remain in the GUI document and the shape payload records"
+        )));
     }
-    ir.model.appearance_bindings = bindings;
-
-    let mut tessellations = Vec::with_capacity(ir.model.tessellations.len());
-    for mut tessellation in std::mem::take(&mut ir.model.tessellations) {
-        if dropped(tessellation.id.as_str()) {
-            continue;
-        }
-        if let Some(state) = state_of(tessellation.id.as_str()) {
-            if let Meshed::Body { body, faces } = &mut tessellation.of {
-                if let Some((id, _)) = moved.get(body.as_str()) {
-                    *body = mint(id.clone())?;
-                }
-                for face in faces.iter_mut() {
-                    if let Some((id, _)) = moved.get(face.as_str()) {
-                        *face = mint(id.clone())?;
-                    }
-                }
-            }
-            tessellation.state = Some(state.clone());
-        }
-        tessellations.push(tessellation);
-    }
-    ir.model.tessellations = tessellations;
 
     let bodies = ir
         .geometry
@@ -1099,7 +1060,7 @@ fn restate_references(
                 .map(|key| tip_repeats[key])
             {
                 restated.extend(current[state].bodies.iter().cloned());
-            } else if let Some((id, _)) = moved.get(body.as_str()) {
+            } else if let Some(id) = moved.get(body.as_str()) {
                 restated.push(mint(id.clone())?);
             } else if !dropped(body.as_str()) {
                 restated.push(body.clone());

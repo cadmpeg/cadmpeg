@@ -5366,7 +5366,20 @@
       },
       "kind": "classified"
     },
-    "losses": [],
+    "losses": [
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "appearance.state-not-transferred",
+            "kind": "material_not_transferred",
+            "namespace": "fcstd"
+          }
+        },
+        "message": "30 appearance binding(s) and 0 tessellation(s) of shapes held outside the current geometry remain in the GUI document and the shape payload records",
+        "severity": "warning"
+      }
+    ],
     "notes": [
       "SchemaVersion=4",
       "FileVersion=1",
