@@ -175,6 +175,9 @@ pub(crate) enum CreoLossCode {
     CrossSectionCurveBodyOpaque,
     /// A generated round entry has no independently owned surface carrier.
     RoundCarrierOwnerUnresolved,
+    /// A surface carrier of the non-visible geometry namespace states no
+    /// visibility: it has no color for an appearance binding to hold it.
+    NonVisibleCarrierVisibilityNotStated,
     /// A legacy ASCII surface carrier refused a lane, so its geometry stays a
     /// structural record.
     LegacySurfaceCarrierUnresolved,
@@ -415,6 +418,9 @@ impl CreoLossCode {
             Self::VisibGeomCurveUntransferred => "geometry.visibgeom-curve-untransferred",
             Self::CrossSectionCurveBodyOpaque => "curve.cross-section-body-opaque",
             Self::RoundCarrierOwnerUnresolved => "geometry.round-carrier-owner-unresolved",
+            Self::NonVisibleCarrierVisibilityNotStated => {
+                "presentation.non-visible-carrier-visibility-not-stated"
+            }
             Self::LegacySurfaceCarrierUnresolved => "geometry.legacy-surface-carrier-unresolved",
             Self::NurbsBoundaryCarrierUnresolved => "geometry.nurbs-boundary-carrier-unresolved",
             Self::VisibGeomSurfaceAmbiguous => "geometry.visibgeom-surface-ambiguous",
@@ -633,6 +639,7 @@ impl CreoLossCode {
             | Self::AssemblyMemberReferenceUnresolved
             | Self::AssemblyConstraintsNotTransferred
             | Self::DesignParameterReferenceAsText => Severity::Warning,
+            Self::NonVisibleCarrierVisibilityNotStated => Severity::Warning,
         }
     }
 
@@ -778,6 +785,7 @@ impl CreoLossCode {
                 LossTaxonomy::AssemblyComponentsExternal
             }
             Self::DesignParameterReferenceAsText => LossTaxonomy::ParametricRecordOmitted,
+            Self::NonVisibleCarrierVisibilityNotStated => LossTaxonomy::MetadataNotTransferred,
             Self::AssemblyMemberTableIncomplete
             | Self::AssemblyPlacementUnresolved
             | Self::AssemblyConstraintsNotTransferred => {
@@ -899,6 +907,7 @@ mod tests {
                 "geometry.visibgeom-curve-untransferred",
                 "curve.cross-section-body-opaque",
                 "geometry.round-carrier-owner-unresolved",
+                "presentation.non-visible-carrier-visibility-not-stated",
                 "geometry.legacy-surface-carrier-unresolved",
                 "geometry.nurbs-boundary-carrier-unresolved",
                 "geometry.visibgeom-surface-ambiguous",

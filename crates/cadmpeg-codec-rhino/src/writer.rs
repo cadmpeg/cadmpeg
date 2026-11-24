@@ -629,9 +629,6 @@ fn prepare_write(
         ("sketches", model.sketches.len()),
         ("sketch_entities", model.sketch_entities.len()),
         ("sketch_constraints", model.sketch_constraints.len()),
-        ("appearances", model.appearances.len()),
-        ("appearance_bindings", model.appearance_bindings.len()),
-        ("attributes", model.attributes.len()),
     ]
     .into_iter()
     .filter(|(_, count)| *count != 0)

@@ -231,11 +231,11 @@ const SYNTHESIS_COVERAGE: ArenaDispositions = {
         tessellations: Dropped,
         point_clouds: Omitted,
         history_bodies: Ignored,
-        appearances: Dropped,
-        appearance_bindings: Dropped,
-        attributes: Dropped,
+        appearances: Omitted,
+        appearance_bindings: Omitted,
+        attributes: Omitted,
         pmi: Dropped,
-        presentation_layers: Dropped,
+        presentation_layers: Omitted,
         physical_materials: Omitted,
         mass_properties: Omitted,
         rigid_bodies: Omitted,
@@ -4876,17 +4876,7 @@ fn reject_unsupported_model(ir: &CadIr) -> Result<(), CodecError> {
             !ir.model.view_presentations.is_empty(),
         ),
         ("tessellations", !ir.model.tessellations.is_empty()),
-        ("appearances", !ir.model.appearances.is_empty()),
-        (
-            "appearance_bindings",
-            !ir.model.appearance_bindings.is_empty(),
-        ),
-        ("attributes", !ir.model.attributes.is_empty()),
         ("pmi", !ir.model.pmi.is_empty()),
-        (
-            "presentation_layers",
-            !ir.model.presentation_layers.is_empty(),
-        ),
     ];
     if let Some((arena, _)) = unsupported.into_iter().find(|(_, present)| *present) {
         return Err(CodecError::NotImplemented(format!(

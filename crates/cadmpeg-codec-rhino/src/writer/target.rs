@@ -143,8 +143,8 @@ pub(crate) fn plan(
 /// What `prepare_write` does with each model arena.
 ///
 /// `subds`, procedural surfaces and curves, features, configurations, parameters,
-/// sketches, sketch entities and constraints, appearances, appearance bindings
-/// and attributes are `Dropped` because `prepare_write` refuses non-empty arenas.
+/// sketches, sketch entities and constraints are `Dropped` because
+/// `prepare_write` refuses non-empty arenas.
 /// Topology is written as Brep and point objects or refused as orphaned;
 /// unowned pcurves are refused.
 /// `points` and `curves` are `Reported` because
@@ -190,9 +190,9 @@ const COVERAGE: ArenaDispositions = {
         tessellations: Written,
         point_clouds: Omitted,
         history_bodies: Ignored,
-        appearances: Dropped,
-        appearance_bindings: Dropped,
-        attributes: Dropped,
+        appearances: Omitted,
+        appearance_bindings: Omitted,
+        attributes: Omitted,
         pmi: Omitted,
         presentation_layers: Omitted,
         physical_materials: Omitted,
