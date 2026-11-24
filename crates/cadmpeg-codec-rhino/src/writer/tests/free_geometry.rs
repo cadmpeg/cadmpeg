@@ -744,9 +744,9 @@ fn unsupported_retained_native_records_are_refused_before_output() {
     decoded
         .ir_mut()
         .native
-        .namespace_mut("rhino")
+        .namespace_mut(cadmpeg_ir::codec_id!("rhino"))
         .arenas_mut()
-        .entry("materials".into())
+        .entry(cadmpeg_core::nonblank_literal!("materials"))
         .or_default()
         .push(
             cadmpeg_ir::NativeRecord::new(
@@ -857,10 +857,6 @@ fn standalone_support_points_and_curves_are_withheld_with_counted_export_loss() 
         format: cadmpeg_ir::codec_id!("iges"),
         object_id: cadmpeg_core::nonblank_literal!("D1"),
         geometry_role: Some(SourceGeometryRole::Support),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     };
     let mut ir = CadIr::empty();

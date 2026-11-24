@@ -22,7 +22,7 @@ This document uses ASD-STE100 Simplified Technical English.
 
 **Question.** What are the fields of the `skinsur` subtype and the `exppc`, `parcur`, `nullbs`, and `intcurve` records of a lofted solid?
 
-**Known.** The `spline` surface record holds the subtype `skinsur`, an integer 0, two flags, an integer 2, four doubles of `-1`, a double 0, the section curves, and a solved `nubs` block with its fit tolerance. The decoder reads the solved block as a B-spline carrier and keeps the construction as an unknown procedural surface (`alibre/geometry.procedural-surface-untyped`). The edges between a loft face and a planar cap have `intcurve` curves with `exppc` pcurves, and these curves carry no typed 3D carrier.
+**Known.** The `spline` surface record holds the subtype `skinsur`, an integer 0, two flags, an integer 2, four doubles of `-1`, a double 0, the section curves, and a solved `nubs` block with its fit tolerance. The decoder reads the solved block as a B-spline carrier and keeps the construction as an unknown procedural surface (`alibre/geometry.procedural-surface-untyped`). The edges between a loft face and a planar cap have `intcurve` curves with `exppc` pcurves. These curves carry no typed 3D carrier, and the decoder emits no pcurve for them (`alibre/geometry.pcurve-undecoded`).
 
 **Need.** A loft between two sections with a known profile, with the curve records of the edges compared against the sections.
 
@@ -58,7 +58,7 @@ This document uses ASD-STE100 Simplified Technical English.
 
 **Question.** What do the extra integer of the entity base and the extra integer of the `body` record mean?
 
-**Known.** The extra base integer is `-1` in every record. The `body` integer is `0`. The decoder removes both before it reads the class fields.
+**Known.** The extra base integer is `-1` in every record. The `body` integer is `0`. The decoder removes both before it reads the class fields, and it reports the removal as `alibre/source.record-extensions-unprojected`.
 
 **Need.** A save of a part with several bodies, with the `body` integers compared.
 

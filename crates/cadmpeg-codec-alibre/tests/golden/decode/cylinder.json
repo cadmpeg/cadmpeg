@@ -68,8 +68,8 @@
             "kind": "solved",
             "value": {
               "axis": {
-                "x": -0.0,
-                "y": -0.0,
+                "x": 0.0,
+                "y": 0.0,
                 "z": -1.0
               },
               "center": {
@@ -953,8 +953,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -1155,6 +1154,18 @@
       "kind": "classified"
     },
     "losses": [
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "source.record-extensions-unprojected",
+            "kind": "metadata_not_transferred",
+            "namespace": "alibre"
+          }
+        },
+        "message": "the extended entity base stores an integer in 25 record(s), and a body record stores one more in 1; the source states neither, and the decoder drops them",
+        "severity": "warning"
+      },
       {
         "code": {
           "kind": "namespaced",
@@ -1439,6 +1450,8 @@
         }
       }
     },
+    "codec_digests": {},
+    "content_digest": "01f59092edc34b70c23bf1b2a02d6ece3691ddfd8dfdf34c5464ca4ceb6d2f17",
     "decode_digest": "f89c07eb29466302d8aa7994905573b3dcb5261b44e5304f0cba2ba0b5e843bf",
     "file_digests": {},
     "retained_records": {},

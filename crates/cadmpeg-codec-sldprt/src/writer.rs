@@ -38,6 +38,7 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::source_fidelity::CodecDigests;
 use cadmpeg_ir::topology::{BodyKind, Color, Face, FaceBoundary, LoopBoundary, Region, Sense};
 use cadmpeg_ir::Annotations;
 
@@ -98,10 +99,12 @@ pub(crate) struct SemanticOutput {
 
 /// Writes a semantic document and returns the dialect and arena coverage it
 /// wrote. Each feature of `withheld` keeps its stored definition record, for
-/// the reason it is paired with.
+/// the reason it is paired with. `digests` are the codec digests the decode
+/// recorded.
 pub(crate) fn write_semantic_with_records(
     ir: &CadIr,
     annotations: &Annotations,
+    digests: &CodecDigests,
     retained_records: &[SourceRecord<'_>],
     withheld: &[(cadmpeg_ir::features::FeatureId, String)],
     writer: &mut dyn Write,
@@ -138,7 +141,7 @@ pub(crate) fn write_semantic_with_records(
     normalized.model.configurations = configurations_without_synthesized_snapshot(&normalized);
     sort_arenas(&mut normalized);
     let mut content_losses =
-        reduce::unwritable_content(&mut normalized, !retained_records.is_empty())?;
+        reduce::unwritable_content(&mut normalized, !retained_records.is_empty(), digests)?;
     content_losses.extend(reduce::unwritable_carriers(&mut normalized, false)?);
     crate::writer_transform::bake(&mut normalized)?;
     sort_arenas(&mut normalized);
@@ -188,7 +191,7 @@ pub(crate) fn write_semantic_with_records(
         unwritten.record(&id, Unwritten::SavedProperty, held);
     }
     let retained_partition =
-        retained_partition(&normalized, source_scan.as_ref(), native.as_ref())?;
+        retained_partition(&normalized, digests, source_scan.as_ref(), native.as_ref())?;
     if native
         .as_ref()
         .is_some_and(|native| !native.feature_histories.is_empty())
@@ -212,7 +215,7 @@ pub(crate) fn write_semantic_with_records(
         losses.extend(reduce::unwritable_carriers(&mut normalized, true)?);
     }
     losses.extend(history_drop::foreign_native_operations(&mut normalized));
-    let reducible = history_drop::HistoryDrop::applies(&normalized);
+    let reducible = history_drop::HistoryDrop::applies(digests);
     let mut displayed_values = history_drop::DisplayedValues::default();
     let mut renamed = history_drop::Renamed::default();
     let mut source_definitions = None;
@@ -236,6 +239,7 @@ pub(crate) fn write_semantic_with_records(
         )?;
         match prepare_history(
             &mut normalized,
+            digests,
             &mut native,
             annotations,
             retained_records,
@@ -350,18 +354,13 @@ pub(crate) fn write_semantic_with_records(
         written: BTreeMap::new(),
     };
     let replay_swobjects = if owners.replay() {
-        let baseline = ir
-            .source
-            .as_ref()
-            .and_then(|source| source.attributes.get(SWOBJECTS_LOCAL_DIGEST_ATTRIBUTE));
+        let baseline = crate::codec_digests::baseline(digests, SWOBJECTS_LOCAL_DIGEST_ATTRIBUTE);
         let current = swobjects_local_sha256(&digest_ctx, ir)?;
-        if baseline != Some(&current) {
-            let material_baseline = ir.source.as_ref().and_then(|source| {
-                source
-                    .attributes
-                    .get(SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE)
-            });
-            if material_baseline != Some(&swobjects_material_local_sha256(&digest_ctx, ir)?) {
+        if baseline != Some(current.as_str()) {
+            let material_baseline =
+                crate::codec_digests::baseline(digests, SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE);
+            let material = swobjects_material_local_sha256(&digest_ctx, ir)?;
+            if material_baseline != Some(material.as_str()) {
                 let baseline =
                     retained_source_baseline(&mut source_baseline, source_context.as_ref())?;
                 losses.extend(materials::retained_materials_kept(
@@ -1347,23 +1346,21 @@ fn source_image<'a>(records: &[SourceRecord<'a>]) -> Option<&'a [u8]> {
 /// The retained Parasolid partition to replay, when the decoded B-rep is
 /// untouched since the decode that recorded its baseline.
 ///
-/// The comparison is bitwise against the `brep_local_sha256` baseline, which is
-/// what an edit-detection question needs and all it can be; see
-/// [`crate::decode::brep_local_sha256`]. A document without the baseline — one
-/// synthesized rather than decoded, or decoded by a binary that named the
-/// attribute differently — has no partition to replay and is written out in full.
+/// The comparison is bitwise against the `brep_local_sha256` codec digest,
+/// which is what an edit-detection question needs and all it can be; see
+/// [`crate::decode::brep_local_sha256`]. A document without the digest — one
+/// synthesized rather than decoded, or written without its sidecar — has no
+/// partition to replay and is written out in full.
 fn retained_partition(
     ir: &CadIr,
+    digests: &CodecDigests,
     source_scan: Option<&crate::container::ContainerScan<'_>>,
     native: Option<&SldprtNative>,
 ) -> Result<Option<(String, Vec<u8>)>, CodecError> {
-    let Some(source) = ir.source.as_ref() else {
+    let Some(expected) = crate::codec_digests::baseline(digests, "brep_local_sha256") else {
         return Ok(None);
     };
-    let Some(expected) = source.attributes.get("brep_local_sha256") else {
-        return Ok(None);
-    };
-    if crate::decode::brep_local_sha256(ir)? != *expected {
+    if crate::decode::brep_local_sha256(ir)? != expected {
         return Ok(None);
     }
     let Some(scan) = source_scan else {
@@ -2342,6 +2339,7 @@ pub(crate) const CAPACITY_FIELDS: &[TextCapacity] = &[
 /// and the losses of the prepared features.
 fn prepare_history(
     normalized: &mut CadIr,
+    digests: &CodecDigests,
     native: &mut Option<SldprtNative>,
     annotations: &Annotations,
     retained_records: &[SourceRecord<'_>],
@@ -2351,17 +2349,21 @@ fn prepare_history(
     let feature_name_changes =
         crate::history::write::feature_name_changes(normalized, native.as_ref());
     let feature_parameter_changes_authorized = !feature_name_changes.is_empty()
-        && crate::history::write::native_parameters_match_source(normalized, native.as_ref())?;
+        && crate::history::write::native_parameters_match_source(digests, native.as_ref())?;
     crate::history::write::apply_feature_name_changes(
         &mut normalized.model.parameters,
         &feature_name_changes,
     );
     let ir = &*normalized;
-    let mut prepared = crate::history::write::prepare_features_for_write(ir, native, edits)?;
+    let mut prepared =
+        crate::history::write::prepare_features_for_write(ir, digests, native, edits)?;
     fit_feature_input_renames(&mut prepared.renames, cut);
-    crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, native, edits, cut)?;
+    crate::resolved_features::write_prepare::prepare_sketches_for_write(
+        ir, digests, native, edits, cut,
+    )?;
     crate::history::write::parameters::prepare_parameters_for_write(
         ir,
+        digests,
         native,
         feature_parameter_changes_authorized,
         edits,
@@ -2371,6 +2373,7 @@ fn prepare_history(
     prepared.losses.extend(
         crate::history::write::configurations::prepare_configurations_for_write(
             ir,
+            digests,
             native,
             annotations,
             edits,
@@ -5259,7 +5262,9 @@ mod nurbs_write_tests {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::nurbs::NurbsSurface;
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+    use cadmpeg_ir::hash::digest::Sha256Digest;
     use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::source_fidelity::CodecDigests;
 
     #[test]
     fn pmi_without_its_baseline_is_dropped_and_named_and_an_edit_of_it_is_named() {
@@ -5281,18 +5286,11 @@ mod nurbs_write_tests {
             source_settings: cadmpeg_ir::design::options::NativeOptions::new(),
         });
         let hash = pmi_local_sha256(&ir).expect("PMI baseline hash");
-        ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
-            cadmpeg_core::dialect::DialectLayers::of(
-                cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect_id!(
-                    "sldprt:test"
-                )),
-            ),
-            std::collections::BTreeMap::from([(
-                cadmpeg_core::nonblank_const!(PMI_LOCAL_DIGEST_ATTRIBUTE),
-                hash,
-            )]),
-        ));
-        assert!(super::reduce::unwritable_content(&mut ir, true)
+        let digests = CodecDigests::from([(
+            cadmpeg_core::nonblank_const!(PMI_LOCAL_DIGEST_ATTRIBUTE),
+            Sha256Digest::try_from(hash).expect("SHA-256 digest"),
+        )]);
+        assert!(super::reduce::unwritable_content(&mut ir, true, &digests)
             .expect("PMI digest")
             .is_empty());
         assert_eq!(ir.model.pmi.len(), 1);
@@ -5303,7 +5301,8 @@ mod nurbs_write_tests {
             panic!("datum definition");
         };
         *identification = "B".into();
-        let losses = super::reduce::unwritable_content(&mut ir, true).expect("PMI digest");
+        let losses =
+            super::reduce::unwritable_content(&mut ir, true, &digests).expect("PMI digest");
         assert_eq!(losses.len(), 1);
         assert_eq!(losses[0].code.local_code(), "edit.dropped");
         assert!(losses[0].message.contains("sldprt:model:pmi#A1"));
@@ -5311,14 +5310,15 @@ mod nurbs_write_tests {
 
         // Without the retained SWIFT block, no PMI is written.
         let mut unretained = ir.clone();
-        let losses = super::reduce::unwritable_content(&mut unretained, false).expect("PMI digest");
+        let losses = super::reduce::unwritable_content(&mut unretained, false, &digests)
+            .expect("PMI digest");
         assert_eq!(losses.len(), 1);
         assert_eq!(losses[0].code.local_code(), "writer.pmi-omitted");
         assert!(losses[0].message.contains("sldprt:model:pmi#A1"));
         assert!(unretained.model.pmi.is_empty());
 
-        ir.source = None;
-        let losses = super::reduce::unwritable_content(&mut ir, true).expect("PMI digest");
+        let losses = super::reduce::unwritable_content(&mut ir, true, &CodecDigests::new())
+            .expect("PMI digest");
         assert_eq!(losses.len(), 1);
         assert_eq!(losses[0].code.local_code(), "writer.pmi-omitted");
         assert!(losses[0].message.contains("sldprt:model:pmi#A1"));

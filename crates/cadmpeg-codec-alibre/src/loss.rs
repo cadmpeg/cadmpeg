@@ -25,6 +25,10 @@ pub(crate) enum AlibreLossCode {
     GeometryFramedWithoutCarriers,
     /// A face rests on a procedural surface construction without a decoded carrier.
     GeometryProceduralSurfaceUntyped,
+    /// A coedge names a pcurve record with no decodable 2D carrier.
+    GeometryPcurveUndecoded,
+    /// The header scale is not the centimetre the decoder reads lengths in.
+    HeaderScaleUnverified,
     /// A header tolerance cannot supply a positive finite document tolerance.
     HeaderToleranceUnresolved,
     /// A tolerant vertex has no positive finite evaluated tolerance.
@@ -37,6 +41,8 @@ pub(crate) enum AlibreLossCode {
     TopologyFaceOwnerUnprojected,
     /// A framed record has no leading source-name component.
     SourceRecordNameUnresolved,
+    /// Integers of the extended entity base have no neutral projection.
+    SourceRecordExtensionsUnprojected,
     /// The ACIS save format lies outside the verified Spatial ACIS bands.
     SourceDialectUnverified,
     /// Streams of the container carry no decoded content in the IR.
@@ -76,12 +82,15 @@ impl AlibreLossCode {
         Self::ContainerNoncanonical,
         Self::GeometryFramedWithoutCarriers,
         Self::GeometryProceduralSurfaceUntyped,
+        Self::GeometryPcurveUndecoded,
+        Self::HeaderScaleUnverified,
         Self::HeaderToleranceUnresolved,
         Self::VertexToleranceUnresolved,
         Self::EdgeToleranceUnresolved,
         Self::TopologyShellUnprojected,
         Self::TopologyFaceOwnerUnprojected,
         Self::SourceRecordNameUnresolved,
+        Self::SourceRecordExtensionsUnprojected,
         Self::SourceDialectUnverified,
         Self::SourceStreamsUndecoded,
         Self::AssemblyMemberUnavailable,
@@ -105,12 +114,15 @@ impl AlibreLossCode {
             Self::ContainerNoncanonical => "container.noncanonical",
             Self::GeometryFramedWithoutCarriers => "geometry.framed-without-carriers",
             Self::GeometryProceduralSurfaceUntyped => "geometry.procedural-surface-untyped",
+            Self::GeometryPcurveUndecoded => "geometry.pcurve-undecoded",
+            Self::HeaderScaleUnverified => "header.scale-unverified",
             Self::HeaderToleranceUnresolved => "header.tolerance-unresolved",
             Self::VertexToleranceUnresolved => "vertex.tolerance-unresolved",
             Self::EdgeToleranceUnresolved => "edge.tolerance-unresolved",
             Self::TopologyShellUnprojected => "topology.shell-unprojected",
             Self::TopologyFaceOwnerUnprojected => "topology.face-owner-unprojected",
             Self::SourceRecordNameUnresolved => "source.record-name-unresolved",
+            Self::SourceRecordExtensionsUnprojected => "source.record-extensions-unprojected",
             Self::SourceDialectUnverified => "source.kernel-dialect-unverified",
             Self::SourceStreamsUndecoded => "source.streams-undecoded",
             Self::AssemblyMemberUnavailable => "assembly.member-unavailable",
@@ -132,15 +144,17 @@ impl AlibreLossCode {
     /// The severity of this loss.
     const fn severity(self) -> Severity {
         match self {
-            Self::GeometryFramedWithoutCarriers => Severity::Blocking,
+            Self::GeometryFramedWithoutCarriers | Self::HeaderScaleUnverified => Severity::Blocking,
             Self::ContainerNoncanonical
             | Self::GeometryProceduralSurfaceUntyped
+            | Self::GeometryPcurveUndecoded
             | Self::HeaderToleranceUnresolved
             | Self::VertexToleranceUnresolved
             | Self::EdgeToleranceUnresolved
             | Self::TopologyShellUnprojected
             | Self::TopologyFaceOwnerUnprojected
             | Self::SourceRecordNameUnresolved
+            | Self::SourceRecordExtensionsUnprojected
             | Self::SourceDialectUnverified
             | Self::SourceStreamsUndecoded
             | Self::AssemblyMemberUnavailable
@@ -163,18 +177,22 @@ impl AlibreLossCode {
         match self {
             Self::GeometryFramedWithoutCarriers
             | Self::GeometryProceduralSurfaceUntyped
+            | Self::GeometryPcurveUndecoded
             | Self::HeaderToleranceUnresolved
             | Self::VertexToleranceUnresolved
             | Self::EdgeToleranceUnresolved
             | Self::TopologyShellUnprojected
-            | Self::TopologyFaceOwnerUnprojected => LossTaxonomy::GeometryNotTransferred,
+            | Self::TopologyFaceOwnerUnprojected
+            | Self::HeaderScaleUnverified => LossTaxonomy::GeometryNotTransferred,
             Self::SourceDialectUnverified | Self::AssemblyMemberDialectUnverified => {
                 LossTaxonomy::SourceDialectUnverified
             }
             Self::ContainerNoncanonical | Self::SourceRecordNameUnresolved => {
                 LossTaxonomy::NoncanonicalSourceSyntax
             }
-            Self::SourceStreamsUndecoded => LossTaxonomy::MetadataNotTransferred,
+            Self::SourceRecordExtensionsUnprojected | Self::SourceStreamsUndecoded => {
+                LossTaxonomy::MetadataNotTransferred
+            }
             Self::AssemblyMemberUnavailable
             | Self::AssemblyMemberUndecoded
             | Self::AssemblyMemberCycle
@@ -218,12 +236,15 @@ mod tests {
                 "container.noncanonical",
                 "geometry.framed-without-carriers",
                 "geometry.procedural-surface-untyped",
+                "geometry.pcurve-undecoded",
+                "header.scale-unverified",
                 "header.tolerance-unresolved",
                 "vertex.tolerance-unresolved",
                 "edge.tolerance-unresolved",
                 "topology.shell-unprojected",
                 "topology.face-owner-unprojected",
                 "source.record-name-unresolved",
+                "source.record-extensions-unprojected",
                 "source.kernel-dialect-unverified",
                 "source.streams-undecoded",
                 "assembly.member-unavailable",

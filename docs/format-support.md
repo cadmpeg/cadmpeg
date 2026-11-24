@@ -626,7 +626,7 @@ The codec detects a part from the streams `SAB_DATA` and `STEP_DATA`, frames the
 
 These gaps remain:
 
-- Faces of a lofted solid keep the solved B-spline cache as carrier, and their edges have no typed 3D curve (ALB-01, `alibre/geometry.procedural-surface-untyped`).
+- The side faces of a lofted solid keep the solved B-spline cache as carrier, and its `intcurve` edges have no typed 3D curve, and its coedges carry no pcurve (ALB-01, `alibre/geometry.procedural-surface-untyped`, `alibre/geometry.pcurve-undecoded`). The cap faces rest on `plane` carriers.
 - The feature model of `STEP_DATA` and every other stream do not transfer (ALB-02, ALB-03, `alibre/source.streams-undecoded`).
 - Sheet-metal parts are not claimed (ALB-04).
 - Assembly constraints, the configurations of an assembly, and flexible subassemblies do not transfer (ALB-09, ALB-11, ALB-12, `alibre/assembly.entities-unread`, `alibre/assembly.configuration-unmapped`).

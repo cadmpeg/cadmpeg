@@ -25,8 +25,7 @@
       "bodies": [
         {
           "id": "pvz:model:body#part.ol",
-          "kind": "solid",
-          "name": "part.ol"
+          "kind": "solid"
         }
       ],
       "coedges": [
@@ -628,8 +627,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -646,8 +644,7 @@
           "source_name": "PART.PRT",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -1081,6 +1078,8 @@
         }
       }
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "b17bb476f37a158fe47d2851e2b03a9e2df39eed87718ff46f965f028136cb02",
     "file_digests": {},
     "retained_records": {},

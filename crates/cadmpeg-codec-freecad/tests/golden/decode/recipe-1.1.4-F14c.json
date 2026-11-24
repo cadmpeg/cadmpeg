@@ -5279,8 +5279,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -6002,7 +6001,6 @@
       "attributes": {
         "application_domains": "App,PartDesign",
         "document_kind": "part-design",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
         "program_version": "1.1R20260928 (Git shallow)"
       },
@@ -6077,6 +6075,10 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {
+      "fcstd_uncarried_local_sha256": "<elided: digest over tolerantly compared geometry>"
+    },
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "dba4b4257d5b44c03051121c52d9ffb84e73fe17deae499256d807a129cd8852",
     "file_digests": {},
     "retained_records": {},

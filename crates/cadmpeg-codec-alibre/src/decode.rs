@@ -20,9 +20,15 @@ use crate::dialect::{classify, kernel_stream, Classification, KernelStream};
 use crate::loss::AlibreLossCode;
 use crate::FORMAT;
 
-/// Millimetres per ASM model-space length unit, which the header scale of an
-/// Alibre stream declares.
-const HEADER_SCALE_TO_MM: f64 = 10.0;
+/// Millimetres per ASM model-space length unit: the shared binary reader
+/// reads every length in centimetres, and an Alibre header states that unit
+/// as its scale (`alibre.md` §2.1).
+use cadmpeg_asm::nurbs::reader::LEN_TO_MM as HEADER_SCALE_TO_MM;
+
+/// How far a stored header scale may differ from the centimetre before it is
+/// charged: the scale is written as an exact double, so only a real
+/// difference passes this bound.
+const HEADER_SCALE_TOLERANCE: f64 = 1e-9;
 
 pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, CodecError> {
     let container = AlibreContainer::open(ctx, root)?;
@@ -71,16 +77,17 @@ pub(crate) fn decode_part<'a>(
             message: message.into(),
         });
     };
-    let brep = decode_kernel_stream(ctx, bytes, &kernel)?;
+    let (brep, removed) = decode_kernel_stream(ctx, bytes, &kernel)?;
+    losses.extend(extensions_loss(removed));
     losses.extend(container.undecoded_streams_loss());
     from_kernel(ctx, classification, &kernel, brep, losses, digest)
 }
 
-fn decode_kernel_stream(
+pub(crate) fn decode_kernel_stream(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     kernel: &KernelStream,
-) -> Result<AsmBrep, CodecError> {
+) -> Result<(AsmBrep, sab::ExtendedBaseRemoval), CodecError> {
     let header = &kernel.header;
     let limit = acis_header::solved_record_limit_with_header(bytes, header);
     let framed = sab::frame_for_header(
@@ -97,8 +104,8 @@ fn decode_kernel_stream(
             CodecError::malformed(format_args!("ACIS SAB framing failed: {error}"))
         })
     })?;
-    sab::normalize_extended_base(&mut records, header.metadata.save_format_version);
-    decode_with_header(
+    let removed = sab::normalize_extended_base(&mut records, header.metadata.save_format_version);
+    let brep = decode_with_header(
         ctx,
         &records,
         bytes,
@@ -106,7 +113,19 @@ fn decode_kernel_stream(
         SAB_STREAM,
         cadmpeg_asm::asm_format!("alibre"),
         DecodePurpose::Model,
-    )
+    )?;
+    Ok((brep, removed))
+}
+
+/// The one note of a stream whose records stored the extended entity base. The
+/// decoder reads the shared entity fields and drops the integers the base adds.
+fn extensions_loss(removed: sab::ExtendedBaseRemoval) -> Option<LossNote> {
+    (!removed.is_empty()).then(|| {
+        AlibreLossCode::SourceRecordExtensionsUnprojected.note(format!(
+            "the extended entity base stores an integer in {} record(s), and a body record stores one more in {}; the source states neither, and the decoder drops them",
+            removed.base_integers, removed.body_integers
+        ))
+    })
 }
 
 fn header_attributes(header: &KernelHeader) -> BTreeMap<String, String> {
@@ -151,6 +170,13 @@ fn from_kernel(
     let header = &kernel.header.metadata;
     losses.extend(classification.kernel_loss());
     let mut ir = new_ir(classification, Some(kernel))?;
+    if let Some(scale) = header.scale {
+        if (scale - HEADER_SCALE_TO_MM).abs() > HEADER_SCALE_TOLERANCE {
+            losses.push(AlibreLossCode::HeaderScaleUnverified.note(format!(
+                "the SAB_DATA header scale is {scale}, not the {HEADER_SCALE_TO_MM} millimetres per unit the decoder reads every length in; lengths may be off by the ratio"
+            )));
+        }
+    }
     if let Some(value) = header.linear {
         let linear_mm = value * HEADER_SCALE_TO_MM;
         match cadmpeg_ir::scalar::PositiveLength::new(linear_mm) {
@@ -165,27 +191,8 @@ fn from_kernel(
         }
     }
     for record in &brep.unknowns {
-        let id = record.id().as_str();
-        let note = if id.contains(":brep:tvertex#") {
-            Some((AlibreLossCode::VertexToleranceUnresolved,
-                "evaluated vertex tolerance is not positive and finite; tolerance left unset; source record retained"))
-        } else if id.contains(":brep:tedge#") {
-            Some((AlibreLossCode::EdgeToleranceUnresolved,
-                "edge tolerance is not positive and finite; tolerance left unset; source record retained"))
-        } else if id.contains(":brep:shell#") {
-            Some((AlibreLossCode::TopologyShellUnprojected,
-                "shell has no admissible members or owner; shell omitted from region references; source record retained"))
-        } else if id.contains(":brep:face#") {
-            Some((AlibreLossCode::TopologyFaceOwnerUnprojected,
-                "standalone source face has no shell owner required by the IR; face omitted; source record retained"))
-        } else if id.contains(":brep:untyped-record#") {
-            Some((AlibreLossCode::SourceRecordNameUnresolved,
-                "record name has no leading component; identity uses its record-table index; source record retained"))
-        } else {
-            None
-        };
-        if let Some((code, message)) = note {
-            losses.push(code.note(message));
+        if let Some(note) = unknown_record_loss(record.id().as_str()) {
+            losses.push(note);
         }
     }
     let (
@@ -195,7 +202,7 @@ fn from_kernel(
             stats,
             annotation_records,
         },
-    ) = transfer_into_ir(ctx, &mut ir, FORMAT, brep)?;
+    ) = transfer_into_ir(ctx, &mut ir, cadmpeg_ir::codec_id!(FORMAT), brep)?;
     let geometry_transferred = !(ir.geometry.surfaces.is_empty()
         && ir.geometry.points.is_empty()
         && ir.geometry.faces.is_empty());
@@ -222,6 +229,18 @@ fn from_kernel(
             "{count} surface construction(s) are untyped; solved caches and source records retained"
         )),
         );
+    }
+    if stats.undecoded_pcurve_refs() > 0 {
+        let kinds = stats
+            .undecoded_pcurve_kinds
+            .iter()
+            .map(|(kind, count)| format!("{kind}={count}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        losses.push(AlibreLossCode::GeometryPcurveUndecoded.note(format!(
+            "{} coedge(s) name a pcurve record with no decodable 2D carrier; those coedges carry no pcurve. Source kinds: {kinds}",
+            stats.undecoded_pcurve_refs()
+        )));
     }
     let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
     coverage.record(crate::coverage::UNKNOWN_RECORDS, unknowns.len());
@@ -281,8 +300,71 @@ fn from_kernel(
     })
 }
 
+/// The loss a retained source record states, by the class of the record the
+/// shared decoder could not project.
+fn unknown_record_loss(id: &str) -> Option<LossNote> {
+    let (code, message) = if id.contains(":brep:tvertex#") {
+        (AlibreLossCode::VertexToleranceUnresolved,
+            "evaluated vertex tolerance is not positive and finite; tolerance left unset; source record retained")
+    } else if id.contains(":brep:tedge#") {
+        (AlibreLossCode::EdgeToleranceUnresolved,
+            "edge tolerance is not positive and finite; tolerance left unset; source record retained")
+    } else if id.contains(":brep:shell#") {
+        (AlibreLossCode::TopologyShellUnprojected,
+            "shell has no admissible members or owner; shell omitted from region references; source record retained")
+    } else if id.contains(":brep:face#") {
+        (AlibreLossCode::TopologyFaceOwnerUnprojected,
+            "standalone source face has no shell owner required by the IR; face omitted; source record retained")
+    } else if id.contains(":brep:untyped-record#") {
+        (AlibreLossCode::SourceRecordNameUnresolved,
+            "record name has no leading component; identity uses its record-table index; source record retained")
+    } else {
+        return None;
+    };
+    Some(code.note(message))
+}
+
 fn unresolved_tolerance(name: &str, value: f64) -> LossNote {
     AlibreLossCode::HeaderToleranceUnresolved.note(format!(
         "header {name} tolerance {value} does not yield a positive finite IR value; keeping the default"
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::unknown_record_loss;
+    use crate::loss::AlibreLossCode;
+
+    /// Each retained-record class the shared decoder reports maps to its own
+    /// code, and any other record states no loss.
+    #[test]
+    fn retained_records_map_to_their_loss_codes() {
+        for (id, code) in [
+            (
+                "alibre:brep:tvertex#4",
+                AlibreLossCode::VertexToleranceUnresolved,
+            ),
+            (
+                "alibre:brep:tedge#7",
+                AlibreLossCode::EdgeToleranceUnresolved,
+            ),
+            (
+                "alibre:brep:shell#3",
+                AlibreLossCode::TopologyShellUnprojected,
+            ),
+            (
+                "alibre:brep:face#9",
+                AlibreLossCode::TopologyFaceOwnerUnprojected,
+            ),
+            (
+                "alibre:brep:untyped-record#12",
+                AlibreLossCode::SourceRecordNameUnresolved,
+            ),
+        ] {
+            let note = unknown_record_loss(id).expect(id);
+            assert_eq!(note.code, code.kind(), "{id}");
+            assert_eq!(note.severity, code.note("").severity, "{id}");
+        }
+        assert!(unknown_record_loss("alibre:brep:lump#2").is_none());
+    }
 }

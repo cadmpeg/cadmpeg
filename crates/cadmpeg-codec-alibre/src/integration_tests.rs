@@ -206,6 +206,11 @@ fn every_specimen_decodes_to_a_checked_solid() {
         let kinds = loss_kinds(&result);
         assert!(kinds.contains(&AlibreLossCode::SourceDialectUnverified.kind()));
         assert!(kinds.contains(&AlibreLossCode::SourceStreamsUndecoded.kind()));
+        // Every specimen is at save format 33.0, which stores the extended entity base.
+        assert!(
+            kinds.contains(&AlibreLossCode::SourceRecordExtensionsUnprojected.kind()),
+            "{name}"
+        );
     }
 }
 
@@ -303,6 +308,9 @@ fn a_loft_keeps_its_spline_faces_as_cached_carriers() {
     assert_eq!(result.ir().geometry.faces.len(), 6);
     assert_eq!(result.ir().geometry.procedural_surfaces.len(), 4);
     assert!(loss_kinds(&result).contains(&AlibreLossCode::GeometryProceduralSurfaceUntyped.kind()));
+    // The loft's coedges name pcurve records, and the IR holds none of them.
+    assert!(result.ir().geometry.pcurves.is_empty());
+    assert!(loss_kinds(&result).contains(&AlibreLossCode::GeometryPcurveUndecoded.kind()));
     let nurbs = result
         .ir()
         .geometry
@@ -318,17 +326,77 @@ fn a_loft_keeps_its_spline_faces_as_cached_carriers() {
     assert_eq!(nurbs, 4);
 }
 
+/// The distinct vertex positions of an IR, in millimetres, rounded to a
+/// nanometre and in order.
+fn corner_points(ir: &cadmpeg_ir::CadIr) -> Vec<[f64; 3]> {
+    let mut corners: Vec<[f64; 3]> = ir
+        .geometry
+        .vertices
+        .iter()
+        .map(|vertex| {
+            let point = ir
+                .geometry
+                .points
+                .iter()
+                .find(|point| point.id == vertex.point)
+                .expect("vertex point");
+            let at = point.position();
+            [at.x, at.y, at.z].map(|coordinate| (coordinate * 1.0e6).round())
+        })
+        .collect();
+    corners.sort_by(|a, b| {
+        a.iter()
+            .zip(b)
+            .map(|(a, b)| a.total_cmp(b))
+            .find(|order| order.is_ne())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    corners.dedup();
+    corners
+}
+
+/// The part and its Alibre-exported STEP twin are one solid, so the IR of the
+/// part holds what the IR of the twin holds: the same vertices, the same
+/// faces, and the same planar caps. The measurer states no box and no volume
+/// for a body with B-spline faces, so the twin carries the design box and the
+/// part is compared with the twin through its points and faces.
 #[test]
-fn the_step_twin_of_the_loft_spans_the_design_box() {
-    let result = cadmpeg_codec_step::StepCodec::default()
+fn the_loft_is_the_solid_its_step_twin_is() {
+    let twin = cadmpeg_codec_step::StepCodec::default()
         .decode(&mut Cursor::new(LOFT_TWIN), &DecodeOptions::default())
         .unwrap();
-    let body = measured_body(result.ir());
+    let part = decode(LOFT);
+    let twin_body = measured_body(twin.ir());
     assert_box(
-        &body,
+        &twin_body,
         [-LOFT_HALF_WIDTH, -LOFT_HALF_WIDTH, 0.0],
         [LOFT_HALF_WIDTH, LOFT_HALF_WIDTH, LOFT_HEIGHT],
     );
+    let (part_corners, twin_corners) = (corner_points(part.ir()), corner_points(twin.ir()));
+    assert_eq!(part_corners.len(), 8);
+    assert_eq!(part_corners, twin_corners);
+    assert_eq!(
+        part.ir().geometry.faces.len(),
+        twin.ir().geometry.faces.len()
+    );
+    assert_eq!(
+        part.ir().geometry.edges.len(),
+        twin.ir().geometry.edges.len()
+    );
+    let planes = |ir: &cadmpeg_ir::CadIr| {
+        ir.geometry
+            .surfaces
+            .iter()
+            .filter(|surface| {
+                matches!(
+                    surface.geometry.solved(),
+                    Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(_))
+                )
+            })
+            .count()
+    };
+    assert_eq!(planes(part.ir()), 2);
+    assert_eq!(planes(twin.ir()), 2);
 }
 
 /// Overwrites the ACIS magic of the `SAB_DATA` stream in place.
@@ -362,4 +430,147 @@ fn a_stream_without_the_acis_magic_is_inspected_as_unknown_and_refused() {
         ),
         "{failure:?}"
     );
+}
+
+const FREE_SECTOR: u32 = 0xffff_ffff;
+
+/// Where the sectors of the `SAB_DATA` stream of a version 3 or 4 compound
+/// file with one FAT sector lie in the file, and the stream length.
+struct SabSectors {
+    offsets: Vec<usize>,
+    length: usize,
+    /// File offset of the FAT entry of the last sector.
+    last_fat_entry: usize,
+}
+
+fn u32_at(bytes: &[u8], at: usize) -> u32 {
+    u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap())
+}
+
+fn sab_sectors(bytes: &[u8]) -> SabSectors {
+    let sector = 1_usize << u16::from_le_bytes([bytes[30], bytes[31]]);
+    let sector_at = |id: u32| sector * (usize::try_from(id).unwrap() + 1);
+    let fat = sector_at(u32_at(bytes, 76));
+    let fat_next = |id: u32| u32_at(bytes, fat + 4 * usize::try_from(id).unwrap());
+    let mut found = None;
+    let mut directory = u32_at(bytes, 48);
+    while directory < 0xffff_fff0 {
+        for entry in 0..sector / 128 {
+            let at = sector_at(directory) + entry * 128;
+            let name_len = usize::from(u16::from_le_bytes([bytes[at + 64], bytes[at + 65]]));
+            let name: Vec<u16> = bytes[at..at + name_len.saturating_sub(2)]
+                .chunks_exact(2)
+                .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+                .collect();
+            if String::from_utf16_lossy(&name) == "SAB_DATA" {
+                let length = usize::try_from(u32_at(bytes, at + 120)).unwrap();
+                found = Some((u32_at(bytes, at + 116), length));
+            }
+        }
+        directory = fat_next(directory);
+    }
+    let (mut id, length) = found.expect("SAB_DATA entry");
+    let mut offsets = Vec::new();
+    let mut last_fat_entry = 0;
+    while id < 0xffff_fff0 {
+        offsets.push(sector_at(id));
+        last_fat_entry = fat + 4 * usize::try_from(id).unwrap();
+        id = u32_at(bytes, last_fat_entry);
+    }
+    SabSectors {
+        offsets,
+        length,
+        last_fat_entry,
+    }
+}
+
+/// The part with its `SAB_DATA` stream edited in place. The edit keeps the
+/// stream length.
+fn with_sab(bytes: &[u8], edit: impl FnOnce(&mut Vec<u8>)) -> Vec<u8> {
+    let sectors = sab_sectors(bytes);
+    let sector = 1_usize << u16::from_le_bytes([bytes[30], bytes[31]]);
+    let mut stream: Vec<u8> = sectors
+        .offsets
+        .iter()
+        .flat_map(|&at| bytes[at..at + sector].iter().copied())
+        .take(sectors.length)
+        .collect();
+    edit(&mut stream);
+    assert_eq!(stream.len(), sectors.length);
+    let mut patched = bytes.to_vec();
+    for (chunk, &at) in stream.chunks(sector).zip(&sectors.offsets) {
+        patched[at..at + chunk.len()].copy_from_slice(chunk);
+    }
+    patched
+}
+
+fn position(haystack: &[u8], needle: &[u8]) -> usize {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+        .unwrap()
+}
+
+#[test]
+fn an_unterminated_stream_chain_is_charged_as_noncanonical() {
+    let sectors = sab_sectors(BOX);
+    let mut patched = BOX.to_vec();
+    patched[sectors.last_fat_entry..sectors.last_fat_entry + 4]
+        .copy_from_slice(&FREE_SECTOR.to_le_bytes());
+    let result = decode(&patched);
+    assert!(result.report().geometry_transferred());
+    assert!(loss_kinds(&result).contains(&AlibreLossCode::ContainerNoncanonical.kind()));
+    assert!(!loss_kinds(&decode(BOX)).contains(&AlibreLossCode::ContainerNoncanonical.kind()));
+}
+
+#[test]
+fn a_header_scale_other_than_the_centimetre_is_charged() {
+    let patched = with_sab(BOX, |stream| {
+        // The first header double, tagged `0x06`, is the scale 10.0.
+        let scale = position(stream, &[0x06, 0, 0, 0, 0, 0, 0, 0x24, 0x40]);
+        stream[scale + 1..scale + 9].copy_from_slice(&1.0_f64.to_le_bytes());
+    });
+    assert!(loss_kinds(&decode(&patched)).contains(&AlibreLossCode::HeaderScaleUnverified.kind()));
+    assert!(!loss_kinds(&decode(BOX)).contains(&AlibreLossCode::HeaderScaleUnverified.kind()));
+}
+
+#[test]
+fn a_header_tolerance_that_is_not_positive_is_charged_and_left_at_its_default() {
+    let patched = with_sab(BOX, |stream| {
+        // The header doubles are tagged `0x06`: the scale 10.0, then the
+        // resolved absolute tolerance, then the resolved normal tolerance.
+        let scale = position(stream, &[0x06, 0, 0, 0, 0, 0, 0, 0x24, 0x40]);
+        for at in [scale + 9, scale + 18] {
+            stream[at + 1..at + 9].copy_from_slice(&0.0_f64.to_le_bytes());
+        }
+    });
+    let result = decode(&patched);
+    let unresolved = loss_kinds(&result)
+        .into_iter()
+        .filter(|kind| *kind == AlibreLossCode::HeaderToleranceUnresolved.kind())
+        .count();
+    assert_eq!(
+        unresolved, 2,
+        "one note each for the linear and angular tolerance"
+    );
+    assert_eq!(
+        result.ir().tolerances,
+        cadmpeg_ir::units::Tolerances::default()
+    );
+}
+
+#[test]
+fn a_stream_whose_geometry_classes_are_unknown_decodes_no_carriers() {
+    // The first use of each identifier loses its last letter to `z`: a class
+    // the decoder does not know, so no record becomes a face, surface, or point.
+    let patched = with_sab(BOX, |stream| {
+        for name in ["face", "plane", "point"] {
+            let first_use = format!("{name}%");
+            let at = position(stream, first_use.as_bytes());
+            stream[at + name.len() - 1] = b'z';
+        }
+    });
+    let result = decode(&patched);
+    assert!(!result.report().geometry_transferred());
+    assert!(loss_kinds(&result).contains(&AlibreLossCode::GeometryFramedWithoutCarriers.kind()));
 }

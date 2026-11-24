@@ -578,7 +578,7 @@ impl EntitySchema for crate::spreadsheets::Spreadsheet {
         self.id.as_str()
     }
 }
-impl_entity_schema!(crate::products::ProductDefinition, ProductDefinition, id; id, kind, source_name, label, description, part_number, bom_properties, generated_from, storage, bodies, tessellations, occurrences, instance_bodies, representations, sketches, units, general_tolerance, active, native_ref);
+impl_entity_schema!(crate::products::ProductDefinition, ProductDefinition, id; id, kind, source_name, label, description, part_number, bom_properties, generated_from, storage, bodies, occurrences, instance_bodies, representations, sketches, units, general_tolerance, active, native_ref);
 impl_entity_schema!(crate::products::Occurrence, Occurrence, id; id, prototype, transform, suppressed, visible, representation, overrides, name, native_ref);
 impl EntitySchema for crate::products::AssemblyJoint {
     const KIND: EntityKind = EntityKind::AssemblyJoint;
@@ -618,14 +618,14 @@ impl EntitySchema for crate::tessellation::Tessellation {
     }
 }
 impl_entity_schema!(crate::appearance::Appearance, Appearance, id; id, name, asset_guid, library_id, visual_guid, physical_token, schema, category, base_color, properties, textures, native_ref);
-impl_entity_schema!(crate::appearance::AppearanceBinding, AppearanceBinding, id; id, target, appearance, source_entity_id, object_type, visible, channels, native_ref);
+impl_entity_schema!(crate::appearance::AppearanceBinding, AppearanceBinding, id; id, target, appearance, precedence, source_entity_id, object_type, visible, channels, native_ref);
 impl_entity_schema!(crate::attributes::SourceAttribute, SourceAttribute, id; id, target, name, values, native_ref);
 impl_entity_schema!(crate::pmi::PmiAnnotation, PmiAnnotation, id; id, name, visible, targets, definition, native_ref, native_options, source_settings);
 impl_entity_schema!(
     crate::presentation::PresentationLayer,
     PresentationLayer,
     id;
-    id, name, parent, description, visible, items
+    id, name, parent, description, visible, items, native_ref
 );
 impl_entity_schema!(crate::physics::PhysicalMaterial, PhysicalMaterial, id; id, name, density, static_friction, dynamic_friction, restitution, native_ref);
 impl_entity_schema!(crate::physics::MassProperties, MassProperties, id; id, target, mass, density, center_of_mass, inertia, material, native_ref);
@@ -633,8 +633,8 @@ impl_entity_schema!(crate::physics::RigidBody, RigidBody, id; id, target, kinema
 impl_entity_schema!(crate::physics::Articulation, Articulation, id; id, root, native_ref);
 impl_entity_schema!(crate::physics::PhysicsScene, PhysicsScene, id; id, name, gravity_direction, gravity_magnitude, native_ref);
 impl_entity_schema!(crate::physics::solver::SolverSettings, SolverSettings, id; id, solver, schema, target, values, native_ref);
-impl_entity_schema!(crate::declared_measures::DeclaredMeasure, DeclaredMeasure, id; id, target, quantity, provenance, source_error, label, native_ref);
-impl_entity_schema!(crate::point_cloud::PointCloud, PointCloud, id; id, definition, name, sensor, positions, normals, colors, channels, native_ref);
+impl_entity_schema!(crate::declared_measures::DeclaredMeasure, DeclaredMeasure, id; id, target, quantity, label, basis, precision, native_ref);
+impl_entity_schema!(crate::point_cloud::PointCloud, PointCloud, id; id, definition, name, color, visible, positions, normals, colors, channels, native_ref);
 impl_entity_schema!(crate::history_body::HistoryBody, HistoryBody, id; id, produced_by, consumed_by, state, topology);
 impl_entity_schema!(crate::physics::Collider, Collider, id; id, target, shape, enabled, material, native_ref);
 

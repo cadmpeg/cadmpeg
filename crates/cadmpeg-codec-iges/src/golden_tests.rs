@@ -15,7 +15,7 @@ use std::io::Cursor;
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_test_support::golden::{elide_local_digests, snapshot_text, Branch, Harness};
+use cadmpeg_test_support::golden::{snapshot_text, Branch, Harness};
 
 use super::IgesCodec;
 
@@ -57,15 +57,10 @@ fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match IgesCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
     {
         Ok(result) => {
-            let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
-            if let Some(source) = result.ir_mut().source.as_mut() {
-                elide_local_digests(&mut source.attributes);
-            }
             serde_json::json!({
                 "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
                 "report": serde_json::to_value(result.report()).expect("serialize report"),
-                "source_fidelity": serde_json::to_value(result.source_fidelity())
-                    .expect("serialize source_fidelity"),
+                "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.source_fidelity()),
             })
         }
         Err(error) => serde_json::json!({ "decode_error": error.to_string() }),

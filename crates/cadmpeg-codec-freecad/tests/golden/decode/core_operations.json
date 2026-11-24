@@ -46195,8 +46195,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -49874,7 +49873,6 @@
       "attributes": {
         "application_domains": "App,Part,PartDesign,Sketcher",
         "document_kind": "part-design",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
         "program_version": "1.1R20260414 (Git shallow)"
       },
@@ -49949,6 +49947,10 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {
+      "fcstd_uncarried_local_sha256": "<elided: digest over tolerantly compared geometry>"
+    },
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "54cc992ca6278fdd8e38b3d01f37c616e5dfdc38ca7a058fe838599b709ed228",
     "file_digests": {},
     "retained_records": {},

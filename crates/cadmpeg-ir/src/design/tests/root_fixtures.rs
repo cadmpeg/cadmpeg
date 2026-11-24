@@ -614,7 +614,10 @@ pub(super) fn arrangement_appearances() -> Vec<ArrangementAppearance> {
     vec![
         ArrangementAppearance {
             path: occurrence_path(),
-            appearance: Some(id("appearance", 1)),
+            appearance: Some(super::super::configuration::InstanceAppearance {
+                appearance: id("appearance", 1),
+                precedence: crate::appearance::AppearancePrecedence::Outer,
+            }),
             transparency: Some(Fraction::new(0.25).unwrap()),
         },
         ArrangementAppearance {

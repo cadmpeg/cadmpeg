@@ -877,7 +877,7 @@
               "normal": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "origin": {
                 "x": 10.0,
@@ -885,9 +885,9 @@
                 "z": 0.0
               },
               "u_axis": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -910,8 +910,8 @@
               },
               "u_axis": {
                 "x": 1.0,
-                "y": -0.0,
-                "z": -0.0
+                "y": 0.0,
+                "z": 0.0
               }
             }
           },
@@ -933,9 +933,9 @@
                 "z": 0.0
               },
               "u_axis": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": -1.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -1006,8 +1006,8 @@
               },
               "u_axis": {
                 "x": -1.0,
-                "y": -0.0,
-                "z": -0.0
+                "y": 0.0,
+                "z": 0.0
               }
             }
           },
@@ -2809,8 +2809,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -3177,6 +3176,18 @@
       "kind": "classified"
     },
     "losses": [
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "source.record-extensions-unprojected",
+            "kind": "metadata_not_transferred",
+            "namespace": "alibre"
+          }
+        },
+        "message": "the extended entity base stores an integer in 85 record(s), and a body record stores one more in 1; the source states neither, and the decoder drops them",
+        "severity": "warning"
+      },
       {
         "code": {
           "kind": "namespaced",
@@ -3973,6 +3984,8 @@
         }
       }
     },
+    "codec_digests": {},
+    "content_digest": "7fc0e59e74d400ed737c6ee77a6b6d6c29b2c0a7c91fdd99e84195ca8a84c863",
     "decode_digest": "3748e1ccaa7813ef7fb868eac6fe0afdd1c76938c3fc3f84b83b401ad1bcfb26",
     "file_digests": {},
     "retained_records": {},

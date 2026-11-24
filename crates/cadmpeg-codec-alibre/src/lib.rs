@@ -22,6 +22,8 @@ mod coverage;
 mod decode;
 mod dialect;
 mod expand;
+#[doc(hidden)]
+pub mod fuzz;
 mod loss;
 mod merge;
 mod part21;

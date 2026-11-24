@@ -64,10 +64,7 @@
             "format": "iges",
             "geometry_role": "independent",
             "instance_path": [],
-            "layer": "0",
-            "name": "SURFACE",
-            "object_id": "D7",
-            "visible": true
+            "object_id": "D7"
           }
         }
       ],
@@ -110,8 +107,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -703,7 +699,6 @@
     "source": {
       "attributes": {
         "author": "author",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "drafting_standard": "0",
         "iges_version_flag": "11",
         "model_scale": "1",
@@ -822,6 +817,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "ebf016bfe744f906dfbecec4fc04eeb32bbfd9092603c72b3b5f0a574bf6462e",
     "file_digests": {},
     "retained_records": {

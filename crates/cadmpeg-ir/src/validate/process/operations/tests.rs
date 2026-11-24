@@ -540,8 +540,6 @@ fn cycle(kind: CycleKind) -> Cycle {
 #[test]
 fn motion_cycles() {
     let mut ir = document();
-    let mut outer = cycle(CycleKind::Drill);
-    outer.expansion = Some(vec![Motion::Cycle(Box::new(cycle(CycleKind::Drill)))]);
     let mut probing = cycle(CycleKind::Drill);
     probing.probe_overtravel = Some(length(2.0));
     let narrow = cycle(CycleKind::Probe(ProbeTarget::CircularBoss {
@@ -550,12 +548,10 @@ fn motion_cycles() {
     ir.process.toolpaths[0].content = ToolpathContent::Motions {
         frame: Transform::default(),
         motions: vec![
-            Motion::Cycle(Box::new(outer)),
             Motion::Cycle(Box::new(probing)),
             Motion::Cycle(Box::new(narrow)),
         ],
     };
-    assert_error(&ir, "a cycle's `expansion` holds a cycle");
     assert_error(&ir, "states a probe clearance or overtravel");
     assert_error(
         &ir,

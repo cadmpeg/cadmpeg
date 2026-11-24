@@ -520,7 +520,7 @@ pub struct ArrangementAppearance {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_appearance"
     )]
-    pub appearance: Option<AppearanceId>,
+    pub appearance: Option<InstanceAppearance>,
     /// The instance's transparency.
     #[serde(
         default,
@@ -528,6 +528,18 @@ pub struct ArrangementAppearance {
         deserialize_with = "deserialize_transparency"
     )]
     pub transparency: Option<Fraction>,
+}
+
+/// The appearance an arrangement sets on an instance, and how it stands
+/// against what the instance's prototype states (§5.11, §8).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct InstanceAppearance {
+    /// The appearance.
+    pub appearance: AppearanceId,
+    /// How the appearance stands against what the prototype states.
+    pub precedence: crate::appearance::AppearancePrecedence,
 }
 
 /// A move of the instances it lists in an arrangement: a `Translate` or

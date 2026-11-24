@@ -3048,8 +3048,7 @@
           "source_name": "World",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -3066,8 +3065,7 @@
           "source_name": "Ball",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -3084,8 +3082,7 @@
           "source_name": "Box",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -3102,8 +3099,7 @@
           "source_name": "Can",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -3120,8 +3116,7 @@
           "source_name": "Frustum",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -3138,8 +3133,7 @@
           "source_name": "Funnel",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -3156,8 +3150,7 @@
           "source_name": "Pill",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -3174,8 +3167,7 @@
           "source_name": "Sheet",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3190,8 +3182,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -3290,6 +3281,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "928338c43ed158b1fbd621b807bf97e7c038ed34f04b8d342c82625a454c95e3",
     "file_digests": {},
     "retained_records": {},

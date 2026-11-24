@@ -106,7 +106,7 @@ fn native_load_refuses_orphan_history_row_with_child_and_parent() {
         changes: Vec::new(),
     };
     namespace.arenas_mut().insert(
-        "asm_bulletin_boards".into(),
+        cadmpeg_core::nonblank_literal!("asm_bulletin_boards"),
         cadmpeg_ir::native::arena_from(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             [Ok::<_, cadmpeg_ir::NativeConvertError>(board)],
@@ -166,7 +166,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         round_trip
             .arenas()
             .keys()
-            .map(String::as_str)
+            .map(cadmpeg_core::text::NonBlankString::as_str)
             .collect::<Vec<_>>(),
         crate::native::F3D_ARENA_NAMES
     );
@@ -196,7 +196,7 @@ fn store_emits_every_pinned_arena_name() {
         namespace
             .arenas()
             .keys()
-            .map(String::as_str)
+            .map(cadmpeg_core::text::NonBlankString::as_str)
             .collect::<Vec<_>>(),
         crate::native::F3D_ARENA_NAMES
     );
@@ -213,7 +213,7 @@ fn diff_reports_design_material_assignment_changes() {
     let mut edited = decoded.ir().clone();
     let assignment = &mut edited
         .native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .arenas_mut()
         .get_mut("design_material_assignments")
         .unwrap()[0];

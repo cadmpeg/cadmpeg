@@ -213,7 +213,7 @@ fn inline_given_up_parts(
 fn finalize_result(
     ctx: &DecodeContext<'_>,
     mut ir: cadmpeg_ir::CadIr,
-    mut source: cadmpeg_ir::SourceMeta,
+    source: cadmpeg_ir::SourceMeta,
     mut body: DecodeBody,
     source_fidelity: cadmpeg_ir::SourceFidelity,
     instance_scopes: &merge::InstanceScopes,
@@ -232,17 +232,6 @@ fn finalize_result(
         |ir, losses| crate::design_v11::project(ctx, ir, depth, losses),
     )?;
     ir.finalize();
-    let hash = cadmpeg_ir::hash::document_local_sha256(
-        ctx,
-        &ir,
-        Some(&source),
-        "f3d",
-        crate::ids::FILE_SOURCE_IMAGE_ID,
-    )?;
-    source.attributes.insert(
-        cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-        hash,
-    );
     ir.source = Some(source);
     Ok(Decoded {
         ir,
