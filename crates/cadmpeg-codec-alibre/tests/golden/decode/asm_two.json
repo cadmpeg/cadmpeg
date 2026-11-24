@@ -492,8 +492,8 @@
             "kind": "solved",
             "value": {
               "axis": {
-                "x": -0.0,
-                "y": -0.0,
+                "x": 0.0,
+                "y": 0.0,
                 "z": -1.0
               },
               "center": {
@@ -1100,7 +1100,7 @@
               "normal": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "origin": {
                 "x": 10.0,
@@ -1108,9 +1108,9 @@
                 "z": 0.0
               },
               "u_axis": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -1133,8 +1133,8 @@
               },
               "u_axis": {
                 "x": 1.0,
-                "y": -0.0,
-                "z": -0.0
+                "y": 0.0,
+                "z": 0.0
               }
             }
           },
@@ -1156,9 +1156,9 @@
                 "z": 0.0
               },
               "u_axis": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": -1.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -1229,8 +1229,8 @@
               },
               "u_axis": {
                 "x": -1.0,
-                "y": -0.0,
-                "z": -0.0
+                "y": 0.0,
+                "z": 0.0
               }
             }
           },
@@ -3776,8 +3776,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -3830,8 +3829,7 @@
                 "kind": "classified"
               }
             }
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -3884,8 +3882,7 @@
                 "kind": "classified"
               }
             }
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -4305,6 +4302,18 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "source.record-extensions-unprojected",
+            "kind": "metadata_not_transferred",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_box: the extended entity base stores an integer in 85 record(s), and a body record stores one more in 1; the source states neither, and the decoder drops them",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "source.streams-undecoded",
             "kind": "metadata_not_transferred",
             "namespace": "alibre"
@@ -4324,6 +4333,18 @@
           }
         },
         "message": "component asm_box: the SAB_DATA stream declares save format 33.0, which no verified Spatial ACIS band declares; its records were read with the grammar `acis:save-format-217` declares, and what they decoded is reported as it decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "source.record-extensions-unprojected",
+            "kind": "metadata_not_transferred",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_cylinder: the extended entity base stores an integer in 25 record(s), and a body record stores one more in 1; the source states neither, and the decoder drops them",
         "severity": "warning"
       },
       {
@@ -5364,6 +5385,8 @@
         }
       }
     },
+    "codec_digests": {},
+    "content_digest": "8fb470a0fa3b1ec6711940858d28e7682ff2799bc6b3022b3300e7ebc1b68cdd",
     "decode_digest": "30c1986989047bfb06a16990a47ebcc6add85ae072d668e9955567e65c7be860",
     "file_digests": {},
     "retained_records": {},
