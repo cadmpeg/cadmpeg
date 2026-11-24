@@ -51,6 +51,8 @@ pub(crate) enum AlibreLossCode {
     HistoryDimensionAnnotationUnmapped,
     /// A feature selects edges by a topology signature that names no edge of the body.
     HistoryEdgeSelectionUnresolved,
+    /// A sketch lies on a face that a topology signature names, and the signature names no face of the body.
+    HistoryFaceSelectionUnresolved,
     /// A loft holds settings after its section list that the history does not map.
     HistoryLoftSettingsUnmapped,
     /// An end condition holds a logical that the history reads as the reversal of the sketch normal.
@@ -81,6 +83,7 @@ impl AlibreLossCode {
         Self::HistorySketchGeometryUnmapped,
         Self::HistoryDimensionAnnotationUnmapped,
         Self::HistoryEdgeSelectionUnresolved,
+        Self::HistoryFaceSelectionUnresolved,
         Self::HistoryLoftSettingsUnmapped,
         Self::HistoryDirectionFlagAssumed,
         Self::HistoryStreamUnread,
@@ -106,6 +109,7 @@ impl AlibreLossCode {
             Self::HistorySketchGeometryUnmapped => "history.sketch-geometry-unmapped",
             Self::HistoryDimensionAnnotationUnmapped => "history.dimension-annotation-unmapped",
             Self::HistoryEdgeSelectionUnresolved => "history.edge-selection-unresolved",
+            Self::HistoryFaceSelectionUnresolved => "history.face-selection-unresolved",
             Self::HistoryLoftSettingsUnmapped => "history.loft-settings-unmapped",
             Self::HistoryDirectionFlagAssumed => "history.direction-flag-assumed",
             Self::HistoryStreamUnread => "history.stream-unread",
@@ -132,6 +136,7 @@ impl AlibreLossCode {
             | Self::HistorySketchGeometryUnmapped
             | Self::HistoryDimensionAnnotationUnmapped
             | Self::HistoryEdgeSelectionUnresolved
+            | Self::HistoryFaceSelectionUnresolved
             | Self::HistoryLoftSettingsUnmapped
             | Self::HistoryDirectionFlagAssumed
             | Self::HistoryStreamUnread
@@ -158,6 +163,7 @@ impl AlibreLossCode {
             | Self::HistorySketchGeometryUnmapped
             | Self::HistoryDimensionAnnotationUnmapped
             | Self::HistoryEdgeSelectionUnresolved
+            | Self::HistoryFaceSelectionUnresolved
             | Self::HistoryLoftSettingsUnmapped
             | Self::HistoryDirectionFlagAssumed
             | Self::HistoryStreamUnread
@@ -206,6 +212,7 @@ mod tests {
                 "history.sketch-geometry-unmapped",
                 "history.dimension-annotation-unmapped",
                 "history.edge-selection-unresolved",
+                "history.face-selection-unresolved",
                 "history.loft-settings-unmapped",
                 "history.direction-flag-assumed",
                 "history.stream-unread",

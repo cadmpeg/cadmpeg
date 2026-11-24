@@ -165,7 +165,8 @@ pub(crate) enum Operation {
     },
     Fillet {
         radius: usize,
-        edge_signature: Option<String>,
+        /// The topology signature text of each edge, in list order.
+        edge_signatures: Vec<String>,
     },
     Hole {
         sketch: usize,
@@ -183,8 +184,6 @@ pub(crate) enum Operation {
 pub(crate) struct Feature {
     pub(crate) record: u32,
     pub(crate) name: String,
-    /// The `index` attribute of the state.
-    pub(crate) ordinal: i64,
     pub(crate) operation: Operation,
 }
 
@@ -729,10 +728,6 @@ impl<'a> Reader<'a> {
             .and_then(Value::as_str)
             .ok_or_else(|| bad("a state has no name"))?
             .to_owned();
-        let ordinal = state
-            .arg(1)
-            .and_then(Value::as_int)
-            .ok_or_else(|| bad("a state has no index"))?;
         let part = self.part;
         let target = operation.arg(1).and_then(Value::as_ref);
         let record = |index: usize, what: &str| reference(operation, index, what);
@@ -812,15 +807,7 @@ impl<'a> Reader<'a> {
                     .arg(2)
                     .and_then(Value::as_logical)
                     .ok_or_else(|| bad("an end condition has no direction flag"))?;
-                if operation
-                    .arg(0)
-                    .and_then(Value::as_list)
-                    .is_some_and(|dims| !dims.is_empty())
-                {
-                    self.history.losses.push(AlibreLossCode::HistoryDimensionAnnotationUnmapped.note(
-                        format!("state {name} holds a dimension annotation, which the history does not map"),
-                    ));
-                }
+                self.dimension_annotations(operation, &name);
                 Operation::Extrude {
                     sketch,
                     end: End::Blind(self.parameter(depth)?),
@@ -847,6 +834,7 @@ impl<'a> Reader<'a> {
                 )?;
                 let angle =
                     self.parameter(reference(condition, 1, "an end condition has no angle")?)?;
+                self.dimension_annotations(operation, &name);
                 Operation::Revolve {
                     sketch,
                     axis_origin,
@@ -857,7 +845,7 @@ impl<'a> Reader<'a> {
             }
             "FILLETOPERATION" => {
                 let radius = self.parameter(record(2, "a fillet has no radius")?)?;
-                let mut signature = None;
+                let mut signatures = Vec::new();
                 for edge in operation.arg(1).and_then(Value::refs).unwrap_or_default() {
                     let proxy = self.get(
                         edge,
@@ -866,7 +854,7 @@ impl<'a> Reader<'a> {
                     )?;
                     let target = self.get_any(reference(proxy, 1, "a proxy has no target")?)?;
                     if target.name == "TOPOLOGYSIGNATURE" {
-                        signature = target.arg(0).and_then(Value::as_str).map(str::to_owned);
+                        signatures.extend(target.arg(0).and_then(Value::as_str).map(str::to_owned));
                     }
                 }
                 self.history.losses.push(AlibreLossCode::HistoryEdgeSelectionUnresolved.note(
@@ -874,7 +862,7 @@ impl<'a> Reader<'a> {
                 ));
                 Operation::Fillet {
                     radius,
-                    edge_signature: signature,
+                    edge_signatures: signatures,
                 }
             }
             "HOLEOPERATION" => {
@@ -917,9 +905,26 @@ impl<'a> Reader<'a> {
         Ok(Feature {
             record: state.id,
             name,
-            ordinal,
             operation: kind,
         })
+    }
+
+    /// Charges the `DESIGNDIMENSION` list of attribute 0, which the history
+    /// does not map.
+    fn dimension_annotations(&mut self, operation: &Instance, state: &str) {
+        if operation
+            .arg(0)
+            .and_then(Value::as_list)
+            .is_some_and(|dimensions| !dimensions.is_empty())
+        {
+            self.history
+                .losses
+                .push(
+                    AlibreLossCode::HistoryDimensionAnnotationUnmapped.note(format!(
+                    "state {state} holds a dimension annotation, which the history does not map"
+                )),
+                );
+        }
     }
 
     fn axis1(&self, id: u32) -> Result<(Vec3, Vec3), CodecError> {
@@ -939,5 +944,46 @@ impl<'a> Reader<'a> {
                 reference(placement, 2, "a placement has no direction")?,
             )?,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::report::Severity;
+
+    fn charged(text: &[u8]) -> Vec<LossNote> {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let ctx = DecodeContext::for_loaded_input(&arena, &policy, 0).unwrap();
+        let part = crate::part21::parse(&ctx, text).unwrap();
+        let mut reader = Reader {
+            part: &part,
+            sketch_at: BTreeMap::new(),
+            plane_at: BTreeMap::new(),
+            axis_at: BTreeMap::new(),
+            history: History::default(),
+        };
+        reader.dimension_annotations(part.get(1).unwrap(), "R1");
+        reader.history.losses
+    }
+
+    #[test]
+    fn a_dimension_list_of_an_operation_is_charged() {
+        let notes = charged(b"DATA;#1=REVOLVESKETCHOPERATION((#2));#2=DESIGNDIMENSION();ENDSEC;");
+        let [note] = notes.as_slice() else {
+            panic!("one loss");
+        };
+        assert_eq!(
+            note.code,
+            AlibreLossCode::HistoryDimensionAnnotationUnmapped.kind()
+        );
+        assert_eq!(note.severity, Severity::Warning);
+    }
+
+    #[test]
+    fn an_empty_dimension_list_charges_nothing() {
+        assert!(charged(b"DATA;#1=REVOLVESKETCHOPERATION(());ENDSEC;").is_empty());
     }
 }

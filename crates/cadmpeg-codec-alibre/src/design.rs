@@ -31,7 +31,7 @@ use cadmpeg_ir::design::ops::sketch::{
 use cadmpeg_ir::design::ops::swept::{
     Extrude, ExtrudeDirection, ExtrudeOrigin, Loft, LoftShape, Revolve, Section, SectionForm,
 };
-use cadmpeg_ir::design::options::SolidOutput;
+use cadmpeg_ir::design::options::{NativeOption, NativeOptions, SolidOutput};
 use cadmpeg_ir::design::parameter::{
     DesignParameter, DimensionDisplay, ParameterDefinition, ParameterOwner, ParameterValue,
 };
@@ -111,21 +111,21 @@ fn picked(target: PickTarget) -> Picked {
     }
 }
 
-fn named<O: MemberOrder>(target: PickTarget) -> Result<Selection<O>, CodecError> {
+fn named<O: MemberOrder>(targets: Vec<PickTarget>) -> Result<Selection<O>, CodecError> {
     Ok(Selection {
         at: Anchor::Input,
         picks: Picks::Named(
-            Members::new(vec![picked(target)])
+            Members::new(targets.into_iter().map(picked).collect())
                 .map_err(|_| invalid("a selection holds a repeated member"))?,
         ),
         native: None,
     })
 }
 
-fn unread<O: MemberOrder>(native: Option<String>) -> Result<Selection<O>, CodecError> {
-    let native = native
-        .map(|text| {
-            vec![text]
+fn unread<O: MemberOrder>(native: Vec<String>) -> Result<Selection<O>, CodecError> {
+    let native = (!native.is_empty())
+        .then(|| {
+            native
                 .try_into()
                 .map_err(|_| invalid("a native selection text is not admitted"))
         })
@@ -161,17 +161,17 @@ impl Projection<'_> {
             .sketches
             .get(&feature)
             .ok_or_else(|| invalid("an operation names a state that holds no sketch"))?;
-        named(PickTarget::Sketch(sketch.clone()))
+        named(vec![PickTarget::Sketch(sketch.clone())])
     }
 
     fn datum_pick(
         &self,
         feature: usize,
     ) -> Result<Selection<cadmpeg_ir::design::selection::Ordered>, CodecError> {
-        named(PickTarget::Datum {
+        named(vec![PickTarget::Datum {
             feature: self.features[feature].clone(),
             part: None,
-        })
+        }])
     }
 
     fn input(
@@ -198,7 +198,7 @@ impl Projection<'_> {
     ) -> Result<Sketch, CodecError> {
         let reference = match &sketch.support {
             Support::Plane(feature) => self.datum_pick(*feature)?,
-            Support::Face(signature) => unread(Some(signature_text(signature)))?,
+            Support::Face(signature) => unread(vec![signature_text(signature)])?,
         };
         Ok(Sketch {
             id: id.clone(),
@@ -418,10 +418,15 @@ impl Projection<'_> {
             }
             Operation::Fillet {
                 radius,
-                edge_signature,
+                edge_signatures,
             } => FeatureOperation::Fillet(Box::new(Fillet {
                 sets: vec![FilletSet::Edges {
-                    edges: unread(edge_signature.as_deref().map(signature_text))?,
+                    edges: unread(
+                        edge_signatures
+                            .iter()
+                            .map(|text| signature_text(text))
+                            .collect(),
+                    )?,
                     section: FilletSection {
                         size: Some(FilletSize::Radius(self.dimension(*radius))),
                         profile: None,
@@ -452,19 +457,24 @@ impl Projection<'_> {
                 else {
                     return Err(invalid("a hole names a state that holds no sketch"));
                 };
-                let center = hole_sketch
+                let centers = hole_sketch
                     .primitives
                     .iter()
-                    .find(|primitive| matches!(primitive.curve, Curve::Point(_)));
-                let points = match center {
-                    Some(primitive) => named(PickTarget::SketchEntity(mint(
-                        "sketch-entity",
-                        primitive.record,
-                    )?))?,
-                    None => unread(None)?,
+                    .filter(|primitive| matches!(primitive.curve, Curve::Point(_)))
+                    .map(|primitive| {
+                        Ok(PickTarget::SketchEntity(mint(
+                            "sketch-entity",
+                            primitive.record,
+                        )?))
+                    })
+                    .collect::<Result<Vec<_>, CodecError>>()?;
+                let points = if centers.is_empty() {
+                    unread(Vec::new())?
+                } else {
+                    named(centers)?
                 };
                 let start = match &hole_sketch.support {
-                    Support::Face(signature) => Some(unread(Some(signature_text(signature)))?),
+                    Support::Face(signature) => Some(unread(vec![signature_text(signature)])?),
                     Support::Plane(_) => None,
                 };
                 FeatureOperation::Hole(Box::new(Hole {
@@ -578,6 +588,13 @@ impl Projection<'_> {
         let diameter = self.history.features.iter().any(|feature| {
             matches!(feature.operation, Operation::Hole { diameter, .. } if diameter == at)
         });
+        let mut source_settings = NativeOptions::new();
+        if let Some(guid) = parameter.guid.as_deref().and_then(NonBlankString::new) {
+            source_settings.insert(
+                cadmpeg_ir::codec_name!("alibre:guid"),
+                NativeOption::Text(Dimension::Literal(guid)),
+            );
+        }
         Ok(DesignParameter {
             id: self.parameters[at].clone(),
             scope: self.scope.clone(),
@@ -592,7 +609,7 @@ impl Projection<'_> {
             decimals: None,
             comment: None,
             native_options: BTreeMap::new(),
-            source_settings: BTreeMap::new(),
+            source_settings,
             native_ref: None,
         })
     }
@@ -638,17 +655,27 @@ pub(crate) fn project(
     definition: &ProductDefinitionId,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    losses.extend(history.losses.iter().cloned());
+    let mut notes = history.losses.clone();
+    for feature in &history.features {
+        if let Operation::Sketch(sketch) = &feature.operation {
+            if let Support::Face(signature) = &sketch.support {
+                notes.push(AlibreLossCode::HistoryFaceSelectionUnresolved.note(format!(
+                    "sketch {} lies on the face that topology signature {signature} names, which names no face of the body",
+                    sketch.name
+                )));
+            }
+        }
+    }
     if history
         .features
         .iter()
         .any(|feature| matches!(feature.operation, Operation::Extrude { .. }))
     {
-        losses.push(AlibreLossCode::HistoryDirectionFlagAssumed.note(
+        notes.push(AlibreLossCode::HistoryDirectionFlagAssumed.note(
             "the logical of a blind end condition is read as the reversal of the sketch normal",
         ));
     }
-    losses.push(AlibreLossCode::HistoryPresentationUnmapped.note(
+    notes.push(AlibreLossCode::HistoryPresentationUnmapped.note(
         "document profile, measurement format, font, hatch, configuration, and version records are not mapped",
     ));
     let mut projection = Projection {
@@ -678,19 +705,21 @@ pub(crate) fn project(
         "project Alibre design records",
     )?;
     let mut features = Vec::new();
+    let mut sketches = Vec::new();
+    let mut sketch_entities = Vec::new();
+    let mut sketch_constraints = Vec::new();
+    let mut parameters = Vec::new();
     for (at, feature) in history.features.iter().enumerate() {
         if let Operation::Sketch(sketch) = &feature.operation {
             let id = &projection.sketches[&at];
-            ir.design
-                .sketches
-                .push(projection.sketch(sketch, id, &projection.features[at])?);
+            sketches.push(projection.sketch(sketch, id, &projection.features[at])?);
             let (entities, constraints) = Projection::entities(sketch, id)?;
             ctx.charge_entities(
                 cadmpeg_core::decode::u64_from_index(entities.len() + constraints.len()),
                 "project Alibre sketch records",
             )?;
-            ir.design.sketch_entities.extend(entities);
-            ir.design.sketch_constraints.extend(constraints);
+            sketch_entities.extend(entities);
+            sketch_constraints.extend(constraints);
         }
         features.push(Feature {
             id: projection.features[at].clone(),
@@ -709,9 +738,7 @@ pub(crate) fn project(
         });
     }
     for (at, parameter) in history.parameters.iter().enumerate() {
-        ir.design
-            .parameters
-            .push(projection.parameter(at, parameter)?);
+        parameters.push(projection.parameter(at, parameter)?);
     }
     let timeline: ContainerId = mint("container", "timeline")?;
     let members = features
@@ -729,6 +756,11 @@ pub(crate) fn project(
         .filter(|candidate| candidate.id == *definition)
         .flat_map(|candidate| candidate.bodies.iter().cloned())
         .collect();
+    losses.append(&mut notes);
+    ir.design.sketches.extend(sketches);
+    ir.design.sketch_entities.extend(sketch_entities);
+    ir.design.sketch_constraints.extend(sketch_constraints);
+    ir.design.parameters.extend(parameters);
     ir.design.features.extend(features);
     ir.design.containers.push(Container::Ordered {
         id: timeline.clone(),
