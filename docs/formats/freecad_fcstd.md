@@ -859,7 +859,8 @@ state after the member, based on the nearest earlier stored state of the body. T
 `Shape` repeats the body's own `Shape`; where the body's own `Shape` holds no shape, the `Tip`'s
 holds the body's current state. The `AddSubShape` of `Pad`, `Pocket`, `Revolution`, `Groove`,
 `Hole`, and every `Additive` and `Subtractive` feature holds the feature's tool body, an
-evaluation of its own. Every other intermediate shape (a sketch's or a datum's shape, a binder's
+evaluation of its own; a document that names the tool shape by the feature's effect stores it as
+`AddShape` or `SubShape`. Every other intermediate shape (a sketch's or a datum's shape, a binder's
 copy, a suppressed member's shape, a dress-up's or a pattern's `AddSubShape`) stays in its shape
 payload record. A persistent element name binds a record of the current geometry only. A
 selection of an intermediate shape's sub-element keeps its source property. A free feature

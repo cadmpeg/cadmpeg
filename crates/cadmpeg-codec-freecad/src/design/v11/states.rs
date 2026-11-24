@@ -5,7 +5,8 @@
 //! `FreeCAD` stores each state of a Body in full. The `Shape` of a member that
 //! builds the Body's solid (an object that stores `BaseFeature`) holds the
 //! state after that member, and the `AddSubShape` of an additive or
-//! subtractive feature or a hole holds its tool body. The Body's own `Shape`
+//! subtractive feature or a hole holds its tool body (`AddShape` and
+//! `SubShape` in documents that name it by the feature's effect). The Body's own `Shape`
 //! repeats its `Tip`'s and is the Body's current state (§5.5, D33).
 //! `CadIr.geometry` holds only the current model, so every other stored state
 //! is an evaluation: `State(After(m))`, based on the nearest earlier stored
@@ -386,7 +387,7 @@ fn home(
         "Shape" if !stateless && source.stored.contains(&(payload.owner, "BaseFeature")) => {
             Home::State { body, member }
         }
-        "AddSubShape"
+        "AddSubShape" | "AddShape" | "SubShape"
             if !stateless
                 && types
                     .get(payload.owner)
