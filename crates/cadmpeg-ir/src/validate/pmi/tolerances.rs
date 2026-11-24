@@ -10,6 +10,7 @@ use crate::design::dimension::Dimension;
 use crate::design::parameter::{Deviations, FitDeviations, LimitSide, Tolerance};
 use crate::pmi::{LimitsAndFits, PmiDimension, PmiQuantity};
 use crate::report::check::Finding;
+use crate::report::check::Ruled;
 use crate::scalar::FiniteReal;
 
 pub(super) fn check_dimension_tolerance(
@@ -31,7 +32,10 @@ pub(super) fn check_dimension_tolerance(
                 error(
                     findings,
                     annotation,
-                    format_args!("dimension's fit and its mate state the same zone"),
+                    crate::rule!(
+                        "pmi.dimension-fit-mate-state-same-zone",
+                        "dimension's fit and its mate state the same zone"
+                    ),
                 );
             }
             deviations.as_ref().map(|deviations| match deviations {
@@ -47,7 +51,8 @@ pub(super) fn check_dimension_tolerance(
             error(
                 findings,
                 annotation,
-                format_args!(
+                crate::rule!(
+                    "pmi.dimension-lower-deviation-not-below-upper",
                     "dimension's lower deviation {} is not below its upper deviation {}",
                     lower.get(),
                     upper.get()
@@ -76,7 +81,8 @@ pub(super) fn check_dimension_statements(
             error(
                 findings,
                 annotation,
-                format_args!(
+                crate::rule!(
+                    "pmi.dimension-states-tolerance-quantity-no-length",
                     "dimension states a tolerance, but its quantity is no length or angle"
                 ),
             );
@@ -87,7 +93,10 @@ pub(super) fn check_dimension_statements(
                     error(
                         findings,
                         annotation,
-                        format_args!("dimension states a fit, but its quantity is no length"),
+                        crate::rule!(
+                            "pmi.dimension-states-fit-quantity-no-length",
+                            "dimension states a fit, but its quantity is no length"
+                        ),
                     );
                 }
                 for (what, designation) in
@@ -99,7 +108,10 @@ pub(super) fn check_dimension_statements(
             Tolerance::Basic | Tolerance::SingleLimit(_) if dimension.nominal.is_none() => error(
                 findings,
                 annotation,
-                format_args!("dimension states a basic or single-limit tolerance and no nominal"),
+                crate::rule!(
+                    "pmi.dimension-states-basic-single-limit-tolerance",
+                    "dimension states a basic or single-limit tolerance and no nominal"
+                ),
             ),
             Tolerance::Deviations(_)
             | Tolerance::General
@@ -122,7 +134,8 @@ pub(super) fn check_dimension_statements(
             warning(
                 findings,
                 annotation,
-                format_args!(
+                crate::rule!(
+                    "pmi.dimension-restates-tolerance-parameter-nominal-binds",
                     "dimension restates the tolerance of the parameter its nominal binds, {} (D61)",
                     parameter.id.as_str()
                 ),
@@ -132,7 +145,8 @@ pub(super) fn check_dimension_statements(
             warning(
                 findings,
                 annotation,
-                format_args!(
+                crate::rule!(
+                    "pmi.dimension-restates-decimals-parameter-nominal-binds",
                     "dimension restates the decimals of the parameter its nominal binds, {} (D60)",
                     parameter.id.as_str()
                 ),
@@ -187,19 +201,25 @@ fn check_designation(
         error(
             findings,
             annotation,
-            format_args!("dimension's {what} designation {letters:?} is not capital letters only"),
+            crate::rule!(
+                "pmi.dimension-designation-not-capital-letters-only",
+                "dimension's {what} designation {letters:?} is not capital letters only"
+            ),
         );
     }
     if designation.grade.is_empty() {
         error(
             findings,
             annotation,
-            format_args!("dimension's {what} designation states an empty grade"),
+            crate::rule!(
+                "pmi.dimension-designation-states-empty-grade",
+                "dimension's {what} designation states an empty grade"
+            ),
         );
     }
 }
 
-fn warning(findings: &mut Vec<Finding>, annotation: &str, message: std::fmt::Arguments<'_>) {
+fn warning(findings: &mut Vec<Finding>, annotation: &str, message: Ruled<'_>) {
     crate::validate::record_finding(
         findings,
         crate::report::check::Check::Pmi,

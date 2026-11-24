@@ -88,7 +88,10 @@ pub(super) fn check_bound_nominal(
             error(
                 findings,
                 annotation,
-                format_args!("dimension nominal binds {id}, which is no parameter of the document"),
+                crate::rule!(
+                    "pmi.dimension-nominal-binds-no-parameter-document",
+                    "dimension nominal binds {id}, which is no parameter of the document"
+                ),
             );
         }
         return;
@@ -100,7 +103,7 @@ pub(super) fn check_bound_nominal(
             error(
                 findings,
                 annotation,
-                format_args!(
+                crate::rule!("pmi.dimension-nominal-binds-kind-no-length", 
                     "dimension nominal binds {id}, whose kind is no length, angle, or dimensionless quantity"
                 ),
             );
@@ -115,7 +118,8 @@ pub(super) fn check_bound_nominal(
         error(
             findings,
             annotation,
-            format_args!(
+            crate::rule!(
+                "pmi.dimension-nominal-binds-kind-disagrees-dimension",
                 "dimension nominal binds {id}, whose kind disagrees with the dimension's kind"
             ),
         );

@@ -15,7 +15,10 @@ pub(super) fn check_mate_zone(
         super::super::error(
             findings,
             parameter,
-            format_args!("parameter's fit and its mate state the same zone"),
+            crate::rule!(
+                "design.parameter-fit-mate-state-same-zone",
+                "parameter's fit and its mate state the same zone"
+            ),
         );
     }
 }

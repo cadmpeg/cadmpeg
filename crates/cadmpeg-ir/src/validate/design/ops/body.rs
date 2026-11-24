@@ -54,17 +54,17 @@ pub(super) fn check_spacing<Q>(
         Spacing::List(values) if values.is_empty() => error(
             findings,
             site.entity,
-            format_args!("{field} is an empty List"),
+            crate::rule!("design.empty-list", "{field} is an empty List"),
         ),
         Spacing::Fit { .. } if !kind.fit => error(
             findings,
             site.entity,
-            format_args!("{field} is Fit, which occurs only in a circular angular run, a path run, or a circular sketch pattern"),
+            crate::rule!("design.fit-occurs-only-circular-angular-run", "{field} is Fit, which occurs only in a circular angular run, a path run, or a circular sketch pattern"),
         ),
         Spacing::UpTo { .. } if !kind.up_to => error(
             findings,
             site.entity,
-            format_args!("{field} is UpTo, which occurs only in a LinearRun"),
+            crate::rule!("design.upto-occurs-only-linearrun", "{field} is UpTo, which occurs only in a LinearRun"),
         ),
         _ => {}
     }
@@ -154,7 +154,10 @@ pub(super) fn check_pattern(
                 error(
                     findings,
                     site.entity,
-                    format_args!("a Features seed picks {class}; it picks feature results"),
+                    crate::rule!(
+                        "design.features-seed-picks-picks-feature-results",
+                        "a Features seed picks {class}; it picks feature results"
+                    ),
                 );
             }
         }
@@ -163,7 +166,10 @@ pub(super) fn check_pattern(
                 error(
                     findings,
                     site.entity,
-                    format_args!("a Faces seed picks {class}, not a face"),
+                    crate::rule!(
+                        "design.faces-seed-picks-not-face",
+                        "a Faces seed picks {class}, not a face"
+                    ),
                 );
             }
         }
@@ -172,7 +178,10 @@ pub(super) fn check_pattern(
                 error(
                     findings,
                     site.entity,
-                    format_args!("a Bodies seed picks {class}, not a body"),
+                    crate::rule!(
+                        "design.bodies-seed-picks-not-body",
+                        "a Bodies seed picks {class}, not a body"
+                    ),
                 );
             }
         }
@@ -193,7 +202,10 @@ pub(super) fn check_pattern(
                 error(
                     findings,
                     site.entity,
-                    format_args!("a Mirror layout states instance overrides"),
+                    crate::rule!(
+                        "design.mirror-layout-states-instance-overrides",
+                        "a Mirror layout states instance overrides"
+                    ),
                 );
             }
             let indices: Vec<&InstanceIndex> = overrides.iter().map(|o| &o.index).collect();
@@ -204,7 +216,10 @@ pub(super) fn check_pattern(
                         error(
                             findings,
                             site.entity,
-                            format_args!("an instance override's Varied.parameters is empty"),
+                            crate::rule!(
+                                "design.instance-override-varied-parameters-empty",
+                                "an instance override's Varied.parameters is empty"
+                            ),
                         );
                     }
                     for parameter in parameters.keys() {
@@ -215,7 +230,8 @@ pub(super) fn check_pattern(
                             error(
                                 findings,
                                 site.entity,
-                                format_args!(
+                                crate::rule!(
+                                    "design.varied-names-no-seed-definition-binds",
                                     "Varied names {}, which no seed definition binds",
                                     parameter.as_str()
                                 ),
@@ -238,7 +254,7 @@ pub(super) fn check_pattern(
                     error(
                         findings,
                         site.entity,
-                        format_args!("a pattern member lists {} features; it lists one per seed feature pick", member.features.len()),
+                        crate::rule!("design.pattern-member-lists-features-lists-one", "a pattern member lists {} features; it lists one per seed feature pick", member.features.len()),
                     );
                 }
             }
@@ -254,7 +270,10 @@ pub(super) fn check_pattern(
                 error(
                     findings,
                     site.entity,
-                    format_args!("a pattern member is one of the pattern's seeds"),
+                    crate::rule!(
+                        "design.pattern-member-one-pattern-seeds",
+                        "a pattern member is one of the pattern's seeds"
+                    ),
                 );
             }
             check_generated_members(index, site, "pattern member", &listed, findings);
@@ -276,12 +295,15 @@ fn check_generated_members(
             None => error(
                 findings,
                 site.entity,
-                format_args!("{what} {feature} is no feature of the design"),
+                crate::rule!(
+                    "design.no-feature-design",
+                    "{what} {feature} is no feature of the design"
+                ),
             ),
             Some(record) if record.driven_by.is_some() => error(
                 findings,
                 site.entity,
-                format_args!("{what} {feature} has driven_by"),
+                crate::rule!("design.driven", "{what} {feature} has driven_by"),
             ),
             Some(_) => {}
         }
@@ -313,7 +335,10 @@ fn check_generated_members(
         error(
             findings,
             site.entity,
-            format_args!("the {what}s do not follow the feature contiguously in its container"),
+            crate::rule!(
+                "design.do-not-follow-feature-contiguously-container",
+                "the {what}s do not follow the feature contiguously in its container"
+            ),
         );
     }
 }
@@ -394,21 +419,30 @@ pub(super) fn check_indices(
             error(
                 findings,
                 site.entity,
-                format_args!("instance index {:?} repeats", index.0),
+                crate::rule!(
+                    "design.instance-index-repeats",
+                    "instance index {:?} repeats",
+                    index.0
+                ),
             );
         }
         if index.0.iter().all(|&coordinate| coordinate == 0) {
             error(
                 findings,
                 site.entity,
-                format_args!("instance index {:?} is all zeros, the seed's", index.0),
+                crate::rule!(
+                    "design.instance-index-all-zeros-seed",
+                    "instance index {:?} is all zeros, the seed's",
+                    index.0
+                ),
             );
         }
         if expected.is_some_and(|expected| index.0.len() != expected) {
             error(
                 findings,
                 site.entity,
-                format_args!(
+                crate::rule!(
+                    "design.instance-index-other-one-coordinate-per",
                     "instance index {:?} has other than one coordinate per run",
                     index.0
                 ),
@@ -419,7 +453,8 @@ pub(super) fn check_indices(
             error(
                 findings,
                 site.entity,
-                format_args!(
+                crate::rule!(
+                    "design.instance-index-lies-outside-run-coordinate",
                     "instance index {:?} lies outside a run's coordinate range",
                     index.0
                 ),
@@ -430,7 +465,8 @@ pub(super) fn check_indices(
             error(
                 findings,
                 site.entity,
-                format_args!(
+                crate::rule!(
+                    "design.instance-index-no-zero-coordinate-under",
                     "instance index {:?} has no zero coordinate under seed_only",
                     index.0
                 ),
@@ -464,7 +500,10 @@ pub(super) fn check_layout(
                 error(
                     findings,
                     site.entity,
-                    format_args!("PatternLayout::Dimensions is empty"),
+                    crate::rule!(
+                        "design.patternlayout-dimensions-empty",
+                        "PatternLayout::Dimensions is empty"
+                    ),
                 );
             }
             for run in runs {
@@ -472,7 +511,10 @@ pub(super) fn check_layout(
                     error(
                         findings,
                         site.entity,
-                        format_args!("a Dimensions run has no increment"),
+                        crate::rule!(
+                            "design.dimensions-run-no-increment",
+                            "a Dimensions run has no increment"
+                        ),
                     );
                 }
                 site.bound(findings, |values| {
@@ -489,7 +531,10 @@ pub(super) fn check_layout(
                 error(
                     findings,
                     site.entity,
-                    format_args!("a Table's parameters are empty or repeat"),
+                    crate::rule!(
+                        "design.table-parameters-empty-repeat",
+                        "a Table's parameters are empty or repeat"
+                    ),
                 );
             }
             let mut rows = BTreeSet::new();
@@ -498,7 +543,8 @@ pub(super) fn check_layout(
                     error(
                         findings,
                         site.entity,
-                        format_args!(
+                        crate::rule!(
+                            "design.table-row-holds-values-parameters",
                             "a Table row holds {} values for {} parameters",
                             row.values.len(),
                             table.parameters.len()
@@ -509,7 +555,11 @@ pub(super) fn check_layout(
                     error(
                         findings,
                         site.entity,
-                        format_args!("Table row instance {} repeats", row.instance),
+                        crate::rule!(
+                            "design.table-row-instance-repeats",
+                            "Table row instance {} repeats",
+                            row.instance
+                        ),
                     );
                 }
             }
@@ -519,7 +569,10 @@ pub(super) fn check_layout(
                 error(
                     findings,
                     site.entity,
-                    format_args!("a Composite layout has fewer than two stages"),
+                    crate::rule!(
+                        "design.composite-layout-fewer-two-stages",
+                        "a Composite layout has fewer than two stages"
+                    ),
                 );
             }
             let mut made: Option<u64> = Some(1);
@@ -535,7 +588,7 @@ pub(super) fn check_layout(
                         error(
                             findings,
                             site.entity,
-                            format_args!("a Scale stage's count does not divide the instances the stages before it make"),
+                            crate::rule!("design.scale-stage-count-does-not-divide", "a Scale stage's count does not divide the instances the stages before it make"),
                         );
                     }
                 }
@@ -557,7 +610,10 @@ pub(super) fn check_layout(
                 error(
                     findings,
                     site.entity,
-                    format_args!("PatternLayout::Chain occurs only in a ComponentPattern"),
+                    crate::rule!(
+                        "design.patternlayout-chain-occurs-only-componentpattern",
+                        "PatternLayout::Chain occurs only in a ComponentPattern"
+                    ),
                 );
             }
             super::options::check_path(site, "ChainLayout.path", &chain.path, findings);
@@ -567,7 +623,10 @@ pub(super) fn check_layout(
                         error(
                             findings,
                             site.entity,
-                            format_args!("a chain link's two pins are one axis"),
+                            crate::rule!(
+                                "design.chain-link-two-pins-one-axis",
+                                "a chain link's two pins are one axis"
+                            ),
                         );
                     }
                 }
@@ -602,7 +661,10 @@ fn check_linear(
         error(
             findings,
             site.entity,
-            format_args!("PatternLayout::Linear.seed_only occurs without second"),
+            crate::rule!(
+                "design.patternlayout-linear-seed-only-occurs-without",
+                "PatternLayout::Linear.seed_only occurs without second"
+            ),
         );
     }
     for run in std::iter::once(&layout.first).chain(&layout.second) {
@@ -695,7 +757,8 @@ fn check_run<Q>(
         error(
             findings,
             site.entity,
-            format_args!(
+            crate::rule!(
+                "design.runsides-against-occurs-occurs-only-path",
                 "RunSides::Against occurs in {field}; it occurs only in a Path layout's run"
             ),
         );
@@ -725,14 +788,17 @@ fn check_increments(
             error(
                 findings,
                 site.entity,
-                format_args!("increment parameter {parameter} appears twice in one run"),
+                crate::rule!(
+                    "design.increment-parameter-appears-twice-one-run",
+                    "increment parameter {parameter} appears twice in one run"
+                ),
             );
         }
         if bound.is_some_and(|bound| !bound.contains(parameter)) {
             error(
                 findings,
                 site.entity,
-                format_args!("increment parameter {parameter} is bound by no dimension of a seed feature's definition"),
+                crate::rule!("design.increment-parameter-bound-no-dimension-seed", "increment parameter {parameter} is bound by no dimension of a seed feature's definition"),
             );
         }
     }
@@ -749,14 +815,20 @@ fn check_orientation(
             error(
                 findings,
                 site.entity,
-                format_args!("InstanceOrientation::Rolled occurs only in a Path layout"),
+                crate::rule!(
+                    "design.instanceorientation-rolled-occurs-only-path-layout",
+                    "InstanceOrientation::Rolled occurs only in a Path layout"
+                ),
             );
         }
         if *reference_axis == crate::design::construction::FrameAxis::X {
             error(
                 findings,
                 site.entity,
-                format_args!("InstanceOrientation::Rolled's reference_axis is X; it is Y or Z"),
+                crate::rule!(
+                    "design.instanceorientation-rolled-reference-axis-x-y",
+                    "InstanceOrientation::Rolled's reference_axis is X; it is Y or Z"
+                ),
             );
         }
     }
@@ -777,7 +849,8 @@ fn check_follow(
         error(
             findings,
             site.entity,
-            format_args!(
+            crate::rule!(
+                "design.patternlayout-follow-holds-picks-holds-one",
                 "PatternLayout::Follow holds {} picks; it holds one",
                 picks.len()
             ),
@@ -790,7 +863,10 @@ fn check_follow(
             error(
                 findings,
                 site.entity,
-                format_args!("PatternLayout::Follow picks other than a pattern feature"),
+                crate::rule!(
+                    "design.patternlayout-follow-picks-other-pattern-feature",
+                    "PatternLayout::Follow picks other than a pattern feature"
+                ),
             );
         }
         return;
@@ -804,7 +880,10 @@ fn check_follow(
             error(
                 findings,
                 site.entity,
-                format_args!("PatternLayout::Follow reaches the pattern itself"),
+                crate::rule!(
+                    "design.patternlayout-follow-reaches-pattern-itself",
+                    "PatternLayout::Follow reaches the pattern itself"
+                ),
             );
             return;
         }
@@ -822,7 +901,10 @@ fn check_follow(
                     error(
                         findings,
                         site.entity,
-                        format_args!("PatternLayout::Follow picks {at}, which is no pattern"),
+                        crate::rule!(
+                            "design.patternlayout-follow-picks-no-pattern",
+                            "PatternLayout::Follow picks {at}, which is no pattern"
+                        ),
                     );
                 }
                 return;
@@ -867,7 +949,10 @@ pub(super) fn check_template_instance(
         error(
             findings,
             site.entity,
-            format_args!("a TemplateInstance repeats a role within its inputs or its parameters"),
+            crate::rule!(
+                "design.templateinstance-repeats-role-within-inputs-parameters",
+                "a TemplateInstance repeats a role within its inputs or its parameters"
+            ),
         );
     }
     for parameter in &instance.parameters {
@@ -879,7 +964,8 @@ pub(super) fn check_template_instance(
             error(
                 findings,
                 site.entity,
-                format_args!(
+                crate::rule!(
+                    "design.template-parameter-no-parameter-instance-scope",
                     "template parameter {} is no parameter of the instance's scope",
                     parameter.parameter.as_str()
                 ),
@@ -918,7 +1004,7 @@ pub(super) fn check_template_inputs(index: &DesignRecords<'_>, findings: &mut Ve
                 error(
                     findings,
                     feature.id.as_str(),
-                    format_args!(
+                    crate::rule!("design.templateinput-picks-input-no-input-instance", 
                         "TemplateInput picks input {input} of {}, which is no input of an instance that lists this feature",
                         instance.as_str()
                     ),
@@ -937,7 +1023,8 @@ pub(super) fn check_combine(site: Site<'_>, combine: &Combine, findings: &mut Ve
         error(
             findings,
             site.entity,
-            format_args!(
+            crate::rule!(
+                "design.combine-op-sew-join-cut-intersect",
                 "Combine.op is Sew; it is Join, Cut, Intersect, Assemble, UnionTrim, or Compound"
             ),
         );
@@ -946,7 +1033,7 @@ pub(super) fn check_combine(site: Site<'_>, combine: &Combine, findings: &mut Ve
         error(
             findings,
             site.entity,
-            format_args!("Combine.tools is empty"),
+            crate::rule!("design.combine-tools-empty", "Combine.tools is empty"),
         );
     }
     if let Some(target) = &combine.target {
@@ -954,14 +1041,20 @@ pub(super) fn check_combine(site: Site<'_>, combine: &Combine, findings: &mut Ve
             error(
                 findings,
                 site.entity,
-                format_args!("a pick is in both Combine.target and Combine.tools"),
+                crate::rule!(
+                    "design.pick-both-combine-target-combine-tools",
+                    "a pick is in both Combine.target and Combine.tools"
+                ),
             );
         }
         if matches!(combine.op, Some(BooleanOp::Compound)) {
             error(
                 findings,
                 site.entity,
-                format_args!("a Compound combine states a target"),
+                crate::rule!(
+                    "design.compound-combine-states-target",
+                    "a Compound combine states a target"
+                ),
             );
         }
     } else if !site.assembly
@@ -973,7 +1066,8 @@ pub(super) fn check_combine(site: Site<'_>, combine: &Combine, findings: &mut Ve
         error(
             findings,
             site.entity,
-            format_args!(
+            crate::rule!(
+                "design.combine-target-none-op-other-join",
                 "Combine.target is None with an op other than Join, Intersect, or Compound"
             ),
         );
@@ -995,14 +1089,20 @@ pub(super) fn check_split(site: Site<'_>, split: &Split, findings: &mut Vec<Find
                         error(
                             findings,
                             site.entity,
-                            format_args!("ByTools.targets picks {class}; it picks bodies or faces"),
+                            crate::rule!(
+                                "design.bytools-targets-picks-picks-bodies-faces",
+                                "ByTools.targets picks {class}; it picks bodies or faces"
+                            ),
                         );
                     }
                 }
                 None if !site.assembly => error(
                     findings,
                     site.entity,
-                    format_args!("ByTools.targets is None in a definition that states no assembly"),
+                    crate::rule!(
+                        "design.bytools-targets-none-definition-states-no",
+                        "ByTools.targets is None in a definition that states no assembly"
+                    ),
                 ),
                 None => {}
             }
@@ -1015,7 +1115,7 @@ pub(super) fn check_split(site: Site<'_>, split: &Split, findings: &mut Vec<Find
                             error(
                                 findings,
                                 site.entity,
-                                format_args!("SplitTool::Geometry picks one datum or principal entity alone, which is SplitTool::Plane"),
+                                crate::rule!("design.splittool-geometry-picks-one-datum-principal", "SplitTool::Geometry picks one datum or principal entity alone, which is SplitTool::Plane"),
                             );
                         }
                     }
@@ -1027,14 +1127,18 @@ pub(super) fn check_split(site: Site<'_>, split: &Split, findings: &mut Vec<Find
                         error(
                             findings,
                             site.entity,
-                            format_args!("a Silhouette split states a method"),
+                            crate::rule!(
+                                "design.silhouette-split-states-method",
+                                "a Silhouette split states a method"
+                            ),
                         );
                     }
                     if matches!(kept, Some(Kept::Side { .. } | Kept::Pieces { .. })) {
                         error(
                             findings,
                             site.entity,
-                            format_args!(
+                            crate::rule!(
+                                "design.silhouette-split-keeps-side-pieces-keeps",
                                 "a Silhouette split keeps a side or pieces; it keeps All or Native"
                             ),
                         );
@@ -1062,7 +1166,10 @@ pub(super) fn check_split(site: Site<'_>, split: &Split, findings: &mut Vec<Find
                     error(
                         findings,
                         site.entity,
-                        format_args!("SplitMethod::Project occurs where no tool is a curve"),
+                        crate::rule!(
+                            "design.splitmethod-project-occurs-where-no-tool",
+                            "SplitMethod::Project occurs where no tool is a curve"
+                        ),
                     );
                 }
                 if matches!(**direction, ProjectionDirection::SketchNormal)
@@ -1071,7 +1178,10 @@ pub(super) fn check_split(site: Site<'_>, split: &Split, findings: &mut Vec<Find
                     error(
                         findings,
                         site.entity,
-                        format_args!("SketchNormal occurs where no tool curve belongs to a sketch"),
+                        crate::rule!(
+                            "design.sketchnormal-occurs-where-no-tool-curve",
+                            "SketchNormal occurs where no tool curve belongs to a sketch"
+                        ),
                     );
                 }
             }
@@ -1085,7 +1195,10 @@ pub(super) fn check_split(site: Site<'_>, split: &Split, findings: &mut Vec<Find
                 error(
                     findings,
                     site.entity,
-                    format_args!("SplitMode::Mutual.elements holds fewer than two picks"),
+                    crate::rule!(
+                        "design.splitmode-mutual-elements-holds-fewer-two",
+                        "SplitMode::Mutual.elements holds fewer than two picks"
+                    ),
                 );
             }
             match kept {
@@ -1094,7 +1207,8 @@ pub(super) fn check_split(site: Site<'_>, split: &Split, findings: &mut Vec<Find
                         error(
                             findings,
                             site.entity,
-                            format_args!(
+                            crate::rule!(
+                                "design.kept-side-holds-entries-elements",
                                 "Kept::Side holds {} entries for {} elements",
                                 side.len(),
                                 count.unwrap_or_default()
@@ -1117,7 +1231,10 @@ fn check_kept<S>(site: Site<'_>, kept: &Kept<S>, findings: &mut Vec<Finding>) {
         error(
             findings,
             site.entity,
-            format_args!("Kept::Pieces states neither keep nor remove"),
+            crate::rule!(
+                "design.kept-pieces-states-neither-keep-nor",
+                "Kept::Pieces states neither keep nor remove"
+            ),
         );
     }
     for list in [keep, remove].into_iter().flatten() {
@@ -1136,7 +1253,7 @@ fn check_kept<S>(site: Site<'_>, kept: &Kept<S>, findings: &mut Vec<Finding>) {
             error(
                 findings,
                 site.entity,
-                format_args!("piece picks of one list do not share one fragment count, or an index is not below it"),
+                crate::rule!("design.piece-picks-one-list-do-not", "piece picks of one list do not share one fragment count, or an index is not below it"),
             );
         }
     }
@@ -1152,7 +1269,10 @@ pub(super) fn check_transform_bodies(
         error(
             findings,
             site.entity,
-            format_args!("TransformBodies.bodies picks {class}; it picks bodies or components"),
+            crate::rule!(
+                "design.transformbodies-bodies-picks-picks-bodies-components",
+                "TransformBodies.bodies picks {class}; it picks bodies or components"
+            ),
         );
     }
     check_transformation(site, &transform.transformation, findings);
@@ -1184,7 +1304,7 @@ pub(super) fn check_transform_bodies(
             error(
                 findings,
                 site.entity,
-                format_args!("divisions above 1 occur where a step is other than Translate, Components, PointToPoint, or Rotate"),
+                crate::rule!("design.divisions-above-1-occur-where-step", "divisions above 1 occur where a step is other than Translate, Components, PointToPoint, or Rotate"),
             );
         }
     }
@@ -1199,7 +1319,10 @@ fn check_transformation(
         error(
             findings,
             site.entity,
-            format_args!("Transformation.steps is empty"),
+            crate::rule!(
+                "design.transformation-steps-empty",
+                "Transformation.steps is empty"
+            ),
         );
     }
     for step in &transformation.steps {
@@ -1210,7 +1333,10 @@ fn check_transformation(
             error(
                 findings,
                 site.entity,
-                format_args!("a Constrained step has no mate"),
+                crate::rule!(
+                    "design.constrained-step-no-mate",
+                    "a Constrained step has no mate"
+                ),
             );
         }
         for mate in mates {
@@ -1227,7 +1353,7 @@ fn check_transformation(
                 error(
                     findings,
                     site.entity,
-                    format_args!("a Constrained step's mate is of a kind other than Coincident, Parallel, Perpendicular, Tangent, Concentric, Distance, or Angle"),
+                    crate::rule!("design.constrained-step-mate-kind-other-coincident", "a Constrained step's mate is of a kind other than Coincident, Parallel, Perpendicular, Tangent, Concentric, Distance, or Angle"),
                 );
             }
             assembly::check_connectors(site, &mate.connectors, &mate.kind, findings);
@@ -1240,7 +1366,10 @@ pub(super) fn check_flex(site: Site<'_>, flex: &Flex, findings: &mut Vec<Finding
         error(
             findings,
             site.entity,
-            format_args!("Flex.bodies picks {class}, not a body"),
+            crate::rule!(
+                "design.flex-bodies-picks-not-body",
+                "Flex.bodies picks {class}, not a body"
+            ),
         );
     }
 }
@@ -1255,7 +1384,7 @@ fn check_faces(
         error(
             findings,
             site.entity,
-            format_args!("{field} picks {class}, not a face"),
+            crate::rule!("design.picks-not-face", "{field} picks {class}, not a face"),
         );
     }
 }
@@ -1279,14 +1408,20 @@ pub(super) fn check_replace_faces(
         error(
             findings,
             site.entity,
-            format_args!("ReplaceFaces.replacement is empty"),
+            crate::rule!(
+                "design.replacefaces-replacement-empty",
+                "ReplaceFaces.replacement is empty"
+            ),
         );
     }
     if picks::share_pick(&faces.faces, &faces.replacement) {
         error(
             findings,
             site.entity,
-            format_args!("ReplaceFaces.replacement shares a pick with faces"),
+            crate::rule!(
+                "design.replacefaces-replacement-shares-pick-faces",
+                "ReplaceFaces.replacement shares a pick with faces"
+            ),
         );
     }
 }
@@ -1298,7 +1433,10 @@ pub(super) fn check_graft(site: Site<'_>, graft: &Graft, findings: &mut Vec<Find
         error(
             findings,
             site.entity,
-            format_args!("Graft.body picks other than one solid body"),
+            crate::rule!(
+                "design.graft-body-picks-other-one-solid",
+                "Graft.body picks other than one solid body"
+            ),
         );
     }
     let allowed = |class| picks::is_body(class) || picks::is_face(class);
@@ -1306,7 +1444,10 @@ pub(super) fn check_graft(site: Site<'_>, graft: &Graft, findings: &mut Vec<Find
         error(
             findings,
             site.entity,
-            format_args!("Graft.sheet picks {class}; it picks sheet bodies or faces"),
+            crate::rule!(
+                "design.graft-sheet-picks-picks-sheet-bodies",
+                "Graft.sheet picks {class}; it picks sheet bodies or faces"
+            ),
         );
     }
 }

@@ -543,7 +543,7 @@ fn apply<'a>(
             super::error(
                 findings,
                 evaluation,
-                format_args!(
+                crate::rule!("design.two-records-resolved-state-share-id", 
                     "two records of the resolved state share id {id}: a {} record and a {arena} record",
                     previous.arena
                 ),
@@ -621,7 +621,10 @@ pub(super) fn check_resolved_states(
                 super::error(
                     findings,
                     entity.id(),
-                    format_args!("an entity of an unproduced body must have no structured name"),
+                    crate::rule!(
+                        "design.entity-unproduced-body-must-no-structured",
+                        "an entity of an unproduced body must have no structured name"
+                    ),
                 );
             }
         }
@@ -658,7 +661,11 @@ pub(super) fn check_resolved_states(
                 super::error(
                     findings,
                     id,
-                    format_args!("evaluation states unproduced body {}", body.as_str()),
+                    crate::rule!(
+                        "design.evaluation-states-unproduced-body",
+                        "evaluation states unproduced body {}",
+                        body.as_str()
+                    ),
                 );
             }
         }
@@ -704,7 +711,8 @@ fn check_current_names(
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "design.name-entry-names-no-record-current",
                     "name entry names {id}, which is no record of the current geometry's {arena}"
                 ),
             );
@@ -729,7 +737,8 @@ fn check_entries(
             super::error(
                 findings,
                 evaluation,
-                format_args!(
+                crate::rule!(
+                    "design.name-entry-names-no-record-resolved",
                     "name entry names {id}, which is no record of the resolved state's {arena}"
                 ),
             );
@@ -740,7 +749,8 @@ fn check_entries(
             super::error(
                 findings,
                 evaluation,
-                format_args!(
+                crate::rule!(
+                    "design.owner-entry-names-no-body-resolved",
                     "owner entry names {}, which is no body of the resolved state",
                     body.as_str()
                 ),
@@ -750,7 +760,8 @@ fn check_entries(
             super::error(
                 findings,
                 evaluation,
-                format_args!(
+                crate::rule!(
+                    "design.owner-entry-names-no-product-definition",
                     "owner entry names {}, which is no product definition",
                     owner.as_str()
                 ),
@@ -762,7 +773,8 @@ fn check_entries(
             super::error(
                 findings,
                 evaluation,
-                format_args!(
+                crate::rule!(
+                    "design.member-entry-names-no-occurrence-model",
                     "member entry names {occurrence}, which is no occurrence of the model"
                 ),
             );
@@ -771,7 +783,8 @@ fn check_entries(
             super::error(
                 findings,
                 evaluation,
-                format_args!(
+                crate::rule!(
+                    "design.member-entry-names-no-product-definition",
                     "member entry names {}, which is no product definition",
                     owner.as_str()
                 ),
@@ -785,7 +798,8 @@ fn check_entries(
                 super::error(
                     findings,
                     evaluation,
-                    format_args!(
+                    crate::rule!(
+                        "design.instance-body-entry-lists-no-body",
                         "instance-body entry lists {}, which is no body of the resolved state",
                         body.as_str()
                     ),
@@ -825,7 +839,7 @@ fn check_closure(
             super::error(
                 findings,
                 evaluation,
-                format_args!("record {id} of the resolved state references {target}, which the state does not hold"),
+                crate::rule!("design.record-resolved-state-references-state-does", "record {id} of the resolved state references {target}, which the state does not hold"),
             );
         }
     }
@@ -864,7 +878,8 @@ fn check_stored_bodies(
             super::error(
                 findings,
                 evaluation.id.as_str(),
-                format_args!(
+                crate::rule!(
+                    "design.stored-feature-names-no-body-state",
                     "stored feature {} names {}, which is no body of the state after it",
                     feature.id.as_str(),
                     body.as_str()

@@ -260,7 +260,8 @@ fn check_entry(
         super::error(
             findings,
             at,
-            format_args!(
+            crate::rule!(
+                "design.name-entry-names-entity-does-not",
                 "name entry for {} names an entity that {state} does not hold",
                 entity.id()
             ),
@@ -270,7 +271,8 @@ fn check_entry(
         super::error(
             findings,
             at,
-            format_args!(
+            crate::rule!(
+                "design.name-entry-holds-neither-name-nor",
                 "name entry for {} holds neither a name nor a native name",
                 entity.id()
             ),
@@ -284,14 +286,19 @@ fn check_entry(
         super::error(
             findings,
             at,
-            format_args!("name of {} merges entities of different kinds", entity.id()),
+            crate::rule!(
+                "design.name-merges-entities-different-kinds",
+                "name of {} merges entities of different kinds",
+                entity.id()
+            ),
         );
     } else if let Some(kind) = kinds.first() {
         if Arena::of_entity(entity).0.name_kind() != Some(*kind) {
             super::error(
                 findings,
                 at,
-                format_args!(
+                crate::rule!(
+                    "design.name-derives-kind-not-entity-kind",
                     "name of {} derives kind {kind:?}, which is not the entity's kind",
                     entity.id()
                 ),
@@ -309,7 +316,8 @@ fn check_order(entry: &NameEntry, features: &HashSet<&str>, at: &str, findings: 
             super::error(
                 findings,
                 at,
-                format_args!(
+                crate::rule!(
+                    "design.name-mentions-feature-named-state-does",
                     "name mentions feature {}, which the named state does not depend on",
                     feature.as_str()
                 ),
@@ -354,7 +362,8 @@ fn check_instance(index: &DesignIndex<'_>, name: &TopoName, at: &str, findings: 
         super::error(
             findings,
             at,
-            format_args!(
+            crate::rule!(
+                "design.instance-name-feature-names-no-implicit",
                 "instance name {:?} of feature {} names no implicit copy of that feature",
                 instance.0,
                 feature.as_str()
@@ -648,7 +657,8 @@ fn check_hole_role(
         super::error(
             findings,
             at,
-            format_args!(
+            crate::rule!(
+                "design.hole-role-name-feature-not-hole",
                 "hole role on a {kind:?} name of feature {}, which is not a hole's face",
                 feature.as_str()
             ),

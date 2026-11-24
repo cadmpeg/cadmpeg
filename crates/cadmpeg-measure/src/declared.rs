@@ -151,6 +151,7 @@ pub(crate) fn findings_from_rows(
             Ok(None) => continue,
             Ok(Some(message)) => Finding {
                 check: Check::DeclaredMeasure,
+                rule: cadmpeg_ir::rule_name!("measure/declared.declared-quantity-differs"),
                 severity: match measure.basis {
                     Some(MeasureBasis::Cache) => Severity::Warning,
                     None | Some(MeasureBasis::Validation) => Severity::Error,
@@ -167,6 +168,7 @@ pub(crate) fn findings_from_rows(
                     }
                 }
                 Finding {
+                    rule: cadmpeg_ir::rule_name!("measure/declared.declared-not-compared"),
                     check: Check::DeclaredMeasure,
                     severity: Severity::Warning,
                     message: format!(

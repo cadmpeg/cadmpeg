@@ -3,6 +3,7 @@
 //! representations occurrences and representations name, instance-body
 //! paths, generated members, and the placements an occurrence takes.
 
+use crate::report::check::Ruled;
 use std::collections::BTreeSet;
 
 use crate::design::feature::{FeatureOperation, StoredOrigin};
@@ -34,7 +35,10 @@ pub(super) fn check(ir: &CadIr, findings: &mut Vec<Finding>) {
                 findings,
                 Check::ReferentialIntegrity,
                 id,
-                format_args!("an External definition holds bodies, occurrences, or a scope"),
+                crate::rule!(
+                    "products.external-definition-holds-bodies-occurrences-scope",
+                    "an External definition holds bodies, occurrences, or a scope"
+                ),
             );
         }
         for entry in &definition.instance_bodies {
@@ -83,12 +87,7 @@ pub(super) fn check(ir: &CadIr, findings: &mut Vec<Finding>) {
     check_placements(ir, &records, findings);
 }
 
-fn error(
-    findings: &mut Vec<Finding>,
-    check: Check,
-    entity: &str,
-    message: std::fmt::Arguments<'_>,
-) {
+fn error(findings: &mut Vec<Finding>, check: Check, entity: &str, message: Ruled<'_>) {
     record_finding(findings, check, Severity::Error, Some(entity), message);
 }
 
@@ -127,7 +126,8 @@ pub(in crate::validate) fn check_representation_name(
             findings,
             Check::ReferentialIntegrity,
             at,
-            format_args!(
+            crate::rule!(
+                "products.representation-no-representation",
                 "representation `{name}` is no representation of {}",
                 definition.id.as_str()
             ),
@@ -153,7 +153,10 @@ fn check_representations(
             findings,
             Check::Counts,
             id,
-            format_args!("{defaults} representations of the definition are its default"),
+            crate::rule!(
+                "products.representations-definition-default",
+                "{defaults} representations of the definition are its default"
+            ),
         );
     }
     for representation in &definition.representations {
@@ -166,7 +169,7 @@ fn check_representations(
                             findings,
                             Check::ReferentialIntegrity,
                             id,
-                            format_args!(
+                            crate::rule!("products.representation-names-no-body-definition", 
                                 "representation `{name}` names {}, which is no body of the definition",
                                 body.as_str()
                             ),
@@ -183,7 +186,7 @@ fn check_representations(
                         findings,
                         Check::ReferentialIntegrity,
                         id,
-                        format_args!(
+                        crate::rule!("products.representation-applies-substitution-instances-no-member", 
                             "representation `{name}` applies a substitution to the instances no member names"
                         ),
                     );
@@ -210,7 +213,7 @@ fn check_representations(
                                     findings,
                                     Check::ReferentialIntegrity,
                                     id,
-                                    format_args!(
+                                    crate::rule!("products.representation-replaces-member-no-occurrence", 
                                         "representation `{name}` replaces a member by no occurrence"
                                     ),
                                 );
@@ -222,7 +225,7 @@ fn check_representations(
                                         findings,
                                         Check::ReferentialIntegrity,
                                         id,
-                                        format_args!(
+                                        crate::rule!("products.representation-replaces-member-member-own-path", 
                                             "representation `{name}` replaces a member by a member's own path"
                                         ),
                                     );
@@ -281,7 +284,7 @@ fn check_representation_features(
                 findings,
                 Check::ReferentialIntegrity,
                 definition,
-                format_args!(
+                crate::rule!("products.representation-names-no-feature-definition-scope", 
                     "representation `{}` names {feature}, which is no feature of the definition's scope",
                     representation.name.as_str()
                 ),
@@ -306,7 +309,10 @@ fn check_generated_from(
             findings,
             Check::ReferentialIntegrity,
             holder,
-            format_args!("the definition is generated from itself"),
+            crate::rule!(
+                "products.definition-generated-itself",
+                "the definition is generated from itself"
+            ),
         );
     }
     let Some(configurations) = records.scope_configurations.get(factory) else {
@@ -325,7 +331,10 @@ fn check_generated_from(
             findings,
             Check::ReferentialIntegrity,
             holder,
-            format_args!("the definition is generated from no configuration of {factory}"),
+            crate::rule!(
+                "products.definition-generated-no-configuration",
+                "the definition is generated from no configuration of {factory}"
+            ),
         );
     }
 }
@@ -340,7 +349,10 @@ fn check_placements(ir: &CadIr, records: &DesignRecords<'_>, findings: &mut Vec<
                 Check::GeometricConsistency,
                 Severity::Warning,
                 Some(holder),
-                format_args!("a placement's linear part is singular"),
+                crate::rule!(
+                    "products.placement-linear-part-singular",
+                    "a placement's linear part is singular"
+                ),
             );
         }
     };

@@ -198,7 +198,7 @@ fn check_external_place(site: Site<'_>, root: &Node<ParameterRef>, findings: &mu
         super::error(
             findings,
             site.entity,
-            format_args!("an External reference is not the whole tree of an expression that states a design parameter's value"),
+            crate::rule!("design.external-reference-not-whole-tree-expression", "an External reference is not the whole tree of an expression that states a design parameter's value"),
         );
     }
 }
@@ -215,7 +215,10 @@ fn check_tokens<R>(entity: &str, tokens: &[ExpressionToken<R>], findings: &mut V
         super::error(
             findings,
             entity,
-            format_args!("source expression holds no text token"),
+            crate::rule!(
+                "design.source-expression-holds-no-text-token",
+                "source expression holds no text token"
+            ),
         );
     }
 }
@@ -267,7 +270,10 @@ fn check_typed_tree<R>(
         Err(reason) => super::error(
             findings,
             site.entity,
-            format_args!("expression does not type-check: {reason}"),
+            crate::rule!(
+                "design.expression-does-not-type-check",
+                "expression does not type-check: {reason}"
+            ),
         ),
         Ok(found) => {
             let root_kind = match (site.kind, site.variables) {
@@ -284,7 +290,10 @@ fn check_typed_tree<R>(
                 super::error(
                     findings,
                     site.entity,
-                    format_args!("expression's root does not have the parameter's kind: {reason}"),
+                    crate::rule!(
+                        "design.expression-root-does-not-parameter-kind",
+                        "expression's root does not have the parameter's kind: {reason}"
+                    ),
                 );
             }
         }
@@ -334,7 +343,8 @@ fn check_measure(site: Site<'_>, measure: &Measure, findings: &mut Vec<Finding>)
                 super::error(
                     findings,
                     entity,
-                    format_args!(
+                    crate::rule!(
+                        "design.measure-reads-whole-model-selects-two",
                         "a {:?} measure reads the whole model; it selects two picks",
                         measure.kind
                     ),
@@ -349,14 +359,18 @@ fn check_measure(site: Site<'_>, measure: &Measure, findings: &mut Vec<Finding>)
         Anchor::Input => super::error(
             findings,
             entity,
-            format_args!(
+            crate::rule!(
+                "design.measure-anchored-input-outside-feature-owned",
                 "a measure is anchored `input` outside a feature-owned parameter's expression"
             ),
         ),
         Anchor::Native(_) => super::error(
             findings,
             entity,
-            format_args!("a measure's selection is anchored `native`"),
+            crate::rule!(
+                "design.measure-selection-anchored-native",
+                "a measure's selection is anchored `native`"
+            ),
         ),
     }
     let count = match &selection.picks {
@@ -367,7 +381,8 @@ fn check_measure(site: Site<'_>, measure: &Measure, findings: &mut Vec<Finding>)
         super::error(
             findings,
             entity,
-            format_args!(
+            crate::rule!(
+                "design.measure-selects-picks-selects-two",
                 "a {:?} measure selects {count} picks; it selects two",
                 measure.kind
             ),
@@ -376,7 +391,11 @@ fn check_measure(site: Site<'_>, measure: &Measure, findings: &mut Vec<Finding>)
         super::error(
             findings,
             entity,
-            format_args!("a {:?} measure selects no pick", measure.kind),
+            crate::rule!(
+                "design.measure-selects-no-pick",
+                "a {:?} measure selects no pick",
+                measure.kind
+            ),
         );
     }
 }
@@ -450,7 +469,8 @@ pub(super) fn check_reference(
                 super::error(
                     findings,
                     entity,
-                    format_args!(
+                    crate::rule!(
+                        "design.expression-references-no-parameter-design",
                         "expression references {}, which is no parameter of the design",
                         target.as_str()
                     ),
@@ -464,13 +484,13 @@ pub(super) fn check_reference(
                 None => super::error(
                     findings,
                     entity,
-                    format_args!("expression references a parameter of {definition}, which is no product definition"),
+                    crate::rule!("design.expression-references-parameter-no-product-definition", "expression references a parameter of {definition}, which is no product definition"),
                 ),
                 Some(Storage::External(_)) => {}
                 Some(Storage::Embedded | Storage::File { .. }) => super::error(
                     findings,
                     entity,
-                    format_args!("expression references a parameter of {definition} by name, but {definition} is no external definition"),
+                    crate::rule!("design.expression-references-parameter-name-no-external", "expression references a parameter of {definition} by name, but {definition} is no external definition"),
                 ),
             }
             Some(definition)
@@ -490,7 +510,7 @@ pub(super) fn check_reference(
             super::error(
                 findings,
                 entity,
-                format_args!(
+                crate::rule!("design.parameter-reference-through-path-ends-not", 
                     "a parameter reference's `through` path ends at {last}, not at the target's scope {target_scope}"
                 ),
             );
@@ -590,7 +610,8 @@ pub(super) fn check_process_parameters(index: &DesignRecords<'_>, findings: &mut
                 super::error(
                     findings,
                     entity,
-                    format_args!(
+                    crate::rule!(
+                        "design.process-parameter-value-does-not-follow",
                         "process parameter's value {value:?} does not follow its kind {:?}",
                         parameter.kind
                     ),
@@ -606,7 +627,8 @@ pub(super) fn check_process_parameters(index: &DesignRecords<'_>, findings: &mut
                     super::error(
                         findings,
                         entity,
-                        format_args!(
+                        crate::rule!(
+                            "design.process-parameter-no-kind-expression-source",
                             "process parameter has no kind, so its expression is `source`"
                         ),
                     );
@@ -620,7 +642,10 @@ pub(super) fn check_process_parameters(index: &DesignRecords<'_>, findings: &mut
                         super::error(
                             findings,
                             entity,
-                            format_args!("a process expression holds an External reference"),
+                            crate::rule!(
+                                "design.process-expression-holds-external-reference",
+                                "a process expression holds an External reference"
+                            ),
                         );
                     }
                     if let ParamRef::Process(target) = reference {
@@ -628,7 +653,7 @@ pub(super) fn check_process_parameters(index: &DesignRecords<'_>, findings: &mut
                             super::error(
                                 findings,
                                 entity,
-                                format_args!(
+                                crate::rule!("design.neutral-expression-references-process-parameter-no", 
                                     "neutral expression references {}, a process parameter with no kind",
                                     target.as_str()
                                 ),
@@ -663,7 +688,8 @@ pub(super) fn check_process_parameters(index: &DesignRecords<'_>, findings: &mut
                 ParamRef::Process(target) if !kinds.contains_key(target.as_str()) => super::error(
                     findings,
                     entity,
-                    format_args!(
+                    crate::rule!(
+                        "design.expression-references-no-process-parameter",
                         "expression references {}, which is no process parameter",
                         target.as_str()
                     ),
@@ -716,7 +742,8 @@ fn check_external_kinds(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) 
             super::error(
                 findings,
                 parameter.id.as_str(),
-                format_args!(
+                crate::rule!(
+                    "design.parameter-external-reference-another-kind",
                     "parameter is the External reference {} of {} as {} is, with another kind",
                     name.as_str(),
                     definition.as_str(),
@@ -747,7 +774,8 @@ fn check_cycles(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
         super::warning(
             findings,
             cycle[0],
-            format_args!(
+            crate::rule!(
+                "design.parameters-reference-other-cycle",
                 "parameters {} reference each other in a cycle",
                 cycle.join(", ")
             ),

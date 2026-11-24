@@ -25,7 +25,10 @@ fn push_identity<'a>(
             Check::Identity,
             Severity::Error,
             Some(id),
-            format_args!("entity id does not match `<format>:<scope>:<kind>#<key>`"),
+            crate::rule!(
+                "identity_order.entity-id-does-not-match-format",
+                "entity id does not match `<format>:<scope>:<kind>#<key>`"
+            ),
         );
     }
     let Some(seen) = seen else {
@@ -42,7 +45,10 @@ fn push_identity<'a>(
             Check::Identity,
             Severity::Error,
             Some(id),
-            format_args!("entity id is not globally unique"),
+            crate::rule!(
+                "identity_order.entity-id-not-globally-unique",
+                "entity id is not globally unique"
+            ),
         );
     }
     Ok(())
@@ -61,7 +67,10 @@ fn check_order<'a>(
                 Check::ArenaOrder,
                 Severity::Error,
                 Some(id),
-                format_args!("arena `{arena}` is not strictly sorted by id"),
+                crate::rule!(
+                    "identity_order.arena-not-strictly-sorted-id",
+                    "arena `{arena}` is not strictly sorted by id"
+                ),
             );
             return;
         }

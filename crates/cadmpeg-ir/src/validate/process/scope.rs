@@ -26,7 +26,10 @@ pub(super) fn check_scope(
             super::error(
                 findings,
                 setup.id.as_str(),
-                format_args!("setup's scope {scope} names no definition with a design scope"),
+                crate::rule!(
+                    "process.setup-scope-names-no-definition-design",
+                    "setup's scope {scope} names no definition with a design scope"
+                ),
             );
         }
     }
@@ -54,7 +57,8 @@ fn check_record(
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "process.setups-use-record-machine-several-scopes",
                     "the setups that use the record machine several scopes: {}",
                     scopes.into_iter().collect::<Vec<_>>().join(", ")
                 ),
@@ -78,7 +82,8 @@ fn check_record(
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "process.no-setup-uses-record-holds-no",
                     "no setup uses the record, so it holds no selection and no `through` path"
                 ),
             );
@@ -96,7 +101,7 @@ fn check_record(
                 super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!("process.workpiece-indexes-none-workpieces-setup", 
                         "workpiece {index} at {at} indexes none of the {count} workpieces of setup {setup}"
                     ),
                 );
@@ -111,7 +116,7 @@ fn check_record(
             Anchor::Input => super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!("process.selection-anchored-input-process-selection-anchored", 
                     "selection at {at} is anchored `input`; a process selection is anchored `current` or `pinned`"
                 ),
             ),
@@ -130,7 +135,7 @@ fn check_record(
                         super::error(
                             findings,
                             id,
-                            format_args!(
+                            crate::rule!("process.selection-pinned-not-setup-scope", 
                                 "selection at {at} is pinned at {position}, which is not in the setup's scope {scope}"
                             ),
                         );
@@ -180,7 +185,10 @@ fn check_definition(
         super::error(
             findings,
             id,
-            format_args!("{what} names {definition}, which is no product definition"),
+            crate::rule!(
+                "process.names-no-product-definition",
+                "{what} names {definition}, which is no product definition"
+            ),
         );
     }
     exists

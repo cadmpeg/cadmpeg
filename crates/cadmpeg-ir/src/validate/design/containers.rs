@@ -20,7 +20,10 @@ pub(super) fn check_containers(index: &DesignRecords<'_>, findings: &mut Vec<Fin
                 super::error(
                     findings,
                     id,
-                    format_args!("container lists {key}, which is no record of the design"),
+                    crate::rule!(
+                        "design.container-lists-no-record-design",
+                        "container lists {key}, which is no record of the design"
+                    ),
                 );
             }
         }
@@ -35,7 +38,11 @@ pub(super) fn check_containers(index: &DesignRecords<'_>, findings: &mut Vec<Fin
                 super::error(
                     findings,
                     scope.definition.as_str(),
-                    format_args!("scope root {} is no container of the design", root.as_str()),
+                    crate::rule!(
+                        "design.scope-root-no-container-design",
+                        "scope root {} is no container of the design",
+                        root.as_str()
+                    ),
                 );
             }
         }
@@ -56,7 +63,7 @@ pub(super) fn check_containers(index: &DesignRecords<'_>, findings: &mut Vec<Fin
             super::error(
                 findings,
                 key.id(),
-                format_args!(
+                crate::rule!("design.member-scope-root-times-member-exactly", 
                     "{key} is a member or scope root {count} times; it is a member of exactly one container or a root of exactly one scope"
                 ),
             );
@@ -68,7 +75,8 @@ pub(super) fn check_containers(index: &DesignRecords<'_>, findings: &mut Vec<Fin
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "design.container-own-ancestor-through-membership-containers",
                     "container is its own ancestor through membership; containers form a tree"
                 ),
             );
@@ -122,7 +130,7 @@ fn check_scope_contents(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) 
             super::error(
                 findings,
                 definition,
-                format_args!("design scope holds no member, parameter, program, rule, configuration, arrangement, publication, occurrence design, or setup"),
+                crate::rule!("design.design-scope-holds-no-member-parameter", "design scope holds no member, parameter, program, rule, configuration, arrangement, publication, occurrence design, or setup"),
             );
         }
     }
@@ -161,7 +169,8 @@ fn check_order(container: &Container, findings: &mut Vec<Finding>) {
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "design.rollback-names-no-member-container",
                     "rollback names {}, which is no member of the container",
                     MemberKey::of(member)
                 ),
@@ -175,9 +184,11 @@ fn check_order(container: &Container, findings: &mut Vec<Finding>) {
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "design.folder-no-run-container-members",
                     "folder {}..={} is no run of the container's {count} members",
-                    folder.first, folder.last
+                    folder.first,
+                    folder.last
                 ),
             );
         }
@@ -188,9 +199,13 @@ fn check_order(container: &Container, findings: &mut Vec<Finding>) {
                 super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!(
+                        "design.folders-neither-nest-nor-disjoint",
                         "folders {}..={} and {}..={} neither nest nor are disjoint",
-                        first.first, first.last, second.first, second.last
+                        first.first,
+                        first.last,
+                        second.first,
+                        second.last
                     ),
                 );
             }

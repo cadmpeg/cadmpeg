@@ -48,7 +48,10 @@ pub(super) fn check_configurations(index: &DesignRecords<'_>, findings: &mut Vec
             super::error(
                 findings,
                 id,
-                format_args!("configuration's scope {scope} has no design scope"),
+                crate::rule!(
+                    "design.configuration-scope-no-design-scope",
+                    "configuration's scope {scope} has no design scope"
+                ),
             );
         }
         if let Some(parent) = &configuration.parent {
@@ -57,14 +60,16 @@ pub(super) fn check_configurations(index: &DesignRecords<'_>, findings: &mut Vec
                 None => super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!(
+                        "design.configuration-parent-no-configuration-design",
                         "configuration's parent {parent} is no configuration of the design"
                     ),
                 ),
                 Some(parent) if parent.scope != configuration.scope => super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!(
+                        "design.configuration-parent-configuration-another-scope",
                         "configuration's parent {} is a configuration of another scope",
                         parent.id.as_str()
                     ),
@@ -75,7 +80,10 @@ pub(super) fn check_configurations(index: &DesignRecords<'_>, findings: &mut Vec
                 super::error(
                     findings,
                     id,
-                    format_args!("configuration is its own ancestor through `parent`"),
+                    crate::rule!(
+                        "design.configuration-own-ancestor-through-parent",
+                        "configuration is its own ancestor through `parent`"
+                    ),
                 );
             }
         }
@@ -105,7 +113,7 @@ pub(super) fn check_configurations(index: &DesignRecords<'_>, findings: &mut Vec
             super::error(
                 findings,
                 id,
-                format_args!("configuration states {untargeted} materials with no target; it states at most one"),
+                crate::rule!("design.configuration-states-materials-no-target-states", "configuration states {untargeted} materials with no target; it states at most one"),
             );
         }
         for target in configuration
@@ -117,7 +125,10 @@ pub(super) fn check_configurations(index: &DesignRecords<'_>, findings: &mut Vec
                 super::error(
                     findings,
                     id,
-                    format_args!("a material's target is not anchored `current`"),
+                    crate::rule!(
+                        "design.material-target-not-anchored-current",
+                        "a material's target is not anchored `current`"
+                    ),
                 );
             }
         }
@@ -157,12 +168,16 @@ fn check_scope(index: &DesignRecords<'_>, scope: &DesignScope, findings: &mut Ve
         (None, true) => super::error(
             findings,
             id,
-            format_args!("scope has configurations but states no active configuration"),
+            crate::rule!(
+                "design.scope-configurations-states-no-active-configuration",
+                "scope has configurations but states no active configuration"
+            ),
         ),
         (Some(active), false) => super::error(
             findings,
             id,
-            format_args!(
+            crate::rule!(
+                "design.scope-names-active-configuration-no-configurations",
                 "scope names active configuration {}, but it has no configurations",
                 active.as_str()
             ),
@@ -176,7 +191,8 @@ fn check_scope(index: &DesignRecords<'_>, scope: &DesignScope, findings: &mut Ve
                 super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!(
+                        "design.scope-active-configuration-no-configuration-scope",
                         "scope's active configuration {} is no configuration of the scope",
                         active.as_str()
                     ),
@@ -192,7 +208,8 @@ fn check_scope(index: &DesignRecords<'_>, scope: &DesignScope, findings: &mut Ve
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "design.scope-states-design-no-occurrence-model",
                     "scope states the design of {key}, which is no occurrence of the model"
                 ),
             );
@@ -208,7 +225,7 @@ fn check_scope(index: &DesignRecords<'_>, scope: &DesignScope, findings: &mut Ve
             super::error(
                 findings,
                 id,
-                format_args!("occurrence {key} overrides parameters, but its prototype has no scope in this document"),
+                crate::rule!("design.occurrence-overrides-parameters-prototype-no-scope", "occurrence {key} overrides parameters, but its prototype has no scope in this document"),
             );
         }
         for (parameter, value) in &design.parameters {
@@ -220,7 +237,7 @@ fn check_scope(index: &DesignRecords<'_>, scope: &DesignScope, findings: &mut Ve
                 super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!("design.occurrence-overrides-no-parameter-prototype-scope", 
                         "occurrence {key} overrides {}, which is no parameter of its prototype's scope",
                         parameter.as_str()
                     ),
@@ -250,7 +267,7 @@ pub(super) fn check_configuration_ref(
                 super::error(
                     findings,
                     entity,
-                    format_args!(
+                    crate::rule!("design.configuration-reference-names-no-configuration-prototype", 
                         "configuration reference {} names no configuration of the prototype's scope",
                         local.as_str()
                     ),
@@ -267,7 +284,7 @@ pub(super) fn check_configuration_ref(
                 super::error(
                     findings,
                     entity,
-                    format_args!(
+                    crate::rule!("design.configuration-reference-names-configuration-prototype-scope", 
                         "configuration reference names `{}`, a configuration of the prototype's scope; it is `local`",
                         name.as_str()
                     ),
@@ -297,7 +314,10 @@ fn check_arrangement_refs(
                     super::error(
                         findings,
                         entity,
-                        format_args!("occurrence names two arrangements of one kind"),
+                        crate::rule!(
+                            "design.occurrence-names-two-arrangements-one-kind",
+                            "occurrence names two arrangements of one kind"
+                        ),
                     );
                 }
                 kinds.push(&record.kind);
@@ -305,7 +325,8 @@ fn check_arrangement_refs(
             _ => super::error(
                 findings,
                 entity,
-                format_args!(
+                crate::rule!(
+                    "design.arrangement-reference-names-no-arrangement-prototype",
                     "arrangement reference {} names no arrangement of the prototype's scope",
                     local.as_str()
                 ),
@@ -331,7 +352,10 @@ fn check_active_arrangements(
                     super::error(
                         findings,
                         entity,
-                        format_args!("active arrangements name two arrangements of one kind"),
+                        crate::rule!(
+                            "design.active-arrangements-name-two-arrangements-one",
+                            "active arrangements name two arrangements of one kind"
+                        ),
                     );
                 }
                 kinds.push(&record.kind);
@@ -339,7 +363,8 @@ fn check_active_arrangements(
             _ => super::error(
                 findings,
                 entity,
-                format_args!(
+                crate::rule!(
+                    "design.active-arrangement-no-arrangement-scope",
                     "active arrangement {} is no arrangement of the scope",
                     arrangement.as_str()
                 ),
@@ -378,7 +403,8 @@ fn check_arrangements_in_force(index: &DesignRecords<'_>, findings: &mut Vec<Fin
                     super::error(
                         findings,
                         arrangement.id.as_str(),
-                        format_args!(
+                        crate::rule!(
+                            "design.arrangement-configuration-force-configuration",
                             "arrangement of configuration {} is in force in configuration {}",
                             owner.as_str(),
                             configuration.id.as_str()
@@ -401,7 +427,10 @@ fn check_arrangement(
         super::error(
             findings,
             id,
-            format_args!("arrangement's scope {scope} has no design scope"),
+            crate::rule!(
+                "design.arrangement-scope-no-design-scope",
+                "arrangement's scope {scope} has no design scope"
+            ),
         );
     }
     if let Some(configuration) = &arrangement.configuration {
@@ -413,7 +442,8 @@ fn check_arrangement(
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "design.arrangement-names-no-configuration-scope",
                     "arrangement names {}, which is no configuration of its scope",
                     configuration.as_str()
                 ),
@@ -435,7 +465,10 @@ fn check_arrangement(
         super::error(
             findings,
             id,
-            format_args!("an explode arrangement states a parameter or feature override"),
+            crate::rule!(
+                "design.explode-arrangement-states-parameter-feature-override",
+                "an explode arrangement states a parameter or feature override"
+            ),
         );
     }
     if matches!(
@@ -446,7 +479,10 @@ fn check_arrangement(
         super::error(
             findings,
             id,
-            format_args!("arrangement states moves; only an explode arrangement moves occurrences"),
+            crate::rule!(
+                "design.arrangement-states-moves-only-explode-arrangement",
+                "arrangement states moves; only an explode arrangement moves occurrences"
+            ),
         );
     }
     let moved = moved_occurrences(index.ir);
@@ -455,7 +491,10 @@ fn check_arrangement(
             super::error(
                 findings,
                 id,
-                format_args!("an appearance entry states neither an appearance nor a transparency"),
+                crate::rule!(
+                    "design.appearance-entry-states-neither-appearance-nor",
+                    "an appearance entry states neither an appearance nor a transparency"
+                ),
             );
         }
         check_path(index, Some(scope), &appearance.path, &moved, id, findings);
@@ -468,7 +507,10 @@ fn check_arrangement(
             super::error(
                 findings,
                 id,
-                format_args!("an arrangement move is neither a `translate` nor a `rotate` step"),
+                crate::rule!(
+                    "design.arrangement-move-neither-translate-nor-rotate",
+                    "an arrangement move is neither a `translate` nor a `rotate` step"
+                ),
             );
         }
         for path in &movement.occurrences {
@@ -487,7 +529,8 @@ fn check_arrangement(
                 super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!(
+                        "design.nested-arrangement-no-arrangement-path-prototype",
                         "nested arrangement {} is no arrangement of the path's prototype's scope",
                         local.as_str()
                     ),
@@ -511,13 +554,19 @@ fn check_overrides(
             None => super::error(
                 findings,
                 holder,
-                format_args!("override names {key}, which is no parameter of the design"),
+                crate::rule!(
+                    "design.override-names-no-parameter-design",
+                    "override names {key}, which is no parameter of the design"
+                ),
             ),
             Some(record) if !matches!(record.definition, ParameterDefinition::Expression(_)) => {
                 super::error(
                     findings,
                     holder,
-                    format_args!("override names {key}, which is not defined by an expression"),
+                    crate::rule!(
+                        "design.override-names-not-defined-expression",
+                        "override names {key}, which is not defined by an expression"
+                    ),
                 );
             }
             Some(_) => {}
@@ -534,7 +583,10 @@ fn check_overrides(
         super::error(
             findings,
             holder,
-            format_args!("an arrangement's overrides hold a definition entry"),
+            crate::rule!(
+                "design.arrangement-overrides-hold-definition-entry",
+                "an arrangement's overrides hold a definition entry"
+            ),
         );
     }
     if overrides.definitions.is_empty() {
@@ -564,7 +616,10 @@ fn check_parameter_override_fields(
         super::error(
             findings,
             holder,
-            format_args!("override of {parameter} states neither an expression nor a value"),
+            crate::rule!(
+                "design.override-states-neither-expression-nor-value",
+                "override of {parameter} states neither an expression nor a value"
+            ),
         );
     }
 }
@@ -580,14 +635,20 @@ fn check_feature_override(
         super::error(
             findings,
             holder,
-            format_args!("feature-state override of {feature} states no field"),
+            crate::rule!(
+                "design.feature-state-override-states-no-field",
+                "feature-state override of {feature} states no field"
+            ),
         );
     }
     let Some(record) = index.features.get(feature) else {
         super::error(
             findings,
             holder,
-            format_args!("override names {feature}, which is no feature of the design"),
+            crate::rule!(
+                "design.override-names-no-feature-design",
+                "override names {feature}, which is no feature of the design"
+            ),
         );
         return;
     };
@@ -599,7 +660,8 @@ fn check_feature_override(
         super::error(
             findings,
             holder,
-            format_args!(
+            crate::rule!(
+                "design.override-suppresses-suppression-bound-parameter",
                 "override suppresses {feature}, whose suppression is bound to a parameter"
             ),
         );
@@ -633,7 +695,7 @@ fn check_feature_override(
             super::error(
                 findings,
                 holder,
-                format_args!("definition override of {feature} names sketch {sketch}, which the feature does not own"),
+                crate::rule!("design.definition-override-names-sketch-feature-does", "definition override of {feature} names sketch {sketch}, which the feature does not own"),
             );
         }
     }
@@ -651,7 +713,10 @@ fn check_occurrence_override(
         super::error(
             findings,
             holder,
-            format_args!("override names {occurrence}, which is no occurrence of the model"),
+            crate::rule!(
+                "design.override-names-no-occurrence-model",
+                "override names {occurrence}, which is no occurrence of the model"
+            ),
         );
     }
     if matches!(kind, Holder::Arrangement)
@@ -660,7 +725,8 @@ fn check_occurrence_override(
         super::error(
             findings,
             holder,
-            format_args!(
+            crate::rule!(
+                "design.arrangement-override-states-configuration-prototype",
                 "an arrangement's override of {occurrence} states a configuration or a prototype"
             ),
         );
@@ -670,7 +736,8 @@ fn check_occurrence_override(
             super::error(
                 findings,
                 holder,
-                format_args!(
+                crate::rule!(
+                    "design.override-names-prototype-no-product-definition",
                     "override of {occurrence} names prototype {}, which is no product definition",
                     prototype.as_str()
                 ),
@@ -711,7 +778,10 @@ fn check_occurrence_override(
             super::error(
                 findings,
                 holder,
-                format_args!("override of {occurrence} names one nested path twice"),
+                crate::rule!(
+                    "design.override-names-one-nested-path-twice",
+                    "override of {occurrence} names one nested path twice"
+                ),
             );
         }
     }
@@ -731,7 +801,10 @@ fn check_definition_override(
         super::error(
             findings,
             holder,
-            format_args!("override names {definition}, which is no definition the scope spans"),
+            crate::rule!(
+                "design.override-names-no-definition-scope-spans",
+                "override names {definition}, which is no definition the scope spans"
+            ),
         );
     }
     let states_field = value.source_name.is_some()
@@ -743,7 +816,10 @@ fn check_definition_override(
         super::error(
             findings,
             holder,
-            format_args!("definition override of {definition} states no field"),
+            crate::rule!(
+                "design.definition-override-states-no-field",
+                "definition override of {definition} states no field"
+            ),
         );
     }
     match (&value.part_number, kind) {
@@ -763,7 +839,7 @@ fn check_definition_override(
                 super::error(
                     findings,
                     holder,
-                    format_args!("part number of {definition} is the document name, but neither the definition nor the override states a `Title` or a source name"),
+                    crate::rule!("design.part-number-document-name-neither-definition", "part number of {definition} is the document name, but neither the definition nor the override states a `Title` or a source name"),
                 );
             }
             let stored = record.is_some_and(|record| {
@@ -773,7 +849,7 @@ fn check_definition_override(
                 super::error(
                     findings,
                     holder,
-                    format_args!("part number of {definition} is the document name, but no document of its own stores it"),
+                    crate::rule!("design.part-number-document-name-no-document", "part number of {definition} is the document name, but no document of its own stores it"),
                 );
             }
         }
@@ -784,7 +860,7 @@ fn check_definition_override(
             super::error(
                 findings,
                 holder,
-                format_args!("part number of {definition} is the parent configuration's name, but no parent is stated"),
+                crate::rule!("design.part-number-parent-configuration-name-no", "part number of {definition} is the parent configuration's name, but no parent is stated"),
             );
         }
         (Some(PartNumber::ParentConfigurationName), Holder::Configuration { has_parent: true })
@@ -805,7 +881,10 @@ fn check_parameter_tolerance(parameter: &DesignParameter, findings: &mut Vec<Fin
         super::error(
             findings,
             id,
-            format_args!("parameter states `decimals` but its kind is no quantity"),
+            crate::rule!(
+                "design.parameter-states-decimals-kind-no-quantity",
+                "parameter states `decimals` but its kind is no quantity"
+            ),
         );
     }
     let Some(tolerance) = &parameter.tolerance else {
@@ -815,7 +894,10 @@ fn check_parameter_tolerance(parameter: &DesignParameter, findings: &mut Vec<Fin
         super::error(
             findings,
             id,
-            format_args!("parameter states a tolerance but its kind is no quantity"),
+            crate::rule!(
+                "design.parameter-states-tolerance-kind-no-quantity",
+                "parameter states a tolerance but its kind is no quantity"
+            ),
         );
     }
     let deviations = match tolerance {
@@ -830,7 +912,10 @@ fn check_parameter_tolerance(parameter: &DesignParameter, findings: &mut Vec<Fin
                 super::error(
                     findings,
                     id,
-                    format_args!("parameter states a fit but its kind is no length"),
+                    crate::rule!(
+                        "design.parameter-states-fit-kind-no-length",
+                        "parameter states a fit but its kind is no length"
+                    ),
                 );
             }
             deviations.as_ref().map(|deviations| match deviations {
@@ -846,7 +931,8 @@ fn check_parameter_tolerance(parameter: &DesignParameter, findings: &mut Vec<Fin
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "design.parameter-lower-deviation-not-below-upper",
                     "parameter's lower deviation {} is not below its upper deviation {}",
                     lower.get(),
                     upper.get()

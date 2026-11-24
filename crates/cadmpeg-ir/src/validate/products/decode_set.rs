@@ -47,7 +47,7 @@ pub(in crate::validate) fn check_qualified_scope(
                 Check::Identity,
                 Severity::Error,
                 Some(id),
-                format_args!(
+                crate::rule!("products.entity-id-scope-qualified-key-no", 
                     "entity id's scope is qualified by `{key}@`, the key of no `File` definition of the document"
                 ),
             );
@@ -69,25 +69,32 @@ pub(in crate::validate) fn check_file_digests(
             .iter()
             .find(|definition| definition.id == *key)
             .map(|definition| &definition.storage);
-        let message = match storage {
+        let mut report = |ruled: crate::report::check::Ruled<'_>| {
+            crate::validate::record_finding(
+                findings,
+                Check::ReferentialIntegrity,
+                Severity::Error,
+                Some(key.as_str()),
+                ruled,
+            );
+        };
+        match storage {
             Some(Storage::File {
                 source: Some(_), ..
-            }) => continue,
-            Some(Storage::File { source: None, .. }) => {
+            }) => {}
+            Some(Storage::File { source: None, .. }) => report(crate::rule!(
+                "products.file-digest-of-root",
                 "the sidecar states a file digest for the root definition, whose file `decode_digest` covers"
-            }
-            Some(Storage::Embedded | Storage::External(_)) => {
+            )),
+            Some(Storage::Embedded | Storage::External(_)) => report(crate::rule!(
+                "products.file-digest-of-no-file",
                 "the sidecar states a file digest for a definition read from no file of its own"
-            }
-            None => "the sidecar states a file digest for no product definition of the document",
-        };
-        crate::validate::record_finding(
-            findings,
-            Check::ReferentialIntegrity,
-            Severity::Error,
-            Some(key.as_str()),
-            format_args!("{message}"),
-        );
+            )),
+            None => report(crate::rule!(
+                "products.file-digest-of-no-definition",
+                "the sidecar states a file digest for no product definition of the document"
+            )),
+        }
     }
 }
 

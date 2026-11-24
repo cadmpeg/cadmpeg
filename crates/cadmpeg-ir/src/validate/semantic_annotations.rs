@@ -51,7 +51,10 @@ pub(super) fn check_semantic_annotations(
                 Check::ReferentialIntegrity,
                 Severity::Error,
                 Some(annotation.id.as_str()),
-                format_args!("invalid semantic annotation reference"),
+                crate::rule!(
+                    "semantic_annotations.invalid-semantic-annotation-reference",
+                    "invalid semantic annotation reference"
+                ),
             );
         }
         check_reference_anchors(annotation, findings);
@@ -77,32 +80,32 @@ fn check_dimension_kind(
         kind,
         Kind::Distance | Kind::HorizontalDistance | Kind::VerticalDistance
     );
-    for (stated, admitted, message) in [
-        (
-            annotation.reflex.is_some(),
-            angle,
-            "semantic annotation states `reflex`, but its dimension kind is no angle",
-        ),
-        (
-            annotation.negated.is_some(),
-            !angle,
-            "semantic annotation states `negated`, but its dimension kind is an angle",
-        ),
-        (
-            annotation.line_directions.is_some(),
-            distance,
-            "semantic annotation states `line_directions`, but its dimension kind is no distance",
-        ),
-    ] {
-        if stated && !admitted {
-            record_finding(
-                findings,
-                Check::ReferentialIntegrity,
-                Severity::Error,
-                Some(annotation.id.as_str()),
-                format_args!("{message}"),
-            );
-        }
+    let mut report = |ruled: crate::report::check::Ruled<'_>| {
+        record_finding(
+            findings,
+            Check::ReferentialIntegrity,
+            Severity::Error,
+            Some(annotation.id.as_str()),
+            ruled,
+        );
+    };
+    if annotation.reflex.is_some() && !angle {
+        report(crate::rule!(
+            "semantic_annotations.reflex-without-angle-kind",
+            "semantic annotation states `reflex`, but its dimension kind is no angle"
+        ));
+    }
+    if annotation.negated.is_some() && angle {
+        report(crate::rule!(
+            "semantic_annotations.negated-with-angle-kind",
+            "semantic annotation states `negated`, but its dimension kind is an angle"
+        ));
+    }
+    if annotation.line_directions.is_some() && !distance {
+        report(crate::rule!(
+            "semantic_annotations.line-directions-without-distance-kind",
+            "semantic annotation states `line_directions`, but its dimension kind is no distance"
+        ));
     }
 }
 
@@ -130,7 +133,10 @@ fn check_reference_anchors(
         Check::ReferentialIntegrity,
         severity,
         Some(annotation.id.as_str()),
-        format_args!("semantic annotation states {count} reference anchors"),
+        crate::rule!(
+            "semantic_annotations.semantic-annotation-states-reference-anchors",
+            "semantic annotation states {count} reference anchors"
+        ),
     );
 }
 

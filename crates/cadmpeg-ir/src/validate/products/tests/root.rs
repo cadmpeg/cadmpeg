@@ -173,9 +173,9 @@ fn a_component_file_or_an_embedded_top_is_no_root() {
 fn the_root_rule_rolls_back_no_decoder_candidate() {
     let ir = decoded();
     for allowed in [
-        crate::validate::admit::DRAFT_CORE_CHECKS,
-        crate::validate::admit::RHINO_DRAFT_CHECKS,
-        crate::validate::admit::CATIA_ADMISSION_CHECKS,
+        crate::validate::admit::DRAFT_CORE,
+        crate::validate::admit::RHINO_DRAFT,
+        crate::validate::admit::CATIA_ADMISSION,
     ] {
         let report = crate::validate::admit::admit(
             &cadmpeg_core::decode::test_support::service_decode_context(),

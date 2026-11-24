@@ -2512,6 +2512,9 @@ pub(super) fn validate_parameter_scopes(
             )
         {
             findings.push(Finding {
+                rule: cadmpeg_ir::rule_name!(
+                    "f3d/parameter_scopes.fusion-splitface-carrier-registration-conflicts-inline"
+                ),
                 related: Vec::new(),
                 check: Check::NativeLinks,
                 severity: Severity::Warning,
