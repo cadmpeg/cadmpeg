@@ -211,8 +211,8 @@ An edited compound-file part is written into a native envelope, and
 neither generates nor replaces. Where that write refuses, or its envelope lands
 on another dialect than the source's, the output is the stored part, and a `writer.compound-file-edit-unwritten` loss (severity error)
 states that no edit is written. `cadmpeg convert
---reject-lossy=export` refuses such a write; `--reject-errors` does not, because
-it judges the written file's check findings, not export losses.
+--reject-lossy=export` refuses such a write; `--reject-errors` refuses
+`export:record.invalid` only.
 
 Semantic regeneration accepts solid bodies with at most five regions and at
 most six shells per solid region. Sheet regions require exactly one shell. It

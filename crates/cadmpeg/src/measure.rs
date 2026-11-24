@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `cadmpeg measure`: geometric measurement of a loaded model.
 //!
-//! The command loads a native file or CADIR at geometry depth, refuses a
-//! document that holds no geometry, measures the selected rows under one
-//! session, and prints text, TSV or the JSON command report.
+//! The command loads a native file or CADIR at geometry depth, measures the
+//! selected rows under one session, and prints text, TSV or the JSON command
+//! report. A document whose scope holds no model class measures no body and
+//! charges `measure:output.empty`, which `--reject-empty` refuses.
 
 mod args;
 pub(crate) mod geometry_diff;
@@ -16,6 +17,7 @@ use std::process::ExitCode;
 use anyhow::anyhow;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth};
 use cadmpeg_ir::report::decode::DecodeReport;
+use cadmpeg_ir::report::strictness::{code_name, Strictness};
 use cadmpeg_ir::DecodeOptions;
 use cadmpeg_measure::report::MeasureReport;
 use cadmpeg_measure::{MeasureError, MeasureInput, MeasureOptions, Measurer, WorkProfile};
@@ -52,6 +54,19 @@ pub(crate) struct MeasureCommand<'a> {
     pub(crate) options: DecodeOptions,
     pub(crate) profile: WorkProfile,
     pub(crate) density: Option<cadmpeg_measure::Density>,
+    /// Refuse a measurement that charges `measure:output.empty`.
+    pub(crate) reject_empty: bool,
+}
+
+impl MeasureCommand<'_> {
+    /// The measurement's strictness.
+    fn strictness(&self) -> Strictness {
+        if self.reject_empty {
+            Strictness::default().with_code("measure:output.empty")
+        } else {
+            Strictness::default()
+        }
+    }
 }
 
 /// Where the measured document came from.
@@ -107,7 +122,6 @@ pub(crate) fn measure(
         if let Some(report) = loaded.decode_report() {
             print_decode_report(&mut io::stderr(), report)?;
         }
-        require_geometry(&loaded)?;
         let selection = command.selection.resolve(&loaded.ir)?;
         let geometry_transferred = loaded
             .decode_report()
@@ -122,6 +136,21 @@ pub(crate) fn measure(
             &selection,
             geometry_transferred,
         )?;
+        if let Some(entry) = command.strictness().first_refused(report.losses(), false) {
+            return Err(ConversionRefusal::StrictMeasureRejected {
+                decode_report: loaded.decode_report().cloned(),
+                loss: Box::new(report.losses()[entry].clone()),
+            }
+            .into());
+        }
+        for loss in report.losses() {
+            eprintln!(
+                "{}: {}: {}",
+                loss.severity,
+                code_name(&loss.code),
+                loss.message
+            );
+        }
         if !geometry_transferred {
             eprintln!("note: the decode transferred no geometry");
         }
@@ -161,7 +190,7 @@ struct Session<'a> {
     density: Option<cadmpeg_measure::Density>,
 }
 
-/// Refuse a document that holds no geometry.
+/// Refuse a document that holds no geometry, for `diff --geometry`.
 fn require_geometry(loaded: &LoadedDocument) -> Result<(), ApplicationError> {
     if !loaded.ir.scope().model {
         return Err(ConversionRefusal::InsufficientMeasureDepth {
