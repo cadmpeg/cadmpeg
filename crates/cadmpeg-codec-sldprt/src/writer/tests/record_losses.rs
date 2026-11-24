@@ -238,7 +238,7 @@ fn derived_degenerate_sphere_seam_curve_has_counted_export_loss() {
             .unwrap(),
     ));
     curve.source_object = Some(cadmpeg_ir::SourceObjectAssociation {
-        format: cadmpeg_ir::CodecFormat::Sldprt,
+        format: cadmpeg_ir::codec_id!("sldprt"),
         geometry_role: Some(cadmpeg_ir::SourceGeometryRole::Support),
         object_id: cadmpeg_core::nonblank_literal!("sphere-seam"),
         name: None,

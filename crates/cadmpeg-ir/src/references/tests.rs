@@ -2,11 +2,13 @@
 
 use serde_json::json;
 
-use super::{InstanceTarget, ReferenceEntity, ReferenceSelection, ReferenceTarget};
+use super::{DrawingPart, InstanceTarget, ReferenceEntity, ReferenceSelection, ReferenceTarget};
 use crate::attributes::AttributeTarget;
 use crate::design::refs::{EntityRef, Evaluated, Member, Position, StateRef};
+use crate::drawings::DrawingId;
 use crate::features::{ConfigurationId, FeatureId};
-use crate::ids::FaceId;
+use crate::ids::{FaceId, PmiId};
+use crate::semantic_annotations::SemanticAnnotationId;
 
 fn face() -> FaceId {
     FaceId::mint("test:model:face#1").unwrap()
@@ -93,6 +95,62 @@ fn a_reference_target_is_adjacently_tagged() {
     ];
     for (target, wire) in cases {
         round_trip(&target, wire);
+    }
+}
+
+#[test]
+fn a_drawing_annotation_or_pmi_target_names_its_record() {
+    let drawing = || DrawingId::mint("test:model:drawing#front").unwrap();
+    let cases = [
+        (
+            ReferenceTarget::Drawing {
+                drawing: drawing(),
+                part: None,
+            },
+            json!({"kind": "drawing", "value": {"drawing": "test:model:drawing#front"}}),
+        ),
+        (
+            ReferenceTarget::Drawing {
+                drawing: drawing(),
+                part: Some(DrawingPart::Curve(3)),
+            },
+            json!({"kind": "drawing", "value": {"drawing": "test:model:drawing#front", "part": {"kind": "curve", "value": 3}}}),
+        ),
+        (
+            ReferenceTarget::Drawing {
+                drawing: drawing(),
+                part: Some(DrawingPart::Unread),
+            },
+            json!({"kind": "drawing", "value": {"drawing": "test:model:drawing#front", "part": {"kind": "unread"}}}),
+        ),
+        (
+            ReferenceTarget::Annotation(
+                SemanticAnnotationId::mint("test:model:semantic-annotation#note").unwrap(),
+            ),
+            json!({"kind": "annotation", "value": "test:model:semantic-annotation#note"}),
+        ),
+        (
+            ReferenceTarget::Pmi(PmiId::mint("test:model:pmi#flatness").unwrap()),
+            json!({"kind": "pmi", "value": "test:model:pmi#flatness"}),
+        ),
+    ];
+    for (target, wire) in cases {
+        assert!(!target.reads_design());
+        round_trip(&target, wire);
+    }
+    for wire in [
+        json!({"kind": "drawing", "value": {"drawing": "test:model:drawing#front", "part": null}}),
+        json!({"kind": "drawing", "value": {"drawing": "test:model:drawing#front", "curve": 3}}),
+        json!({"kind": "drawing", "value": {"drawing": "test:model:drawing#front", "part": {"kind": "unread", "value": null}}}),
+        json!({"kind": "drawing", "value": {"drawing": "test:model:drawing#front", "part": {"kind": "curve", "value": -1}}}),
+        json!({"kind": "drawing", "value": {"part": {"kind": "unread"}}}),
+        json!({"kind": "drawing", "value": "test:model:drawing#front"}),
+        json!({"kind": "pmi", "value": "bad id"}),
+    ] {
+        assert!(
+            serde_json::from_value::<ReferenceTarget>(wire.clone()).is_err(),
+            "{wire}"
+        );
     }
 }
 

@@ -17,7 +17,7 @@ use crate::design::construction::{kinds, Construction, FrameValue, ScalarDimensi
 use crate::design::evaluation::EvaluationStatus;
 use crate::design::feature::LinkState;
 use crate::design::ids::SpatialSketchConstraintId;
-use crate::design::names::{CodecId, InstanceIndex, NativeName, NativeNameValue};
+use crate::design::names::{InstanceIndex, NativeName, NativeNameValue};
 use crate::design::ops::shared::Spacing;
 use crate::design::ops::sketch::{
     AngleOperands, AngleSector, BlockInstance, BoundedCurve, Contact, DefiningRole, Derivation,
@@ -33,7 +33,7 @@ use crate::design::selection::PrincipalEntity;
 use crate::document::{CadIr, Design};
 use crate::features::geometry::FinitePoint3;
 use crate::geometry::analytic::LineCurve;
-use crate::geometry::SolvedCurveGeometry;
+use crate::geometry::InlineCurve;
 use crate::sketches::{
     SketchConstraintId, SketchEntityId, SketchId, SpatialSketchEntityId, SpatialSketchId,
 };
@@ -109,7 +109,7 @@ fn frame() -> Construction<kinds::Frame> {
 
 fn native_name() -> NativeName {
     NativeName {
-        codec: CodecId::from(text("sldprt")),
+        codec: crate::codec_id!("sldprt"),
         value: NativeNameValue::Integers(vec![12]),
     }
 }
@@ -190,8 +190,8 @@ fn spatial_sketches() -> Vec<SpatialSketch> {
     ]
 }
 
-fn line_carrier() -> SolvedCurveGeometry {
-    SolvedCurveGeometry::Line(LineCurve::new(FinitePoint3::ZERO, UnitVector3::X_AXIS))
+fn line_carrier() -> InlineCurve {
+    InlineCurve::Line(LineCurve::new(FinitePoint3::ZERO, UnitVector3::X_AXIS))
 }
 
 fn spatial_curves() -> Vec<SpatialCurve> {

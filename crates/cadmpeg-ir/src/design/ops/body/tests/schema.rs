@@ -10,16 +10,16 @@ use crate::design::ops::body::{
     FlexKind, Graft, Heal, InstanceChange, InstanceOverride, Kept, MoveFaces, NewComponent,
     Pattern, PatternInstances, PatternMember, PatternMethod, PatternSeeds, PieceForm, ReplaceFaces,
     Retention, ScaleFactors, Split, SplitMethod, SplitMode, SplitTool, Template, TemplateInput,
-    TemplateInstance, TemplateParameter, TransformBodies, TransformMode, TransformStep,
-    Transformation,
+    TemplateInstance, TemplateParameter, ToolExtension, TransformBodies, TransformMode,
+    TransformStep, Transformation,
 };
 use crate::design::ops::shared::{
-    Alignment, AxisLimits, Bounds, ChainLayout, ChainLink, ChainLinks, Coupling, DimensionRun,
-    DimensionTable, DriveAxis, DriveMode, Increment, InstanceOrientation, JointConnector,
-    JointDrive, JointKind, JointMotion, JointOffset, LinearRun, Locus, PairElement,
-    PathAxisControl, PathPosition, PathReference, PathRollControl, PatternLayout, PatternRun,
-    RunSides, SlotPosition, Spacing, TableRow, TangentContact, ToolDisposition, UpToFill,
-    WidthMode,
+    Alignment, AxisLimits, Bounds, ChainLayout, ChainLink, ChainLinks, CircularLayout,
+    CompositeStage, Coupling, DimensionRun, DimensionTable, DriveAxis, DriveMode, Increment,
+    InstanceOrientation, JointConnector, JointDrive, JointKind, JointMotion, JointOffset,
+    LinearLayout, LinearRun, Locus, MirrorLayout, PairElement, PathAxisControl, PathPosition,
+    PathReference, PathRollControl, PatternLayout, PatternRun, RunSides, ScaleLayout, SlotPosition,
+    Spacing, TableRow, TangentContact, ToolDisposition, UpToFill, WidthMode,
 };
 use crate::scalar::{Angle, Length};
 
@@ -36,6 +36,11 @@ fn every_pattern_type_has_a_schema() {
     generates::<PatternMethod>(&mut generator);
     generates::<AdjustAgainst>(&mut generator);
     generates::<PatternLayout>(&mut generator);
+    generates::<CompositeStage>(&mut generator);
+    generates::<LinearLayout>(&mut generator);
+    generates::<CircularLayout>(&mut generator);
+    generates::<MirrorLayout>(&mut generator);
+    generates::<ScaleLayout>(&mut generator);
     generates::<ChainLayout>(&mut generator);
     generates::<ChainLinks>(&mut generator);
     generates::<ChainLink>(&mut generator);
@@ -75,6 +80,7 @@ fn every_template_and_body_operation_type_has_a_schema() {
     generates::<Split>(&mut generator);
     generates::<SplitMode>(&mut generator);
     generates::<SplitTool>(&mut generator);
+    generates::<ToolExtension>(&mut generator);
     generates::<SplitMethod>(&mut generator);
     generates::<Kept<Dimension<bool>>>(&mut generator);
     generates::<Kept<Vec<Option<Dimension<bool>>>>>(&mut generator);

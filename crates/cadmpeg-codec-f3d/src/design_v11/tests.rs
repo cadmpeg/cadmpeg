@@ -991,7 +991,7 @@ fn parameters_state_literals_and_source_text_in_their_scope() {
     assert_eq!(
         d1.source_settings,
         BTreeMap::from([(
-            cadmpeg_core::nonblank_literal!("f3d:role"),
+            cadmpeg_ir::codec_name!("f3d:role"),
             cadmpeg_ir::design::options::NativeOption::Text(Dimension::Literal(
                 cadmpeg_core::nonblank_literal!("Linear Dimension-1")
             )),

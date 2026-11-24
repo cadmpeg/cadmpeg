@@ -136,9 +136,9 @@ fn bound(key: u32, parameter: u32) -> Feature {
     operation(
         key,
         FeatureOperation::Native {
-            kind: NonBlankString::new("test:op").unwrap(),
+            kind: crate::codec_name!("test:op"),
             native_options: NativeOptions::from([(
-                NonBlankString::new("test:depth").unwrap(),
+                crate::codec_name!("test:depth"),
                 NativeOption::Length(Dimension::Parameter(parameter_id(parameter))),
             )]),
             source_settings: NativeOptions::new(),
@@ -1584,6 +1584,7 @@ fn removing_an_unordered_member_removes_its_own_result() {
     document.model.presentation_layers = vec![crate::presentation::PresentationLayer {
         id: id("layer", 1),
         name: "Layer".to_owned(),
+        parent: None,
         description: None,
         visible: None,
         items: [1, 2]

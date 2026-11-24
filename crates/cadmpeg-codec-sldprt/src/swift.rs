@@ -1951,14 +1951,8 @@ fn project_dimension(
     annotation.name = object_name(entity);
     if let Some(Deviations { lower, upper }) = equal_deviations {
         for (key, value) in [
-            (
-                cadmpeg_core::nonblank_literal!("sldprt:lower_deviation"),
-                lower,
-            ),
-            (
-                cadmpeg_core::nonblank_literal!("sldprt:upper_deviation"),
-                upper,
-            ),
+            (cadmpeg_ir::codec_name!("sldprt:lower_deviation"), lower),
+            (cadmpeg_ir::codec_name!("sldprt:upper_deviation"), upper),
         ] {
             annotation
                 .native_options
