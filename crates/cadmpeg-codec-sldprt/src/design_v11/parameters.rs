@@ -461,13 +461,32 @@ pub(crate) fn displayed_length(
     if shown.number == 0.0 || metres == 0.0 {
         return None;
     }
-    let millimetres = metres * 1000.0;
+    let millimetres = metres * MM_PER_M;
+    // The exact form: the number is the record's metres, or its value in the
+    // document's unit (in any of the three units where that is not read).
+    let document_mm = match unit {
+        Some(unit) => match canonical(unit)? {
+            (Quantity::LENGTH, factor) => Some(factor),
+            _ => return None,
+        },
+        None => None,
+    };
+    let exact_units = match document_mm {
+        Some(factor) => vec![MM_PER_M, factor],
+        None => UNSTATED_UNIT_MM.to_vec(),
+    };
+    if let Some(mm_per_unit) = exact_units
+        .into_iter()
+        .find(|mm_per_unit| same_stored(shown.number * mm_per_unit, millimetres))
+    {
+        return Some(DisplayedLength {
+            number: shown.number,
+            mm_per_unit,
+        });
+    }
     let reads = |mm_per_unit: f64| shown.shows(millimetres / mm_per_unit);
-    let mm_per_unit = match unit {
-        Some(unit) => {
-            let (quantity, factor) = canonical(unit)?;
-            (quantity == Quantity::LENGTH && reads(factor)).then_some(factor)?
-        }
+    let mm_per_unit = match document_mm {
+        Some(factor) => reads(factor).then_some(factor)?,
         None => {
             let mut readings = UNSTATED_UNIT_MM.into_iter().filter(|factor| reads(*factor));
             let only = readings.next()?;

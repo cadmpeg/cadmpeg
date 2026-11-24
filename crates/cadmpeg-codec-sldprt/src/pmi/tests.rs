@@ -395,6 +395,24 @@ fn a_millimetre_document_does_not_read_a_display_in_inches() {
 }
 
 #[test]
+fn a_raw_metre_scalar_equal_to_the_record_types_in_a_millimetre_document() {
+    // The decoded number times 1 is the record's 0.005 m: the exact form,
+    // 5 mm, whatever the document's unit.
+    let (parameter, refined) = bare_keywords_length_in(
+        "0.005",
+        Some(real(0.005)),
+        "Linear",
+        0.005,
+        Some(UnitSymbol::Mm),
+        Some(2),
+    );
+    assert_eq!(parameter.expression, "5mm");
+    assert!((length_of(&parameter).unwrap() - 5.0).abs() < EPS_TEST_MM);
+    // A configuration's 0.006 is 0.006 m, 6 mm.
+    assert!((refined[0].displayed.mm_per_unit - 1000.0).abs() < EPS_TEST_MM);
+}
+
+#[test]
 fn a_display_that_rounds_the_record_to_another_number_is_declined() {
     // 0.0026 m is 2.6 mm; a display of no places shows 3, not 2.
     let (parameter, refined) = bare_keywords_length_in(
