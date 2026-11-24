@@ -64,7 +64,6 @@ fn product(ir: &mut cadmpeg_ir::CadIr) {
         .push(cadmpeg_ir::products::ProductDefinition {
             sketches: Vec::default(),
 
-            tessellations: Vec::new(),
             id: "test:model:product-definition#empty".try_into().unwrap(),
             kind: Some(cadmpeg_ir::products::ProductDefinitionKind::Part),
             source_name: None,

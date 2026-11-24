@@ -150,7 +150,7 @@ pub(super) fn losses(ir: &CadIr, digests: &CodecDigests, regenerated_brep: bool)
         ir.model
             .tessellations
             .iter()
-            .filter(|mesh| mesh.body.is_some())
+            .filter(|mesh| mesh.of.body().is_some())
             .count(),
         SldprtLossCode::WriterTessellationMetadataOmitted,
         "tessellation body binding",
@@ -159,7 +159,7 @@ pub(super) fn losses(ir: &CadIr, digests: &CodecDigests, regenerated_brep: bool)
         ir.model
             .tessellations
             .iter()
-            .map(|mesh| mesh.faces.len())
+            .map(|mesh| mesh.of.faces().len())
             .sum(),
         SldprtLossCode::WriterTessellationMetadataOmitted,
         "tessellation face binding",

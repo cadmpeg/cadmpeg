@@ -188,7 +188,6 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
         .push(cadmpeg_ir::products::ProductDefinition {
             sketches: Vec::default(),
 
-            tessellations: Vec::new(),
             id: "test:model:product#group"
                 .try_into()
                 .expect("valid identity"),
@@ -649,6 +648,7 @@ fn writer_reports_dangling_appearance_binding() {
         id: binding.try_into().expect("valid identity"),
         target: AppearanceTarget::Body(ir.geometry.bodies[0].id.clone()).into(),
         appearance: appearance.clone(),
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,
@@ -697,6 +697,7 @@ fn writer_reports_appearance_without_base_color() {
         id: binding.try_into().expect("valid identity"),
         target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()).into(),
         appearance: appearance.clone(),
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,
@@ -766,6 +767,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
             id: "test:model:binding#red".try_into().expect("valid identity"),
             target: target.clone().into(),
             appearance: red,
+            precedence: None,
             source_entity_id: None,
             object_type: None,
             visible: None,
@@ -778,6 +780,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
                 .expect("valid identity"),
             target: target.into(),
             appearance: blue,
+            precedence: None,
             source_entity_id: None,
             object_type: None,
             visible: None,
@@ -868,11 +871,11 @@ fn writer_reports_reduced_tessellation_metadata_and_body_links() {
             .expect("valid channel")],
         )
         .expect("valid tessellation")
-        .with_body(Some(
-            cadmpeg_ir::ids::BodyId::mint("test:model:body#test:missing-body")
+        .with_of(cadmpeg_ir::tessellation::Meshed::Body {
+            body: cadmpeg_ir::ids::BodyId::mint("test:model:body#test:missing-body")
                 .expect("identity grammar"),
-        ))
-        .with_faces(vec![ir.geometry.faces[0].id.clone()])
+            faces: vec![ir.geometry.faces[0].id.clone()],
+        })
         .with_chordal_deflection(Some(0.01))
         .unwrap(),
     );
@@ -1179,6 +1182,7 @@ fn ap203e1_reports_hidden_appearance_visibility_loss() {
             .expect("valid identity"),
         target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()).into(),
         appearance,
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: Some(false),

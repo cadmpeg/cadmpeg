@@ -560,7 +560,6 @@ fn the_file_definition_is_the_root_occurrence_prototype_or_the_one_unplaced_defi
         bom_properties: std::collections::BTreeMap::new(),
         bodies: Vec::new(),
         sketches: Vec::new(),
-        tessellations: Vec::new(),
         native_ref: None,
         generated_from: None,
         storage: cadmpeg_ir::products::Storage::Embedded,

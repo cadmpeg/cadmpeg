@@ -1010,6 +1010,7 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
             .expect("valid identity"),
         target: target.into(),
         appearance: AppearanceId::mint("f3d:test:appearance#material").expect("identity grammar"),
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,

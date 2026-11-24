@@ -25,8 +25,7 @@
       "bodies": [
         {
           "id": "pvz:model:body#part.ol",
-          "kind": "solid",
-          "name": "part.ol"
+          "kind": "solid"
         }
       ],
       "coedges": [
@@ -531,8 +530,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -549,8 +547,7 @@
           "source_name": "PART.PRT",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],

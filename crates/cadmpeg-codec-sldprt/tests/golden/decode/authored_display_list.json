@@ -252,8 +252,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -268,7 +267,6 @@
       "spreadsheets": [],
       "tessellations": [
         {
-          "body": "sldprt:brep:body#900",
           "channels": [
             {
               "addressing": {
@@ -325,9 +323,6 @@
               "kind": 8
             }
           ],
-          "faces": [
-            "sldprt:brep:face#10"
-          ],
           "feature_edges": [],
           "id": "sldprt:displaylist:record#348:0",
           "mesh": {
@@ -372,6 +367,13 @@
                 }
               ]
             ]
+          },
+          "of": {
+            "body": "sldprt:brep:body#900",
+            "faces": [
+              "sldprt:brep:face#10"
+            ],
+            "kind": "body"
           },
           "texture_assignments": [],
           "texture_coordinates": [],

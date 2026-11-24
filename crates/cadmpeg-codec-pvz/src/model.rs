@@ -13,15 +13,15 @@ use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
-use cadmpeg_ir::ids::BodyId;
+use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::products::{
     ExternalDocument, Occurrence, ProductDefinition, ProductDefinitionKind, Storage,
 };
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
-use cadmpeg_ir::tessellation::{Tessellation, TessellationMesh, TessellationTriangleGroup};
-use cadmpeg_ir::topology::{Body, BodyKind, Color};
+use cadmpeg_ir::tessellation::{Meshed, Tessellation, TessellationMesh, TessellationTriangleGroup};
+use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
@@ -91,7 +91,6 @@ pub(crate) fn definitions(
         ir.model.product_definitions.push(ProductDefinition {
             sketches: Vec::default(),
 
-            tessellations: Vec::new(),
             id: crate::ids::definition(index),
             kind: Some(match definition.role {
                 DefinitionRole::Component => ProductDefinitionKind::Part,
@@ -420,47 +419,36 @@ fn uniform_scale(axes: [[f64; 3]; 3]) -> Option<f64> {
     (equal && perpendicular && right_handed).then_some(scale)
 }
 
-/// Adds the display geometry of one geometry member: its body, one
-/// tessellation per mesh, and the appearances the meshes use. Returns the
-/// body, or `None` when the member holds no display geometry.
+/// Adds the display geometry of one geometry member: one tessellation per
+/// mesh, and the appearances the meshes use. A mesh displays `exact`, the
+/// member's first exact body, where the member holds one, and is otherwise the
+/// geometry of `definition`, the one definition that uses the member. Each
+/// mesh names the member as the object it was read from.
 pub(crate) fn display_geometry(
     ctx: &DecodeContext<'_>,
     member: &str,
     geometry: &MemberGeometry,
     exact: Option<BodyId>,
+    definition: Option<ProductDefinitionId>,
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
-) -> Result<Option<BodyId>, CodecError> {
-    let body = match exact {
-        Some(body) => {
-            let written = ir
-                .geometry
-                .bodies
-                .iter_mut()
-                .rev()
-                .find(|written| written.id == body)
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!("B-rep body {body} was not written"))
-                })?;
-            written.name = Some(member.to_owned());
-            body
-        }
-        None if geometry.meshes.is_empty() && !geometry.has_exact => return Ok(None),
-        None => {
-            let body = crate::ids::body(member);
-            ir.geometry.bodies.push(Body {
-                id: body.clone(),
-                kind: BodyKind::General,
-                transform: None,
-                name: Some(member.to_owned()),
-                color: None,
-                visible: None,
-                native_ref: None,
-                unstated: None,
-            });
-            body
-        }
+) -> Result<(), CodecError> {
+    let of = match (exact, definition) {
+        (Some(body), _) => Meshed::Body {
+            body,
+            faces: Vec::new(),
+        },
+        (None, Some(definition)) => Meshed::definition(definition),
+        (None, None) => Meshed::Unresolved,
     };
+    let source_object = NonBlankString::new(member.to_owned()).map(|object_id| {
+        cadmpeg_ir::SourceObjectAssociation {
+            format: cadmpeg_ir::codec_id!("pvz"),
+            geometry_role: None,
+            object_id,
+            instance_path: Vec::new(),
+        }
+    });
     let mut admitted = u64_from_index(ir.entity_count());
     let mut used = BTreeSet::new();
     let mut rejected = Vec::new();
@@ -473,15 +461,18 @@ pub(crate) fn display_geometry(
         let id = crate::ids::tessellation(member, index);
         match tessellation(id.clone(), mesh) {
             Ok(tessellation) => {
-                ir.model
-                    .tessellations
-                    .push(tessellation.with_body(Some(body.clone())));
+                ir.model.tessellations.push(
+                    tessellation
+                        .with_of(of.clone())
+                        .with_source_object(source_object.clone()),
+                );
                 if let Some(base) = mesh.appearance {
                     used.insert(base);
                     ir.model.appearance_bindings.push(AppearanceBinding {
                         id: crate::ids::appearance_binding(member, index),
                         target: AppearanceTarget::Tessellation(id.to_string()).into(),
                         appearance: crate::ids::appearance(member, base),
+                        precedence: None,
                         source_entity_id: None,
                         object_type: None,
                         visible: None,
@@ -526,7 +517,7 @@ pub(crate) fn display_geometry(
              range and were not transferred"
         )));
     }
-    Ok(Some(body))
+    Ok(())
 }
 
 /// Builds the tessellation of one mesh.

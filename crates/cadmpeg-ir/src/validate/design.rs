@@ -24,6 +24,7 @@ mod fit;
 pub(super) mod fixture;
 mod folds;
 mod index;
+mod joins;
 mod linkage;
 mod matching;
 mod materials;
@@ -60,7 +61,7 @@ use crate::report::{
 use super::record_finding;
 use index::DesignIndex;
 use records::MemberKey;
-use walk::{Collect, ConstructionView, SelectionView, Walk};
+use walk::{BoundDimension, Collect, ConstructionView, SelectionView, Walk};
 
 /// The record that holds a walked selection or construction.
 #[derive(Debug, Clone, Copy)]
@@ -96,11 +97,13 @@ impl<'a> Holder<'a> {
     }
 }
 
-/// The selections and constructions one design record holds.
+/// The selections, constructions, and bound dimensions one design record
+/// holds.
 struct Held<'a> {
     holder: Holder<'a>,
     selections: Vec<SelectionView<'a>>,
     constructions: Vec<ConstructionView<'a>>,
+    dimensions: Vec<BoundDimension<'a>>,
 }
 
 /// Check the design layer of `ir` against part 10's scope-and-linkage,
@@ -141,8 +144,10 @@ pub(super) fn check_design(
 
     let _depth = ctx.enter_nested("IR design validation")?;
     let held = collect(ctx, ir, &index)?;
+    dimensions::check_bound_dimensions(&index.records, &held, findings);
     index.add_dependencies(&held);
     let states = states::States::new(ir);
+    joins::check(&index, &states, findings);
     let matchers = matching::Matchers::new(&states);
     names::check(ctx, &index, &states, &held, findings)?;
     selections::check(ctx, &index, &matchers, &held, ids.native_view(), findings)?;
@@ -152,7 +157,8 @@ pub(super) fn check_design(
     Ok(())
 }
 
-/// Walks every design record that can hold a selection or a construction.
+/// Walks every design record that can hold a selection, a construction, or a
+/// dimension.
 fn collect<'a>(
     ctx: &DecodeContext<'_>,
     ir: &'a CadIr,
@@ -163,11 +169,15 @@ fn collect<'a>(
     let mut add = |holder: Holder<'a>, record: &'a dyn Walk| -> Result<(), CodecError> {
         let mut into = Collect::new(ctx);
         record.walk(&mut into)?;
-        if !into.selections.is_empty() || !into.constructions.is_empty() {
+        if !into.selections.is_empty()
+            || !into.constructions.is_empty()
+            || !into.dimensions.is_empty()
+        {
             held.push(Held {
                 holder,
                 selections: into.selections,
                 constructions: into.constructions,
+                dimensions: into.dimensions,
             });
         }
         Ok(())
