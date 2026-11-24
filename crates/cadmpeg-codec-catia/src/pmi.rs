@@ -7,12 +7,14 @@ mod source;
 use std::collections::HashSet;
 
 use cadmpeg_ir::design::dimension::Dimension;
+use cadmpeg_ir::design::options::NativeOption;
 use cadmpeg_ir::design::parameter::{Deviations, Tolerance};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PmiId;
 use cadmpeg_ir::pmi::{
     PmiAnnotation, PmiDefinition, PmiDimension, PmiDimensionKind, PmiQuantity, PmiValue,
 };
+use cadmpeg_ir::scalar::{FiniteReal, Length};
 
 use crate::native::entity_record::CatiaEntityRecord;
 use crate::native::{CatiaNative, CatiaRangeInterval};
@@ -48,7 +50,7 @@ pub(crate) fn transfer_dimensions(
         if transferred_sketch_ranges.contains(&entity.object_record) {
             continue;
         }
-        let Some(definition) = dimension_definition(entity) else {
+        let Some((definition, unordered)) = dimension_definition(entity) else {
             continue;
         };
         let id = pmi_id(entity.byte_offset)?;
@@ -56,9 +58,19 @@ pub(crate) fn transfer_dimensions(
             continue;
         }
         ctx.charge_entities(1, "admit CATIA PMI dimension")?;
-        ir.model
-            .pmi
-            .push(PmiAnnotation::new(id, Vec::new(), definition));
+        let mut annotation = PmiAnnotation::new(id, Vec::new(), definition);
+        if let Some(UnorderedDeviations { lower, upper }) = unordered {
+            for (key, value) in [
+                (cadmpeg_ir::codec_name!("catia:lower_deviation"), lower),
+                (cadmpeg_ir::codec_name!("catia:upper_deviation"), upper),
+            ] {
+                annotation.native_options.insert(
+                    key,
+                    NativeOption::Length(Dimension::Literal(Length::from_assigned_real(value))),
+                );
+            }
+        }
+        ir.model.pmi.push(annotation);
         transferred += 1;
     }
     Ok(transferred)
@@ -69,7 +81,17 @@ fn pmi_id(source_offset: u64) -> Result<PmiId, cadmpeg_core::CodecError> {
     PmiId::mint(value).map_err(cadmpeg_core::CodecError::malformed)
 }
 
-fn dimension_definition(entity: &CatiaEntityRecord) -> Option<PmiDefinition> {
+/// A Range's deviation pair whose lower deviation is not below its upper,
+/// which states no tolerance and stays as the annotation's native options
+/// (§5.12).
+struct UnorderedDeviations {
+    lower: FiniteReal,
+    upper: FiniteReal,
+}
+
+fn dimension_definition(
+    entity: &CatiaEntityRecord,
+) -> Option<(PmiDefinition, Option<UnorderedDeviations>)> {
     let range = entity.range_interval.as_ref()?;
     if entity.constraint_range().is_some() {
         return None;
@@ -80,7 +102,7 @@ fn dimension_definition(entity: &CatiaEntityRecord) -> Option<PmiDefinition> {
 fn range_only_dimension_definition(
     entity: &CatiaEntityRecord,
     range: &CatiaRangeInterval,
-) -> Option<PmiDefinition> {
+) -> Option<(PmiDefinition, Option<UnorderedDeviations>)> {
     if entity.lead != 2 {
         return None;
     }
@@ -114,13 +136,16 @@ fn range_only_dimension_definition(
     let [lower, upper] = range.interval.slots.as_ref()?;
     let lower_deviation = finite_length(lower.bits())?;
     let upper_deviation = finite_length(upper.bits())?;
+    let (lower, upper) = (lower_deviation.value, upper_deviation.value);
     let mut dimension = PmiDimension::new(dimension);
     dimension.nominal = Some(Dimension::Literal(nominal));
-    dimension.tolerance = Some(Tolerance::Deviations(Deviations {
-        lower: lower_deviation.value,
-        upper: upper_deviation.value,
-    }));
-    Some(PmiDefinition::Dimension(dimension))
+    let unordered = if lower.get() < upper.get() {
+        dimension.tolerance = Some(Tolerance::Deviations(Deviations { lower, upper }));
+        None
+    } else {
+        Some(UnorderedDeviations { lower, upper })
+    };
+    Some((PmiDefinition::Dimension(dimension), unordered))
 }
 
 fn finite_length(bits: u64) -> Option<PmiValue> {
@@ -458,6 +483,59 @@ mod tests {
                     Some(Tolerance::Deviations(deviations)) if deviations.lower.get() == 0.0
                 )
         ));
+    }
+
+    #[test]
+    fn a_zero_zero_range_states_no_tolerance_and_keeps_both_deviations() {
+        let mut zero_zero = range_only_entity("DiameterThread");
+        *zero_zero
+            .range_interval
+            .as_mut()
+            .expect("Range interval")
+            .interval
+            .slots
+            .as_mut()
+            .expect("deviation slots") = [
+            RangeIntervalSlot::ZeroLiteral { offset: 0 },
+            RangeIntervalSlot::ZeroLiteral { offset: 8 },
+        ];
+        let native = CatiaNative {
+            entity_records: vec![zero_zero],
+            ..CatiaNative::default()
+        };
+        let mut ir = CadIr::empty();
+        crate::test_support::with_service_context(|ctx| {
+            transfer_dimensions(
+                ctx,
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unscoped,
+                &HashSet::new(),
+            )
+        })
+        .expect("zero-zero dimension");
+        let [annotation] = ir.model.pmi.as_slice() else {
+            panic!("one PMI entry");
+        };
+        let PmiDefinition::Dimension(dimension) = &annotation.definition else {
+            panic!("dimension annotation");
+        };
+        assert_eq!(dimension.tolerance, None);
+        let zero = cadmpeg_ir::design::options::NativeOption::Length(
+            cadmpeg_ir::design::dimension::Dimension::Literal(cadmpeg_ir::scalar::Length::ZERO),
+        );
+        let options = annotation
+            .native_options
+            .iter()
+            .map(|(key, value)| (key.as_str(), value))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            options,
+            [
+                ("catia:lower_deviation", &zero),
+                ("catia:upper_deviation", &zero),
+            ]
+        );
     }
 
     #[test]
