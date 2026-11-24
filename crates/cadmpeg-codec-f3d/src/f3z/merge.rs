@@ -526,6 +526,7 @@ impl MergeSession<'_, '_> {
             // level, which the placing occurrence places.
             let first = format!("f3d:{}@", member.scope);
             let this = format!("f3d:{occurrence}@");
+            let mut counterparts = Vec::with_capacity(instance.occurrences.len());
             for root in &instance.occurrences {
                 let counterpart = match root.id.as_str().strip_prefix(&this) {
                     Some(tail) if first != this => {
@@ -534,9 +535,10 @@ impl MergeSession<'_, '_> {
                     }
                     _ => root.id.clone(),
                 };
-                let owner =
-                    cadmpeg_ir::products::owner(&parent_ir.model.product_definitions, &counterpart)
-                        .map(|definition| definition.id.clone());
+                counterparts.push((counterpart, root));
+            }
+            let placed = in_owner_order(&parent_ir.model.product_definitions, counterparts);
+            for (owner, root) in placed {
                 if owner.as_ref() == Some(&member.definition)
                     && !crate::xref::is_document_definition(&root.prototype)
                     && root.native_ref.is_none()
@@ -2037,6 +2039,38 @@ fn place_contained_poses_in_members(
     Ok(left_identity)
 }
 
+/// Pairs each instance occurrence with the definition that owns its
+/// first-instance `counterpart`, ordered as the owner lists the
+/// counterparts. A definition lists its children in source order; the
+/// instance's own arena order is by identity and must not decide it.
+fn in_owner_order<T>(
+    definitions: &[cadmpeg_ir::products::ProductDefinition],
+    counterparts: Vec<(cadmpeg_ir::ids::OccurrenceId, T)>,
+) -> Vec<(Option<cadmpeg_ir::ids::ProductDefinitionId>, T)> {
+    let mut placed = counterparts
+        .into_iter()
+        .map(|(counterpart, item)| {
+            let owner = cadmpeg_ir::products::owner(definitions, &counterpart);
+            let position = owner.and_then(|definition| {
+                definition
+                    .occurrences
+                    .iter()
+                    .position(|listed| listed == &counterpart)
+            });
+            (
+                owner.map(|definition| definition.id.clone()),
+                position,
+                item,
+            )
+        })
+        .collect::<Vec<_>>();
+    placed.sort_by(|left, right| (&left.0, left.1).cmp(&(&right.0, right.1)));
+    placed
+        .into_iter()
+        .map(|(owner, _, item)| (owner, item))
+        .collect()
+}
+
 impl MemberDefinition {
     fn instantiate(
         &self,
@@ -2768,6 +2802,37 @@ mod tests {
             ),
             std::collections::BTreeMap::new(),
         )
+    }
+
+    #[test]
+    fn instance_occurrences_are_placed_in_their_owner_source_order() {
+        use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
+        use cadmpeg_ir::products::{ProductDefinition, Storage};
+
+        let occurrence =
+            |name: &str| OccurrenceId::mint(format!("f3d:test:occurrence#{name}")).unwrap();
+        let mut owner = ProductDefinition::new(
+            ProductDefinitionId::mint("f3d:test:component#owner").unwrap(),
+            Storage::Embedded,
+        );
+        // Source order differs from identity order.
+        owner.occurrences = vec![
+            occurrence("d"),
+            occurrence("b"),
+            occurrence("c"),
+            occurrence("a"),
+        ];
+        let definitions = [owner];
+        let arena = ["a", "b", "c", "d"];
+        let placed = super::in_owner_order(
+            &definitions,
+            arena.iter().map(|name| (occurrence(name), *name)).collect(),
+        );
+        let names = placed.iter().map(|(_, name)| *name).collect::<Vec<_>>();
+        assert_eq!(names, ["d", "b", "c", "a"]);
+        assert!(placed
+            .iter()
+            .all(|(owner, _)| owner.as_ref() == Some(&definitions[0].id)));
     }
 
     #[test]
