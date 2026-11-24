@@ -2165,7 +2165,7 @@ height. GUI point and pixel sizes are distinct from physical em height.
 
 ## 13. Codec digests
 
-A `Full` decode records one SHA-256 digest in `SourceFidelity.codec_digests` (CADIR §3.1, Rule B). The writer patches the `entries`, `extensions`, `objects`, and `properties` native arenas itself, and compares the digest to find an edit of any other record.
+The `SourceFidelity.codec_digests` of a `Full` FCStd decode (CADIR §3.1, Rule B) holds one SHA-256 digest. It covers the records outside the `entries`, `extensions`, `objects`, and `properties` native arenas, whose content the archive entries store directly.
 
 | Key | Records |
 | --- | --- |

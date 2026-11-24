@@ -3579,7 +3579,7 @@ A virtual component (`swIsVirtualComponent="YES"`) has its document stored in th
 
 ## 12. Codec digests
 
-The decoder records the SHA-256 digests below in `SourceFidelity.codec_digests` (CADIR §3.1, Rule B). Each digest covers the canonical JSON of the records its row names, as the decode states them. The writer takes the same digest of the document it writes and compares the two to find the records the document edits. A key that ends in `_local_sha256` covers values that the decoder computes with floating-point functions. The other keys cover values the file stores.
+The `SourceFidelity.codec_digests` of a SLDPRT decode (CADIR §3.1, Rule B) holds the SHA-256 digests below. Each digest covers the canonical JSON of the records its row names, as the decode states them. A key that ends in `_local_sha256` covers values computed with floating-point functions. The other keys cover values the file stores.
 
 | Key | Records |
 | --- | --- |
