@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::design::container::Container;
 use cadmpeg_ir::design::dimension::Dimension;
-use cadmpeg_ir::design::expr::{BinaryOp, Node};
+use cadmpeg_ir::design::expr::{MulOp, Node};
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::ops::sketch::{
     AngleOperands, DefiningRole, DistanceAxis, Planar, PlanarCurve, RadialMeasure, SketchRelation,
@@ -518,11 +518,11 @@ fn a_referenced_parameter_stays_a_user_parameter() {
     ir.design.parameters.push(parameter(
         "twice",
         "Twice",
-        neutral(Node::Binary {
-            op: BinaryOp::Multiply,
-            left: Box::new(reference("gap")),
-            right: Box::new(number(2.0, None)),
-        }),
+        neutral(Node::mul(
+            reference("gap"),
+            MulOp::Multiply,
+            number(2.0, None),
+        )),
         Some(40.0),
     ));
     let operand = |name: &str| {

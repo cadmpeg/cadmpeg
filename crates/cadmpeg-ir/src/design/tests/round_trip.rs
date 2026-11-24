@@ -15,8 +15,8 @@ use super::round_trip;
 use crate::design::construction::{kinds, FrameAxis, InputRole, Relation, Subject};
 use crate::design::dimension::{Dimension, ParamRef, ParameterRef, RefTarget};
 use crate::design::expr::{
-    BendVariable, BinaryOp, Constant, ExpressionToken, Function, Measure, MeasureKind,
-    MeasureTarget, Neutral, Node, UnaryOp,
+    AddOp, BendVariable, BinaryOp, Constant, ExpressionToken, Function, Measure, MeasureKind,
+    MeasureTarget, MulOp, Neutral, Node, UnaryOp,
 };
 use crate::design::names::{InstanceIndex, NativeName, NativeNameValue};
 use crate::design::options::{
@@ -341,10 +341,6 @@ fn every_design_type_round_trips() {
     report.check(
         "BinaryOp",
         vec![
-            BinaryOp::Add,
-            BinaryOp::Subtract,
-            BinaryOp::Multiply,
-            BinaryOp::Divide,
             BinaryOp::Power,
             BinaryOp::Equal,
             BinaryOp::NotEqual,
@@ -352,10 +348,10 @@ fn every_design_type_round_trips() {
             BinaryOp::LessEqual,
             BinaryOp::Greater,
             BinaryOp::GreaterEqual,
-            BinaryOp::And,
-            BinaryOp::Or,
         ],
     );
+    report.check("AddOp", vec![AddOp::Add, AddOp::Subtract]);
+    report.check("MulOp", vec![MulOp::Multiply, MulOp::Divide]);
     report.check("Function", Function::ALL.to_vec());
     report.check("Unit", units());
     report.check("UnitFactor", units().remove(2).0);
