@@ -189,7 +189,9 @@ impl FilledSurfaceContinuity {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct FilledSurfaceContinuityState(
-    #[serde(deserialize_with = "deserialize_continuity")] pub(super) Option<FilledSurfaceContinuity>,
+    #[serde(deserialize_with = "deserialize_continuity")]
+    #[cfg_attr(feature = "schema", schemars(with = "FilledSurfaceContinuity"))]
+    pub(super) Option<FilledSurfaceContinuity>,
 );
 
 impl FilledSurfaceContinuityState {
