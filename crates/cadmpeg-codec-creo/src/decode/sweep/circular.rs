@@ -436,12 +436,11 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             .shells
             .push(Shell::new(shell_id.clone(), region_id.clone()));
         ctx.charge_entities(1, "admit Creo model regions")?;
-        ir.geometry.regions.push(Region {
-            id: region_id.clone(),
-            body: body_id.clone(),
-            shells: circular_item(shell_id),
-            native_ref: None,
-        });
+        ir.geometry.regions.push(Region::new(
+            region_id.clone(),
+            body_id.clone(),
+            circular_item(shell_id),
+        ));
         ctx.charge_entities(1, "admit Creo model bodies")?;
         source_carriers.admit_body(
             ir,
@@ -453,6 +452,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 color: None,
                 visible: None,
                 native_ref: None,
+                unstated: None,
             },
         )?;
         transferred += 1;

@@ -60,14 +60,14 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
     for body in &ir.geometry.bodies {
         let transform = body.transform.unwrap_or_default();
         check_rigid(transform)?;
-        for region in ir.geometry.body_regions(&body.id) {
-            for shell_id in &region.shells {
+        for region in ir.geometry.stated_body_regions(&body.id) {
+            for shell_id in region.stated_shells() {
                 let shell = shells.get(shell_id.as_str()).ok_or_else(|| {
                     CodecError::Malformed("region references missing shell".into())
                 })?;
-                for face in ir.geometry.shell_faces(&shell.id) {
+                for face in ir.geometry.stated_shell_faces(&shell.id) {
                     assign(&mut surface_transforms, face.surface.as_str(), transform)?;
-                    for loop_id in &face.loops {
+                    for loop_id in face.loops.stated() {
                         let lp = loops.get(loop_id.as_str()).ok_or_else(|| {
                             CodecError::Malformed("face references missing loop".into())
                         })?;

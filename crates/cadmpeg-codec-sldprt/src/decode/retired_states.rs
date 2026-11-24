@@ -145,7 +145,7 @@ fn target_id(target: &AppearanceTarget) -> Option<&str> {
         | AppearanceTarget::Tessellation(_)
         | AppearanceTarget::TriangleGroup { .. }
         | AppearanceTarget::Record { .. }
-        | AppearanceTarget::Source { .. } => None,
+        | AppearanceTarget::Unresolved => None,
     }
 }
 

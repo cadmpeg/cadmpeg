@@ -126,6 +126,7 @@ pub(super) fn timeline(histories: &[FeatureHistory]) -> Result<Timeline, CodecEr
                         suppressed: Some(Dimension::Literal(feature.suppressed)),
                         definition: FeatureDefinition {
                             operation,
+                            assembly: None,
                             refine: None,
                             fuzzy_tolerance: None,
                         },

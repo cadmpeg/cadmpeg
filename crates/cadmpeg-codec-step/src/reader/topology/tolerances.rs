@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{BodyId, EdgeId, FaceId, LoopId, RegionId, ShellId, VertexId};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::{PositiveLength, PositiveReal};
+use cadmpeg_ir::scalar::PositiveLength;
 use cadmpeg_ir::topology::ShellMember;
 
 use super::TopologyData;
@@ -145,7 +145,7 @@ fn apply_body_bounds(ir: &mut CadIr, body_bounds: &HashMap<BodyId, PositiveLengt
 }
 
 fn widen(
-    tolerance: &mut Option<PositiveReal>,
+    tolerance: &mut Option<PositiveLength>,
     bound: Option<&PositiveLength>,
     document: PositiveLength,
 ) {
@@ -155,9 +155,7 @@ fn widen(
     if bound == document || tolerance.is_some_and(|stated| stated.get() >= bound.get()) {
         return;
     }
-    if let Some(bound) = PositiveReal::new(bound.get()) {
-        *tolerance = Some(bound);
-    }
+    *tolerance = Some(bound);
 }
 
 /// Report the disagreeing context values that no face, edge, or vertex

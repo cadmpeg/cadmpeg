@@ -260,7 +260,7 @@ impl<'ir> FaceInput<'_, 'ir> {
         let owners = self.owners;
         let coedges: Vec<_> = face
             .loops
-            .iter()
+            .stated()
             .filter_map(|loop_id| owners.loop_(loop_id.as_str()))
             .flat_map(cadmpeg_ir::topology::Loop::coedges)
             .filter_map(|coedge| owners.coedge(coedge.as_str()))
@@ -268,7 +268,7 @@ impl<'ir> FaceInput<'_, 'ir> {
         let linear = owners.ir.tolerances.linear.get();
         let mut local: Vec<f64> = face
             .tolerance
-            .map(cadmpeg_ir::scalar::PositiveReal::get)
+            .map(cadmpeg_ir::scalar::PositiveLength::get)
             .into_iter()
             .collect();
         for coedge in &coedges {
@@ -377,7 +377,7 @@ impl<'ir> FaceInput<'_, 'ir> {
         let tau_b = tau.max(fit).max(max_gap).max(off_surface);
         let surface_tau = model_tolerance(
             linear,
-            face.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get),
+            face.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get),
         )
         .max(fit);
         let deviation = |edge: &str| {
@@ -1125,7 +1125,7 @@ impl<'ir> FaceInput<'_, 'ir> {
         let Ok(boundary) = boundary else {
             return face
                 .loops
-                .iter()
+                .stated()
                 .map(|loop_id| LoopMeasures {
                     loop_id: loop_id.as_str().to_owned(),
                     declared_role: declared(face, loop_id),

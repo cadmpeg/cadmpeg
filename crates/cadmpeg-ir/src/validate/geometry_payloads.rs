@@ -22,9 +22,9 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
     for body in &ir.geometry.bodies {
         for face in ir
             .geometry
-            .body_regions(&body.id)
-            .flat_map(|region| region.shells.iter())
-            .flat_map(|shell| ir.geometry.shell_faces(shell))
+            .stated_body_regions(&body.id)
+            .flat_map(crate::topology::Region::stated_shells)
+            .flat_map(|shell| ir.geometry.stated_shell_faces(shell))
         {
             face_bodies.insert(face.id.as_str(), body.id.as_str());
         }

@@ -21,7 +21,7 @@ fn consumer(pick: Picked) -> crate::features::Feature {
             origin: Some(origin()),
             direction: Some(direction()),
             source_settings: std::collections::BTreeMap::from([(
-                cadmpeg_core::nonblank_literal!("test:selection"),
+                crate::codec_name!("test:selection"),
                 NativeOption::Selection(Selection {
                     at: Anchor::Input,
                     picks: Picks::Named(Members::new(vec![pick]).unwrap()),
@@ -46,6 +46,7 @@ fn datum_axis_witness_validation_uses_local_typed_arenas_and_distinct_identities
         let region: crate::ids::RegionId = "test:witness:region#one".try_into().unwrap();
         let shell: crate::ids::ShellId = "test:witness:shell#one".try_into().unwrap();
         body.bodies.push(crate::topology::Body {
+            unstated: None,
             id: body_id.clone(),
             kind: crate::topology::BodyKind::General,
             transform: None,
@@ -54,12 +55,11 @@ fn datum_axis_witness_validation_uses_local_typed_arenas_and_distinct_identities
             visible: None,
             native_ref: None,
         });
-        body.regions.push(crate::topology::Region {
-            id: region.clone(),
-            body: body_id,
-            shells: vec![shell.clone()],
-            native_ref: None,
-        });
+        body.regions.push(crate::topology::Region::new(
+            region.clone(),
+            body_id,
+            vec![shell.clone()],
+        ));
         body.shells.push(crate::topology::Shell::with_free_vertex(
             shell,
             region,
@@ -136,7 +136,7 @@ fn datum_axis_bound_dimensions_resolve_within_the_consuming_definition() {
         let mut owner = feature(
             DatumAxisDraft {
                 native_options: std::collections::BTreeMap::from([(
-                    cadmpeg_core::nonblank_literal!("test:length"),
+                    crate::codec_name!("test:length"),
                     NativeOption::Length(Dimension::Parameter(parameter.clone())),
                 )]),
                 ..Default::default()
@@ -305,8 +305,8 @@ fn datum_axis_unresolved_point_part_keeps_its_cardinality_uncertainty() {
 
 #[test]
 fn datum_axis_option_keys_have_one_classification_and_distinct_literals_survive() {
-    let key = cadmpeg_core::nonblank_literal!("test:model:parameter#one");
-    let other = cadmpeg_core::nonblank_literal!("test:placed:parameter#one");
+    let key = crate::codec_name!("test:model:parameter#one");
+    let other = crate::codec_name!("test:placed:parameter#one");
     for equal_values in [false, true] {
         let draft = DatumAxisDraft {
             native_options: std::collections::BTreeMap::from([(

@@ -50,6 +50,7 @@ fn body(key: &str) -> Body {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     }
 }
 
@@ -293,7 +294,7 @@ fn operations_keep_their_family_or_their_nx_kind() {
     assert_eq!(
         operation(&native).unwrap(),
         FeatureOperation::Native {
-            kind: NonBlankString::new("nx:TUBE").unwrap(),
+            kind: cadmpeg_ir::codec_name!("nx:TUBE"),
             native_options: BTreeMap::new(),
             source_settings: BTreeMap::new(),
         }
@@ -354,7 +355,7 @@ fn operations_keep_their_family_or_their_nx_kind() {
     assert_eq!(
         operation(&snapshot).unwrap(),
         FeatureOperation::Native {
-            kind: NonBlankString::new("nx:MASTER SNAPSHOT BODY").unwrap(),
+            kind: cadmpeg_ir::codec_name!("nx:MASTER SNAPSHOT BODY"),
             native_options: BTreeMap::new(),
             source_settings: BTreeMap::new(),
         }
@@ -405,7 +406,7 @@ fn a_wave_face_link_with_unresolved_bodies_keeps_its_nx_kind() {
     assert_eq!(
         operation(&wave_face_link(Vec::new())).unwrap(),
         FeatureOperation::Native {
-            kind: NonBlankString::new("nx:LINKED_FACE").unwrap(),
+            kind: cadmpeg_ir::codec_name!("nx:LINKED_FACE"),
             native_options: BTreeMap::new(),
             source_settings: BTreeMap::new(),
         }

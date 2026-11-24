@@ -80,6 +80,26 @@ fn max_container_depth(value: &Value, limit: usize) -> Option<usize> {
     Some(deepest)
 }
 
+/// Rewrites every negative zero inside `value` as zero: a document holds one
+/// zero in every float, a native record's included (§2.5).
+fn hold_one_zero(value: &mut Value) {
+    let mut pending = vec![value];
+    while let Some(value) = pending.pop() {
+        match value {
+            Value::Array(items) => pending.extend(items.iter_mut()),
+            Value::Object(entries) => pending.extend(entries.values_mut()),
+            Value::Number(number)
+                if number
+                    .as_f64()
+                    .is_some_and(|number| number == 0.0 && number.is_sign_negative()) =>
+            {
+                *value = Value::from(0.0);
+            }
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+        }
+    }
+}
+
 /// Records `value` at `depth` when it is a container.
 fn push_container<'a>(pending: &mut Vec<(&'a Value, usize)>, value: &'a Value, depth: usize) {
     if matches!(value, Value::Array(_) | Value::Object(_)) {
@@ -287,6 +307,7 @@ impl NativeRecord {
             };
             max_field_depth = max_field_depth.max(field_depth);
         }
+        fields.values_mut().for_each(hold_one_zero);
         let json = render(&id, &fields);
         let depth = 1 + max_field_depth;
         Ok(Self { id, json, depth })
@@ -527,7 +548,8 @@ impl NativeRecord {
     }
 
     /// Build a canonical record directly from pre-formatted canonical compact
-    /// JSON text (`{"id":...}` with `id` first and remaining keys sorted) of
+    /// JSON text (`{"id":...}` with `id` first, remaining keys sorted, and a
+    /// float zero written `0.0`, never `-0.0`, per §2.5) of
     /// known container nesting `depth` (`>= 1`, `<= MAX_NATIVE_NESTING_DEPTH + 1`).
     ///
     /// Enforces identity validation, caller depth admission, and retained-byte

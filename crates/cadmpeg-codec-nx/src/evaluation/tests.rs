@@ -29,6 +29,7 @@ fn model_body(id: &str) -> Body {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     }
 }
 

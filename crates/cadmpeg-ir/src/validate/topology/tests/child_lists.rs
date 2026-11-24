@@ -29,19 +29,28 @@ fn the_unit_cube_states_reciprocal_child_lists() {
         "{report:?}"
     );
     let shell = &ir.geometry.shells[0];
-    assert_eq!(ir.geometry.shell_faces(&shell.id).count(), 6);
+    assert_eq!(ir.geometry.stated_shell_faces(&shell.id).count(), 6);
     let body = &ir.geometry.bodies[0];
-    assert_eq!(ir.geometry.body_regions(&body.id).count(), 1);
+    assert_eq!(ir.geometry.stated_body_regions(&body.id).count(), 1);
     let lists = ir.geometry.child_lists();
-    assert_eq!(lists.shell_faces(&shell.id).len(), 6);
-    assert_eq!(lists.body_regions(&body.id).len(), 1);
+    assert_eq!(lists.stated_shell_faces(&shell.id).len(), 6);
+    assert_eq!(
+        lists.complete_shell_faces(&shell.id).map(<[_]>::len),
+        Some(6)
+    );
+    assert_eq!(lists.stated_body_regions(&body.id).len(), 1);
 }
 
 #[test]
 fn a_stored_child_list_must_name_the_children_whose_parent_is_its_owner() {
     let mut ir = unit_cube().unwrap();
     let region = ir.geometry.regions[0].id.as_str().to_owned();
-    let shell = ir.geometry.regions[0].shells.remove(0);
+    let shell = ir.geometry.regions[0]
+        .stated_shells()
+        .next()
+        .expect("a shell")
+        .clone();
+    ir.geometry.regions[0].retain_stated_shells(|listed| listed != &shell);
     let report = findings(&ir);
     assert!(has(
         &report,
@@ -51,9 +60,18 @@ fn a_stored_child_list_must_name_the_children_whose_parent_is_its_owner() {
     ));
 
     let mut ir = unit_cube().unwrap();
-    let stolen = ir.geometry.faces[1].loops.to_vec()[0].clone();
+    let stolen = ir.geometry.faces[1]
+        .loops
+        .stated()
+        .next()
+        .expect("a loop")
+        .clone();
     let face = ir.geometry.faces[0].id.as_str().to_owned();
-    let mut loops = ir.geometry.faces[0].loops.to_vec();
+    let mut loops = ir.geometry.faces[0]
+        .loops
+        .stated()
+        .cloned()
+        .collect::<Vec<_>>();
     loops.push(stolen.clone());
     ir.geometry.faces[0].loops = crate::topology::FaceLoops::unspecified(loops);
     let report = findings(&ir);

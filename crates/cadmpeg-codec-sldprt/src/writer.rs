@@ -38,7 +38,7 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::scalar::FiniteReal;
-use cadmpeg_ir::topology::{BodyKind, Color, LoopBoundary, Sense};
+use cadmpeg_ir::topology::{BodyKind, Color, Face, FaceBoundary, LoopBoundary, Region, Sense};
 use cadmpeg_ir::Annotations;
 
 use crate::SourceRecord;
@@ -306,6 +306,11 @@ pub(crate) fn write_semantic_with_records(
             generated.sections
         }
     } else {
+        losses.extend(cadmpeg_ir::codec::write::partial_topology_omitted(
+            "SLDPRT",
+            &ir.geometry,
+            "the body is not written",
+        ));
         let encoded = body_drop::encode_without_unwritable_bodies(ir, None, |ir| {
             generated_partitions(ir, length_scale)
         })?;
@@ -1668,7 +1673,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .geometry
         .regions
         .iter()
-        .flat_map(|region| region.shells.iter().cloned())
+        .flat_map(|region| region.stated_shells().cloned())
         .collect::<HashSet<_>>();
     subset
         .geometry
@@ -1682,7 +1687,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .geometry
         .faces
         .iter()
-        .flat_map(|face| face.loops.iter().cloned())
+        .flat_map(|face| face.loops.stated().cloned())
         .collect::<HashSet<_>>();
     subset
         .geometry
@@ -3910,15 +3915,13 @@ pub(crate) fn brep_body_from(
         let face = faces_by_id.get(&lp.face).copied().ok_or_else(|| {
             CodecError::malformed(format_args!("loop references missing face: {}", lp.id))
         })?;
-        let position = face
-            .loops
+        let position = face_boundary(face)?
             .iter()
             .position(|id| id == &lp.id)
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("face does not own referenced loop: {}", lp.id))
             })?;
-        let next_loop = face
-            .loops
+        let next_loop = face_boundary(face)?
             .iter()
             .nth(position + 1)
             .map_or(0, |id| loops[id]);
@@ -3944,10 +3947,10 @@ pub(crate) fn brep_body_from(
         be32(&mut out, 0);
         pointer(&mut out, face_owners[&face.id])?;
         out.extend_from_slice(&MAGIC);
-        let first =
-            face.loops.iter().next().ok_or_else(|| {
-                CodecError::malformed(format_args!("face has no loop: {}", face.id))
-            })?;
+        let first = face_boundary(face)?
+            .iter()
+            .next()
+            .ok_or_else(|| CodecError::malformed(format_args!("face has no loop: {}", face.id)))?;
         for value in [0, 0, loops[first], 0, surfaces[&face.surface]] {
             pointer(&mut out, value)?;
         }
@@ -4018,8 +4021,9 @@ fn write_body_hierarchy(
     for body in &ir.geometry.bodies {
         let root = take_attr(next)?;
         let mut native_regions = Vec::new();
-        for region in ir.geometry.body_regions(&body.id) {
-            if body.kind == BodyKind::Sheet && region.shells.len() != 1 {
+        for region in complete_regions(ir, body)? {
+            let region_shells = complete_shells(ir, region)?;
+            if body.kind == BodyKind::Sheet && region_shells.len() != 1 {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT sheet regions require exactly one shell: {}",
                     body.id
@@ -4028,12 +4032,12 @@ fn write_body_hierarchy(
             let native_region = take_attr(next)?;
             native_regions.push(native_region);
             let mut native_lumps = Vec::new();
-            for shell_id in &region.shells {
+            for shell_id in region_shells {
                 let shell = shells.get(shell_id).ok_or_else(|| {
                     CodecError::Malformed("region references missing shell".into())
                 })?;
                 let mut owned = Vec::new();
-                for face in ir.geometry.shell_faces(&shell.id) {
+                for face in ir.geometry.stated_shell_faces(&shell.id) {
                     let face = &face.id;
                     if !faces.contains_key(face) {
                         return Err(CodecError::Malformed(
@@ -4158,14 +4162,12 @@ fn write_typed_body_hierarchy(
 
     for (index, body) in ir.geometry.bodies.iter().enumerate() {
         let body_attr = body_attrs[&body.id];
-        let first_body_region = ir
-            .geometry
-            .body_regions(&body.id)
+        let first_body_region = complete_regions(ir, body)?
+            .into_iter()
             .next()
             .ok_or_else(|| CodecError::Malformed("body has no typed region".into()))?;
         let first_region = region_attrs[&first_body_region.id];
-        let first_shell = first_body_region
-            .shells
+        let first_shell = complete_shells(ir, first_body_region)?
             .first()
             .map(|shell| shell_attrs[shell])
             .ok_or_else(|| CodecError::Malformed("typed region has no shell".into()))?;
@@ -4212,14 +4214,22 @@ fn write_typed_body_hierarchy(
             .geometry
             .regions
             .iter()
-            .find(|region| region.shells.iter().any(|candidate| candidate == &shell.id))
+            .find(|region| {
+                region
+                    .stated_shells()
+                    .any(|candidate| candidate == &shell.id)
+            })
             .map(|region| &region.body)
             .ok_or_else(|| CodecError::Malformed("typed shell has no region".into()))?;
         let region = ir
             .geometry
             .regions
             .iter()
-            .find(|region| region.shells.iter().any(|candidate| candidate == &shell.id))
+            .find(|region| {
+                region
+                    .stated_shells()
+                    .any(|candidate| candidate == &shell.id)
+            })
             .ok_or_else(|| CodecError::Malformed("typed shell has no region".into()))?;
         typed_prefix(
             out,
@@ -4234,8 +4244,7 @@ fn write_typed_body_hierarchy(
                     )
                 })?,
         )?;
-        let next_shell = region
-            .shells
+        let next_shell = complete_shells(ir, region)?
             .iter()
             .skip_while(|candidate| *candidate != &shell.id)
             .nth(1)
@@ -4256,9 +4265,14 @@ fn write_typed_body_hierarchy(
 
     for (index, region) in ir.geometry.regions.iter().enumerate() {
         let body = body_attrs[&region.body];
-        let body_regions = ir
+        let owner = ir
             .geometry
-            .body_regions(&region.body)
+            .bodies
+            .iter()
+            .find(|candidate| candidate.id == region.body)
+            .ok_or_else(|| CodecError::Malformed("typed region has no body".into()))?;
+        let body_regions = complete_regions(ir, owner)?
+            .into_iter()
             .map(|candidate| &candidate.id)
             .collect::<Vec<_>>();
         let position = body_regions
@@ -4272,8 +4286,7 @@ fn write_typed_body_hierarchy(
             .checked_sub(1)
             .and_then(|position| body_regions.get(position))
             .map_or(1, |id| region_attrs[*id]);
-        let shell_head = region
-            .shells
+        let shell_head = complete_shells(ir, region)?
             .first()
             .map(|id| shell_attrs[id])
             .ok_or_else(|| CodecError::Malformed("typed region has no shell".into()))?;
@@ -5494,6 +5507,44 @@ mod conversion_correction_tests {
         assert!(tessellation_f32(f64::NAN, "position").is_err());
         assert!(tessellation_f32(f64::INFINITY, "position").is_err());
     }
+}
+
+/// The regions of `body` where it states every region. The B-rep encoder
+/// writes no body that does not; the failure names it, and the body is left
+/// out (§3.4, Content the target cannot hold).
+fn complete_regions<'a>(
+    ir: &'a CadIr,
+    body: &cadmpeg_ir::topology::Body,
+) -> Result<Vec<&'a Region>, CodecError> {
+    ir.geometry
+        .complete_body_regions(&body.id)
+        .map(Iterator::collect)
+        .ok_or_else(|| {
+            CodecError::NotImplemented(format!(
+                "SLDPRT writes no body that does not state every region: {}",
+                body.id
+            ))
+        })
+}
+
+/// The shells of `region` where it states every shell, face, and loop.
+fn complete_shells<'a>(
+    ir: &CadIr,
+    region: &'a Region,
+) -> Result<&'a [cadmpeg_ir::ids::ShellId], CodecError> {
+    ir.geometry.complete_shells(region).ok_or_else(|| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT writes no region that does not state every shell or face: {}",
+            region.id
+        ))
+    })
+}
+
+/// The loops of `face` where it states every loop.
+fn face_boundary(face: &Face) -> Result<FaceBoundary<'_>, CodecError> {
+    face.loops.boundary().ok_or_else(|| {
+        CodecError::NotImplemented(format!("SLDPRT writes no partial face: {}", face.id))
+    })
 }
 
 #[cfg(test)]

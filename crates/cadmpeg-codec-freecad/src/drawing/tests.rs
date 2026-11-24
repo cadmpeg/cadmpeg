@@ -136,10 +136,8 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
             .map(cadmpeg_ir::drawings::DrawingId::as_str),
         Some(neutral_template.id.as_str())
     );
-    assert_eq!(
-        neutral_page.relationships["Views"][0].native_text(),
-        Some(crate::native::id_key(&neutral_view.object))
-    );
+    assert_eq!(neutral_page.views, std::slice::from_ref(&neutral_view.id));
+    assert!(neutral_page.relationships.is_empty());
     assert_eq!(neutral_template.assets.len(), 1);
     assert_eq!(
         neutral_view
@@ -293,11 +291,141 @@ fn keeps_non_page_template_links_out_of_neutral_page_field() {
             .map(cadmpeg_ir::drawings::DrawingId::as_str),
         Some(neutral_template.id.as_str())
     );
+    assert!(!neutral_page.relationships.contains_key("Template"));
+    assert_eq!(neutral_page.views, std::slice::from_ref(&neutral_view.id));
     assert_eq!(
-        neutral_view.relationships["Template"][0].native_text(),
-        Some(crate::native::id_key(&neutral_template.object))
+        neutral_view.relationships["Template"],
+        [cadmpeg_ir::ReferenceSelection::new(
+            cadmpeg_ir::ReferenceTarget::Drawing {
+                drawing: neutral_template.id.clone(),
+                part: None,
+            }
+        )]
     );
     assert!(neutral_view.template.is_none());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
+    assert_valid_document(result.ir());
+}
+
+#[test]
+fn local_links_name_drawing_records_and_annotations_and_typed_fields_hold_their_own() {
+    use cadmpeg_ir::references::DrawingPart;
+    use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="10">
+ <Object type="TechDraw::DrawPage" name="Page" id="1"/>
+ <Object type="TechDraw::DrawPage" name="Other" id="2"/>
+ <Object type="TechDraw::DrawProjGroup" name="Group" id="3"/>
+ <Object type="TechDraw::DrawProjGroupItem" name="Item" id="4"/>
+ <Object type="TechDraw::DrawViewClip" name="Clip" id="5"/>
+ <Object type="TechDraw::DrawViewPart" name="Front" id="6"/>
+ <Object type="TechDraw::DrawViewSection" name="Section" id="7"/>
+ <Object type="TechDraw::DrawViewDetail" name="Detail" id="8"/>
+ <Object type="TechDraw::DrawViewDimension" name="Dimension" id="9"/>
+ <Object type="App::Annotation" name="Label" id="10"/>
+</Objects>
+<ObjectData Count="10">
+ <Object name="Page"><Properties Count="2">
+  <Property name="Template" type="App::PropertyLink"><Link value="Front"/></Property>
+  <Property name="Views" type="App::PropertyLinkList"><LinkList count="4"><Link value="Group"/><Link value="Clip"/><Link value="Other"/><Link value="Dimension"/></LinkList></Property>
+ </Properties></Object>
+ <Object name="Other"><Properties Count="0"/></Object>
+ <Object name="Group"><Properties Count="1">
+  <Property name="Views" type="App::PropertyLinkList"><LinkList count="1"><Link value="Item"/></LinkList></Property>
+ </Properties></Object>
+ <Object name="Item"><Properties Count="0"/></Object>
+ <Object name="Clip"><Properties Count="1">
+  <Property name="Views" type="App::PropertyLinkList"><LinkList count="2"><Link value="Front"/><Link value="Section"/></LinkList></Property>
+ </Properties></Object>
+ <Object name="Front"><Properties Count="1">
+  <Property name="Source" type="App::PropertyLink"><Link value="Label"/></Property>
+ </Properties></Object>
+ <Object name="Section"><Properties Count="1">
+  <Property name="BaseView" type="App::PropertyLink"><Link value="Front"/></Property>
+ </Properties></Object>
+ <Object name="Detail"><Properties Count="1">
+  <Property name="BaseView" type="App::PropertyLink"><Link value="Dimension"/></Property>
+ </Properties></Object>
+ <Object name="Dimension"><Properties Count="1">
+  <Property name="References2D" type="App::PropertyLinkSubList"><LinkSubList count="2"><Link obj="Front" sub="Vertex1"/><Link obj="Front" sub="Edge2"/></LinkSubList></Property>
+ </Properties></Object>
+ <Object name="Label"><Properties Count="0"/></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("drawing links");
+    let model = &result.ir().model;
+    let drawing = |name: &str| {
+        model
+            .drawings
+            .iter()
+            .find(|drawing| drawing.object.ends_with(&format!("#{name}")))
+            .unwrap_or_else(|| panic!("{name}"))
+    };
+    let id = |name: &str| drawing(name).id.clone();
+    let whole = |name: &str| {
+        ReferenceSelection::new(ReferenceTarget::Drawing {
+            drawing: id(name),
+            part: None,
+        })
+    };
+
+    let page = drawing("Page");
+    assert_eq!(page.views, [id("Group"), id("Clip"), id("Dimension")]);
+    assert_eq!(page.relationships["Views"], [whole("Other")]);
+    assert!(page.template.is_none());
+    assert_eq!(page.relationships["Template"], [whole("Front")]);
+    assert_eq!(drawing("Group").views, [id("Item")]);
+    assert_eq!(drawing("Clip").views, [id("Front"), id("Section")]);
+    assert!(drawing("Group").relationships.is_empty());
+    assert!(drawing("Clip").relationships.is_empty());
+
+    let label = model
+        .semantic_annotations
+        .iter()
+        .find(|annotation| annotation.object.ends_with("#Label"))
+        .expect("label");
+    assert_eq!(
+        drawing("Front").relationships["Source"],
+        [ReferenceSelection::new(ReferenceTarget::Annotation(
+            label.id.clone()
+        ))]
+    );
+
+    assert_eq!(drawing("Section").base_view, Some(id("Front")));
+    assert!(drawing("Section").relationships.is_empty());
+    assert!(drawing("Detail").base_view.is_none());
+    assert_eq!(
+        drawing("Detail").relationships["BaseView"],
+        [whole("Dimension")]
+    );
+
+    let references = &drawing("Dimension").relationships["References2D"];
+    assert_eq!(references.len(), 2);
+    for (reference, text) in references.iter().zip(["Front.Vertex1", "Front.Edge2"]) {
+        assert_eq!(
+            reference.target,
+            ReferenceTarget::Drawing {
+                drawing: id("Front"),
+                part: Some(DrawingPart::Unread),
+            }
+        );
+        assert_eq!(reference.native_text(), Some(text));
+    }
+    let semantic_dimension = model
+        .semantic_annotations
+        .iter()
+        .find(|annotation| annotation.object.ends_with("#Dimension"))
+        .expect("semantic dimension");
+    assert_eq!(&semantic_dimension.references["References2D"], references);
+    assert!(model
+        .drawings
+        .iter()
+        .flat_map(|drawing| drawing.relationships.values().flatten())
+        .all(|reference| reference.target != ReferenceTarget::Unresolved));
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }

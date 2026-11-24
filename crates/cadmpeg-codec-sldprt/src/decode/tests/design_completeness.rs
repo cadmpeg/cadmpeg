@@ -872,8 +872,7 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
         FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             boundary: cadmpeg_ir::features::surface_inputs::SurfaceBoundary::Path(path.clone()),
             support_faces: face.clone(),
-            continuity:
-                cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuityState::unresolved(),
+            continuity: None,
             merge_result: Some(false),
             interior_constraints: Vec::new(),
             reverse_normal: None,
@@ -1018,10 +1017,11 @@ fn empty_required_operands_are_incomplete_design_semantics() {
                     ]),
                 ),
                 support_faces: FaceSelection::Faces(Vec::new()),
-                continuity:
-                    cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuityState::uniform(
+                continuity: Some(
+                    cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuity::one(
                         SurfaceContinuity::Contact,
                     ),
+                ),
                 merge_result: Some(false),
                 interior_constraints: Vec::new(),
                 reverse_normal: None,
