@@ -4224,3 +4224,11 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 **Need.** A mesh import saved by Fusion 2706.1.17, and a `MeshTessellate` feature saved by an earlier Fusion version.
 
 **Note.** The mesh graph requires a Scene node in that slot; such a design reports `mesh.container-undecoded`.
+
+### DR-1069. Bounded-face recipe with more nodes than its face has boundary edges
+
+**Question.** What do the nodes of a termination recipe count when the recipe has more nodes than its candidate face has boundary edges?
+
+**Known.** A termination recipe stores 18 nodes: eight one-clause nodes and ten two-clause nodes. Its operand lanes name one face. In the preceding topology that face has eight closed single-edge loops and an outer loop of eight edges. The eight one-clause nodes match the closed edges, and ten two-clause nodes correspond to the eight outer-loop edges.
+
+**Need.** An Extrude with a to-face termination on a face with circular holes, saved before and after one outer edge is split or merged, to compare the termination recipe nodes with the boundaries of the preceding topology.

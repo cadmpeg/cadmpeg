@@ -173,9 +173,21 @@ fn disputed(group: &str, reason: &str) -> LossNote {
 
 /// Replace each native single-group Extrude face profile whose set its own
 /// transition infers with the inferred historical faces.
+#[cfg(test)]
 pub(crate) fn bind_extrude_face_profile_sets(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &FaceProfileSetResolution<'_>,
+) -> Result<Vec<LossNote>, CodecError> {
+    bind_extrude_face_profile_sets_with(features, resolution, false)
+}
+
+/// Bind face profile sets. With `defer_closed_edge`, a profile whose recipe
+/// has a closed-edge node stays native, so a later pass can bind it after
+/// the sketch-selection route.
+pub(crate) fn bind_extrude_face_profile_sets_with(
+    features: &mut [cadmpeg_ir::features::Feature],
+    resolution: &FaceProfileSetResolution<'_>,
+    defer_closed_edge: bool,
 ) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = Vec::new();
     for feature in features {
@@ -188,11 +200,51 @@ pub(crate) fn bind_extrude_face_profile_sets(
         };
         let mut outcome = Ok(Vec::new());
         feature.evaluation.edit(|definition, _| {
-            outcome = bind_one(definition, scope, resolution, SEARCH_LIMITS);
+            outcome = bind_one(
+                definition,
+                scope,
+                resolution,
+                SEARCH_LIMITS,
+                defer_closed_edge,
+            );
         });
         losses.extend(outcome?);
     }
     Ok(losses)
+}
+
+pub(crate) fn keep_cap_inferred_profiles(
+    features: &mut [cadmpeg_ir::features::Feature],
+    cap_inferred: &[cadmpeg_ir::features::Feature],
+) {
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+
+    let by_id: HashMap<_, _> = cap_inferred
+        .iter()
+        .map(|feature| (&feature.id, feature))
+        .collect();
+    for feature in features {
+        let Some(reference) = by_id.get(&feature.id) else {
+            continue;
+        };
+        let FeatureDefinition::Operation(FeatureOperation::Extrude {
+            profile: inferred @ ProfileRef::Planar(PlanarProfileRef::HistoricalFaces { .. }),
+            ..
+        }) = reference.evaluation.definition()
+        else {
+            continue;
+        };
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) =
+                definition
+            {
+                if profile != inferred {
+                    *profile = inferred.clone();
+                }
+            }
+        });
+    }
 }
 
 fn bind_one(
@@ -200,6 +252,7 @@ fn bind_one(
     scope: &DesignParameterScope,
     resolution: &FaceProfileSetResolution<'_>,
     limits: SearchLimits,
+    defer_closed_edge: bool,
 ) -> Result<Vec<LossNote>, CodecError> {
     use cadmpeg_ir::features::extents::{
         ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
@@ -253,6 +306,9 @@ fn bind_one(
         let Some(operand) = resolution.operands.get(index) else {
             return Ok(Vec::new());
         };
+        if defer_closed_edge && operand.has_closed_edge_node() {
+            return Ok(Vec::new());
+        }
         match (
             operand.resolved_face_slots.as_slice(),
             &operand.resolved_active_face,

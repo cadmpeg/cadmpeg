@@ -556,6 +556,100 @@ fn an_unselected_target_without_a_preceding_candidate_has_no_withdrawal_loss() {
 }
 
 #[test]
+fn a_recipe_referenced_selection_behind_the_start_stays_native() {
+    let (face, slots, _) = run_configured(false, 18.5, None, |_, operand, _| {
+        operand.recipe_references[0].candidate_faces = vec![crate::ids::brep_face_id(3465)];
+    });
+    assert!(matches!(face, FaceSelection::Native(_)));
+    assert!(slots.is_empty());
+}
+
+#[test]
+fn a_recipe_referenced_selection_ahead_of_the_start_is_kept() {
+    let (face, slots, losses) = run_configured(false, 18.5, None, |_, operand, _| {
+        operand.recipe_references[0].candidate_faces = vec![crate::ids::brep_face_id(3484)];
+    });
+    assert_eq!(selection_slots(&face), Some(vec![3484]));
+    assert_eq!(slots, [3484]);
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn a_retained_selection_behind_the_start_does_not_pass_the_stored_cap_fallback() {
+    let (face, slots, _) = run_configured(false, -1.5, None, |_, operand, _| {
+        operand.recipe_references[0].candidate_faces = vec![crate::ids::brep_face_id(3484)];
+    });
+    assert!(matches!(face, FaceSelection::Native(_)));
+    assert!(slots.is_empty());
+}
+
+#[test]
+fn a_planar_face_is_behind_the_start_when_its_offset_plane_precedes_it_along_the_sweep() {
+    let mut topology = AsmHistoricalTopology::default();
+    add_plane(&mut topology, 3465, 0.0);
+    let start = Point3::new(0.0, 0.0, 7.5);
+    let sweep = Vector3::new(0.0, 0.0, 1.0);
+    assert!(slot_behind_start(
+        3465,
+        start,
+        sweep,
+        &topology,
+        -1.5,
+        LINEAR_TOLERANCE,
+        false
+    ));
+    assert!(!slot_behind_start(
+        3465,
+        start,
+        sweep,
+        &topology,
+        8.0,
+        LINEAR_TOLERANCE,
+        false
+    ));
+    assert!(!slot_behind_start(
+        3465,
+        start,
+        sweep,
+        &topology,
+        7.5,
+        LINEAR_TOLERANCE,
+        false
+    ));
+    assert!(!slot_behind_start(
+        3999,
+        start,
+        sweep,
+        &topology,
+        -1.5,
+        LINEAR_TOLERANCE,
+        false
+    ));
+}
+
+#[test]
+fn a_planar_face_on_the_start_is_behind_it_only_when_the_start_counts() {
+    let mut topology = AsmHistoricalTopology::default();
+    add_plane(&mut topology, 3465, 0.0);
+    let start = Point3::new(0.0, 0.0, 7.5);
+    let sweep = Vector3::new(0.0, 0.0, 1.0);
+    for (on_start_counts, expected) in [(false, false), (true, true)] {
+        assert_eq!(
+            slot_behind_start(
+                3465,
+                start,
+                sweep,
+                &topology,
+                7.5,
+                LINEAR_TOLERANCE,
+                on_start_counts
+            ),
+            expected
+        );
+    }
+}
+
+#[test]
 fn a_target_cap_from_an_earlier_link_of_the_state_chain_selects_the_recipe_face() {
     let (mut feature, sketch, mut scope, group, mut operand) = fixture();
     scope

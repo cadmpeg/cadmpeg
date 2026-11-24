@@ -418,3 +418,19 @@ fn a_face_recipe_node_has_two_side_clauses_only_with_a_two_side_structure() {
     structure.sides.push(side);
     assert!(node.has_two_side_clauses());
 }
+
+#[test]
+fn a_node_ordinal_check_admits_one_clause_for_a_closed_edge_only_with_a_matching_count() {
+    let references = [recipe_reference(100, 108), recipe_reference(125, 133)];
+    let mut structure = recipe_structure(1);
+    structure.prelude = [0, 1];
+    structure.sides.truncate(1);
+    assert!(structure.has_valid_boundary_edge_ordinals(&references));
+    assert!(!structure.has_valid_operand_ordinals(&references));
+    structure.prelude[1] = 2;
+    assert!(!structure.has_valid_boundary_edge_ordinals(&references));
+    structure.prelude[1] = -1;
+    assert!(!structure.has_valid_boundary_edge_ordinals(&references));
+    assert!(recipe_structure(1).has_valid_boundary_edge_ordinals(&references));
+    assert!(recipe_structure(1).has_valid_operand_ordinals(&references));
+}

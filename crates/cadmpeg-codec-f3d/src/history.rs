@@ -86,6 +86,7 @@ mod output_measure;
 mod output_properties;
 mod pattern_bodies;
 pub(crate) mod pipe_section;
+mod recipe_fill;
 mod recipe_index;
 mod reference_edge;
 mod reference_face;

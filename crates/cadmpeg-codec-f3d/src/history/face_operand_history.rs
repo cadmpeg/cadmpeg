@@ -384,11 +384,19 @@ pub(super) fn bind_historical_face_operand_candidates<'a>(
     for reference in &mut operand.recipe_references {
         bind_historical_recipe_reference_candidates(reference, topology, recipe_topologies)?;
     }
-    let recipe_face = face_recipes
+    let has_extrude_profile_group = super::recipe_fill::is_extrude_profile_member(
+        operand,
+        scope,
+        operand_groups,
+        feature_family == Some(crate::design::DesignFeatureFamily::Extrude),
+    );
+    let resolved_recipe_face = face_recipes
         .get(topology, super::face_recipe::FaceRecipeIndex::new)
         .resolve(operand);
+    let closed_edge_face = resolved_recipe_face.filter(|_| operand.has_closed_edge_node());
+    let recipe_face = resolved_recipe_face.filter(|_| !operand.has_closed_edge_node());
     if scope.kind() == crate::records::feature::scope::DesignFeatureKind::DeleteFace {
-        operand.resolved_face_slots = recipe_face.into_iter().collect();
+        operand.resolved_face_slots = resolved_recipe_face.into_iter().collect();
         return Ok(());
     }
     if let Some(recipe_record_index) = recipe_record_indices.get(operand.recipe_id.as_str()) {
@@ -710,10 +718,19 @@ pub(super) fn bind_historical_face_operand_candidates<'a>(
             }
         }
     }
-    if let Some(face) = recipe_face {
+    if let Some(face) = recipe_face.or(closed_edge_face) {
         // Every recipe node matches one boundary edge of this face and the
-        // face fans around both of its ends.
-        operand.resolved_face_slots = vec![face];
+        // face fans around both of its ends. An earlier selection that no
+        // check withdrew stays: the recipe fills an empty selection only.
+        if super::recipe_fill::recipe_face_replaces_selection(
+            operand.has_closed_edge_node()
+                && feature_family == Some(crate::design::DesignFeatureFamily::Extrude)
+                && (has_extrude_profile_group || has_extrude_face_group),
+            operand.resolved_face_slots.is_empty(),
+            !(has_extrude_profile_group && changed_faces.contains(&face)),
+        ) {
+            operand.resolved_face_slots = vec![face];
+        }
     }
     if feature_family == Some(crate::design::DesignFeatureFamily::Extrude)
         && operand.resolved_face_slots.is_empty()
@@ -724,7 +741,13 @@ pub(super) fn bind_historical_face_operand_candidates<'a>(
             .get(topology, super::face_recipe::FaceRecipeIndex::new)
             .resolve_loop(operand)
         {
-            operand.resolved_face_slots = vec![face];
+            if super::recipe_fill::recipe_face_replaces_selection(
+                operand.has_closed_edge_node(),
+                true,
+                !(has_extrude_profile_group && changed_faces.contains(&face)),
+            ) {
+                operand.resolved_face_slots = vec![face];
+            }
         }
     }
     let alternate_start_face = alternate_start_face.filter(|face| {
@@ -756,5 +779,16 @@ pub(super) fn bind_historical_face_operand_candidates<'a>(
         operand.resolved_face_slots = vec![face];
     }
 
+    if has_extrude_profile_group {
+        super::recipe_fill::drop_unconsumed_closed_edge_profile(
+            operand,
+            &super::recipe_fill::Transition {
+                state,
+                previous_state_id,
+                states,
+            },
+            super::recipe_fill::is_new_body_extrude(scope),
+        );
+    }
     Ok(())
 }

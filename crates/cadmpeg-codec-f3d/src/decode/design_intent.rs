@@ -1345,18 +1345,29 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &design.sketch_surfaces,
             &model.spatial_sketch_entities,
         );
+    let face_set_resolution =
+        crate::design::profile_select::face_profile_sets::FaceProfileSetResolution {
+            scopes: &design.design_parameter_scopes,
+            groups: &design.design_construction_operand_groups,
+            operands: &design.design_face_operands,
+            histories: &design.asm_histories,
+            scope_histories: &scope_histories,
+            linear_tolerance: geometry.tolerances.linear.get(),
+            ctx,
+        };
+    // The profiles the transition's own end caps infer, before any closed-edge
+    // recipe or sketch-selection route binds a face.
+    let mut cap_inferred = model.features.clone();
+    crate::design::profile_select::face_profile_sets::bind_extrude_face_profile_sets_with(
+        &mut cap_inferred,
+        &face_set_resolution,
+        false,
+    )?;
     losses.extend(
-        crate::design::profile_select::face_profile_sets::bind_extrude_face_profile_sets(
+        crate::design::profile_select::face_profile_sets::bind_extrude_face_profile_sets_with(
             &mut model.features,
-            &crate::design::profile_select::face_profile_sets::FaceProfileSetResolution {
-                scopes: &design.design_parameter_scopes,
-                groups: &design.design_construction_operand_groups,
-                operands: &design.design_face_operands,
-                histories: &design.asm_histories,
-                scope_histories: &scope_histories,
-                linear_tolerance: geometry.tolerances.linear.get(),
-                ctx,
-            },
+            &face_set_resolution,
+            true,
         )?,
     );
     losses.extend(
@@ -1390,6 +1401,17 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
                 ctx,
             },
         )?,
+    );
+    losses.extend(
+        crate::design::profile_select::face_profile_sets::bind_extrude_face_profile_sets_with(
+            &mut model.features,
+            &face_set_resolution,
+            false,
+        )?,
+    );
+    crate::design::profile_select::face_profile_sets::keep_cap_inferred_profiles(
+        &mut model.features,
+        &cap_inferred,
     );
     losses.extend(profile_work.losses());
     let unprofiled = crate::design::profile_select::unprofiled_region_losses(

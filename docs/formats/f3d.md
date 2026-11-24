@@ -1867,6 +1867,8 @@ At a vertex whose face corners each join two distinct edges, one edge can have f
 
 When no other start or termination rule resolves the operand to a historical face slot or an active face, an `Extrude` start or termination bounded-face recipe whose nodes each carry two side clauses can identify one complete loop of a face with several loops. The positive header equals the node count and that loop's edge count. Each node binds one distinct loop edge in the preceding topology by the endpoint-clause binding rule of §3.1 "Each endpoint clause stores a cyclic face fan". A unique face with a complete matching loop is the selected historical face.
 
+A planar to-face Extrude termination lies ahead of the profile-plane start along the sweep direction, with its offset applied. The preceding and result states delimit the complete transition interval.
+
 A face recipe node may carry an optional postlude exactly `[-1, t, -1, 0, 0, -1]` after its topology side clauses. The signed scalar `t` and every postlude word are retained.
 
 An extended topology field program is complete only when it contains one or more repetitions of a nonempty nonnegative field whose first word is positive, `-1`, the exact zero field `[0, 0]`, and a final `-1`. A prefix that merely ends with `-1` is not a complete field program. The compact form is the single word `[0]`.

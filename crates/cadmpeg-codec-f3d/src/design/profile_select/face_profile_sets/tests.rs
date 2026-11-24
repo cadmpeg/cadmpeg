@@ -1610,6 +1610,7 @@ fn a_capped_search_keeps_the_profile_native_with_a_loss() {
                     face_edges: 4096,
                     cap_faces: 4096,
                 },
+                false,
             )
         })
         .unwrap();

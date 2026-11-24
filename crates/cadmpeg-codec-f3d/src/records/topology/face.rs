@@ -219,6 +219,15 @@ impl Serialize for DesignFaceOperand {
 }
 
 impl DesignFaceOperand {
+    /// Whether a recipe node carries one side clause and so binds a closed edge.
+    pub(crate) fn has_closed_edge_node(&self) -> bool {
+        self.recipe_nodes.iter().any(|node| {
+            node.recipe_structure
+                .as_ref()
+                .is_some_and(|structure| structure.sides.len() == 1)
+        })
+    }
+
     pub(crate) fn try_new(draft: DesignFaceOperandDraft) -> Result<Self, String> {
         if !(draft.byte_offset < draft.paired_byte_offset
             && draft.paired_byte_offset < draft.recipe_record_byte_offset

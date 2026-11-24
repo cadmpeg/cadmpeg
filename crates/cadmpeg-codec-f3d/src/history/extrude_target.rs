@@ -87,12 +87,13 @@ pub(crate) fn bind(
             });
             let Some(operand) = operands.next() else { return };
             if operands.next().is_some() { return; }
+            let behind_start = history.topology(previous).is_some_and(|before| selection_behind_start(face, SweepFrame { profile, direction, start }, sketches, before, offset.map_or(0.0, Length::get), input.linear_tolerance, operand.has_closed_edge_node()));
             let referenced: BTreeSet<_> = operand.recipe_references.iter()
                 .flat_map(super::face_resolution::effective_faces)
                 .filter_map(|face| super::body_closures::stable_ref(face.as_str()))
                 .collect();
-            if referenced.is_empty() { return; }
-            if selection_slots(face).is_some_and(|slots| {
+            if referenced.is_empty() && !behind_start { return; }
+            if !behind_start && selection_slots(face).is_some_and(|slots| {
                 !slots.is_empty() && slots.iter().all(|slot| referenced.contains(slot))
             }) {
                 return;
@@ -122,7 +123,8 @@ pub(crate) fn bind(
                     ExtrudeDirection::Unresolved {} => return None,
                 };
                 let sweep = sweep.unit()?;
-                let start = start_origin(start, origin.get(), normal.get(), sweep, before);
+                let start_kind = &*start;
+                let start = start_origin(start_kind, origin.get(), normal.get(), sweep, before);
                 let caps: Vec<_> = changed.iter()
                     .filter_map(|slot| exact_plane(after, *slot))
                     .collect();
@@ -143,9 +145,24 @@ pub(crate) fn bind(
                     offset.map_or(0.0, Length::get),
                     (input.linear_tolerance, input.angular_tolerance),
                 );
+                let not_behind = |slots: &BTreeSet<i64>| -> BTreeSet<i64> {
+                    slots.iter().copied().filter(|slot| {
+                        !profile_start(start_kind, origin.get(), normal.get()).is_some_and(|start| slot_behind_start(
+                            *slot,
+                            start,
+                            sweep,
+                            before,
+                            offset.map_or(0.0, Length::get),
+                            input.linear_tolerance,
+                            false,
+                        ))
+                    }).collect()
+                };
+                let retained_ahead = not_behind(&retained);
+                let preceding_ahead = not_behind(&preceding);
                 start.and_then(|start| cap_match(&referenced, Some(start), &caps))
-                    .or_else(|| cap_match(&retained, None, retained_caps))
-                    .or_else(|| cap_match(&preceding, None, retained_caps))
+                    .or_else(|| cap_match(&retained_ahead, None, retained_caps))
+                    .or_else(|| cap_match(&preceding_ahead, None, retained_caps))
             });
             if let Some(slot) = selected {
                 if let Some(selection) = crate::design::face_resolve::historical_face_selection_with_native(
@@ -264,6 +281,19 @@ fn exact_plane(topology: &AsmHistoricalTopology, slot: i64) -> Option<&AsmHistor
     planes.next().is_none().then_some(plane)
 }
 
+/// The start of a sweep that begins on the profile plane, or `None` when a
+/// face sets the start: the start face is a selection of its own, so a
+/// termination is not judged against it.
+fn profile_start(start: &ExtrudeStart, origin: Point3, normal: Vector3) -> Option<Point3> {
+    match start {
+        ExtrudeStart::ProfilePlane {} => Some(origin),
+        ExtrudeStart::OffsetProfilePlane { offset } => {
+            Some(origin.translated(normal, offset.get()))
+        }
+        _ => None,
+    }
+}
+
 fn start_origin(
     start: &ExtrudeStart,
     origin: Point3,
@@ -289,6 +319,82 @@ fn start_origin(
         }
         _ => None,
     }
+}
+
+/// The profile, direction and start of an Extrude.
+#[derive(Clone, Copy)]
+struct SweepFrame<'a> {
+    profile: &'a cadmpeg_ir::features::profiles::ProfileRef,
+    direction: &'a ExtrudeDirection,
+    start: &'a ExtrudeStart,
+}
+
+/// Whether the selected planar termination face, moved by `offset` along the
+/// sweep, lies behind the profile-plane start of the sweep. A to-face extent ends ahead of
+/// its start, so such a face is not the termination.
+fn selection_behind_start(
+    face: &FaceSelection,
+    frame: SweepFrame<'_>,
+    sketches: &[Sketch],
+    before: &AsmHistoricalTopology,
+    offset: f64,
+    linear_tolerance: f64,
+    on_start_counts: bool,
+) -> bool {
+    let behind = || {
+        let (origin, normal, _) =
+            crate::design::face_resolve::extrude_profile_sketch_id(frame.profile)
+                .and_then(|id| sketches.iter().find(|sketch| sketch.id == *id))
+                .and_then(Sketch::resolved_placement)?;
+        let sweep = match frame.direction {
+            ExtrudeDirection::ProfileNormal {} => normal.get(),
+            ExtrudeDirection::ReversedProfileNormal {} => normal.get().scale(-1.0),
+            ExtrudeDirection::Explicit { vector, .. } => vector.get(),
+            ExtrudeDirection::Unresolved {} => return None,
+        }
+        .unit()?;
+        let start = profile_start(frame.start, origin.get(), normal.get())?;
+        let slots = selection_slots(face)?;
+        let [slot] = slots.as_slice() else {
+            return None;
+        };
+        Some(slot_behind_start(
+            *slot,
+            start,
+            sweep,
+            before,
+            offset,
+            linear_tolerance,
+            on_start_counts,
+        ))
+    };
+    behind().unwrap_or(false)
+}
+
+/// Whether the planar face `slot`, moved by `offset` along `sweep`, lies
+/// behind `start`, or on it when `on_start_counts`: a sweep that ends on its
+/// start has no length. A face without an exact plane is not behind.
+fn slot_behind_start(
+    slot: i64,
+    start: Point3,
+    sweep: Vector3,
+    before: &AsmHistoricalTopology,
+    offset: f64,
+    linear_tolerance: f64,
+    on_start_counts: bool,
+) -> bool {
+    exact_plane(before, slot).is_some_and(|plane| {
+        let along = plane
+            .origin
+            .translated(sweep, offset)
+            .vector_from(start)
+            .dot(sweep);
+        if on_start_counts {
+            along <= linear_tolerance
+        } else {
+            along < -linear_tolerance
+        }
+    })
 }
 
 fn select_target(
