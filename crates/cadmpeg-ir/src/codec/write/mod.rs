@@ -37,6 +37,8 @@ pub use loss::{
     partial_topology_omitted, record_invalid, record_residual_unavailable, rule_invalid,
     solid_partial, value_unwritable,
 };
+mod partial;
+pub use partial::without_partial_topology;
 mod scene;
 pub mod subset_lowering;
 pub mod target;
