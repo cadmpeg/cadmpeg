@@ -11,6 +11,7 @@ fn marked_feature(name: &str, suppressed: bool) -> cadmpeg_ir::design::feature::
         suppressed: Some(Dimension::Literal(suppressed)),
         definition: cadmpeg_ir::design::feature::FeatureDefinition {
             operation: super::super::operation::origin(),
+            assembly: None,
             refine: None,
             fuzzy_tolerance: None,
         },

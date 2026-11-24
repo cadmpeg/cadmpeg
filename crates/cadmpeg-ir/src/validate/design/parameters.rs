@@ -46,7 +46,9 @@ fn value_in(
     let record = index.parameters.get(parameter.as_str())?;
     let expression = match &record.definition {
         ParameterDefinition::Expression(expression) => Some(expression),
-        ParameterDefinition::Driven | ParameterDefinition::Assigned(_) => None,
+        ParameterDefinition::Driven
+        | ParameterDefinition::Assigned(_)
+        | ParameterDefinition::Unset => None,
     };
     if !reads_override(index, chain, parameter) {
         if let Some(value) = &record.value {

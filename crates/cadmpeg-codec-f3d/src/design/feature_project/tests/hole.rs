@@ -300,14 +300,13 @@ fn hole_placement_without_an_admitted_form_stays_native_with_its_loss() {
         32,
     );
     set_extent(&mut scope, 0, false);
-    let cases: [CarrierCase; 4] = [
+    let cases: [CarrierCase; 3] = [
         (13, [0.0; 3], &[]),
         (
             13,
             [0.0; 3],
             &[(10, [1.0, 1.5, 2.0]), (17, [3.0, 1.5, 2.0])],
         ),
-        (19, [1.0, 1.5, 2.0], &[(17, [3.0, 1.5, 2.0])]),
         (18, [1.0, 1.5, 2.0], &[(17, [1.0, 1.5, 2.0])]),
     ];
     for (reference_type, position, locations) in cases {
@@ -320,6 +319,46 @@ fn hole_placement_without_an_admitted_form_stays_native_with_its_loss() {
             crate::loss::F3dLossCode::HolePlacementUnproven.kind()
         );
     }
+}
+
+#[test]
+fn face_point_carrier_with_records_off_its_position_charges_the_unselected_point() {
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#32",
+        DesignFeatureKind::Hole,
+        32,
+    );
+    set_extent(&mut scope, 0, false);
+    // A sole `refType` 17 record off the carrier without a reconstructed plane, and
+    // a `refType` 17 record with a `refType` 5 record at one point off a zero carrier.
+    let cases: [CarrierCase; 2] = [
+        (19, [1.0, 1.5, 2.0], &[(17, [3.0, 1.5, 2.0])]),
+        (19, [0.0; 3], &[(17, [3.0, 1.5, 2.0]), (5, [3.0, 1.5, 2.0])]),
+    ];
+    for (reference_type, position, locations) in cases {
+        set_carrier(&mut scope, reference_type, position, locations, false);
+        let (placements, losses) = projected_placements(&scope);
+        assert_eq!(placements, None);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::HolePlacementPointUnselected.kind()
+        );
+    }
+    // Records at the carrier position place the Hole and charge no placement loss.
+    set_carrier(
+        &mut scope,
+        19,
+        [1.0, 1.5, 2.0],
+        &[(17, [1.0, 1.5, 2.0])],
+        false,
+    );
+    let (placements, losses) = projected_placements(&scope);
+    assert!(placements.is_some());
+    assert!(!losses.iter().any(|loss| {
+        loss.code == crate::loss::F3dLossCode::HolePlacementPointUnselected.kind()
+            || loss.code == crate::loss::F3dLossCode::HolePlacementUnproven.kind()
+    }));
 }
 
 #[test]

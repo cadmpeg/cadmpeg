@@ -645,7 +645,7 @@ fn vertex_positions(ir: &CadIr) -> BorrowedIdentities<'_, (Point3, Option<f64>)>
                     vertex.id.as_str(),
                     (
                         *position,
-                        vertex.tolerance.map(crate::scalar::PositiveReal::get),
+                        vertex.tolerance.map(crate::scalar::PositiveLength::get),
                     ),
                 );
             }
@@ -700,7 +700,7 @@ pub(super) fn vertexless_edge_on_open_carrier(
     let bound = coincidence_allowance(
         linear,
         &[
-            edge.tolerance.map(crate::scalar::PositiveReal::get),
+            edge.tolerance.map(crate::scalar::PositiveLength::get),
             cache_fit_tolerance.map(crate::geometry::legacy_cache::FitTolerance::get),
         ],
     );
@@ -794,7 +794,7 @@ pub(super) fn check_edge_endpoint_consistency(
         let bound = coincidence_allowance(
             ir.tolerances.linear,
             &[
-                edge.tolerance.map(crate::scalar::PositiveReal::get),
+                edge.tolerance.map(crate::scalar::PositiveLength::get),
                 *start_tol,
                 *end_tol,
                 curve_cache_tolerances
@@ -879,7 +879,7 @@ pub(super) fn check_edge_endpoint_consistency(
         let bound = coincidence_allowance(
             ir.tolerances.linear,
             &[
-                edge.tolerance.map(crate::scalar::PositiveReal::get),
+                edge.tolerance.map(crate::scalar::PositiveLength::get),
                 *start_tol,
                 *end_tol,
                 curve_cache_tolerances
@@ -1025,10 +1025,10 @@ pub(super) fn check_pcurve_surface_consistency(
         let bound = coincidence_allowance(
             ir.tolerances.linear,
             &[
-                edge.tolerance.map(crate::scalar::PositiveReal::get),
+                edge.tolerance.map(crate::scalar::PositiveLength::get),
                 *start_tol,
                 *end_tol,
-                face.tolerance.map(crate::scalar::PositiveReal::get),
+                face.tolerance.map(crate::scalar::PositiveLength::get),
                 first
                     .fit_tolerance()
                     .map(crate::geometry::legacy_cache::FitTolerance::get),
@@ -1043,10 +1043,10 @@ pub(super) fn check_pcurve_surface_consistency(
         let recovery_bound = coincidence_allowance(
             ir.tolerances.linear,
             &[
-                edge.tolerance.map(crate::scalar::PositiveReal::get),
+                edge.tolerance.map(crate::scalar::PositiveLength::get),
                 *start_tol,
                 *end_tol,
-                face.tolerance.map(crate::scalar::PositiveReal::get),
+                face.tolerance.map(crate::scalar::PositiveLength::get),
             ],
         );
         // A malformed STEP export can retain a stale TRIMMED_CURVE interval

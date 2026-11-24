@@ -32,7 +32,7 @@ pub(super) fn project(
     let mut native_options = BTreeMap::new();
     if let Some(value) = source.orientation {
         native_options.insert(
-            cadmpeg_core::nonblank_literal!("inventor:orientation"),
+            cadmpeg_ir::codec_name!("inventor:orientation"),
             NativeOption::Integer(Dimension::Literal(i64::from(value))),
         );
     }
@@ -45,13 +45,10 @@ pub(super) fn project(
     } = source.definition.kind()
     {
         for (name, value) in [
-            ("inventor:state", native_state),
-            ("inventor:flags", native_flags),
+            (cadmpeg_ir::codec_name!("inventor:state"), native_state),
+            (cadmpeg_ir::codec_name!("inventor:flags"), native_flags),
         ] {
             if let Some(value) = value {
-                let name = cadmpeg_core::text::NonBlankString::new(name).ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed("Inventor native key is blank")
-                })?;
                 let text = cadmpeg_core::text::NonBlankString::new(value.to_string()).ok_or_else(
                     || cadmpeg_core::CodecError::malformed("Inventor integer text is blank"),
                 )?;
@@ -60,11 +57,11 @@ pub(super) fn project(
         }
         for (name, text) in [
             (
-                cadmpeg_core::nonblank_literal!("inventor:properties"),
+                cadmpeg_ir::codec_name!("inventor:properties"),
                 serde_json::to_string(native_properties),
             ),
             (
-                cadmpeg_core::nonblank_literal!("inventor:operands"),
+                cadmpeg_ir::codec_name!("inventor:operands"),
                 serde_json::to_string(operands),
             ),
         ] {
@@ -80,7 +77,7 @@ pub(super) fn project(
         let text = cadmpeg_ir::hash::finite_json::to_canonical_json_string(&source.definition)
             .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
         native_options.insert(
-            cadmpeg_core::nonblank_literal!("inventor:relation"),
+            cadmpeg_ir::codec_name!("inventor:relation"),
             NativeOption::Text(Dimension::Literal(
                 cadmpeg_core::text::NonBlankString::new(text).ok_or_else(|| {
                     cadmpeg_core::CodecError::malformed("Inventor relation text is blank")

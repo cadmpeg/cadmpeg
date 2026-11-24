@@ -18,7 +18,10 @@ use cadmpeg_ir::design::construction::{kinds, AxisValue, Construction, FrameValu
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::body::{Pattern, PatternInstances, PatternSeeds};
-use cadmpeg_ir::design::ops::shared::{LinearRun, PatternLayout, PatternRun, RunSides, Spacing};
+use cadmpeg_ir::design::ops::shared::{
+    CircularLayout, LinearLayout, LinearRun, MirrorLayout, PatternLayout, PatternRun, RunSides,
+    Spacing,
+};
 use cadmpeg_ir::design::selection::{
     Anchor, Members, OrderedSelection, PickTarget, Picked, Picks, Selection,
 };
@@ -289,7 +292,7 @@ fn read_pattern(
             let [first, second, ..] = lines.as_slice() else {
                 return Err("a rectangular pattern references fewer than two lines".to_owned());
             };
-            let layout = PatternLayout::Linear {
+            let layout = PatternLayout::Linear(LinearLayout {
                 first: linear_run(
                     &frame,
                     first,
@@ -305,7 +308,7 @@ fn read_pattern(
                     "second",
                 )?),
                 seed_only: Some(Dimension::Literal(false)),
-            };
+            });
             Ok(Read {
                 operation: pattern(seeds, layout),
                 sense_unread: false,
@@ -329,7 +332,7 @@ fn read_pattern(
             let step = Angle::new(first_step)
                 .ok_or_else(|| "the angle between instances is not finite".to_owned())?;
             let extent = f64::from(first_count) * first_step.abs();
-            let layout = PatternLayout::Circular {
+            let layout = PatternLayout::Circular(CircularLayout {
                 axis: Construction::<kinds::Axis> {
                     resolved: Some(axis),
                     ..construction::empty()
@@ -337,7 +340,7 @@ fn read_pattern(
                 angular: run(instances, Dimension::Literal(step)),
                 radial: None,
                 orientation: None,
-            };
+            });
             Ok(Read {
                 operation: pattern(seeds, layout),
                 sense_unread: extent < std::f64::consts::TAU - EPS_FULL_TURN,
@@ -408,10 +411,10 @@ fn read_mirror(
     if class != PLANE_CLASS {
         return Err(format!("the mirror plane object is of class {class}"));
     }
-    let layout = PatternLayout::Mirror {
+    let layout = PatternLayout::Mirror(MirrorLayout {
         plane: mirror_plane(&plane)?,
         stitch_tolerance: None,
-    };
+    });
     Ok(Read {
         operation: pattern(seeds(&[seed])?, layout),
         sense_unread: false,

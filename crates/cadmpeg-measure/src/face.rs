@@ -268,7 +268,7 @@ impl<'ir> FaceInput<'_, 'ir> {
         let linear = owners.ir.tolerances.linear.get();
         let mut local: Vec<f64> = face
             .tolerance
-            .map(cadmpeg_ir::scalar::PositiveReal::get)
+            .map(cadmpeg_ir::scalar::PositiveLength::get)
             .into_iter()
             .collect();
         for coedge in &coedges {
@@ -377,7 +377,7 @@ impl<'ir> FaceInput<'_, 'ir> {
         let tau_b = tau.max(fit).max(max_gap).max(off_surface);
         let surface_tau = model_tolerance(
             linear,
-            face.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get),
+            face.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get),
         )
         .max(fit);
         let deviation = |edge: &str| {

@@ -142,7 +142,7 @@ fn depends_on_measure(index: &DesignRecords<'_>, root: &Node<ParameterRef>) -> b
                     };
                     pending.extend(program_reads(statements, target.as_str()));
                 }
-                ParameterDefinition::Driven => return true,
+                ParameterDefinition::Driven | ParameterDefinition::Unset => return true,
             }
         }
     }
