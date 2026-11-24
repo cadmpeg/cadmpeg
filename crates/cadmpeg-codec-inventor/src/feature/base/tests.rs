@@ -1,19 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_asm::brep::records::BodyNativeKey;
-use cadmpeg_core::decode::{DecodeContext, View};
+use std::rc::Rc;
+
+use cadmpeg_container::compound::CompoundSnapshot;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::report::loss::LossKind;
 
 use crate::feature::base::{
     current_body, entry, history_candidate, reference_counts, unique_link_header, wrappers,
 };
+use crate::feature::history_views::{ResultStates, StateModel};
 use crate::feature::tests::{reference, test_feature, test_header};
 use crate::feature::{
     PmDcFeatureProperty, PmDcFeaturePropertyKind, PmDcFeaturePropertyPayload, PmDcKernelEntityLink,
     PmDcKernelEntityLinkPayload, KERNEL_ENTITY_LINK_TYPE, SURFACE_BODY_TYPE,
 };
 use crate::layout::{meta_external_reference as external, meta_external_revision as revision};
+use crate::loss::InventorLossCode;
 use crate::pmdc::PmDcReference;
 use crate::record_identity::{Located, RecordTypeId};
 use crate::records::MetaSection;
+use crate::rse::RseInventory;
+use crate::test_support::base_envelope::{
+    base_records, decode, design_records, fixtures, state_model, RESULT_KEY, SOURCE_INDEX,
+};
+use crate::test_support::test_fixtures::{
+    acis_sphere_kernel_stream_with_body_key, base_envelope_fixture,
+};
 
 fn wrapper(body: u32) -> PmDcFeatureProperty {
     Located::new(
@@ -250,4 +266,163 @@ fn history_candidate_refuses_a_link_that_does_not_select_the_carrier() {
         1,
     );
     assert!(!history_candidate(&output, &changed, "seg", 0, &[]));
+}
+
+/// States of a fixed answer.
+struct Fixed {
+    introduces: bool,
+    outcome: fn(&CadIr) -> StateModel,
+    model: CadIr,
+}
+
+impl ResultStates for Fixed {
+    fn after(
+        &self,
+        _: &DecodeContext<'_>,
+        source_index: u32,
+    ) -> Result<Rc<StateModel>, CodecError> {
+        assert_eq!(source_index, SOURCE_INDEX);
+        Ok(Rc::new((self.outcome)(&self.model)))
+    }
+
+    fn introduces(&self, source_index: u32, key: i64) -> bool {
+        self.introduces && source_index == SOURCE_INDEX && key == RESULT_KEY
+    }
+}
+
+fn holding(model: &CadIr) -> StateModel {
+    StateModel::Model(Box::new(model.clone()))
+}
+
+/// Projects the two Base features of the fixture with a final model that
+/// holds no body key, and returns the transferred count and the losses.
+fn project_without_final_body(states: &Fixed) -> (usize, Vec<LossKind>) {
+    let (design, base) = fixtures();
+    let bytes = base_envelope_fixture(
+        &acis_sphere_kernel_stream_with_body_key(21_800, 7),
+        &design,
+        &base,
+    );
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("context");
+    let snapshot = CompoundSnapshot::new(&ctx, root).expect("compound");
+    let document = RseInventory::build(&ctx, &snapshot).expect("RSe inventory");
+    let features = crate::feature::inventory(&ctx, &document).expect("feature inventory");
+    let design = crate::design::inventory(&ctx, &document).expect("design inventory");
+    let mut ir = decode(&design_records(), &base_records());
+    ir.model.feature_result_topologies.clear();
+    for feature in &mut ir.model.features {
+        feature
+            .evaluation
+            .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: cadmpeg_ir::features::NativeFeatureKind::Other("Base".into()),
+                parameters: std::collections::BTreeMap::new(),
+            }));
+    }
+    let keys: Vec<BodyNativeKey> = Vec::new();
+    let projection = crate::feature::base::project(
+        &ctx,
+        &crate::feature::base::Inputs {
+            document: &document,
+            inventory: &features,
+            design: &design,
+            transforms: &[],
+            keys: &keys,
+            states: Some(states),
+        },
+        &mut ir,
+    )
+    .expect("Base projection");
+    let codes = projection
+        .losses
+        .iter()
+        .map(|note| note.code.clone())
+        .collect();
+    if projection.transferred == 2 {
+        assert_eq!(ir.model.feature_result_topologies.len(), 2);
+        for result in &ir.model.feature_result_topologies {
+            assert_eq!(result.bodies().len(), 1);
+            assert!(result.bodies()[0].as_str().ends_with("-3"));
+        }
+        for feature in &ir.model.features {
+            assert!(matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
+            ));
+            assert!(feature.source_properties.contains_key("result_body_link"));
+        }
+    } else {
+        assert!(ir.model.feature_result_topologies.is_empty());
+    }
+    (projection.transferred, codes)
+}
+
+#[test]
+fn a_result_body_that_its_state_introduces_types_the_base() {
+    let states = Fixed {
+        introduces: true,
+        outcome: holding,
+        model: state_model(),
+    };
+    assert_eq!(project_without_final_body(&states), (2, Vec::new()));
+}
+
+#[test]
+fn a_result_key_that_no_state_introduces_stays_native_without_a_loss() {
+    let states = Fixed {
+        introduces: false,
+        outcome: holding,
+        model: state_model(),
+    };
+    assert_eq!(project_without_final_body(&states), (0, Vec::new()));
+}
+
+#[test]
+fn a_state_without_a_body_of_the_result_key_stays_native_with_its_loss() {
+    let mut model = state_model();
+    model
+        .native
+        .namespace_mut(cadmpeg_ir::codec_id!("inventor"))
+        .arenas_mut()
+        .remove("body_native_keys");
+    let states = Fixed {
+        introduces: true,
+        outcome: holding,
+        model,
+    };
+    let (transferred, codes) = project_without_final_body(&states);
+    assert_eq!(transferred, 0);
+    assert_eq!(codes, vec![state_loss(); 2]);
+}
+
+#[test]
+fn a_state_that_does_not_decode_or_passed_its_cap_stays_native_with_its_loss() {
+    for outcome in [
+        |_: &CadIr| StateModel::Failed,
+        |_: &CadIr| StateModel::Bounded,
+    ] {
+        let states = Fixed {
+            introduces: true,
+            outcome,
+            model: CadIr::empty(),
+        };
+        let (transferred, codes) = project_without_final_body(&states);
+        assert_eq!(transferred, 0);
+        assert_eq!(codes, vec![state_loss(); 2]);
+    }
+    let states = Fixed {
+        introduces: true,
+        outcome: |_| StateModel::Unavailable,
+        model: CadIr::empty(),
+    };
+    let (transferred, codes) = project_without_final_body(&states);
+    assert_eq!(transferred, 0);
+    assert_eq!(codes, vec![state_loss(); 2]);
+}
+
+fn state_loss() -> LossKind {
+    InventorLossCode::FeatureBaseResultStateNative
+        .note("state")
+        .code
 }
