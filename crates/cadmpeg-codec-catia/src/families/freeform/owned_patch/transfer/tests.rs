@@ -408,7 +408,9 @@ fn planar_transfer_preserves_pcurves_with_native_accuracy() {
         .iter()
         .all(|side| side.pcurves.len() == 1));
     assert_eq!(
-        ir.geometry.edges[0].tolerance.map(PositiveReal::get),
+        ir.geometry.edges[0]
+            .tolerance
+            .map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(0.02 + GAP_MM)
     );
 }

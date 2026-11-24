@@ -58,6 +58,7 @@ impl Walk for Place {
         let Self {
             occurrence: _,
             placement,
+            scale,
             base: _,
             constraints,
             packaged: _,
@@ -65,6 +66,7 @@ impl Walk for Place {
             source_settings,
         } = self;
         placement.walk(into)?;
+        scale.walk(into)?;
         constraints.walk(into)?;
         native_options.walk(into)?;
         source_settings.walk(into)?;

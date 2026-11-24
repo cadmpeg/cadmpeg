@@ -42,7 +42,8 @@ use crate::features::geometry::FinitePoint3;
 use crate::features::ParameterId;
 use crate::math::Point3;
 use crate::scalar::{
-    Angle, FiniteReal, Fraction, Length, NonNegativeLength, NonNegativeReal, PositiveReal,
+    Angle, FiniteReal, Fraction, Length, NonNegativeLength, NonNegativeReal, NonZeroReal,
+    PositiveReal,
 };
 use crate::units::UnitVector3;
 
@@ -916,6 +917,7 @@ fn places() -> Vec<Place> {
         Place {
             occurrence: occurrence(1),
             placement: Some(frame_construction()),
+            scale: Some(ScaleFactors::Uniform(parameter(9))),
             base: Some(PlacementBase::OwnOccurrence),
             constraints: joints(),
             packaged: Some(false),
@@ -925,13 +927,50 @@ fn places() -> Vec<Place> {
         Place {
             occurrence: occurrence(2),
             placement: None,
+            scale: None,
             base: None,
             constraints: Vec::new(),
             packaged: None,
             native_options: NativeOptions::new(),
             source_settings: NativeOptions::new(),
         },
+        Place {
+            occurrence: occurrence(5),
+            placement: Some(frame_construction()),
+            scale: Some(ScaleFactors::PerAxis {
+                factors: [2.0, -1.0, 0.5].map(|factor| literal(NonZeroReal::new(factor).unwrap())),
+                frame: None,
+            }),
+            base: Some(PlacementBase::Parent),
+            constraints: Vec::new(),
+            packaged: None,
+            native_options: NativeOptions::new(),
+            source_settings: NativeOptions::new(),
+        },
     ]
+}
+
+/// §6.7: `Place.scale` is written after `placement`, a per-axis one with no
+/// frame is its factors alone, and `null` is refused.
+#[test]
+fn a_place_states_the_scale_composed_with_its_placement() {
+    let place = places().remove(2);
+    let value = to_value(&place);
+    let text = serde_json::to_string(&place).unwrap();
+    let at = |key: &str| text.find(&format!("\"{key}\":")).unwrap();
+    assert!(at("placement") < at("scale") && at("scale") < at("base"));
+    assert_eq!(
+        value["scale"],
+        json!({"kind": "per_axis", "value": {"factors": [
+            {"kind": "literal", "value": 2.0},
+            {"kind": "literal", "value": -1.0},
+            {"kind": "literal", "value": 0.5},
+        ]}})
+    );
+    assert!(to_value(&places().remove(1)).get("scale").is_none());
+    let mut text = value.clone();
+    text["scale"] = serde_json::Value::Null;
+    assert!(refuses::<Place>(&text.to_string()).contains("scale"));
 }
 
 fn place_sets() -> Vec<PlaceSet> {

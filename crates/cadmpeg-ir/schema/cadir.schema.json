@@ -1951,31 +1951,17 @@
           ]
         },
         {
-          "description": "Native presentation carrier without a neutral geometry arena.",
+          "description": "An object the source assigns the appearance to that the decoder did\nnot join to a record of the document. The binding's\n`source_entity_id` or `native_ref` states what the decoder read of it.",
           "type": "object",
           "properties": {
             "kind": {
               "type": "string",
-              "const": "source"
-            },
-            "value": {
-              "type": "object",
-              "properties": {
-                "source_id": {
-                  "description": "Native source entity identity.",
-                  "type": "string"
-                }
-              },
-              "additionalProperties": false,
-              "required": [
-                "source_id"
-              ]
+              "const": "unresolved"
             }
           },
           "additionalProperties": false,
           "required": [
-            "kind",
-            "value"
+            "kind"
           ]
         }
       ]
@@ -2469,32 +2455,6 @@
     "AssetId": {
       "description": "Stable identity of one document asset.",
       "$ref": "#/$defs/Identity"
-    },
-    "AttributeExpression": {
-      "description": "An expression that a source states on a property.",
-      "type": "object",
-      "properties": {
-        "comment": {
-          "description": "The source's comment on the expression.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "expression": {
-          "description": "The expression.",
-          "$ref": "#/$defs/Expression"
-        },
-        "path": {
-          "description": "The source's path of the property the expression drives.",
-          "type": "string"
-        }
-      },
-      "additionalProperties": false,
-      "required": [
-        "path",
-        "expression"
-      ]
     },
     "AttributeId": {
       "description": "Identifies a linked [`crate::attributes::SourceAttribute`] record.",
@@ -3218,7 +3178,7 @@
           ]
         },
         {
-          "description": "The design parameter that a property linked to a dimension or a\nmeasure is.",
+          "description": "The design parameter that a property is where the source states its\nvalue by an expression.",
           "type": "object",
           "properties": {
             "kind": {
@@ -3270,24 +3230,6 @@
               "items": {
                 "$ref": "#/$defs/AttributeMapEntry"
               }
-            }
-          },
-          "additionalProperties": false,
-          "required": [
-            "kind",
-            "value"
-          ]
-        },
-        {
-          "description": "An expression the source states on the property that no parameter\nholds.",
-          "type": "object",
-          "properties": {
-            "kind": {
-              "type": "string",
-              "const": "expression"
-            },
-            "value": {
-              "$ref": "#/$defs/AttributeExpression"
             }
           },
           "additionalProperties": false,
@@ -20697,10 +20639,10 @@
           ]
         },
         "tolerance": {
-          "description": "Optional geometric tolerance in the document's length unit.",
+          "description": "The entity's tolerance in millimetres, overriding `tolerances.linear`.",
           "anyOf": [
             {
-              "$ref": "#/$defs/PositiveReal"
+              "$ref": "#/$defs/PositiveLength"
             },
             {
               "type": "null"
@@ -23746,10 +23688,10 @@
           "$ref": "#/$defs/SurfaceId"
         },
         "tolerance": {
-          "description": "Optional geometric tolerance in the document's length unit.",
+          "description": "The entity's tolerance in millimetres, overriding `tolerances.linear`.",
           "anyOf": [
             {
-              "$ref": "#/$defs/PositiveReal"
+              "$ref": "#/$defs/PositiveLength"
             },
             {
               "type": "null"
@@ -58982,6 +58924,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/Construction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "scale": {
+          "description": "The scale the source composes with `placement` on the occurrence,\napplied in the placed definition's own axes before `placement`, with\nfactors an expression can bind. A `PerAxis` scale states no `frame`.\n`None` where the source stores no scale, or a scale of one on every\naxis.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScaleFactors2"
             },
             {
               "type": "null"
@@ -99335,10 +99288,10 @@
           "$ref": "#/$defs/PointId"
         },
         "tolerance": {
-          "description": "Optional geometric tolerance in the document's length unit.",
+          "description": "The entity's tolerance in millimetres, overriding `tolerances.linear`.",
           "anyOf": [
             {
-              "$ref": "#/$defs/PositiveReal"
+              "$ref": "#/$defs/PositiveLength"
             },
             {
               "type": "null"

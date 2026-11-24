@@ -201,7 +201,7 @@ fn cuboid_volume_model(side: Option<f64>, edge: Option<f64>, corner: f64) -> f64
         .iter_mut()
         .find(|face| face.id.as_str() == found)
         .expect("the side's face");
-    face.tolerance = side.and_then(cadmpeg_ir::scalar::PositiveReal::new);
+    face.tolerance = side.and_then(cadmpeg_ir::scalar::PositiveLength::new);
     let edges = Selection {
         all_edges: true,
         ..Selection::default()
@@ -224,7 +224,7 @@ fn cuboid_volume_model(side: Option<f64>, edge: Option<f64>, corner: f64) -> f64
         .iter_mut()
         .find(|candidate| candidate.id.as_str() == found)
         .expect("the edge");
-    model_edge.tolerance = edge.and_then(cadmpeg_ir::scalar::PositiveReal::new);
+    model_edge.tolerance = edge.and_then(cadmpeg_ir::scalar::PositiveLength::new);
     let report = measure(&ir, &Selection::default());
     let volume = only_body(&report)
         .volume()
