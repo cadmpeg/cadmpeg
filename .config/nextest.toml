@@ -20,11 +20,6 @@ filter = '''
     | test(=golden_tests::golden_snapshots_hold)
     | test(/^integration_tests::csg_solids::a_sphere_and_a_torus_/)
     | test(=every_read_optional_field_refuses_a_null_spelling)
+    | test(/^writer::tests::leaf_sweep::every_leaf_edit_of_/)
 '''
 priority = 100
-
-# The two leaf sweeps edit, write and read back one part per leaf kind, which
-# takes longer than 600 seconds on a four-core runner.
-[[profile.default.overrides]]
-filter = 'test(/^writer::tests::leaf_sweep::every_leaf_edit_of_ftc_0[68]_is_carried_or_named$/)'
-slow-timeout = { period = "60s", terminate-after = 40 }
