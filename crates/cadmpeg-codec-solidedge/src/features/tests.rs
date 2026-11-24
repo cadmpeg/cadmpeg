@@ -239,7 +239,7 @@ fn malformed_navigators_are_unread_not_absent() {
 }
 
 #[test]
-fn listed_object_the_cluster_lacks_is_unread() {
+fn listed_object_the_cluster_lacks_reads_as_unreadable() {
     let classes = ["ReferencePlaneObject", "Nav"];
     let objects = [
         Object {
@@ -271,7 +271,7 @@ fn listed_object_the_cluster_lacks_is_unread() {
     let map = SpaceMap::parse(&map).unwrap();
     let cluster = Cluster::parse(&cluster, &map).unwrap();
     let types = TypeTable::parse(&type_table(&classes, &[])).unwrap();
-    assert_eq!(navigator(&cluster, &types), Navigator::Unread);
+    assert_eq!(kinds(navigator(&cluster, &types)), vec![Kind::Unreadable]);
 }
 
 #[test]
@@ -384,4 +384,76 @@ fn folder_count_beyond_its_bytes_is_unread() {
     let cluster = Cluster::parse(&cluster, &map).unwrap();
     let types = TypeTable::parse(&type_table(&classes, &[])).unwrap();
     assert_eq!(kinds(navigator(&cluster, &types)), vec![Kind::Folder(None)]);
+}
+
+#[test]
+fn an_unreadable_listed_object_leaves_the_others_readable() {
+    let classes = ["ReferencePlaneObject", "CLSID_JMPart", "Nav"];
+    let plane = |id| Object {
+        id,
+        form: 0,
+        flags: 0,
+        body: vec![0; 8],
+    };
+    let objects = [
+        plane(1),
+        plane(2),
+        plane(3),
+        Object {
+            id: 10,
+            form: 1,
+            flags: 0,
+            body: part_body("JMProtrusionFunction"),
+        },
+        Object {
+            id: 11,
+            form: 1,
+            flags: 0,
+            body: part_body("JMHoleFunction"),
+        },
+        Object {
+            id: 5,
+            form: 2,
+            flags: 0,
+            body: navigator_body([1, 2, 3], &[10, 44, 11]),
+        },
+    ];
+    let (cluster, map) = cluster_and_map(&objects);
+    let map = SpaceMap::parse(&map).unwrap();
+    let cluster = Cluster::parse(&cluster, &map).unwrap();
+    let types = TypeTable::parse(&type_table(&classes, &[])).unwrap();
+    assert_eq!(
+        kinds(navigator(&cluster, &types)),
+        vec![
+            Kind::Function(Some("JMProtrusionFunction".into())),
+            Kind::Unreadable,
+            Kind::Function(Some("JMHoleFunction".into())),
+        ]
+    );
+}
+
+#[test]
+fn the_timeline_states_the_readable_features_around_an_unreadable_one() {
+    let listed = [
+        Listed {
+            object: 10,
+            kind: Kind::Function(Some("JMProtrusionFunction".into())),
+            suppressed: Some(false),
+        },
+        Listed {
+            object: 44,
+            kind: Kind::Unreadable,
+            suppressed: None,
+        },
+        Listed {
+            object: 11,
+            kind: Kind::Function(Some("JMHoleFunction".into())),
+            suppressed: Some(false),
+        },
+    ];
+    let mut losses = Vec::new();
+    let timeline = super::timeline(&listed, &mut losses).unwrap();
+    assert_eq!(timeline.features.len(), 2);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "feature.storage-unread");
 }
