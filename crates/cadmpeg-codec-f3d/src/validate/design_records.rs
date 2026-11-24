@@ -583,7 +583,7 @@ pub(super) fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .iter()
                     .filter_map(|body| body.tessellation_id.as_deref())
             };
-            if ctx.holds_design_intent() && projected().next().is_some() {
+            if ctx.holds_neutral_design() && projected().next().is_some() {
                 valid &= scope.is_some_and(|scope| {
                     ctx.ir.model.features.iter().any(|neutral| {
                         neutral.native_ref.as_deref() == Some(scope.id.as_str())

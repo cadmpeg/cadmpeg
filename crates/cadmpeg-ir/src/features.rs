@@ -203,71 +203,7 @@ pub struct Feature {
     pub native_ref: Option<String>,
 }
 
-/// One row of the model route's feature list.
-///
-/// `regeneration_parent` is a model-route datum: the read hands it to
-/// [`crate::document::Model`] with the feature, which is the only owner that
-/// can place the edge. The standalone route reads [`FeatureReadWire`], which
-/// declares no such field, so the difference between the two routes is a
-/// field, not a check.
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-pub(crate) struct FeatureRowWire {
-    #[serde(default, deserialize_with = "deserialize_product_definition")]
-    product_definition: Option<ProductDefinitionId>,
-    id: FeatureId,
-    ordinal: u64,
-    #[serde(default, deserialize_with = "deserialize_name")]
-    name: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_feature_row_wire_suppressed")]
-    suppressed: Option<bool>,
-    #[serde(default, deserialize_with = "deserialize_regeneration_parent")]
-    regeneration_parent: Option<FeatureId>,
-    #[serde(deserialize_with = "deserialize_dependencies")]
-    dependencies: DistinctMembers<FeatureId>,
-    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    source_properties: BTreeMap<NonBlankString, String>,
-    #[serde(default, deserialize_with = "deserialize_source_tag")]
-    source_tag: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_source_text")]
-    source_text: Option<String>,
-    source_content: FeatureContent,
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<BodyId>"))]
-    outputs: DistinctMembers<BodyId>,
-    definition: FeatureDefinition,
-    #[serde(default, deserialize_with = "deserialize_native_ref")]
-    native_ref: Option<String>,
-}
-
-impl FeatureRowWire {
-    pub(crate) fn into_parts(self) -> (Feature, Option<FeatureId>) {
-        let regeneration_parent = self.regeneration_parent;
-        let feature = FeatureReadWire {
-            product_definition: self.product_definition,
-            id: self.id,
-            ordinal: self.ordinal,
-            name: self.name,
-            suppressed: self.suppressed,
-            dependencies: self.dependencies,
-            source_properties: self.source_properties,
-            source_tag: self.source_tag,
-            source_text: self.source_text,
-            source_content: self.source_content,
-            outputs: self.outputs,
-            definition: self.definition,
-            native_ref: self.native_ref,
-        }
-        .into_feature();
-        (feature, regeneration_parent)
-    }
-}
-
 /// The standalone feature wire: one feature outside any model.
-///
-/// It declares no `regeneration_parent`, so a row of the model route does not
-/// read back as a standalone feature and the parent edge cannot arrive without
-/// the model that owns it. `deny_unknown_fields` states the refusal.
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -316,9 +252,6 @@ impl FeatureReadWire {
 }
 
 /// Read one feature outside any model.
-///
-/// The model route reads `FeatureRowWire` and splits the row with `into_parts`.
-/// Standalone reconstruction reads the same feature fields without a parent edge.
 impl<'de> Deserialize<'de> for Feature {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -2464,11 +2397,6 @@ cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
 
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 
-cadmpeg_core::named_optional_field!(
-    deserialize_regeneration_parent,
-    FeatureId,
-    "regeneration_parent"
-);
 cadmpeg_core::named_optional_field!(deserialize_source_tag, String, "source_tag");
 cadmpeg_core::named_optional_field!(deserialize_transfer_occurrence, OccurrenceId, "occurrence");
 cadmpeg_core::named_optional_field!(
@@ -2713,4 +2641,3 @@ cadmpeg_core::named_optional_field!(
 );
 cadmpeg_core::named_optional_field!(deserialize_dimensions, [PositiveLength; 3], "dimensions");
 cadmpeg_core::named_optional_field!(deserialize_suppressed, bool, "suppressed");
-cadmpeg_core::named_optional_field!(deserialize_feature_row_wire_suppressed, bool, "suppressed");
