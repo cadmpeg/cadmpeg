@@ -6,7 +6,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::design::dimension::Dimension;
-use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
+use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::shared::{Limit, Span};
 use cadmpeg_ir::design::ops::swept::{Extrude, ExtrudeDirection, Revolve};
 use cadmpeg_ir::design::options::{Boolean, BooleanOp, SymmetricMeasure};
@@ -265,10 +265,9 @@ fn profile_on_the_axis_stays_unresolved() {
     // The bar lies on the axis through x = 10 mm.
     let result = revolution(2.0, Slot::Dim(FRAC_PI_2), [0.01, 0.0, 0.0]);
     assert!(matches!(
-        result.ir().design.features[0].definition.operation,
-        FeatureOperation::Unresolved {
-            family: OperationFamily::Revolve
-        }
+        &result.ir().design.features[0].definition.operation,
+        FeatureOperation::Native { native_options, .. }
+            if native_options.keys().any(|key| key.as_str() == "solidedge:profile")
     ));
     assert!(codes(&result).contains(&"feature.extent-unread".to_owned()));
 }
@@ -276,12 +275,11 @@ fn profile_on_the_axis_stays_unresolved() {
 #[test]
 fn unknown_extent_kind_stays_unresolved_with_a_loss() {
     let result = extrusion(EXTRUDE, 99.0, 2.0, Slot::Dim(0.01));
-    assert_eq!(
-        result.ir().design.features[0].definition.operation,
-        FeatureOperation::Unresolved {
-            family: OperationFamily::Extrude
-        }
-    );
+    assert!(matches!(
+        &result.ir().design.features[0].definition.operation,
+        FeatureOperation::Native { native_options, .. }
+            if native_options.keys().any(|key| key.as_str() == "solidedge:profile")
+    ));
     let notes: Vec<_> = result
         .report()
         .losses
@@ -297,8 +295,9 @@ fn unknown_extent_kind_stays_unresolved_with_a_loss() {
 fn unresolved_depth_slot_stays_unresolved() {
     let result = extrusion(EXTRUDE, 13.0, 2.0, Slot::Empty);
     assert!(matches!(
-        result.ir().design.features[0].definition.operation,
-        FeatureOperation::Unresolved { .. }
+        &result.ir().design.features[0].definition.operation,
+        FeatureOperation::Native { native_options, .. }
+            if native_options.keys().any(|key| key.as_str() == "solidedge:profile")
     ));
     assert!(codes(&result).contains(&"feature.extent-unread".to_owned()));
 }
