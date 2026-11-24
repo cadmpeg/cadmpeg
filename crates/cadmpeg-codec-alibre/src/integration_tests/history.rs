@@ -530,6 +530,10 @@ mod synthetic {
     }
 
     fn project() -> (CadIr, Vec<cadmpeg_ir::report::loss::LossNote>) {
+        project_of(&history())
+    }
+
+    fn project_of(history: &History) -> (CadIr, Vec<cadmpeg_ir::report::loss::LossNote>) {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let ctx = DecodeContext::for_loaded_input(&arena, &policy, 0).unwrap();
@@ -539,7 +543,7 @@ mod synthetic {
             &cadmpeg_ir::identity_namespace!("alibre", "model", "product-definition"),
             cadmpeg_ir::identity_key!("root"),
         );
-        crate::design::project(&ctx, &mut ir, &history(), &definition, &mut losses).unwrap();
+        crate::design::project(&ctx, &mut ir, history, &definition, &mut losses).unwrap();
         (ir, losses)
     }
 
@@ -620,5 +624,32 @@ mod synthetic {
             .collect();
         assert_eq!(faces.len(), 1);
         assert_eq!(faces[0].severity, Severity::Warning);
+    }
+
+    #[test]
+    fn a_hole_positioned_by_a_sketch_with_points_charges_no_position_loss() {
+        let (_, losses) = project();
+        assert!(!losses
+            .iter()
+            .any(|loss| loss.code == AlibreLossCode::HistoryHolePositionUnresolved.kind()));
+    }
+
+    #[test]
+    fn a_hole_whose_sketch_has_no_point_charges_its_name() {
+        let mut history = history();
+        let Operation::Sketch(sketch) = &mut history.features[1].operation else {
+            panic!("sketch");
+        };
+        sketch.primitives.clear();
+        let (_, losses) = project_of(&history);
+        let notes: Vec<_> = losses
+            .iter()
+            .filter(|loss| loss.code == AlibreLossCode::HistoryHolePositionUnresolved.kind())
+            .collect();
+        let [note] = notes.as_slice() else {
+            panic!("one loss");
+        };
+        assert_eq!(note.severity, Severity::Warning);
+        assert!(note.message.contains("H1"), "{}", note.message);
     }
 }

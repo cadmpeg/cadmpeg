@@ -666,6 +666,24 @@ pub(crate) fn project(
             }
         }
     }
+    for feature in &history.features {
+        if let Operation::Hole { sketch, .. } = &feature.operation {
+            let placed = matches!(
+                &history.features[*sketch].operation,
+                Operation::Sketch(hole_sketch)
+                    if hole_sketch
+                        .primitives
+                        .iter()
+                        .any(|primitive| matches!(primitive.curve, Curve::Point(_)))
+            );
+            if !placed {
+                notes.push(AlibreLossCode::HistoryHolePositionUnresolved.note(format!(
+                    "hole {} has a sketch with no point, so its positions are not read",
+                    feature.name
+                )));
+            }
+        }
+    }
     if history
         .features
         .iter()
