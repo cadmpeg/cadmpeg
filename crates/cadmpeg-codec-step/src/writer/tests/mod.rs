@@ -6,6 +6,7 @@ mod approximations;
 mod collapsed_edges;
 mod cones;
 mod helix;
+mod layers;
 mod orientation;
 mod products;
 mod reports;

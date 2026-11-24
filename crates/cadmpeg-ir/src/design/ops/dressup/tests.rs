@@ -159,14 +159,14 @@ fn frame_construction() -> Construction<kinds::Frame> {
 
 fn options() -> NativeOptions {
     NativeOptions::from([(
-        text("sldprt:attachment_edges"),
+        crate::codec_name!("sldprt:attachment_edges"),
         NativeOption::Bool(literal(true)),
     )])
 }
 
 fn settings() -> NativeOptions {
     NativeOptions::from([(
-        text("freecad:Mode"),
+        crate::codec_name!("freecad:Mode"),
         NativeOption::Text(literal(text("Skin"))),
     )])
 }
@@ -499,7 +499,7 @@ fn transitions() -> Vec<Transition> {
             at: Some(selection(9)),
             kind: Some(TransitionKind::Blend),
             native_options: NativeOptions::from([(
-                text("creo:transition_type"),
+                crate::codec_name!("creo:transition_type"),
                 NativeOption::Integer(literal(12)),
             )]),
         },

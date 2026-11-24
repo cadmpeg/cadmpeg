@@ -3843,7 +3843,7 @@ fn decode_graph_inner(
             tolerance: rec
                 .tolerance_m
                 .map(|value| {
-                    cadmpeg_ir::scalar::PositiveReal::new(value * LEN_TO_MM).ok_or_else(|| {
+                    cadmpeg_ir::scalar::PositiveLength::new(value * LEN_TO_MM).ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed(
                             "VERTEX tolerance is outside finite millimetres",
                         )
@@ -4158,7 +4158,7 @@ fn decode_graph_inner(
             .into_iter()
             .chain(tolerant_edge_tolerance_mm.get(&e).copied())
             .reduce(f64::max)
-            .and_then(cadmpeg_ir::scalar::PositiveReal::new),
+            .and_then(cadmpeg_ir::scalar::PositiveLength::new),
             native_ref: None,
         });
         edge_set.insert(e);

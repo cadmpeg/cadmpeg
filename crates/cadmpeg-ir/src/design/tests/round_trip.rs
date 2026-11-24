@@ -18,7 +18,7 @@ use crate::design::expr::{
     BendVariable, BinaryOp, Constant, ExpressionToken, Function, Measure, MeasureKind,
     MeasureTarget, Neutral, Node, UnaryOp,
 };
-use crate::design::names::{CodecId, InstanceIndex, NativeName, NativeNameValue};
+use crate::design::names::{InstanceIndex, NativeName, NativeNameValue};
 use crate::design::options::{
     BodyForm, Boolean, BooleanOp, CornerRound, Hand, LimitOffset, LoopNesting, NativeOption,
     ProjectionDirection, SectionCondition, SheetOutput, SolidOutput, Solidify, Support,
@@ -562,7 +562,7 @@ fn every_design_type_round_trips() {
     report.check(
         "NativeName integers",
         vec![NativeName {
-            codec: CodecId::from(text("creo")),
+            codec: crate::codec_id!("creo"),
             value: NativeNameValue::Integers(Vec::new()),
         }],
     );

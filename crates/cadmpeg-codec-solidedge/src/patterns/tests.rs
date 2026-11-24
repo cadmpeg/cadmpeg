@@ -8,7 +8,9 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ops::body::{Pattern, PatternInstances, PatternSeeds};
-use cadmpeg_ir::design::ops::shared::{PatternLayout, PatternRun, Spacing};
+use cadmpeg_ir::design::ops::shared::{
+    CircularLayout, LinearLayout, MirrorLayout, PatternLayout, PatternRun, Spacing,
+};
 use cadmpeg_ir::design::selection::{PickTarget, Picks};
 
 use crate::features::feature_id;
@@ -159,11 +161,11 @@ fn rectangular_three_by_two_along_x_and_y() {
     );
     let pattern = pattern(&result);
     assert_seed(pattern);
-    let PatternLayout::Linear {
+    let PatternLayout::Linear(LinearLayout {
         first,
         second: Some(second),
         seed_only,
-    } = &pattern.layout
+    }) = &pattern.layout
     else {
         panic!("expected two linear runs, found {:?}", pattern.layout);
     };
@@ -188,11 +190,11 @@ fn rectangular_four_by_two_through_a_turned_frame() {
         [[0.0, 0.0, 0.036, 0.0], [0.0, 0.0, 0.0, 0.006]],
     );
     let pattern = pattern(&result);
-    let PatternLayout::Linear {
+    let PatternLayout::Linear(LinearLayout {
         first,
         second: Some(second),
         ..
-    } = &pattern.layout
+    }) = &pattern.layout
     else {
         panic!("expected two linear runs");
     };
@@ -212,7 +214,7 @@ fn circular_full_turn_has_no_sense_note() {
     let result = circular(6, FRAC_PI_3, [0.020, 0.015]);
     let pattern = pattern(&result);
     assert_seed(pattern);
-    let PatternLayout::Circular { axis, angular, .. } = &pattern.layout else {
+    let PatternLayout::Circular(CircularLayout { axis, angular, .. }) = &pattern.layout else {
         panic!("expected a circular layout, found {:?}", pattern.layout);
     };
     let axis = axis.resolved.as_ref().unwrap();
@@ -239,7 +241,8 @@ fn circular_full_turn_has_no_sense_note() {
 #[test]
 fn circular_partial_turn_has_no_sense_note() {
     let result = circular(3, FRAC_PI_6, [0.020, 0.015]);
-    let PatternLayout::Circular { axis, angular, .. } = &pattern(&result).layout else {
+    let PatternLayout::Circular(CircularLayout { axis, angular, .. }) = &pattern(&result).layout
+    else {
         panic!("expected a circular layout");
     };
     // Instances turn counter-clockwise about the profile normal, which is a
@@ -263,7 +266,7 @@ fn circular_partial_turn_has_no_sense_note() {
 }
 
 fn plane_of(result: &DecodeResult) -> ([f64; 3], [f64; 3]) {
-    let PatternLayout::Mirror { plane, .. } = &pattern(result).layout else {
+    let PatternLayout::Mirror(MirrorLayout { plane, .. }) = &pattern(result).layout else {
         panic!("expected a mirror layout");
     };
     let plane = plane.resolved.as_ref().unwrap();

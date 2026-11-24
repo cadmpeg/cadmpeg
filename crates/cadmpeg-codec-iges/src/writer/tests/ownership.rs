@@ -100,7 +100,7 @@ fn exact_surface_export_keeps_its_active_rectangle() {
 
 fn support_association() -> SourceObjectAssociation {
     SourceObjectAssociation {
-        format: cadmpeg_ir::CodecFormat::Step,
+        format: cadmpeg_ir::codec_id!("step"),
         geometry_role: Some(SourceGeometryRole::Support),
         object_id: cadmpeg_core::nonblank_literal!("support"),
         name: None,
