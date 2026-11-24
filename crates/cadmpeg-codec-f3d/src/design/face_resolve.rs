@@ -2511,7 +2511,6 @@ pub(super) fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::sc
     )?)
 }
 
-/// Length scale from a placement's stored origin to the neutral length unit.
 /// The model-space origin of a sketch placement in the neutral unit. This is
 /// the single source of the sketch frame origin: a sketch that measures its
 /// coordinates from the foot of the design origin takes that foot instead of
@@ -2553,6 +2552,7 @@ pub(crate) fn placement_vector(placement: &DesignSketchPlacement, vector: &Vecto
     )
 }
 
+/// Length scale from a placement's stored origin to the neutral length unit.
 /// Frames with an explicit transform store its translation in centimetres, as
 /// the `EntityGenesis`-flavor 213/341-byte frames and the member-run head
 /// record of a feature-owned sketch do, while their sketch point and curve
