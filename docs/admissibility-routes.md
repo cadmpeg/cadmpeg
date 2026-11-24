@@ -61,7 +61,7 @@ constants below.
 | Rhino draft                                      | `RHINO_DRAFT_CHECKS` = core + `Annotations` | `ArenaOrder` excluded (pre-finalize)                                                                                                    |
 | Rhino instance                                   | `RHINO_INSTANCE_CHECKS` = core              | `ArenaOrder` excluded; no mid-expansion finalize                                                                                        |
 | CATIA admission                                  | `CATIA_ADMISSION_CHECKS` = core             | finalize first; pending native identities via admit helper                                                                              |
-| IGES rejection                                   | full `validate_neutral`                     | classified keep-full: `DRAFT_CORE_CHECKS` ≡ full errors on all 78 IGES golden fixtures, every one of them `iges:5.3-fixed-ascii`        |
+| IGES projection check                            | full `validate_neutral`                     | refuses nothing: each Error finding is one `iges/projection.invalid` loss, and the decode returns the document                         |
 | SLDPRT export precondition (`writer` input)      | full `validate_neutral`                     | keep-full: refusal depends on non-core Checks (`Counts`, …); `SLDPRT_EXPORT_PRECONDITION_CHECKS` is the documented draft/topology floor |
 | SLDPRT writer postcondition (after bake/prepare) | full `validate_neutral`                     | postcondition on the writer's own transform; not replaced                                                                               |
 
@@ -81,11 +81,6 @@ What is dialect-keyed is the evidence each classification rests on. Fixture
 coverage is per row in [`dialect-support.toml`](../crates/cadmpeg-registry/docs/dialect-support.toml), and it
 is uneven:
 
-- **IGES rejection.** All 78 golden fixtures are `iges:5.3-fixed-ascii`. The
-  keep-full classification is therefore a measurement of one row out of
-  twenty-two. The other twenty-one carry no fixture, so nothing has ever
-  compared `DRAFT_CORE_CHECKS` against full validation on a compressed-ASCII,
-  binary, or pre-5.3 document.
 - **Rhino draft and instance.** Fixtures sit on `rhino:archive-3`, `-4`,
   `-50`, `-60`, `-70`, and `-80`; `rhino:archive-1`'s single fixture is a
   reject case (`reject_v1.3dm`), so it exercises detection, not the gates.
@@ -102,8 +97,8 @@ is uneven:
   never been measured against a document that classified onto a declared row.
 
 Narrowing a keep-full route to a `Check` subset is a claim about the documents
-that route sees. Read the row above first: on IGES and SLDPRT the current
-evidence covers one row each.
+that route sees. Read the row above first: on SLDPRT the current evidence
+covers one row.
 
 ## Native passthrough arenas
 

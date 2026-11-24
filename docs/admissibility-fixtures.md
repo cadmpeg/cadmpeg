@@ -21,7 +21,7 @@ driven by rejections, not only by accepts.
 | Rhino draft                 | `decode.rs` candidate commit            | empty IR; ArenaOrder stripped | missing point / missing region                                                  |
 | Rhino instance              | `decode.rs` expansion                   | empty IR                      | missing point / missing region                                                  |
 | CATIA admission             | `assemble::neutral_model_is_admissible` | empty IR; pending unknowns    | shell → missing region (`assemble` tests)                                       |
-| IGES rejection              | `reader::reject_invalid_semantic_ir`    | valid decode IR               | missing point (`semantic_decode_barrier_rejects_invalid_cadir`)                 |
+| IGES projection check       | `reader::invalid_semantic_ir`           | valid decode IR: no loss      | missing point: one `projection.invalid` loss per finding                        |
 | SLDPRT export precondition  | `writer.rs:50`                          | normalized decode IR          | face → missing surface (`semantic_writer_rejects_invalid_ir_without_panicking`) |
 | SLDPRT writer postcondition | `writer.rs:79`                          | after bake/prepare            | same transform must preserve validity (full validator kept)                     |
 
