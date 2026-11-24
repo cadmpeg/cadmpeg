@@ -74,6 +74,10 @@ pub(super) fn map(
     ))
 }
 
+/// Marks a refusal of a support form the decoder does not map. Unresolved or malformed
+/// records do not carry it.
+const UNSUPPORTED_FORM: &str = "not supported yet";
+
 const FACE_ORIENTATION_UNPROVEN: &str = "the offset support face orientation and in-plane axis need a stored attachment proof (ONSHAPE-009)";
 
 fn unsupported(feature: &Value) -> Mapping<Option<&'static str>> {
@@ -83,7 +87,7 @@ fn unsupported(feature: &Value) -> Mapping<Option<&'static str>> {
     for (key, reason) in [
         (
             "oppositeDirection",
-            "a flipped offset plane is not supported yet",
+            "a flipped offset plane is not supported yet (ONSHAPE-008)",
         ),
         (
             "flipNormal",
@@ -102,7 +106,10 @@ fn unsupported(feature: &Value) -> Mapping<Option<&'static str>> {
 }
 
 pub(super) fn loss_code(feature: &Value, reason: &str) -> crate::loss::OnshapeLossCode {
-    if unsupported(feature).ok().flatten().is_some() || reason == FACE_ORIENTATION_UNPROVEN {
+    if unsupported(feature).ok().flatten().is_some()
+        || reason == FACE_ORIENTATION_UNPROVEN
+        || reason.contains(UNSUPPORTED_FORM)
+    {
         crate::loss::OnshapeLossCode::PlaneNotSupported
     } else {
         crate::loss::OnshapeLossCode::HistoryNotSupported

@@ -24,3 +24,28 @@ fn sketch_matrix_requires_a_rigid_homogeneous_transform() {
         assert!(sketch_plane(&json!({"sketchMatrix":matrix})).is_err());
     }
 }
+
+#[test]
+fn plane_losses_name_unsupported_forms_and_keep_unresolved_records_in_history() {
+    use super::loss_code;
+    use crate::loss::OnshapeLossCode::{HistoryNotSupported, PlaneNotSupported};
+    let feature = json!({"featureType":"cPlane","parameters":[
+        {"parameterId":"cplaneType","value":"OFFSET"}]});
+    for reason in [
+        "multiple sketch planes are not supported yet",
+        "a sketch on more than one face is not supported yet",
+        super::FACE_ORIENTATION_UNPROVEN,
+    ] {
+        assert!(PlaneNotSupported.matches(&loss_code(&feature, reason).note("plane")));
+    }
+    for reason in [
+        "the selected datum plane is unresolved",
+        "quantity expression must be a string",
+    ] {
+        assert!(HistoryNotSupported.matches(&loss_code(&feature, reason).note("history")));
+    }
+    let flipped = json!({"featureType":"cPlane","parameters":[
+        {"parameterId":"cplaneType","value":"OFFSET"},
+        {"parameterId":"oppositeDirection","value":true}]});
+    assert!(PlaneNotSupported.matches(&loss_code(&flipped, "any").note("plane")));
+}

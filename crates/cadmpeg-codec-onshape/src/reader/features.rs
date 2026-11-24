@@ -238,8 +238,11 @@ fn whole_sketch_region_query(query: &Value) -> bool {
         Some(true) => "true",
         Some(false) | None => "false",
     };
-    let expected = format!("query = qSketchRegion(id + \"{sketch}\", {inner});");
-    string.split_whitespace().eq(expected.split_whitespace())
+    let expected = format!("query=qSketchRegion(id+\"{sketch}\",{inner});");
+    let stripped: String = string.chars().filter(|c| !c.is_whitespace()).collect();
+    // The literal keeps its exact text, so ids that differ only in whitespace stay distinct.
+    string.contains(&format!("\"{sketch}\""))
+        && stripped == expected.replace(char::is_whitespace, "")
 }
 fn sketch_entities(queries: &[Value], model: &Model, entity_type: &str) -> Mapping<Value> {
     sketch_entities_in_order(queries, model, entity_type, false)

@@ -38,11 +38,7 @@ pub(super) fn frame(
             return Err("a sketch on more than one face is not supported yet".into());
         };
         let support = face(native.as_str().ok_or("a sketch face id is not a string")?)?;
-        if feature.get("plane").is_none() && support.get("u_axis").is_some() {
-            Ok(support)
-        } else {
-            attachment_frame(feature, &support)
-        }
+        attachment_frame(feature, &support)
     };
     let plane = if query
         .get("queryString")

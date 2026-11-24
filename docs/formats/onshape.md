@@ -101,16 +101,17 @@ A `BTMIndividualSketchRegionQuery-140` whose `queryString` is
 the regions of that sketch named by the query string; its
 `deterministicIds` do not restrict that selection. With `filterInnerLoops`
 equal to `false` the selection is every region of the sketch. With `true`
-it excludes each region fully contained in another region; a region whose
-border has a vertex or edge on the containing region's boundary is not
-contained. A selected region retains the loops directly inside it as hole
+it excludes each region fully contained in another region. A selected region retains the loops directly inside it as hole
 boundaries.
 
-A sketch's optional `plane` object stores its attachment frame. `origin` uses
+A sketch's optional `plane` object stores its attachment frame and is the
+frame of that sketch whenever it is present. `origin` uses
 metres; `normal` and `x` store its normal and x axis. The axes are orthogonal.
 A referenced planar face and the stored attachment frame are coplanar. The
 stored origin retains tangential translation. The stored x axis retains
 in-plane rotation. The normal carries the attachment sense.
+A sketch without a `plane` object on a created datum plane takes its frame
+from its `sketchMatrix` row, which is coplanar with that datum plane.
 The top-level `sketches` array in `sketches.json` contains sketch rows.
 Each row identifies its sketch through `featureId`.
 Its `sketchMatrix` stores a row-major homogeneous 4 by 4 transform.
