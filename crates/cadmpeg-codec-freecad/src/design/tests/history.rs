@@ -1079,32 +1079,35 @@ Ve 0.001 0 0 0 0 0 1001000 *
             &DecodeOptions::default(),
         )
         .expect("body shapes");
-    let visible = |name: &str| {
+    let body = |name: &str| {
         result
             .ir()
             .geometry
             .bodies
             .iter()
             .find(|body| body.id.as_str().contains(&format!(":{name}:")))
-            .unwrap_or_else(|| panic!("{name} body"))
-            .visible
     };
-    assert_eq!(visible("Body.Shape.brp"), None);
-    assert_eq!(visible("Free.Shape.brp"), None);
-    for hidden in ["Sketch.Shape.brp", "Pad.Shape.brp", "Pad.AddSubShape.brp"] {
-        assert_eq!(visible(hidden), Some(false), "{hidden}");
+    assert_eq!(body("Body.Shape.brp").map(|body| body.visible), Some(None));
+    assert_eq!(body("Free.Shape.brp").map(|body| body.visible), Some(None));
+    // The sketch's shape and the `Tip`'s repeat of the Body's state are no
+    // geometry; the pad's tool body is a state of its own (§5.4).
+    for state in ["Sketch.Shape.brp", "Pad.Shape.brp", "Pad.AddSubShape.brp"] {
+        assert!(body(state).is_none(), "{state}");
     }
-    let pad = result
-        .ir()
-        .model
-        .features
-        .iter()
-        .find(|feature| feature.name.as_deref() == Some("Pad"))
-        .unwrap();
-    let [output] = pad.evaluation.outputs().as_slice() else {
-        panic!("pad must have one result body");
+    let [tool] = result.ir().design.evaluations.as_slice() else {
+        panic!("{:?}", result.ir().design.evaluations);
     };
-    assert!(output.as_str().contains(":Pad.Shape.brp:"));
+    assert_eq!(
+        tool.of,
+        cadmpeg_ir::design::refs::Evaluated::Tool(
+            cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Pad").unwrap()
+        )
+    );
+    let records = &tool.content.as_ref().unwrap().delta.records;
+    assert!(records
+        .bodies
+        .iter()
+        .all(|body| body.id.as_str().contains(":Pad.AddSubShape.brp:")));
     assert_valid_document(result.ir());
 }
 

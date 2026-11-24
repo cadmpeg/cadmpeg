@@ -160,9 +160,10 @@ fn primitive_placement_cc0_recipe_frames_and_validator() {
                     matches!(solid.kind(), PrimitiveSolidKind::Box { length, width, height } if (length.get() - 20.0).abs() < EPS_PRIMITIVE_FRAME && (width.get() - 30.0).abs() < EPS_PRIMITIVE_FRAME && (height.get() - 10.0).abs() < EPS_PRIMITIVE_FRAME)
                 );
             }
+            let (state, bodies) = crate::test_support::result_of(decoded.ir(), feature);
             let report =
-                cadmpeg_measure::test_support::round_trip::measured("F14", decoded.ir()).unwrap();
-            let [body_id] = feature.evaluation.outputs().as_slice() else {
+                cadmpeg_measure::test_support::round_trip::measured("F14", &state).unwrap();
+            let [body_id] = bodies.as_slice() else {
                 panic!("{version} F14{variant}: expected one result")
             };
             let body = report
