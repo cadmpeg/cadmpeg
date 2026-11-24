@@ -222,7 +222,7 @@ fn malformed_navigators_are_unread_not_absent() {
 }
 
 #[test]
-fn listed_object_the_cluster_lacks_is_unread() {
+fn listed_object_the_cluster_lacks_reads_as_unreadable() {
     let classes = ["ReferencePlaneObject", "Nav"];
     let objects = [
         Object {
@@ -254,7 +254,7 @@ fn listed_object_the_cluster_lacks_is_unread() {
     let map = SpaceMap::parse(&map).unwrap();
     let cluster = Cluster::parse(&cluster, &map).unwrap();
     let types = TypeTable::parse(&type_table(&classes, &[])).unwrap();
-    assert_eq!(navigator(&cluster, &types), Navigator::Unread);
+    assert_eq!(kinds(navigator(&cluster, &types)), vec![Kind::Unreadable]);
 }
 
 #[test]
