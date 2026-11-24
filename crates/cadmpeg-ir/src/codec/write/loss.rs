@@ -377,6 +377,31 @@ pub fn solid_partial(format: &str, region: &crate::ids::RegionId, form: &str) ->
     ))
 }
 
+/// The losses of a writer that omits every partial face and writes no region
+/// [`crate::document::Topology::complete_shells`] does not answer for as a
+/// solid: `export:face.partial` naming each such face and
+/// `export:solid.partial` naming each such region, with `form` saying what the
+/// writer writes for it (§3.4, Content the target cannot hold).
+#[must_use]
+pub fn partial_topology_omitted(
+    format: &str,
+    geometry: &crate::document::Topology,
+    form: &str,
+) -> Vec<LossNote> {
+    let faces = geometry
+        .faces
+        .iter()
+        .filter(|face| face.loops.is_partial())
+        .map(|face| face_partial(format, &face.id));
+    let lists = geometry.child_lists();
+    let regions = geometry
+        .regions
+        .iter()
+        .filter(|region| lists.complete_shells(region).is_none())
+        .map(|region| solid_partial(format, &region.id, form));
+    faces.chain(regions).collect()
+}
+
 /// `export:record.invalid`: the writer wrote these records of `kind` from the
 /// canonical side, and the output's own validation finds an Error in them
 /// (§3.4, Refusals). The message names each record.

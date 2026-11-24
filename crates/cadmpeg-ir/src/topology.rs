@@ -267,6 +267,17 @@ impl Region {
         self.shells.push(shell);
     }
 
+    /// Inserts `shell` in the positional list after `after`, or appends it
+    /// where `after` is not in that list.
+    pub fn insert_shell_after(&mut self, after: &ShellId, shell: ShellId) {
+        let at = self
+            .shells
+            .iter()
+            .position(|listed| listed == after)
+            .map_or(self.shells.len(), |position| position + 1);
+        self.shells.insert(at, shell);
+    }
+
     /// Replaces the positional list.
     pub fn set_shells(&mut self, shells: Vec<ShellId>) {
         self.shells = shells;
@@ -1760,11 +1771,7 @@ cadmpeg_core::named_optional_field!(
 );
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 cadmpeg_core::named_optional_field!(deserialize_unstated, Unstated, "unstated");
-cadmpeg_core::named_optional_field!(
-    deserialize_region_unstated,
-    RegionUnstated,
-    "unstated"
-);
+cadmpeg_core::named_optional_field!(deserialize_region_unstated, RegionUnstated, "unstated");
 cadmpeg_core::named_optional_field!(deserialize_partial_outer, LoopId, "outer");
 cadmpeg_core::named_optional_field!(deserialize_ends, EdgeEnds, "ends");
 
@@ -2128,8 +2135,9 @@ mod tests {
     }
 
     use super::{
-        coedge_ring_neighbors, AnchoredVertexUse, Coedge, CoedgeUseCurve, Face, FaceLoops, Loop,
-        LoopBoundary, LoopBoundaryRole, LoopId, LoopRing,
+        coedge_ring_neighbors, AnchoredVertexUse, BodyId, Coedge, CoedgeUseCurve, Face, FaceLoops,
+        Loop, LoopBoundary, LoopBoundaryRole, LoopId, LoopRing, Region, RegionId, RegionUnstated,
+        ShellId, Unstated,
     };
     use crate::features::selections::NonEmptyMembers;
 
@@ -2458,7 +2466,7 @@ mod tests {
             .expect("valid unit cube fixture")
             .geometry;
         let face = &mut geometry.faces[0];
-        let mut members = face.loops.iter().cloned();
+        let mut members = face.loops.stated().cloned();
         let outer = members.next().expect("a cube face states a loop");
         let inner = members.collect();
         face.loops = FaceLoops::classified(outer.clone(), inner);
@@ -2496,7 +2504,7 @@ mod tests {
                 .as_array()
                 .expect("a loops array")
                 .len(),
-            face.loops.len()
+            face.loops.boundary().expect("a complete face").len()
         );
         let restored: Face = serde_json::from_value(wire).unwrap();
         assert!(matches!(restored.loops, FaceLoops::Unspecified { .. }));
@@ -2522,7 +2530,7 @@ mod tests {
         let none: FaceLoops =
             serde_json::from_value(serde_json::json!({"kind": "unspecified", "loops": []}))
                 .unwrap();
-        assert!(none.is_empty());
+        assert!(none.boundary().expect("a complete face").is_empty());
     }
 
     #[test]
@@ -2532,11 +2540,109 @@ mod tests {
             LoopId::mint("test:model:loop#1").expect("identity"),
         ]);
         assert!(matches!(unclassified, FaceLoops::Unspecified { .. }));
-        assert_eq!(unclassified.len(), 2);
+        assert_eq!(unclassified.boundary().expect("a complete face").len(), 2);
         assert_eq!(
             unclassified.role(&LoopId::mint("test:model:loop#0").expect("identity")),
             LoopBoundaryRole::Unspecified
         );
+    }
+
+    #[test]
+    fn a_partial_face_names_its_stated_loops_and_states_no_boundary() {
+        let loop_id = |key: &str| LoopId::mint(format!("test:model:loop#{key}")).expect("identity");
+        for (wire, stated) in [
+            (
+                serde_json::json!({"kind": "partial_classified", "outer": "test:model:loop#0", "inner": ["test:model:loop#1"]}),
+                vec![loop_id("0"), loop_id("1")],
+            ),
+            (
+                serde_json::json!({"kind": "partial_classified", "inner": ["test:model:loop#1"]}),
+                vec![loop_id("1")],
+            ),
+            (
+                serde_json::json!({"kind": "partial_unspecified", "loops": ["test:model:loop#2"]}),
+                vec![loop_id("2")],
+            ),
+        ] {
+            let loops: FaceLoops = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(&loops).unwrap(), wire);
+            assert!(loops.is_partial());
+            assert!(loops.boundary().is_none());
+            assert_eq!(loops.stated().cloned().collect::<Vec<_>>(), stated);
+            assert!(stated.iter().all(|id| loops.contains(id)));
+        }
+        let classified: FaceLoops = serde_json::from_value(serde_json::json!(
+            {"kind": "partial_classified", "inner": ["test:model:loop#1"]}
+        ))
+        .unwrap();
+        assert_eq!(classified.role(&loop_id("1")), LoopBoundaryRole::Inner);
+        assert!(serde_json::from_value::<FaceLoops>(serde_json::json!(
+            {"kind": "partial_classified", "outer": null, "inner": []}
+        ))
+        .is_err());
+    }
+
+    #[test]
+    fn a_region_mark_lists_the_shells_whose_role_is_not_stated() {
+        let shell = |key: &str| ShellId::mint(format!("test:model:shell#{key}")).expect("identity");
+        let mut region = Region::new(
+            RegionId::mint("test:model:region#0").expect("identity"),
+            BodyId::mint("test:model:body#0").expect("identity"),
+            Vec::new(),
+        );
+        region.unstated = Some(RegionUnstated::Exterior {
+            voids: vec![shell("1")],
+        });
+        let wire = serde_json::to_value(&region).unwrap();
+        assert_eq!(
+            wire["unstated"],
+            serde_json::json!({"kind": "exterior", "voids": ["test:model:shell#1"]})
+        );
+        assert_eq!(wire["shells"], serde_json::json!([]));
+        let restored: Region = serde_json::from_value(wire).unwrap();
+        assert_eq!(restored, region);
+        assert_eq!(
+            restored.stated_shells().cloned().collect::<Vec<_>>(),
+            vec![shell("1")]
+        );
+        let voids = serde_json::json!({"kind": "voids"});
+        assert_eq!(
+            serde_json::from_value::<RegionUnstated>(voids.clone()).unwrap(),
+            RegionUnstated::Voids
+        );
+        assert_eq!(serde_json::to_value(RegionUnstated::Voids).unwrap(), voids);
+        assert_eq!(
+            serde_json::to_value(Unstated::Members).unwrap(),
+            serde_json::json!("members")
+        );
+    }
+
+    #[test]
+    fn a_complete_read_answers_nothing_under_a_mark() {
+        let mut geometry = crate::examples::unit_cube()
+            .expect("valid unit cube fixture")
+            .geometry;
+        let region = geometry.regions[0].clone();
+        let shell = geometry.shells[0].id.clone();
+        let body = geometry.bodies[0].id.clone();
+        assert!(geometry.complete_shells(&region).is_some());
+        assert!(geometry.child_lists().complete_shells(&region).is_some());
+        let face = &mut geometry.faces[0];
+        let stated = face.loops.stated().cloned().collect::<Vec<_>>();
+        face.loops = FaceLoops::PartialUnspecified { loops: stated };
+        assert!(geometry.complete_shells(&region).is_none());
+        assert!(geometry.child_lists().complete_shells(&region).is_none());
+        assert!(geometry.complete_shell_faces(&shell).is_some());
+        geometry.shells[0].unstated = Some(Unstated::Members);
+        assert!(geometry.complete_shell_faces(&shell).is_none());
+        assert!(geometry
+            .child_lists()
+            .complete_shell_faces(&shell)
+            .is_none());
+        assert_eq!(geometry.stated_shell_faces(&shell).count(), 6);
+        geometry.bodies[0].unstated = Some(Unstated::Members);
+        assert!(geometry.complete_body_regions(&body).is_none());
+        assert_eq!(geometry.stated_body_regions(&body).count(), 1);
     }
 
     #[test]

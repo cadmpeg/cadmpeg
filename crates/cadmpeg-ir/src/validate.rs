@@ -61,8 +61,8 @@ use semantic_annotations::check_semantic_annotations;
 use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
 use topology::graphs::{
-    check_child_list_reciprocity, check_closed_edges, check_coedge_pairing,
-    check_partial_topology, check_shell_connectivity, check_wire_topology,
+    check_child_list_reciprocity, check_closed_edges, check_coedge_pairing, check_partial_topology,
+    check_shell_connectivity, check_wire_topology,
 };
 use topology::{
     check_references, check_subdivision_schemes, check_tolerances, check_topology_tolerances,

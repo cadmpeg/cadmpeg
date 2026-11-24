@@ -105,3 +105,50 @@ fn an_unknown_body_selector_is_refused() {
         })
     ));
 }
+
+#[test]
+fn a_partial_face_states_no_area_and_its_body_no_volume() {
+    let mut cube = cadmpeg_ir::examples::unit_cube().expect("fixture");
+    let stated = cube.geometry.faces[0]
+        .loops
+        .stated()
+        .cloned()
+        .collect::<Vec<_>>();
+    cube.geometry.faces[0].loops =
+        cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops: stated };
+    let partial = cube.geometry.faces[0].id.as_str().to_owned();
+    let selection = Selection {
+        all_faces: true,
+        ..Selection::default()
+    };
+    let report = measure(&cube, &selection);
+    let row = report
+        .faces()
+        .iter()
+        .find(|face| face.face == partial)
+        .expect("the partial face's row");
+    assert_eq!(
+        row.measures()
+            .area()
+            .unavailable()
+            .map(crate::value::Unavailable::reason),
+        Some(crate::reason::UnavailableReason::BoundaryPartialFace)
+    );
+    let [body] = report.bodies().as_slice() else {
+        panic!("one body row");
+    };
+    assert!(body.volume().is_none());
+    assert!(body.shells().is_empty());
+}
+
+#[test]
+fn a_marked_shell_states_no_volume_for_its_body() {
+    let mut cube = cadmpeg_ir::examples::unit_cube().expect("fixture");
+    cube.geometry.shells[0].unstated = Some(cadmpeg_ir::topology::Unstated::Members);
+    let report = measure(&cube, &Selection::default());
+    let [body] = report.bodies().as_slice() else {
+        panic!("one body row");
+    };
+    assert_measured(body.area().as_ref().expect("area"), 600.0, 600.0);
+    assert!(body.volume().is_none());
+}

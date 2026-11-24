@@ -260,7 +260,7 @@ impl<'ir> FaceInput<'_, 'ir> {
         let owners = self.owners;
         let coedges: Vec<_> = face
             .loops
-            .iter()
+            .stated()
             .filter_map(|loop_id| owners.loop_(loop_id.as_str()))
             .flat_map(cadmpeg_ir::topology::Loop::coedges)
             .filter_map(|coedge| owners.coedge(coedge.as_str()))
@@ -1125,7 +1125,7 @@ impl<'ir> FaceInput<'_, 'ir> {
         let Ok(boundary) = boundary else {
             return face
                 .loops
-                .iter()
+                .stated()
                 .map(|loop_id| LoopMeasures {
                     loop_id: loop_id.as_str().to_owned(),
                     declared_role: declared(face, loop_id),
