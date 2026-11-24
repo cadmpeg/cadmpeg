@@ -72,7 +72,7 @@ its result.
 | Creo Parametric `.prt`                            | L1    |
 | Creo View `.pvz`                                  | L3    |
 | SolidWorks eDrawings `.eprt` and `.easm`          | L2    |
-| Alibre Design `.AD_PRT`                           | L3    |
+| Alibre Design `.AD_PRT` and `.AD_ASM`             | L3    |
 | OpenUSD layers                                    | L2    |
 | STEP Part 21                                      | L8    |
 | Solid Edge `.par`, `.psm`, and `.asm`             | L0    |
@@ -606,7 +606,7 @@ These gaps remain:
 - **Native write: None.**
 - **Round trip: None.**
 
-## Alibre Design `.AD_PRT`
+## Alibre Design `.AD_PRT` and `.AD_ASM`
 
 **Container:** Microsoft Compound File with a flat root; the `SAB_DATA` stream holds an ACIS binary body
 
@@ -632,7 +632,7 @@ These gaps remain:
 - Assembly constraints, the configurations of an assembly, and flexible subassemblies do not transfer (ALB-09, ALB-11, ALB-12, `alibre/assembly.entities-unread`, `alibre/assembly.configuration-unmapped`).
 
 ### Read profile
-- **Container and versions: Partial.** The codec admits the compound file, requires the two body streams, and classifies the ACIS save format on the kernel layer.
+- **Container and versions: Partial.** The codec admits the compound file and requires one of two stream pairs: `SAB_DATA` and `STEP_DATA` for a part, `CONSTITUENTS` and `STEP_DATA` without `SAB_DATA` for an assembly. It classifies the ACIS save format of a part on the kernel layer; an assembly has no kernel layer and runs no admission gate.
 - **Geometry: Partial.** Planes, cylinders, cones, tori, and B-spline carriers decode with exact topology. Procedural constructions stay unknown.
 
 ### Write and round trip

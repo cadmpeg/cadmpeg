@@ -1,4 +1,4 @@
-# Alibre Design part: Open Items
+# Alibre Design part and assembly: Open Items
 
 This document lists the parts of the Alibre Design `.AD_PRT` and `.AD_ASM` formats that we do not know. The specification `alibre.md` gives the parts that we know.
 
