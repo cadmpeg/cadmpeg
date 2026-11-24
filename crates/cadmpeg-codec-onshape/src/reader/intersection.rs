@@ -4,7 +4,7 @@
 use super::Mapping;
 
 /// Arithmetic roundoff units admitted before a root or discriminant is ambiguous.
-const ROUNDOFF_FACTOR: f64 = 64.0;
+pub(super) const ROUNDOFF_FACTOR: f64 = 64.0;
 
 pub(super) fn roots(coefficients: &[f64]) -> Mapping<Vec<f64>> {
     if coefficients.iter().any(|v| !v.is_finite()) {
@@ -30,7 +30,11 @@ pub(super) fn roots(coefficients: &[f64]) -> Mapping<Vec<f64>> {
             let depressed_q = c3 * c3 * c3 / 8.0 - c3 * c2 / 2.0 + c1;
             let depressed_r = -3.0 * c3.powi(4) / 256.0 + c3 * c3 * c2 / 16.0 - c3 * c1 / 4.0 + c0;
             let mut result = Vec::new();
-            if depressed_q == 0.0 {
+            // A linear term below the cancellation noise of its own terms is zero:
+            // the biquadratic form applies, and the residual check below proves
+            // each root against the stored coefficients.
+            let q_scale = c3.abs().powi(3) / 8.0 + (c3 * c2).abs() / 2.0 + c1.abs();
+            if depressed_q.abs() <= ROUNDOFF_FACTOR * f64::EPSILON * q_scale {
                 for z in quadratic(depressed_p, depressed_r)? {
                     if z != 0.0
                         && z.abs()

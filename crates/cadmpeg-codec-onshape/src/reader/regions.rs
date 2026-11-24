@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_ir::document::Model;
 use serde_json::{json, Value};
 
+use super::intersection::ROUNDOFF_FACTOR;
 use super::{id, query, rows, text, topology, Mapping};
 const WORK_LIMIT: usize = 1_000_000;
 const OUTPUT_LIMIT: usize = 20_000;
@@ -256,7 +257,7 @@ pub(super) fn profile(
         if edges.is_empty() {
             return Err("the sketch region has no resolved boundary edges".into());
         }
-        attach_tangencies(&mut edges, model, &mut recovery.budget)?;
+        attach_tangencies(&sketch_id, &mut edges, model, &mut recovery.budget)?;
         let region = if outside {
             exterior_region(&sketch_id, &edges, model, &mut recovery)?
         } else {
@@ -382,7 +383,7 @@ fn has_exterior_vertex(inner: &Ring, outer: &Ring, budget: &mut Budget) -> Mappi
             for point in [edge.a, edge.b] {
                 let value = dot(point, axis);
                 let scale = low.abs().max(high.abs()).max(value.abs()).max(1.0);
-                let roundoff = BOUNDARY_ROUNDOFF_FACTOR * f64::EPSILON * scale;
+                let roundoff = ROUNDOFF_FACTOR * f64::EPSILON * scale;
                 if value < low - roundoff || value > high + roundoff {
                     return Ok(true);
                 }
@@ -644,7 +645,12 @@ fn isolated(edge: &Edge, loops: &Loops, budget: &mut Budget) -> Mapping<bool> {
     Ok(true)
 }
 
-fn attach_tangencies(edges: &mut [Edge], model: &Model, budget: &mut Budget) -> Mapping<()> {
+fn attach_tangencies(
+    sketch: &str,
+    edges: &mut [Edge],
+    model: &Model,
+    budget: &mut Budget,
+) -> Mapping<()> {
     budget.work(
         model
             .sketch_constraints
@@ -654,6 +660,13 @@ fn attach_tangencies(edges: &mut [Edge], model: &Model, budget: &mut Budget) -> 
     )?;
     let mut peers: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for constraint in &model.sketch_constraints {
+        // Only an applied constraint of the region's own sketch states a contact.
+        if constraint.sketch.as_str() != sketch
+            || constraint.active == Some(false)
+            || constraint.driving == Some(false)
+        {
+            continue;
+        }
         let wire = serde_json::to_value(constraint)
             .map_err(|_| "a stored tangent constraint is unreadable")?;
         let Some(definition) = wire.get("definition") else {
@@ -788,7 +801,8 @@ fn trig_bounds(c: f64, s: f64, [from, to]: [f64; 2]) -> [f64; 2] {
     }
     let mut low = a.min(b);
     let mut high = a.max(b);
-    let tolerance = 64.0 * f64::EPSILON * from.abs().max(to.abs()).max(std::f64::consts::TAU);
+    let tolerance =
+        ROUNDOFF_FACTOR * f64::EPSILON * from.abs().max(to.abs()).max(std::f64::consts::TAU);
     let phase = s.atan2(c);
     for (angle, maximum) in [(phase, true), (phase + std::f64::consts::PI, false)] {
         let offset = (angle - from).rem_euclid(std::f64::consts::TAU);
@@ -818,7 +832,7 @@ fn separated(a: &Edge, b: &Edge) -> Mapping<bool> {
             )
             .map(f64::abs)
             .fold(1.0_f64, f64::max);
-    let roundoff = 64.0 * f64::EPSILON * scale;
+    let roundoff = ROUNDOFF_FACTOR * f64::EPSILON * scale;
     for axis in [
         Some([1.0, 0.0]),
         Some([0.0, 1.0]),
@@ -849,7 +863,7 @@ fn separated(a: &Edge, b: &Edge) -> Mapping<bool> {
         let qa = dot(delta, delta);
         let qb = 2.0 * dot(offset, delta);
         let qc = dot(offset, offset) - 1.0;
-        let uncertainty = BOUNDARY_ROUNDOFF_FACTOR
+        let uncertainty = ROUNDOFF_FACTOR
             * f64::EPSILON
             * (qb * qb + 4.0 * qa * qc.abs()).max(1.0)
             * (1.0 + scale / conic.radii[0].min(conic.radii[1]));
@@ -897,7 +911,7 @@ fn conic_separated(edge: &Edge, source: Conic, target: Conic, scale: f64) -> boo
     let [l2, h2] = trig_bounds(c2, s2, [2.0 * from, 2.0 * to]);
     let [major, minor] = target.radii;
     let magnitude = (constant.abs() + c1.hypot(s1) + c2.hypot(s2)).max(1.0);
-    let tolerance = 64.0 * f64::EPSILON * magnitude * (1.0 + scale / major.min(minor));
+    let tolerance = ROUNDOFF_FACTOR * f64::EPSILON * magnitude * (1.0 + scale / major.min(minor));
     let low = constant + l1 + l2;
     let high = constant + h1 + h2;
     [low, high, tolerance].iter().all(|v| v.is_finite())
@@ -912,14 +926,15 @@ fn on_curve(edge: &Edge, point: [f64; 2]) -> Mapping<bool> {
             return Err("a boundary line has no direction".into());
         }
         let t = dot([point[0] - edge.a[0], point[1] - edge.a[1]], delta) / length;
-        return Ok((0.0..=1.0).contains(&t));
+        let slack = parameter_slack(edge.a.into_iter().chain(edge.b).chain(point), length.sqrt());
+        return Ok((-slack..=1.0 + slack).contains(&t));
     };
     if edge.closed {
         return Ok(true);
     }
     let [u, v] = conic.normalize([point[0] - conic.center[0], point[1] - conic.center[1]]);
     let offset = (v.atan2(u) - edge.range[0]).rem_euclid(std::f64::consts::TAU);
-    let roundoff = BOUNDARY_ROUNDOFF_FACTOR * f64::EPSILON * std::f64::consts::TAU;
+    let roundoff = ROUNDOFF_FACTOR * f64::EPSILON * std::f64::consts::TAU;
     Ok(offset <= edge.range[1] - edge.range[0] + roundoff
         || std::f64::consts::TAU - offset <= roundoff)
 }
@@ -972,8 +987,13 @@ fn intersections(a: &Edge, b: &Edge) -> Mapping<Vec<[f64; 2]>> {
         })
         .collect()
 }
+fn circular(conic: Conic) -> bool {
+    let [a, b] = conic.radii;
+    (a - b).abs() <= ROUNDOFF_FACTOR * f64::EPSILON * (a + b)
+}
+
 fn tangent_contact(first: &Edge, second: &Edge) -> Mapping<Option<[f64; 2]>> {
-    let roundoff = BOUNDARY_ROUNDOFF_FACTOR * f64::EPSILON;
+    let roundoff = ROUNDOFF_FACTOR * f64::EPSILON;
     match (first.conic()?, second.conic()?) {
         (Some(conic), None) | (None, Some(conic)) => {
             let line = if first.conic()?.is_none() {
@@ -1003,7 +1023,7 @@ fn tangent_contact(first: &Edge, second: &Edge) -> Mapping<Option<[f64; 2]>> {
                 line.a[1] + t * (line.b[1] - line.a[1]),
             ]))
         }
-        (Some(ca), Some(cb)) if ca.radii[0] == ca.radii[1] && cb.radii[0] == cb.radii[1] => {
+        (Some(ca), Some(cb)) if circular(ca) && circular(cb) => {
             let delta = [cb.center[0] - ca.center[0], cb.center[1] - ca.center[1]];
             let center_distance = delta[0].hypot(delta[1]);
             let first_radius = ca.radii[0];
@@ -1011,7 +1031,7 @@ fn tangent_contact(first: &Edge, second: &Edge) -> Mapping<Option<[f64; 2]>> {
             if center_distance == 0.0 || !center_distance.is_finite() {
                 return Err("the stored tangent circles have no distinct finite centers".into());
             }
-            let tolerance = roundoff * (center_distance + first_radius + second_radius).max(1.0);
+            let tolerance = roundoff * (center_distance + first_radius + second_radius);
             let external = (center_distance - first_radius - second_radius).abs() <= tolerance;
             let internal =
                 (center_distance - (first_radius - second_radius).abs()).abs() <= tolerance;
@@ -1059,7 +1079,12 @@ fn carrier_intersections(first: &Edge, second: &Edge) -> Mapping<Vec<[f64; 2]>> 
                         "the analytic line intersection parameters exceed the finite range".into(),
                     );
                 }
-                if (0.0..=1.0).contains(&t) && (0.0..=1.0).contains(&u) {
+                let conditioning = 1.0 + offset[0].hypot(offset[1]) / determinant.abs();
+                let slack_t = ROUNDOFF_FACTOR * f64::EPSILON * conditioning * db[0].hypot(db[1]);
+                let slack_u = ROUNDOFF_FACTOR * f64::EPSILON * conditioning * da[0].hypot(da[1]);
+                if (-slack_t..=1.0 + slack_t).contains(&t)
+                    && (-slack_u..=1.0 + slack_u).contains(&u)
+                {
                     vec![[first.a[0] + t * da[0], first.a[1] + t * da[1]]]
                 } else {
                     Vec::new()
@@ -1075,13 +1100,14 @@ fn carrier_intersections(first: &Edge, second: &Edge) -> Mapping<Vec<[f64; 2]>> 
             let offset =
                 conic.normalize([line.a[0] - conic.center[0], line.a[1] - conic.center[1]]);
             let delta = conic.normalize([line.b[0] - line.a[0], line.b[1] - line.a[1]]);
+            let slack = ROUNDOFF_FACTOR * f64::EPSILON;
             super::intersection::roots(&[
                 dot(offset, offset) - 1.0,
                 2.0 * dot(offset, delta),
                 dot(delta, delta),
             ])?
             .into_iter()
-            .filter(|t| (0.0..=1.0).contains(t))
+            .filter(|t| (-slack..=1.0 + slack).contains(t))
             .map(|t| {
                 [
                     line.a[0] + t * (line.b[0] - line.a[0]),
@@ -1119,31 +1145,53 @@ fn carrier_intersections(first: &Edge, second: &Edge) -> Mapping<Vec<[f64; 2]>> 
             };
             let xx = square(x);
             let yy = square(y);
-            let coefficients: Vec<_> = xx
-                .into_iter()
-                .zip(yy)
-                .zip([1.0, 0.0, 2.0, 0.0, 1.0])
-                .map(|((xs, ys), unit)| xs + ys - unit)
-                .collect();
+            let mut coefficients: Vec<f64> = Vec::with_capacity(5);
+            let mut scale = 1.0_f64;
+            for ((xs, ys), unit) in xx.into_iter().zip(yy).zip([1.0, 0.0, 2.0, 0.0, 1.0]) {
+                coefficients.push(xs + ys - unit);
+                scale = scale.max(xs.abs() + ys.abs() + unit);
+            }
+            if coefficients
+                .iter()
+                .all(|c| c.abs() <= ROUNDOFF_FACTOR * f64::EPSILON * scale)
+            {
+                return Err("the analytic intersection carriers coincide".into());
+            }
             let at = |angle: f64| {
                 [
                     source.center[0] + cosine[0] * angle.cos() + sine[0] * angle.sin(),
                     source.center[1] + cosine[1] * angle.cos() + sine[1] * angle.sin(),
                 ]
             };
+            // tan(theta/2) omits theta=pi. The leading coefficient is the value of
+            // that chart seam; a seam within roundoff of zero is zero.
+            let seam = dot([x[2], y[2]], [x[2], y[2]]) - 1.0;
+            let on_seam = seam.abs()
+                <= ROUNDOFF_FACTOR * f64::EPSILON * (dot([x[2], y[2]], [x[2], y[2]]) + 1.0);
+            if on_seam {
+                coefficients[4] = 0.0;
+            }
             let mut points: Vec<_> = super::intersection::roots(&coefficients)?
                 .into_iter()
                 .map(|t| at(2.0 * t.atan()))
                 .collect();
-            // tan(theta/2) omits theta=pi. Test that algebraic chart seam too.
-            let seam = dot([x[2], y[2]], [x[2], y[2]]) - 1.0;
-            if seam.abs() <= BOUNDARY_ROUNDOFF_FACTOR * f64::EPSILON {
+            if on_seam {
                 points.push(at(std::f64::consts::PI));
             }
             points
         }
     };
     Ok(candidates)
+}
+
+/// Roundoff of a line parameter that a point at `extent` from the origin sets, in units of the
+/// line length. A contact the parameter misses by less than this stays a contact.
+fn parameter_slack(coordinates: impl IntoIterator<Item = f64>, length: f64) -> f64 {
+    let extent = coordinates
+        .into_iter()
+        .map(f64::abs)
+        .fold(1.0_f64, f64::max);
+    ROUNDOFF_FACTOR * f64::EPSILON * (1.0 + extent / length)
 }
 
 fn cross([a, b]: [f64; 2], [c, d]: [f64; 2]) -> f64 {
@@ -1154,9 +1202,8 @@ fn distance([a, b]: [f64; 2], [c, d]: [f64; 2]) -> f64 {
     (a - c).hypot(b - d)
 }
 
-const BOUNDARY_ROUNDOFF_FACTOR: f64 = 64.0;
 fn boundary_roundoff(edges: &[Edge]) -> f64 {
-    BOUNDARY_ROUNDOFF_FACTOR
+    ROUNDOFF_FACTOR
         * f64::EPSILON
         * edges
             .iter()
@@ -1310,13 +1357,13 @@ fn endpoint_contact(first: &Edge, second: &Edge, roundoff: f64) -> Mapping<bool>
             let a_span = first.range[1] - first.range[0];
             let b_span = second.range[1] - second.range[0];
             let offset = (second.range[0] - first.range[0]).rem_euclid(tau);
-            let tolerance = BOUNDARY_ROUNDOFF_FACTOR * f64::EPSILON * tau;
+            let tolerance = ROUNDOFF_FACTOR * f64::EPSILON * tau;
             Ok(offset >= a_span - tolerance && offset + b_span <= tau + tolerance)
         }
     }
 }
 fn ray_heights(y: f64, ay: f64, by: f64) -> (f64, f64) {
-    let tolerance = 64.0 * f64::EPSILON * ay.abs().max(by.abs()).max(y.abs()).max(1.0);
+    let tolerance = ROUNDOFF_FACTOR * f64::EPSILON * ay.abs().max(by.abs()).max(y.abs()).max(1.0);
     let height = |v: f64| {
         if (v - y).abs() <= tolerance {
             0.0
@@ -1515,13 +1562,13 @@ fn source_loops(sketch: &str, model: &Model, budget: &mut Budget) -> Mapping<Loo
         }
         edges.push(Edge::new(entity.id().as_str().to_owned(), &wire)?);
     }
-    attach_tangencies(&mut edges, model, budget)?;
+    attach_tangencies(sketch, &mut edges, model, budget)?;
     let scale = edges
         .iter()
         .flat_map(|e| e.a.into_iter().chain(e.b))
         .map(f64::abs)
         .fold(1.0_f64, f64::max);
-    let roundoff = 64.0 * f64::EPSILON * scale;
+    let roundoff = ROUNDOFF_FACTOR * f64::EPSILON * scale;
     let mut rings = Vec::new();
     let mut open = Vec::new();
     while let Some(first) = edges.pop() {
@@ -1691,7 +1738,7 @@ fn exterior_region(
     budget.work(topology.rings.iter().try_fold(0usize, |count, ring| {
         count.checked_add(ring.edges.len()).ok_or(BUDGET_LOSS)
     })?)?;
-    let roundoff = BOUNDARY_ROUNDOFF_FACTOR
+    let roundoff = ROUNDOFF_FACTOR
         * f64::EPSILON
         * topology
             .rings

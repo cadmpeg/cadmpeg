@@ -368,3 +368,174 @@ fn oriented_returns_the_requested_sense_from_either_stored_sense() {
         }
     }
 }
+
+fn line(a: [f64; 2], b: [f64; 2]) -> Value {
+    json!({"kind":"line","start":{"u":a[0],"v":a[1]},"end":{"u":b[0],"v":b[1]}})
+}
+
+fn circle(name: &str, center: [f64; 2], radius: f64) -> Edge {
+    edge(
+        name,
+        json!({"kind":"circle","center":{"u":center[0],"v":center[1]},"radius":radius}),
+    )
+}
+
+fn ellipse(name: &str, major: f64, minor: f64, angle: f64) -> Edge {
+    edge(
+        name,
+        json!({"kind":"ellipse","center":{"u":0.0,"v":0.0},"major_radius":major,
+        "minor_radius":minor,"major_angle":angle}),
+    )
+}
+
+#[test]
+fn line_contact_a_roundoff_past_an_endpoint_is_not_separate() {
+    // The two lines share the endpoint (2.61, 1.5). Solving the line parameters in
+    // floating point gives u = 1 + 2.2e-16 for the second line.
+    let first = edge("first", line([-3.7, -2.45], [2.61, 1.5]));
+    let second = edge("second", line([-4.1, 3.93], [2.61, 1.5]));
+    assert!(!separated(&first, &second).unwrap());
+    assert!(!separated(&second, &first).unwrap());
+    assert_eq!(intersections(&first, &second).unwrap().len(), 1);
+}
+
+#[test]
+fn line_contact_far_past_an_endpoint_is_separate() {
+    let first = edge("first", line([-3.7, -2.45], [2.61, 1.5]));
+    let second = edge("second", line([-4.1, 3.93], [2.60, 1.5]));
+    assert!(separated(&first, &second).unwrap());
+}
+
+fn tangent_model(sketch: &str, active: Option<bool>, driving: Option<bool>) -> Model {
+    let mut model = cadmpeg_ir::CadIr::empty().model;
+    let mut row = json!({"id":"synthetic:model:sketch-constraint#0","sketch":sketch,
+        "definition":{"kind":"tangent","first":"synthetic:model:sketch-entity#0","second":"synthetic:model:sketch-entity#1"}});
+    if let Some(active) = active {
+        row["active"] = json!(active);
+    }
+    if let Some(driving) = driving {
+        row["driving"] = json!(driving);
+    }
+    model
+        .sketch_constraints
+        .push(serde_json::from_value(row).unwrap());
+    model
+}
+
+fn tangent_edges() -> Vec<Edge> {
+    vec![
+        circle("synthetic:model:sketch-entity#0", [0.0, 0.0], 1.0),
+        circle("synthetic:model:sketch-entity#1", [2.0, 0.0], 1.0),
+    ]
+}
+
+#[test]
+fn only_an_applied_constraint_of_the_region_sketch_states_a_contact() {
+    for (constraint_sketch, active, driving, attached) in [
+        ("synthetic:model:sketch#a", None, None, true),
+        ("synthetic:model:sketch#a", Some(true), Some(true), true),
+        ("synthetic:model:sketch#b", None, None, false),
+        ("synthetic:model:sketch#a", Some(false), None, false),
+        ("synthetic:model:sketch#a", None, Some(false), false),
+    ] {
+        let model = tangent_model(constraint_sketch, active, driving);
+        let mut edges = tangent_edges();
+        attach_tangencies(
+            "synthetic:model:sketch#a",
+            &mut edges,
+            &model,
+            &mut Recovery::default().budget,
+        )
+        .unwrap();
+        assert_eq!(
+            edges[0]
+                .tangent_peers
+                .contains("synthetic:model:sketch-entity#1"),
+            attached,
+            "{constraint_sketch} {active:?} {driving:?}"
+        );
+    }
+}
+
+#[test]
+fn coincident_conic_carriers_refuse_instead_of_choosing_roots() {
+    let first = ellipse("first", 2.0, 1.0, 0.0);
+    for second in [
+        ellipse("same", 2.0, 1.0, 0.0),
+        ellipse("turned", 2.0, 1.0, PI),
+        ellipse("swapped", 1.0, 2.0, FRAC_PI_2),
+    ] {
+        let reason = carrier_intersections(&first, &second).unwrap_err();
+        assert!(reason.contains("coincide"), "{}: {reason}", second.id);
+        assert!(
+            !separated(&first, &second).unwrap_or(false),
+            "{}",
+            second.id
+        );
+    }
+    let shifted = edge(
+        "shifted",
+        json!({"kind":"ellipse","center":{"u":f64::EPSILON,"v":0.0},"major_radius":2.0,
+        "minor_radius":1.0,"major_angle":0.0}),
+    );
+    assert!(carrier_intersections(&first, &shifted).is_err());
+}
+
+#[test]
+fn contacts_on_the_chart_seam_are_found_once_whatever_the_roundoff() {
+    // The unit circles about the origin and (-1, 1) meet at (-1, 0), the point
+    // theta = pi of the first, and at (0, 1).
+    for step in -6..=6 {
+        let x = -1.0 + f64::from(step) * f64::EPSILON;
+        let first = circle("first", [0.0, 0.0], 1.0);
+        let second = circle("second", [x, 1.0], 1.0);
+        let mut points = carrier_intersections(&first, &second).unwrap();
+        points.sort_by(|a, b| a[0].total_cmp(&b[0]));
+        assert_eq!(points.len(), 2, "step {step}: {points:?}");
+        assert!(distance(points[0], [-1.0, 0.0]) < 1e-9, "{points:?}");
+        assert!(distance(points[1], [0.0, 1.0]) < 1e-9, "{points:?}");
+    }
+}
+
+#[test]
+fn tangent_circles_are_judged_against_their_own_scale() {
+    let tiny = 1e-6;
+    let first = circle("first", [0.0, 0.0], tiny);
+    let mut second = circle("second", [2.0 * tiny + 1e-15, 0.0], tiny);
+    assert!(tangent_contact(&first, &second).is_err());
+    second = circle("second", [2.0 * tiny, 0.0], tiny);
+    let point = tangent_contact(&first, &second).unwrap().unwrap();
+    assert!(distance(point, [tiny, 0.0]) <= 1e-12 * tiny);
+    // Radii that differ by one unit of roundoff are equal radii.
+    let wider = circle("wider", [2.0 + 1e-15, 0.0], 1.0 + f64::EPSILON);
+    let unit = circle("unit", [0.0, 0.0], 1.0);
+    let point = tangent_contact(&unit, &wider).unwrap().unwrap();
+    assert!(distance(point, [1.0, 0.0]) < 1e-9);
+}
+
+#[test]
+fn a_shifted_biquadratic_keeps_its_four_roots() {
+    // (y^2 - 1)(y^2 - 4) with y = x + 0.3: the cancelled linear term of the
+    // depressed quartic is roundoff, not data.
+    let shift = 0.3;
+    let stored = [4.0, 0.0, -5.0, 0.0, 1.0];
+    let mut coefficients = vec![0.0; 5];
+    let mut power = vec![1.0]; // (x + shift)^k, ascending
+    for c in stored {
+        for (slot, p) in coefficients.iter_mut().zip(&power) {
+            *slot += c * p;
+        }
+        let mut next = vec![0.0; power.len() + 1];
+        for (i, p) in power.iter().enumerate() {
+            next[i] += shift * p;
+            next[i + 1] += p;
+        }
+        power = next;
+    }
+    let mut roots = super::super::intersection::roots(&coefficients).unwrap();
+    roots.sort_by(f64::total_cmp);
+    for (root, expected) in roots.iter().zip([-2.0, -1.0, 1.0, 2.0]) {
+        assert!((root - (expected - shift)).abs() < 1e-9, "{roots:?}");
+    }
+    assert_eq!(roots.len(), 4);
+}

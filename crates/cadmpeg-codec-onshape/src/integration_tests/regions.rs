@@ -57,11 +57,21 @@ fn exact_conic_intersections_map_closed_lenses_and_refuse_missing_intervals() {
                 result.report().losses
             );
             if missing {
-                assert!(result
-                    .report()
-                    .losses
-                    .iter()
-                    .any(|l| l.code.to_string() == "onshape/history.not-supported"));
+                let reason = if elliptical {
+                    "the sketch-region source curve has no resolved boundary parameter range"
+                } else {
+                    "the directed sketch-region boundary is open or ambiguous"
+                };
+                assert!(
+                    result
+                        .report()
+                        .losses
+                        .iter()
+                        .any(|l| l.code.to_string() == "onshape/history.not-supported"
+                            && l.message.contains(reason)),
+                    "{:?}",
+                    result.report().losses
+                );
             }
             review::validate(result);
         }
