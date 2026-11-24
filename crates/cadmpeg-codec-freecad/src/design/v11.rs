@@ -17,6 +17,7 @@ use cadmpeg_ir::design::feature::{
     Feature, FeatureDefinition, FeatureOperation, FuzzyTolerance, OperationFamily, StoredOrigin,
 };
 use cadmpeg_ir::design::ids::ContainerId;
+use cadmpeg_ir::design::names::CodecName;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::document::CadIr;
@@ -412,6 +413,7 @@ fn feature(legacy: &LegacyFeature, source: &Source<'_>) -> Feature {
         suppressed: legacy.suppressed.map(Dimension::Literal),
         definition: FeatureDefinition {
             operation: self::operation(legacy, operation),
+            assembly: None,
             refine,
             fuzzy_tolerance,
         },
@@ -424,7 +426,8 @@ fn feature(legacy: &LegacyFeature, source: &Source<'_>) -> Feature {
 
 fn native(kind: &str) -> FeatureOperation {
     FeatureOperation::Native {
-        kind: cadmpeg_core::nonblank_literal!("fcstd:").with_suffix(kind),
+        kind: CodecName::new(&cadmpeg_ir::codec_id!("fcstd"), kind)
+            .unwrap_or_else(|| cadmpeg_ir::codec_name!("fcstd:feature")),
         native_options: BTreeMap::default(),
         source_settings: BTreeMap::default(),
     }

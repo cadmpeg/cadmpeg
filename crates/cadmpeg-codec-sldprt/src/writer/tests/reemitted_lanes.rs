@@ -127,13 +127,8 @@ fn a_config_objects_lane_is_written_to_its_own_member() {
     let source = crate::test_support::carchive::sldprt_with_sketch_config_objects();
     let (decoded, expected) = lanes(&source);
     assert_eq!(expected.len(), 2, "{expected:?}");
-    let (mut ir, _, fidelity) = decoded.into_parts();
-    ir.source
-        .as_mut()
-        .unwrap()
-        .attributes
-        .remove(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE)
-        .unwrap();
+    let (ir, _, mut fidelity) = decoded.into_parts();
+    fidelity.content_digest = cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]);
     let mut written = Vec::new();
     crate::SldprtCodec
         .plan(
@@ -182,13 +177,7 @@ fn a_config_objects_lane_without_provenance_is_written_to_its_own_member() {
     let source = crate::test_support::carchive::sldprt_with_sketch_config_objects();
     let (decoded, expected) = lanes(&source);
     assert_eq!(expected.len(), 2, "{expected:?}");
-    let (mut ir, _, _) = decoded.into_parts();
-    ir.source
-        .as_mut()
-        .unwrap()
-        .attributes
-        .remove(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE)
-        .unwrap();
+    let (ir, _, _) = decoded.into_parts();
     let mut written = Vec::new();
     crate::SldprtCodec
         .plan(

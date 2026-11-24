@@ -154,7 +154,7 @@ fn owned_records(ir: &CadIr) -> HashMap<&BodyId, HashSet<&str>> {
         records.insert(region.id.as_str());
         let mut edge_ids = Vec::new();
         let mut vertex_ids = Vec::new();
-        for shell_id in &region.shells {
+        for shell_id in region.stated_shells() {
             records.insert(shell_id.as_str());
             let Some(shell) = shells.get(shell_id) else {
                 continue;
@@ -164,7 +164,7 @@ fn owned_records(ir: &CadIr) -> HashMap<&BodyId, HashSet<&str>> {
             for face in faces_by_shell.get(shell_id).into_iter().flatten() {
                 records.insert(face.id.as_str());
                 records.insert(face.surface.as_str());
-                for loop_id in &face.loops {
+                for loop_id in face.loops.stated() {
                     records.insert(loop_id.as_str());
                     let Some(loop_) = loops.get(loop_id) else {
                         continue;

@@ -390,6 +390,7 @@ mod tests {
                     color: None,
                     visible: None,
                     native_ref: None,
+                    unstated: None,
                 }],
                 points: vec![Point::new(
                     PointId::mint("f3d:brep:point#2").unwrap(),

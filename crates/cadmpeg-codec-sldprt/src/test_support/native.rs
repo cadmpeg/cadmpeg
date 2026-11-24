@@ -20,7 +20,7 @@ pub(crate) fn update_sldprt_native<R>(
     native
         .store(
             &cadmpeg_core::decode::test_support::service_decode_context(),
-            ir.native.namespace_mut("sldprt"),
+            ir.native.namespace_mut(cadmpeg_ir::codec_id!("sldprt")),
         )
         .unwrap();
     result

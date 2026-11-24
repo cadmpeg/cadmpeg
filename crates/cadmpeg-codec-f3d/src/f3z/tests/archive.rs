@@ -391,7 +391,7 @@ fn f3z_archive_without_merged_components_preserves_root_replay() {
 }
 
 #[test]
-fn f3z_container_only_stamps_the_outer_document_digest() {
+fn f3z_container_only_records_the_outer_document_digest() {
     let root = f3d_with_smbh(&synthetic_geometry_smbh());
     let archive = f3z_archive("root.f3d", &[("root.f3d", root.as_slice())]);
     let decoded = crate::test_support::archive_session::decode(
@@ -403,13 +403,7 @@ fn f3z_container_only_stamps_the_outer_document_digest() {
     )
     .unwrap();
 
-    let source = decoded.ir().source.as_ref().unwrap();
-    assert_eq!(
-        source
-            .attributes
-            .get(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-        Some(&crate::decode::document_local_sha256(decoded.ir()).unwrap())
-    );
+    assert!(!decoded.source_fidelity().edited(decoded.ir()).unwrap());
 }
 
 #[test]

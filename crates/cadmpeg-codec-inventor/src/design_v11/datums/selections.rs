@@ -32,7 +32,7 @@ fn native(text: &str) -> Option<OrderedSelection> {
     selection(
         PickTarget::Native { within: None },
         Some(NativeName {
-            codec: cadmpeg_core::nonblank_literal!("inventor").into(),
+            codec: cadmpeg_ir::codec_id!("inventor"),
             value: NativeNameValue::Text(NonBlankString::new(text)?),
         }),
     )

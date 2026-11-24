@@ -1283,7 +1283,7 @@ fn schema_projects_feature_fields_with_tagged_union_inventory() {
     );
     assert!(stdout.contains("operation"), "{stdout}");
     // The other measured trap: an optional field is absent and a list is always written.
-    assert!(stdout.contains("suppressed\tboolean?\tno"), "{stdout}");
+    assert!(stdout.contains("suppressed\tboolean\tno"), "{stdout}");
     assert!(stdout.contains("outputs\tarray<BodyId>\tyes"), "{stdout}");
     assert!(stdout.contains("id\tFeatureId\tyes"), "{stdout}");
 
@@ -1669,7 +1669,7 @@ fn a_foreign_ir_version_is_refused() {
 #[cfg(feature = "iges")]
 #[test]
 fn query_projects_export_identity_and_losses_from_a_generated_report() {
-    use cadmpeg_ir::{CodecFormat, SourceGeometryRole, SourceObjectAssociation};
+    use cadmpeg_ir::{SourceGeometryRole, SourceObjectAssociation};
     let dir = tempdir().unwrap();
     let mut ir = unit_cube().unwrap();
     ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
@@ -1679,13 +1679,9 @@ fn query_projects_export_identity_and_losses_from_a_generated_report() {
         ))
         .unwrap(),
         Some(SourceObjectAssociation {
-            format: CodecFormat::Step,
+            format: cadmpeg_ir::codec_id!("step"),
             object_id: cadmpeg_core::nonblank_literal!("orphan"),
             geometry_role: Some(SourceGeometryRole::Support),
-            name: None,
-            color: None,
-            visible: None,
-            layer: None,
             instance_path: Vec::new(),
         }),
     ));

@@ -75,8 +75,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -171,20 +170,7 @@
     },
     "source": {
       "attributes": {
-        "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "outer_version": "0x00000004",
-        "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_native_configuration_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_history_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_sketch_sha256": "15fc7fc42992b3c7646eb095ca1f439c39d14cec4d4d38d0c95ab3bfb4cde609",
-        "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
+        "outer_version": "0x00000004"
       },
       "identity": {
         "dialects": {
@@ -337,6 +323,21 @@
         }
       }
     },
+    "codec_digests": {
+      "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_native_configuration_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "sldprt_native_history_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "sldprt_native_sketch_sha256": "15fc7fc42992b3c7646eb095ca1f439c39d14cec4d4d38d0c95ab3bfb4cde609",
+      "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
+    },
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "354aa77dac50ed6aef2ac123c79310bf035854d4a89bb0d6c4252d3b78dfa1bb",
     "file_digests": {},
     "retained_records": {

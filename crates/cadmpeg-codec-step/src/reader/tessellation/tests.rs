@@ -154,7 +154,7 @@ pub(crate) fn decode_transfers_ap242_one_based_tessellation_indices() {
     assert_eq!(mesh.triangles(), [[0, 1, 2]]);
     assert_eq!(mesh.vertex_normals().len(), 3);
     assert_eq!(
-        mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
+        mesh.of.body().map(cadmpeg_ir::ids::BodyId::as_str),
         Some("step:data:body#38")
     );
     let complex = result
@@ -249,7 +249,7 @@ fn complex_tessellation_partials_transfer_coordinates_and_indices() {
     assert_eq!(mesh.triangles(), [[0, 1, 2]]);
     assert_eq!(mesh.vertex_normals().len(), 3);
     assert_eq!(
-        mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
+        mesh.of.body().map(cadmpeg_ir::ids::BodyId::as_str),
         Some("step:data:body#38")
     );
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
@@ -273,7 +273,7 @@ fn tessellation_geometry_sets_transfer_flag_and_invalid_pnindex_is_rejected() {
         .model
         .tessellations
         .iter()
-        .any(|mesh| mesh.id.as_str() == "step:tessellation:mesh#7" && mesh.body.is_none()));
+        .any(|mesh| mesh.id.as_str() == "step:tessellation:mesh#7" && mesh.of.body().is_none()));
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::TessellationItemUndeclared.kind()
             && loss.message.contains("mesh retained as detached")
@@ -309,7 +309,7 @@ fn product_linked_bodyless_tessellated_representation_declares_mesh() {
         .model
         .tessellations
         .iter()
-        .any(|mesh| mesh.id.as_str() == "step:tessellation:mesh#7" && mesh.body.is_none()));
+        .any(|mesh| mesh.id.as_str() == "step:tessellation:mesh#7" && mesh.of.body().is_none()));
     assert!(!decoded.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::TessellationItemUndeclared.kind()
             && loss.message.contains("tessellation item #7")
@@ -344,7 +344,7 @@ fn generic_representation_relationship_does_not_admit_product_tessellation() {
         .iter()
         .find(|mesh| mesh.id.as_str() == "step:tessellation:mesh#7")
         .expect("generic bridge tessellation");
-    assert!(mesh.body.is_none());
+    assert!(mesh.of.body().is_none());
     assert_eq!(
         mesh.source_object
             .as_ref()
@@ -385,7 +385,7 @@ fn shape_representation_relationship_admits_product_tessellation() {
         .iter()
         .find(|mesh| mesh.id.as_str() == "step:tessellation:mesh#7")
         .expect("typed bridge tessellation");
-    assert!(mesh.body.is_none());
+    assert!(mesh.of.body().is_none());
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::TessellationItemBodyUnresolved.kind()
             && loss.message.contains("tessellation item #7")
@@ -422,7 +422,7 @@ fn accuracy_parameter_representation_uses_inherited_items_and_context() {
         .find(|mesh| mesh.id.as_str() == "step:tessellation:mesh#7")
         .expect("accuracy-parameter tessellation");
     assert_eq!(
-        mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
+        mesh.of.body().map(cadmpeg_ir::ids::BodyId::as_str),
         Some("step:data:body#38")
     );
     assert!(!decoded.report().losses.iter().any(|loss| {
@@ -463,7 +463,7 @@ fn repositioned_annotation_mesh_transfers_one_placement() {
         .expect("repositioned annotation mesh");
     assert_point3_close(mesh.vertices()[0].get(), Point3::new(110.0, 210.0, 300.0));
     assert_vector3_close(mesh.vertex_normals()[0].get(), Vector3::new(1.0, 0.0, 0.0));
-    assert!(mesh.body.is_none());
+    assert!(mesh.of.body().is_none());
     let exact_mesh = decoded
         .ir()
         .model
@@ -666,7 +666,7 @@ fn tessellated_shape_relationship_supplies_exact_body_owner() {
         .find(|mesh| mesh.id.as_str() == "step:tessellation:mesh#4")
         .expect("related mesh");
     assert_eq!(
-        mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
+        mesh.of.body().map(cadmpeg_ir::ids::BodyId::as_str),
         Some("step:data:body#38")
     );
     assert!(!decoded.report().losses.iter().any(|loss| {
@@ -701,7 +701,7 @@ fn direct_tessellated_representation_item_uses_exact_body_relationship() {
         .find(|mesh| mesh.id.as_str() == "step:tessellation:mesh#7")
         .expect("directly represented mesh");
     assert_eq!(
-        mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
+        mesh.of.body().map(cadmpeg_ir::ids::BodyId::as_str),
         Some("step:data:body#38")
     );
     assert!(!decoded.report().losses.iter().any(|loss| {
@@ -740,7 +740,7 @@ fn nested_tessellated_body_container_uses_exact_body_link() {
         .find(|mesh| mesh.id.as_str() == "step:tessellation:mesh#4")
         .expect("nested body-container mesh");
     assert_eq!(
-        mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
+        mesh.of.body().map(cadmpeg_ir::ids::BodyId::as_str),
         Some("step:data:body#38")
     );
     assert!(!decoded.report().losses.iter().any(|loss| {
@@ -779,7 +779,7 @@ fn nested_tessellated_representation_item_uses_exact_body_relationship() {
         .find(|mesh| mesh.id.as_str() == "step:tessellation:mesh#7")
         .expect("nested represented mesh");
     assert_eq!(
-        mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
+        mesh.of.body().map(cadmpeg_ir::ids::BodyId::as_str),
         Some("step:data:body#38")
     );
     assert!(!decoded.report().losses.iter().any(|loss| {
@@ -822,7 +822,7 @@ fn complex_tessellated_shape_representation_inherits_items() {
         .find(|mesh| mesh.id.as_str() == "step:tessellation:mesh#4")
         .expect("complex representation mesh");
     assert_eq!(
-        mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
+        mesh.of.body().map(cadmpeg_ir::ids::BodyId::as_str),
         Some("step:data:body#38")
     );
     assert!(!decoded.report().losses.iter().any(|loss| {
@@ -851,7 +851,7 @@ fn shared_tessellation_item_is_not_assigned_to_an_arbitrary_body() {
         .iter()
         .find(|mesh| mesh.id.as_str() == "step:tessellation:mesh#4")
         .expect("shared mesh");
-    assert!(mesh.body.is_none());
+    assert!(mesh.of.body().is_none());
     assert!(
         decoded.report().losses.iter().any(|loss| {
             loss.code == StepLossCode::TessellationItemBodyUnresolved.kind()

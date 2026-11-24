@@ -31,7 +31,7 @@ use super::index::DesignIndex;
 use super::names::derived_kinds;
 use super::records::MemberKey;
 use super::walk::{ConstructionView, Kind};
-use super::{native_text, Held, Holder};
+use super::{Held, Holder};
 
 /// Checks every construction of the design.
 pub(super) fn check<'a>(index: &DesignIndex<'a>, held: &[Held<'a>], findings: &mut Vec<Finding>) {
@@ -52,6 +52,13 @@ pub(super) fn check<'a>(index: &DesignIndex<'a>, held: &[Held<'a>], findings: &m
         };
         for &construction in &record.constructions {
             check_construction(index, construction, scope, geometry, at, findings);
+            super::caches::constructions::check_construction(
+                &index.records,
+                construction,
+                scope,
+                at,
+                findings,
+            );
         }
     }
     for feature in &index.records.ir.design.features {
@@ -177,14 +184,6 @@ fn check_construction(
             error(format_args!(
                 "a ZAxis subject carries a {relation:?} relation; the whole carries it"
             ));
-        }
-        if let Relation::Native(text) = relation {
-            if !native_text(text.as_str()) {
-                error(format_args!(
-                    "native relation {:?} is not written codec:name",
-                    text.as_str()
-                ));
-            }
         }
         if !value_admitted(
             kind,

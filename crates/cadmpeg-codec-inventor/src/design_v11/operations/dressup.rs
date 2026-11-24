@@ -414,7 +414,7 @@ pub(super) fn operation(
                 let mut settings = BTreeMap::default();
                 swept::setting(
                     &mut settings,
-                    cadmpeg_core::nonblank_literal!("inventor:allow_multi_profile_faces"),
+                    cadmpeg_ir::codec_name!("inventor:allow_multi_profile_faces"),
                     *allow_multi_profile_faces,
                 );
                 FeatureOperation::Hole(Box::new(new::Hole {

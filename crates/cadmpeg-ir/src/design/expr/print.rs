@@ -4,7 +4,8 @@
 use super::super::read;
 use super::super::units::Unit;
 use super::{
-    level, BendVariable, BinaryOp, Chain, Constant, ExprError, Measure, NeutralWire, Node, UnaryOp,
+    level, AddOp, BendVariable, BinaryOp, Chain, Constant, ExprError, Measure, MulOp, NeutralWire,
+    Node, UnaryOp,
 };
 
 fn malformed<T>(message: impl Into<String>) -> Result<T, ExprError> {
@@ -90,6 +91,10 @@ fn format_unit(unit: &Unit) -> String {
 
 const fn precedence<R>(node: &Node<R>) -> u8 {
     match node {
+        Node::Any(_) => 1,
+        Node::All(_) => 2,
+        Node::Sum { .. } => 5,
+        Node::Product { .. } => 6,
         Node::Binary { op, .. } => binary_precedence(*op),
         Node::Unary {
             op: UnaryOp::Not, ..
@@ -104,34 +109,38 @@ const fn precedence<R>(node: &Node<R>) -> u8 {
 
 const fn binary_precedence(op: BinaryOp) -> u8 {
     match op {
-        BinaryOp::Or => 1,
-        BinaryOp::And => 2,
         BinaryOp::Equal
         | BinaryOp::NotEqual
         | BinaryOp::Less
         | BinaryOp::LessEqual
         | BinaryOp::Greater
         | BinaryOp::GreaterEqual => 4,
-        BinaryOp::Add | BinaryOp::Subtract => 5,
-        BinaryOp::Multiply | BinaryOp::Divide => 6,
         BinaryOp::Power => 8,
+    }
+}
+
+const fn add_mark(op: AddOp) -> &'static str {
+    match op {
+        AddOp::Add => "+",
+        AddOp::Subtract => "-",
+    }
+}
+
+const fn mul_mark(op: MulOp) -> &'static str {
+    match op {
+        MulOp::Multiply => "*",
+        MulOp::Divide => "/",
     }
 }
 
 const fn binary_mark(op: BinaryOp) -> &'static str {
     match op {
-        BinaryOp::Or => "or",
-        BinaryOp::And => "and",
         BinaryOp::Equal => "==",
         BinaryOp::NotEqual => "!=",
         BinaryOp::Less => "<",
         BinaryOp::LessEqual => "<=",
         BinaryOp::Greater => ">",
         BinaryOp::GreaterEqual => ">=",
-        BinaryOp::Add => "+",
-        BinaryOp::Subtract => "-",
-        BinaryOp::Multiply => "*",
-        BinaryOp::Divide => "/",
         BinaryOp::Power => "^",
     }
 }
@@ -150,8 +159,8 @@ enum Step<'a, N> {
     Raw(&'a N),
     /// Writes fixed text.
     Text(&'static str),
-    /// Writes a binary operator between spaces.
-    Mark(BinaryOp),
+    /// Writes an operator between spaces.
+    Mark(&'static str),
     /// Writes a closing parenthesis and leaves its level.
     Close(read::Depth),
     /// Leaves a level.
@@ -161,8 +170,14 @@ enum Step<'a, N> {
     Chain {
         at: u8,
         chain: Chain,
-        operations: Vec<(BinaryOp, &'a N)>,
+        operations: Vec<(&'static str, &'a N)>,
     },
+    /// Writes `if(` and the cases of a ladder from its first, then its
+    /// `otherwise`, each later case as an `if` nested in the last argument
+    /// of the one before, as the text spells it.
+    Ladder(&'a [(N, N)], &'a N),
+    /// A ladder in the last argument of an `if`, one level deeper.
+    NestedLadder(&'a [(N, N)], &'a N),
 }
 
 struct Printer<R> {
@@ -204,7 +219,7 @@ impl<R: PartialEq + Clone> Printer<R> {
             }
             Step::Raw(node) => self.raw(node, work)?,
             Step::Text(text) => self.text.push_str(text),
-            Step::Mark(op) => self.mark(op),
+            Step::Mark(mark) => self.mark(mark),
             Step::Close(depth) => {
                 self.text.push(')');
                 drop(depth);
@@ -215,9 +230,9 @@ impl<R: PartialEq + Clone> Printer<R> {
                 mut chain,
                 mut operations,
             } => {
-                if let Some((op, operand)) = operations.pop() {
+                if let Some((mark, operand)) = operations.pop() {
                     chain.next()?;
-                    self.mark(op);
+                    self.mark(mark);
                     work.push(Step::Chain {
                         at,
                         chain,
@@ -226,13 +241,35 @@ impl<R: PartialEq + Clone> Printer<R> {
                     work.push(Step::Show(operand, at + 1));
                 }
             }
+            Step::Ladder(cases, otherwise) => {
+                let Some(((condition, value), more)) = cases.split_first() else {
+                    return malformed(
+                        "an if states no case; canonical text writes an if with at least one",
+                    );
+                };
+                self.text.push_str("if(");
+                work.push(Step::Text(")"));
+                if more.is_empty() {
+                    work.push(Step::Nested(otherwise, 0));
+                } else {
+                    work.push(Step::NestedLadder(more, otherwise));
+                }
+                work.push(Step::Text(", "));
+                work.push(Step::Nested(value, 0));
+                work.push(Step::Text(", "));
+                work.push(Step::Nested(condition, 0));
+            }
+            Step::NestedLadder(cases, otherwise) => {
+                work.push(Step::Leave(level()?));
+                work.push(Step::Ladder(cases, otherwise));
+            }
         }
         Ok(())
     }
 
-    fn mark(&mut self, op: BinaryOp) {
+    fn mark(&mut self, mark: &str) {
         self.text.push(' ');
-        self.text.push_str(binary_mark(op));
+        self.text.push_str(mark);
         self.text.push(' ');
     }
 
@@ -313,33 +350,47 @@ impl<R: PartialEq + Clone> Printer<R> {
                 | BinaryOp::Greater
                 | BinaryOp::GreaterEqual) => {
                     work.push(Step::Show(right, 5));
-                    work.push(Step::Mark(op));
+                    work.push(Step::Mark(binary_mark(op)));
                     work.push(Step::Show(left, 5));
                 }
-                op @ (BinaryOp::Or
-                | BinaryOp::And
-                | BinaryOp::Add
-                | BinaryOp::Subtract
-                | BinaryOp::Multiply
-                | BinaryOp::Divide) => {
-                    let at = binary_precedence(op);
-                    let mut operations = vec![(op, right.as_ref())];
-                    let mut first = left.as_ref();
-                    while let Node::Binary { op, left, right } = first {
-                        if binary_precedence(*op) != at {
-                            break;
-                        }
-                        operations.push((*op, right));
-                        first = left;
-                    }
-                    work.push(Step::Chain {
-                        at,
-                        chain: Chain::new(),
-                        operations,
-                    });
-                    work.push(Step::Show(first, at));
-                }
             },
+            Node::Sum { first, rest } => chain(
+                5,
+                first.as_ref(),
+                rest.iter()
+                    .rev()
+                    .map(|(op, operand)| (add_mark(*op), operand))
+                    .collect(),
+                work,
+            ),
+            Node::Product { first, rest } => chain(
+                6,
+                first.as_ref(),
+                rest.iter()
+                    .rev()
+                    .map(|(op, operand)| (mul_mark(*op), operand))
+                    .collect(),
+                work,
+            ),
+            Node::All(operands) | Node::Any(operands) => {
+                let (at, mark) = if matches!(node, Node::All(_)) {
+                    (2, "and")
+                } else {
+                    (1, "or")
+                };
+                let Some((first, rest)) = operands.split_first() else {
+                    return malformed(format!(
+                        "an {mark} run states no operand; canonical text writes one with at \
+                         least two"
+                    ));
+                };
+                chain(
+                    at,
+                    first,
+                    rest.iter().rev().map(|operand| (mark, operand)).collect(),
+                    work,
+                );
+            }
             Node::Call { function, args } => {
                 if args.is_empty() {
                     return malformed(format!(
@@ -352,13 +403,27 @@ impl<R: PartialEq + Clone> Printer<R> {
                 self.text.push('(');
                 arguments(args, work);
             }
-            Node::If(branches) => {
-                self.text.push_str("if(");
-                arguments(branches.as_ref(), work);
-            }
+            Node::If { cases, otherwise } => work.push(Step::Ladder(cases, otherwise)),
         }
         Ok(())
     }
+}
+
+/// Pushes the steps that print a run of one left-associative level: its
+/// first operand, then `operations`, given last first, each operator before
+/// its operand.
+fn chain<'a, N>(
+    at: u8,
+    first: &'a N,
+    operations: Vec<(&'static str, &'a N)>,
+    work: &mut Vec<Step<'a, N>>,
+) {
+    work.push(Step::Chain {
+        at,
+        chain: Chain::new(),
+        operations,
+    });
+    work.push(Step::Show(first, at));
 }
 
 /// Pushes the steps that print `args`, each one level deeper, separated by

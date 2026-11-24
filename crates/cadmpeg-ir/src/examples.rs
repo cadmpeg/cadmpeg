@@ -362,13 +362,13 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
         cube_id!(ShellId, "shell", 0_usize),
         cube_id!(RegionId, "region", 0_usize),
     ));
-    ir.geometry.regions.push(Region {
-        id: cube_id!(RegionId, "region", 0_usize),
-        body: cube_id!(BodyId, "body", 0_usize),
-        shells: vec![cube_id!(ShellId, "shell", 0_usize)],
-        native_ref: None,
-    });
+    ir.geometry.regions.push(Region::new(
+        cube_id!(RegionId, "region", 0_usize),
+        cube_id!(BodyId, "body", 0_usize),
+        vec![cube_id!(ShellId, "shell", 0_usize)],
+    ));
     ir.geometry.bodies.push(Body {
+        unstated: None,
         id: cube_id!(BodyId, "body", 0_usize),
         kind: BodyKind::Solid,
         transform: None,

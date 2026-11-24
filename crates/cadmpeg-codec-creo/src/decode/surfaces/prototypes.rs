@@ -692,16 +692,12 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id: crate::identity::source_object_id_checked(format_args!(
                         "{}:{}",
                         section.name(),
                         row.id
                     ))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,
@@ -870,16 +866,12 @@ pub(in super::super) fn transfer_positional_spline_replays(
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id: crate::identity::source_object_id_checked(format_args!(
                         "{}:{}",
                         section.name(),
                         row.id
                     ))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,
@@ -1052,16 +1044,12 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id: crate::identity::source_object_id_checked(format_args!(
                         "{}{}",
                         carrier.namespace.source_prefix(),
                         carrier.surface_id
                     ))?,
-                    name: None,
-                    color: None,
-                    visible: Some(carrier.namespace.is_visible()),
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,

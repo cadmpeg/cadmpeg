@@ -4,11 +4,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::order::on_cycles;
 use super::records::ProcessRecords;
 use super::walk::Walked;
 use crate::design::dimension::{ParamRef, ParameterRef, RefTarget};
 use crate::report::check::Finding;
+use crate::validate::cycles::on_cycles;
 
 pub(super) fn check_bindings(
     records: &ProcessRecords<'_>,
@@ -22,7 +22,7 @@ pub(super) fn check_bindings(
         .iter()
         .map(|parameter| parameter.id.as_str())
         .collect();
-    let mut graph: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    let mut graph: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
     for record in walked {
         let id = record.id;
         for choice in &record.found.choices {
@@ -56,7 +56,7 @@ pub(super) fn check_bindings(
         for (at, reference) in &record.found.references {
             if expression {
                 if let ParamRef::Process(parameter) = reference {
-                    graph.entry(id).or_default().push(parameter.as_str());
+                    graph.entry(id).or_default().insert(parameter.as_str());
                 }
                 continue;
             }

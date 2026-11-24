@@ -256,7 +256,7 @@ fn assert_square_with_hole(result: &DecodeResult, tolerance: f64) {
     let ir = result.ir();
     assert_eq!(ir.geometry.faces.len(), 1);
     let face = &ir.geometry.faces[0];
-    assert_eq!(face.loops.len(), 2);
+    assert_eq!(face.loops.stated().count(), 2);
     let mut rings = rings(ir);
     rings.sort_unstable();
     assert_eq!(rings, vec![(1, 0), (4, 0)]);
@@ -423,7 +423,11 @@ fn trim_arrays_with_one_entry_for_each_curve_trim_the_face() {
         let trims = two_triangles(ranges);
         let result = decode(&layer(&format!("{PLANE}{trims}")));
         assert_valid(&result);
-        assert_eq!(result.ir().geometry.faces[0].loops.len(), 2, "{trims}");
+        assert_eq!(
+            result.ir().geometry.faces[0].loops.stated().count(),
+            2,
+            "{trims}"
+        );
         assert!(
             !has_loss(&result, UsdLossCode::NurbsTrimNotTransferred),
             "{trims}"
@@ -688,7 +692,7 @@ fn unclassified_loops_listing_the_hole_first_keep_the_hole() {
     let first = decode(&layer(&format!("{PLANE}{}", square_with_hole(true))));
     let mut ir = first.ir().clone();
     let face = &mut ir.geometry.faces[0];
-    let mut loops = face.loops.to_vec();
+    let mut loops = face.loops.stated().cloned().collect::<Vec<_>>();
     loops.sort_by_key(|id| {
         first
             .ir()
@@ -735,7 +739,11 @@ fn unclassified_loops_listing_the_hole_first_keep_the_hole() {
 fn unclassified_loops_write_no_trim_curves_without_a_brep_array() {
     let first = decode(&layer(&format!("{PLANE}{}", square_with_hole(true))));
     let mut ir = first.ir().clone();
-    let loops = ir.geometry.faces[0].loops.to_vec();
+    let loops = ir.geometry.faces[0]
+        .loops
+        .stated()
+        .cloned()
+        .collect::<Vec<_>>();
     ir.geometry.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(loops);
     ir.geometry.curves[0].geometry =
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None });

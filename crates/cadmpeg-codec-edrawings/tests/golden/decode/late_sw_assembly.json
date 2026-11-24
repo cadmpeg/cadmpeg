@@ -2899,7 +2899,7 @@
               "kind": "plane",
               "normal": {
                 "x": 1.0,
-                "y": -0.0,
+                "y": 0.0,
                 "z": 0.0
               },
               "origin": {
@@ -3451,8 +3451,7 @@
           "source_name": "body0",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -3470,8 +3469,7 @@
           "source_name": "body1",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -3488,8 +3486,7 @@
           "sketches": [],
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -3507,8 +3504,7 @@
           "source_name": "body2",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3528,8 +3524,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3548,8 +3543,7 @@
           "source_name": "Group A",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3566,8 +3560,7 @@
           "source_name": "Group B",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3584,8 +3577,7 @@
           "source_name": "Group C",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -3746,6 +3738,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "6258a7f3df7a12e14b59def118b3a86b0cdd4edfbcd0fc221ef54537e4140334",
     "file_digests": {},
     "retained_records": {},

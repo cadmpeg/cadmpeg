@@ -67,7 +67,7 @@ fn symbolic_thread_pipeline_checks_witness_without_inventing_faces_or_extent() {
         let mut invalid = wire.clone();
         invalid["construction"]["coordinates"][2]["value"] = serde_json::json!(1.0);
         ir.native
-            .namespace_mut("nx")
+            .namespace_mut(cadmpeg_ir::codec_id!("nx"))
             .set_arena(ctx, "feature_symbolic_threads", &[invalid])
             .unwrap();
         let findings = <crate::NxCodec as CodecBackend>::validate_native(ctx, &ir, None).unwrap();
@@ -76,7 +76,7 @@ fn symbolic_thread_pipeline_checks_witness_without_inventing_faces_or_extent() {
         let mut null = wire;
         null["construction"] = serde_json::Value::Null;
         ir.native
-            .namespace_mut("nx")
+            .namespace_mut(cadmpeg_ir::codec_id!("nx"))
             .set_arena(ctx, "feature_symbolic_threads", &[null])
             .unwrap();
         let findings = <crate::NxCodec as CodecBackend>::validate_native(ctx, &ir, None).unwrap();

@@ -36,7 +36,7 @@ use crate::CodecError;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::text::NonBlankString;
+use crate::text::{CodecId, NonBlankString};
 
 /// A registry dialect id, for example `"rhino:archive-80"`.
 ///
@@ -360,7 +360,7 @@ pub struct DialectMatch {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_instance"
     )]
-    instance: Option<String>,
+    instance: Option<NonBlankString>,
     /// How this layer was admitted.
     admission: Admission,
 }
@@ -471,7 +471,7 @@ impl DialectLayers {
         {
             return Err(DialectLayerError::Duplicate(layer));
         }
-        if layer.format() == self.primary.format() && layer.instance().is_none_or(str::is_empty) {
+        if layer.format() == self.primary.format() && layer.instance().is_none() {
             return Err(DialectLayerError::MissingInstance(layer));
         }
         self.extra.push(layer);
@@ -555,7 +555,7 @@ pub enum FormatIdentity<T> {
     /// The format is known but no classification payload exists.
     Unclassified {
         /// Registry format namespace.
-        format: String,
+        format: CodecId,
     },
 }
 
@@ -568,10 +568,8 @@ impl<T: FormatIdentityPayload> FormatIdentity<T> {
 
     /// Constructs an identity for a known format without classification.
     #[must_use]
-    pub fn unclassified(format: impl Into<String>) -> Self {
-        Self::Unclassified {
-            format: format.into(),
-        }
+    pub const fn unclassified(format: CodecId) -> Self {
+        Self::Unclassified { format }
     }
 
     /// Returns the authoritative format id.
@@ -579,7 +577,18 @@ impl<T: FormatIdentityPayload> FormatIdentity<T> {
     pub fn format(&self) -> &str {
         match self {
             Self::Classified { dialects } => dialects.format(),
-            Self::Unclassified { format } => format,
+            Self::Unclassified { format } => format.as_str(),
+        }
+    }
+
+    /// Returns the authoritative format id as a codec id: a classified
+    /// payload's format is the namespace of a dialect id, which has the
+    /// grammar of a codec id.
+    #[must_use]
+    pub fn codec(&self) -> CodecId {
+        match self {
+            Self::Classified { dialects } => CodecId::admitted(dialects.format()),
+            Self::Unclassified { format } => format.clone(),
         }
     }
 
@@ -646,9 +655,10 @@ impl DialectMatch {
     }
 
     /// Attaches a report-local layer instance before the match enters a report.
+    /// A blank instance names no instance.
     #[must_use]
     pub fn with_instance(mut self, instance: impl Into<String>) -> Self {
-        self.instance = Some(instance.into());
+        self.instance = NonBlankString::new(instance);
         self
     }
 
@@ -673,7 +683,7 @@ impl DialectMatch {
     /// Returns the report-local layer instance.
     #[must_use]
     pub fn instance(&self) -> Option<&str> {
-        self.instance.as_deref()
+        self.instance.as_ref().map(NonBlankString::as_str)
     }
 
     /// Returns how this layer was admitted.
@@ -1042,6 +1052,16 @@ mod tests {
         assert_eq!(error, super::DialectLayerError::MissingInstance(extra));
     }
 
+    /// "`instance`: `Option<NonBlankString>`" (§2.7): a blank instance names
+    /// no instance, and a document that states one is refused.
+    #[test]
+    fn a_blank_instance_names_no_instance() {
+        assert_eq!(layer("rhino").with_instance(" \t").instance(), None);
+        let mut wire = serde_json::to_value(layer("rhino").with_instance("root")).unwrap();
+        wire["instance"] = serde_json::json!(" ");
+        assert!(serde_json::from_value::<DialectMatch>(wire).is_err());
+    }
+
     #[test]
     fn dialect_layers_deserialization_rejects_an_untagged_extra_in_a_tagged_primary_format() {
         let serialized = serde_json::json!({
@@ -1082,7 +1102,25 @@ mod tests {
             ["rhino", "acis"]
         );
     }
+
+    #[test]
+    fn an_unclassified_format_is_a_codec_id() {
+        type Identity = super::FormatIdentity<DialectLayers>;
+        let read = |format: &str| {
+            serde_json::from_value::<Identity>(
+                serde_json::json!({"kind": "unclassified", "format": format}),
+            )
+        };
+        let identity = read("rhino").unwrap();
+        assert_eq!(identity.format(), "rhino");
+        assert_eq!(identity.codec(), crate::codec_id!("rhino"));
+        for format in ["", "Rhino", "rhino:archive-80", "my-codec"] {
+            assert!(read(format).is_err(), "{format:?}");
+        }
+        let classified = Identity::classified(DialectLayers::of(layer("step")));
+        assert_eq!(classified.codec(), crate::codec_id!("step"));
+    }
 }
 
 // Each optional key below names itself in whatever it refuses.
-crate::named_optional_field!(deserialize_instance, String, "instance");
+crate::named_optional_field!(deserialize_instance, NonBlankString, "instance");

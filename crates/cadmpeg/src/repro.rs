@@ -53,7 +53,8 @@ pub(crate) fn run(inputs: &InputCatalog, args: &ReproArgs) -> Result<()> {
         None,
     )?;
     let bundle = cut(&document.ir, &finding, &CutOptions::default())?;
-    let bytes = serde_json::to_vec(&bundle)?;
+    let mut bytes = cadmpeg_ir::hash::finite_json::to_canonical_json_string(&bundle)?.into_bytes();
+    bytes.push(b'\n');
     let mut output = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)

@@ -137,6 +137,7 @@ fn generated_edge_outputs_follow_producer_history_before_ir_feature_insertion() 
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
 
     assert_eq!(
@@ -160,6 +161,7 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     ir.model.features.push(Feature {
         product_definition: None,
@@ -237,6 +239,7 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     ir.geometry.bodies.push(Body {
         id: BodyId::mint("creo:generated:result#10".to_string()).expect("identity grammar"),
@@ -246,15 +249,13 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
-    ir.geometry.regions.push(Region {
-        id: RegionId::mint("creo:generated:region#10".to_string()).expect("identity grammar"),
-        body: BodyId::mint("creo:generated:result#10".to_string()).expect("identity grammar"),
-        shells: vec![
-            ShellId::mint("creo:generated:shell#10".to_string()).expect("identity grammar")
-        ],
-        native_ref: None,
-    });
+    ir.geometry.regions.push(Region::new(
+        RegionId::mint("creo:generated:region#10".to_string()).expect("identity grammar"),
+        BodyId::mint("creo:generated:result#10".to_string()).expect("identity grammar"),
+        vec![ShellId::mint("creo:generated:shell#10".to_string()).expect("identity grammar")],
+    ));
     ir.geometry.shells.push(Shell::new(
         ShellId::mint("creo:generated:shell#10".to_string()).expect("identity grammar"),
         RegionId::mint("creo:generated:region#10".to_string()).expect("identity grammar"),
@@ -329,12 +330,11 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
     );
 
     let mut duplicate_region = ir.clone();
-    duplicate_region.geometry.regions.push(Region {
-        id: RegionId::mint("creo:generated:region#10".to_string()).expect("identity grammar"),
-        body: BodyId::mint("creo:ambiguous:body#10".to_string()).expect("identity grammar"),
-        shells: Vec::new(),
-        native_ref: None,
-    });
+    duplicate_region.geometry.regions.push(Region::new(
+        RegionId::mint("creo:generated:region#10".to_string()).expect("identity grammar"),
+        BodyId::mint("creo:ambiguous:body#10".to_string()).expect("identity grammar"),
+        Vec::new(),
+    ));
     assert_eq!(
         crate::decode::with_service_context(|ctx| FeatureOutputIndex::new(
             &scan,
@@ -384,13 +384,13 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
-    ir.geometry.regions.push(Region {
-        id: region_id.clone(),
-        body: body_id.clone(),
-        shells: vec![shell_id.clone()],
-        native_ref: None,
-    });
+    ir.geometry.regions.push(Region::new(
+        region_id.clone(),
+        body_id.clone(),
+        vec![shell_id.clone()],
+    ));
     ir.geometry
         .shells
         .push(Shell::new(shell_id.clone(), region_id.clone()));
@@ -481,13 +481,12 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     );
 
     let mut duplicate_region = ir.clone();
-    duplicate_region.geometry.regions.push(Region {
-        id: region_id.clone(),
-        body: BodyId::mint("test:model:entity#creo:ambiguous:body".to_string())
+    duplicate_region.geometry.regions.push(Region::new(
+        region_id.clone(),
+        BodyId::mint("test:model:entity#creo:ambiguous:body".to_string())
             .expect("identity grammar"),
-        shells: Vec::new(),
-        native_ref: None,
-    });
+        Vec::new(),
+    ));
     assert!(
         bodies_containing_edges(&duplicate_region, std::slice::from_ref(&edge_id))
             .expect("find the bodies containing the edges")
@@ -503,6 +502,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     assert!(
         bodies_containing_edges(&duplicate_body, std::slice::from_ref(&edge_id))
@@ -522,6 +522,7 @@ fn evaluated_sweep_body_joins_reject_duplicate_ids() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     assert_eq!(
         evaluated_sweep_output_bodies(&ir, 40).expect("compute the evaluated sweep output bodies"),
@@ -540,6 +541,7 @@ fn evaluated_sweep_body_joins_reject_duplicate_ids() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     assert!(evaluated_sweep_output_bodies(&ir, 40)
         .expect("compute the evaluated sweep output bodies")

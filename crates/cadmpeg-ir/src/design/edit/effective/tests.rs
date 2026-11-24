@@ -5,7 +5,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 
 use crate::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
-use crate::design::configuration::{DesignConfiguration, OccurrenceOverride, Overrides};
+use crate::design::configuration::{
+    Arrangement, ArrangementKind, ArrangementRef, DesignConfiguration, NestedArrangement,
+    OccurrenceOverride, Overrides,
+};
 use crate::design::evaluation::{CurrentState, EvaluationStatus};
 use crate::design::refs::ConfigurationRef;
 use crate::design::refs::{Member, Position};
@@ -19,6 +22,7 @@ use crate::references::InstanceTarget;
 use crate::topology::Color;
 use crate::transform::Transform;
 use crate::CadIr;
+use cadmpeg_core::text::NonBlankString;
 
 fn id<T>(kind: &str, key: u32) -> T
 where
@@ -160,9 +164,7 @@ fn a_link_with_no_placement_or_a_native_step_has_no_transform() {
     let mut native = path(&[1]);
     native.0.push(PathStep {
         occurrence: StepRef::Native(crate::design::names::NativeName {
-            codec: crate::design::names::CodecId::from(
-                cadmpeg_core::text::NonBlankString::new("test").unwrap(),
-            ),
+            codec: crate::codec_id!("test"),
             value: crate::design::names::NativeNameValue::Text(
                 cadmpeg_core::text::NonBlankString::new("n2").unwrap(),
             ),
@@ -485,6 +487,7 @@ fn binding(
         id: id("appearance-binding", key),
         target,
         appearance: id("appearance", appearance),
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,
@@ -596,9 +599,11 @@ fn visibility_is_every_stated_gate_combined_with_and() {
     let layer = |items| PresentationLayer {
         id: id("layer", 1),
         name: "l".into(),
+        parent: None,
         description: None,
         visible: Some(false),
         items,
+        native_ref: None,
     };
     document.model.presentation_layers =
         vec![layer(vec![InstanceTarget::new(PresentationItem::Body {
@@ -613,4 +618,108 @@ fn visibility_is_every_stated_gate_combined_with_and() {
     assert!(!shown(&document));
     document.model.presentation_layers[0].visible = Some(true);
     assert!(shown(&document));
+}
+
+/// A hidden layer hides the items of the layers below it through `parent`.
+#[test]
+fn a_hidden_parent_layer_hides_its_sublayers_items() {
+    let mut document = cube();
+    let body = document.geometry.bodies[0].id.clone();
+    let layer = |key: u32, parent: Option<u32>, visible, items| PresentationLayer {
+        id: id("layer", key),
+        name: format!("l{key}"),
+        parent: parent.map(|key| id("layer", key)),
+        description: None,
+        visible,
+        items,
+        native_ref: None,
+    };
+    document.model.presentation_layers = vec![
+        layer(1, None, Some(false), Vec::new()),
+        layer(2, Some(1), None, Vec::new()),
+        layer(
+            3,
+            Some(2),
+            Some(true),
+            vec![InstanceTarget::new(PresentationItem::Body {
+                body: body.clone(),
+            })],
+        ),
+    ];
+    let target = InstanceTarget::new(AppearanceTarget::Body(body));
+    assert!(!document.effective_visibility(&target).unwrap());
+    document.model.presentation_layers[0].visible = Some(true);
+    assert!(document.effective_visibility(&target).unwrap());
+}
+
+fn arrangement(key: u32, scope: u32, overrides: Overrides) -> Arrangement {
+    Arrangement {
+        id: id("arrangement", key),
+        scope: definition(scope),
+        name: NonBlankString::new(format!("a{key}")).unwrap(),
+        kind: ArrangementKind::Positional,
+        configuration: None,
+        overrides,
+        appearances: Vec::new(),
+        moves: Vec::new(),
+        nested: Vec::new(),
+        native_ref: None,
+    }
+}
+
+fn moves_occurrence_2(y: f64, visible: Option<bool>) -> Overrides {
+    let mut overrides = Overrides::default();
+    overrides.occurrences.insert(
+        occurrence(2),
+        OccurrenceOverride {
+            transform: Some(shift(0.0, y, 0.0)),
+            visible,
+            ..OccurrenceOverride::default()
+        },
+    );
+    overrides
+}
+
+/// An arrangement in force in definition 1 chooses, by a `nested` entry, the
+/// arrangement of definition 2 that occurrence 1 shows, in place of the one
+/// occurrence 1's own design names; a named entry chooses none.
+#[test]
+fn a_nested_arrangement_is_in_force_for_the_instance_it_names() {
+    let mut document = assembly();
+    let mut outer = arrangement(1, 1, Overrides::default());
+    outer.nested.push(NestedArrangement {
+        path: path(&[1]),
+        arrangement: ArrangementRef::Local(id("arrangement", 2)),
+    });
+    document.design.arrangements = vec![
+        outer,
+        arrangement(2, 2, moves_occurrence_2(5.0, Some(false))),
+        arrangement(3, 2, moves_occurrence_2(3.0, None)),
+    ];
+    document.design.scopes[0].occurrences.insert(
+        occurrence(1),
+        OccurrenceDesign {
+            configuration: None,
+            arrangements: vec![ArrangementRef::Local(id("arrangement", 3))],
+            grounded: None,
+            flexible: None,
+            parameters: BTreeMap::new(),
+        },
+    );
+    assert_eq!(transform_at(&document, &[1, 2]), Some([10.0, 3.0, 0.0]));
+
+    document.design.scopes[0]
+        .active_arrangements
+        .insert(id("arrangement", 1));
+    assert_eq!(transform_at(&document, &[1, 2]), Some([10.0, 5.0, 0.0]));
+    let placed = InstanceTarget {
+        entity: AppearanceTarget::Body(id("body", 1)),
+        path: Some(path(&[1, 2])),
+        state: None,
+    };
+    assert!(!document.effective_visibility(&placed).unwrap());
+
+    document.design.arrangements[0].nested[0].arrangement =
+        ArrangementRef::Named(NonBlankString::new("a2".to_owned()).unwrap());
+    assert_eq!(transform_at(&document, &[1, 2]), Some([10.0, 3.0, 0.0]));
 }

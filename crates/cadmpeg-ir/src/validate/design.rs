@@ -18,7 +18,7 @@ mod constructions;
 mod containers;
 mod dimensions;
 pub(super) mod evaluations;
-mod expressions;
+pub(super) mod expressions;
 mod fit;
 #[cfg(test)]
 pub(super) mod fixture;
@@ -28,7 +28,7 @@ mod linkage;
 mod matching;
 mod materials;
 mod names;
-mod ops;
+pub(super) mod ops;
 mod overrides;
 mod parameter_records;
 #[cfg(test)]
@@ -49,7 +49,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use crate::design::feature::Feature;
-use crate::document::{CadIr, Topology};
+use crate::document::CadIr;
 use crate::ids::ProductDefinitionId;
 use crate::index::ModelIndex;
 use crate::report::{
@@ -60,36 +60,7 @@ use crate::report::{
 use super::record_finding;
 use index::DesignIndex;
 use records::MemberKey;
-use walk::{Collect, ConstructionView, SelectionView, Walk};
-
-/// Whether native text has the form `codec:name`.
-fn native_text(text: &str) -> bool {
-    text.split_once(':')
-        .is_some_and(|(codec, name)| !codec.is_empty() && !name.is_empty())
-}
-
-/// Checks that a `Topology` is closed over its own references: every
-/// reference of its records names a record of it.
-fn check_closed_topology(
-    ctx: &DecodeContext<'_>,
-    topology: &Topology,
-    at: &str,
-    what: &str,
-    findings: &mut Vec<Finding>,
-) -> Result<(), CodecError> {
-    let mut alone = CadIr::empty();
-    alone.geometry = topology.clone();
-    let index = crate::index::ModelIndex::build(&alone);
-    let mut nested = Vec::new();
-    super::topology::check_references(ctx, &alone, &index, &mut nested)?;
-    for mut finding in nested {
-        finding.check = Check::Design;
-        finding.message = format!("{what}: {}", finding.message);
-        finding.related.insert(0, at.to_owned());
-        findings.push(finding);
-    }
-    Ok(())
-}
+use walk::{BoundDimension, Collect, ConstructionView, SelectionView, Walk};
 
 /// The record that holds a walked selection or construction.
 #[derive(Debug, Clone, Copy)]
@@ -125,11 +96,13 @@ impl<'a> Holder<'a> {
     }
 }
 
-/// The selections and constructions one design record holds.
+/// The selections, constructions, and bound dimensions one design record
+/// holds.
 struct Held<'a> {
     holder: Holder<'a>,
     selections: Vec<SelectionView<'a>>,
     constructions: Vec<ConstructionView<'a>>,
+    dimensions: Vec<BoundDimension<'a>>,
 }
 
 /// Check the design layer of `ir` against part 10's scope-and-linkage,
@@ -170,18 +143,20 @@ pub(super) fn check_design(
 
     let _depth = ctx.enter_nested("IR design validation")?;
     let held = collect(ctx, ir, &index)?;
+    dimensions::check_bound_dimensions(&index.records, &held, findings);
     index.add_dependencies(&held);
     let states = states::States::new(ir);
     let matchers = matching::Matchers::new(&states);
     names::check(ctx, &index, &states, &held, findings)?;
-    selections::check(ctx, &index, &matchers, &held, findings)?;
+    selections::check(ctx, &index, &matchers, &held, ids.native_view(), findings)?;
     constructions::check(&index, &held, findings);
     folds::check(&index, &matchers, &held, findings);
     materials::check(&index, &matchers, findings);
     Ok(())
 }
 
-/// Walks every design record that can hold a selection or a construction.
+/// Walks every design record that can hold a selection, a construction, or a
+/// dimension.
 fn collect<'a>(
     ctx: &DecodeContext<'_>,
     ir: &'a CadIr,
@@ -192,11 +167,15 @@ fn collect<'a>(
     let mut add = |holder: Holder<'a>, record: &'a dyn Walk| -> Result<(), CodecError> {
         let mut into = Collect::new(ctx);
         record.walk(&mut into)?;
-        if !into.selections.is_empty() || !into.constructions.is_empty() {
+        if !into.selections.is_empty()
+            || !into.constructions.is_empty()
+            || !into.dimensions.is_empty()
+        {
             held.push(Held {
                 holder,
                 selections: into.selections,
                 constructions: into.constructions,
+                dimensions: into.dimensions,
             });
         }
         Ok(())

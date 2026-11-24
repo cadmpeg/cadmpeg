@@ -1007,15 +1007,11 @@ fn neutral_form_cage(id: &str, uuid: &str) -> cadmpeg_ir::SubdSurface {
         scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
         source_object: Some(cadmpeg_ir::SourceObjectAssociation {
             geometry_role: None,
-            format: cadmpeg_ir::CodecFormat::F3d,
+            format: cadmpeg_ir::codec_id!("f3d"),
             object_id: cadmpeg_core::text::NonBlankString::new(format!(
                 "FusionAssetName[Active]/TSplines.BlobParts/TSpline.{uuid}.tsm"
             ))
             .unwrap(),
-            name: None,
-            color: None,
-            visible: None,
-            layer: None,
             instance_path: Vec::new(),
         }),
         cage: cadmpeg_ir::subd::SubdCage::default(),

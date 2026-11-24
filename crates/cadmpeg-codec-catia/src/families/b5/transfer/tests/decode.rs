@@ -89,13 +89,13 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
     assert_eq!(result.ir().geometry.curves.len(), 3);
     assert!(result.ir().geometry.surfaces.iter().all(|surface| {
         surface.source_object.as_ref().is_some_and(|source| {
-            source.format == cadmpeg_ir::CodecFormat::Catia
+            source.format == cadmpeg_ir::codec_id!("catia")
                 && source.object_id.as_str().starts_with("cgm-surface:")
         })
     }));
     assert!(result.ir().geometry.curves.iter().all(|curve| {
         curve.source_object.as_ref().is_some_and(|source| {
-            source.format == cadmpeg_ir::CodecFormat::Catia
+            source.format == cadmpeg_ir::codec_id!("catia")
                 && source.object_id.as_str().starts_with("cgm-edge:")
         })
     }));

@@ -116,6 +116,7 @@ fn without_omitted_driven(
 
 pub(crate) fn prepare_parameters_for_write(
     ir: &cadmpeg_ir::CadIr,
+    digests: &cadmpeg_ir::source_fidelity::CodecDigests,
     native: &mut Option<crate::native::SldprtNative>,
     feature_parameter_changes_authorized: bool,
     edits: &mut SourceEdits<'_>,
@@ -132,16 +133,10 @@ pub(crate) fn prepare_parameters_for_write(
         .as_ref()
         .map(|value| native_parameter_hash(&hash_ctx, &value.feature_histories))
         .transpose()?;
-    let baseline_neutral = ir.source.as_ref().and_then(|source| {
-        source
-            .attributes
-            .get("sldprt_neutral_parameter_local_sha256")
-    });
-    let baseline_native = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("sldprt_native_parameter_sha256"));
-    let neutral_changed = baseline_neutral.is_none_or(|hash| hash != &neutral_hash);
+    let baseline_neutral =
+        crate::codec_digests::baseline(digests, "sldprt_neutral_parameter_local_sha256");
+    let baseline_native = crate::codec_digests::baseline(digests, "sldprt_native_parameter_sha256");
+    let neutral_changed = baseline_neutral.is_none_or(|hash| hash != neutral_hash);
     let native_changed = !edits.native_unedited()
         && match (&native_hash, baseline_native) {
             (Some(current), Some(baseline)) => current != baseline,
@@ -152,14 +147,14 @@ pub(crate) fn prepare_parameters_for_write(
         if ir.model.parameters.is_empty() {
             return Ok(());
         }
-        return sync_neutral_parameters(ir, native, edits);
+        return sync_neutral_parameters(ir, digests, native, edits);
     }
     match (neutral_changed, native_changed) {
         (false, true) if feature_parameter_changes_authorized => Ok(()),
         (false, _) => Ok(()),
         (true, true) => {
             if feature_parameter_changes_authorized {
-                return sync_neutral_parameters(ir, native, edits);
+                return sync_neutral_parameters(ir, digests, native, edits);
             }
             let lane_bytes = native
                 .as_ref()
@@ -186,7 +181,7 @@ pub(crate) fn prepare_parameters_for_write(
                 ))
             }
         }
-        (true, false) => sync_neutral_parameters(ir, native, edits),
+        (true, false) => sync_neutral_parameters(ir, digests, native, edits),
     }
 }
 
@@ -212,6 +207,7 @@ fn written_dimension_properties(
 
 fn sync_neutral_parameters(
     ir: &cadmpeg_ir::CadIr,
+    digests: &cadmpeg_ir::source_fidelity::CodecDigests,
     native: &mut Option<crate::native::SldprtNative>,
     edits: &mut SourceEdits<'_>,
 ) -> Result<(), CodecError> {
@@ -280,7 +276,7 @@ fn sync_neutral_parameters(
     // A record entry is an editable dimension, so the parameter of a driven
     // dimension whose reference relation the write does not write stays out
     // of its feature's record; the export charges it.
-    let omitted = crate::resolved_features::write_prepare::omitted_driven_parameters(ir);
+    let omitted = crate::resolved_features::write_prepare::omitted_driven_parameters(ir, digests);
     let stated = parameters;
     let parameters = without_omitted_driven(stated.clone(), &omitted);
     let left_out = stated

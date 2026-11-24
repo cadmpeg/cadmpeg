@@ -1149,7 +1149,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -1173,7 +1173,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -1197,7 +1197,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -1219,7 +1219,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -1267,7 +1267,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -1315,7 +1315,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -1363,7 +1363,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -1389,7 +1389,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -1437,7 +1437,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -1461,7 +1461,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -1485,7 +1485,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -1507,7 +1507,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -1555,7 +1555,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -1603,7 +1603,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -1651,7 +1651,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -1677,7 +1677,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -4487,7 +4487,7 @@
               "normal": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "origin": {
                 "x": 0.0,
@@ -4514,7 +4514,7 @@
             "value": {
               "kind": "plane",
               "normal": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -4555,7 +4555,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -4572,7 +4572,7 @@
             "value": {
               "kind": "plane",
               "normal": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -4613,7 +4613,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -4632,7 +4632,7 @@
               "normal": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "origin": {
                 "x": 20.0,
@@ -4661,7 +4661,7 @@
               "normal": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "origin": {
                 "x": 0.0,
@@ -4688,7 +4688,7 @@
             "value": {
               "kind": "plane",
               "normal": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -4729,7 +4729,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -4746,7 +4746,7 @@
             "value": {
               "kind": "plane",
               "normal": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -4787,7 +4787,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -4806,7 +4806,7 @@
               "normal": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "origin": {
                 "x": 20.0,
@@ -5271,8 +5271,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -5876,7 +5875,6 @@
       "attributes": {
         "application_domains": "App,PartDesign",
         "document_kind": "part-design",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
         "program_version": "0.21R33771 (Git)"
       },
@@ -5951,6 +5949,10 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {
+      "fcstd_uncarried_local_sha256": "<elided: digest over tolerantly compared geometry>"
+    },
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "25c836424406343439bd3fa9acd82f8e6dbabdae689fe2a799099bf73805aafb",
     "file_digests": {},
     "retained_records": {},

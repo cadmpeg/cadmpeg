@@ -134,7 +134,7 @@ fn a_solidworks_feature_history_keeps_the_skeleton_off() {
     native
         .store(
             &cadmpeg_core::decode::test_support::service_decode_context(),
-            ir.native.namespace_mut("sldprt"),
+            ir.native.namespace_mut(cadmpeg_ir::codec_id!("sldprt")),
         )
         .unwrap();
     let (bytes, losses) = write(&ir);

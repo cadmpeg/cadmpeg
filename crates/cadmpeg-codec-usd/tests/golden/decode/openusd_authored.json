@@ -29,19 +29,9 @@
           "name": "Rail"
         },
         {
-          "id": "usd:stage:body#/Plant/Frame/Tube",
-          "kind": "general",
-          "name": "Tube"
-        },
-        {
           "id": "usd:stage:body#/Plant/Roof",
           "kind": "sheet",
           "name": "Roof"
-        },
-        {
-          "id": "usd:stage:body#prototype0",
-          "kind": "general",
-          "name": "Leg"
         }
       ],
       "coedges": [
@@ -984,8 +974,7 @@
           "source_name": "Plant",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -1003,8 +992,7 @@
           "source_name": "Frame",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -1021,13 +1009,10 @@
           "source_name": "Rail",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
-          "bodies": [
-            "usd:stage:body#/Plant/Frame/Tube"
-          ],
+          "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Plant/Frame/Tube",
           "instance_bodies": [],
@@ -1039,8 +1024,7 @@
           "source_name": "Tube",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -1057,13 +1041,10 @@
           "source_name": "Roof",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
-          "bodies": [
-            "usd:stage:body#prototype0"
-          ],
+          "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#prototype0",
           "instance_bodies": [],
@@ -1075,8 +1056,7 @@
           "source_name": "Leg",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -1091,8 +1071,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -1107,9 +1086,7 @@
       "spreadsheets": [],
       "tessellations": [
         {
-          "body": "usd:stage:body#/Plant/Frame/Tube",
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "usd:stage:tessellation#/Plant/Frame/Tube",
           "mesh": {
@@ -1199,14 +1176,16 @@
               }
             ]
           },
+          "of": {
+            "definition": "usd:stage:definition#/Plant/Frame/Tube",
+            "kind": "definition"
+          },
           "texture_assignments": [],
           "texture_coordinates": [],
           "triangle_groups": []
         },
         {
-          "body": "usd:stage:body#prototype0",
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "usd:stage:tessellation#prototype0",
           "mesh": {
@@ -1273,6 +1252,10 @@
                 }
               }
             ]
+          },
+          "of": {
+            "definition": "usd:stage:definition#prototype0",
+            "kind": "definition"
           },
           "texture_assignments": [],
           "texture_coordinates": [],
@@ -1390,6 +1373,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "c8dafaf904c044ca04d7db467af7eae43727359cec970527da9edd92e5d106c0",
     "file_digests": {},
     "retained_records": {},

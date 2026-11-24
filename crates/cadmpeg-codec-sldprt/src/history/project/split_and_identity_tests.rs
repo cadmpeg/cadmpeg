@@ -519,7 +519,7 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
             ref continuity,
             merge_result: None,
             ..
-        }) if continuity.is_unresolved()
+        }) if continuity.is_none()
     ));
     assert!(matches!(
         projected[8].evaluation.definition(),

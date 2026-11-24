@@ -263,8 +263,11 @@ pub(super) fn check_tolerances(ir: &CadIr, findings: &mut Vec<Finding>) {
 
 /// In a Catmull–Clark cage every face side holds one edge use, and the edges
 /// that state a knot interval state one value.
-pub(super) fn check_subdivision_schemes(ir: &CadIr, findings: &mut Vec<Finding>) {
-    for surface in &ir.geometry.subds {
+pub(super) fn check_subdivision_schemes(
+    geometry: &crate::document::Topology,
+    findings: &mut Vec<Finding>,
+) {
+    for surface in &geometry.subds {
         if surface.scheme != crate::subd::SubdScheme::CatmullClark {
             continue;
         }
@@ -345,7 +348,7 @@ pub(super) fn check_references(
         {
             ref_error(findings, l.id.as_str(), "body", l.body.as_str());
         }
-        for s in &l.shells {
+        for s in l.stated_shells() {
             if ids
                 .shells(s.as_str(), crate::index::StandardIndex)
                 .is_none()
@@ -388,7 +391,7 @@ pub(super) fn check_references(
         {
             ref_error(findings, f.id.as_str(), "surface", f.surface.as_str());
         }
-        for lp in &f.loops {
+        for lp in f.loops.stated() {
             if ids
                 .loops(lp.as_str(), crate::index::StandardIndex)
                 .is_none()
@@ -627,7 +630,6 @@ pub(super) fn check_references(
                 }
                 Some(_) => {}
             },
-            AppearanceTarget::Source { .. } => {}
             _ => {}
         }
     }

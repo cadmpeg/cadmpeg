@@ -11,184 +11,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::sync::Arc;
 
-use crate::topology::Color;
-use serde::de::Error as _;
+use crate::design::names::CodecId;
 use std::fmt;
-
-/// Registry codec format id stored on a source-object association.
-///
-/// The variant set is the generated `FORMAT` constants. Serialize as the
-/// registry string. Deserialize rejects any other string.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(rename_all = "lowercase"))]
-pub enum CodecFormat {
-    /// `acis`
-    Acis,
-    /// `catia`
-    Catia,
-    /// `creo`
-    Creo,
-    /// `f3d`
-    F3d,
-    /// `fcstd`
-    Fcstd,
-    /// `iges`
-    Iges,
-    /// `inventor`
-    Inventor,
-    /// `nx`
-    Nx,
-    /// `parasolid`
-    Parasolid,
-    /// `rhino`
-    Rhino,
-    /// `sat`
-    Sat,
-    /// `sldprt`
-    Sldprt,
-    /// `step`
-    Step,
-}
-
-impl CodecFormat {
-    /// Parse a generated registry format id.
-    #[must_use]
-    pub fn parse(id: &str) -> Option<Self> {
-        Some(match id {
-            "acis" => Self::Acis,
-            "catia" => Self::Catia,
-            "creo" => Self::Creo,
-            "f3d" => Self::F3d,
-            "fcstd" => Self::Fcstd,
-            "iges" => Self::Iges,
-            "inventor" => Self::Inventor,
-            "nx" => Self::Nx,
-            "parasolid" => Self::Parasolid,
-            "rhino" => Self::Rhino,
-            "sat" => Self::Sat,
-            "sldprt" => Self::Sldprt,
-            "step" => Self::Step,
-            _ => return None,
-        })
-    }
-
-    /// The generated registry format id.
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Acis => "acis",
-            Self::Catia => "catia",
-            Self::Creo => "creo",
-            Self::F3d => "f3d",
-            Self::Fcstd => "fcstd",
-            Self::Iges => "iges",
-            Self::Inventor => "inventor",
-            Self::Nx => "nx",
-            Self::Parasolid => "parasolid",
-            Self::Rhino => "rhino",
-            Self::Sat => "sat",
-            Self::Sldprt => "sldprt",
-            Self::Step => "step",
-        }
-    }
-
-    /// Check a generated `FORMAT` constant against the registry.
-    ///
-    /// The [`codec_format!`](crate::codec_format) macro evaluates this in a
-    /// const initializer and turns `None` into a compile error. Runtime text
-    /// must use [`CodecFormat::parse`], which returns `None` instead of
-    /// panicking.
-    #[must_use]
-    pub const fn from_registry_id(id: &str) -> Option<Self> {
-        let bytes = id.as_bytes();
-        if registry_id_is(bytes, b"acis") {
-            Some(Self::Acis)
-        } else if registry_id_is(bytes, b"catia") {
-            Some(Self::Catia)
-        } else if registry_id_is(bytes, b"creo") {
-            Some(Self::Creo)
-        } else if registry_id_is(bytes, b"f3d") {
-            Some(Self::F3d)
-        } else if registry_id_is(bytes, b"fcstd") {
-            Some(Self::Fcstd)
-        } else if registry_id_is(bytes, b"iges") {
-            Some(Self::Iges)
-        } else if registry_id_is(bytes, b"inventor") {
-            Some(Self::Inventor)
-        } else if registry_id_is(bytes, b"nx") {
-            Some(Self::Nx)
-        } else if registry_id_is(bytes, b"parasolid") {
-            Some(Self::Parasolid)
-        } else if registry_id_is(bytes, b"rhino") {
-            Some(Self::Rhino)
-        } else if registry_id_is(bytes, b"sat") {
-            Some(Self::Sat)
-        } else if registry_id_is(bytes, b"sldprt") {
-            Some(Self::Sldprt)
-        } else if registry_id_is(bytes, b"step") {
-            Some(Self::Step)
-        } else {
-            None
-        }
-    }
-}
-
-/// True when the registry id `bytes` spells exactly `expected`.
-const fn registry_id_is(bytes: &[u8], expected: &[u8]) -> bool {
-    if bytes.len() != expected.len() {
-        return false;
-    }
-    let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] != expected[index] {
-            return false;
-        }
-        index += 1;
-    }
-    true
-}
-
-/// The [`CodecFormat`] a generated `FORMAT` constant names.
-///
-/// The id is read in the initializer of a `const` item, so a codec whose
-/// `FORMAT` is not a registry id fails `cargo check` with E0080 instead of
-/// panicking when the association is built.
-#[macro_export]
-macro_rules! codec_format {
-    ($id:expr) => {{
-        const CODEC_FORMAT: $crate::CodecFormat = match $crate::CodecFormat::from_registry_id($id) {
-            Some(format) => format,
-            None => {
-                assert!(
-                    false,
-                    "a registry format id names one of the generated FORMAT constants"
-                );
-                $crate::CodecFormat::Step
-            }
-        };
-        CODEC_FORMAT
-    }};
-}
-
-impl fmt::Display for CodecFormat {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl Serialize for CodecFormat {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
-impl<'de> Deserialize<'de> for CodecFormat {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let id = String::deserialize(deserializer)?;
-        Self::parse(&id).ok_or_else(|| D::Error::custom(format!("format: unknown codec id {id}")))
-    }
-}
 
 /// Whether source geometry is a standalone object or a support of another object.
 /// Supports retain their mathematics when their owner cannot be projected; writers
@@ -203,20 +27,20 @@ pub enum SourceGeometryRole {
     Support,
 }
 
-/// Native object identity and effective display metadata for a free carrier.
+/// The identity of the source object a point, carrier, cage, or tessellation
+/// was read from, and nothing else: its name, colour, visibility, and layer
+/// have their own homes (D21).
 ///
 /// `format` identifies the source format. `object_id` is the source format's
-/// native object identifier, not an IR arena identifier. `name`, `color`, and
-/// `visible` are the effective object display values. `layer` is the native
-/// layer identifier. `instance_path` contains native instance identifiers in
-/// outermost-to-innermost order; an empty path means that the object is not
-/// nested in an instance.
+/// native object identifier, not an IR arena identifier. `instance_path`
+/// contains native instance identifiers in outermost-to-innermost order; an
+/// empty path means that the object is not nested in an instance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct SourceObjectAssociation {
-    /// Source format identifier.
-    pub format: CodecFormat,
+    /// The codec of the source format.
+    pub format: CodecId,
     /// Source ownership, when it can be established independently of projection.
     #[serde(
         default,
@@ -227,34 +51,6 @@ pub struct SourceObjectAssociation {
     /// Native source object identifier.
     #[serde(deserialize_with = "deserialize_object_id")]
     pub object_id: cadmpeg_core::text::NonBlankString,
-    /// Effective source object name, when present.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_name"
-    )]
-    pub name: Option<String>,
-    /// Effective source object color, when present.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_color"
-    )]
-    pub color: Option<Color>,
-    /// Effective source object visibility, when present.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_visible"
-    )]
-    pub visible: Option<bool>,
-    /// Native source layer identifier, when present.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_layer"
-    )]
-    pub layer: Option<String>,
     /// Native instance identifiers from outermost to innermost.
     pub instance_path: Vec<String>,
 }
@@ -627,45 +423,36 @@ pub enum Exactness {
 mod tests {
     #[cfg(feature = "schema")]
     use super::StreamName;
-    use super::{CodecFormat, SourceObjectAssociation, SourceProvenance};
+    use super::{SourceObjectAssociation, SourceProvenance};
     use crate::test_support::wire;
 
     #[cfg(feature = "schema")]
     #[test]
-    fn provenance_schemas_use_admitted_stream_names_and_codec_spellings() {
+    fn provenance_schemas_use_admitted_stream_names_and_codec_ids() {
         let schema = serde_json::to_value(schemars::schema_for!(StreamName)).unwrap();
         assert_eq!(schema["type"], "string");
         assert_eq!(schema["minLength"], 1);
-        let schema = serde_json::to_value(schemars::schema_for!(CodecFormat)).unwrap();
-        let variants = schema["oneOf"].as_array().unwrap();
-        for variant in variants {
-            let text = variant["const"].as_str().unwrap();
-            let format = CodecFormat::parse(text).unwrap();
-            assert_eq!(serde_json::to_value(format).unwrap(), variant["const"]);
-        }
-        assert_eq!(variants.len(), 13);
-        assert!(variants.iter().any(|variant| variant["const"] == "f3d"));
         let schema = serde_json::to_value(schemars::schema_for!(SourceObjectAssociation)).unwrap();
-        assert_eq!(
-            schema["properties"]["format"]["$ref"],
-            "#/$defs/CodecFormat"
-        );
-        assert_eq!(
-            schema["$defs"]["CodecFormat"]["oneOf"].as_array().unwrap(),
-            variants
-        );
+        assert_eq!(schema["properties"]["format"]["$ref"], "#/$defs/CodecId");
+        assert_eq!(schema["$defs"]["CodecId"]["pattern"], "^[a-z0-9]+$");
     }
 
     #[test]
-    fn registry_format_parser_is_total_for_runtime_text() {
-        const STEP: CodecFormat = crate::codec_format!("step");
-
-        assert_eq!(
-            CodecFormat::from_registry_id("step"),
-            Some(CodecFormat::Step)
-        );
-        assert_eq!(CodecFormat::from_registry_id("unknown"), None);
-        assert_eq!(STEP, CodecFormat::Step);
+    fn a_source_object_names_any_codec_id() {
+        for format in ["3dm", "usd", "step"] {
+            let wire =
+                serde_json::json!({"format": format, "object_id": "#42", "instance_path": []});
+            let value: SourceObjectAssociation =
+                serde_json::from_value(wire.clone()).expect("a codec id");
+            assert_eq!(value.format.as_str(), format);
+            assert_eq!(serde_json::to_value(value).expect("serialize"), wire);
+        }
+        for format in ["", "Step", "st-ep", "step "] {
+            serde_json::from_value::<SourceObjectAssociation>(
+                serde_json::json!({"format": format, "object_id": "#42", "instance_path": []}),
+            )
+            .expect_err("not a codec id");
+        }
     }
 
     #[test]
@@ -757,10 +544,6 @@ cadmpeg_core::named_optional_field!(
     SourceGeometryRole,
     "geometry_role"
 );
-cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
-cadmpeg_core::named_optional_field!(deserialize_color, Color, "color");
-cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
-cadmpeg_core::named_optional_field!(deserialize_layer, String, "layer");
 cadmpeg_core::named_optional_field!(deserialize_tag, String, "tag");
 cadmpeg_core::named_optional_field!(deserialize_stream, StreamName, "stream");
 
