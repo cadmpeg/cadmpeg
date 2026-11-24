@@ -145,6 +145,9 @@ pub(crate) enum RhinoLossCode {
     IntegrityFailure,
     /// A framed presentation record could not be transferred.
     PresentationRecordDropped,
+    /// A hidden carrier that no topology uses has no display colour, so no
+    /// appearance binding states its visibility.
+    FreeGeometryVisibilityNotStated,
     /// A framed annotation record could not be transferred.
     AnnotationRecordDropped,
     /// A framed product occurrence could not be transferred to the native graph.
@@ -261,6 +264,7 @@ impl RhinoLossCode {
         Self::ContainerScanDiagnostic,
         Self::IntegrityFailure,
         Self::PresentationRecordDropped,
+        Self::FreeGeometryVisibilityNotStated,
         Self::AnnotationRecordDropped,
         Self::ProductOccurrenceDropped,
         Self::AnnotationUserdataDropped,
@@ -314,6 +318,9 @@ impl RhinoLossCode {
             Self::ContainerScanDiagnostic => "container.scan-diagnostic",
             Self::IntegrityFailure => "container.integrity-failure",
             Self::PresentationRecordDropped => "presentation.record-dropped",
+            Self::FreeGeometryVisibilityNotStated => {
+                "presentation.free-geometry-visibility-not-stated"
+            }
             Self::AnnotationRecordDropped => "annotation.record-dropped",
             Self::ProductOccurrenceDropped => "product.occurrence-dropped",
             Self::AnnotationUserdataDropped => "annotation.userdata-dropped",
@@ -386,6 +393,7 @@ impl RhinoLossCode {
             Self::TrimPcurveDropped => LossTaxonomy::PcurveOmitted,
             Self::IntegrityFailure => LossTaxonomy::IntegrityFailure,
             Self::PresentationRecordDropped => LossTaxonomy::AssetNotTransferred,
+            Self::FreeGeometryVisibilityNotStated => LossTaxonomy::MetadataNotTransferred,
             Self::ViewportUserdataDropped | Self::ProductOccurrenceDropped => {
                 LossTaxonomy::RecordNotTyped
             }
@@ -485,6 +493,7 @@ mod tests {
                 "container.scan-diagnostic",
                 "container.integrity-failure",
                 "presentation.record-dropped",
+                "presentation.free-geometry-visibility-not-stated",
                 "annotation.record-dropped",
                 "product.occurrence-dropped",
                 "annotation.userdata-dropped",
