@@ -41,7 +41,7 @@ use cadmpeg_ir::topology::{
     BodyKind, Color, EdgeCarrier, EdgeEnds, FaceLoops, LoopBoundary, Point, Sense, Shell,
     ShellMember, Vertex,
 };
-use cadmpeg_ir::units::coincidence_allowance;
+use cadmpeg_ir::units::binding_allowance;
 use serde_json::Value;
 
 use crate::loss::F3dLossCode;
@@ -602,7 +602,7 @@ impl<'a> Reduction<'a> {
                 };
                 ends.start == ends.end
                     && position.distance(*point)
-                        <= coincidence_allowance(
+                        <= binding_allowance(
                             linear,
                             &[
                                 edge.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get),
@@ -697,7 +697,7 @@ impl<'a> Reduction<'a> {
                     .and_then(|construction| construction.cache_fit_tolerance())
                     .map(FitTolerance::get);
                 let edge_tolerance = edge.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get);
-                let allowance = coincidence_allowance(
+                let allowance = binding_allowance(
                     linear,
                     &[edge_tolerance, start_tolerance, end_tolerance, fit],
                 );
@@ -887,7 +887,7 @@ impl<'a> Reduction<'a> {
                             "vertex {vertex} lies {distance:.6} mm off its curve"
                         ));
                     } else if within
-                        && distance > coincidence_allowance(linear, &[edge_tolerance, own, fit])
+                        && distance > binding_allowance(linear, &[edge_tolerance, own, fit])
                     {
                         let raised = tolerant.entry(vertex).or_insert(distance);
                         if distance > *raised {

@@ -16,7 +16,7 @@ use crate::units::UnitVector3;
 /// The two stored rows preserve the source coefficients. The bottom row
 /// `[0, 0, 1]` is a fact of the type: it is produced by [`Self::rows`] and is
 /// neither carried nor compared.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct Transform2 {
@@ -150,7 +150,7 @@ pub enum TransformError {
 /// The three stored rows preserve the source coefficients. The bottom row
 /// `[0, 0, 0, 1]` is a fact of the type: it is produced by [`Self::rows`] and
 /// is neither carried nor compared.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct Transform {

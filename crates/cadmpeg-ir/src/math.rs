@@ -36,7 +36,7 @@ pub(crate) fn serialize_one_zero_f32<T: Copy + Into<f32>, S: serde::Serializer>(
 }
 
 /// A point in 3D model space, in the document's length unit.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Point3 {
@@ -114,7 +114,7 @@ impl Point3 {
 
 /// A 3D vector. Depending on context this may be a direction (often but not
 /// always unit length) or a length-bearing displacement.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Vector3 {
@@ -218,7 +218,7 @@ impl std::ops::Sub for Vector3 {
 }
 
 /// A point in 2D surface parameter (u, v) space.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Point2 {

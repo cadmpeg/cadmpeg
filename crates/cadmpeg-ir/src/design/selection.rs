@@ -28,6 +28,7 @@ use crate::geometry::{InlineCurve, InlineSurface};
 use crate::ids::{OccurrenceId, ProductDefinitionId};
 use crate::scalar::{Angle, FiniteReal, Length};
 use crate::sketches::{SketchEntityId, SketchId, SpatialSketchEntityId, SpatialSketchId};
+use crate::structural_order::StructuralOrd;
 use crate::units::UnitVector3;
 
 /// The order marker of a [`Members`] list.
@@ -247,8 +248,8 @@ pub enum Picks<O: MemberOrder> {
 }
 
 /// One pick of a selection. Its identity key is
-/// `(target, context, native, domain)`; neither the witness nor `resolved`
-/// is part of it.
+/// `(target, context, native, domain)`, and a `Native` pick that carries no
+/// native name adds its witness. `resolved` is never part of it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields, try_from = "PickedWire")]
@@ -275,25 +276,58 @@ pub struct Picked {
 }
 
 /// The identity key of a [`Picked`], `(target, context, native, domain)`, in
-/// the order of §2.5. Neither the witness nor `resolved` is part of it.
+/// the order of §2.5. A `Native` pick that carries no native name adds its
+/// witness, which is then the one statement of what it picks; the witness of
+/// any other pick, and `resolved`, are not part of it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PickKey<'a> {
     target: &'a PickTarget,
     context: Option<&'a PickContext>,
     native: Option<&'a NativeName>,
     domain: Option<PickDomainKey<'a>>,
+    witness: Option<WitnessKey<'a>>,
 }
 
 impl Keyed for Picked {
     type Key<'a> = PickKey<'a>;
 
     fn key(&self) -> PickKey<'_> {
+        let witness = match (&self.target, &self.native) {
+            (PickTarget::Native { .. }, None) => self.witness.as_ref().map(WitnessKey),
+            _ => None,
+        };
         PickKey {
             target: &self.target,
             context: self.context.as_ref(),
             native: self.native.as_ref(),
             domain: self.domain.as_ref().map(PickDomainKey),
+            witness,
         }
+    }
+}
+
+/// A witness in a pick's identity key, compared in the derived structural
+/// order of §2.5.
+#[derive(Debug, Clone, Copy)]
+pub struct WitnessKey<'a>(&'a Witness);
+
+impl PartialEq for WitnessKey<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+
+impl Eq for WitnessKey<'_> {}
+
+impl PartialOrd for WitnessKey<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for WitnessKey<'_> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.structural_cmp(other.0)
     }
 }
 
@@ -617,7 +651,7 @@ pub enum DatumPart {
 
 /// A pick's evaluated geometry as the source cached it: a cache of the pick
 /// in its anchored state.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Witness {
