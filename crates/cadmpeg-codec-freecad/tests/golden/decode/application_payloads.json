@@ -118,10 +118,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": [
-            "fcstd:native:property#Mesh:Mesh:mesh"
-          ]
+          }
         }
       ],
       "rigid_bodies": [],
@@ -137,7 +134,6 @@
       "tessellations": [
         {
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "fcstd:native:property#Mesh:Mesh:mesh",
           "mesh": {
@@ -176,6 +172,10 @@
                 "z": 0.0
               }
             ]
+          },
+          "of": {
+            "definition": "fcstd:model:product_definition#document:root",
+            "kind": "definition"
           },
           "source_object": {
             "format": "fcstd",

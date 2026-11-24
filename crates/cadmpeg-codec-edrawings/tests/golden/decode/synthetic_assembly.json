@@ -2302,8 +2302,7 @@
           "source_name": "body0",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -2321,8 +2320,7 @@
           "source_name": "body1",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -2340,8 +2338,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -2359,8 +2356,7 @@
           "source_name": "Group A",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -2377,8 +2373,7 @@
           "source_name": "Group B",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],

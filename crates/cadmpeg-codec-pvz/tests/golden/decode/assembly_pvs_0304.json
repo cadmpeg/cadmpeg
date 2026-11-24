@@ -22,18 +22,7 @@
     },
     "fragment": false,
     "geometry": {
-      "bodies": [
-        {
-          "id": "pvz:model:body#bracket.ol",
-          "kind": "general",
-          "name": "bracket.ol"
-        },
-        {
-          "id": "pvz:model:body#plate.ol",
-          "kind": "general",
-          "name": "plate.ol"
-        }
-      ],
+      "bodies": [],
       "coedges": [],
       "curves": [],
       "edges": [],
@@ -217,13 +206,10 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         },
         {
-          "bodies": [
-            "pvz:model:body#bracket.ol"
-          ],
+          "bodies": [],
           "bom_properties": {},
           "id": "pvz:model:definition#1",
           "instance_bodies": [],
@@ -235,13 +221,10 @@
           "source_name": "BRACKET.PRT",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
-          "bodies": [
-            "pvz:model:body#plate.ol"
-          ],
+          "bodies": [],
           "bom_properties": {
             "MATERIAL": "STEEL"
           },
@@ -255,8 +238,7 @@
           "source_name": "PLATE.PRT",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -271,9 +253,7 @@
       "spreadsheets": [],
       "tessellations": [
         {
-          "body": "pvz:model:body#bracket.ol",
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "pvz:model:tessellation#bracket.ol:0",
           "mesh": {
@@ -323,6 +303,10 @@
               }
             ]
           },
+          "of": {
+            "definition": "pvz:model:definition#1",
+            "kind": "definition"
+          },
           "texture_assignments": [],
           "texture_coordinates": [],
           "triangle_groups": [
@@ -338,9 +322,7 @@
           ]
         },
         {
-          "body": "pvz:model:body#plate.ol",
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "pvz:model:tessellation#plate.ol:0",
           "mesh": {
@@ -407,6 +389,10 @@
                 }
               }
             ]
+          },
+          "of": {
+            "definition": "pvz:model:definition#2",
+            "kind": "definition"
           },
           "texture_assignments": [],
           "texture_coordinates": [],

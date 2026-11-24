@@ -954,6 +954,7 @@ pub enum Meshed {
     },
     /// A mesh whose role the decoder did not establish, in the coordinates of
     /// the source record that holds it.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
     Unresolved,
 }
 

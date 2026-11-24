@@ -991,8 +991,7 @@
           "source_name": "Surfaces",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -1009,8 +1008,7 @@
           "source_name": "Bilinear",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -1027,8 +1025,7 @@
           "source_name": "Trimmed",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -1043,8 +1040,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],

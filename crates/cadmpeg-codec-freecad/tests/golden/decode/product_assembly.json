@@ -3132,8 +3132,7 @@
           "source_name": "Assembly",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3151,8 +3150,7 @@
           "source_name": "BracketOccurrence",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -3173,8 +3171,7 @@
           "source_name": "BracketPrototype",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3192,8 +3189,7 @@
           "source_name": "ExternalOccurrence",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3211,8 +3207,7 @@
           "source_name": "NestedBracketOccurrence",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3236,8 +3231,7 @@
           "source_name": "OccurrenceGroup",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3255,8 +3249,7 @@
           "source_name": "PinArray",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3274,8 +3267,7 @@
           "source_name": "PinArray_i0",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3293,8 +3285,7 @@
           "source_name": "PinArray_i1",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3312,8 +3303,7 @@
           "source_name": "PinArray_i2",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -3334,8 +3324,7 @@
           "source_name": "PinPrototype",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3353,8 +3342,7 @@
           "source_name": "PrototypeGroup",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3372,8 +3360,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3388,8 +3375,7 @@
             "kind": "external",
             "object": "ExternalPrototype",
             "path": "external_component.FCStd"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],

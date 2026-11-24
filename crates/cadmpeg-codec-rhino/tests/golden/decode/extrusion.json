@@ -427,10 +427,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": [
-            "rhino:object:tessellation#record-000000-offset-177.cache-0"
-          ]
+          }
         }
       ],
       "rigid_bodies": [],
@@ -446,7 +443,6 @@
       "tessellations": [
         {
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "rhino:object:tessellation#record-000000-offset-177.cache-0",
           "mesh": {
@@ -459,6 +455,10 @@
                 "z": 0.0
               }
             ]
+          },
+          "of": {
+            "definition": "rhino:model:product-definition#root",
+            "kind": "display"
           },
           "source_object": {
             "format": "rhino",

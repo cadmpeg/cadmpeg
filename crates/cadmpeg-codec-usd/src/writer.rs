@@ -831,7 +831,9 @@ impl<'ir> Writer<'ir> {
                         return;
                     }
                 }
-                ([], [mesh]) => {
+                ([], [mesh])
+                    if mesh_named_as(mesh, occurrence.name.as_deref().unwrap_or("Occurrence")) =>
+                {
                     self.mesh(mesh, &name, None, &placement, &[]);
                     self.stack.pop();
                     return;
@@ -910,7 +912,10 @@ impl<'ir> Writer<'ir> {
                                         occurrence.name.as_deref().unwrap_or("Occurrence"),
                                     )
                                 }),
-                            ([], [_]) => true,
+                            ([], [mesh]) => mesh_named_as(
+                                mesh,
+                                occurrence.name.as_deref().unwrap_or("Occurrence"),
+                            ),
                             _ => false,
                         }
                 })
@@ -1914,7 +1919,7 @@ impl<'ir> Writer<'ir> {
                     self.body(body, &mut names, &Placement::default(), Some(&name));
                     continue;
                 }
-                ([], [], [mesh]) => {
+                ([], [], [mesh]) if mesh_named_as(mesh, &name) => {
                     self.mesh(mesh, &name, None, &Placement::default(), &[]);
                     continue;
                 }
@@ -2224,6 +2229,17 @@ fn mesh_name(tessellation: &Tessellation) -> String {
             name: Some(name), ..
         } => name.as_str().to_owned(),
         _ => "Mesh".to_owned(),
+    }
+}
+
+/// Whether the prim named after `name` can carry `mesh`, a mesh body, under
+/// its own name: the mesh has no name, or the same prim name.
+fn mesh_named_as(mesh: &Tessellation, name: &str) -> bool {
+    match &mesh.of {
+        Meshed::Definition {
+            name: Some(own), ..
+        } => text::identifier(own.as_str()) == text::identifier(name),
+        _ => true,
     }
 }
 

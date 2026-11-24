@@ -406,6 +406,17 @@ pub(crate) struct DecodeContext<'a> {
     definition_candidates: HashMap<crate::wire::Uuid, usize>,
     expansion_budget: ExpansionBudget,
     expansion_undo: Option<ExpansionUndo>,
+    /// The mesh objects committed, by tessellation id: each is a mesh body of
+    /// the root, stated with its own name, colour, and visibility once the
+    /// root exists.
+    mesh_bodies: HashMap<String, MeshBody>,
+}
+
+/// A mesh object's own display name, colour, and visibility flag.
+struct MeshBody {
+    name: Option<cadmpeg_core::text::NonBlankString>,
+    color: Option<Color>,
+    visible: Option<bool>,
 }
 
 impl<'a> DecodeContext<'a> {
@@ -450,6 +461,7 @@ impl<'a> DecodeContext<'a> {
             definition_candidates,
             expansion_budget: ExpansionBudget::new(),
             expansion_undo: None,
+            mesh_bodies: HashMap::new(),
         };
         context.retain_object_records()?;
         context.retain_opaque_records()?;
@@ -2662,11 +2674,24 @@ impl<'a> DecodeContext<'a> {
             self.retain_opaque_record(&source)?;
         }
         let document = self.session.document_mut()?;
-        document.state_root_definition(
+        if let Some(root) = document.state_root_definition(
             ctx,
             crate::product::root_definition_id(),
             cadmpeg_ir::products::ExternalDocument::default(),
-        )?;
+        )? {
+            let root = root.id.clone();
+            for mesh in &mut document.model.tessellations {
+                if let Some(body) = self.mesh_bodies.remove(mesh.id.as_str()) {
+                    mesh.of = Meshed::Definition {
+                        definition: root.clone(),
+                        name: body.name,
+                        color: body.color,
+                        visible: body.visible,
+                    };
+                }
+            }
+            document.display_unresolved_meshes(&root);
+        }
         document.finalize();
         let mut losses: Vec<LossNote> = Vec::new();
         let outcomes = self.class_outcomes()?;
@@ -3487,9 +3512,6 @@ impl<'a> DecodeContext<'a> {
                 ))
                 .map_err(|error| error.to_string())?;
                 mesh.tessellation.source_object = Some(association.clone());
-                mesh.tessellation.of = Meshed::Display {
-                    definition: crate::product::root_definition_id(),
-                };
                 annotate_derived(candidate_annotations, mesh.tessellation.id.as_str());
                 links.push(mesh.tessellation.id.to_string());
                 candidate.model.tessellations.push(mesh.tessellation);
@@ -3616,12 +3638,14 @@ impl<'a> DecodeContext<'a> {
         let id = mesh.tessellation.id.to_string();
         let mut tessellation = mesh.tessellation;
         tessellation.source_object = Some(self.source_association(identity)?);
-        tessellation.of = Meshed::Definition {
-            definition: crate::product::root_definition_id(),
-            name: cadmpeg_core::text::NonBlankString::new(identity.name.clone()),
-            color: identity.own_color.map(color),
-            visible: identity.own_visible,
-        };
+        self.mesh_bodies.insert(
+            id.clone(),
+            MeshBody {
+                name: cadmpeg_core::text::NonBlankString::new(identity.name.clone()),
+                color: identity.own_color.map(color),
+                visible: identity.own_visible,
+            },
+        );
         self.session
             .append_model_mut()?
             .tessellations
@@ -4511,9 +4535,6 @@ fn stage_brep_carriers(
                         },
                     );
                     staged.links.push(mesh.tessellation.id.to_string());
-                    mesh.tessellation.of = Meshed::Display {
-                        definition: crate::product::root_definition_id(),
-                    };
                     staged
                         .draft
                         .model_mut()
