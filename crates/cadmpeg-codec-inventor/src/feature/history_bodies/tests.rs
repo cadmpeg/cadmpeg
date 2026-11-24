@@ -13,11 +13,11 @@ use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::topology::BodyKind;
 
 use super::*;
+use crate::feature::history_states::{StateRef, UnboundReason};
+use crate::kernel::parse_carrier;
 use crate::test_support::history_carrier::{
     carrier_bytes, framed_carrier, CURRENT_BODY_KEY, SPHERE_BODY_KEY,
 };
-use crate::feature::history_states::{StateRef, UnboundReason};
-use crate::kernel::parse_carrier;
 
 fn feature(native: &str) -> Feature {
     Feature {
@@ -314,7 +314,11 @@ fn build_from(
     else {
         panic!("the chain closes");
     };
-    build(&ctx, &carrier, *chain, records, features).expect("build")
+    let closed = crate::feature::history_states::Closed::new(
+        *chain,
+        crate::feature::history_states::StateIndex::default(),
+    );
+    build(&ctx, &carrier, &closed, records, features).expect("build")
 }
 
 fn split(key: i64) -> FeatureHistoryState {

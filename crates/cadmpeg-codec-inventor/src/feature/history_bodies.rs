@@ -10,9 +10,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use cadmpeg_asm::brep::{decode_with_header, DecodePurpose};
-use cadmpeg_asm::history::{
-    historical_record_archive, materialize_record_table, walk_entity_versions,
-};
+use cadmpeg_asm::history::{materialize_record_table, walk_entity_versions};
 use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, Topology};
@@ -27,7 +25,7 @@ use cadmpeg_ir::schema::EntitySchema;
 use cadmpeg_ir::topology::{BodyKind, EdgeCarrier};
 
 use super::history_states::{
-    Binding, Chain, FeatureHistoryState, BASE_TAG, NATIVE_BASE_KIND, SPLIT_TAG,
+    Binding, Closed, FeatureHistoryState, BASE_TAG, NATIVE_BASE_KIND, SPLIT_TAG,
 };
 use crate::kernel::ActiveCarrier;
 
@@ -167,7 +165,7 @@ fn wants(records: &[FeatureHistoryState], outcome: &mut Outcome) -> Vec<Want> {
 pub(crate) fn build(
     ctx: &DecodeContext<'_>,
     carrier: &ActiveCarrier<'_>,
-    chain: Chain<'_>,
+    closed: &Closed<'_>,
     records: &[FeatureHistoryState],
     model_features: &[Feature],
 ) -> Result<Built, CodecError> {
@@ -180,14 +178,14 @@ pub(crate) fn build(
     if wants.is_empty() {
         return Ok(built);
     }
-    let Chain {
+    let Closed {
         views,
-        frames,
         archived_ids,
         active_count,
-    } = chain;
+        ..
+    } = closed;
     let state_count = views.len();
-    let Some(archive) = historical_record_archive(&views, frames) else {
+    let Some(archive) = closed.archive() else {
         built.outcome.undecoded += wants.len();
         return Ok(built);
     };
@@ -201,7 +199,7 @@ pub(crate) fn build(
     let mut failure = None;
     let mut bounded = HashSet::<usize>::new();
     let mut visited = 0_usize;
-    walk_entity_versions(&views, active_count, &archived_ids, |slot, versions| {
+    walk_entity_versions(views, *active_count, archived_ids, |slot, versions| {
         let visit = visited;
         visited += 1;
         let Some(ordinal) = state_count

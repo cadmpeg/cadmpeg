@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact generator joins and complete result-face construction checks.
 
+use crate::feature::history_views::{ResultStates, StateModel};
 use crate::feature::profile::selection::PathCurve;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
 use cadmpeg_ir::document::Topology;
 use cadmpeg_ir::geometry::lofts::LoftMemberForm;
@@ -358,6 +361,46 @@ pub(in crate::feature::loft_sweep) fn loft_result(
         section_curves(section).contains(&name)
     })
     .or_else(|| legacy_loft(ir, generator, sections, &section_curves))
+}
+
+/// Why a loft result is not proved.
+#[derive(Debug)]
+pub(in crate::feature::loft_sweep) enum Unproved {
+    /// Neither the final model nor the state after the loft holds a complete
+    /// generator-owned result.
+    Result,
+    /// The views of history states passed their work cap.
+    Bounded,
+    /// The decode of a state failed.
+    Codec(CodecError),
+}
+
+/// Loft result proof. The final model holds the result faces unless a later
+/// feature removed or copied them. The history state that first names the
+/// loft holds them in that case (spec section 13.2).
+pub(in crate::feature::loft_sweep) fn loft_proof(
+    ctx: &DecodeContext<'_>,
+    final_model: Option<&CadIr>,
+    states: Option<&dyn ResultStates>,
+    generator: u32,
+    sections: [u32; 2],
+    section_curves: impl Fn(usize) -> Vec<i64>,
+) -> Result<(), Unproved> {
+    if final_model
+        .is_some_and(|model| loft_result(model, generator, sections, &section_curves).is_some())
+    {
+        return Ok(());
+    }
+    let Some(states) = states else {
+        return Err(Unproved::Result);
+    };
+    match states.after(ctx, generator).map_err(Unproved::Codec)? {
+        StateModel::Model(model) => {
+            loft_result(&model, generator, sections, &section_curves).ok_or(Unproved::Result)
+        }
+        StateModel::Unavailable => Err(Unproved::Result),
+        StateModel::Bounded => Err(Unproved::Bounded),
+    }
 }
 
 const LEGACY_CAP_CLASS: &str =

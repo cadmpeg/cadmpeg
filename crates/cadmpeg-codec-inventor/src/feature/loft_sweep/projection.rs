@@ -36,12 +36,13 @@ pub(in crate::feature) fn project(
                 return None;
             }
         },
-        FeatureFamily::Loft => match loft(source, label, index) {
+        FeatureFamily::Loft => match loft(ctx, source, label, index) {
             Ok(operation) => operation,
-            Err(reason) => {
+            Err(Refusal::Native(reason)) => {
                 losses.push(reason.note());
                 return None;
             }
+            Err(Refusal::Codec(error)) => return Some(Err(error)),
         },
         _ => return None,
     };
@@ -88,11 +89,26 @@ pub(in crate::feature) fn project(
     )))
 }
 
+/// Why a loft is not typed.
+enum Refusal {
+    /// The loft stays native.
+    Native(NativeReason),
+    /// The decode fails.
+    Codec(CodecError),
+}
+
+impl From<NativeReason> for Refusal {
+    fn from(reason: NativeReason) -> Self {
+        Self::Native(reason)
+    }
+}
+
 fn loft(
+    ctx: &DecodeContext<'_>,
     source: &PmDcFeature,
     label: &PmDcFeatureLabel,
     index: &ProjectionIndex<'_>,
-) -> Result<FeatureOperation, NativeReason> {
+) -> Result<FeatureOperation, Refusal> {
     let token = source.identity.segment_token.as_str();
     let links = controls::sections(
         source,
@@ -131,7 +147,7 @@ fn loft(
             })
             .collect::<Vec<_>>();
         let [(ordinal, sketch, profile)] = profiles.as_slice() else {
-            return Err(NativeReason::Profile);
+            return Err(NativeReason::Profile.into());
         };
         section_sources.push(
             index
@@ -144,12 +160,13 @@ fn loft(
         );
         selected.push((*ordinal, *sketch, profile.clone()));
     }
-    let result_model = index.result_model.ok_or(NativeReason::ResultTopology)?;
     let section_sources: [u32; 2] = section_sources
         .try_into()
         .map_err(|_| NativeReason::ResultTopology)?;
-    evidence::loft_result(
-        result_model,
+    evidence::loft_proof(
+        ctx,
+        index.result_model,
+        index.result_states,
         source.header.source_index,
         section_sources,
         |section| {
@@ -160,7 +177,11 @@ fn loft(
                 })
         },
     )
-    .ok_or(NativeReason::ResultTopology)?;
+    .map_err(|failure| match failure {
+        evidence::Unproved::Result => Refusal::Native(NativeReason::ResultTopology),
+        evidence::Unproved::Bounded => Refusal::Native(NativeReason::ResultStateBounded),
+        evidence::Unproved::Codec(error) => Refusal::Codec(error),
+    })?;
     let sections = selected
         .into_iter()
         .map(|entry| LoftSection::Profile(ProfileRef::Planar(entry.2)))

@@ -493,3 +493,107 @@ fn legacy_loft_refuses_a_cap_side_or_name_that_is_not_the_positional_form() {
     other_body.geometry.shells.push(shell);
     assert!(check(&other_body).is_none());
 }
+
+/// A source of history-state models that answers every request with one
+/// fixed outcome and records the source indices it was asked for.
+struct FixedStates {
+    outcome: fn(&CadIr) -> StateModel,
+    model: CadIr,
+    asked: std::cell::RefCell<Vec<u32>>,
+}
+
+impl FixedStates {
+    fn new(model: CadIr, outcome: fn(&CadIr) -> StateModel) -> Self {
+        Self {
+            outcome,
+            model,
+            asked: std::cell::RefCell::default(),
+        }
+    }
+
+    fn holding(model: CadIr) -> Self {
+        Self::new(model, |model| StateModel::Model(Box::new(model.clone())))
+    }
+}
+
+impl ResultStates for FixedStates {
+    fn after(&self, _: &DecodeContext<'_>, source_index: u32) -> Result<StateModel, CodecError> {
+        self.asked.borrow_mut().push(source_index);
+        Ok((self.outcome)(&self.model))
+    }
+}
+
+fn proof(final_model: Option<&CadIr>, states: Option<&dyn ResultStates>) -> Result<(), Unproved> {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    loft_proof(&ctx, final_model, states, 17, [19, 23], legacy_curves)
+}
+
+/// The legacy loft of `legacy_model` after a later feature consumed the cap
+/// of the first section: no face carries that cap name.
+fn consumed_cap() -> CadIr {
+    let mut model = legacy_model();
+    model.model.attributes.remove(0);
+    model
+}
+
+/// The legacy loft after a later feature copied its first cap: a second face
+/// carries the name of the cap.
+fn copied_cap() -> CadIr {
+    let mut model = legacy_model();
+    let mut copy = model.model.attributes[0].clone();
+    copy.target = AttributeTarget::Face(
+        serde_json::from_value(json!("test:model:face#f3")).expect("face id"),
+    )
+    .into();
+    model.model.attributes[3] = copy;
+    model
+}
+
+#[test]
+fn a_complete_final_model_proves_the_loft_without_a_state() {
+    let complete = legacy_model();
+    assert!(proof(Some(&complete), None).is_ok());
+    let states = FixedStates::new(CadIr::empty(), |_| StateModel::Unavailable);
+    assert!(proof(Some(&complete), Some(&states)).is_ok());
+    assert!(states.asked.borrow().is_empty());
+}
+
+#[test]
+fn a_loft_whose_cap_a_later_feature_consumed_or_copied_is_proved_by_its_state() {
+    for later in [consumed_cap(), copied_cap()] {
+        assert!(loft_result(&later, 17, [19, 23], legacy_curves).is_none());
+        assert!(matches!(proof(Some(&later), None), Err(Unproved::Result)));
+        assert!(matches!(proof(None, None), Err(Unproved::Result)));
+        let states = FixedStates::holding(legacy_model());
+        assert!(proof(Some(&later), Some(&states)).is_ok());
+        assert!(proof(None, Some(&states)).is_ok());
+        assert_eq!(*states.asked.borrow(), [17, 17]);
+    }
+}
+
+#[test]
+fn the_state_must_hold_the_complete_result_itself() {
+    let later = consumed_cap();
+    let incomplete = FixedStates::holding(consumed_cap());
+    assert!(matches!(
+        proof(Some(&later), Some(&incomplete)),
+        Err(Unproved::Result)
+    ));
+    let unavailable = FixedStates::new(CadIr::empty(), |_| StateModel::Unavailable);
+    assert!(matches!(
+        proof(Some(&later), Some(&unavailable)),
+        Err(Unproved::Result)
+    ));
+}
+
+#[test]
+fn a_state_view_over_its_work_cap_keeps_the_loft_unproved_as_bounded() {
+    let later = consumed_cap();
+    let bounded = FixedStates::new(CadIr::empty(), |_| StateModel::Bounded);
+    assert!(matches!(
+        proof(Some(&later), Some(&bounded)),
+        Err(Unproved::Bounded)
+    ));
+    // A final model that proves the loft never reads the state.
+    assert!(proof(Some(&legacy_model()), Some(&bounded)).is_ok());
+}
