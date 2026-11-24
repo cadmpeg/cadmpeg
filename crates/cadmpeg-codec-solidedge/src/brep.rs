@@ -68,14 +68,11 @@ fn malformed(message: &str) -> CodecError {
 fn ptr(node: Node<'_>, field: &str) -> Option<u32> {
     node.pointer(field).filter(|index| *index > 1)
 }
-fn required(node: Node<'_>, field: &str) -> Result<u32, CodecError> {
-    ptr(node, field).ok_or_else(|| malformed("unresolved Parasolid node reference"))
-}
-fn sense(node: Node<'_>) -> Result<Sense, CodecError> {
+fn sense(node: Node<'_>) -> Option<Sense> {
     match node.char("sense") {
-        Some(b'+') => Ok(Sense::Forward),
-        Some(b'-') => Ok(Sense::Reversed),
-        _ => Err(malformed("invalid Parasolid sense")),
+        Some(b'+') => Some(Sense::Forward),
+        Some(b'-') => Some(Sense::Reversed),
+        _ => None,
     }
 }
 fn reverse(value: Sense) -> Sense {
@@ -118,6 +115,10 @@ fn widened(
 
 /// A vertex's position in millimetres.
 fn vertex_position(nodes: &Nodes<'_>, vertex: u32) -> Option<Point3> {
+    vertex_point(nodes, vertex).map(FinitePoint3::get)
+}
+
+fn vertex_point(nodes: &Nodes<'_>, vertex: u32) -> Option<FinitePoint3> {
     let point = nodes.get(&ptr(*nodes.get(&vertex)?, "point")?)?;
     let [x, y, z] = point.vector("pvec")?;
     FinitePoint3::new(Point3::new(
@@ -125,25 +126,154 @@ fn vertex_position(nodes: &Nodes<'_>, vertex: u32) -> Option<Point3> {
         y * MM_PER_METRE,
         z * MM_PER_METRE,
     ))
-    .map(FinitePoint3::get)
 }
 
-fn chain(nodes: &Nodes<'_>, start: Option<u32>, link: &str) -> Result<Vec<u32>, CodecError> {
+/// The nodes of an ownership chain, ending at the first link that does not
+/// resolve or that repeats a node. The second value names that defect.
+fn chain(nodes: &Nodes<'_>, start: Option<u32>, link: &str) -> (Vec<u32>, Option<&'static str>) {
     let mut result = Vec::new();
     let mut seen = BTreeSet::new();
     let mut current = start;
     while let Some(index) = current {
         if !seen.insert(index) {
-            return Err(malformed("cyclic Parasolid ownership chain"));
+            return (result, Some("cyclic Parasolid ownership chain"));
         }
-        let node = nodes
-            .get(&index)
-            .copied()
-            .ok_or_else(|| malformed("unresolved Parasolid ownership chain"))?;
+        let Some(node) = nodes.get(&index).copied() else {
+            return (result, Some("unresolved Parasolid ownership chain"));
+        };
         result.push(index);
         current = ptr(node, link);
     }
-    Ok(result)
+    (result, None)
+}
+
+fn chain_losses(defect: Option<&'static str>, owner: &str, losses: &mut Vec<LossNote>) {
+    if let Some(defect) = defect {
+        losses.push(SolidEdgeLossCode::ChainTruncated.note(format!(
+            "{defect} of {owner}; the records after the defect are not transferred"
+        )));
+    }
+}
+
+/// What an edge states: its endpoint vertices in fin order and its carrier
+/// node. An edge whose endpoints or carrier cannot be placed has no
+/// admissible form, and the loops that use it are not transferred.
+struct EdgeRead {
+    /// Start and end vertex nodes before the carrier's sense applies; `None`
+    /// is a vertexless ring edge.
+    endpoints: Option<[u32; 2]>,
+    /// The carrier node, when the edge names one that resolves.
+    curve: Option<u32>,
+    /// The edge names a carrier node that does not resolve.
+    curve_unresolved: bool,
+}
+
+type EdgeReads = BTreeMap<u32, Result<EdgeRead, &'static str>>;
+
+fn read_edge(nodes: &Nodes<'_>, edge: u32) -> Result<EdgeRead, &'static str> {
+    let node = *nodes.get(&edge).ok_or("unresolved edge")?;
+    let first = ptr(node, "halfedge")
+        .and_then(|index| nodes.get(&index))
+        .copied()
+        .ok_or("edge has no resolved fin")?;
+    let previous = ptr(first, "backward")
+        .and_then(|index| nodes.get(&index))
+        .copied()
+        .ok_or("edge fin has no resolved predecessor")?;
+    let endpoints = match (ptr(previous, "vertex"), ptr(first, "vertex")) {
+        (Some(start), Some(end)) => {
+            let sense = sense(first).ok_or("edge fin has an invalid sense")?;
+            if vertex_position(nodes, start).is_none() || vertex_position(nodes, end).is_none() {
+                return Err("edge vertex has no resolved position");
+            }
+            Some(if sense == Sense::Forward {
+                [start, end]
+            } else {
+                [end, start]
+            })
+        }
+        (None, None) => None,
+        _ => return Err("edge states one endpoint vertex"),
+    };
+    let named = ptr(node, "curve");
+    let curve = named.filter(|index| nodes.contains_key(index));
+    if endpoints.is_none() && curve.is_none() && crate::sp_curve::locate(nodes, first).is_none() {
+        return Err("vertexless edge has no carrier");
+    }
+    Ok(EdgeRead {
+        endpoints,
+        curve,
+        curve_unresolved: named.is_some() && curve.is_none(),
+    })
+}
+
+/// A fin of a loop's ring.
+struct RingFin {
+    fin: u32,
+    edge: u32,
+    vertex: Option<u32>,
+}
+
+enum LoopShape {
+    Pole(u32),
+    Ring(Vec<RingFin>),
+}
+
+/// Reads the boundary of a loop from its fin ring.
+fn read_loop(
+    nodes: &Nodes<'_>,
+    edges: &mut EdgeReads,
+    loop_index: u32,
+) -> Result<LoopShape, &'static str> {
+    let loop_ = *nodes.get(&loop_index).ok_or("unresolved loop")?;
+    let first = ptr(loop_, "halfedge").ok_or("loop has no fin")?;
+    let mut current = first;
+    let mut ring = Vec::new();
+    let mut seen = BTreeSet::new();
+    loop {
+        if !seen.insert(current) {
+            return Err("fin ring has a secondary cycle");
+        }
+        let fin = *nodes.get(&current).ok_or("unresolved fin")?;
+        if fin.char("sense") == Some(b'?')
+            && ptr(fin, "forward") == Some(current)
+            && ptr(fin, "backward") == Some(current)
+            && ptr(fin, "edge").is_none()
+        {
+            let vertex = ptr(fin, "vertex").ok_or("pole fin has no vertex")?;
+            if vertex_position(nodes, vertex).is_none() {
+                return Err("pole vertex has no resolved position");
+            }
+            return Ok(LoopShape::Pole(vertex));
+        }
+        let edge = ptr(fin, "edge").ok_or("fin has no edge")?;
+        edges
+            .entry(edge)
+            .or_insert_with(|| read_edge(nodes, edge))
+            .as_ref()
+            .map_err(|reason| *reason)?;
+        sense(fin).ok_or("fin has an invalid sense")?;
+        ring.push(RingFin {
+            fin: current,
+            edge,
+            vertex: ptr(fin, "vertex"),
+        });
+        current = ptr(fin, "forward").ok_or("fin has no successor")?;
+        if current == first {
+            return Ok(LoopShape::Ring(ring));
+        }
+    }
+}
+
+/// A face whose every loop read.
+struct FaceRead {
+    index: u32,
+    shell: u32,
+    /// The surface node, or the face's own node index for the unknown surface
+    /// that stands for a missing reference.
+    surface: u32,
+    sense: Sense,
+    loops: Vec<(u32, LoopShape)>,
 }
 
 pub(crate) fn project(
@@ -208,7 +338,8 @@ pub(crate) fn project(
                 && ptr(*node, "body") == Some(body.index())
                 && node.char("type") == Some(b'S')
         }) {
-            let shells = chain(&nodes, ptr(region, "shell"), "next")?;
+            let (shells, defect) = chain(&nodes, ptr(region, "shell"), "next");
+            chain_losses(defect, "a region's shells", losses);
             for shell in &shells {
                 selected_shells.insert(*shell, region.index());
             }
@@ -223,7 +354,8 @@ pub(crate) fn project(
             });
         }
         if regions.is_empty() {
-            let shells = chain(&nodes, ptr(body, "shell"), "next")?;
+            let (shells, defect) = chain(&nodes, ptr(body, "shell"), "next");
+            chain_losses(defect, "a body's shells", losses);
             for shell in &shells {
                 selected_shells.insert(*shell, body.index());
             }
@@ -239,11 +371,11 @@ pub(crate) fn project(
         }
         ir.geometry.regions.extend(regions);
     }
-    let mut faces = BTreeSet::new();
+    let mut face_shells = BTreeMap::new();
     for (shell_index, region) in selected_shells {
-        let shell = *nodes
-            .get(&shell_index)
-            .ok_or_else(|| malformed("unresolved shell"))?;
+        let Some(shell) = nodes.get(&shell_index).copied() else {
+            continue;
+        };
         if ptr(shell, "edge").is_some() || ptr(shell, "vertex").is_some() {
             losses.push(
                 SolidEdgeLossCode::WireTopologyUnsupported
@@ -254,9 +386,12 @@ pub(crate) fn project(
             shell_id(stream, shell_index),
             region_id(stream, region),
         ));
-        faces.extend(chain(&nodes, ptr(shell, "face"), "next")?);
+        let (shell_faces, defect) = chain(&nodes, ptr(shell, "face"), "next");
+        chain_losses(defect, "a shell's faces", losses);
+        for face in shell_faces {
+            face_shells.entry(face).or_insert(shell_index);
+        }
     }
-    let mut fins = BTreeSet::new();
     let mut edges = BTreeSet::new();
     let mut fit_tolerances: BTreeMap<CurveId, f64> = BTreeMap::new();
     // Largest departure of a carrier from the faces it bounds, where it
@@ -268,91 +403,92 @@ pub(crate) fn project(
     let document_linear = ir.tolerances.linear.get();
     let mut vertices = BTreeSet::new();
     let mut surfaces = BTreeSet::new();
+    // Faces with no surface reference stand on an unknown surface that takes
+    // the face's own node index.
+    let mut surfaceless = Vec::new();
     let mut emitted = Emitted::default();
-    for face_index in faces {
-        let face = *nodes
-            .get(&face_index)
-            .ok_or_else(|| malformed("unresolved face"))?;
-        let surface = required(face, "surface")?;
-        surfaces.insert(surface);
-        let loops = chain(&nodes, ptr(face, "loop"), "next")?;
-        for loop_index in &loops {
-            let loop_ = *nodes
-                .get(loop_index)
-                .ok_or_else(|| malformed("unresolved loop"))?;
-            let first = required(loop_, "halfedge")?;
-            let mut current = first;
-            let mut ring = Vec::new();
-            let mut seen = BTreeSet::new();
-            let boundary = loop {
-                if !seen.insert(current) {
-                    return Err(malformed("Parasolid fin ring has a secondary cycle"));
-                }
-                let fin = *nodes
-                    .get(&current)
-                    .ok_or_else(|| malformed("unresolved fin"))?;
-                if fin.char("sense") == Some(b'?')
-                    && ptr(fin, "forward") == Some(current)
-                    && ptr(fin, "backward") == Some(current)
-                    && ptr(fin, "edge").is_none()
-                {
-                    let vertex = required(fin, "vertex")?;
-                    vertices.insert(vertex);
-                    break LoopBoundary::Vertex {
-                        vertex: vertex_id(stream, vertex),
-                        pcurves: Vec::new(),
-                    };
-                }
-                fins.insert(current);
-                edges.insert(required(fin, "edge")?);
-                if let Some(vertex) = ptr(fin, "vertex") {
-                    vertices.insert(vertex);
-                }
-                ring.push(coedge_id(stream, current));
-                current = required(fin, "forward")?;
-                if current == first {
-                    break LoopBoundary::Ring(
-                        LoopRing::new(ring, Vec::new()).map_err(CodecError::malformed)?,
+    let mut edge_reads = EdgeReads::new();
+    let mut face_reads = Vec::new();
+    for (face_index, shell) in face_shells {
+        let Some(face) = nodes.get(&face_index).copied() else {
+            continue;
+        };
+        let Some(face_sense) = sense(face) else {
+            losses.push(
+                SolidEdgeLossCode::FaceSenseUnresolved.note(
+                    "a face states no orientation; the face and its loops are not transferred",
+                ),
+            );
+            continue;
+        };
+        let (loop_nodes, defect) = chain(&nodes, ptr(face, "loop"), "next");
+        let mut complete = defect.is_none();
+        chain_losses(defect, "a face's loops", losses);
+        let mut loops = Vec::new();
+        for loop_index in loop_nodes {
+            match read_loop(&nodes, &mut edge_reads, loop_index) {
+                Ok(shape) => loops.push((loop_index, shape)),
+                Err(reason) => {
+                    complete = false;
+                    losses.push(
+                        SolidEdgeLossCode::LoopUnreadable
+                            .note(format!("a loop does not read: {reason}")),
                     );
                 }
-            };
-            ir.geometry.loops.push(Loop {
-                id: loop_id(stream, *loop_index),
-                face: face_id(stream, face_index),
-                boundary,
-                native_ref: None,
-            });
+            }
         }
-        let carrier = *nodes
-            .get(&surface)
-            .ok_or_else(|| malformed("unresolved surface"))?;
-        let mut face_sense = sense(face)?;
-        let negative_major = matches!(
-            geometry::analytic(carrier),
-            Some(cadmpeg_parasolid::geometry::Analytic::Surface {
-                negative_major: true,
-                ..
-            })
-        );
-        if (carrier.char("sense") == Some(b'-')) != negative_major {
-            face_sense = reverse(face_sense);
+        if !complete {
+            losses.push(
+                SolidEdgeLossCode::LoopUnreadable
+                    .note("a face with a loop that does not read is not transferred"),
+            );
+            continue;
         }
-        ir.geometry.faces.push(Face {
-            id: face_id(stream, face_index),
-            shell: shell_id(stream, required(face, "shell")?),
-            surface: surface_id(stream, surface),
+        let surface = if let Some(surface) = ptr(face, "surface") {
+            surfaces.insert(surface);
+            surface
+        } else {
+            surfaceless.push(face_index);
+            face_index
+        };
+        for (_, shape) in &loops {
+            match shape {
+                LoopShape::Pole(vertex) => {
+                    vertices.insert(*vertex);
+                }
+                LoopShape::Ring(ring) => {
+                    for fin in ring {
+                        edges.insert(fin.edge);
+                        match fin.vertex {
+                            Some(vertex) if vertex_position(&nodes, vertex).is_some() => {
+                                vertices.insert(vertex);
+                            }
+                            Some(_) => losses.push(
+                                SolidEdgeLossCode::VertexUnresolved
+                                    .note("a fin names a vertex that has no resolved position"),
+                            ),
+                            None => {}
+                        }
+                    }
+                }
+            }
+        }
+        face_reads.push(FaceRead {
+            index: face_index,
+            shell,
+            surface,
             sense: face_sense,
-            loops: FaceLoops::unspecified(
-                loops
-                    .into_iter()
-                    .map(|index| loop_id(stream, index))
-                    .collect(),
-            ),
-            name: None,
-            color: None,
-            tolerance: tolerance(face, losses),
-            native_ref: None,
+            loops,
         });
+    }
+    for edge in &edges {
+        if let Some(Ok(EdgeRead {
+            endpoints: Some(ends),
+            ..
+        })) = edge_reads.get(edge)
+        {
+            vertices.extend(ends);
+        }
     }
     for edge in &edges {
         if let Some(source) = nodes
@@ -373,9 +509,20 @@ pub(crate) fn project(
         }
     }
     for surface in surfaces {
-        let node = *nodes
-            .get(&surface)
-            .ok_or_else(|| malformed("unresolved surface"))?;
+        let Some(node) = nodes.get(&surface).copied() else {
+            losses.push(
+                SolidEdgeLossCode::SurfaceUnresolved.note(
+                    "a face names a surface node that does not resolve; its carrier is unknown",
+                ),
+            );
+            ir.geometry.surfaces.push(Surface {
+                id: surface_id(stream, surface),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+                source_object: None,
+                native_ref: None,
+            });
+            continue;
+        };
         if node.kind() == kind::SWEPT_SURF
             && swept_surface(&nodes, &mut ir, &mut emitted, stream, surface, node)?
         {
@@ -395,23 +542,28 @@ pub(crate) fn project(
             native_ref: None,
         });
     }
+    for face in &surfaceless {
+        losses.push(
+            SolidEdgeLossCode::SurfaceUnresolved
+                .note("a face names no surface; its carrier is unknown"),
+        );
+        ir.geometry.surfaces.push(Surface {
+            id: surface_id(stream, *face),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            source_object: None,
+            native_ref: None,
+        });
+    }
     for vertex in vertices {
-        let node = *nodes
-            .get(&vertex)
-            .ok_or_else(|| malformed("unresolved vertex"))?;
-        let point = required(node, "point")?;
-        let source = *nodes
-            .get(&point)
-            .ok_or_else(|| malformed("unresolved point"))?;
-        let [x, y, z] = source
-            .vector("pvec")
-            .ok_or_else(|| malformed("invalid point"))?;
-        let position = FinitePoint3::new(Point3::new(
-            x * MM_PER_METRE,
-            y * MM_PER_METRE,
-            z * MM_PER_METRE,
-        ))
-        .ok_or_else(|| malformed("nonfinite point"))?;
+        let Some(position) = vertex_point(&nodes, vertex) else {
+            continue;
+        };
+        let Some(point) = nodes.get(&vertex).and_then(|node| ptr(*node, "point")) else {
+            continue;
+        };
+        let Some(node) = nodes.get(&vertex).copied() else {
+            continue;
+        };
         if emitted.points.insert(point_id(stream, point)) {
             ir.geometry
                 .points
@@ -424,58 +576,25 @@ pub(crate) fn project(
             native_ref: None,
         });
     }
-    for fin in &fins {
-        let node = nodes[fin];
-        let edge = required(node, "edge")?;
-        let edge_node = *nodes
-            .get(&edge)
-            .ok_or_else(|| malformed("unresolved edge"))?;
-        let curve = ptr(edge_node, "curve")
-            .and_then(|index| nodes.get(&index))
-            .copied();
-        let mut use_sense = sense(node)?;
-        if curve.is_some_and(|curve| curve.char("sense") == Some(b'-')) {
-            use_sense = reverse(use_sense);
-        }
-        let radial = ptr(node, "other")
-            .filter(|other| fins.contains(other))
-            .unwrap_or(*fin);
-        ir.geometry.coedges.push(Coedge {
-            id: coedge_id(stream, *fin),
-            owner_loop: loop_id(stream, required(node, "loop")?),
-            edge: edge_id(stream, edge),
-            radial_next: coedge_id(stream, radial),
-            sense: use_sense,
-            pcurves: Vec::new(),
-            use_curve: None,
-            native_ref: None,
-        });
-    }
+    let mut dropped_edges = BTreeSet::new();
     for edge in edges {
-        let node = nodes[&edge];
-        let first = *nodes
-            .get(&required(node, "halfedge")?)
-            .ok_or_else(|| malformed("unresolved edge fin"))?;
-        let previous = *nodes
-            .get(&required(first, "backward")?)
-            .ok_or_else(|| malformed("unresolved previous fin"))?;
-        let mut endpoints = match (ptr(previous, "vertex"), ptr(first, "vertex")) {
-            (Some(start), Some(end)) => {
-                let ends = if sense(first)? == Sense::Forward {
-                    [start, end]
-                } else {
-                    [end, start]
-                };
-                Some(ends)
-            }
-            (None, None) => None,
-            _ => return Err(malformed("incomplete edge endpoints")),
+        let (Some(node), Some(Ok(read))) = (nodes.get(&edge).copied(), edge_reads.get(&edge))
+        else {
+            continue;
         };
+        let first = ptr(node, "halfedge").and_then(|index| nodes.get(&index).copied());
+        let mut endpoints = read.endpoints;
         let mut carrier = EdgeCarrier::Free;
-        if let Some(curve_index) = ptr(node, "curve") {
-            let source = *nodes
-                .get(&curve_index)
-                .ok_or_else(|| malformed("unresolved curve"))?;
+        if read.curve_unresolved {
+            losses.push(
+                SolidEdgeLossCode::CurveUnresolved
+                    .note("an edge names a carrier node that does not resolve"),
+            );
+        }
+        if let Some(curve_index) = read.curve {
+            let Some(source) = nodes.get(&curve_index).copied() else {
+                continue;
+            };
             if source.char("sense") == Some(b'-') {
                 endpoints = endpoints.map(|[start, end]| [end, start]);
             }
@@ -527,7 +646,7 @@ pub(crate) fn project(
                                     ));
                                 }
                             }
-                            let context = cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext::try_new(
+                            match cadmpeg_ir::geometry::intersection_curves::IntcurveSupportContext::try_new(
                                 chart.supports.map(|support| {
                                     cadmpeg_ir::geometry::intersection_curves::IntcurveSupportSide {
                                         surface: Some(surface_id(stream, support)),
@@ -536,22 +655,27 @@ pub(crate) fn project(
                                 }),
                                 chart.range,
                                 [Vec::new(), Vec::new(), Vec::new()],
-                            )
-                            .map_err(malformed)?;
-                            definition = Some(cadmpeg_ir::geometry::ProceduralCurve::new(
-                                construction_id(stream, curve_index),
-                                cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Intersection {
-                                    context,
-                                    discontinuity_flag: false,
-                                    cache: chart.fit,
-                                },
-                            ));
-                            projected = Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                                chart.curve,
-                            )));
-                            losses.push(SolidEdgeLossCode::IntersectionChartReduced.note(
-                                "surface-intersection construction and chart cache are retained, the chart cache moved onto its support surfaces; angular and parameter error fields remain unmapped",
-                            ));
+                            ) {
+                                Ok(context) => {
+                                    definition = Some(cadmpeg_ir::geometry::ProceduralCurve::new(
+                                        construction_id(stream, curve_index),
+                                        cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition::Intersection {
+                                            context,
+                                            discontinuity_flag: false,
+                                            cache: chart.fit,
+                                        },
+                                    ));
+                                    projected = Some(CurveGeometry::Solved(
+                                        SolvedCurveGeometry::Nurbs(chart.curve),
+                                    ));
+                                    losses.push(SolidEdgeLossCode::IntersectionChartReduced.note(
+                                        "surface-intersection construction and chart cache are retained, the chart cache moved onto its support surfaces; angular and parameter error fields remain unmapped",
+                                    ));
+                                }
+                                Err(_) => {
+                                    reason = "intersection support context is invalid";
+                                }
+                            }
                         }
                         Ok(_) => reason = "intersection support references do not resolve",
                         Err(crate::chart::ChartError::Data(message)) => reason = message,
@@ -597,13 +721,20 @@ pub(crate) fn project(
                     },
                 );
                 if let Some(definition) = definition {
-                    cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.geometry)
-                        .add_curve(&mut ir.geometry, &owner, definition)?
-                        .map_err(|error| CodecError::Malformed(error.to_string()))?;
+                    if let Err(error) =
+                        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.geometry)
+                            .add_curve(&mut ir.geometry, &owner, definition)?
+                    {
+                        losses.push(SolidEdgeLossCode::CurveConstructionDropped.note(format!(
+                            "the surface-intersection construction is not admitted: {error}"
+                        )));
+                    }
                 }
             }
             carrier = EdgeCarrier::Curve(curve_id(stream, curve_index));
-        } else if let Some((sp, stated, range)) = crate::sp_curve::locate(&nodes, first) {
+        } else if let Some((sp, stated, range)) =
+            first.and_then(|first| crate::sp_curve::locate(&nodes, first))
+        {
             let target = crate::sp_curve::FIT_TOLERANCE_MM.min(0.5 * document_linear);
             if let Some(sampled) = crate::sp_curve::sample(ctx, &nodes, sp, range, target)? {
                 let owner = curve_id(stream, stated);
@@ -632,6 +763,10 @@ pub(crate) fn project(
                     ));
                 }
                 carrier = EdgeCarrier::Curve(owner);
+            } else {
+                losses.push(SolidEdgeLossCode::CurveUnsupported.note(
+                    "a tolerant edge's parameter-space curve does not sample to a model-space carrier",
+                ));
             }
         }
         let ends = match endpoints {
@@ -641,6 +776,11 @@ pub(crate) fn project(
             )),
             None => ring_vertex(ctx, &mut ir, &mut emitted, stream, edge, &carrier)?,
         };
+        if ends.is_none() && carrier.curve().is_none() {
+            // A vertexless edge bounds no extent without a carrier.
+            dropped_edges.insert(edge);
+            continue;
+        }
         let stated = tolerance(node, losses);
         let departure = carrier
             .curve()
@@ -650,6 +790,123 @@ pub(crate) fn project(
             carrier,
             ends,
             tolerance: widened(stated, departure, document_linear),
+            native_ref: None,
+        });
+    }
+    let mut fins = BTreeMap::new();
+    for face in face_reads {
+        let mut loop_ids = Vec::new();
+        let mut face_loops = Vec::new();
+        let mut usable = true;
+        for (loop_index, shape) in face.loops {
+            let boundary = match shape {
+                LoopShape::Pole(vertex) => LoopBoundary::Vertex {
+                    vertex: vertex_id(stream, vertex),
+                    pcurves: Vec::new(),
+                },
+                LoopShape::Ring(ring) => {
+                    if ring.iter().any(|fin| dropped_edges.contains(&fin.edge)) {
+                        usable = false;
+                        break;
+                    }
+                    let Ok(ring_boundary) = LoopRing::new(
+                        ring.iter().map(|fin| coedge_id(stream, fin.fin)).collect(),
+                        Vec::new(),
+                    ) else {
+                        usable = false;
+                        break;
+                    };
+                    face_loops.extend(ring.iter().map(|fin| (fin.fin, loop_index, fin.edge)));
+                    LoopBoundary::Ring(ring_boundary)
+                }
+            };
+            loop_ids.push(loop_id(stream, loop_index));
+            ir.geometry.loops.push(Loop {
+                id: loop_id(stream, loop_index),
+                face: face_id(stream, face.index),
+                boundary,
+                native_ref: None,
+            });
+        }
+        if !usable {
+            losses.push(
+                SolidEdgeLossCode::LoopUnreadable
+                    .note("a face whose loop uses an edge with no carrier is not transferred"),
+            );
+            // The loops already admitted for this face leave with it.
+            let face_id = face_id(stream, face.index);
+            ir.geometry.loops.retain(|loop_| loop_.face != face_id);
+            continue;
+        }
+        fins.extend(
+            face_loops
+                .into_iter()
+                .map(|(fin, loop_index, edge)| (fin, (loop_index, edge))),
+        );
+        let mut face_sense = face.sense;
+        if let Some(carrier) = nodes.get(&face.surface).copied() {
+            let negative_major = matches!(
+                geometry::analytic(carrier),
+                Some(cadmpeg_parasolid::geometry::Analytic::Surface {
+                    negative_major: true,
+                    ..
+                })
+            );
+            if (carrier.char("sense") == Some(b'-')) != negative_major {
+                face_sense = reverse(face_sense);
+            }
+        }
+        let Some(face_node) = nodes.get(&face.index).copied() else {
+            continue;
+        };
+        ir.geometry.faces.push(Face {
+            id: face_id(stream, face.index),
+            shell: shell_id(stream, face.shell),
+            surface: surface_id(stream, face.surface),
+            sense: face_sense,
+            loops: FaceLoops::unspecified(loop_ids),
+            name: None,
+            color: None,
+            tolerance: tolerance(face_node, losses),
+            native_ref: None,
+        });
+    }
+    for (fin, (loop_index, edge)) in &fins {
+        let (Some(node), Some(edge_node)) = (nodes.get(fin).copied(), nodes.get(edge).copied())
+        else {
+            continue;
+        };
+        let Some(mut use_sense) = sense(node) else {
+            continue;
+        };
+        let curve = ptr(edge_node, "curve")
+            .and_then(|index| nodes.get(&index))
+            .copied();
+        if curve.is_some_and(|curve| curve.char("sense") == Some(b'-')) {
+            use_sense = reverse(use_sense);
+        }
+        // The next fin around the edge that a transferred loop uses.
+        let mut radial = *fin;
+        let mut seen = BTreeSet::new();
+        let mut walker = ptr(node, "other");
+        while let Some(other) = walker {
+            if fins.contains_key(&other) {
+                radial = other;
+                break;
+            }
+            if !seen.insert(other) {
+                break;
+            }
+            walker = nodes.get(&other).and_then(|node| ptr(*node, "other"));
+        }
+        ir.geometry.coedges.push(Coedge {
+            id: coedge_id(stream, *fin),
+            owner_loop: loop_id(stream, *loop_index),
+            edge: edge_id(stream, *edge),
+            radial_next: coedge_id(stream, radial),
+            sense: use_sense,
+            pcurves: Vec::new(),
+            use_curve: None,
             native_ref: None,
         });
     }
@@ -721,7 +978,7 @@ fn swept_surface(
         native_ref: None,
     };
     ir.geometry.surfaces.push(carrier);
-    cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.geometry)
+    let admitted = cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.geometry)
         .add_surface(
             &mut ir.geometry,
             &owner,
@@ -732,8 +989,12 @@ fn swept_surface(
                 ),
                 None,
             ),
-        )?
-        .map_err(|error| CodecError::Malformed(error.to_string()))?;
+        )?;
+    if admitted.is_err() {
+        // The surface keeps an unsupported carrier.
+        ir.geometry.surfaces.pop();
+        return Ok(false);
+    }
     Ok(true)
 }
 

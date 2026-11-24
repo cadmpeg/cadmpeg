@@ -285,6 +285,58 @@ fn invalid_tolerance_keeps_body_geometry_with_a_loss() {
     assert_geometry_valid(result.ir());
 }
 
+#[test]
+fn dangling_face_surface_keeps_the_other_faces() {
+    let mut partition = test_support::cube_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
+        .unwrap()
+        .unwrap();
+    let range = records
+        .nodes()
+        .find(|node| node.kind() == cadmpeg_parasolid::records::node_type::FACE)
+        .unwrap()
+        .field_range("surface")
+        .unwrap();
+    partition[range].copy_from_slice(&4000u16.to_be_bytes());
+    let bytes = test_support::with_partitions(&[partition]);
+    let result = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let ir = result.ir();
+    assert_eq!(ir.geometry.bodies.len(), 1);
+    assert_eq!(ir.geometry.faces.len(), 6);
+    assert_eq!(
+        ir.geometry
+            .surfaces
+            .iter()
+            .filter(|surface| matches!(
+                surface.geometry,
+                cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+                    cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { .. }
+                )
+            ))
+            .count(),
+        1
+    );
+    let codes: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .map(|loss| loss.code.clone())
+        .collect();
+    assert!(codes.contains(
+        &crate::loss::SolidEdgeLossCode::SurfaceUnresolved
+            .note("")
+            .code
+    ));
+    assert!(!codes.contains(
+        &crate::loss::SolidEdgeLossCode::PartitionUnreadable
+            .note("")
+            .code
+    ));
+    assert_geometry_valid(ir);
+}
+
 fn assert_geometry_valid(ir: &cadmpeg_ir::CadIr) {
     let mut geometry = ir.clone();
     geometry.source = None;

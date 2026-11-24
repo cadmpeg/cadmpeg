@@ -30,6 +30,13 @@ pub(crate) enum SolidEdgeLossCode {
     IntersectionNurbsBoundaryAssumed,
     IntersectionNurbsIsolineAssumed,
     EdgeToleranceWidened,
+    SurfaceUnresolved,
+    CurveUnresolved,
+    LoopUnreadable,
+    FaceSenseUnresolved,
+    ChainTruncated,
+    VertexUnresolved,
+    CurveConstructionDropped,
 }
 
 impl SolidEdgeLossCode {
@@ -109,6 +116,21 @@ impl SolidEdgeLossCode {
             Self::FeaturesPending => (
                 "feature.decode-pending",
                 LossTaxonomy::MetadataNotTransferred,
+            ),
+            Self::SurfaceUnresolved => ("surface.unresolved", LossTaxonomy::GeometryNotTransferred),
+            Self::CurveUnresolved => ("curve.unresolved", LossTaxonomy::GeometryNotTransferred),
+            Self::LoopUnreadable => ("loop.unreadable", LossTaxonomy::TopologyNotTransferred),
+            Self::FaceSenseUnresolved => {
+                ("face.sense-unresolved", LossTaxonomy::SourceTopologyInvalid)
+            }
+            Self::ChainTruncated => (
+                "topology.chain-truncated",
+                LossTaxonomy::TopologyNotTransferred,
+            ),
+            Self::VertexUnresolved => ("vertex.unresolved", LossTaxonomy::SourceTopologyInvalid),
+            Self::CurveConstructionDropped => (
+                "curve.construction-dropped",
+                LossTaxonomy::GeometryNotTransferred,
             ),
             Self::BodiesPending => ("body.decode-pending", LossTaxonomy::MissingGeometryStream),
         };
