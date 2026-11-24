@@ -440,6 +440,7 @@ pub(crate) fn project<'a>(
     crate::sketches::project(ctx, &cluster, &types, &listed, ir, losses)?;
     crate::extents::project(&cluster, &types, &listed, ir, losses);
     crate::dressup::project(&cluster, &types, &listed, ir, losses);
+    crate::sketches::name_untyped_profiles(&listed, ir);
     let pending = ir
         .design
         .features
