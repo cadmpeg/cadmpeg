@@ -81,6 +81,7 @@ dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "serde_json",
 ]
 
 [[package]]
