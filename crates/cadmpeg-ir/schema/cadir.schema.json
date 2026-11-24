@@ -19808,6 +19808,17 @@
             "type": "string"
           }
         },
+        "base_view": {
+          "description": "The view a section or detail view is cut or magnified from.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DrawingId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "curves": {
           "description": "Curves in source order. Origin is the view origin; X points right and Y points up.\nCoordinates are millimetres before view scale and rotation.",
           "type": "array",
@@ -19999,6 +20010,13 @@
             }
           ]
         },
+        "views": {
+          "description": "The drawing records a page shows or a view collection holds, in\nsource order, or in id order where the source's list is a set.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DrawingId"
+          }
+        },
         "visible": {
           "description": "Whether the source explicitly displays this drawing entity.",
           "type": [
@@ -20026,6 +20044,7 @@
         "runtime_type",
         "order",
         "relationships",
+        "views",
         "curves",
         "parameters",
         "assets"
@@ -20225,6 +20244,45 @@
           "description": "Extension-defined drawing object.",
           "type": "string",
           "const": "other"
+        }
+      ]
+    },
+    "DrawingPart": {
+      "description": "The part of a drawing record that a reference names.",
+      "oneOf": [
+        {
+          "description": "The curve at this index of the record's `curves`.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "curve"
+            },
+            "value": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A part the decoder did not resolve to a curve, such as a view\nvertex; the source's string stays in the reference's `native`.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "unread"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
         }
       ]
     },
@@ -67634,6 +67692,81 @@
           ]
         },
         {
+          "description": "A drawing record, as a whole or in part.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "drawing"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "drawing": {
+                  "description": "The drawing record.",
+                  "$ref": "#/$defs/DrawingId"
+                },
+                "part": {
+                  "description": "The part of the record; `None` names the record as a whole.",
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/DrawingPart"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "drawing"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A semantic annotation.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "annotation"
+            },
+            "value": {
+              "$ref": "#/$defs/SemanticAnnotationId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A PMI annotation.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "pmi"
+            },
+            "value": {
+              "$ref": "#/$defs/PmiId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
           "description": "An object of a document that was not read.",
           "type": "object",
           "properties": {
@@ -67667,7 +67800,7 @@
           ]
         },
         {
-          "description": "A target the decoder cannot resolve to an object the document holds.",
+          "description": "A target the decoder did not resolve, or one that no other arm names\n(a mesh, a record kept only as native).",
           "type": "object",
           "properties": {
             "kind": {
