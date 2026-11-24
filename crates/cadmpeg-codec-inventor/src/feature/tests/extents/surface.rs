@@ -157,6 +157,174 @@ fn to_face_surface_extrusion_ends_at_the_stored_face_plane() {
     );
 }
 
+/// A plane face perpendicular to the +z travel direction at `z` centimetres.
+fn plane_face_at(ordinal: u32, z: f64) -> PmDcFeatureProperty {
+    let mut surface = test_property(
+        ordinal,
+        PmDcFeaturePropertyKind::PlaneSurface {
+            references: [reference(0); 3],
+            extension: None,
+            state: 1,
+            surface_form: PLANE_SURFACE_FORM,
+            value: 0,
+            origin: reals([0.0, 0.0, z]),
+            u_axis: reals([1.0, 0.0, 0.0]),
+            v_axis: reals([0.0, 1.0, 0.0]),
+        },
+    );
+    surface.edit(|payload| payload.save_version_major = 19);
+    surface
+}
+
+/// A plane face tilted about the x axis, with unit normal (0, -0.8, 0.6),
+/// through (0, 0, `z`) centimetres.
+fn tilted_plane_face(ordinal: u32, z: f64, v_axis: [f64; 3]) -> PmDcFeatureProperty {
+    let mut surface = plane_face_at(ordinal, z);
+    surface.edit(|payload| {
+        if let PmDcFeaturePropertyKind::PlaneSurface { v_axis: v, .. } = &mut payload.kind {
+            *v = reals(v_axis);
+        }
+    });
+    surface
+}
+
+const FROM_TO_SLOTS: [(usize, u32); 4] = [(10, 20), (17, 21), (13, 22), (18, 23)];
+
+fn from_to_surface(
+    start_z: f64,
+    end_z: f64,
+    slots: &[(usize, u32)],
+    start_flag: u8,
+) -> Option<Feature> {
+    surface_extrusion(
+        5,
+        6,
+        slots,
+        vec![
+            test_property(
+                20,
+                PmDcFeaturePropertyKind::TerminationFlag { value: start_flag },
+            ),
+            plane_face_at(21, start_z),
+            test_property(22, PmDcFeaturePropertyKind::TerminationFlag { value: 1 }),
+            plane_face_at(23, end_z),
+        ],
+    )
+}
+
+#[test]
+fn from_to_surface_extrusion_spans_the_start_face_to_the_end_face() {
+    use cadmpeg_ir::features::extents::{ExtrudeStart, PlaneTargetSource};
+    let feature = from_to_surface(1.0, 4.0, &FROM_TO_SLOTS, 1).expect("from-to surface");
+    let FeatureDefinition::Operation(FeatureOperation::Extrude { solid, .. }) =
+        feature.evaluation.definition()
+    else {
+        panic!("not an extrusion");
+    };
+    assert_eq!(*solid, Some(false));
+    let (extent, start) = extrude_definition(&feature);
+    let ExtrudeStart::FromPlane {
+        plane,
+        native,
+        source,
+    } = start
+    else {
+        panic!("from-to surface starts at a plane");
+    };
+    assert_eq!(*source, Some(PlaneTargetSource::FaceSurface));
+    assert_eq!(native.as_str(), plane_face_at(21, 1.0).id());
+    assert!((plane.origin().get().z - 10.0).abs() < EPS_SAME_COORDINATE);
+    let ExtrudeExtent::OneSided { side } = extent else {
+        panic!("from-to surface extrusion is one-sided");
+    };
+    assert!(matches!(
+        side.termination,
+        LinearTermination::ToPlane {
+            source: Some(PlaneTargetSource::FaceSurface),
+            ..
+        }
+    ));
+    assert_to_plane(
+        &side.termination,
+        [0.0, 0.0, 40.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        &plane_face_at(23, 4.0).id(),
+    );
+    // One target-face note for the start face and one for the end face.
+    assert_eq!(
+        crate::feature::extrusion::native_face_targets(feature.evaluation.definition()),
+        2
+    );
+}
+
+fn from_to_tilted(start: (f64, [f64; 3]), end: (f64, [f64; 3])) -> Option<Feature> {
+    surface_extrusion(
+        5,
+        6,
+        &FROM_TO_SLOTS,
+        vec![
+            test_property(20, PmDcFeaturePropertyKind::TerminationFlag { value: 1 }),
+            tilted_plane_face(21, start.0, start.1),
+            test_property(22, PmDcFeaturePropertyKind::TerminationFlag { value: 1 }),
+            tilted_plane_face(23, end.0, end.1),
+        ],
+    )
+}
+
+#[test]
+fn from_to_surface_extrusion_orders_tilted_faces_along_the_travel() {
+    let tilt = [0.0, 0.6, 0.8];
+    assert!(from_to_tilted((1.0, tilt), (4.0, tilt)).is_some());
+    // The end plane lies behind the start plane along the travel direction.
+    assert!(from_to_tilted((4.0, tilt), (1.0, tilt)).is_none());
+    // Planes that are not parallel order by the plane origins.
+    let other = [0.0, 0.8, 0.6];
+    assert!(from_to_tilted((1.0, tilt), (4.0, other)).is_some());
+    assert!(from_to_tilted((4.0, tilt), (1.0, other)).is_none());
+    // The travel direction lies in the face planes.
+    assert!(from_to_tilted((1.0, [0.0, 0.0, 1.0]), (4.0, [0.0, 0.0, 1.0])).is_none());
+}
+
+#[test]
+fn from_to_surface_extrusion_refuses_operands_it_does_not_define() {
+    // A work-plane start stays native.
+    assert!(from_to_surface(1.0, 4.0, &[(8, 41), (13, 22), (18, 23)], 1).is_none());
+    // A start termination flag other than 1.
+    assert!(from_to_surface(1.0, 4.0, &FROM_TO_SLOTS, 0).is_none());
+    // A start face without its surface.
+    assert!(from_to_surface(1.0, 4.0, &[(10, 20), (13, 22), (18, 23)], 1).is_none());
+    // A non-null slot 14 requires the through-all extent.
+    assert!(surface_extrusion_over_solid(
+        6,
+        &[(10, 20), (17, 21), (13, 22), (18, 23), (14, 24)],
+        vec![
+            test_property(20, PmDcFeaturePropertyKind::TerminationFlag { value: 1 }),
+            plane_face_at(21, 1.0),
+            test_property(22, PmDcFeaturePropertyKind::TerminationFlag { value: 1 }),
+            plane_face_at(23, 4.0),
+            surface_body(24),
+        ],
+    )
+    .is_none());
+    // The start plane lies behind the end plane along the travel direction.
+    assert!(from_to_surface(4.0, 1.0, &FROM_TO_SLOTS, 1).is_none());
+    assert!(from_to_surface(2.0, 2.0, &FROM_TO_SLOTS, 1).is_none());
+    // Start-face slots belong to the from-to extent only.
+    assert!(surface_extrusion(
+        5,
+        7,
+        &[(10, 20), (17, 21), (13, 22), (18, 23)],
+        vec![
+            test_property(20, PmDcFeaturePropertyKind::TerminationFlag { value: 1 }),
+            plane_face_at(21, 1.0),
+            test_property(22, PmDcFeaturePropertyKind::TerminationFlag { value: 1 }),
+            plane_face_at(23, 4.0),
+        ],
+    )
+    .is_none());
+}
+
 #[test]
 fn surface_extrusion_refuses_operands_it_does_not_define() {
     // Solid part operations select the solid decoder.

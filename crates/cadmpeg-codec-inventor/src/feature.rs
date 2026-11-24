@@ -3526,7 +3526,11 @@ fn project_extrusion(
 
 /// Slots of a surface extrusion that hold no operand. Slot 14 is null or
 /// selects the solid body wrapper; slot 26 is the solid result collection.
-const SURFACE_EXTRUSION_NULL_SLOTS: [usize; 6] = [8, 9, 10, 12, 17, 26];
+const SURFACE_EXTRUSION_NULL_SLOTS: [usize; 4] = [8, 9, 12, 26];
+
+/// Slots that hold the start face of a from-to surface extrusion. Every other
+/// extent leaves them null.
+const SURFACE_EXTRUSION_START_FACE_SLOTS: [usize; 2] = [10, 17];
 
 /// The profile of a surface extrusion: the native selection of the boundary
 /// patch, or the native patch record when no neutral sketch exists.
@@ -3536,11 +3540,16 @@ fn surface_extrusion_profile(
     index: &ProjectionIndex<'_>,
 ) -> Option<PlanarProfileRef> {
     let slots = source.properties.references();
+    let from_to = enum16(source, 6, PmDcFeatureEnumFamily::Extent, index) == Some(EXTENT_FROM_TO);
     if slots.len() != 30
         || slots.get(23)? != slots.get(1)?
         || SURFACE_EXTRUSION_NULL_SLOTS
             .iter()
             .any(|slot| slots[*slot].index() != 0)
+        || (!from_to
+            && SURFACE_EXTRUSION_START_FACE_SLOTS
+                .iter()
+                .any(|slot| slots[*slot].index() != 0))
         || !extrusion::surface_input_is_solid(source, index)
     {
         return None;

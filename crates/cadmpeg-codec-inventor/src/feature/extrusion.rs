@@ -140,6 +140,9 @@ const SURFACE_OPERATION: u16 = 5;
 /// Largest departure of the travel direction from the profile-plane normal,
 /// as a cosine deficit, that still counts as perpendicular to the profile plane.
 const EPS_TRAVEL_NORMAL: f64 = 1e-9;
+/// Smallest cosine between the travel direction and a face-plane normal for
+/// the travel to cross the plane.
+const EPS_TRAVEL_CROSSING: f64 = 1e-6;
 /// Smallest distance in millimetres by which a work point lies ahead of the
 /// profile plane.
 const EPS_POINT_AHEAD: f64 = 1e-6;
@@ -355,7 +358,7 @@ pub(super) fn indexed_operands(
         }
         (_, false, false) => ExtrudeExtent::OneSided { side: first },
     };
-    if output == Output::Surface && !surface_extent(&start, &extent) {
+    if output == Output::Surface && !surface_extent(&start, &extent, &direction) {
         return None;
     }
     // The solid body of slot 14 bounds a through-all extent; no other extent
@@ -387,23 +390,55 @@ pub(super) fn indexed_operands(
 }
 
 /// The surface extrusion extents that the format model defines: one side from
-/// the profile plane, through all or to a plane face.
-fn surface_extent(start: &ExtrudeStart, extent: &ExtrudeExtent) -> bool {
-    use cadmpeg_ir::features::extents::PlaneTargetSource;
-    matches!(start, ExtrudeStart::ProfilePlane {})
-        && matches!(
-            extent,
-            ExtrudeExtent::OneSided {
-                side: cadmpeg_ir::features::extents::ExtrudeSide {
-                    termination: LinearTermination::ThroughAll {}
-                        | LinearTermination::ToPlane {
-                            source: Some(PlaneTargetSource::FaceSurface),
-                            ..
-                        },
-                    ..
-                },
-            }
-        )
+/// the profile plane, through all or to a plane face; or from a start face to
+/// an end face, where the travel direction crosses both planes, the start
+/// plane origin lies behind the end plane and the end plane origin lies ahead
+/// of the start plane along it.
+fn surface_extent(start: &ExtrudeStart, extent: &ExtrudeExtent, travel: &UnitVector3) -> bool {
+    use cadmpeg_ir::features::extents::{ExtrudeSide, PlaneTargetSource};
+    let ExtrudeExtent::OneSided {
+        side: ExtrudeSide { termination, .. },
+    } = extent
+    else {
+        return false;
+    };
+    match (start, termination) {
+        (
+            ExtrudeStart::ProfilePlane {},
+            LinearTermination::ThroughAll {}
+            | LinearTermination::ToPlane {
+                source: Some(PlaneTargetSource::FaceSurface),
+                ..
+            },
+        ) => true,
+        (
+            ExtrudeStart::FromPlane {
+                plane: from,
+                source: Some(PlaneTargetSource::FaceSurface),
+                ..
+            },
+            LinearTermination::ToPlane {
+                plane: to,
+                source: Some(PlaneTargetSource::FaceSurface),
+                ..
+            },
+        ) => {
+            // Distance along the travel direction from a point of one plane
+            // to the other plane.
+            let travel = *travel.as_raw();
+            let along = |origin: cadmpeg_ir::math::Point3,
+                         target: &cadmpeg_ir::features::geometry::FeatureSupportPlaneFrame| {
+                let normal = target.normal().get();
+                let toward = normal.dot(travel);
+                (toward.abs() > EPS_TRAVEL_CROSSING).then(|| {
+                    target.origin().get().vector_from(origin).dot(normal) / toward
+                })
+            };
+            along(from.origin().get(), to).is_some_and(|ahead| ahead > EPS_POINT_AHEAD)
+                && along(to.origin().get(), from).is_some_and(|behind| behind < -EPS_POINT_AHEAD)
+        }
+        _ => false,
+    }
 }
 
 pub(super) fn native_profile(
