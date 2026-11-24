@@ -321,3 +321,37 @@ fn copy_list_rejects_text_that_is_not_the_identifier() {
     assert_eq!(super::copy_list(&tail(b"41")), None);
     assert_eq!(super::copy_list(&[0; 8]), None);
 }
+
+#[test]
+fn circular_copy_repeating_the_first_index_is_not_an_occurrence() {
+    // A circular pattern keys its copies by the first index alone, so the copy
+    // (1, 1) repeats (1, 0); its reference is stale, not a lone occurrence.
+    let pattern = PatternSpec {
+        frame: &XY,
+        seed: 0,
+        kind: 2,
+        counts: [3, 0],
+        steps: [TAU / 3.0, 0.0],
+        geometry: &[Member2d::Arc([0.0, 0.0, 0.01, 0.0, TAU])],
+        guid: true,
+    };
+    let mut references = references(&[0.0, 0.04, 0.08]);
+    for spec in references.iter_mut().skip(1) {
+        spec.role = 0x40;
+    }
+    let result = decode(assembly_pattern_document(&AssemblyPatternSpec {
+        pattern: &pattern,
+        references: &references,
+        copies: &[(1, 0, 21), (1, 1, 22)],
+        layout: None,
+    }));
+    let ids: Vec<_> = result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .map(|occurrence| occurrence.id.clone())
+        .collect();
+    assert_eq!(ids, vec![occurrence_id(20), occurrence_id(21)]);
+    assert_eq!(component_pattern(&result).instances.len(), 1);
+}

@@ -167,18 +167,12 @@ fn native_key(name: &str) -> Result<CodecName, String> {
         .ok_or_else(|| format!("the option name {name} is invalid"))
 }
 
-/// The component pattern of the pattern object `object`.
-fn read_pattern(
+/// The layout of the pattern object `object` (§9.5).
+fn pattern_layout(
     cluster: &Cluster<'_>,
     types: &TypeTable,
     object: &Object<'_>,
-    occurrences: &BTreeMap<u32, OccurrenceId>,
-    losses: &mut Vec<LossNote>,
-) -> Result<Feature, String> {
-    let seed_object = word(object, asm_pattern::SEED, "seed")?;
-    let seed = occurrences
-        .get(&seed_object)
-        .ok_or_else(|| format!("the seed {seed_object:#x} is not a stated occurrence"))?;
+) -> Result<PatternLayout, String> {
     let parameters = word(object, asm_pattern::LAYOUT, "layout")?;
     let parameters = cluster
         .object(parameters)
@@ -195,6 +189,22 @@ fn read_pattern(
         &parameters,
         parameter_base(&parameters)?,
     )?;
+    Ok(layout)
+}
+
+/// The component pattern of the pattern object `object`.
+fn read_pattern(
+    cluster: &Cluster<'_>,
+    types: &TypeTable,
+    object: &Object<'_>,
+    occurrences: &BTreeMap<u32, OccurrenceId>,
+    losses: &mut Vec<LossNote>,
+) -> Result<Feature, String> {
+    let seed_object = word(object, asm_pattern::SEED, "seed")?;
+    let seed = occurrences
+        .get(&seed_object)
+        .ok_or_else(|| format!("the seed {seed_object:#x} is not a stated occurrence"))?;
+    let layout = pattern_layout(cluster, types, object)?;
     let circular = matches!(layout, PatternLayout::Circular(_));
     let mut native_options = NativeOptions::new();
     let layout = if let PatternLayout::Circular(circle) = layout {
@@ -299,6 +309,13 @@ pub(super) fn stale_references(cluster: &Cluster<'_>, types: &TypeTable) -> BTre
         let Some(list) = copy_list(pattern.bytes) else {
             continue;
         };
+        // A circular pattern keys its copies by the first index alone, as
+        // `read_pattern` does; a pattern whose layout does not read keys them
+        // by both.
+        let circular = matches!(
+            pattern_layout(cluster, types, &pattern),
+            Ok(PatternLayout::Circular(_))
+        );
         let mut seen = BTreeSet::new();
         for id in list {
             let Some(copy) = cluster
@@ -314,7 +331,8 @@ pub(super) fn stale_references(cluster: &Cluster<'_>, types: &TypeTable) -> BTre
             ) else {
                 continue;
             };
-            if (first, second) != (0, 0) && seen.insert((first, second)) {
+            let key = (first, if circular { 0 } else { second });
+            if (first, second) != (0, 0) && seen.insert(key) {
                 live.insert(reference);
             }
         }
