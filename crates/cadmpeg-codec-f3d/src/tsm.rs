@@ -1719,10 +1719,6 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 format: cadmpeg_ir::codec_id!("f3d"),
                 object_id: cadmpeg_core::text::NonBlankString::new(name.to_owned())
                     .ok_or_else(|| malformed(name, "source object_id must not be empty"))?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
                 instance_path: Vec::new(),
             }),
             cage: cadmpeg_ir::subd::SubdCage::new(vertices, edges, faces, symmetries)

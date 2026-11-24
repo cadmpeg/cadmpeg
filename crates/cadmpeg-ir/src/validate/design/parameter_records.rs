@@ -9,7 +9,9 @@ use crate::attributes::AttributeValue;
 use crate::design::container::Container;
 use crate::design::edit::unit_factor;
 use crate::design::feature::FeatureOperation;
-use crate::design::parameter::{DesignParameter, ParameterOwner, ParameterValue};
+use crate::design::parameter::{
+    DesignParameter, ParameterDefinition, ParameterOwner, ParameterValue,
+};
 use crate::design::spreadsheet::Spreadsheet;
 use crate::design::units::ValueKind;
 use crate::report::check::Finding;
@@ -26,6 +28,7 @@ pub(super) fn check_parameter_records(index: &DesignRecords<'_>, findings: &mut 
         .map(|cell| cell.parameter.as_str())
         .collect();
     let mut names: BTreeMap<NameKey<'_>, usize> = BTreeMap::new();
+    let mut unnamed = Vec::new();
     for parameter in &design.parameters {
         let id = parameter.id.as_str();
         match &parameter.name {
@@ -38,15 +41,32 @@ pub(super) fn check_parameter_records(index: &DesignRecords<'_>, findings: &mut 
                     ))
                     .or_default() += 1;
             }
-            None if !cells.contains(id) => super::error(
-                findings,
-                id,
-                format_args!("parameter states no name but is no spreadsheet cell's parameter"),
-            ),
+            None if !cells.contains(id) => unnamed.push(id),
             None => {}
         }
         check_owner(index, parameter, findings);
         check_kind(parameter, findings);
+        if matches!(parameter.definition, ParameterDefinition::Unset) && parameter.value.is_some() {
+            super::error(
+                findings,
+                id,
+                format_args!("an `Unset` parameter states a `value`; it has none"),
+            );
+        }
+    }
+    if !unnamed.is_empty() {
+        let sketch_bound = super::dimensions::sketch_constraint_bindings(index);
+        for id in unnamed {
+            if !sketch_bound.contains(id) {
+                super::error(
+                    findings,
+                    id,
+                    format_args!(
+                        "parameter states no name but is no spreadsheet cell's parameter and no sketch constraint's dimension binds it"
+                    ),
+                );
+            }
+        }
     }
     for ((scope, owner, name), count) in names {
         if count > 1 {

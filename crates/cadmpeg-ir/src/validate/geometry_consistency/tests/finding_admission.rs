@@ -249,6 +249,33 @@ fn charted_intersection_witness_finding_is_reported() {
 }
 
 #[test]
+fn procedural_cache_disagreements_are_warnings() {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    for ir in [
+        super::mapped_surface_curve([3.0, 2.0]),
+        charted(false),
+        charted(true),
+    ] {
+        let index = crate::index::ModelIndex::new_model_only(&ir);
+        let mut findings = Vec::new();
+        super::super::check_procedural_support_consistency(
+            &ctx,
+            &index,
+            &crate::eval::admission::ModelEvaluationPass::new(),
+            &mut findings,
+        )
+        .unwrap();
+        assert!(!findings.is_empty());
+        assert!(
+            findings
+                .iter()
+                .all(|finding| finding.severity == crate::report::Severity::Warning),
+            "{findings:?}"
+        );
+    }
+}
+
+#[test]
 fn cache_support_failures_return_side_indexes_with_the_validator_allowance() {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for (mapping, fit, expected) in [

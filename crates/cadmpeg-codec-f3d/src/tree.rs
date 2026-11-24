@@ -53,6 +53,14 @@ pub(crate) fn state_root_definition(
     if let Some(root) =
         ir.state_root_definition(ctx, file_root_id(), ExternalDocument::default())?
     {
+        let root_id = root.id.clone();
+        retarget_meshes(&mut ir.model, &file_root_id(), &root_id);
+        let root = ir
+            .model
+            .product_definitions
+            .iter_mut()
+            .find(|definition| definition.id == root_id)
+            .ok_or_else(|| CodecError::malformed("F3D root definition was not stated"))?;
         if let (Some(identity), Storage::File { document, .. }) = (document, &mut root.storage) {
             // The manifest terminal supplies only the lineage; the version
             // always comes from design ordinal zero.
@@ -70,6 +78,24 @@ pub(crate) fn state_root_definition(
         }
     }
     Ok(losses)
+}
+
+/// Makes the mesh bodies of `from` the mesh bodies of `to`.
+pub(crate) fn retarget_meshes(
+    model: &mut Model,
+    from: &ProductDefinitionId,
+    to: &ProductDefinitionId,
+) {
+    if from == to {
+        return;
+    }
+    for mesh in &mut model.tessellations {
+        if let cadmpeg_ir::tessellation::Meshed::Definition { definition, .. } = &mut mesh.of {
+            if definition == from {
+                *definition = to.clone();
+            }
+        }
+    }
 }
 
 /// The file's root definition in `model`, added when it is absent.

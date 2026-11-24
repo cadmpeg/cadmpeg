@@ -631,7 +631,7 @@ fn retains_every_reference_to_a_shared_side_entry() {
     );
     corrupted
         .native
-        .namespace_mut("fcstd")
+        .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
         .set_arena(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             "entries",

@@ -14,20 +14,19 @@ the shapes instead of re-deriving them.
 
 ## Prefer graph and join
 
-Feature `native_ref` to a native record, after `query schema file FILE ARENA`
-shows `native_ref` as `ref`:
+Occurrence `prototype` to its product definition, after `query schema file
+FILE ARENA` shows `prototype` as `ref`:
 
 ```sh
-cadmpeg query join doc.json model.features native.rhino.unknowns \
-  --left-key native_ref --right-key id
+cadmpeg query join doc.json model.occurrences model.product_definitions \
+  --left-key prototype --right-key id
 ```
 
-Walk a nested parameter object, after schema shows
-`definition.parameters.segment_0_object` as `ref`:
+Walk a feature's component, after schema shows `component` as `ref`:
 
 ```sh
-cadmpeg query graph doc.json model.features ID \
-  --follow definition.parameters.segment_0_object --hops 1
+cadmpeg query graph doc.json design.features ID \
+  --follow component --hops 1
 ```
 
 Walk BREP children, which name their parents (`region.body`, `shell.region`,
@@ -106,18 +105,18 @@ group is complete.
 
 ## Recipe: three-way join through an id chain
 
-Feature → its result faces → their surfaces, tolerating gaps at every
-hop:
+Occurrence → its prototype's bodies → their regions, tolerating gaps at
+every hop:
 
 ```jq
 . as $doc
-| INDEX($doc.geometry.faces[]?; .id) as $face
-| INDEX($doc.geometry.surfaces[]?; .id) as $surface
-| $doc.model.features[]?
-| . as $f
-| ($f.outputs // [])[]
-| $face[.] // empty
-| [$f.id, .id, ($surface[.surface].id // "absent")]
+| INDEX($doc.model.product_definitions[]?; .id) as $definition
+| INDEX($doc.geometry.bodies[]?; .id) as $body
+| $doc.model.occurrences[]?
+| . as $o
+| ($definition[$o.prototype].bodies // [])[]
+| $body[.] // empty
+| [$o.id, .id, ((.regions // [])[0] // "absent")]
 | @tsv
 ```
 
@@ -131,7 +130,7 @@ is identical — index the model arena, walk the native one:
 
 ```jq
 . as $doc
-| INDEX($doc.model.features[]?; .id) as $model
+| INDEX($doc.geometry.bodies[]?; .id) as $model
 | $doc.native.<codec>.<arena>[]?
 | [.id, (.model_ref // "" | $model[.].id // "unlinked")]
 | @tsv

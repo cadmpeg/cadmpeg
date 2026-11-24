@@ -274,12 +274,11 @@ fn a_profile_face_loop_uses_its_body_key_and_custom_edge_names() {
 
     let id = |index| format!("inventor:brep:entity#{index}");
     let mut brep = AsmBrep::default();
-    brep.regions.push(Region {
-        id: id(2).try_into().expect("synthetic identity"),
-        body: id(1).try_into().expect("synthetic identity"),
-        shells: vec![id(3).try_into().expect("synthetic identity")],
-        native_ref: None,
-    });
+    brep.regions.push(Region::new(
+        id(2).try_into().expect("synthetic identity"),
+        id(1).try_into().expect("synthetic identity"),
+        vec![id(3).try_into().expect("synthetic identity")],
+    ));
     brep.shells.push(Shell::new(
         id(3).try_into().expect("synthetic identity"),
         id(2).try_into().expect("synthetic identity"),

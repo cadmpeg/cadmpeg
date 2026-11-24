@@ -5,7 +5,9 @@
 //! operations, and π.
 
 use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
-use cadmpeg_ir::design::expr::{format_number, BinaryOp, Constant, ExpressionToken, Node, UnaryOp};
+use cadmpeg_ir::design::expr::{
+    format_number, AddOp, Constant, ExpressionToken, MulOp, Node, UnaryOp,
+};
 use cadmpeg_ir::design::units::{Quantity, Unit, UnitSymbol};
 use cadmpeg_ir::features::ParameterId;
 
@@ -43,23 +45,10 @@ pub(super) fn referenced(reference: &ParameterRef) -> Option<&ParameterId> {
 
 /// Every parameter reference of `node`, in reading order.
 pub(super) fn references<'a>(node: &'a Node<ParameterRef>, out: &mut Vec<&'a ParameterRef>) {
-    match node {
-        Node::Reference(reference) => out.push(reference),
-        Node::Unary { operand, .. } => references(operand, out),
-        Node::Binary { left, right, .. } => {
-            references(left, out);
-            references(right, out);
-        }
-        Node::Call { args, .. } => args.iter().for_each(|arg| references(arg, out)),
-        Node::If(branches) => branches.iter().for_each(|branch| references(branch, out)),
-        Node::Number { .. }
-        | Node::Constant(_)
-        | Node::Boolean(_)
-        | Node::Text(_)
-        | Node::Measure(_)
-        | Node::LawParameter
-        | Node::Bend(_) => {}
+    if let Node::Reference(reference) = node {
+        out.push(reference);
     }
+    node.operands().for_each(|operand| references(operand, out));
 }
 
 /// The Fusion text of `node`, with each reference written as `name` gives
@@ -77,13 +66,25 @@ pub(super) fn print<'a>(
             op: UnaryOp::Negate,
             operand,
         } => Some(format!("-({})", print(operand, name)?)),
-        Node::Binary { op, left, right } => {
-            let op = arithmetic(*op)?;
-            Some(format!(
-                "({} {op} {})",
-                print(left, name)?,
-                print(right, name)?
-            ))
+        Node::Sum { first, rest } => {
+            rest.iter()
+                .try_fold(print(first, name)?, |left, (op, operand)| {
+                    let mark = match op {
+                        AddOp::Add => "+",
+                        AddOp::Subtract => "-",
+                    };
+                    Some(format!("({left} {mark} {})", print(operand, name)?))
+                })
+        }
+        Node::Product { first, rest } => {
+            rest.iter()
+                .try_fold(print(first, name)?, |left, (op, operand)| {
+                    let mark = match op {
+                        MulOp::Multiply => "*",
+                        MulOp::Divide => "/",
+                    };
+                    Some(format!("({left} {mark} {})", print(operand, name)?))
+                })
         }
         _ => None,
     }
@@ -103,15 +104,25 @@ pub(super) fn evaluate(
             op: UnaryOp::Negate,
             operand,
         } => -evaluate(operand, value)?,
-        Node::Binary { op, left, right } => {
-            let (left, right) = (evaluate(left, value)?, evaluate(right, value)?);
-            match op {
-                BinaryOp::Add => left + right,
-                BinaryOp::Subtract => left - right,
-                BinaryOp::Multiply => left * right,
-                BinaryOp::Divide => left / right,
-                _ => return None,
-            }
+        Node::Sum { first, rest } => {
+            rest.iter()
+                .try_fold(evaluate(first, value)?, |left, (op, operand)| {
+                    let right = evaluate(operand, value)?;
+                    Some(match op {
+                        AddOp::Add => left + right,
+                        AddOp::Subtract => left - right,
+                    })
+                })?
+        }
+        Node::Product { first, rest } => {
+            rest.iter()
+                .try_fold(evaluate(first, value)?, |left, (op, operand)| {
+                    let right = evaluate(operand, value)?;
+                    Some(match op {
+                        MulOp::Multiply => left * right,
+                        MulOp::Divide => left / right,
+                    })
+                })?
         }
         _ => return None,
     };
@@ -175,16 +186,6 @@ fn canonical_factor(unit: &Unit) -> Option<f64> {
     match unit.0.as_slice() {
         [] => Some(1.0),
         [factor] if factor.power.get() == 1 => Some(factor.symbol.canonical().0),
-        _ => None,
-    }
-}
-
-fn arithmetic(op: BinaryOp) -> Option<&'static str> {
-    match op {
-        BinaryOp::Add => Some("+"),
-        BinaryOp::Subtract => Some("-"),
-        BinaryOp::Multiply => Some("*"),
-        BinaryOp::Divide => Some("/"),
         _ => None,
     }
 }

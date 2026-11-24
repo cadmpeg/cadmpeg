@@ -71,7 +71,7 @@ fn two_loop_face_nodes(point: bool) -> Vec<Node> {
 
 fn assert_vertex_loop_beside_ring(brep: &super::Brep, vertex_suffix: &str) {
     assert_eq!(brep.faces.len(), 1);
-    let face_loops: Vec<_> = brep.faces[0].loops.iter().collect();
+    let face_loops: Vec<_> = brep.faces[0].loops.stated().collect();
     assert_eq!(face_loops.len(), 2);
     let boundaries: Vec<_> = face_loops
         .iter()

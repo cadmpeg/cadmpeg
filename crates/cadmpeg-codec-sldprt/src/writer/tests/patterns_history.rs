@@ -700,7 +700,7 @@ fn semantic_writer_round_trips_typed_sweep() {
             );
             let (section, sections) = std::mem::replace(
                 shape,
-                cadmpeg_ir::features::sweeps::SweepShape::unresolved(None),
+                cadmpeg_ir::features::sweeps::SweepShape::unresolved(),
             )
             .into_sections();
             *shape = cadmpeg_ir::features::sweeps::SweepShape::solid_sections(

@@ -5170,7 +5170,7 @@ pub(crate) fn install(
         };
         group.links.sort();
     }
-    let namespace = ir.native.namespace_mut("rhino");
+    let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("rhino"));
     namespace.set_arena(ctx, "groups", &groups)?;
     namespace.set_arena(ctx, "materials", &materials)?;
     namespace.set_arena(ctx, "lights", &lights)?;

@@ -33,9 +33,12 @@ pub mod edge_recovery;
 mod loss;
 pub use loss::{
     carried_source_losses, edit_dropped, edit_unverified, evaluation_missing, evaluation_stale,
-    native_records_omitted, output_empty, parameter_flattened, parameter_renamed, record_invalid,
-    record_residual_unavailable, rule_invalid, value_unwritable,
+    face_partial, native_records_omitted, output_empty, parameter_flattened, parameter_renamed,
+    partial_topology_omitted, record_invalid, record_residual_unavailable, rule_invalid,
+    solid_partial, value_unwritable,
 };
+mod partial;
+pub use partial::without_partial_topology;
 mod scene;
 pub mod subset_lowering;
 pub mod target;
@@ -142,6 +145,18 @@ impl<E: EncoderBackend> Encoder for E {
             mut notes,
         } = body;
         losses.extend(coverage.omission_losses(input.ir, E::FORMAT.as_str()));
+        if !input.ir.model.omitted_arenas_held() && coverage.reads_wire_omitted() {
+            notes.push(format!(
+                "the document was read from CADIR, which does not carry the arenas {}; the {} \
+                 writer writes records of them, and this write holds none",
+                crate::document::ArenaName::WIRE_OMITTED
+                    .iter()
+                    .map(|arena| arena.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                E::FORMAT
+            ));
+        }
         let recorded = input.ir.scope().depth();
         if recorded < E::REQUEST {
             notes.push(format!(
@@ -379,7 +394,8 @@ impl ExportPlan {
     /// carried because they cannot be shown to be outside the output. A located
     /// finding is carried if any entity or related id location is carried. Model
     /// locations follow the plan's arena coverage. Native locations are carried
-    /// by complete coverage or by their own format's encoder; a backend reads
+    /// by complete coverage, by the CADIR encoder, which writes every native
+    /// namespace, or by their own format's encoder; any other backend reads
     /// no native namespace other than its own format's.
     pub fn carried_errors<'r>(&self, ir: &CadIr, report: &'r ValidationReport) -> Vec<&'r Finding> {
         let errors: Vec<_> = report
@@ -407,7 +423,9 @@ impl ExportPlan {
         match location {
             EntityLocation::Model(kind) => self.coverage.carries(kind),
             EntityLocation::Native(namespace) => {
-                self.coverage == ArenaCoverage::Complete || namespace == self.format.as_str()
+                self.coverage == ArenaCoverage::Complete
+                    || self.format == CadirEncoder::FORMAT
+                    || namespace == self.format.as_str()
             }
         }
     }
@@ -441,12 +459,11 @@ impl EncoderBackend for CadirEncoder {
             .into_bytes();
         bytes.push(b'\n');
         // CADIR is the neutral document itself: there is no container to
-        // replay or patch, so this encoder has one path and states it. The
-        // serialization carries every arena.
+        // replay or patch, so this encoder has one path and states it.
         Ok(ExportBody::synthesized(
             bytes,
             input.ir,
-            ArenaCoverage::Complete,
+            ArenaCoverage::Declared(coverage::cadir_dispositions()),
         ))
     }
 }

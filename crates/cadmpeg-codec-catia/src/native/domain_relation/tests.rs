@@ -42,7 +42,7 @@ fn native_class24_domain_relation_retains_exact_frame_and_wire() {
         *relation
     );
     let mut contradictory = wire.clone();
-    contradictory["data"]["source"]["offset"] = serde_json::json!(0.0);
+    contradictory["data"]["source"]["offset"] = serde_json::json!(1.0);
     assert!(serde_json::from_value::<CatiaConsolidatedDomainRelation>(contradictory).is_err());
     let mut contradictory = wire;
     contradictory["data"]["selector"] = serde_json::json!(0x0587);

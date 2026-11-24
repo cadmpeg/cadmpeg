@@ -620,7 +620,7 @@ fn cube_with_a_seam_ring(case: SeamRing) -> CadIr {
             .iter_mut()
             .find(|face| face.id == face_id)
             .unwrap();
-        let mut loops = face.loops.to_vec();
+        let mut loops = face.loops.stated().cloned().collect::<Vec<_>>();
         loops.push(loop_id);
         face.loops = FaceLoops::unspecified(loops);
     } else {

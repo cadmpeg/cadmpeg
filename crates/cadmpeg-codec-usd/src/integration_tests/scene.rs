@@ -39,8 +39,28 @@ fn twice_placed_body() -> cadmpeg_ir::CadIr {
         .find(|definition| definition.source_name.as_deref() == Some("Bracket"))
         .expect("the Bracket definition");
     bracket.occurrences.clear();
-    bracket.bodies.clone_from(&plate.bodies);
+    let bracket = bracket.id.clone();
+    move_mesh_bodies(model, &plate.id, &bracket);
     ir
+}
+
+/// Makes the mesh bodies of `from` mesh bodies of `to` named `Plate`.
+fn move_mesh_bodies(
+    model: &mut cadmpeg_ir::document::Model,
+    from: &cadmpeg_ir::ids::ProductDefinitionId,
+    to: &cadmpeg_ir::ids::ProductDefinitionId,
+) {
+    use cadmpeg_ir::tessellation::Meshed;
+    for mesh in &mut model.tessellations {
+        if matches!(&mesh.of, Meshed::Definition { definition, .. } if definition == from) {
+            mesh.of = Meshed::Definition {
+                definition: to.clone(),
+                name: cadmpeg_core::text::NonBlankString::new("Plate".to_owned()),
+                color: None,
+                visible: None,
+            };
+        }
+    }
 }
 
 const NURBS_PATCH: &str = r#"#usda 1.0
@@ -224,6 +244,7 @@ fn a_body_keeps_its_name_in_a_uniquified_prototype() {
         .filter(|occurrence| plate_ids.contains(&occurrence.prototype))
         .map(|occurrence| (occurrence.id.clone(), occurrence.prototype.clone()))
         .collect();
+    let mut moved = Vec::new();
     for definition in &mut model.product_definitions {
         if !matches!(definition.source_name.as_deref(), Some("Bracket" | "Clamp")) {
             continue;
@@ -239,8 +260,11 @@ fn a_body_keeps_its_name_in_a_uniquified_prototype() {
             .find(|plate| &plate.id == prototype)
             .expect("the placed Plate");
         definition.occurrences.clear();
-        definition.bodies.clone_from(&plate.bodies);
         definition.source_name = Some("Plate".to_owned());
+        moved.push((plate.id.clone(), definition.id.clone()));
+    }
+    for (from, to) in &moved {
+        move_mesh_bodies(model, from, to);
     }
     model
         .product_definitions

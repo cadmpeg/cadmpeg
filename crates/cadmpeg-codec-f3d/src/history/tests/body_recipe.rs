@@ -19,21 +19,20 @@ fn form33_without_unique_body_proof_remains_unresolved() {
         color: None,
         visible: Some(true),
         native_ref: None,
+        unstated: None,
     };
     let bodies = [body(1), body(2)];
     let regions = [
-        Region {
-            id: RegionId::mint("test:model:region#1").expect("identity grammar"),
-            body: bodies[0].id.clone(),
-            shells: vec![ShellId::mint("test:model:shell#1").expect("identity grammar")],
-            native_ref: None,
-        },
-        Region {
-            id: RegionId::mint("test:model:region#2").expect("identity grammar"),
-            body: bodies[1].id.clone(),
-            shells: vec![ShellId::mint("test:model:shell#2").expect("identity grammar")],
-            native_ref: None,
-        },
+        Region::new(
+            RegionId::mint("test:model:region#1").expect("identity grammar"),
+            bodies[0].id.clone(),
+            vec![ShellId::mint("test:model:shell#1").expect("identity grammar")],
+        ),
+        Region::new(
+            RegionId::mint("test:model:region#2").expect("identity grammar"),
+            bodies[1].id.clone(),
+            vec![ShellId::mint("test:model:shell#2").expect("identity grammar")],
+        ),
     ];
     let shells = [
         Shell::new(

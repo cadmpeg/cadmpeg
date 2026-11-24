@@ -19,9 +19,14 @@
 //! accepts and refuses the documents that serde's derive does, and reads each
 //! payload from JSON text through `cadmpeg_core::tagged`, so the payload's
 //! types are compiled against the one deserializer that reads CADIR text.
+//!
+//! `#[derive(StructuralOrd)]` implements
+//! `cadmpeg_ir::structural_order::StructuralOrd`, the derived structural
+//! order of §2.5, from the type's declaration.
 
 use proc_macro::{Delimiter, LexError, TokenStream, TokenTree};
 
+mod structural;
 mod tagged;
 
 /// Derives a `Deserialize` that reads a data-free enum from its variant's
@@ -43,6 +48,17 @@ pub fn deserialize_name(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(DeserializeTagged, attributes(serde))]
 pub fn deserialize_tagged(input: TokenStream) -> TokenStream {
     let expanded = tagged::derive(input).unwrap_or_else(|message| compile_error(&message));
+    expanded
+        .parse()
+        .or_else(|error: LexError| compile_error(&error.to_string()).parse())
+        .unwrap_or_default()
+}
+
+/// Derives the structural order of §2.5 from a struct's or an enum's
+/// declaration.
+#[proc_macro_derive(StructuralOrd, attributes(serde))]
+pub fn structural_ord(input: TokenStream) -> TokenStream {
+    let expanded = structural::derive(input).unwrap_or_else(|message| compile_error(&message));
     expanded
         .parse()
         .or_else(|error: LexError| compile_error(&error.to_string()).parse())
