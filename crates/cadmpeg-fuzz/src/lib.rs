@@ -4,11 +4,13 @@
 pub mod seed_paths;
 pub mod seeds;
 
-/// Compare a reparsed canonical document with the admitted source after arena sorting.
+/// Compare a reparsed canonical document with the admitted source, as the
+/// CADIR wire carries it, after arena sorting.
 pub fn check_ir_canonical_roundtrip(
     mut original: cadmpeg_ir::CadIr,
     canonical: &str,
 ) -> Result<(), String> {
+    original.model.drop_omitted_arenas();
     original.finalize();
     let reparsed = cadmpeg_ir::CadIr::from_json(canonical)
         .map_err(|error| format!("canonical JSON cannot be reparsed: {error}"))?;
@@ -22,8 +24,9 @@ pub fn check_ir_canonical_roundtrip(
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+    use cadmpeg_ir::assets::{Asset, AssetContent, AssetData, AssetId};
     use cadmpeg_ir::features::evaluation::FeatureEvaluation;
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
     use super::check_ir_canonical_roundtrip;
 
@@ -56,6 +59,15 @@ mod tests {
         let mut earlier = changed.model.features[0].clone();
         earlier.id = FeatureId::mint("test:model:feature#before").unwrap();
         changed.model.features.push(earlier);
+        changed.model.assets.push(Asset {
+            id: AssetId::mint("test:model:asset#changed").unwrap(),
+            name: None,
+            media_type: None,
+            content: AssetContent::Embedded {
+                data: AssetData::new(vec![1, 2, 3]).unwrap(),
+            },
+            native_ref: None,
+        });
         let changed_canonical = changed.to_canonical_json().unwrap();
         assert!(check_ir_canonical_roundtrip(changed, &changed_canonical).is_ok());
         assert!(check_ir_canonical_roundtrip(original, &changed_canonical)

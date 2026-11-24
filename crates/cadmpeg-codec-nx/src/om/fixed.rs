@@ -38,7 +38,7 @@ impl Q155 {
     pub(crate) fn from_wire(value: f64, raw: [u8; 7]) -> Result<Self, &'static str> {
         let scalar =
             Self::from_raw(raw).ok_or("signed Q1.55 raw_values must form a valid signed atom")?;
-        if scalar.value().to_bits() != value.to_bits() {
+        if scalar.value() != value {
             return Err("values must match signed Q1.55 raw_values");
         }
         Ok(scalar)

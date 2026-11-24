@@ -985,7 +985,7 @@ pub(super) fn transfer_closed_face_topology(
             name: None,
             color: None,
             visible: None,
-            native_ref: None,
+            native_ref: None, unstated: None,
         };
         ir.geometry.bodies.push(body);
         admitted!(annotate(
@@ -1008,12 +1008,7 @@ pub(super) fn transfer_closed_face_topology(
             return Some(Err(error));
         }
         let shells = vec![copied_id!(shell_id, ShellId)];
-        let region = Region {
-            id: copied_id!(region_id, RegionId),
-            body: body_id,
-            shells,
-            native_ref: None,
-        };
+        let region = Region::new(copied_id!(region_id, RegionId), body_id, shells);
         ir.geometry.regions.push(region);
         admitted!(annotate(
             annotations,
@@ -1501,7 +1496,9 @@ mod tests {
         assert_eq!(counts.coedges, 6);
         assert_eq!(ir.geometry.bodies[0].kind, BodyKind::Solid);
         assert_eq!(
-            ir.geometry.shell_faces(&ir.geometry.shells[0].id).count(),
+            ir.geometry
+                .stated_shell_faces(&ir.geometry.shells[0].id)
+                .count(),
             2
         );
         assert!(ir.geometry.coedges.iter().all(|coedge| {

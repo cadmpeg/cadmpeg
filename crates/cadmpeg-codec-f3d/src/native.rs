@@ -680,7 +680,7 @@ fn emit_asm_entity_changes(
         };
         out.push(record);
     }
-    namespace.set_arena_records(row.arena, out);
+    namespace.set_arena_records(row.arena, out)?;
     Ok(())
 }
 
@@ -777,7 +777,7 @@ fn emit_asm_history_records(
             };
         out.push(native_record);
     }
-    namespace.set_arena_records(row.arena, out);
+    namespace.set_arena_records(row.arena, out)?;
     Ok(())
 }
 

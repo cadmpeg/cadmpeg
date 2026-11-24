@@ -2,7 +2,7 @@
 //! Declared quantities compare only with their identified bodies.
 
 use cadmpeg_ir::declared_measures::{
-    DeclaredMeasure, DeclaredMeasureProvenance, DeclaredQuantity, DeclaredTarget,
+    DeclaredMeasure, DeclaredQuantity, DeclaredTarget, MeasureBasis,
 };
 use cadmpeg_ir::ids::{BodyId, DeclaredMeasureId, ProductDefinitionId};
 use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
@@ -36,7 +36,6 @@ fn definition(ir: &mut CadIr, bodies: Vec<BodyId>) -> ProductDefinitionId {
         bom_properties: std::collections::BTreeMap::new(),
         bodies,
         sketches: Vec::new(),
-        tessellations: Vec::new(),
         native_ref: None,
         generated_from: None,
         storage: cadmpeg_ir::products::Storage::Embedded,
@@ -72,40 +71,33 @@ fn a_body_target_counts_each_identity_once() {
 }
 
 #[test]
-fn saved_cache_disagreements_warn_while_declarations_and_validation_properties_error() {
-    for (provenance, severity) in [
-        (
-            DeclaredMeasureProvenance::SourceDeclaration,
-            Severity::Error,
-        ),
-        (
-            DeclaredMeasureProvenance::ValidationProperty,
-            Severity::Error,
-        ),
-        (DeclaredMeasureProvenance::SavedCache, Severity::Warning),
+fn cache_disagreements_warn_while_unstated_and_validation_bases_error() {
+    for (basis, severity) in [
+        (None, Severity::Error),
+        (Some(MeasureBasis::Validation), Severity::Error),
+        (Some(MeasureBasis::Cache), Severity::Warning),
     ] {
         let mut cube = cadmpeg_ir::examples::unit_cube().expect("cube");
         let body = cube.geometry.bodies[0].id.clone();
-        cube.model.declared_measures.push(
-            DeclaredMeasure::new(
-                DeclaredMeasureId::mint("test:model:declared_measure#mismatch").expect("identity"),
-                DeclaredTarget::Bodies {
-                    bodies: vec![body.clone()],
-                },
-                DeclaredQuantity::Volume {
-                    value: FiniteReal::new(900.0).expect("finite"),
-                },
-            )
-            .with_provenance(provenance),
+        let mut measure = DeclaredMeasure::new(
+            DeclaredMeasureId::mint("test:model:declared_measure#mismatch").expect("identity"),
+            DeclaredTarget::Bodies {
+                bodies: vec![body.clone()],
+            },
+            DeclaredQuantity::Volume {
+                value: FiniteReal::new(900.0).expect("finite"),
+            },
         );
+        measure.basis = basis;
+        cube.model.declared_measures.push(measure);
 
         let found = run(&cube);
-        assert_eq!(found.len(), 1, "{provenance:?}");
+        assert_eq!(found.len(), 1, "{basis:?}");
         assert_eq!(
             found[0].check,
             cadmpeg_ir::report::check::Check::DeclaredMeasure
         );
-        assert_eq!(found[0].severity, severity, "{provenance:?}");
+        assert_eq!(found[0].severity, severity, "{basis:?}");
         assert_eq!(
             found[0].entity.as_deref(),
             Some("test:model:declared_measure#mismatch")

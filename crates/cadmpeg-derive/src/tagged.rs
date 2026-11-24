@@ -143,7 +143,7 @@ fn parse(input: TokenStream) -> Result<Enumeration, String> {
 }
 
 /// `token` without the invisible group a `macro_rules!` fragment arrives in.
-fn unwrapped(token: &TokenTree) -> TokenTree {
+pub(super) fn unwrapped(token: &TokenTree) -> TokenTree {
     let mut tokens = transparent(token.clone().into()).into_iter();
     match (tokens.next(), tokens.next()) {
         (Some(only), None) => only,
@@ -233,7 +233,7 @@ fn literal(item: &Item) -> Result<String, String> {
 
 /// Splits `tokens` at each comma outside angle brackets. With `angles`
 /// false, angle brackets are not tracked.
-fn split(tokens: &[TokenTree], angles: bool) -> Vec<&[TokenTree]> {
+pub(super) fn split(tokens: &[TokenTree], angles: bool) -> Vec<&[TokenTree]> {
     let mut parts = Vec::new();
     let mut depth = 0_usize;
     let mut start = 0;
@@ -260,7 +260,7 @@ fn split(tokens: &[TokenTree], angles: bool) -> Vec<&[TokenTree]> {
 }
 
 /// The index of the `>` that closes the `<` at `tokens[open]`.
-fn closing_angle(tokens: &[TokenTree], open: usize) -> Result<usize, String> {
+pub(super) fn closing_angle(tokens: &[TokenTree], open: usize) -> Result<usize, String> {
     let mut depth = 0_usize;
     let mut arrow = false;
     for (index, token) in tokens.iter().enumerate().skip(open) {
@@ -313,7 +313,7 @@ fn generics(owner: &str, tokens: &[TokenTree]) -> Result<Vec<Param>, String> {
 
 /// The index of the `=` that starts a parameter's default, outside angle
 /// brackets.
-fn default_at(tokens: &[TokenTree]) -> Option<usize> {
+pub(super) fn default_at(tokens: &[TokenTree]) -> Option<usize> {
     let mut depth = 0_usize;
     for (index, token) in tokens.iter().enumerate() {
         if let TokenTree::Punct(punct) = token {

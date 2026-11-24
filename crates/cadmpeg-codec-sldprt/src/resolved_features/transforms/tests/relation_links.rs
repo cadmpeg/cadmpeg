@@ -1,4 +1,4 @@
-//! Relation link identity and inactive-constraint tests.
+//! Relation link identity tests.
 
 use super::marker;
 use crate::records::operand_tag::NativeOperandTag;
@@ -10,7 +10,6 @@ use crate::resolved_features::endpoints::inferred_point_coordinates_by_index;
 use crate::resolved_features::relation_loci::relation_operand_loci;
 use crate::resolved_features::typed_relations::legacy_terminal_profile_indexed_endpoints;
 use crate::resolved_features::typed_relations::marker_owns_constraint;
-use crate::resolved_features::typed_relations::marker_relation_is_inactive;
 use crate::resolved_features::typed_relations::relation_owner_markers;
 use crate::resolved_features::typed_relations::typed_marker_relation_definition;
 use crate::resolved_features::typed_relations::typed_marker_relation_definition_in_sketch;
@@ -594,168 +593,6 @@ fn fixed_relation_selects_one_geometry_operand_beside_auxiliary_relation_handles
         .unwrap(),
         Some(SketchConstraintDefinitionInput::Native { .. })
     ));
-}
-
-#[test]
-fn resolved_wrong_family_relation_is_inactive() {
-    let mut relation = marker("relation", None);
-    relation.reclassify(SketchInputKind::Relation(
-        SketchRelationKind::EllipseAngle180,
-    ));
-    let entity_id = SketchEntityId::mint("synthetic:test:id#line").unwrap();
-    let definition = SketchConstraintDefinitionInput::Native {
-        native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-relation:34").unwrap(),
-        native_state: None,
-        native_flags: None,
-        native_properties: std::collections::BTreeMap::new(),
-        entities: vec![entity_id.clone()],
-        parameter: None,
-        operands: Vec::new(),
-    };
-    let entities = vec![SketchEntity::new(
-        entity_id,
-        SketchId::mint("synthetic:test:id#sketch").unwrap(),
-        SketchGeometry::try_from(SketchGeometryDefinition::Line {
-            start: Point2::new(0.0, 0.0),
-            end: Point2::new(1.0, 0.0),
-        })
-        .unwrap(),
-    )];
-
-    assert!(marker_relation_is_inactive(&relation, &definition, &entities).unwrap());
-}
-
-#[test]
-fn geometrically_contradicted_point_coincidence_is_inactive() {
-    let mut relation = marker("relation", None);
-    relation.reclassify(SketchInputKind::Relation(SketchRelationKind::Coincident));
-    let ids = [
-        SketchEntityId::mint("synthetic:test:id#first").unwrap(),
-        SketchEntityId::mint("synthetic:test:id#second").unwrap(),
-    ];
-    let definition = SketchConstraintDefinitionInput::Native {
-        native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-relation:9").unwrap(),
-        native_state: None,
-        native_flags: None,
-        native_properties: std::collections::BTreeMap::new(),
-        entities: ids.to_vec(),
-        parameter: None,
-        operands: Vec::new(),
-    };
-    let point = |id: SketchEntityId, position| {
-        SketchEntity::new(
-            id,
-            SketchId::mint("synthetic:test:id#sketch").unwrap(),
-            SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).unwrap(),
-        )
-    };
-    let first = point(ids[0].clone(), Point2::new(1.0, 2.0));
-    let coincident = point(ids[1].clone(), Point2::new(1.0, 2.0));
-    let distinct = point(ids[1].clone(), Point2::new(1.0, 3.0));
-
-    assert!(
-        !marker_relation_is_inactive(&relation, &definition, &[first.clone(), coincident],)
-            .unwrap()
-    );
-    assert!(marker_relation_is_inactive(&relation, &definition, &[first, distinct],).unwrap());
-}
-
-#[test]
-fn horizontal_relation_requires_one_line_or_two_points() {
-    let mut relation = marker("relation", None);
-    relation.reclassify(SketchInputKind::Relation(SketchRelationKind::Horizontal));
-    let entity = |id: &str, geometry| {
-        SketchEntity::new(
-            SketchEntityId::mint(id).unwrap(),
-            SketchId::mint("synthetic:test:id#sketch").unwrap(),
-            geometry,
-        )
-    };
-    let definition = |entities| SketchConstraintDefinitionInput::Native {
-        native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-relation:4").unwrap(),
-        native_state: None,
-        native_flags: None,
-        native_properties: std::collections::BTreeMap::new(),
-        entities,
-        parameter: None,
-        operands: Vec::new(),
-    };
-    let point = entity(
-        "synthetic:test:id#point",
-        SketchGeometry::try_from(SketchGeometryDefinition::Point {
-            position: Point2::new(0.0, 0.0),
-        })
-        .unwrap(),
-    );
-    let line = entity(
-        "synthetic:test:id#line",
-        SketchGeometry::try_from(SketchGeometryDefinition::Line {
-            start: Point2::new(0.0, 0.0),
-            end: Point2::new(1.0, 0.0),
-        })
-        .unwrap(),
-    );
-
-    assert!(marker_relation_is_inactive(
-        &relation,
-        &definition(vec![point.id().clone()]),
-        std::slice::from_ref(&point),
-    )
-    .unwrap());
-    assert!(!marker_relation_is_inactive(
-        &relation,
-        &definition(vec![line.id().clone()]),
-        std::slice::from_ref(&line),
-    )
-    .unwrap());
-    assert!(!marker_relation_is_inactive(
-        &relation,
-        &definition(vec![
-            point.id().clone(),
-            SketchEntityId::mint("synthetic:test:id#second").unwrap()
-        ]),
-        &[
-            point,
-            entity(
-                "synthetic:test:id#second",
-                SketchGeometry::try_from(SketchGeometryDefinition::Point {
-                    position: Point2::new(1.0, 0.0),
-                })
-                .unwrap(),
-            ),
-        ],
-    )
-    .unwrap());
-    assert!(marker_relation_is_inactive(
-        &relation,
-        &SketchConstraintDefinitionInput::Native {
-            native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-relation:4")
-                .unwrap(),
-            native_state: None,
-            native_flags: None,
-            native_properties: std::collections::BTreeMap::new(),
-            entities: Vec::new(),
-            parameter: None,
-            operands: vec![
-                SketchNativeOperand {
-                    native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-local-id")
-                        .expect("source operand kind is nonempty"),
-                    field: None,
-                    object_index: Some(3),
-                    native_ref: Some("same-marker".into()),
-                },
-                SketchNativeOperand {
-                    native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-local-id")
-                        .expect("source operand kind is nonempty"),
-                    field: None,
-                    object_index: Some(3),
-                    native_ref: Some("same-marker".into()),
-                },
-            ],
-        },
-        &[],
-    )
-    .unwrap());
 }
 
 #[test]

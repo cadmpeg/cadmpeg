@@ -13,7 +13,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// A subdivision surface represented by its control cage.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct SubdSurface {
@@ -67,7 +67,9 @@ fn require_finite_point(field: &str, point: Point3) -> Result<FinitePoint3, Subd
 }
 
 /// A subdivision cage with valid local topology and numeric payloads.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Default, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "SubdCageWire")]
 pub struct SubdCage {
@@ -344,7 +346,7 @@ fn normalize_user_knots(edges: &mut [SubdEdge]) {
 }
 
 /// A symmetry plane frame carried by a T-spline editor block.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "SubdPlaneFrameWire")]
 pub struct SubdPlaneFrame {
@@ -404,7 +406,14 @@ impl SubdPlaneFrame {
 }
 
 /// Kind-specific controls for a T-spline symmetry block.
-#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SubdSymmetryKind {
@@ -415,7 +424,7 @@ pub enum SubdSymmetryKind {
 }
 
 /// Admitted radial controls and selector-preserving maps.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "SubdRadialSymmetryWire")]
 pub struct SubdRadialSymmetry {
@@ -508,7 +517,18 @@ impl SubdSymmetryKind {
 }
 
 /// Selector of one native radial-symmetry map.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, DeserializeName)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Serialize,
+    DeserializeName,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -528,7 +548,7 @@ pub enum SubdRadialMapSelector {
 }
 
 /// One selector-preserving native radial-symmetry map.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct SubdRadialSymmetryMap {
@@ -539,7 +559,7 @@ pub struct SubdRadialSymmetryMap {
 }
 
 /// Typed editor symmetry state for one subdivision cage.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "SubdSymmetryWire", into = "SubdSymmetryWire")]
 pub struct SubdSymmetry {
@@ -621,7 +641,9 @@ impl TryFrom<SubdSymmetryWire> for SubdSymmetry {
 }
 
 /// Subdivision scheme used by a control cage.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName, cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -634,7 +656,7 @@ pub enum SubdScheme {
 }
 
 /// A control-cage vertex and its subdivision tag.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "SubdVertexWire")]
 pub struct SubdVertex {
@@ -709,7 +731,9 @@ impl SubdVertex {
 }
 
 /// Compass direction of the root edge in a control-cage grid frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName, cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -725,7 +749,7 @@ pub enum SubdGripDirection {
 }
 
 /// Typed secondary-grip layout for one subdivision vertex.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "SubdVertexGripLayoutWire")]
 pub struct SubdVertexGripLayout {
@@ -784,7 +808,14 @@ impl SubdVertexGripLayout {
 }
 
 /// One wedge in a secondary-grip layout.
-#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SubdGripWedge {
@@ -815,7 +846,7 @@ pub enum SubdGripWedge {
 }
 
 /// A secondary grip point and its source grip-array identity.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "SubdSecondaryGripWire")]
 pub struct SubdSecondaryGrip {
@@ -876,7 +907,9 @@ impl SubdSecondaryGrip {
 }
 
 /// A control-cage vertex tag.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName, cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -892,7 +925,7 @@ pub enum SubdVertexTag {
 }
 
 /// A control-cage edge with endpoint sharpness and sector coefficients.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "SubdEdgeWire")]
 pub struct SubdEdge {
@@ -1070,7 +1103,15 @@ impl SubdEdge {
 }
 
 /// A user-supplied knot interval layered over an edge's base interval.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -1087,7 +1128,9 @@ pub enum SubdUserKnot {
 }
 
 /// A control-cage edge tag.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName, cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -1102,7 +1145,7 @@ pub enum SubdEdgeTag {
 
 /// A subdivision face bounded by a directed edge ring, listed as its sides in
 /// boundary order.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "SubdFaceWire")]
 pub struct SubdFace {
@@ -1166,7 +1209,7 @@ impl SubdFace {
 
 /// One side of a subdivision face: its directed edge uses in boundary order.
 /// Each joint between two uses of one side is a T-junction.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct SubdFaceSide {
@@ -1175,7 +1218,9 @@ pub struct SubdFaceSide {
 }
 
 /// One directed use of a subdivision edge in a face ring.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct SubdEdgeUse {

@@ -99,7 +99,7 @@ fn configuration_properties_are_compared_even_when_removed_or_forged() {
 }
 
 #[test]
-fn owned_properties_keep_names_values_and_exact_float_bits() {
+fn owned_properties_keep_names_and_values_with_one_zero() {
     let mut original = property(
         "sldprt:metadata:default_property#8:5:SW-Short%20Date",
         "SW-Short Date",
@@ -118,13 +118,17 @@ fn owned_properties_keep_names_values_and_exact_float_bits() {
         } else {
             Some(AttributeValue::float(-0.0).unwrap())
         }];
-        let mut positive = original.clone();
-        positive.values = vec![if vector {
-            Some(AttributeValue::vector([0.0]).unwrap())
-        } else {
-            Some(AttributeValue::float(0.0).unwrap())
-        }];
-        assert!(!same_attribute(&original, &positive));
+        let written = |value: f64| {
+            let mut written = original.clone();
+            written.values = vec![if vector {
+                Some(AttributeValue::vector([value]).unwrap())
+            } else {
+                Some(AttributeValue::float(value).unwrap())
+            }];
+            written
+        };
+        assert!(same_attribute(&original, &written(0.0)));
+        assert!(!same_attribute(&original, &written(0.5)));
     }
 }
 
@@ -292,6 +296,17 @@ fn each_property_is_charged_by_the_carrier_bytes_the_write_emits() {
     };
     assert_eq!(source.model.attributes.len(), 4);
     assert!(unwritten(&source, &records, &notes).unwrap().is_empty());
+    let mut read_back = source.clone();
+    for row in &mut read_back.model.attributes {
+        if row.name == "Mass" {
+            assert!(matches!(
+                row.values.as_slice(),
+                [Some(AttributeValue::Float(stored))] if stored.get().is_sign_negative()
+            ));
+            row.values = vec![Some(AttributeValue::float(0.0).unwrap())];
+        }
+    }
+    assert!(unwritten(&read_back, &records, &notes).unwrap().is_empty());
 
     let mut edited = source.clone();
     for row in &mut edited.model.attributes {

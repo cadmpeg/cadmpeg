@@ -575,23 +575,6 @@ pub(super) fn project(
         }
     }
 
-    for curve in &mut ir.geometry.curves {
-        if let Some(source) = &mut curve.source_object {
-            source.color = sequences
-                .curve(&curve.id)
-                .and_then(|sequence| entries.get(&sequence))
-                .and_then(|entry| entry.color.and_then(resolve_color));
-        }
-    }
-    for surface in &mut ir.geometry.surfaces {
-        if let Some(source) = &mut surface.source_object {
-            source.color = sequences
-                .surface(&surface.id)
-                .and_then(|sequence| entries.get(&sequence))
-                .and_then(|entry| entry.color.and_then(resolve_color));
-        }
-    }
-
     for index in 0..ir.geometry.bodies.len() {
         let Some((sequence, color_number, visible)) = (|| {
             let body = &ir.geometry.bodies[index];
@@ -618,6 +601,7 @@ pub(super) fn project(
             )),
             target: AppearanceTarget::Body(body_id).into(),
             appearance: appearance_id,
+            precedence: None,
             source_entity_id: None,
             object_type: Some("Body".to_string()),
             visible: None,
@@ -697,6 +681,7 @@ pub(super) fn project(
             )),
             target: AppearanceTarget::Face(face_id).into(),
             appearance: appearance_id,
+            precedence: None,
             source_entity_id: None,
             object_type: Some("Face".to_string()),
             visible: None,

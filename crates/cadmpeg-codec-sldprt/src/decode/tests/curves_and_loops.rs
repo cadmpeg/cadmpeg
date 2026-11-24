@@ -522,7 +522,7 @@ fn a_face_that_stores_no_loop_covers_its_sphere() {
         let result = decode(sphere(0x2d), 1, bridge_marker);
         let faces = &result.ir().geometry.faces;
         assert_eq!(faces.len(), 1);
-        assert!(faces[0].loops.is_empty());
+        assert!(faces[0].loops.stated().next().is_none());
         assert_eq!(faces[0].sense, sense);
         assert!(!withheld(&result));
     }

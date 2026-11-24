@@ -4,9 +4,10 @@
 use cadmpeg_core::CodecError;
 
 use crate::design::ops::sheet_metal::{
-    AngleRange, BendAllowance, BendEquations, BendSet, ConnectBetween, Convert, ConvertBend,
-    ConvertFrom, ConvertRip, Flange, FlangeHeight, FlangeWidth, Hem, Rip, RipPath, SheetMetal,
-    SheetMetalKind, SheetMetalRule, StampForm, StampOutline, VertexBend,
+    AngleRange, BendAllowance, BendEquations, BendSet, BendSpec, BendTable, BendTableLookup,
+    ConnectBetween, Convert, ConvertBend, ConvertFrom, ConvertRip, Flange, FlangeHeight,
+    FlangeWidth, Hem, HemForm, KFactorRow, KFactorTable, OutsideGrid, Relief, Rip, RipPath,
+    RipWidth, SheetMetal, SheetMetalKind, SheetMetalRule, StampForm, StampOutline, VertexBend,
 };
 
 use super::{Collect, Walk};
@@ -30,7 +31,9 @@ impl Walk for BendAllowance {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         match self {
             Self::Equations(f0) => f0.walk(into),
-            Self::KFactor(_) | Self::KFactorTable(_) | Self::Table(_) => Ok(()),
+            Self::KFactor(f0) => f0.walk(into),
+            Self::KFactorTable(f0) => f0.walk(into),
+            Self::Table(f0) => f0.walk(into),
         }
     }
 }
@@ -56,6 +59,45 @@ impl Walk for BendSet {
     }
 }
 
+impl Walk for BendSpec {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        let Self {
+            radius,
+            radius_side: _,
+            relief,
+        } = self;
+        radius.walk(into)?;
+        relief.walk(into)?;
+        Ok(())
+    }
+}
+
+impl Walk for BendTable {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        let Self {
+            blocks: _,
+            angle: _,
+            value: _,
+            lookup,
+        } = self;
+        lookup.walk(into)?;
+        Ok(())
+    }
+}
+
+impl Walk for BendTableLookup {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        let Self {
+            thickness: _,
+            radius: _,
+            angle: _,
+            outside,
+        } = self;
+        outside.walk(into)?;
+        Ok(())
+    }
+}
+
 impl Walk for ConnectBetween {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         match self {
@@ -70,13 +112,15 @@ impl Walk for Convert {
         let Self {
             body,
             fixed,
-            thickness: _,
+            thickness,
             from,
             rips,
-            bend: _,
+            bend,
             keep_solid: _,
             rule: _,
         } = self;
+        thickness.walk(into)?;
+        bend.walk(into)?;
         body.walk(into)?;
         fixed.walk(into)?;
         from.walk(into)?;
@@ -88,7 +132,10 @@ impl Walk for Convert {
 impl Walk for ConvertBend {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         match self {
-            Self::Edge { edge, radius: _ } => edge.walk(into),
+            Self::Edge { edge, radius } => {
+                radius.walk(into)?;
+                edge.walk(into)
+            }
             Self::Face { face } => face.walk(into),
         }
     }
@@ -105,7 +152,8 @@ impl Walk for ConvertFrom {
 
 impl Walk for ConvertRip {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
-        let Self { path, gap: _ } = self;
+        let Self { path, gap } = self;
+        gap.walk(into)?;
         path.walk(into)?;
         Ok(())
     }
@@ -116,14 +164,16 @@ impl Walk for Flange {
         let Self {
             edges,
             height,
-            angle: _,
+            angle,
             width,
-            bend: _,
+            bend,
             rule: _,
             height_datum: _,
             position: _,
             outline,
         } = self;
+        angle.walk(into)?;
+        bend.walk(into)?;
         edges.walk(into)?;
         height.walk(into)?;
         width.walk(into)?;
@@ -135,8 +185,11 @@ impl Walk for Flange {
 impl Walk for FlangeHeight {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         match self {
-            Self::UpTo { target, offset: _ } => target.walk(into),
-            Self::Distance(_) => Ok(()),
+            Self::UpTo { target, offset } => {
+                offset.walk(into)?;
+                target.walk(into)
+            }
+            Self::Distance(f0) => f0.walk(into),
         }
     }
 }
@@ -146,18 +199,23 @@ impl Walk for FlangeWidth {
         match self {
             Self::FromReference {
                 from,
-                offset: _,
-                width: _,
+                offset,
+                width,
                 reversed: _,
-            } => from.walk(into),
-            Self::Full
-            | Self::Centered { width: _ }
-            | Self::FromEnds {
-                first: _,
-                second: _,
+            } => {
+                offset.walk(into)?;
+                width.walk(into)?;
+                from.walk(into)
             }
-            | Self::PerEdge(_)
-            | Self::CenteredPerEdge(_) => Ok(()),
+            Self::Centered { width } => width.walk(into),
+            Self::FromEnds { first, second } => {
+                first.walk(into)?;
+                second.walk(into)?;
+                Ok(())
+            }
+            Self::PerEdge(f0) => f0.walk(into),
+            Self::CenteredPerEdge(f0) => f0.walk(into),
+            Self::Full => Ok(()),
         }
     }
 }
@@ -166,12 +224,85 @@ impl Walk for Hem {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         let Self {
             edges,
-            form: _,
+            form,
             side: _,
             position: _,
             rule: _,
         } = self;
+        form.walk(into)?;
         edges.walk(into)?;
+        Ok(())
+    }
+}
+
+impl Walk for HemForm {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        match self {
+            Self::Flat { length, gap } => {
+                length.walk(into)?;
+                gap.walk(into)?;
+                Ok(())
+            }
+            Self::Open { length, gap } => {
+                length.walk(into)?;
+                gap.walk(into)?;
+                Ok(())
+            }
+            Self::Teardrop {
+                radius,
+                length,
+                gap,
+            } => {
+                radius.walk(into)?;
+                length.walk(into)?;
+                gap.walk(into)?;
+                Ok(())
+            }
+            Self::Rolled { radius, angle } => {
+                radius.walk(into)?;
+                angle.walk(into)?;
+                Ok(())
+            }
+            Self::Native(_) => Ok(()),
+        }
+    }
+}
+
+impl Walk for KFactorRow {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        let Self { ratio: _, k_factor } = self;
+        k_factor.walk(into)?;
+        Ok(())
+    }
+}
+
+impl Walk for KFactorTable {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        let Self { rows, lookup: _ } = self;
+        rows.walk(into)?;
+        Ok(())
+    }
+}
+
+impl Walk for OutsideGrid {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        match self {
+            Self::BackupKFactor { k_factor } => k_factor.walk(into),
+        }
+    }
+}
+
+impl Walk for Relief {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        let Self {
+            shape: _,
+            width,
+            width_ratio,
+            depth,
+        } = self;
+        width.walk(into)?;
+        width_ratio.walk(into)?;
+        depth.walk(into)?;
         Ok(())
     }
 }
@@ -180,7 +311,10 @@ impl Walk for Rip {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         match self {
             Self::Faces { faces } => faces.walk(into),
-            Self::Along { path, width: _ } => path.walk(into),
+            Self::Along { path, width } => {
+                width.walk(into)?;
+                path.walk(into)
+            }
         }
     }
 }
@@ -208,6 +342,15 @@ impl Walk for RipPath {
     }
 }
 
+impl Walk for RipWidth {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        match self {
+            Self::Gap { gap, side: _ } => gap.walk(into),
+            Self::Tear => Ok(()),
+        }
+    }
+}
+
 impl Walk for SheetMetal {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         let Self {
@@ -228,20 +371,25 @@ impl Walk for SheetMetalKind {
             Self::ApplyRule { rule: _, bodies } => bodies.walk(into),
             Self::Wall {
                 profile,
-                thickness: _,
+                thickness,
                 side: _,
                 rule: _,
-            } => profile.walk(into),
+            } => {
+                thickness.walk(into)?;
+                profile.walk(into)
+            }
             Self::ContourFlange {
                 profile,
                 edges,
                 width,
                 extent,
-                thickness: _,
-                bend: _,
+                thickness,
+                bend,
                 vertex_bends,
                 rule: _,
             } => {
+                thickness.walk(into)?;
+                bend.walk(into)?;
                 profile.walk(into)?;
                 edges.walk(into)?;
                 width.walk(into)?;
@@ -253,27 +401,38 @@ impl Walk for SheetMetalKind {
             Self::Hem(f0) => f0.walk(into),
             Self::Bend {
                 line,
-                angle: _,
-                radius: _,
+                angle,
+                radius,
                 radius_side: _,
-                flat_length: _,
+                flat_length,
                 zone: _,
                 line_face: _,
                 fixed_side: _,
-            } => line.walk(into),
+            } => {
+                angle.walk(into)?;
+                radius.walk(into)?;
+                flat_length.walk(into)?;
+                line.walk(into)
+            }
             Self::Connect {
                 between,
-                radius: _,
+                radius,
                 extension: _,
                 double: _,
-            } => between.walk(into),
+            } => {
+                radius.walk(into)?;
+                between.walk(into)
+            }
             Self::Rip(f0) => f0.walk(into),
             Self::Convert(f0) => f0.walk(into),
             Self::BreakCorner {
                 corners,
-                size: _,
+                size,
                 shape: _,
-            } => corners.walk(into),
+            } => {
+                size.walk(into)?;
+                corners.walk(into)
+            }
             Self::ExtendWall { edge, to } => {
                 edge.walk(into)?;
                 to.walk(into)?;
@@ -282,10 +441,12 @@ impl Walk for SheetMetalKind {
             Self::ExtrudedHole {
                 bore,
                 entry,
-                height: _,
-                root_fillet: _,
+                height,
+                root_fillet,
                 rule: _,
             } => {
+                height.walk(into)?;
+                root_fillet.walk(into)?;
                 bore.walk(into)?;
                 entry.walk(into)?;
                 Ok(())
@@ -327,13 +488,15 @@ impl Walk for SheetMetalRule {
             id: _,
             scope: _,
             name: _,
-            thickness: _,
-            bend: _,
+            thickness,
+            bend,
             allowance,
             native_options,
             source_settings,
             native_ref: _,
         } = self;
+        thickness.walk(into)?;
+        bend.walk(into)?;
         allowance.walk(into)?;
         native_options.walk(into)?;
         source_settings.walk(into)?;
@@ -346,47 +509,75 @@ impl Walk for StampForm {
         match self {
             Self::Raised {
                 outline,
-                height: _,
-                wall_angle: _,
-                rim_radius: _,
-                floor_radius: _,
-            } => outline.walk(into),
+                height,
+                wall_angle,
+                rim_radius,
+                floor_radius,
+            } => {
+                height.walk(into)?;
+                wall_angle.walk(into)?;
+                rim_radius.walk(into)?;
+                floor_radius.walk(into)?;
+                outline.walk(into)
+            }
             Self::Bridge {
                 placement,
-                height: _,
-                wall_angle: _,
-                length: _,
-                width: _,
-                rim_radius: _,
-                floor_radius: _,
-                relief_length: _,
-            } => placement.walk(into),
+                height,
+                wall_angle,
+                length,
+                width,
+                rim_radius,
+                floor_radius,
+                relief_length,
+            } => {
+                height.walk(into)?;
+                wall_angle.walk(into)?;
+                length.walk(into)?;
+                width.walk(into)?;
+                rim_radius.walk(into)?;
+                floor_radius.walk(into)?;
+                relief_length.walk(into)?;
+                placement.walk(into)
+            }
             Self::Louver {
                 profile,
                 open_edge,
-                depth: _,
-                flap_angle: _,
-                wall_angle: _,
-                rim_radius: _,
+                depth,
+                flap_angle,
+                wall_angle,
+                rim_radius,
             } => {
+                depth.walk(into)?;
+                flap_angle.walk(into)?;
+                wall_angle.walk(into)?;
+                rim_radius.walk(into)?;
                 profile.walk(into)?;
                 open_edge.walk(into)?;
                 Ok(())
             }
             Self::Bead {
                 path,
-                height: _,
-                section_radius: _,
-                end_radius: _,
-            } => path.walk(into),
+                height,
+                section_radius,
+                end_radius,
+            } => {
+                height.walk(into)?;
+                section_radius.walk(into)?;
+                end_radius.walk(into)?;
+                path.walk(into)
+            }
             Self::StiffeningRib {
                 bend,
                 at,
-                length: _,
-                bottom_radius: _,
-                wall_angle: _,
-                rim_radius: _,
+                length,
+                bottom_radius,
+                wall_angle,
+                rim_radius,
             } => {
+                length.walk(into)?;
+                bottom_radius.walk(into)?;
+                wall_angle.walk(into)?;
+                rim_radius.walk(into)?;
                 bend.walk(into)?;
                 at.walk(into)?;
                 Ok(())
@@ -399,10 +590,10 @@ impl Walk for StampOutline {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         match self {
             Self::Profile(f0) => f0.walk(into),
-            Self::Circle {
-                center,
-                diameter: _,
-            } => center.walk(into),
+            Self::Circle { center, diameter } => {
+                diameter.walk(into)?;
+                center.walk(into)
+            }
         }
     }
 }
@@ -411,9 +602,10 @@ impl Walk for VertexBend {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         let Self {
             vertex,
-            radius: _,
+            radius,
             radius_side: _,
         } = self;
+        radius.walk(into)?;
         vertex.walk(into)?;
         Ok(())
     }

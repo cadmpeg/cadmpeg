@@ -144,13 +144,13 @@ fn face_geometry() -> (
         color: None,
         visible: Some(true),
         native_ref: None,
+        unstated: None,
     };
-    let region = Region {
-        id: RegionId::mint("f3d:model:region#1").unwrap(),
-        body: body.id.clone(),
-        shells: vec![ShellId::mint("f3d:model:shell#1").unwrap()],
-        native_ref: None,
-    };
+    let region = Region::new(
+        RegionId::mint("f3d:model:region#1").unwrap(),
+        body.id.clone(),
+        vec![ShellId::mint("f3d:model:shell#1").unwrap()],
+    );
     let shell = Shell::new(
         ShellId::mint("f3d:model:shell#1").unwrap(),
         region.id.clone(),
@@ -245,6 +245,7 @@ fn linked_body() -> Option<cadmpeg_ir::ids::BodyId> {
         color: None,
         visible: Some(true),
         native_ref: None,
+        unstated: None,
     };
     let recipe = ConstructionRecipe {
         id: operands[0].recipe_id.clone(),

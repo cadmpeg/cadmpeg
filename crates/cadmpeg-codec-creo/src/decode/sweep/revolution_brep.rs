@@ -463,12 +463,11 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         ir.geometry.shells.push(shell);
         let region_shells = vec![shell_id];
         ctx.charge_entities(1, "admit Creo model regions")?;
-        ir.geometry.regions.push(Region {
-            id: region_id.clone(),
-            body: body_id.clone(),
-            shells: region_shells,
-            native_ref: None,
-        });
+        ir.geometry.regions.push(Region::new(
+            region_id.clone(),
+            body_id.clone(),
+            region_shells,
+        ));
         ctx.charge_entities(1, "admit Creo model bodies")?;
         source_carriers.admit_body(
             ir,
@@ -480,6 +479,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 color: None,
                 visible: None,
                 native_ref: None,
+                unstated: None,
             },
         )?;
         transferred += 1;

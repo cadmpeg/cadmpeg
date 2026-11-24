@@ -17,7 +17,6 @@ use crate::document::SourceMeta;
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use crate::scalar::{FiniteReal, NonNegativeReal, NonZeroReal, PositiveReal};
 use crate::sketches::SketchId;
-use crate::tessellation::TessellationId;
 use crate::transform::Transform;
 
 crate::ids::id_type!(
@@ -110,9 +109,6 @@ pub struct ProductDefinition {
     pub storage: Storage,
     /// The bodies of `CadIr.geometry` the definition owns.
     pub bodies: Vec<BodyId>,
-    /// The tessellations of `CadIr.model` the definition owns that represent
-    /// no body: the meshes of a part that the source states as triangles.
-    pub tessellations: Vec<TessellationId>,
     /// The occurrences the definition owns, in source order.
     pub occurrences: Vec<OccurrenceId>,
     /// Bodies an instance below the definition shows in place of its
@@ -121,7 +117,9 @@ pub struct ProductDefinition {
     /// Named contents an occurrence can show in place of the full content.
     pub representations: Vec<Representation>,
     /// The sketches of the model's sketch arena that the definition owns.
-    /// The list names records of that arena and goes with it.
+    /// The list names records of that arena and, like it, stays out of the
+    /// CADIR wire.
+    #[serde(skip)]
     pub sketches: Vec<SketchId>,
     /// The unit system the definition's source document is authored and
     /// displayed in.
@@ -170,7 +168,6 @@ impl ProductDefinition {
             generated_from: None,
             storage,
             bodies: Vec::new(),
-            tessellations: Vec::new(),
             occurrences: Vec::new(),
             instance_bodies: Vec::new(),
             representations: Vec::new(),
@@ -434,8 +431,7 @@ impl crate::document::CadIr {
     /// definition stored in the root file, or else a new one with `id` and
     /// the identities `document` the root file records about itself. The
     /// root then owns every body that no definition owns or shows for an
-    /// instance, and every tessellation that represents no body and that no
-    /// definition owns: what the file holds at its top. A new root is charged
+    /// instance: what the file holds at its top. A new root is charged
     /// to `ctx` as one entity, so a decoder that admits its entity total calls
     /// this after its last admission. A container decode holds no model
     /// records, so it states none and returns `None`.
@@ -468,20 +464,6 @@ impl crate::document::CadIr {
             .filter(|body| !held.contains(body.id.as_str()))
             .map(|body| body.id.clone())
             .collect();
-        let listed: std::collections::BTreeSet<&str> = definitions
-            .iter()
-            .flat_map(|definition| &definition.tessellations)
-            .map(TessellationId::as_str)
-            .collect();
-        let tessellations: Vec<TessellationId> = self
-            .model
-            .tessellations
-            .iter()
-            .filter(|tessellation| {
-                tessellation.body.is_none() && !listed.contains(tessellation.id.as_str())
-            })
-            .map(|tessellation| tessellation.id.clone())
-            .collect();
         let index = match definitions.iter().position(ProductDefinition::is_root) {
             Some(index) => index,
             None => {
@@ -494,8 +476,20 @@ impl crate::document::CadIr {
         };
         let root = &mut self.model.product_definitions[index];
         root.bodies.extend(bodies);
-        root.tessellations.extend(tessellations);
         Ok(Some(root))
+    }
+
+    /// States each tessellation whose role is `Unresolved` as a display of
+    /// `definition`: for a decoder whose stored meshes each display the
+    /// geometry of the one definition its file holds at its top.
+    pub fn display_unresolved_meshes(&mut self, definition: &ProductDefinitionId) {
+        for mesh in &mut self.model.tessellations {
+            if matches!(mesh.of, crate::tessellation::Meshed::Unresolved) {
+                mesh.of = crate::tessellation::Meshed::Display {
+                    definition: definition.clone(),
+                };
+            }
+        }
     }
 }
 
