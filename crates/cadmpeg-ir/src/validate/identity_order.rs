@@ -3,7 +3,7 @@
 
 use crate::index::identities::BorrowedIdentities;
 use cadmpeg_core::CodecError;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::document::CadIr;
 use crate::report::{
@@ -14,9 +14,11 @@ use crate::report::{
 /// `seen` is absent when every visited identity is known to be distinct.
 fn push_identity<'a>(
     seen: &mut Option<BorrowedIdentities<'a, bool>>,
+    file_keys: &BTreeSet<&str>,
     findings: &mut Vec<Finding>,
     id: &'a str,
 ) -> Result<(), CodecError> {
+    super::products::decode_set::check_qualified_scope(file_keys, id, findings);
     if !crate::ids::is_valid_identity(id) {
         super::record_finding(
             findings,
@@ -81,12 +83,13 @@ macro_rules! define_model_identity_checks {
         fn check_model_identity_and_order<'a>(
             ir: &'a CadIr,
             seen: &mut Option<BorrowedIdentities<'a, bool>>,
+            file_keys: &BTreeSet<&str>,
             findings: &mut Vec<Finding>,
         ) -> Result<(), CodecError> {
             $(
                 check_order(stringify!($field), ir.$home.$field.iter().map(crate::schema::EntitySchema::identity), findings);
                 for entity in &ir.$home.$field {
-                    push_identity(seen, findings, crate::schema::EntitySchema::identity(entity))?;
+                    push_identity(seen, file_keys, findings, crate::schema::EntitySchema::identity(entity))?;
                 }
             )*
             Ok(())
@@ -120,11 +123,12 @@ pub(super) fn check_identity_and_order(
             }
         });
     }));
-    check_model_identity_and_order(view.ir, &mut seen, findings)?;
+    let file_keys = super::products::decode_set::file_keys(view.ir);
+    check_model_identity_and_order(view.ir, &mut seen, &file_keys, findings)?;
     let mut by_arena: BTreeMap<String, Vec<&str>> = BTreeMap::new();
     view.visit::<cadmpeg_core::CodecError>(|format, arena, records| {
         for record in records.records() {
-            push_identity(&mut seen, findings, record.id())?;
+            push_identity(&mut seen, &file_keys, findings, record.id())?;
         }
         if records.len() == 0 {
             return Ok(());

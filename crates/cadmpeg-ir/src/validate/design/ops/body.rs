@@ -448,7 +448,20 @@ pub(super) fn check_indices(
                 ),
             );
         }
-        if seed_only && !index.0.contains(&0) {
+        let runs = super::super::names::index_in_runs(layout, index);
+        if runs.is_some_and(|(in_range, _)| !in_range) {
+            error(
+                findings,
+                site.entity,
+                crate::rule!(
+                    "design.instance-index-lies-outside-run-coordinate",
+                    "instance index {:?} lies outside a run's coordinate range",
+                    index.0
+                ),
+            );
+        }
+        let staged = runs.is_none_or(|(_, seed_only)| seed_only);
+        if (seed_only && !index.0.contains(&0)) || !staged {
             error(
                 findings,
                 site.entity,

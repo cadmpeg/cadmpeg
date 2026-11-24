@@ -95,7 +95,11 @@ pub(super) fn check_appearance_attributes(
                 ),
             );
         }
-        if let Some(other) = stated.insert(&binding.target, &binding.appearance) {
+        let earlier = match binding.target.entity {
+            AppearanceTarget::Unresolved => None,
+            _ => stated.insert(&binding.target, &binding.appearance),
+        };
+        if let Some(other) = earlier {
             if other != &binding.appearance {
                 super::record_finding(
                     findings,

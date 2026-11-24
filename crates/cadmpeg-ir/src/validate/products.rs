@@ -7,6 +7,7 @@ use cadmpeg_core::CodecError;
 
 use super::record_finding;
 
+pub(in crate::validate) mod decode_set;
 pub(in crate::validate) mod definitions;
 use crate::document::CadIr;
 use crate::products::{JointOperands, OperandContainer, PairedJointKind};
@@ -189,11 +190,11 @@ pub(super) fn check_products(
         record_finding(
             findings,
             Check::ReferentialIntegrity,
-            crate::report::Severity::Warning,
+            crate::report::Severity::Error,
             Some(definition),
             crate::rule!(
                 "products.product-definition-places-itself",
-                "product definition places itself"
+                "product definition is the prototype of an occurrence it owns, directly or transitively"
             ),
         );
     }
@@ -272,12 +273,11 @@ pub(super) fn check_products(
     Ok(())
 }
 
-/// Part 10: exactly one definition is `File` with `source: None`, the root
-/// definition, and no occurrence places it (§8.1). The root is what the
-/// decode's root file holds at its top, so only a decoded document, one with
-/// a `source`, that holds the model class must state it; a fragment's root
-/// can lie outside it. The counts are not in the decoder admission sets,
-/// which judge candidate parts of a document.
+/// Part 10: where `model` is in scope and the document is not a fragment, a
+/// document that holds a model record holds exactly one definition that is
+/// `File` with `source: None`, the root definition, and no occurrence places
+/// it (§8.1). A fragment's root can lie outside it. The counts are not in the
+/// decoder admission sets, which judge candidate parts of a document.
 fn check_root_definition(ir: &CadIr, findings: &mut Vec<Finding>) {
     let roots = ir
         .model
@@ -286,9 +286,11 @@ fn check_root_definition(ir: &CadIr, findings: &mut Vec<Finding>) {
         .filter(|definition| definition.is_root())
         .collect::<Vec<_>>();
     match roots.split_first() {
-        None if ir.source.is_some()
-            && !ir.fragment
-            && ir.scope().holds(cadmpeg_core::decode::ArenaClass::Model) =>
+        None if !ir.fragment
+            && ir.scope().holds(cadmpeg_core::decode::ArenaClass::Model)
+            && ir
+                .populated_arena(cadmpeg_core::decode::ArenaClass::Model)
+                .is_some() =>
         {
             record_finding(
                 findings,
@@ -439,6 +441,7 @@ mod tests {
             );
             assert!(joint.set_frame_sense(frame_sense));
             ir.model.assembly_joints.push(joint);
+            crate::examples::add_document_root(&mut ir);
             let mut findings = Vec::new();
             check_products(
                 &cadmpeg_core::decode::test_support::service_decode_context(),
@@ -484,6 +487,7 @@ mod tests {
             None,
         ));
 
+        crate::examples::add_document_root(&mut ir);
         let mut findings = Vec::new();
         check_products(
             &cadmpeg_core::decode::test_support::service_decode_context(),
@@ -592,6 +596,7 @@ mod tests {
                 .expect("identity grammar"),
         );
         ir.model.assembly_joints.push(joint);
+        crate::examples::add_document_root(&mut ir);
         let mut findings = Vec::new();
         check_products(
             &cadmpeg_core::decode::test_support::service_decode_context(),

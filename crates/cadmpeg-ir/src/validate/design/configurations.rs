@@ -6,7 +6,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::text::NonBlankString;
 
-use super::evaluations::check_path_steps;
 use super::records::DesignRecords;
 use crate::design::configuration::{
     Arrangement, ArrangementKind, ArrangementRef, DefinitionOverride, FeatureStateOverride,
@@ -25,6 +24,7 @@ use crate::design::units::{Quantity, ValueKind};
 use crate::ids::ProductDefinitionId;
 use crate::products::Storage;
 use crate::report::check::Finding;
+use crate::validate::design::selections::{check_path, check_unconfigured, moved_occurrences};
 use crate::validate::products::definitions::{check_representation_name, last_prototype};
 
 /// What holds a set of overrides.
@@ -250,7 +250,7 @@ fn check_scope(index: &DesignRecords<'_>, scope: &DesignScope, findings: &mut Ve
 
 /// A `ConfigurationRef::Local` names a configuration of the prototype's
 /// scope; `Named` occurs only where that scope is absent or lacks the name.
-fn check_configuration_ref(
+pub(super) fn check_configuration_ref(
     index: &DesignRecords<'_>,
     configuration: &ConfigurationRef,
     prototype: Option<&str>,
@@ -471,6 +471,21 @@ fn check_arrangement(
             ),
         );
     }
+    if matches!(
+        arrangement.kind,
+        ArrangementKind::Positional | ArrangementKind::Display
+    ) && !arrangement.moves.is_empty()
+    {
+        super::error(
+            findings,
+            id,
+            crate::rule!(
+                "design.arrangement-states-moves-only-explode-arrangement",
+                "arrangement states moves; only an explode arrangement moves occurrences"
+            ),
+        );
+    }
+    let moved = moved_occurrences(index.ir);
     for appearance in &arrangement.appearances {
         if appearance.appearance.is_none() && appearance.transparency.is_none() {
             super::error(
@@ -482,7 +497,7 @@ fn check_arrangement(
                 ),
             );
         }
-        check_path_steps(index, &appearance.path, id, "appearance", findings);
+        check_path(index, Some(scope), &appearance.path, &moved, id, findings);
     }
     for movement in &arrangement.moves {
         if !matches!(
@@ -499,11 +514,11 @@ fn check_arrangement(
             );
         }
         for path in &movement.occurrences {
-            check_path_steps(index, path, id, "move", findings);
+            check_path(index, Some(scope), path, &moved, id, findings);
         }
     }
     for nested in &arrangement.nested {
-        check_path_steps(index, &nested.path, id, "nested arrangement", findings);
+        check_path(index, Some(scope), &nested.path, &moved, id, findings);
         if let ArrangementRef::Local(local) = &nested.arrangement {
             let prototype = last_prototype(index, &nested.path);
             let of_prototype = index
@@ -746,8 +761,15 @@ fn check_occurrence_override(
         check_representation_name(index, prototype, name.as_str(), holder, findings);
     }
     let mut paths = BTreeSet::new();
+    let moved = moved_occurrences(index.ir);
+    let prototype = value
+        .prototype
+        .as_ref()
+        .map(ProductDefinitionId::as_str)
+        .or_else(|| index.prototype(occurrence));
     for nested in &value.nested {
-        check_path_steps(index, &nested.path, holder, "nested override", findings);
+        check_path(index, prototype, &nested.path, &moved, holder, findings);
+        check_unconfigured(&nested.path, holder, "a nested override's path", findings);
         if let Some(name) = &nested.representation {
             let prototype = last_prototype(index, &nested.path);
             check_representation_name(index, prototype, name.as_str(), holder, findings);

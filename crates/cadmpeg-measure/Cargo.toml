@@ -27,7 +27,6 @@ serde.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-cadmpeg-ir = { workspace = true, features = ["examples"] }
 serde_json.workspace = true
 
 [lints]

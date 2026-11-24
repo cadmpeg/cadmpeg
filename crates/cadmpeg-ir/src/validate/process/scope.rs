@@ -11,7 +11,7 @@ use super::walk::Walked;
 use crate::design::dimension::{ParamRef, ParameterRef};
 use crate::design::selection::{Anchor, OccurrencePath, PickContext};
 use crate::report::check::Finding;
-use crate::validate::design::evaluations::check_position;
+use crate::validate::design::evaluations::{check_position, check_resulting_position};
 use crate::validate::design::records::{MemberKey, PositionKey};
 use crate::validate::design::selections;
 
@@ -124,6 +124,7 @@ fn check_record(
                 let position = PositionKey::of(position);
                 let exists = super::as_process(findings, |findings| {
                     check_position(records.design, position, id, findings)
+                        && check_resulting_position(records.design, position, id, findings)
                 });
                 if exists {
                     let member = match position {

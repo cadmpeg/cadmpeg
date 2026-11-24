@@ -18,7 +18,7 @@ use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 use crate::transform::Transform;
 use crate::validate::design::records::{DesignRecords, MemberKey};
-use crate::validate::design::selections::{check_path, moved_occurrences};
+use crate::validate::design::selections::{check_path, check_unconfigured, moved_occurrences};
 use crate::validate::record_finding;
 
 pub(super) fn check(ir: &CadIr, findings: &mut Vec<Finding>) {
@@ -43,6 +43,7 @@ pub(super) fn check(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
         for entry in &definition.instance_bodies {
             check_path(&records, Some(id), &entry.occurrence, &moved, id, findings);
+            check_unconfigured(&entry.occurrence, id, "an instance-body path", findings);
         }
         check_representations(ir, &records, &moved, definition, findings);
         if let Some(generated) = &definition.generated_from {
@@ -63,6 +64,15 @@ pub(super) fn check(ir: &CadIr, findings: &mut Vec<Finding>) {
             );
         }
         for nested in &occurrence.overrides {
+            check_path(
+                &records,
+                Some(occurrence.prototype.as_str()),
+                &nested.path,
+                &moved,
+                id,
+                findings,
+            );
+            check_unconfigured(&nested.path, id, "a nested override's path", findings);
             if let Some(name) = &nested.representation {
                 check_representation_name(
                     &records,
@@ -183,6 +193,12 @@ fn check_representations(
                 }
                 for member in &rule.members {
                     check_path(records, Some(id), &member.path, moved, id, findings);
+                    check_unconfigured(
+                        &member.path,
+                        id,
+                        "a representation member's path",
+                        findings,
+                    );
                     match &member.action {
                         MemberAction::Substitute(substitute) => check_representation_name(
                             records,

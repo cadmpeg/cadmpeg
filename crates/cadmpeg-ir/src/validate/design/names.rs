@@ -402,6 +402,30 @@ fn valid_pattern_index(layout: &PatternLayout, instance: &InstanceIndex) -> Opti
     Some(in_range && seed_only)
 }
 
+/// Whether an instance index of `layout` that has one coordinate per run
+/// lies in each run's coordinate range, and whether, under a literal
+/// `seed_only: true` of a two-run `Linear` layout or stage, it has a zero
+/// coordinate there (§6.5, part 10 "Patterns"). `None` where the layout does
+/// not state its runs or the index has another number of coordinates.
+pub(super) fn index_in_runs(
+    layout: &PatternLayout,
+    instance: &InstanceIndex,
+) -> Option<(bool, bool)> {
+    let coordinates = &instance.0;
+    let index = layout_coordinates(layout)?;
+    if coordinates.len() != index.coordinates.len() {
+        return None;
+    }
+    let in_range = coordinates
+        .iter()
+        .zip(&index.coordinates)
+        .all(|(value, coordinate)| coordinate.admits(i64::from(*value)));
+    let seed_only = index.seed_only.iter().all(|&first| {
+        coordinates[first] == 0 || coordinates.get(first + 1).is_some_and(|value| *value == 0)
+    });
+    Some((in_range, seed_only))
+}
+
 /// The coordinates an instance index of a layout has.
 struct LayoutCoordinates<'a> {
     /// One per run, in index order.
@@ -531,14 +555,35 @@ fn layout_coordinates(layout: &PatternLayout) -> Option<LayoutCoordinates<'_>> {
 /// a seed that is not literal. That carve-out is interim, gap
 /// 20261119-ERR1-C-H6-2: §6.5 does not yet state it.
 fn run_coordinate<'a, Q>(run: &PatternRun<Q>, on_path: bool) -> Coordinate<'a> {
-    let Some(last) = spacing_count(&run.spacing).map(|count| i64::from(count) - 1) else {
-        return Coordinate::ANY;
-    };
     let seed = match &run.seed {
         None => Some(0),
         Some(seed) => literal(seed).map(i64::from),
     };
-    match &run.sides {
+    sided_coordinate(&run.spacing, run.sides.as_ref(), seed, on_path)
+}
+
+/// Whether `value` lies in the coordinate range of a run with its seed first,
+/// as a sketch pattern's runs are (§6.5, Coordinate range).
+pub(super) fn seed_first_run_admits<Q>(
+    spacing: &Spacing<Q>,
+    sides: Option<&RunSides<Q>>,
+    value: i64,
+) -> bool {
+    sided_coordinate(spacing, sides, Some(0), false).admits(value)
+}
+
+/// The coordinate range of a run of `spacing` and `sides`, with the seed at
+/// step `seed` where it is literal.
+fn sided_coordinate<'a, Q>(
+    spacing: &Spacing<Q>,
+    sides: Option<&RunSides<Q>>,
+    seed: Option<i64>,
+    on_path: bool,
+) -> Coordinate<'a> {
+    let Some(last) = spacing_count(spacing).map(|count| i64::from(count) - 1) else {
+        return Coordinate::ANY;
+    };
+    match sides {
         Some(RunSides::One) => seed.map_or(Coordinate::ANY, |seed| {
             Coordinate::between(-seed, last - seed)
         }),
