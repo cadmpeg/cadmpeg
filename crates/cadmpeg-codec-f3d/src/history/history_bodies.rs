@@ -1448,11 +1448,10 @@ fn admit(
         native_ref: None,
     });
     scratch.model.history_bodies.push(body);
-    let report = cadmpeg_ir::validate::validate_neutral_for_decode(ctx, &scratch, Vec::new())?;
-    let valid = !report
-        .findings
-        .iter()
-        .any(|finding| finding.severity == cadmpeg_ir::report::Severity::Error);
+    // A nest is unusable where its topology or its link to the origin
+    // breaks; a finding of another check family does not drop it.
+    let valid =
+        cadmpeg_ir::admit(ctx, &scratch, cadmpeg_ir::DRAFT_CORE_CHECKS, Vec::new())?.is_ok();
     let Some(body) = scratch.model.history_bodies.pop() else {
         return Err(CodecError::malformed("history body admission"));
     };
