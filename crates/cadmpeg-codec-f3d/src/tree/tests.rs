@@ -629,7 +629,7 @@ fn an_operand_names_an_external_instance_by_its_identity_segment() {
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     ir.native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(&ctx, "xref_references", &[reference])
         .unwrap();
     reference_bolt(&mut ir, "f3d:model:occurrence#a:xref-0-0");
