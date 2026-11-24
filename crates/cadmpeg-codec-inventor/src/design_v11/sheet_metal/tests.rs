@@ -597,7 +597,7 @@ fn native_validation_rejects_a_changed_relief_form() {
         &mut Vec::new(),
     )
     .expect("projection");
-    let namespace = ir.native.namespace_mut("inventor");
+    let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("inventor"));
     namespace
         .set_arena(
             &ctx,
@@ -729,6 +729,7 @@ fn equal_style_relief_forms_admit_both_boolean_values() {
         suppressed: None,
         definition: FeatureDefinition {
             operation,
+            assembly: None,
             refine: None,
             fuzzy_tolerance: None,
         },
@@ -750,7 +751,7 @@ fn equal_style_relief_forms_admit_both_boolean_values() {
             *value = control;
         });
         let mut ir = source.clone();
-        let losses = feature_reliefs(&mut ir, &inventory, &[]).expect("projection");
+        let losses = feature_reliefs(&mut ir, &inventory, &[]);
         let FeatureOperation::SheetMetal(operation) = &ir.design.features[0].definition.operation
         else {
             panic!("sheet metal")
@@ -782,7 +783,7 @@ fn equal_style_relief_forms_admit_both_boolean_values() {
             },
         }
     });
-    feature_reliefs(&mut source, &inventory, &[]).expect("projection");
+    feature_reliefs(&mut source, &inventory, &[]);
     let FeatureOperation::SheetMetal(operation) = &source.design.features[0].definition.operation
     else {
         panic!("sheet metal")

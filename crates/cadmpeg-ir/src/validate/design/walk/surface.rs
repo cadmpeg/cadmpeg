@@ -7,7 +7,8 @@ use crate::design::ops::surface::{
     BoundaryFill, BridgeEnd, CircleMode, CombineOperand, CurveDefinition, CurveFeature,
     CurveOffset, EquationCoordinates, Extend, ExtendLimit, FaceReference, Form, Healing,
     ImplicitSection, ImplicitSweep, Knit, LineLength, LineMode, MeshFeature, MeshKind, Patch,
-    PatchBounds, PatchEdge, SplineCurve, SplinePoint, TextCurve, TextPlacement, Unsew, UnsewFaces,
+    PatchBounds, PatchEdge, ReduceTarget, SplineCurve, SplinePoint, TextCurve, TextPlacement,
+    Unsew, UnsewFaces,
 };
 
 use super::{Collect, Walk};
@@ -18,13 +19,15 @@ impl Walk for BoundaryFill {
             tools,
             cells,
             regions: _,
-            cap_planar: _,
-            merge: _,
+            cap_planar,
+            merge,
             tools_after: _,
             boolean,
             native_options,
             source_settings,
         } = self;
+        cap_planar.walk(into)?;
+        merge.walk(into)?;
         tools.walk(into)?;
         cells.walk(into)?;
         boolean.walk(into)?;
@@ -40,9 +43,11 @@ impl Walk for BridgeEnd {
             curve,
             at,
             continuity: _,
-            tension: _,
-            reversed: _,
+            tension,
+            reversed,
         } = self;
+        tension.walk(into)?;
+        reversed.walk(into)?;
         curve.walk(into)?;
         at.walk(into)?;
         Ok(())
@@ -88,8 +93,9 @@ impl Walk for CircleMode {
                 passing,
                 surface,
                 radius,
-                trim: _,
+                trim,
             } => {
+                trim.walk(into)?;
                 passing.walk(into)?;
                 surface.walk(into)?;
                 radius.walk(into)?;
@@ -144,12 +150,19 @@ impl Walk for CurveDefinition {
             Self::Bridge { ends } => ends.walk(into),
             Self::Text(f0) => f0.walk(into),
             Self::Constructed(f0) => f0.walk(into),
-            Self::Corner { arc, trim: _ } => arc.walk(into),
+            Self::Corner { arc, trim } => {
+                trim.walk(into)?;
+                arc.walk(into)
+            }
             Self::Polygon {
                 placement,
-                sides: _,
-                circumradius: _,
-            } => placement.walk(into),
+                sides,
+                circumradius,
+            } => {
+                sides.walk(into)?;
+                circumradius.walk(into)?;
+                placement.walk(into)
+            }
             Self::Point(f0) => f0.walk(into),
             Self::Equation { frame, coordinates } => {
                 frame.walk(into)?;
@@ -159,8 +172,9 @@ impl Walk for CurveDefinition {
             Self::Combined {
                 first,
                 second,
-                nearest: _,
+                nearest,
             } => {
+                nearest.walk(into)?;
                 first.walk(into)?;
                 second.walk(into)?;
                 Ok(())
@@ -180,11 +194,16 @@ impl Walk for CurveDefinition {
             }
             Self::Smoothed {
                 curve,
-                max_deviation: _,
-                tangency_threshold: _,
-                curvature_ratio: _,
+                max_deviation,
+                tangency_threshold,
+                curvature_ratio,
                 continuity: _,
-            } => curve.walk(into),
+            } => {
+                max_deviation.walk(into)?;
+                tangency_threshold.walk(into)?;
+                curvature_ratio.walk(into)?;
+                curve.walk(into)
+            }
             Self::Native(_) => Ok(()),
         }
     }
@@ -262,7 +281,8 @@ impl Walk for ExtendLimit {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         match self {
             Self::UpTo(f0) => f0.walk(into),
-            Self::Distance(_) | Self::Natural | Self::Native(_) => Ok(()),
+            Self::Distance(f0) => f0.walk(into),
+            Self::Natural | Self::Native(_) => Ok(()),
         }
     }
 }
@@ -271,7 +291,7 @@ impl Walk for FaceReference {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         match self {
             Self::Faces(f0) => f0.walk(into),
-            Self::Adjacent { alternate: _ } => Ok(()),
+            Self::Adjacent { alternate } => alternate.walk(into),
         }
     }
 }
@@ -292,11 +312,14 @@ impl Walk for Form {
 impl Walk for Healing {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         let Self {
-            objective: _,
-            tangency: _,
-            tangency_objective: _,
+            objective,
+            tangency,
+            tangency_objective,
             frozen,
         } = self;
+        objective.walk(into)?;
+        tangency.walk(into)?;
+        tangency_objective.walk(into)?;
         frozen.walk(into)?;
         Ok(())
     }
@@ -352,14 +375,16 @@ impl Walk for Knit {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         let Self {
             elements,
-            tolerance: _,
-            simplify: _,
+            tolerance,
+            simplify,
             healing,
             federation,
             output,
             native_options,
             source_settings,
         } = self;
+        tolerance.walk(into)?;
+        simplify.walk(into)?;
         elements.walk(into)?;
         healing.walk(into)?;
         federation.walk(into)?;
@@ -466,14 +491,15 @@ impl Walk for MeshKind {
                 fill: _,
             } => plane.walk(into),
             Self::Combine { tools, op: _ } => tools.walk(into),
-            Self::Section { sketch: _ }
-            | Self::Reduce { target: _ }
-            | Self::Repair
-            | Self::Remesh {
-                edge_length: _,
-                shape: _,
+            Self::Reduce { target } => target.walk(into),
+            Self::Remesh { edge_length, shape } => {
+                edge_length.walk(into)?;
+                shape.walk(into)?;
+                Ok(())
             }
-            | Self::Smooth { smoothness: _ }
+            Self::Smooth { smoothness } => smoothness.walk(into),
+            Self::Section { sketch: _ }
+            | Self::Repair
             | Self::Remove
             | Self::ReverseNormals
             | Self::Convert { method: _ }
@@ -487,12 +513,14 @@ impl Walk for Patch {
         let Self {
             bounds,
             passing,
-            planar: _,
-            simplified: _,
+            planar,
+            simplified,
             output,
             native_options,
             source_settings,
         } = self;
+        planar.walk(into)?;
+        simplified.walk(into)?;
         bounds.walk(into)?;
         passing.walk(into)?;
         output.walk(into)?;
@@ -524,13 +552,24 @@ impl Walk for PatchEdge {
     }
 }
 
+impl Walk for ReduceTarget {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        match self {
+            Self::Deviation(f0) => f0.walk(into),
+            Self::Proportion(f0) => f0.walk(into),
+            Self::FaceCount(f0) => f0.walk(into),
+        }
+    }
+}
+
 impl Walk for SplineCurve {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         let Self {
             points,
-            closed: _,
+            closed,
             support,
         } = self;
+        closed.walk(into)?;
         points.walk(into)?;
         support.walk(into)?;
         Ok(())
@@ -542,8 +581,9 @@ impl Walk for SplinePoint {
         let Self {
             point,
             tangent,
-            tension: _,
+            tension,
         } = self;
+        tension.walk(into)?;
         point.walk(into)?;
         tangent.walk(into)?;
         Ok(())
@@ -552,7 +592,8 @@ impl Walk for SplinePoint {
 
 impl Walk for TextCurve {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
-        let Self { text: _, placement } = self;
+        let Self { text, placement } = self;
+        text.walk(into)?;
         placement.walk(into)?;
         Ok(())
     }

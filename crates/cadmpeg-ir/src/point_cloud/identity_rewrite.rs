@@ -4,4 +4,4 @@
 use super::{PointChannel, PointCloud};
 
 rewrite_record!(PointChannel, []; {name, values});
-rewrite_record!(PointCloud, []; {id, definition, name, sensor, positions, normals, colors, channels, native_ref});
+rewrite_record!(PointCloud, []; {id, definition, name, color, visible, positions, normals, colors, channels, native_ref});

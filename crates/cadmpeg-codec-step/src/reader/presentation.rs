@@ -224,9 +224,11 @@ pub(super) fn decode(
         ir.model.presentation_layers.push(PresentationLayer {
             id: LayerId::from(ids::presentation(kind!("layer"), layer_id)),
             name,
+            parent: None,
             description,
             visible: hidden_layer_ids.contains(&layer_id).then_some(false),
             items: items.into_iter().map(InstanceTarget::new).collect(),
+            native_ref: None,
         });
         typed.insert(layer_id);
     }
@@ -247,6 +249,7 @@ pub(super) fn decode(
     let mut scalar_color_candidates =
         BTreeMap::<AppearanceTarget, NonemptyGroup<(u64, Color)>>::new();
     let mut style_domains = BTreeMap::new();
+    let mut bindings_by_style: HashMap<u64, Vec<usize>> = HashMap::new();
     for (style_id, _) in styles {
         if overridden_styles.contains(&style_id) {
             typed.insert(style_id);
@@ -413,6 +416,10 @@ pub(super) fn decode(
             };
             for (target_ordinal, target) in targets.into_iter().enumerate() {
                 push_scalar_candidate(&mut scalar_color_candidates, &target, style_id, color)?;
+                bindings_by_style
+                    .entry(style_id)
+                    .or_default()
+                    .push(ir.model.appearance_bindings.len());
                 ir.model.appearance_bindings.push(AppearanceBinding {
                     id: ids::presentation(
                         kind!("binding"),
@@ -423,7 +430,8 @@ pub(super) fn decode(
                     .into(),
                     target: target.into(),
                     appearance: appearance_id.clone(),
-                    source_entity_id: Some(format!("#{style_id}")),
+                    precedence: None,
+                    source_entity_id: Some(format!("#{target_step}")),
                     object_type: None,
                     visible,
                     channels: BTreeMap::new(),
@@ -443,21 +451,6 @@ pub(super) fn decode(
         typed.insert(color_id);
     }
     if !deferred_invisibility.is_empty() {
-        let mut bindings_by_style: HashMap<u64, Vec<usize>> = HashMap::new();
-        for (index, binding) in ir.model.appearance_bindings.iter().enumerate() {
-            let Some(binding_style_id) = binding
-                .source_entity_id
-                .as_deref()
-                .and_then(|source_id| source_id.strip_prefix('#'))
-                .and_then(|source_id| source_id.parse::<u64>().ok())
-            else {
-                continue;
-            };
-            bindings_by_style
-                .entry(binding_style_id)
-                .or_default()
-                .push(index);
-        }
         let mut styles_by_ancestor: HashMap<u64, Vec<u64>> =
             HashMap::with_capacity(bindings_by_style.len());
         let mut active = Vec::new();
@@ -785,9 +778,7 @@ fn appearance_targets(
             tessellation_id.into_string(),
         ))
     } else if exchange.records().contains_key(&id) {
-        Some(AppearanceTarget::Source {
-            source_id: format!("#{id}"),
-        })
+        Some(AppearanceTarget::Unresolved)
     } else {
         None
     };

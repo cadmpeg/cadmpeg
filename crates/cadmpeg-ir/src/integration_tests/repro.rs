@@ -48,7 +48,7 @@ fn repro_strips_names_paths_ids_and_metadata_and_preserves_context() {
     value["source"] = serde_json::json!({"identity": {"kind":"unclassified","format":"f3d"},
         "attributes": {"PLANTED_METADATA_KEY":"PLANTED_METADATA_VALUE", "file_path":"/PLANTED_FILE/secret-source.f3d", "private-member.f3z":"member-source.f3d"}});
     value["geometry"]["points"][0]["source_object"] = serde_json::json!({"format":"f3d", "object_id":"PLANTED_SOURCE_NAME",
-        "name":"PLANTED_OBJECT_NAME", "layer":"PLANTED_LAYER", "instance_path":["PLANTED_MEMBER_PATH/member.cad"]});
+        "instance_path":["PLANTED_MEMBER_PATH/member.cad"]});
 
     let old = value["geometry"]["points"][0]["id"]
         .as_str()
@@ -76,8 +76,6 @@ fn repro_strips_names_paths_ids_and_metadata_and_preserves_context() {
         "private-member.f3z",
         "member-source.f3d",
         "PLANTED_SOURCE_NAME",
-        "PLANTED_OBJECT_NAME",
-        "PLANTED_LAYER",
         "PLANTED_MEMBER_PATH",
         "member.cad",
     ] {
@@ -93,7 +91,7 @@ fn repro_native_feature_closure_keeps_numeric_joins_and_type_rows() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let ctx = cadmpeg_core::decode::DecodeContext::for_loaded_input(&arena, &policy, 0).unwrap();
-    let native = document.native.namespace_mut("synthetic");
+    let native = document.native.namespace_mut(crate::codec_id!("synthetic"));
     for (arena, records) in [
         (
             "scopes",
@@ -191,9 +189,12 @@ fn repro_native_feature_closure_keeps_numeric_joins_and_type_rows() {
     assert!(!serde_json::to_string(&model_bundle)
         .unwrap()
         .contains("PLANTED"));
-    let parsed: CadIr = serde_json::from_slice(&serde_json::to_vec(&bundle).unwrap()).unwrap();
+    let bytes = serde_json::to_vec(&bundle).unwrap();
+    let parsed: CadIr = serde_json::from_slice(&bytes).unwrap();
     assert!(parsed.fragment);
-    assert_eq!(parsed.repro.unwrap().context, bundle.context);
+    assert!(parsed.repro.is_some());
+    let read: Bundle = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(read.context, bundle.context);
 }
 
 #[test]
@@ -335,7 +336,7 @@ fn repro_classified_source_keeps_codec_and_strips_declarations() {
     ));
     let bundle = cut(&document, &finding, &CutOptions::default()).unwrap();
     assert_eq!(bundle.document.source.as_ref().unwrap().format(), "f3d");
-    assert_eq!(bundle.signature.codec, "f3d");
+    assert_eq!(bundle.signature.codec.as_str(), "f3d");
     assert!(!serde_json::to_string(&bundle)
         .unwrap()
         .contains("PLANTED_MEMBER"));
@@ -368,8 +369,8 @@ fn assembly_boundary_document() -> (CadIr, crate::report::check::Finding) {
     }
     value["geometry"]["faces"][6]["surface"] = surface;
     value["model"]["product_definitions"] = serde_json::json!([
-        {"id":"synthetic:assembly:definition#1", "kind":"part", "bom_properties":{}, "storage":{"kind":"embedded"}, "tessellations":[], "occurrences":[], "instance_bodies":[], "representations":[], "bodies":[first_body], "sketches":[]},
-        {"id":"synthetic:assembly:definition#2", "kind":"part", "bom_properties":{}, "storage":{"kind":"embedded"}, "tessellations":[], "occurrences":[], "instance_bodies":[], "representations":[], "bodies":[second_body], "sketches":[]}
+        {"id":"synthetic:assembly:definition#1", "kind":"part", "bom_properties":{}, "storage":{"kind":"embedded"}, "occurrences":[], "instance_bodies":[], "representations":[], "bodies":[first_body], "sketches":[]},
+        {"id":"synthetic:assembly:definition#2", "kind":"part", "bom_properties":{}, "storage":{"kind":"embedded"}, "occurrences":[], "instance_bodies":[], "representations":[], "bodies":[second_body], "sketches":[]}
     ]);
     value["geometry"]["points"][0]["source_object"] = serde_json::json!({
         "format":"f3d", "object_id":"synthetic:assembly:definition#1",

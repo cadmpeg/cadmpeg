@@ -46,7 +46,9 @@ fn value_in(
     let record = index.parameters.get(parameter.as_str())?;
     let expression = match &record.definition {
         ParameterDefinition::Expression(expression) => Some(expression),
-        ParameterDefinition::Driven | ParameterDefinition::Assigned(_) => None,
+        ParameterDefinition::Driven
+        | ParameterDefinition::Assigned(_)
+        | ParameterDefinition::Unset => None,
     };
     if !reads_override(index, chain, parameter) {
         if let Some(value) = &record.value {
@@ -122,10 +124,14 @@ pub(super) fn node_references<R>(root: &Node<R>) -> Vec<&R> {
     while let Some(node) = pending.pop() {
         match node {
             Node::Reference(reference) => found.push(reference),
-            Node::Unary { operand, .. } => pending.push(operand),
-            Node::Binary { left, right, .. } => pending.extend([&**left, &**right]),
-            Node::Call { args, .. } => pending.extend(args),
-            Node::If(branches) => pending.extend(branches.iter()),
+            Node::Unary { .. }
+            | Node::Binary { .. }
+            | Node::Sum { .. }
+            | Node::Product { .. }
+            | Node::All(_)
+            | Node::Any(_)
+            | Node::Call { .. }
+            | Node::If { .. } => pending.extend(node.operands()),
             Node::Number { .. }
             | Node::Constant(_)
             | Node::Boolean(_)
@@ -172,17 +178,15 @@ fn evaluate_in(
                     tasks.push(Task::Visit(operand));
                 }
                 Node::Binary {
-                    op: BinaryOp::And | BinaryOp::Or | BinaryOp::Equal | BinaryOp::NotEqual,
-                    left,
-                    right,
-                } => {
-                    tasks.push(Task::Apply(node));
-                    tasks.push(Task::Visit(right));
-                    tasks.push(Task::Visit(left));
+                    op: BinaryOp::Equal | BinaryOp::NotEqual,
+                    ..
                 }
-                Node::If(branches) => {
+                | Node::All(_)
+                | Node::Any(_)
+                | Node::If { .. } => {
                     tasks.push(Task::Apply(node));
-                    tasks.extend(branches.iter().rev().map(Task::Visit));
+                    let operands: Vec<_> = node.operands().collect();
+                    tasks.extend(operands.into_iter().rev().map(Task::Visit));
                 }
                 _ => values.push(None),
             },
@@ -194,14 +198,35 @@ fn evaluate_in(
                         let left = values.pop()?;
                         combine(*op, left, right)
                     }
-                    Node::If(_) => {
-                        let otherwise = values.pop()?;
-                        let then = values.pop()?;
-                        match values.pop()? {
-                            Some(true) => then,
-                            Some(false) => otherwise,
-                            None => None,
+                    Node::All(operands) | Node::Any(operands) => {
+                        let start = values.len().checked_sub(operands.len())?;
+                        let all = matches!(node, Node::All(_));
+                        values
+                            .split_off(start)
+                            .into_iter()
+                            .try_fold(all, |held, value| {
+                                value.map(|value| if all { held && value } else { held || value })
+                            })
+                    }
+                    Node::If { cases, .. } => {
+                        let start = values.len().checked_sub(2 * cases.len() + 1)?;
+                        let ladder = values.split_off(start);
+                        let (otherwise, cases) = ladder.split_last()?;
+                        let mut taken = *otherwise;
+                        for case in cases.chunks(2) {
+                            match case {
+                                [Some(true), value] => {
+                                    taken = *value;
+                                    break;
+                                }
+                                [Some(false), _] => {}
+                                _ => {
+                                    taken = None;
+                                    break;
+                                }
+                            }
                         }
+                        taken
                     }
                     _ => None,
                 };
@@ -212,21 +237,15 @@ fn evaluate_in(
     values.pop().flatten()
 }
 
-/// A Boolean operation, decided only where both operands are Booleans with
-/// a value: `and` and `or` evaluate both operands (§5.13), so an undecided
-/// operand leaves the result undecided.
+/// A Boolean comparison, decided only where both operands are Booleans with
+/// a value. `and` and `or` evaluate every operand (§5.13), so an undecided
+/// operand of a run leaves the run undecided as well.
 fn combine(op: BinaryOp, left: Option<bool>, right: Option<bool>) -> Option<bool> {
     let (left, right) = (left?, right?);
     match op {
-        BinaryOp::And => Some(left && right),
-        BinaryOp::Or => Some(left || right),
         BinaryOp::Equal => Some(left == right),
         BinaryOp::NotEqual => Some(left != right),
-        BinaryOp::Add
-        | BinaryOp::Subtract
-        | BinaryOp::Multiply
-        | BinaryOp::Divide
-        | BinaryOp::Power
+        BinaryOp::Power
         | BinaryOp::Less
         | BinaryOp::LessEqual
         | BinaryOp::Greater

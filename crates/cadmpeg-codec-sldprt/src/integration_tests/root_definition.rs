@@ -59,11 +59,10 @@ fn assert_root(decoded: &EditableDecodeResult, id: &str) {
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
         .expect("validate synthetic document");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
-    let source = decoded.ir().source.as_ref().expect("source metadata");
-    assert_eq!(
-        source.attributes[cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE],
-        crate::decode::document_local_sha256(decoded.ir()).expect("final document digest")
-    );
+    assert!(!decoded
+        .source_fidelity()
+        .edited(decoded.ir())
+        .expect("final document digest"));
 }
 
 #[test]

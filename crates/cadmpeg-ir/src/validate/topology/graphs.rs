@@ -1,15 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Radial-ring, child-list, wire ownership and shell connectivity checks.
 
+use std::collections::BTreeSet;
+
 use cadmpeg_core::CodecError;
 
 use crate::document::CadIr;
+use crate::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::index::identities::BorrowedIdentities;
 use crate::report::{
     check::{Check, Finding},
     Severity,
 };
-use crate::validate::record_finding;
+use crate::topology::RegionUnstated;
+use crate::validate::{record_finding, record_related_finding};
 
 #[derive(Clone, Copy)]
 enum RadialStatus {
@@ -276,7 +280,24 @@ pub(in crate::validate) fn check_child_list_reciprocity(ir: &CadIr, findings: &m
     });
     let mut listed_shells = BorrowedIdentities::new();
     for region in &ir.geometry.regions {
-        for shell in &region.shells {
+        let marked = matches!(
+            region.unstated,
+            Some(RegionUnstated::Exterior { .. } | RegionUnstated::Unclassified { .. })
+        );
+        let mut seen = BorrowedIdentities::new();
+        for shell in region.stated_shells() {
+            if marked && seen.insert(shell.as_str(), ()).is_some() {
+                record_finding(
+                    findings,
+                    Check::ReferentialIntegrity,
+                    Severity::Error,
+                    Some(region.id.as_str()),
+                    format_args!(
+                        "region's mark names shell `{}` twice, or one its `shells` names",
+                        shell.as_str()
+                    ),
+                );
+            }
             listed_shells.insert(shell.as_str(), region.id.as_str());
             if shell_regions
                 .get(shell.as_str())
@@ -289,7 +310,7 @@ pub(in crate::validate) fn check_child_list_reciprocity(ir: &CadIr, findings: &m
     let mut listed_loops = BorrowedIdentities::new();
     for face in &ir.geometry.faces {
         let mut seen = BorrowedIdentities::new();
-        for loop_ in &face.loops {
+        for loop_ in face.loops.stated() {
             listed_loops.insert(loop_.as_str(), face.id.as_str());
             if seen.insert(loop_.as_str(), ()).is_some() {
                 record_finding(
@@ -526,8 +547,16 @@ pub(in crate::validate) fn check_shell_connectivity(ir: &CadIr, findings: &mut V
     }
     let child_lists = ir.geometry.child_lists();
     for shell in &ir.geometry.shells {
-        let shell_faces = child_lists.shell_faces(&shell.id);
-        if shell_faces.len() < 2 || shell_faces.iter().any(|face| face.loops.is_empty()) {
+        let Some(shell_faces) = child_lists.complete_shell_faces(&shell.id) else {
+            continue;
+        };
+        if shell_faces.len() < 2
+            || shell_faces.iter().any(|face| {
+                face.loops
+                    .boundary()
+                    .is_none_or(crate::topology::FaceBoundary::is_empty)
+            })
+        {
             continue;
         }
         let mut owned = BorrowedIdentities::new();
@@ -541,6 +570,135 @@ pub(in crate::validate) fn check_shell_connectivity(ir: &CadIr, findings: &mut V
                 format_args!("shell faces are disconnected through shared edges or vertices"),
             );
         }
+    }
+}
+
+/// A face with no loops is the only face of its shell, and its surface is no
+/// plane, cylinder, or cone, and no placed surface whose basis, through every
+/// placement, is one (part 10, Topology and model records; §5.6). The rule
+/// does not fire on a marked shell, or on a shell or region that holds a
+/// partial face or a marked shell. A procedural surface is read through its
+/// construction, which this rule does not evaluate.
+pub(in crate::validate) fn check_loopless_faces(ir: &CadIr, findings: &mut Vec<Finding>) {
+    let geometry = &ir.geometry;
+    let child_lists = geometry.child_lists();
+    let partial_regions: BTreeSet<&str> = geometry
+        .shells
+        .iter()
+        .filter(|shell| {
+            shell.unstated.is_some()
+                || child_lists
+                    .stated_shell_faces(&shell.id)
+                    .iter()
+                    .any(|face| face.loops.is_partial())
+        })
+        .map(|shell| shell.region.as_str())
+        .collect();
+    let surfaces = BorrowedIdentities::build(|add| {
+        for surface in &geometry.surfaces {
+            add(surface.id.as_str(), surface);
+        }
+    });
+    for shell in &geometry.shells {
+        if partial_regions.contains(shell.region.as_str()) {
+            continue;
+        }
+        let Some(faces) = child_lists.complete_shell_faces(&shell.id) else {
+            continue;
+        };
+        for face in faces.iter().filter(|face| {
+            face.loops
+                .boundary()
+                .is_some_and(crate::topology::FaceBoundary::is_empty)
+        }) {
+            if faces.len() > 1 {
+                record_related_finding(
+                    findings,
+                    Check::ShellTopology,
+                    Severity::Error,
+                    face.id.as_str(),
+                    &[shell.id.as_str()],
+                    format_args!(
+                        "a face with no loops shares its shell with {} other face(s); it is the only face of its shell",
+                        faces.len() - 1
+                    ),
+                );
+            }
+            let kind =
+                surfaces
+                    .get(face.surface.as_str())
+                    .and_then(|surface| match &surface.geometry {
+                        SurfaceGeometry::Solved(solved) => bounded_kind(solved),
+                        SurfaceGeometry::Procedural { .. } => None,
+                    });
+            if let Some(kind) = kind {
+                record_finding(
+                    findings,
+                    Check::ShellTopology,
+                    Severity::Error,
+                    Some(face.id.as_str()),
+                    format_args!(
+                        "a face with no loops lies on a {kind}, which a face bounds with a loop"
+                    ),
+                );
+            }
+        }
+    }
+}
+
+/// The kind of a plane, cylinder, or cone surface, through every placement.
+fn bounded_kind(surface: &SolvedSurfaceGeometry) -> Option<&'static str> {
+    match surface {
+        SolvedSurfaceGeometry::Plane(_) => Some("plane"),
+        SolvedSurfaceGeometry::Cylinder(_) => Some("cylinder"),
+        SolvedSurfaceGeometry::Cone(_) => Some("cone"),
+        SolvedSurfaceGeometry::Transformed(placed) => bounded_kind(placed.basis()),
+        SolvedSurfaceGeometry::Sphere(_)
+        | SolvedSurfaceGeometry::Torus(_)
+        | SolvedSurfaceGeometry::Nurbs(_)
+        | SolvedSurfaceGeometry::Polygonal(_)
+        | SolvedSurfaceGeometry::Unknown { .. } => None,
+    }
+}
+
+/// A partial face and a marked region, shell, or body are reported at
+/// Warning (part 10, Topology and model records).
+pub(in crate::validate) fn check_partial_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
+    let geometry = &ir.geometry;
+    let partial = geometry
+        .bodies
+        .iter()
+        .filter(|body| body.unstated.is_some())
+        .map(|body| (body.id.as_str(), "body does not state every region"))
+        .chain(
+            geometry
+                .regions
+                .iter()
+                .filter(|region| region.unstated.is_some())
+                .map(|region| (region.id.as_str(), "region does not state every shell")),
+        )
+        .chain(
+            geometry
+                .shells
+                .iter()
+                .filter(|shell| shell.unstated.is_some())
+                .map(|shell| (shell.id.as_str(), "shell does not state every member")),
+        )
+        .chain(
+            geometry
+                .faces
+                .iter()
+                .filter(|face| face.loops.is_partial())
+                .map(|face| (face.id.as_str(), "face does not state every loop")),
+        );
+    for (id, message) in partial {
+        record_finding(
+            findings,
+            Check::TopologyPartial,
+            Severity::Warning,
+            Some(id),
+            format_args!("{message}"),
+        );
     }
 }
 

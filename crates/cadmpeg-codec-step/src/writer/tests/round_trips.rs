@@ -763,7 +763,7 @@ pub(super) fn wire_body_ir(alpha: f64) -> CadIr {
     ir.geometry.shells[0].members =
         vec![cadmpeg_ir::topology::ShellMember::WireEdge { id: edge.id }];
     ir.geometry.regions.truncate(1);
-    ir.geometry.regions[0].shells = vec![ir.geometry.shells[0].id.clone()];
+    ir.geometry.regions[0].set_shells(vec![ir.geometry.shells[0].id.clone()]);
     ir.geometry.bodies.truncate(1);
     ir.geometry.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
     ir.geometry.bodies[0].color =
@@ -875,7 +875,10 @@ pub(crate) fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link(
             Vec::new(),
         )
         .expect("valid tessellation")
-        .with_body(Some(ir.geometry.bodies[0].id.clone())),
+        .with_of(cadmpeg_ir::tessellation::Meshed::Body {
+            body: ir.geometry.bodies[0].id.clone(),
+            faces: Vec::new(),
+        }),
     );
     let mut bytes = Vec::new();
     let report = write_step(
@@ -900,7 +903,7 @@ pub(crate) fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link(
     assert_eq!(mesh.vertices().len(), 3);
     assert_eq!(mesh.triangles(), [[0, 1, 2], [2, 1, 0]]);
     assert_eq!(mesh.vertex_normals().len(), 3);
-    assert!(mesh.body.is_some());
+    assert!(mesh.of.body().is_some());
 }
 
 #[test]
@@ -1088,7 +1091,9 @@ fn every_reference_resolves() {
 fn unclassified_face_loops_round_trip_without_inventing_outer_roles() {
     let mut ir = unit_cube().expect("unit cube fixture");
     for face in &mut ir.geometry.faces {
-        face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(face.loops.to_vec());
+        face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(
+            face.loops.stated().cloned().collect::<Vec<_>>(),
+        );
     }
     let output = export(&ir);
     assert_eq!(output.matches("FACE_OUTER_BOUND").count(), 0);
@@ -1189,6 +1194,7 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
             .expect("valid identity"),
         target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()).into(),
         appearance,
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: Some(false),
@@ -1269,6 +1275,7 @@ fn writer_round_trips_surface_appearance_transparency() {
             .expect("valid identity"),
         target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()).into(),
         appearance,
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,
@@ -1281,6 +1288,7 @@ fn writer_round_trips_surface_appearance_transparency() {
             .expect("valid identity"),
         target: AppearanceTarget::Face(ir.geometry.faces[1].id.clone()).into(),
         appearance: second_appearance,
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,
@@ -1326,9 +1334,11 @@ fn writer_round_trips_presentation_layer_visibility() {
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#hidden").expect("identity grammar"),
         name: "hidden layer".into(),
+        parent: None,
         description: Some("layer visibility".into()),
         visible: Some(false),
         items: vec![PresentationItem::Body { body }.into()],
+        native_ref: None,
     });
 
     let mut output = Vec::new();
@@ -1368,9 +1378,11 @@ fn writer_round_trips_empty_presentation_layer_label() {
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#unnamed").expect("identity grammar"),
         name: String::new(),
+        parent: None,
         description: Some("unnamed layer".into()),
         visible: Some(false),
         items: vec![PresentationItem::Body { body }.into()],
+        native_ref: None,
     });
 
     let mut output = Vec::new();

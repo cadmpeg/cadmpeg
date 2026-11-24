@@ -59,7 +59,7 @@ struct PendingFace {
     shell: ShellId,
     surface: SurfaceId,
     sense: cadmpeg_ir::topology::Sense,
-    tolerance: Option<cadmpeg_ir::scalar::PositiveReal>,
+    tolerance: Option<cadmpeg_ir::scalar::PositiveLength>,
 }
 
 pub(super) struct TopologyStream<'inputs> {
@@ -291,6 +291,7 @@ pub(super) fn emit_topology(
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
     }
 
@@ -337,12 +338,9 @@ pub(super) fn emit_topology(
             }
             annotations.derived(region.as_str(), "body")?;
 
-            ir.geometry.regions.push(Region {
-                id: region.clone(),
-                body: body.clone(),
-                shells: Vec::new(),
-                native_ref: None,
-            });
+            ir.geometry
+                .regions
+                .push(Region::new(region.clone(), body.clone(), Vec::new()));
             regions.insert(region_xmt, (region.clone(), body.clone()));
             region
         };
@@ -373,7 +371,7 @@ pub(super) fn emit_topology(
             .iter_mut()
             .find(|candidate| candidate.id == region_id)
         {
-            parent.shells.push(shell_id.clone());
+            parent.push_shell(shell_id.clone());
         }
         shells.insert(node.xmt(), shell_id);
     }
@@ -382,7 +380,7 @@ pub(super) fn emit_topology(
         .geometry
         .regions
         .iter()
-        .filter(|region| !region.shells.is_empty())
+        .filter(|region| region.stated_shells().next().is_some())
     {
         shell_owners.insert(region.body.clone());
     }
@@ -429,7 +427,7 @@ pub(super) fn emit_topology(
             vertex,
             (
                 point_position,
-                tolerance.map(cadmpeg_ir::scalar::PositiveReal::get),
+                tolerance.map(cadmpeg_ir::scalar::PositiveLength::get),
             ),
         );
     }
@@ -684,7 +682,7 @@ pub(super) fn emit_topology(
                         end_position,
                         end_tolerance,
                         edge_tolerance: decoded_tolerance(fields.tolerance())
-                            .map(cadmpeg_ir::scalar::PositiveReal::get),
+                            .map(cadmpeg_ir::scalar::PositiveLength::get),
                         procedural_curve: procedural_curve_ids.contains(carrier),
                     },
                     &mut curve_point_cache,
@@ -1505,8 +1503,8 @@ pub(super) fn curve_tag(geometry: &SolvedCurveGeometry) -> &'static str {
 /// Admit a metre tolerance in millimetres. The scaled value is finite and
 /// positive exactly when the metre value is and scaling does not overflow,
 /// and the negative missing-tolerance sentinel is refused by its sign.
-pub(crate) fn decoded_tolerance(value: f64) -> Option<cadmpeg_ir::scalar::PositiveReal> {
-    cadmpeg_ir::scalar::PositiveReal::new(value * 1000.0)
+pub(crate) fn decoded_tolerance(value: f64) -> Option<cadmpeg_ir::scalar::PositiveLength> {
+    cadmpeg_ir::scalar::PositiveLength::new(value * 1000.0)
 }
 
 struct ClosedEdge<'inputs> {
@@ -1516,7 +1514,7 @@ struct ClosedEdge<'inputs> {
     curve_index: usize,
     range: Option<[f64; 2]>,
     source_stream: &'inputs cadmpeg_ir::annotations::StreamHandle,
-    tolerance: Option<cadmpeg_ir::scalar::PositiveReal>,
+    tolerance: Option<cadmpeg_ir::scalar::PositiveLength>,
 }
 
 fn synthesize_closed_edge_vertex_with_curve_index_and_budget(

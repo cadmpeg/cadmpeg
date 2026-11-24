@@ -29,6 +29,8 @@ use serde_json::Value;
 
 use super::records::{DesignRecords, MemberKey};
 use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation};
+use crate::design::ops::dressup::{EmbossEffect, OffsetResult};
+use crate::design::options::Boolean;
 use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 
@@ -42,8 +44,8 @@ pub(super) struct Site<'a> {
     feature: &'a str,
     /// The scope the feature belongs to, where its containers reach one.
     scope: Option<&'a str>,
-    /// Whether the operation is the operation of an `AssemblyFeature`.
-    in_assembly_feature: bool,
+    /// Whether the definition that holds the operation states `assembly`.
+    assembly: bool,
 }
 
 /// Check the sketches and every stated operation of `index` against the
@@ -54,6 +56,9 @@ pub(super) fn check_operations(index: &DesignRecords<'_>, findings: &mut Vec<Fin
     options::check_native_keys(&wire, findings);
     for (site, definition) in definitions(index) {
         check_operation(index, site, &definition.operation, findings);
+        if let Some(context) = &definition.assembly {
+            assembly::check_assembly_feature(site, &definition.operation, context, findings);
+        }
     }
     for feature in &index.ir.design.features {
         check_feature(index, feature, findings);
@@ -63,23 +68,92 @@ pub(super) fn check_operations(index: &DesignRecords<'_>, findings: &mut Vec<Fin
     sheet_metal::check_rules(index, findings);
 }
 
+/// The `Boolean` field of an operation's result.
+pub(super) enum BooleanField<'a> {
+    /// The operation's result has no `Boolean`.
+    Absent,
+    /// The operation leaves its `Boolean` unstated.
+    Unstated,
+    /// The stated `Boolean`.
+    Stated(&'a Boolean),
+}
+
+impl<'a> From<Option<&'a Boolean>> for BooleanField<'a> {
+    fn from(boolean: Option<&'a Boolean>) -> Self {
+        boolean.map_or(Self::Unstated, Self::Stated)
+    }
+}
+
+/// The `Boolean` field of `operation`'s result.
+pub(super) fn boolean_field(operation: &FeatureOperation) -> BooleanField<'_> {
+    match operation {
+        FeatureOperation::Extrude(op) => op.output.boolean.as_ref().into(),
+        FeatureOperation::Revolve(op) => op.output.boolean.as_ref().into(),
+        FeatureOperation::Sweep(op) => op.output.boolean.as_ref().into(),
+        FeatureOperation::HelicalSweep(op) => op.output.boolean.as_ref().into(),
+        FeatureOperation::Primitive(op) => op.output.boolean.as_ref().into(),
+        FeatureOperation::Loft(op) => op.output.boolean.as_ref().into(),
+        FeatureOperation::ImplicitSweep(op) => op.output.boolean.as_ref().into(),
+        FeatureOperation::Rib(op) => op.boolean.as_ref().into(),
+        FeatureOperation::Thicken(op) => op.boolean.as_ref().into(),
+        FeatureOperation::BoundaryFill(op) => op.boolean.as_ref().into(),
+        FeatureOperation::Patch(op) => op.output.boolean.as_ref().into(),
+        FeatureOperation::Knit(op) => op.output.boolean.as_ref().into(),
+        FeatureOperation::Extend(op) => op
+            .output
+            .as_ref()
+            .and_then(|output| output.boolean.as_ref())
+            .into(),
+        FeatureOperation::Offset(op) => match &op.result {
+            OffsetResult::Copy(output) => output.boolean.as_ref().into(),
+            OffsetResult::Move {} => BooleanField::Absent,
+        },
+        _ => BooleanField::Absent,
+    }
+}
+
+/// Whether `operation` builds a tool body that it combines with the state
+/// it enters (§5.4): one that states `Boolean::Apply`, a `Hole`, or an
+/// `Emboss` whose effect is not `Scribe`. `None` where the operation is
+/// `Unresolved` or `Native`, or states no Boolean or effect.
+pub(super) fn builds_tool_body(operation: &FeatureOperation) -> Option<bool> {
+    match operation {
+        FeatureOperation::Unresolved { .. } | FeatureOperation::Native { .. } => None,
+        FeatureOperation::Hole(_) => Some(true),
+        FeatureOperation::Emboss(op) => match op.effect {
+            EmbossEffect::Emboss { .. } | EmbossEffect::Engrave { .. } => Some(true),
+            EmbossEffect::Scribe => Some(false),
+            EmbossEffect::Native(_) => None,
+        },
+        _ => match boolean_field(operation) {
+            BooleanField::Absent => Some(false),
+            BooleanField::Unstated => None,
+            BooleanField::Stated(boolean) => Some(matches!(boolean, Boolean::Apply { .. })),
+        },
+    }
+}
+
 /// Every feature definition the design states, with where it is stated:
 /// each feature's own, and each definition override of a configuration or
 /// an arrangement.
 fn definitions<'a>(index: &DesignRecords<'a>) -> Vec<(Site<'a>, &'a FeatureDefinition)> {
     let design = &index.ir.design;
-    let site = |entity: &'a str, feature: &'a str| Site {
+    let site = |entity: &'a str, feature: &'a str, definition: &FeatureDefinition| Site {
         entity,
         feature,
         scope: index.scope_of(MemberKey::Feature(feature)),
-        in_assembly_feature: false,
+        assembly: definition.assembly.is_some(),
     };
     let mut out: Vec<(Site<'a>, &'a FeatureDefinition)> = design
         .features
         .iter()
         .map(|feature| {
             (
-                site(feature.id.as_str(), feature.id.as_str()),
+                site(
+                    feature.id.as_str(),
+                    feature.id.as_str(),
+                    &feature.definition,
+                ),
                 &feature.definition,
             )
         })
@@ -97,7 +171,7 @@ fn definitions<'a>(index: &DesignRecords<'a>) -> Vec<(Site<'a>, &'a FeatureDefin
     for (holder, overrides) in overrides {
         for (feature, state) in &overrides.features {
             if let Some(definition) = &state.definition {
-                out.push((site(holder, feature.as_str()), definition));
+                out.push((site(holder, feature.as_str(), definition), definition));
             }
         }
     }
@@ -176,16 +250,6 @@ fn check_operation(
         }
         FeatureOperation::MirrorComponents(mirror) => {
             assembly::check_mirror(index, site, mirror, findings);
-        }
-        FeatureOperation::AssemblyFeature(feature) => {
-            assembly::check_assembly_feature(site, feature, findings);
-            if !matches!(*feature.operation, FeatureOperation::AssemblyFeature(_)) {
-                let nested = Site {
-                    in_assembly_feature: true,
-                    ..site
-                };
-                check_operation(index, nested, &feature.operation, findings);
-            }
         }
         FeatureOperation::Sketch(_)
         | FeatureOperation::SpatialSketch(_)

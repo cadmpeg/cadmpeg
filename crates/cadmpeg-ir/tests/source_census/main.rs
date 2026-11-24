@@ -285,11 +285,6 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
     ),
     (
         "crates/cadmpeg-ir/src/provenance.rs",
-        "CodecFormat",
-        "keyless",
-    ),
-    (
-        "crates/cadmpeg-ir/src/provenance.rs",
         "SourceOwner",
         "keyless",
     ),
@@ -359,7 +354,7 @@ fn every_hand_written_deserialize_states_its_coverage() {
     // Namespace and arena names are open. Their values still have fixed shapes:
     // a namespace is an arena map, and an arena is a list of native records.
     for wire in [
-        serde_json::json!({"rhino": {"objects": []}, "zz_bogus": {}}),
+        serde_json::json!({"rhino": {"objects": []}, "zzbogus": {}}),
         serde_json::json!({"rhino": {"objects": [], "zz_bogus": []}}),
     ] {
         let read: cadmpeg_ir::native::Native =

@@ -308,7 +308,7 @@ impl Allocations {
         let distance = backward_shell_distance(payload(bytes, &self.records[index])?)?;
         let shell = self.backward_target(index, distance)?;
         let frame = &self.records[shell];
-        if frame.class() != 0x61 || frame.family() != Family::A || frame.flag() != Flag::Flag03 {
+        if frame.class() != 0x61 || frame.flag() != Flag::Flag03 {
             return None;
         }
         let (references, bits) = sheet_references(payload(bytes, frame)?, frame.family())?;
@@ -533,25 +533,51 @@ pub(super) fn patches(
     let mut allocation_starts = BTreeMap::new();
     let mut source_bytes = BTreeMap::new();
     let mut mixed_allocations = BTreeMap::new();
-    let mut excluded_groups = 0;
-    for group in records
+    let mut groups = records
         .iter()
-        .filter(|frame| root(frame, data) || backward_root(frame, data))
-    {
-        let source = group.source_index();
-        if selected.as_ref().is_some_and(|selected| {
-            selected.source == source && !selected.groups.contains(&group.source_range().start)
-        }) {
-            excluded_groups += 1;
-            continue;
+        .filter(|frame| {
+            frame.family() == Family::B && frame.class() == 0x5b && frame.flag() == Flag::Flag13
+        })
+        .map(|frame| {
+            (
+                (frame.source_index(), frame.source_range().start),
+                frame.byte_offset(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    if let Some(selected) = &selected {
+        for &start in &selected.groups {
+            let physical = file_offset(&sources[selected.source], start).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed(
+                    "governing sheet root is outside its logical source",
+                )
+            })?;
+            groups.entry((selected.source, start)).or_insert(physical);
         }
+    }
+    let mut excluded_groups = 0;
+    for ((source, start), group_position) in groups {
         let extents = &sources[source];
         let bytes = match source_bytes.entry(source) {
             Entry::Occupied(entry) => entry.into_mut(),
             Entry::Vacant(entry) => entry.insert(logical_bytes(ctx, data, extents)?),
         };
         let bytes = bytes.as_ref();
-        let backward = backward_root(group, data);
+        let Some(group) = parse_consolidated_allocation_record(bytes, start, bytes.len()) else {
+            continue;
+        };
+        let group = &group;
+        if !root(group, bytes) && !backward_root(group, bytes) {
+            continue;
+        }
+        if selected
+            .as_ref()
+            .is_some_and(|selected| selected.source == source && !selected.groups.contains(&start))
+        {
+            excluded_groups += 1;
+            continue;
+        }
+        let backward = backward_root(group, bytes);
         let mut end_anchored = backward;
         let (alloc, members) = if backward {
             let Some(seed) = records.windows(3).find(|frames| {
@@ -574,7 +600,7 @@ pub(super) fn patches(
             (alloc, members)
         } else {
             let alloc = Rc::new(Allocations::read(bytes, group.source_range().end, None));
-            let members = payload(data, group)
+            let members = payload(bytes, group)
                 .and_then(shell_slots)
                 .and_then(|shells| alloc.faces(bytes, &shells));
             if members.is_some() {
@@ -665,10 +691,7 @@ pub(super) fn patches(
                 body: (source, shell_pos),
                 forward,
             };
-            roots
-                .entry(member.body)
-                .or_default()
-                .insert(group.byte_offset());
+            roots.entry(member.body).or_default().insert(group_position);
             let owners = sheet_members
                 .entry((source, alloc.records[face].source_range().start))
                 .or_default();
@@ -829,6 +852,8 @@ pub(super) fn patches(
 mod tests {
     use super::*;
     use crate::wire::records::parse_consolidated_record;
+
+    mod governing_roots;
 
     #[test]
     fn wide_vertex_roster_crosses_weighted_allocations_and_stays_in_source() {

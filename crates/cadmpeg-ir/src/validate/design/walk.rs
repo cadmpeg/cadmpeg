@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The selections and constructions a design record holds.
+//! The selections, constructions, and bound dimensions a design record holds.
 //!
 //! [`Walk`] visits a record and every value inside it that can hold a
-//! selection, a construction, or an expression, and collects each selection
-//! and construction it reaches. Every impl destructures its type
-//! exhaustively, so a field or variant added to a design type is walked or
-//! skipped by name, never silently. The family modules hold one impl per
-//! design type that reaches a selection; this module holds the impls of the
-//! selection, construction, and expression types themselves.
+//! selection, a construction, an expression, or a dimension, and collects
+//! each selection and construction it reaches and each dimension that binds a
+//! parameter, with the dimension's value type. Every impl destructures its
+//! type exhaustively, so a field or variant added to a design type is walked
+//! or skipped by name, never silently. The family modules hold one impl per
+//! design type that reaches a selection or a dimension; this module holds the
+//! impls of the selection, construction, expression, and dimension types
+//! themselves.
 
 mod assembly;
 mod body;
@@ -27,19 +29,22 @@ use cadmpeg_core::CodecError;
 
 use crate::design::construction::{
     kinds, AnyConstruction, Construction, ConstructionInput, ConstructionKind, InputReference,
-    PostStep,
+    PostStep, ScalarDimension,
 };
+use crate::design::dimension::Dimension;
 use crate::design::expr::{Expression, MeasureTarget, Neutral, Node};
 use crate::design::selection::{
     Anchor, MemberOrder, Members, PickDomain, Picked, Picks, Propagation, RuleTerm, Selection,
     SelectionRule,
 };
-use crate::features::ConfigurationId;
+use crate::features::{ConfigurationId, ParameterId};
 
-/// A value that can hold selections or constructions.
+use super::dimensions::{value_type, Bound, ValueType};
+
+/// A value that can hold selections, constructions, or dimensions.
 pub(super) trait Walk {
-    /// Collects every selection and construction this value holds into
-    /// `into`, outermost first.
+    /// Collects every selection, construction, and bound dimension this
+    /// value holds into `into`, outermost first.
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError>;
 }
 
@@ -64,6 +69,10 @@ pub(super) struct Collect<'a, 'c> {
     pub(super) constructions: Vec<ConstructionView<'a>>,
     /// The expressions held inside feature operations and sheet-metal rules.
     pub(super) expressions: Vec<(ExpressionPlace<'a>, &'a Expression)>,
+    /// The dimensions that bind a parameter.
+    pub(super) dimensions: Vec<BoundDimension<'a>>,
+    /// Whether the walk is inside an assembly context's participants.
+    in_participants: bool,
 }
 
 impl<'a, 'c> Collect<'a, 'c> {
@@ -73,6 +82,8 @@ impl<'a, 'c> Collect<'a, 'c> {
             selections: Vec::new(),
             constructions: Vec::new(),
             expressions: Vec::new(),
+            dimensions: Vec::new(),
+            in_participants: false,
         }
     }
 
@@ -90,12 +101,24 @@ impl<'a, 'c> Collect<'a, 'c> {
     }
 }
 
+/// One dimension that binds a parameter, with its value type.
+pub(super) struct BoundDimension<'a> {
+    /// The bound parameter.
+    pub(super) parameter: &'a ParameterId,
+    /// Whether the binding is `Negated`.
+    pub(super) negated: bool,
+    /// The dimension's value type.
+    pub(super) value: ValueType,
+}
+
 /// One selection, with its order marker erased.
 pub(super) struct SelectionView<'a> {
     /// The state the picks resolve in.
     pub(super) at: &'a Anchor,
     /// The picks, or the rule that gives them.
     pub(super) picks: PicksView<'a>,
+    /// Whether the selection is one of an assembly context's participants.
+    pub(super) participants: bool,
 }
 
 /// The members of a selection, with the order marker erased.
@@ -169,6 +192,7 @@ pub(super) fn rule_picks(rule: &SelectionRule) -> impl Iterator<Item = &Picked> 
         | SelectionRule::Of { .. }
         | SelectionRule::LoopEdges
         | SelectionRule::Boundary
+        | SelectionRule::Affected
         | SelectionRule::Native(_) => (None, &[]),
     };
     one.into_iter().chain(many)
@@ -285,12 +309,13 @@ impl<K: Viewed> Walk for Construction<K> {
         let _depth = into.enter("construction")?;
         let Self {
             inputs,
-            after: _,
+            after,
             solution: _,
             mode,
             resolved: _,
             resolved_in: _,
         } = self;
+        after.walk(into)?;
         into.constructions.push(K::view(self));
         for input in inputs {
             input.walk(into)?;
@@ -304,9 +329,10 @@ impl Walk for ConstructionInput {
         let Self {
             role: _,
             reference,
-            value: _,
+            value,
             reversed: _,
         } = self;
+        value.walk(into)?;
         reference.walk(into)
     }
 }
@@ -347,13 +373,22 @@ impl<O: MemberOrder> Walk for Selection<O> {
                 terms,
                 excluded,
                 resolved,
-            } => PicksView::Rule {
-                terms: terms.iter().map(term_view).collect(),
-                excluded: excluded.iter().map(term_view).collect(),
-                resolved: resolved.as_ref().map(Members::as_slice),
-            },
+            } => {
+                for term in terms.iter().chain(excluded) {
+                    term.propagation.walk(into)?;
+                }
+                PicksView::Rule {
+                    terms: terms.iter().map(term_view).collect(),
+                    excluded: excluded.iter().map(term_view).collect(),
+                    resolved: resolved.as_ref().map(Members::as_slice),
+                }
+            }
         };
-        into.selections.push(SelectionView { at, picks });
+        into.selections.push(SelectionView {
+            at,
+            picks,
+            participants: into.in_participants,
+        });
         Ok(())
     }
 }
@@ -378,27 +413,98 @@ impl<R> Walk for Neutral<R> {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         let mut stack: Vec<&'a Node<R>> = vec![&self.0];
         while let Some(node) = stack.pop() {
-            match node {
-                Node::Measure(measure) => match &measure.of {
-                    MeasureTarget::Selection(selection) => selection.walk(into)?,
-                    MeasureTarget::Model => {}
-                },
-                Node::Unary { operand, .. } => stack.push(operand),
-                Node::Binary { left, right, .. } => {
-                    stack.push(right);
-                    stack.push(left);
+            if let Node::Measure(measure) = node {
+                if let MeasureTarget::Selection(selection) = &measure.of {
+                    selection.walk(into)?;
                 }
-                Node::Call { args, .. } => stack.extend(args.iter().rev()),
-                Node::If(branches) => stack.extend(branches.iter().rev()),
-                Node::Number { .. }
-                | Node::Constant(_)
-                | Node::Boolean(_)
-                | Node::Text(_)
-                | Node::Reference(_)
-                | Node::LawParameter
-                | Node::Bend(_) => {}
+                continue;
             }
+            let operands: Vec<_> = node.operands().collect();
+            stack.extend(operands.into_iter().rev());
         }
+        Ok(())
+    }
+}
+
+impl Walk for PostStep {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        match self {
+            Self::Flip(f0) => f0.walk(into),
+            Self::Translate { axis: _, distance } => distance.walk(into),
+            Self::Rotate { axis: _, angle } => angle.walk(into),
+            Self::AxisRotate { axis, angle } => {
+                axis.walk(into)?;
+                angle.walk(into)?;
+                Ok(())
+            }
+            Self::Fixed(_) => Ok(()),
+        }
+    }
+}
+
+impl Walk for ScalarDimension {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        match self {
+            Self::Length(f0) => f0.walk(into),
+            Self::Angle(f0) => f0.walk(into),
+            Self::Ratio(f0) => f0.walk(into),
+            Self::Uv { u, v } => {
+                u.walk(into)?;
+                v.walk(into)?;
+                Ok(())
+            }
+            Self::Position { x, y, z } => {
+                x.walk(into)?;
+                y.walk(into)?;
+                z.walk(into)?;
+                Ok(())
+            }
+            Self::Components { x, y, z } => {
+                x.walk(into)?;
+                y.walk(into)?;
+                z.walk(into)?;
+                Ok(())
+            }
+            Self::PlaneEquation { a, b, c, d } => {
+                a.walk(into)?;
+                b.walk(into)?;
+                c.walk(into)?;
+                d.walk(into)?;
+                Ok(())
+            }
+            Self::ParameterRatio(f0) => f0.walk(into),
+        }
+    }
+}
+
+impl Walk for Propagation {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        match self {
+            Self::Connected {
+                continuity: _,
+                angle,
+                gap,
+            } => {
+                angle.walk(into)?;
+                gap.walk(into)
+            }
+            Self::Off | Self::Minimal | Self::Native(_) => Ok(()),
+        }
+    }
+}
+
+impl<T: Bound> Walk for Dimension<T> {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        let (parameter, negated) = match self {
+            Self::Literal(_) => return Ok(()),
+            Self::Parameter(parameter) => (parameter, false),
+            Self::Negated(parameter) => (parameter, true),
+        };
+        into.dimensions.push(BoundDimension {
+            parameter,
+            negated,
+            value: value_type::<T>(),
+        });
         Ok(())
     }
 }

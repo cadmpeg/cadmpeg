@@ -41,13 +41,9 @@ fn id_strategy() -> impl Strategy<Value = String> {
 fn free_carrier(object_id: &str) -> SourceObjectAssociation {
     SourceObjectAssociation {
         geometry_role: None,
-        format: crate::CodecFormat::Step,
+        format: crate::codec_id!("step"),
         object_id: cadmpeg_core::text::NonBlankString::new(object_id)
             .expect("nonempty source identity"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     }
 }
@@ -61,15 +57,11 @@ fn source_association_is_a_free_carrier_root() {
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: Some(SourceObjectAssociation {
             geometry_role: None,
-            format: crate::CodecFormat::Rhino,
+            format: crate::codec_id!("rhino"),
             object_id: cadmpeg_core::text::NonBlankString::new(
                 "00000000-0000-0000-0000-000000000000",
             )
             .expect("nonempty source identity"),
-            name: Some("curve".into()),
-            color: None,
-            visible: Some(true),
-            layer: Some("layer-0".into()),
             instance_path: Vec::new(),
         }),
         native_ref: None,
@@ -140,6 +132,7 @@ fn insert_free_vertex_shell(
         .unwrap();
     draft
         .insert(Body {
+            unstated: None,
             id: BodyId::mint(body_id).expect("valid identity"),
             kind: BodyKind::Wire,
             transform: None,
@@ -150,12 +143,11 @@ fn insert_free_vertex_shell(
         })
         .unwrap();
     draft
-        .insert(Region {
-            id: RegionId::mint(region_id).expect("valid identity"),
-            body: BodyId::mint(body_id).expect("valid identity"),
-            shells: vec![ShellId::mint(shell_id).expect("valid identity")],
-            native_ref: None,
-        })
+        .insert(Region::new(
+            RegionId::mint(region_id).expect("valid identity"),
+            BodyId::mint(body_id).expect("valid identity"),
+            vec![ShellId::mint(shell_id).expect("valid identity")],
+        ))
         .unwrap();
     draft
         .insert(Shell::with_free_vertex(

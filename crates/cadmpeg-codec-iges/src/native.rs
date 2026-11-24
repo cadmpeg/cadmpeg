@@ -2261,7 +2261,7 @@ pub(crate) fn store_physical_cards(
         .map(|(index, line)| NativeCard { index, line })
         .collect::<Vec<_>>();
     ir.native
-        .namespace_mut("iges")
+        .namespace_mut(cadmpeg_ir::codec_id!("iges"))
         .set_arena_from(ctx, "cards", cards)?;
     Ok(NativeStoreResult {
         occurrence_expansion: ProductOccurrenceExpansion {
@@ -5545,7 +5545,7 @@ pub(crate) fn store(
         if let Some(sequence) = curve
             .source_object
             .as_ref()
-            .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
+            .filter(|source| source.format == cadmpeg_ir::codec_id!("iges"))
             .and_then(|_| sequences.curve(&curve.id))
         {
             push_occurrence_neutral_link(
@@ -5559,7 +5559,7 @@ pub(crate) fn store(
         if let Some(sequence) = surface
             .source_object
             .as_ref()
-            .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
+            .filter(|source| source.format == cadmpeg_ir::codec_id!("iges"))
             .and_then(|_| sequences.surface(&surface.id))
         {
             push_occurrence_neutral_link(
@@ -5769,7 +5769,7 @@ pub(crate) fn store(
         ));
     };
     ctx.charge_entities(native_entity_count, "iges_native_entities")?;
-    let namespace = ir.native.namespace_mut("iges");
+    let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("iges"));
     namespace.set_arena_from(ctx, "cards", cards)?;
     namespace.set_arena_from(ctx, "entities", entities)?;
     namespace.set_arena_from(ctx, "directions", directions)?;

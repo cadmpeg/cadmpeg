@@ -11,6 +11,7 @@ use super::records::ProcessRecords;
 use crate::design::dimension::{Dimension, ParamRef, ParameterRef, RefTarget};
 use crate::design::parameter::ParameterValue;
 use crate::design::selection::{Ordered, Picks, Selection};
+use crate::geometry::InlineCurve;
 use crate::process::cycle::{Cycle, CycleKind, ProbeTarget};
 use crate::process::limits::{HeightFrom, HeightRole, RadialLimit, RadiusFrom, RadiusRole};
 use crate::process::operation::{
@@ -242,6 +243,7 @@ fn check_operation(
         );
     }
     check_radii(operation, findings);
+    check_profile_ranges(operation, findings);
     for height in operation.heights.values() {
         match height.from.as_ref().and_then(|from| from.value.as_ref()) {
             Some(HeightFrom::Selection(slot)) => {
@@ -333,6 +335,36 @@ fn check_operation(
         None => None,
     };
     check_technology(id, technology, tool.map(|tool| &tool.class), findings);
+}
+
+/// A profile curve whose carrier is a line, a parabola, or a hyperbola, or a
+/// placement of one, states its `range` (part 10).
+fn check_profile_ranges(operation: &Operation, findings: &mut Vec<Finding>) {
+    let curves = operation
+        .geometry
+        .iter()
+        .filter_map(|geometry| match &geometry.source {
+            GeometrySource::Profile { curves, .. } => Some(curves),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(|curve| curve.geometry.as_ref());
+    for curve in curves.filter(|curve| curve.range.is_none()) {
+        let mut carrier = &curve.carrier;
+        while let InlineCurve::Transformed { basis, .. } = carrier {
+            carrier = basis;
+        }
+        if matches!(
+            carrier,
+            InlineCurve::Line(_) | InlineCurve::Parabola(_) | InlineCurve::Hyperbola(_)
+        ) {
+            super::error(
+                findings,
+                operation.id.as_str(),
+                format_args!("a profile curve on an unbounded carrier states no `range`"),
+            );
+        }
+    }
 }
 
 /// Radial limits: a `Limit` names another stated role and the `Limit`
@@ -691,24 +723,12 @@ fn check_technology(
     }
 }
 
-/// A `Cycle.expansion` holds no `Cycle`; probe values occur only in a probe
-/// cycle, and a probe target's widths, diameters, and spacing are positive.
+/// Probe values occur only in a probe cycle, and a probe target's widths,
+/// diameters, and spacing are positive.
 fn check_motions(holder: &str, motions: &[Motion], findings: &mut Vec<Finding>) {
-    let mut pending: Vec<(&Motion, bool)> = motions.iter().map(|motion| (motion, false)).collect();
-    while let Some((motion, expanded)) = pending.pop() {
-        let Motion::Cycle(cycle) = motion else {
-            continue;
-        };
-        if expanded {
-            super::error(
-                findings,
-                holder,
-                format_args!("a cycle's `expansion` holds a cycle"),
-            );
-        }
-        check_motion_cycle(holder, cycle, findings);
-        for inner in cycle.expansion.iter().flatten() {
-            pending.push((inner, true));
+    for motion in motions {
+        if let Motion::Cycle(cycle) = motion {
+            check_motion_cycle(holder, cycle, findings);
         }
     }
 }

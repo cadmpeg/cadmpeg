@@ -415,9 +415,13 @@ pub(crate) fn summarize(
             losses,
             notes,
         ),
-        None => {
-            ContainerSummary::unclassified(crate::dialect::FORMAT, kind, entries, losses, notes)
-        }
+        None => ContainerSummary::unclassified(
+            cadmpeg_ir::codec_id!(crate::dialect::FORMAT),
+            kind,
+            entries,
+            losses,
+            notes,
+        ),
     })
 }
 

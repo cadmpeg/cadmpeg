@@ -216,7 +216,9 @@ fn project_brep(
         .map(|vertex| {
             (
                 &vertex.id,
-                vertex.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get),
+                vertex
+                    .tolerance
+                    .map(cadmpeg_ir::scalar::PositiveLength::get),
             )
         })
         .collect::<HashMap<_, _>>();
@@ -257,7 +259,10 @@ fn project_brep(
         // Edge refusals and their loops. The face's profiles end before the
         // first refused loop, so no later loop takes its position.
         let mut refusals = Vec::new();
-        for loop_id in &face.loops {
+        let Some(face_loops) = face.loops.boundary() else {
+            continue;
+        };
+        for loop_id in face_loops {
             let Some(loop_) = loops.get(loop_id) else {
                 continue;
             };

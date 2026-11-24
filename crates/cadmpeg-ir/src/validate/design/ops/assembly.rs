@@ -4,23 +4,24 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::picks::{self, Class};
-use super::{body, error, Site};
+use super::{body, boolean_field, error, BooleanField, Site};
 use crate::design::construction::FrameAxis;
 use crate::design::container::Container;
 use crate::design::dimension::Dimension;
 use crate::design::feature::{Driver, Feature, FeatureOperation, OperationFamily};
 use crate::design::ops::assembly::{
-    AssemblyFeature, ComponentPattern, MirrorComponents, Place, PlaceSet, RigidGroup,
+    AssemblyContext, ComponentPattern, MirrorComponents, Place, PlaceSet, RigidGroup,
 };
-use crate::design::ops::body::SplitMode;
-use crate::design::ops::dressup::OffsetResult;
+use crate::design::ops::body::{ScaleFactors, SplitMode};
 use crate::design::ops::shared::{
     AxisLimits, Bounds, Joint, JointConnector, JointKind, JointMotion, PathAxisControl,
     PathRollControl,
 };
 use crate::design::ops::sheet_metal::SheetMetalKind;
 use crate::design::options::Boolean;
-use crate::design::selection::{PickContext, PickTarget, StepRef};
+use crate::design::selection::{
+    Keyed, Members, PickContext, PickTarget, Picked, Picks, SelectionRule, SetSelection, StepRef,
+};
 use crate::ids::OccurrenceId;
 use crate::report::check::Finding;
 use crate::scalar::{Angle, Length};
@@ -94,6 +95,19 @@ pub(super) fn check_place(
             site.entity,
             format_args!("Place.base is present where placement is not, or absent where it is"),
         );
+    }
+    match &place.scale {
+        Some(_) if place.placement.is_none() => error(
+            findings,
+            site.entity,
+            format_args!("Place.scale is present where placement is not"),
+        ),
+        Some(ScaleFactors::PerAxis { frame: Some(_), .. }) => error(
+            findings,
+            site.entity,
+            format_args!("a PerAxis Place.scale states a frame"),
+        ),
+        _ => {}
     }
     for constraint in &place.constraints {
         check_joint(index, site, constraint, findings);
@@ -511,61 +525,148 @@ pub(super) fn check_mirror(
 /// `Split` in `Mutual` mode and no `SheetMetal` `Convert`; every
 /// `Boolean::Apply.targets` and `Targets` in it, and its
 /// `ShellFeature.bodies`, `Combine.target`, and `SplitMode::ByTools.targets`,
-/// are `None`, and no `Boolean` in it is `NewBody`". §2.5: "an assembly
-/// feature's operation is not itself an assembly feature". `ByTools.targets`
-/// is a required selection in this crate's `SplitMode`, so its `None` is not
-/// tested here.
+/// are `None`, and no `Boolean` in it is `NewBody`", and the rules on its
+/// participants.
 pub(super) fn check_assembly_feature(
     site: Site<'_>,
-    feature: &AssemblyFeature,
+    operation: &FeatureOperation,
+    context: &AssemblyContext,
     findings: &mut Vec<Finding>,
 ) {
-    let operation = &*feature.operation;
-    if matches!(
-        operation,
-        FeatureOperation::AssemblyFeature(_)
-            | FeatureOperation::Unresolved {
-                family: OperationFamily::AssemblyFeature
-            }
-    ) {
-        error(
-            findings,
-            site.entity,
-            format_args!("an AssemblyFeature's operation is itself an assembly feature"),
-        );
-    }
     if let Some(excluded) = excluded_operation(operation) {
         error(
             findings,
             site.entity,
-            format_args!("an AssemblyFeature's operation is {excluded}, which an assembly feature does not run"),
+            format_args!("a definition that states assembly has the operation {excluded}, which an assembly feature does not run"),
         );
     }
     if let Some(operand) = stated_body_operand(operation) {
         error(
             findings,
             site.entity,
-            format_args!("an AssemblyFeature's operation states a body operand of its own, {operand}; participants states what the feature modifies"),
+            format_args!("a definition that states assembly states a body operand of its own, {operand}; assembly.participants states what the feature changes"),
         );
     }
-    if matches!(boolean_of(operation), Some(Boolean::NewBody)) {
+    if matches!(
+        boolean_field(operation),
+        BooleanField::Stated(Boolean::NewBody)
+    ) {
         error(
             findings,
             site.entity,
-            format_args!("an AssemblyFeature's operation has a Boolean that is NewBody"),
+            format_args!("a definition that states assembly has a Boolean that is NewBody"),
         );
     }
-    if let Some(participants) = picks::named(&feature.participants) {
-        if participants
+    check_participants(site, context, findings);
+}
+
+/// Part 10 (§6.7): "Every pick of `AssemblyContext.participants` carries an
+/// occurrence context. No selection in it is `Named` with no pick, a
+/// selection with `Unread` picks is its only entry, no pick is in two of its
+/// selections, and its selections state one `at`. An `Affected` term occurs
+/// only among the `terms` of a selection of `AssemblyContext.participants`,
+/// in at most one selection of a context; where that selection's `resolved`
+/// is stated, it holds no participant another entry of the context states."
+/// The seeds, propagation, and placement of an `Affected` term are checked
+/// with every selection's rules.
+fn check_participants(site: Site<'_>, context: &AssemblyContext, findings: &mut Vec<Finding>) {
+    let selections: Vec<&SetSelection> = context.participants.values().collect();
+    let mut record = |message: std::fmt::Arguments<'_>| error(findings, site.entity, message);
+    if selections
+        .iter()
+        .flat_map(|selection| participant_picks(selection, true))
+        .any(|pick| !matches!(pick.context, Some(PickContext::Occurrence(_))))
+    {
+        record(format_args!(
+            "an assembly participant pick carries no occurrence context"
+        ));
+    }
+    if selections
+        .iter()
+        .any(|selection| matches!(&selection.picks, Picks::Named(members) if members.as_slice().is_empty()))
+    {
+        record(format_args!(
+            "an assembly participant selection is Named with no pick"
+        ));
+    }
+    if selections.len() > 1
+        && selections
             .iter()
-            .any(|pick| !matches!(pick.context, Some(PickContext::Occurrence(_))))
-        {
-            error(
-                findings,
-                site.entity,
-                format_args!("an AssemblyFeature participant carries no occurrence context"),
-            );
+            .any(|selection| matches!(selection.picks, Picks::Unread))
+    {
+        record(format_args!(
+            "an assembly participant selection with Unread picks is not its context's only entry"
+        ));
+    }
+    if selections
+        .iter()
+        .any(|selection| selection.at != selections[0].at)
+    {
+        record(format_args!(
+            "the selections of an assembly context state more than one at"
+        ));
+    }
+    let mut held = BTreeSet::new();
+    let mut repeated = false;
+    for selection in &selections {
+        let own: BTreeSet<_> = participant_picks(selection, false)
+            .into_iter()
+            .map(Keyed::key)
+            .collect();
+        for key in own {
+            repeated |= !held.insert(key);
         }
+    }
+    if repeated {
+        record(format_args!(
+            "a pick is in two selections of an assembly context"
+        ));
+    }
+    let affected = |terms: &[crate::design::selection::RuleTerm<_>]| {
+        terms
+            .iter()
+            .any(|term| matches!(term.rule, SelectionRule::Affected))
+    };
+    let mut holding = 0;
+    for selection in &selections {
+        if let Picks::Rule {
+            terms, excluded, ..
+        } = &selection.picks
+        {
+            if affected(excluded) {
+                record(format_args!(
+                    "an Affected rule term is among the excluded terms of an assembly participant selection"
+                ));
+            }
+            if affected(terms) {
+                holding += 1;
+            }
+        }
+    }
+    if holding > 1 {
+        record(format_args!(
+            "more than one selection of an assembly context holds an Affected rule term"
+        ));
+    }
+}
+
+/// The picks a participant selection lists: its `Named` members, or its
+/// terms' seeds and its cached result, with its excluded terms' seeds where
+/// `excluded` is set.
+fn participant_picks(selection: &SetSelection, excluded: bool) -> Vec<&Picked> {
+    match &selection.picks {
+        Picks::Unread => Vec::new(),
+        Picks::Named(members) => members.as_slice().iter().collect(),
+        Picks::Rule {
+            terms,
+            excluded: removed,
+            resolved,
+        } => terms
+            .iter()
+            .chain(removed.iter().filter(|_| excluded))
+            .flat_map(|term| term.seeds.as_slice())
+            .chain(resolved.iter().flat_map(Members::as_slice))
+            .collect(),
     }
 }
 
@@ -634,36 +735,12 @@ fn excluded_operation(operation: &FeatureOperation) -> Option<&'static str> {
     }
 }
 
-/// The `Boolean` that `operation` states for its result.
-fn boolean_of(operation: &FeatureOperation) -> Option<&Boolean> {
-    match operation {
-        FeatureOperation::Extrude(op) => op.output.boolean.as_ref(),
-        FeatureOperation::Revolve(op) => op.output.boolean.as_ref(),
-        FeatureOperation::Sweep(op) => op.output.boolean.as_ref(),
-        FeatureOperation::HelicalSweep(op) => op.output.boolean.as_ref(),
-        FeatureOperation::Primitive(op) => op.output.boolean.as_ref(),
-        FeatureOperation::Loft(op) => op.output.boolean.as_ref(),
-        FeatureOperation::ImplicitSweep(op) => op.output.boolean.as_ref(),
-        FeatureOperation::Rib(op) => op.boolean.as_ref(),
-        FeatureOperation::Thicken(op) => op.boolean.as_ref(),
-        FeatureOperation::BoundaryFill(op) => op.boolean.as_ref(),
-        FeatureOperation::Patch(op) => op.output.boolean.as_ref(),
-        FeatureOperation::Knit(op) => op.output.boolean.as_ref(),
-        FeatureOperation::Extend(op) => op.output.as_ref()?.boolean.as_ref(),
-        FeatureOperation::Offset(op) => match &op.result {
-            OffsetResult::Copy(output) => output.boolean.as_ref(),
-            OffsetResult::Move {} => None,
-        },
-        _ => None,
-    }
-}
-
 /// The field of `operation` that states bodies it changes, where §6.7
 /// requires `None` in an assembly feature.
 fn stated_body_operand(operation: &FeatureOperation) -> Option<&'static str> {
     if matches!(
-        boolean_of(operation),
-        Some(Boolean::Apply {
+        boolean_field(operation),
+        BooleanField::Stated(Boolean::Apply {
             targets: Some(_),
             ..
         })
@@ -671,6 +748,17 @@ fn stated_body_operand(operation: &FeatureOperation) -> Option<&'static str> {
         return Some("Boolean::Apply.targets");
     }
     match operation {
+        FeatureOperation::Split(op)
+            if matches!(
+                op.mode,
+                SplitMode::ByTools {
+                    targets: Some(_),
+                    ..
+                }
+            ) =>
+        {
+            Some("SplitMode::ByTools.targets")
+        }
         FeatureOperation::Hole(op) if op.targets.is_some() => Some("Hole.targets"),
         FeatureOperation::Emboss(op) if op.targets.is_some() => Some("Emboss.targets"),
         FeatureOperation::Shell(op) if op.bodies.is_some() => Some("ShellFeature.bodies"),

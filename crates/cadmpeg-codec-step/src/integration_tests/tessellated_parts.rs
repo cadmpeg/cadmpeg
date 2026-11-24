@@ -52,11 +52,14 @@ fn assert_owned_mesh(source: &str) {
     assert!(ir.geometry.bodies.is_empty());
     assert_eq!(ir.model.tessellations.len(), 1);
     let mesh = &ir.model.tessellations[0];
-    assert_eq!(mesh.body, None);
+    assert_eq!(mesh.of.body().cloned(), None);
     assert_eq!(ir.model.product_definitions.len(), 1);
     let definition = &ir.model.product_definitions[0];
     assert!(definition.bodies.is_empty());
-    assert_eq!(definition.tessellations, vec![mesh.id.clone()]);
+    assert_eq!(
+        mesh.of,
+        cadmpeg_ir::tessellation::Meshed::definition(definition.id.clone())
+    );
     assert!(!decoded
         .report()
         .losses

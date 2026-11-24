@@ -85,14 +85,10 @@ fn placed_source_object(
     let object_id = format!("{object_id}");
     Ok(SourceObjectAssociation {
         geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Creo,
+        format: cadmpeg_ir::codec_id!("creo"),
         object_id: cadmpeg_core::text::NonBlankString::new(object_id).ok_or_else(|| {
             cadmpeg_core::CodecError::malformed("source object_id must not be empty")
         })?,
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     })
 }

@@ -136,12 +136,9 @@ fn shared_by_two_placements() -> (CadIr, SurfaceId) {
         .shells
         .push(Shell::new(shell.clone(), region.clone()));
     ir.geometry.faces.push(face);
-    ir.geometry.regions.push(Region {
-        id: region.clone(),
-        body: body.clone(),
-        shells: vec![shell],
-        native_ref: None,
-    });
+    ir.geometry
+        .regions
+        .push(Region::new(region.clone(), body.clone(), vec![shell]));
     ir.geometry.bodies.push(Body {
         id: body,
         kind: BodyKind::Sheet,
@@ -154,6 +151,7 @@ fn shared_by_two_placements() -> (CadIr, SurfaceId) {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     ir.finalize();
     (ir, surface)

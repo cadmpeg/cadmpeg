@@ -546,7 +546,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -570,7 +570,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -594,7 +594,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -616,7 +616,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -664,7 +664,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -712,7 +712,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -760,7 +760,7 @@
             "kind": "solved",
             "value": {
               "direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -786,7 +786,7 @@
               "direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "kind": "line",
               "origin": {
@@ -822,7 +822,7 @@
               "ref_direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -876,7 +876,7 @@
               "ref_direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -1945,7 +1945,7 @@
               "v": 0.0
             },
             "y_axis": {
-              "u": -0.0,
+              "u": 0.0,
               "v": 1.0
             }
           },
@@ -1969,7 +1969,7 @@
             "kind": "line",
             "origin": {
               "u": 6.283185307179586,
-              "v": -0.0
+              "v": 0.0
             }
           },
           "id": "fcstd:model:pcurve#PinPrototype:Shape:PinPrototype.Shape.brp:4%3A2%3A1",
@@ -1992,7 +1992,7 @@
             "kind": "line",
             "origin": {
               "u": 0.0,
-              "v": -0.0
+              "v": 0.0
             }
           },
           "id": "fcstd:model:pcurve#PinPrototype:Shape:PinPrototype.Shape.brp:4%3A2%3A2",
@@ -2042,7 +2042,7 @@
               "v": 0.0
             },
             "y_axis": {
-              "u": -0.0,
+              "u": 0.0,
               "v": 1.0
             }
           },
@@ -2230,7 +2230,7 @@
               "normal": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "origin": {
                 "x": 0.0,
@@ -2257,7 +2257,7 @@
             "value": {
               "kind": "plane",
               "normal": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -2298,7 +2298,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -2315,7 +2315,7 @@
             "value": {
               "kind": "plane",
               "normal": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -2356,7 +2356,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -2375,7 +2375,7 @@
               "normal": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "origin": {
                 "x": 20.0,
@@ -2415,7 +2415,7 @@
               "ref_direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -2444,7 +2444,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -2473,7 +2473,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -3132,8 +3132,7 @@
           "source_name": "Assembly",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3151,8 +3150,7 @@
           "source_name": "BracketOccurrence",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -3173,8 +3171,7 @@
           "source_name": "BracketPrototype",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3192,8 +3189,7 @@
           "source_name": "ExternalOccurrence",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3211,8 +3207,7 @@
           "source_name": "NestedBracketOccurrence",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3236,8 +3231,7 @@
           "source_name": "OccurrenceGroup",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3255,8 +3249,7 @@
           "source_name": "PinArray",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3274,8 +3267,7 @@
           "source_name": "PinArray_i0",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3293,8 +3285,7 @@
           "source_name": "PinArray_i1",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3312,8 +3303,7 @@
           "source_name": "PinArray_i2",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -3334,8 +3324,7 @@
           "source_name": "PinPrototype",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3353,8 +3342,7 @@
           "source_name": "PrototypeGroup",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3372,8 +3360,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -3388,8 +3375,7 @@
             "kind": "external",
             "object": "ExternalPrototype",
             "path": "external_component.FCStd"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -5389,7 +5375,6 @@
       "attributes": {
         "application_domains": "App,Assembly,Part",
         "document_kind": "assembly",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
         "program_version": "1.1R20260414 (Git shallow)"
       },
@@ -5464,6 +5449,10 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {
+      "fcstd_uncarried_local_sha256": "<elided: digest over tolerantly compared geometry>"
+    },
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "b8e0e92c0155b4182565493deace3e30b42fe1e45e8424ae4fd1d9bc5ddd8340",
     "file_digests": {},
     "retained_records": {},

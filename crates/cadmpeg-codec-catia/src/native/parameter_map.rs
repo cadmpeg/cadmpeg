@@ -3,6 +3,7 @@
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::hash::finite_json::to_json_value;
 use cadmpeg_ir::native::bytes::NativeBytes;
 use serde::{Deserialize, Serialize};
 
@@ -38,8 +39,8 @@ impl TryFrom<ParameterMapWire> for CatiaSampledParameterMap {
     fn try_from(wire: ParameterMapWire) -> Result<Self, Self::Error> {
         let derived = parameter_map::parse(&wire.payload)
             .ok_or("native sampled-map payload is not complete")?;
-        if serde_json::to_vec(&wire.data).map_err(|error| error.to_string())?
-            != serde_json::to_vec(&derived).map_err(|error| error.to_string())?
+        if to_json_value(&wire.data).map_err(|error| error.to_string())?
+            != to_json_value(&derived).map_err(|error| error.to_string())?
         {
             return Err("native sampled-map data differs from its payload".to_owned());
         }

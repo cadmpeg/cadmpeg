@@ -2272,8 +2272,8 @@
               "kind": "legacy"
             },
             "direction": {
-              "x": -0.0,
-              "y": -0.0,
+              "x": 0.0,
+              "y": 0.0,
               "z": -1.0
             },
             "directrix": "fcstd:model:surface#Body:Shape:Body.Shape.brp:1:directrix",
@@ -2288,8 +2288,8 @@
               "kind": "legacy"
             },
             "direction": {
-              "x": -0.0,
-              "y": -0.0,
+              "x": 0.0,
+              "y": 0.0,
               "z": -1.0
             },
             "directrix": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:1:directrix",
@@ -2304,8 +2304,8 @@
               "kind": "legacy"
             },
             "direction": {
-              "x": -0.0,
-              "y": -0.0,
+              "x": 0.0,
+              "y": 0.0,
               "z": -1.0
             },
             "directrix": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:2:directrix",
@@ -2320,8 +2320,8 @@
               "kind": "legacy"
             },
             "direction": {
-              "x": -0.0,
-              "y": -0.0,
+              "x": 0.0,
+              "y": 0.0,
               "z": -1.0
             },
             "directrix": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:1:directrix",
@@ -2336,8 +2336,8 @@
               "kind": "legacy"
             },
             "direction": {
-              "x": -0.0,
-              "y": -0.0,
+              "x": 0.0,
+              "y": 0.0,
               "z": -1.0
             },
             "directrix": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:2:directrix",
@@ -2352,8 +2352,8 @@
               "kind": "legacy"
             },
             "direction": {
-              "x": -0.0,
-              "y": -0.0,
+              "x": 0.0,
+              "y": 0.0,
               "z": -1.0
             },
             "directrix": "fcstd:model:surface#Sketch:Shape:Sketch.Shape.brp:1:directrix",
@@ -2368,8 +2368,8 @@
               "kind": "legacy"
             },
             "direction": {
-              "x": -0.0,
-              "y": -0.0,
+              "x": 0.0,
+              "y": 0.0,
               "z": -1.0
             },
             "directrix": "fcstd:model:surface#Sketch:Shape:Sketch.Shape.brp:2:directrix",
@@ -2608,7 +2608,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -2638,7 +2638,7 @@
                 "u_axis": {
                   "x": 1.0,
                   "y": 0.0,
-                  "z": -0.0
+                  "z": 0.0
                 }
               },
               "kind": "transformed",
@@ -2717,7 +2717,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -2747,7 +2747,7 @@
                 "u_axis": {
                   "x": 1.0,
                   "y": 0.0,
-                  "z": -0.0
+                  "z": 0.0
                 }
               },
               "kind": "transformed",
@@ -3044,8 +3044,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -3812,7 +3811,6 @@
       "attributes": {
         "application_domains": "App,PartDesign,Sketcher",
         "document_kind": "part-design",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
         "program_version": "1.0R39319 (Git)"
       },
@@ -3887,6 +3885,10 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {
+      "fcstd_uncarried_local_sha256": "<elided: digest over tolerantly compared geometry>"
+    },
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "18c27b11e1c9ed9376b1544f43c095a038890ba59a1a0c725b910906f4ce9eb5",
     "file_digests": {},
     "retained_records": {},

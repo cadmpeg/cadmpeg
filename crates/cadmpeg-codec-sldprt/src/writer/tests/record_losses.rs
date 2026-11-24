@@ -3,6 +3,7 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::{loss::SldprtLossCode, SldprtCodec};
+use cadmpeg_ir::source_fidelity::CodecDigests;
 use cadmpeg_ir::{
     appearance::{Appearance, AppearanceBinding, AppearanceTarget},
     codec::write::{target::TargetRequest, EncodeInput, Encoder},
@@ -92,6 +93,7 @@ fn edge_and_vertex_appearance_bindings_have_counted_export_loss() {
             id: "test:model:appearance-binding#other".try_into().unwrap(),
             target: target.into(),
             appearance: appearance.id.clone(),
+            precedence: None,
             source_entity_id: None,
             object_type: None,
             visible: None,
@@ -145,8 +147,10 @@ fn tessellation_body_faces_and_deflection_each_have_export_loss() {
         Vec::new(),
     )
     .unwrap();
-    mesh.body = Some(ir.geometry.bodies[0].id.clone());
-    mesh.faces = vec![ir.geometry.faces[0].id.clone()];
+    mesh.of = cadmpeg_ir::tessellation::Meshed::Body {
+        body: ir.geometry.bodies[0].id.clone(),
+        faces: vec![ir.geometry.faces[0].id.clone()],
+    };
     mesh.set_chordal_deflection(Some(0.001)).unwrap();
     ir.model.tessellations.push(mesh);
     let plan = crate::test_support::plan_fixture_with_native_envelope(
@@ -202,7 +206,7 @@ fn regenerated_shell_wire_members_and_pcurve_uses_have_counted_losses() {
     // The topology writer ignores the shell members and the coedge relation;
     // accounting belongs to that write, irrespective of neutral admission.
     crate::writer::brep_body(&ir, 0.001, false).unwrap();
-    let losses = super::super::accounting::losses(&ir, true);
+    let losses = super::super::accounting::losses(&ir, &CodecDigests::new(), true);
     for (code, field) in [
         (
             SldprtLossCode::WriterShellWireTopologyOmitted,
@@ -220,7 +224,7 @@ fn regenerated_shell_wire_members_and_pcurve_uses_have_counted_losses() {
         assert!(losses.iter().any(|loss| loss.code == code.kind()
             && loss.message.starts_with(&format!("1 {field} record(s)"))));
     }
-    let retained_losses = super::super::accounting::losses(&ir, false);
+    let retained_losses = super::super::accounting::losses(&ir, &CodecDigests::new(), false);
     assert!(!retained_losses.iter().any(|loss| loss.code
         == SldprtLossCode::WriterShellWireTopologyOmitted.kind()
         || loss.code == SldprtLossCode::WriterCoedgePcurveUsesOmitted.kind()));
@@ -238,13 +242,9 @@ fn derived_degenerate_sphere_seam_curve_has_counted_export_loss() {
             .unwrap(),
     ));
     curve.source_object = Some(cadmpeg_ir::SourceObjectAssociation {
-        format: cadmpeg_ir::CodecFormat::Sldprt,
+        format: cadmpeg_ir::codec_id!("sldprt"),
         geometry_role: Some(cadmpeg_ir::SourceGeometryRole::Support),
         object_id: cadmpeg_core::nonblank_literal!("sphere-seam"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     });
     ir.geometry.curves.push(curve);
@@ -396,7 +396,7 @@ fn a_driven_dimension_of_a_generated_sketch_has_a_counted_export_loss() {
         metadata: None,
         native_ref: None,
     });
-    let losses = super::super::accounting::losses(&ir, false);
+    let losses = super::super::accounting::losses(&ir, &CodecDigests::new(), false);
     for prefix in [
         "1 driven (reference) sketch dimension record(s)",
         "1 driven (reference) dimension parameter record(s)",
@@ -430,24 +430,21 @@ fn a_driven_dimension_of_a_generated_sketch_has_a_counted_export_loss() {
     let twice = reader("twice", "D2", Some(4.0));
     let unknown = reader("unknown", "D3", None);
     ir.model.parameters.extend([twice, unknown]);
-    let named = |ir: &CadIr| {
-        super::super::accounting::losses(ir, false)
+    let named = |ir: &CadIr, digests: &CodecDigests| {
+        super::super::accounting::losses(ir, digests, false)
             .into_iter()
             .filter(|loss| loss.message.contains("reads an omitted"))
             .map(|loss| (loss.code, loss.message))
             .collect::<Vec<_>>()
     };
-    assert!(named(&ir).is_empty());
-    ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
-        cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
-            cadmpeg_core::dialect_id!("sldprt:test"),
-        )),
-        std::collections::BTreeMap::from([(
+    assert!(named(&ir, &CodecDigests::new()).is_empty());
+    let named = named(
+        &ir,
+        &CodecDigests::from([(
             cadmpeg_core::nonblank_literal!("sldprt_native_history_sha256"),
-            "0".into(),
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(b"history"),
         )]),
-    ));
-    let named = named(&ir);
+    );
     assert!(
         named.iter().any(|(code, message)| *code
             == SldprtLossCode::WriterParameterExpressionsOmitted.kind()

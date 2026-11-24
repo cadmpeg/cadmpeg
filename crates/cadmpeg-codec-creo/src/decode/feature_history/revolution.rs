@@ -258,7 +258,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     geometry: surface,
                     source_object: Some(SourceObjectAssociation {
                         geometry_role: None,
-                        format: cadmpeg_ir::CodecFormat::Creo,
+                        format: cadmpeg_ir::codec_id!("creo"),
                         object_id: if let Some(id) = native_surface {
                             crate::identity::source_object_id_checked(format_args!(
                                 "VisibGeom:{id}"
@@ -269,10 +269,6 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                                 segment.external_id
                             ))?
                         },
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                     native_ref: None,
@@ -331,14 +327,10 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                         geometry: surface,
                         source_object: Some(SourceObjectAssociation {
                             geometry_role: None,
-                            format: cadmpeg_ir::CodecFormat::Creo,
+                            format: cadmpeg_ir::codec_id!("creo"),
                             object_id: crate::identity::source_object_id_checked(format_args!(
                                 "VisibGeom:{native_surface}"
                             ))?,
-                            name: None,
-                            color: None,
-                            visible: None,
-                            layer: None,
                             instance_path: Vec::new(),
                         }),
                         native_ref: None,
@@ -449,14 +441,10 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
                     source_object: Some(SourceObjectAssociation {
                         geometry_role: None,
-                        format: cadmpeg_ir::CodecFormat::Creo,
+                        format: cadmpeg_ir::codec_id!("creo"),
                         object_id: crate::identity::source_object_id_checked(format_args!(
                             "VisibGeom:{native_surface}"
                         ))?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                     native_ref: None,
@@ -594,7 +582,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id: cadmpeg_core::text::NonBlankString::new(object_id).ok_or_else(
                         || {
                             cadmpeg_core::CodecError::malformed(
@@ -602,10 +590,6 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
                             )
                         },
                     )?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,
@@ -693,7 +677,7 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id: cadmpeg_core::text::NonBlankString::new(object_id).ok_or_else(
                         || {
                             cadmpeg_core::CodecError::malformed(
@@ -701,10 +685,6 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
                             )
                         },
                     )?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,

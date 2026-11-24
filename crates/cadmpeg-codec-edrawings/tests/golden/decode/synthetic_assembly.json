@@ -2038,7 +2038,7 @@
               "kind": "plane",
               "normal": {
                 "x": 1.0,
-                "y": -0.0,
+                "y": 0.0,
                 "z": 0.0
               },
               "origin": {
@@ -2302,8 +2302,7 @@
           "source_name": "body0",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -2321,8 +2320,7 @@
           "source_name": "body1",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -2340,8 +2338,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -2359,8 +2356,7 @@
           "source_name": "Group A",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -2377,8 +2373,7 @@
           "source_name": "Group B",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -2491,6 +2486,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "234fe47c278d3f4b910eeece5ef10de63133b6b1d706b6d8e9f54218e7433f46",
     "file_digests": {},
     "retained_records": {},

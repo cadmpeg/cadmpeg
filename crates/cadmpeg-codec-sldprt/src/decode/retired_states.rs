@@ -142,10 +142,11 @@ fn target_id(target: &AppearanceTarget) -> Option<&str> {
         AppearanceTarget::Curve(id) => Some(id.as_str()),
         AppearanceTarget::Point(id) => Some(id.as_str()),
         AppearanceTarget::Occurrence(_)
+        | AppearanceTarget::Definition(_)
         | AppearanceTarget::Tessellation(_)
         | AppearanceTarget::TriangleGroup { .. }
         | AppearanceTarget::Record { .. }
-        | AppearanceTarget::Source { .. } => None,
+        | AppearanceTarget::Unresolved => None,
     }
 }
 

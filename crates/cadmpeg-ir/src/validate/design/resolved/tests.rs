@@ -111,6 +111,7 @@ fn stored_override(configuration: usize, bodies: Vec<BodyId>) -> CadIr {
                         tessellations: Vec::new(),
                         origin: StoredOrigin::Base {},
                     },
+                    assembly: None,
                     refine: None,
                     fuzzy_tolerance: None,
                 }),
