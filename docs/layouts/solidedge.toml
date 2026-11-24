@@ -924,8 +924,20 @@ size = 229
 
 [[record.gap]]
 offset = 0
-size = 16
-note = "§9.2 states no field before the state word."
+size = 14
+note = "§9.2 states no field before the pattern role."
+
+[[record.field]]
+name = "role"
+offset = 14
+type = "u8"
+source = "spec"
+anchor = "| 14 | `u8` pattern role: `0x20` for the seed of an assembly pattern, `0x40` for a copy of one, `0` otherwise |"
+
+[[record.gap]]
+offset = 15
+size = 1
+note = "§9.2 states no field between the pattern role and the state word."
 
 [[record.gap]]
 offset = 16

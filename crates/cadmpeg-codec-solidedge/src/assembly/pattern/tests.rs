@@ -162,8 +162,44 @@ fn second_run_index_is_the_second_coordinate() {
     assert_eq!(component.instances[0].index.0, vec![0, 1]);
 }
 
+/// References 20 (the seed), the copies 21 and 22, the repeat 23 of copy 22 and
+/// the stale clone 24, all copies with the copy role.
+fn stale_references() -> Vec<OccurrenceSpec> {
+    let mut references = references(&[0.0, 0.04, 0.08, 0.08, 0.04]);
+    for spec in references.iter_mut().skip(1) {
+        spec.role = 0x40;
+    }
+    references
+}
+
 #[test]
-fn copy_that_repeats_an_index_is_an_occurrence_outside_the_pattern() {
+fn stale_copy_references_are_not_occurrences() {
+    let pattern = linear_spec([3, 1]);
+    let references = stale_references();
+    let result = decode(assembly_pattern_document(&AssemblyPatternSpec {
+        pattern: &pattern,
+        references: &references,
+        copies: &[(1, 0, 21), (2, 0, 22), (2, 0, 23)],
+        layout: None,
+    }));
+    let ids: Vec<_> = result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .map(|occurrence| occurrence.id.clone())
+        .collect();
+    assert_eq!(
+        ids,
+        vec![occurrence_id(20), occurrence_id(21), occurrence_id(22)]
+    );
+    assert_eq!(component_pattern(&result).instances.len(), 2);
+    // The repeated copy, the stale reference 23 and the stale clone 24.
+    assert_eq!(count(&result, "assembly.pattern-unread"), 3);
+}
+
+#[test]
+fn copy_reference_without_the_copy_role_stays_an_occurrence() {
     let pattern = linear_spec([3, 1]);
     let references = references(&[0.0, 0.04, 0.08, 0.08]);
     let result = decode(assembly_pattern_document(&AssemblyPatternSpec {

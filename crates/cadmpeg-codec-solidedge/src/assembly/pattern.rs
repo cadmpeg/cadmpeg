@@ -34,7 +34,7 @@ use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::report::loss::LossNote;
 
 use crate::features::{container_id, feature_id};
-use crate::layout::{asm_pattern, asm_pattern_occurrence};
+use crate::layout::{asm_pattern, asm_pattern_occurrence, assembly_reference};
 use crate::loss::SolidEdgeLossCode;
 use crate::patterns::{sketch_layout, SketchLayout};
 use crate::psm::{Cluster, Object, TypeTable};
@@ -229,13 +229,6 @@ fn read_pattern(
             .filter(|found| types.class_name(found.form, found.flags) == Some(COPY_CLASS))
             .ok_or_else(|| format!("the copy {id:#x} is not a {COPY_CLASS}"))?;
         let reference = word(&copy, asm_pattern_occurrence::REFERENCE, "reference")?;
-        let Some(occurrence) = occurrences.get(&reference) else {
-            losses.push(note(format!(
-                "the copy {id:#x} names occurrence {reference:#x}, which is not stated; the copy \
-                 is left out of the pattern"
-            )));
-            continue;
-        };
         let first = word(&copy, asm_pattern_occurrence::FIRST_INDEX, "first index")?;
         let second = word(&copy, asm_pattern_occurrence::SECOND_INDEX, "second index")?;
         let mut coordinates =
@@ -250,10 +243,17 @@ fn read_pattern(
         {
             losses.push(note(format!(
                 "the copy {id:#x} repeats instance index {coordinates:?}; it is left out of the \
-                 pattern and its occurrence {reference:#x} stays an occurrence"
+                 pattern"
             )));
             continue;
         }
+        let Some(occurrence) = occurrences.get(&reference) else {
+            losses.push(note(format!(
+                "the copy {id:#x} names occurrence {reference:#x}, which is not stated; the copy \
+                 is left out of the pattern"
+            )));
+            continue;
+        };
         instances.push(ComponentInstance {
             index: InstanceIndex(coordinates),
             occurrences: vec![occurrence.clone()],
@@ -280,6 +280,54 @@ fn read_pattern(
         driven_by: None,
         native_ref: None,
     })
+}
+
+/// The role byte of a copy's reference (§9.2).
+const COPY_ROLE: u8 = 0x40;
+/// The class of an occurrence.
+const REFERENCE_CLASS: &str = "CLSID_JAsmReference";
+
+/// The reference objects that are not occurrences (§9.5): the references with
+/// the copy role that no copy object, the first of its index in its pattern,
+/// names.
+pub(super) fn stale_references(cluster: &Cluster<'_>, types: &TypeTable) -> BTreeSet<u32> {
+    let mut live = BTreeSet::new();
+    for pattern in cluster
+        .objects()
+        .filter(|object| types.class_name(object.form, object.flags) == Some(PATTERN_CLASS))
+    {
+        let Some(list) = copy_list(pattern.bytes) else {
+            continue;
+        };
+        let mut seen = BTreeSet::new();
+        for id in list {
+            let Some(copy) = cluster
+                .object(id)
+                .filter(|found| types.class_name(found.form, found.flags) == Some(COPY_CLASS))
+            else {
+                continue;
+            };
+            let (Ok(reference), Ok(first), Ok(second)) = (
+                word(&copy, asm_pattern_occurrence::REFERENCE, "reference"),
+                word(&copy, asm_pattern_occurrence::FIRST_INDEX, "first index"),
+                word(&copy, asm_pattern_occurrence::SECOND_INDEX, "second index"),
+            ) else {
+                continue;
+            };
+            if (first, second) != (0, 0) && seen.insert((first, second)) {
+                live.insert(reference);
+            }
+        }
+    }
+    cluster
+        .objects()
+        .filter(|object| {
+            types.class_name(object.form, object.flags) == Some(REFERENCE_CLASS)
+                && object.bytes.get(assembly_reference::ROLE) == Some(&COPY_ROLE)
+                && !live.contains(&object.id)
+        })
+        .map(|object| object.id)
+        .collect()
 }
 
 /// State the patterns of the assembly on `root`. `occurrences` maps the

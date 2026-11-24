@@ -533,6 +533,7 @@ A `CLSID_JAsmReference` object stores:
 
 | Offset | Field |
 | ---: | --- |
+| 14 | `u8` pattern role: `0x20` for the seed of an assembly pattern, `0x40` for a copy of one, `0` otherwise |
 | 16 | `u32` state word: `2` for a grounded occurrence, `4` for an occurrence that is not grounded |
 | 113 | `u32` identifier of the `CLSID_JSite` object of the referenced document |
 | 125 | nine `f64`: the rotation `R`, row-major |
@@ -646,10 +647,14 @@ A `CLSID_JAsmPatternOcc` object stores:
 | 36 | `u32` identifier of the `CLSID_JAsmReference` object of the copy |
 
 The copy object stores the placement of the copy as an occurrence does
-(§9.2). The seed has index `0` in every run. The document can hold a copy
-whose indices repeat those of another copy, and a `CLSID_JAsmReference`
-object at a copy's placement that no `CLSID_JAsmPatternOcc` object names;
-each is an occurrence of its own.
+(§9.2). The seed has index `0` in every run. A pattern can list a copy whose
+indices repeat those of an earlier copy of the pattern, and the document can
+hold a `CLSID_JAsmReference` object with role `0x40` that no
+`CLSID_JAsmPatternOcc` object of a pattern names. The references collection
+(§9.1) and the structure list (§9.4) list these objects too. Such an object
+and the reference of a repeated copy are not occurrences. The occurrences of
+a pattern are its seed and the references of its copies that are the first of
+their index.
 
 ### 9.6 Mirrored occurrences
 

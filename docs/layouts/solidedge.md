@@ -407,6 +407,7 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 14 | 1 | `role` | `u8` | little | spec | \| 14 \| `u8` pattern role: `0x20` for the seed of an assembly pattern, `0x40` for a copy of one, `0` otherwise \| |
 | 113 | 4 | `site` | `u32` | little | spec | \| 113 \| `u32` identifier of the `CLSID_JSite` object of the referenced document \| |
 | 125 | 72 | `rotation` | `f64[9]` | little | spec | \| 125 \| nine `f64`: the rotation `R`, row-major \| |
 | 197 | 24 | `translation` | `f64[3]` | little | spec | \| 197 \| three `f64`: the translation `t`, in metres \| |
@@ -414,7 +415,8 @@ Parsed by:
 
 Unstated regions:
 
-- `0..16` (16 B): §9.2 states no field before the state word.
+- `0..14` (14 B): §9.2 states no field before the pattern role.
+- `15..16` (1 B): §9.2 states no field between the pattern role and the state word.
 - `16..113` (97 B): The state word of §9.2 is not decoded into a field; §9.2 states no other field before the site identifier.
 - `117..125` (8 B): §9.2 states no field between the site identifier and the rotation.
 

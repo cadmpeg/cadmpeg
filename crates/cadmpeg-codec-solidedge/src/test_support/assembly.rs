@@ -32,6 +32,8 @@ pub(crate) struct OccurrenceSpec {
     /// The translation in metres.
     pub(crate) translation: [f64; 3],
     pub(crate) unit: f64,
+    /// The pattern role byte at object offset 14.
+    pub(crate) role: u8,
     /// The object length to keep, the frame included, or `None` for all of it.
     pub(crate) keep: Option<usize>,
 }
@@ -46,6 +48,7 @@ impl OccurrenceSpec {
             rotation: IDENTITY,
             translation: [0.0; 3],
             unit: 1.0,
+            role: 0,
             keep: None,
         }
     }
@@ -104,6 +107,7 @@ pub(crate) fn link_stream(links: [&str; 2], long: [Option<&str>; 2]) -> Vec<u8> 
 
 pub(super) fn occurrence_body(spec: &OccurrenceSpec) -> Vec<u8> {
     let mut body = vec![0_u8; OCCURRENCE_LEN - 8];
+    body[14 - 8] = spec.role;
     put_words(&mut body, 16, &[spec.state]);
     put_words(&mut body, 113, &[spec.site]);
     put_reals(&mut body, 125, &spec.rotation);

@@ -480,7 +480,15 @@ pub(crate) fn project<'a>(
     let mut placed = BTreeSet::new();
     let mut new_definitions = Vec::new();
     let mut occurrences = Vec::new();
+    let stale = pattern::stale_references(&cluster, &types);
     for id in listing.ids {
+        if stale.contains(&id) {
+            losses.push(SolidEdgeLossCode::AssemblyPatternUnread.note(format!(
+                "reference object {id:#x} is a stale pattern copy; it is not an occurrence and \
+                 is not transferred"
+            )));
+            continue;
+        }
         if !placed.insert(id) {
             losses.push(SolidEdgeLossCode::AssemblyOccurrenceUnread.note(format!(
                 "occurrence object {id:#x} is listed twice; the second entry is not transferred"
