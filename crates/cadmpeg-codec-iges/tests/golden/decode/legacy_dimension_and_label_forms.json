@@ -57,10 +57,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "CURVE2",
-            "object_id": "D11",
-            "visible": true
+            "object_id": "D11"
           }
         },
         {
@@ -89,10 +86,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "CURVE1",
-            "object_id": "D9",
-            "visible": true
+            "object_id": "D9"
           }
         }
       ],

@@ -63,10 +63,7 @@
             "format": "iges",
             "geometry_role": "independent",
             "instance_path": [],
-            "layer": "0",
-            "name": "ISLAND",
-            "object_id": "D11",
-            "visible": true
+            "object_id": "D11"
           }
         },
         {
@@ -101,10 +98,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "SYMGEOM",
-            "object_id": "D3",
-            "visible": true
+            "object_id": "D3"
           }
         },
         {
@@ -139,10 +133,7 @@
             "format": "iges",
             "geometry_role": "independent",
             "instance_path": [],
-            "layer": "0",
-            "name": "BOUNDARY",
-            "object_id": "D9",
-            "visible": true
+            "object_id": "D9"
           }
         }
       ],

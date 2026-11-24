@@ -101,10 +101,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "MODEL",
-            "object_id": "D3",
-            "visible": true
+            "object_id": "D3"
           }
         },
         {
@@ -164,10 +161,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "PCURVE",
-            "object_id": "D5",
-            "visible": true
+            "object_id": "D5"
           }
         }
       ],
@@ -326,10 +320,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "PLANE",
-            "object_id": "D1",
-            "visible": true
+            "object_id": "D1"
           }
         }
       ],

@@ -102,10 +102,7 @@
             "format": "iges",
             "geometry_role": "independent",
             "instance_path": [],
-            "layer": "0",
-            "name": "SPLINE",
-            "object_id": "D1",
-            "visible": true
+            "object_id": "D1"
           }
         }
       ],

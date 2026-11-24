@@ -57,10 +57,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "CHILD1",
-            "object_id": "D1",
-            "visible": true
+            "object_id": "D1"
           }
         },
         {
@@ -89,10 +86,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "CHILD2",
-            "object_id": "D3",
-            "visible": true
+            "object_id": "D3"
           }
         },
         {
@@ -140,10 +134,7 @@
             "format": "iges",
             "geometry_role": "independent",
             "instance_path": [],
-            "layer": "0",
-            "name": "COMPOSIT",
-            "object_id": "D5",
-            "visible": true
+            "object_id": "D5"
           }
         }
       ],

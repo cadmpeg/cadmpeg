@@ -57,10 +57,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "ENCLOSE",
-            "object_id": "D7",
-            "visible": true
+            "object_id": "D7"
           }
         }
       ],
