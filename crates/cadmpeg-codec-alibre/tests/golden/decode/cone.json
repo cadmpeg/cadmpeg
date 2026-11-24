@@ -1173,8 +1173,8 @@
               },
               "u_axis": {
                 "x": -1.0,
-                "y": -0.0,
-                "z": -0.0
+                "y": 0.0,
+                "z": 0.0
               }
             }
           },
@@ -1185,8 +1185,8 @@
             "kind": "solved",
             "value": {
               "axis": {
-                "x": -0.0,
-                "y": -0.0,
+                "x": 0.0,
+                "y": 0.0,
                 "z": -1.0
               },
               "half_angle": 0.7853981633974483,
@@ -2502,6 +2502,8 @@
         }
       }
     },
+    "codec_digests": {},
+    "content_digest": "e022d9a46c4e56b33fb2a5a6dc84f9c7d61cde95c63ffffdd9b381bab644ad13",
     "decode_digest": "280a3641d93431b621ae25c16ef4e3354dcdcc805991e68874cd75f46497eadd",
     "file_digests": {},
     "retained_records": {},

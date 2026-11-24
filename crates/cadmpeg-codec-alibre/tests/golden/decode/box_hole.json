@@ -508,7 +508,15 @@
             "value": "alibre:step:feature#216"
           },
           "scope": "alibre:model:product-definition#root",
-          "source_settings": {},
+          "source_settings": {
+            "alibre:guid": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "BADD217C-5C3E-43F3-8C1B-684D209388D7"
+              }
+            }
+          },
           "unit": [
             {
               "power": 1,
@@ -1580,8 +1588,8 @@
             "kind": "solved",
             "value": {
               "axis": {
-                "x": -0.0,
-                "y": -0.0,
+                "x": 0.0,
+                "y": 0.0,
                 "z": -1.0
               },
               "center": {
@@ -2195,8 +2203,8 @@
               },
               "u_axis": {
                 "x": -1.0,
-                "y": -0.0,
-                "z": -0.0
+                "y": 0.0,
+                "z": 0.0
               }
             }
           },
@@ -2210,7 +2218,7 @@
               "normal": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "origin": {
                 "x": 10.0,
@@ -2218,9 +2226,9 @@
                 "z": 0.0
               },
               "u_axis": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -2243,8 +2251,8 @@
               },
               "u_axis": {
                 "x": 1.0,
-                "y": -0.0,
-                "z": -0.0
+                "y": 0.0,
+                "z": 0.0
               }
             }
           },
@@ -2266,9 +2274,9 @@
                 "z": 0.0
               },
               "u_axis": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": -1.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -4918,6 +4926,18 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "history.face-selection-unresolved",
+            "kind": "feature_history_retained",
+            "namespace": "alibre"
+          }
+        },
+        "message": "sketch HS lies on the face that topology signature #0 names, which names no face of the body",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "history.direction-flag-assumed",
             "kind": "feature_history_retained",
             "namespace": "alibre"
@@ -5872,6 +5892,8 @@
         }
       }
     },
+    "codec_digests": {},
+    "content_digest": "28ab766bcba3cad536b9337c76c6c30edaeac9a807242bca835a2c10f7e92b69",
     "decode_digest": "a7fddcdb0d293a96783dae2f0a1ae0a2ac11c4fec864c4a4acdd675117ab45c2",
     "file_digests": {},
     "retained_records": {},

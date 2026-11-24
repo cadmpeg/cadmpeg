@@ -1386,8 +1386,8 @@
             "kind": "solved",
             "value": {
               "axis": {
-                "x": -0.0,
-                "y": -0.0,
+                "x": 0.0,
+                "y": 0.0,
                 "z": -1.0
               },
               "center": {
@@ -1430,8 +1430,8 @@
             "kind": "solved",
             "value": {
               "axis": {
-                "x": -0.0,
-                "y": -0.0,
+                "x": 0.0,
+                "y": 0.0,
                 "z": -1.0
               },
               "center": {
@@ -1474,8 +1474,8 @@
             "kind": "solved",
             "value": {
               "axis": {
-                "x": -0.0,
-                "y": -0.0,
+                "x": 0.0,
+                "y": 0.0,
                 "z": -1.0
               },
               "center": {
@@ -1499,8 +1499,8 @@
             "kind": "solved",
             "value": {
               "axis": {
-                "x": -0.0,
-                "y": -0.0,
+                "x": 0.0,
+                "y": 0.0,
                 "z": -1.0
               },
               "center": {
@@ -6936,6 +6936,8 @@
         }
       }
     },
+    "codec_digests": {},
+    "content_digest": "5ec31c99fe1fdaceef293ab45592c1d6b4d77c7b3178f67ed1f434de6899256a",
     "decode_digest": "fd43d82345eca4cb065d5390bd60c7d3569f6428dedb0baa639986feebfc3f46",
     "file_digests": {},
     "retained_records": {

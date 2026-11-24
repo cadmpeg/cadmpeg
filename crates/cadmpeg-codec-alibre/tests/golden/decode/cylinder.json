@@ -392,7 +392,15 @@
             "value": "alibre:step:feature#159"
           },
           "scope": "alibre:model:product-definition#root",
-          "source_settings": {},
+          "source_settings": {
+            "alibre:guid": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "AB134747-963A-4F9F-9C78-33DDD1FB8ACF"
+              }
+            }
+          },
           "unit": [
             {
               "power": 1,
@@ -605,8 +613,8 @@
             "kind": "solved",
             "value": {
               "axis": {
-                "x": -0.0,
-                "y": -0.0,
+                "x": 0.0,
+                "y": 0.0,
                 "z": -1.0
               },
               "center": {
@@ -2012,6 +2020,8 @@
         }
       }
     },
+    "codec_digests": {},
+    "content_digest": "25023620ce6f082d1989d9bed0f301e9be4cd96c9f0eabe894c448138ade4bc4",
     "decode_digest": "f89c07eb29466302d8aa7994905573b3dcb5261b44e5304f0cba2ba0b5e843bf",
     "file_digests": {},
     "retained_records": {},
