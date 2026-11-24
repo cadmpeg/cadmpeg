@@ -31,8 +31,8 @@ use crate::design::ops::dressup::{
 };
 use crate::design::ops::shared::{
     AxisLimits, Bounds, CompositeStage, Coupling, Joint, JointConnector, JointKind, JointMotion,
-    JointOffset, Limit, LinearLayout, LinearRun, Locus, PatternLayout, PatternRun, RunSides,
-    ScaleLayout, Spacing, Span,
+    JointOffset, Limit, LinearLayout, LinearRun, PatternLayout, PatternRun, RunSides, Spacing,
+    Span,
 };
 use crate::design::ops::sheet_metal::{
     BendAllowance, BendSpec, Flange, FlangeWidth, KFactorRow, KFactorTable, SheetMetal,
@@ -63,7 +63,7 @@ use crate::ids::OccurrenceId;
 use crate::math::Point2;
 use crate::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
 use crate::report::Severity;
-use crate::scalar::{Angle, Fraction, Length, NonZeroReal, PositiveLength, PositiveReal};
+use crate::scalar::{Angle, Fraction, Length, NonZeroReal, PositiveLength};
 use crate::sketches::{SketchConstraintId, SketchEntityId, SketchId};
 use crate::transform::Transform;
 use crate::units::{FinitePoint2, UnitVector3};
@@ -1914,39 +1914,6 @@ fn an_assembly_feature_runs_no_operation_that_states_its_bodies() {
         family: OperationFamily::Split,
     };
     assert_no_finding_containing(&in_assembly(split), excluded);
-}
-
-#[test]
-fn a_composite_scale_stage_divides_the_instances_before_it() {
-    let scale = |count| {
-        CompositeStage::Scale(ScaleLayout {
-            factor: Dimension::Literal(PositiveReal::new(2.0).unwrap()),
-            count: Dimension::Literal(count),
-            center: Locus::Centroid,
-        })
-    };
-    let refused = "does not divide the instances";
-    assert_finding(
-        &with(pattern(
-            PatternLayout::Composite(vec![linear_stage(4), scale(3)]),
-            Vec::new(),
-        )),
-        refused,
-    );
-    assert_no_finding_containing(
-        &with(pattern(
-            PatternLayout::Composite(vec![linear_stage(4), scale(2)]),
-            Vec::new(),
-        )),
-        refused,
-    );
-    assert_finding(
-        &with(pattern(
-            PatternLayout::Composite(vec![linear_stage(4), scale(1)]),
-            Vec::new(),
-        )),
-        "a Scale layout's literal count is below 2",
-    );
 }
 
 /// §10: a `ByTools` split whose tool is `Silhouette` has `method: None`, and

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The coordinates an instance index of a `Scale` layout or stage has.
+//! The instances and coordinates of a `Scale` layout or stage.
 
 use super::{assert_finding, assert_no_finding_containing, linear_stage, pattern, skipped, with};
 use crate::design::dimension::Dimension;
@@ -41,5 +41,38 @@ fn a_scale_layout_or_stage_has_one_coordinate() {
             vec![skipped(vec![1])],
         )),
         counted,
+    );
+}
+
+#[test]
+fn a_composite_scale_stage_divides_the_instances_before_it() {
+    let scale = |count| {
+        CompositeStage::Scale(ScaleLayout {
+            factor: Dimension::Literal(PositiveReal::new(2.0).unwrap()),
+            count: Dimension::Literal(count),
+            center: Locus::Centroid,
+        })
+    };
+    let refused = "does not divide the instances";
+    assert_finding(
+        &with(pattern(
+            PatternLayout::Composite(vec![linear_stage(4), scale(3)]),
+            Vec::new(),
+        )),
+        refused,
+    );
+    assert_no_finding_containing(
+        &with(pattern(
+            PatternLayout::Composite(vec![linear_stage(4), scale(2)]),
+            Vec::new(),
+        )),
+        refused,
+    );
+    assert_finding(
+        &with(pattern(
+            PatternLayout::Composite(vec![linear_stage(4), scale(1)]),
+            Vec::new(),
+        )),
+        "a Scale layout's literal count is below 2",
     );
 }
