@@ -695,7 +695,7 @@ macro_rules! declare_topology {
     ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
         /// The current geometry: B-rep topology, its carriers, and
         /// subdivision surfaces, each arena sorted by identity.
-        #[derive(Debug, Clone, Default, PartialEq)]
+        #[derive(Debug, Clone, Default, PartialEq, cadmpeg_derive::StructuralOrd)]
         pub struct Topology {
             $(
                 #[doc = $doc]

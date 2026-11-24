@@ -26,7 +26,9 @@ use crate::sketches::{SketchEntityId, SpatialSketchEntityId};
 /// A codec id (§2.2): one or more lower-case ASCII letters and digits. The
 /// set of codec ids is open. Build a compile-time id with
 /// [`crate::codec_id!`].
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, cadmpeg_derive::StructuralOrd,
+)]
 #[serde(try_from = "String")]
 pub struct CodecId(Cow<'static, str>);
 

@@ -153,8 +153,7 @@ pub(super) fn refused<O: MemberOrder>(
         .find(|&class| class != Class::Unknown && !allowed(class))
 }
 
-/// Whether two selections name one pick: equal target, context, native
-/// name, and domain.
+/// Whether two selections name one pick: equal identity keys.
 pub(super) fn share_pick<A: MemberOrder, B: MemberOrder>(
     first: &Selection<A>,
     second: &Selection<B>,

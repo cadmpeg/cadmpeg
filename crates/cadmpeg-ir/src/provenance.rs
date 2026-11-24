@@ -18,7 +18,9 @@ use std::fmt;
 /// Whether source geometry is a standalone object or a support of another object.
 /// Supports retain their mathematics when their owner cannot be projected; writers
 /// must not promote them to standalone geometry merely because they are unused.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName, cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SourceGeometryRole {
@@ -36,7 +38,7 @@ pub enum SourceGeometryRole {
 /// layer identifier. `instance_path` contains native instance identifiers in
 /// outermost-to-innermost order; an empty path means that the object is not
 /// nested in an instance.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct SourceObjectAssociation {

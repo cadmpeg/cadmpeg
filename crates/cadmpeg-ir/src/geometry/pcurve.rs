@@ -31,7 +31,7 @@ fn finite_axis_is_nonzero(axis: FinitePoint2) -> bool {
 /// One rational pole in parameter space: its position and its weight.
 // A source states a raw position; a `PcurveNurbs` holds the admitted row,
 // whose position is a `FinitePoint2`.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct WeightedPole2<P = Point2> {
@@ -44,7 +44,7 @@ pub struct WeightedPole2<P = Point2> {
 /// The poles of a parameter-space NURBS curve.
 // A source states raw positions; a `PcurveNurbs` holds the admitted poles,
 // whose positions are `FinitePoint2` values.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -267,7 +267,7 @@ impl PoleValue<FiniteReal> for FiniteReal {
 }
 
 /// Parameter-space line with a finite origin and nonzero direction.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "LinePcurveWire")]
 pub struct LinePcurve {
@@ -330,7 +330,7 @@ impl TryFrom<LinePcurveWire> for LinePcurve {
 }
 
 /// Polar harmonic curve with finite coefficients and nonzero radial variation.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "PolarHarmonicPcurveWire")]
 pub struct PolarHarmonicPcurve {
@@ -449,7 +449,7 @@ impl TryFrom<PolarHarmonicPcurveWire> for PolarHarmonicPcurve {
 }
 
 /// Spherical great-circle chart with finite coefficients and nonzero azimuth rate.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "SphericalGreatCirclePcurveWire")]
 pub struct SphericalGreatCirclePcurve {
@@ -555,7 +555,7 @@ impl TryFrom<SphericalGreatCirclePcurveWire> for SphericalGreatCirclePcurve {
 }
 
 /// Parameter-space circle with a positive radius and finite nonzero axes.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "CirclePcurveWire")]
 pub struct CirclePcurve {
@@ -679,7 +679,7 @@ impl TryFrom<CirclePcurveWire> for CirclePcurve {
 }
 
 /// Parameter-space ellipse with positive radii and finite nonzero axes.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "EllipsePcurveWire")]
 pub struct EllipsePcurve {
@@ -827,7 +827,7 @@ impl TryFrom<EllipsePcurveWire> for EllipsePcurve {
 }
 
 /// Harmonic parameter-space curve with finite coefficients and nonzero variation.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "HarmonicPcurveWire")]
 pub struct HarmonicPcurve {
@@ -901,7 +901,7 @@ impl TryFrom<HarmonicPcurveWire> for HarmonicPcurve {
 }
 
 /// Parameter-space parabola with a positive focal distance and finite nonzero axes.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "ParabolaPcurveWire")]
 pub struct ParabolaPcurve {
@@ -1012,7 +1012,7 @@ impl TryFrom<ParabolaPcurveWire> for ParabolaPcurve {
 }
 
 /// Parameter-space hyperbola with positive radii and finite nonzero axes.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "HyperbolaPcurveWire")]
 pub struct HyperbolaPcurve {
@@ -1160,7 +1160,7 @@ impl TryFrom<HyperbolaPcurveWire> for HyperbolaPcurve {
 }
 
 /// Hyperbolic parameter-space curve with finite coefficients and nonzero variation.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "HyperbolicPcurveWire")]
 pub struct HyperbolicPcurve {
@@ -1237,7 +1237,7 @@ impl TryFrom<HyperbolicPcurveWire> for HyperbolicPcurve {
 /// carrier's knot interval included. A declared domain and an evaluable
 /// parameter are two different questions, and this carrier answers only the
 /// first.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "TrimmedPcurveWire")]
 pub struct TrimmedPcurve {
@@ -1320,7 +1320,7 @@ impl TryFrom<TrimmedPcurveWire> for TrimmedPcurve {
 }
 
 /// Parameter-space offset with a finite signed distance.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "OffsetPcurveWire")]
 pub struct OffsetPcurve {
@@ -1382,7 +1382,14 @@ impl TryFrom<OffsetPcurveWire> for OffsetPcurve {
 }
 
 /// The shape of a parameter-space (u, v) curve on a surface.
-#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PcurveGeometry {
@@ -1430,7 +1437,7 @@ pub enum PcurveGeometry {
 // A source states raw values; a `PolarPcurveNurbs` holds the admitted row,
 // whose radial pole is a `FinitePoint2` and whose axial pole is a
 // `FiniteReal`.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct PolarNurbsPole<P = Point2, S = f64> {
@@ -1441,7 +1448,7 @@ pub struct PolarNurbsPole<P = Point2, S = f64> {
 }
 
 /// Checked polar parameter-space NURBS payload.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, cadmpeg_derive::StructuralOrd)]
 pub struct PolarPcurveNurbs {
     degree: u32,
     knots: KnotVector,
@@ -1450,7 +1457,7 @@ pub struct PolarPcurveNurbs {
 }
 
 /// One rational polar pole: its radial and axial halves and its weight.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct WeightedPolarNurbsPole<P = Point2, S = f64> {
@@ -1464,7 +1471,7 @@ pub struct WeightedPolarNurbsPole<P = Point2, S = f64> {
 
 /// The poles of a polar parameter-space NURBS curve.
 // A source states raw values; a `PolarPcurveNurbs` holds the admitted poles.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -1746,7 +1753,7 @@ impl<'de> Deserialize<'de> for PolarPcurveNurbs {
 }
 
 /// Checked two-dimensional NURBS payload for pcurves and sketch curves.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PcurveNurbs {
     degree: u32,
@@ -2038,7 +2045,7 @@ fn nesting_depth_over(basis: &PcurveGeometry) -> Option<usize> {
 /// `try_new` is the only constructor and refuses a chain deeper than
 /// [`MAX_GEOMETRY_NESTING`], so no [`PcurveGeometry`] value nests past the
 /// bound however it was built or read.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "PlacedPcurveWire")]
 pub struct PlacedPcurve {
@@ -2297,7 +2304,7 @@ impl PcurveGeometry {
 /// A pcurve carrier: the 2D image of a coedge in its face's surface parameter
 /// space. Referenced by a coedge; the owning surface establishes whether a
 /// parameter dimension is a length (relevant to unit scaling, see [F3D spec §5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/asm.md#5-topology-records)).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Pcurve {
@@ -2344,7 +2351,14 @@ impl Pcurve {
 }
 
 /// Source-specific pcurve parameterization metadata.
-#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum PcurveMetadata {
@@ -2473,7 +2487,7 @@ fn admit_pcurve_fit_tolerance(value: f64) -> Result<FitTolerance, &'static str> 
 }
 
 /// The fields carried together by an ASM inline `exp_par_cur` record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[serde(try_from = "PcurveInlineFormWire")]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PcurveInlineForm {
@@ -2563,7 +2577,9 @@ impl PcurveInlineForm {
 }
 
 /// Pcurve metadata with no ASM inline-record contract.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Default, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd,
+)]
 #[serde(try_from = "PcurveGeneralFormWire")]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PcurveGeneralForm {
