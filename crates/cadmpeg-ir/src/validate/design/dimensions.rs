@@ -368,13 +368,23 @@ pub(super) fn value_type<T: Bound>() -> ValueType {
 
 /// Whether `T` admits `value`: whether `value` deserializes as a `T`.
 fn admits<T: Bound>(value: &ParameterValue) -> bool {
-    let wire = match value {
-        ParameterValue::Number(number) => Json::from(number.get()),
-        ParameterValue::Integer(integer) => Json::from(*integer),
-        ParameterValue::Boolean(boolean) => Json::Bool(*boolean),
-        ParameterValue::Text(text) => Json::String(text.clone()),
+    from_cache::<T>(value, false).is_some()
+}
+
+/// The value of a dimension of type `T` that binds a parameter whose cache is
+/// `value`, with the opposite sign or the complement where `negated` (§5.14).
+/// `None` where `T` does not admit it.
+pub(super) fn from_cache<T: Bound>(value: &ParameterValue, negated: bool) -> Option<T> {
+    let wire = match (value, negated) {
+        (ParameterValue::Number(number), false) => Json::from(number.get()),
+        (ParameterValue::Number(number), true) => Json::from(-number.get()),
+        (ParameterValue::Integer(integer), false) => Json::from(*integer),
+        (ParameterValue::Integer(integer), true) => Json::from(integer.checked_neg()?),
+        (ParameterValue::Boolean(boolean), negated) => Json::Bool(*boolean != negated),
+        (ParameterValue::Text(text), false) => Json::String(text.clone()),
+        (ParameterValue::Text(_), true) => return None,
     };
-    serde_json::from_value::<T>(wire).is_ok()
+    serde_json::from_value::<T>(wire).ok()
 }
 
 /// A bound dimension's parameter has the kind its value type takes, a cached

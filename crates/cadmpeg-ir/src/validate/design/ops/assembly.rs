@@ -7,7 +7,6 @@ use super::picks::{self, Class};
 use super::{body, boolean_field, error, BooleanField, Site};
 use crate::design::construction::FrameAxis;
 use crate::design::container::Container;
-use crate::design::dimension::Dimension;
 use crate::design::feature::{Driver, Feature, FeatureOperation, OperationFamily};
 use crate::design::ops::assembly::{
     AssemblyContext, ComponentPattern, ContextEffect, MirrorComponents, Place, PlaceSet,
@@ -29,6 +28,7 @@ use crate::ids::OccurrenceId;
 use crate::report::check::Finding;
 use crate::scalar::{Angle, Length};
 
+use super::super::dimensions::Bound;
 use super::super::records::{DesignRecords, MemberKey};
 
 /// The definition whose `occurrences` lists an occurrence (§8.1).
@@ -178,7 +178,7 @@ fn free_axes(motion: &JointMotion) -> Option<BTreeSet<(bool, FrameAxis)>> {
     Some(free)
 }
 
-fn check_bounds<Q: Copy>(
+fn check_bounds<Q: Bound + Clone>(
     site: Site<'_>,
     bounds: &Bounds<Q>,
     value: impl Fn(Q) -> f64,
@@ -187,16 +187,11 @@ fn check_bounds<Q: Copy>(
     if bounds.min.is_none() && bounds.max.is_none() {
         error(findings, site.entity, format_args!("Bounds holds no bound"));
     }
-    if let (Some(Dimension::Literal(min)), Some(Dimension::Literal(max))) =
-        (&bounds.min, &bounds.max)
-    {
-        if value(*min) > value(*max) {
-            error(
-                findings,
-                site.entity,
-                format_args!("Bounds has min above max"),
-            );
-        }
+    if let (Some(min), Some(max)) = (&bounds.min, &bounds.max) {
+        site.bound(findings, |values| {
+            (value(values.get(min)?) > value(values.get(max)?))
+                .then(|| "Bounds has min above max".to_owned())
+        });
     }
 }
 
