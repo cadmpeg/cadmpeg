@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_ir::{math::Point3, report::check::Check, CadIr};
+use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
+use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
+use cadmpeg_ir::topology::PcurveUse;
+use cadmpeg_ir::{
+    math::{Point2, Point3},
+    report::check::Check,
+    CadIr,
+};
 use cadmpeg_registry::{repro::Bundle, InputCatalog};
 use clap::Parser;
 
@@ -136,19 +143,35 @@ fn repro_bundle_holds_the_one_zero() {
     let report = directory.path().join("report.json");
     let output = directory.path().join("bundle.json");
     let mut document = cadmpeg_ir::examples::unit_cube().unwrap();
-    document.geometry.points[0].set_position(Point3::new(50.0, -0.0, -0.0).try_into().unwrap());
+    document.geometry.points[0].set_position(Point3::new(50.0, 0.0, 0.0).try_into().unwrap());
+    let validation = cadmpeg_ir::validate_neutral(&document, Vec::new()).unwrap();
+    let finding = validation
+        .findings
+        .into_iter()
+        .find(|finding| finding.check == Check::GeometricConsistency)
+        .unwrap();
+    let pcurve = cadmpeg_ir::ids::PcurveId::mint("synthetic:use:pcurve#1").unwrap();
+    document.geometry.pcurves.push(Pcurve {
+        id: pcurve.clone(),
+        geometry: PcurveGeometry::Line(
+            LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)).unwrap(),
+        ),
+        metadata: PcurveMetadata::default(),
+        native_ref: None,
+    });
+    for coedge in &mut document.geometry.coedges {
+        coedge.pcurves.push(PcurveUse {
+            pcurve: pcurve.clone(),
+            isoparametric: None,
+            parameter_range: Some(DirectedParameterRange::new([-0.0, 1.0]).unwrap()),
+        });
+    }
+    document.finalize();
     let input_bytes = serde_json::to_vec(&document).unwrap();
     assert!(holds_negative_zero(
         &serde_json::from_slice(&input_bytes).unwrap()
     ));
     std::fs::write(&input, input_bytes).unwrap();
-    let validation = cadmpeg_ir::validate_neutral(&document, Vec::new()).unwrap();
-    let mut finding = validation
-        .findings
-        .into_iter()
-        .find(|finding| finding.check == Check::GeometricConsistency)
-        .unwrap();
-    finding.message.push_str(" at offset -0.0");
     let payload = serde_json::json!({"input_path": input, "check_report": {"findings": [finding]}});
     std::fs::write(&report, serde_json::to_vec(&payload).unwrap()).unwrap();
     let cli = crate::Cli::try_parse_from([
@@ -169,10 +192,12 @@ fn repro_bundle_holds_the_one_zero() {
     let bytes = std::fs::read(&output).unwrap();
     let bundle: Bundle = serde_json::from_slice(&bytes).unwrap();
     assert!(bundle
-        .signature
-        .numbers
+        .document
+        .geometry
+        .coedges
         .iter()
-        .any(|band| band.value.get() == 0.0));
+        .flat_map(|coedge| &coedge.pcurves)
+        .any(|use_| use_.parameter_range.is_some()));
     assert!(!holds_negative_zero(
         &serde_json::from_slice(&bytes).unwrap()
     ));
