@@ -24,6 +24,7 @@ mod fit;
 pub(super) mod fixture;
 mod folds;
 mod index;
+mod joins;
 mod linkage;
 mod matching;
 mod materials;
@@ -129,7 +130,7 @@ pub(super) fn check_design(
     let records = &index.records;
     linkage::check_linkage(records, ids, findings);
     containers::check_containers(records, findings);
-    evaluations::check_evaluations(records, ctx.policy().limits.max_state_chain_depth, findings);
+    evaluations::check_evaluations(records, ctx.policy().limits.max_state_chain_depth, findings)?;
     evaluations::check_current_geometry(records, findings);
     resolved::check_resolved_states(ctx, records, ids, findings)?;
     configurations::check_configurations(records, findings);
@@ -147,6 +148,7 @@ pub(super) fn check_design(
     dimensions::check_bound_dimensions(&index.records, &held, findings);
     index.add_dependencies(&held);
     let states = states::States::new(ir);
+    joins::check(&index, &states, findings);
     let matchers = matching::Matchers::new(&states);
     names::check(ctx, &index, &states, &held, findings)?;
     selections::check(ctx, &index, &matchers, &held, ids.native_view(), findings)?;

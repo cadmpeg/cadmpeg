@@ -220,6 +220,25 @@ fn design_bindings<'a>(index: &DesignRecords<'a>) -> Vec<Binding<'a>> {
     found
 }
 
+/// The parameters the dimensions of planar and spatial sketch constraints
+/// bind.
+pub(super) fn sketch_constraint_bindings(index: &DesignRecords<'_>) -> BTreeSet<String> {
+    let design = &index.ir.design;
+    let mut scratch = Vec::new();
+    let mut found = BTreeSet::new();
+    for constraint in &design.sketch_constraints {
+        if let Some(wire) = wire_if_bound(&mut scratch, constraint) {
+            found.extend(bound_parameters(&wire));
+        }
+    }
+    for constraint in &design.spatial_sketch_constraints {
+        if let Some(wire) = wire_if_bound(&mut scratch, constraint) {
+            found.extend(bound_parameters(&wire));
+        }
+    }
+    found
+}
+
 /// The design parameters a PMI annotation or a process record binds, which
 /// count as dimensions that bind a driven parameter.
 fn other_bindings(index: &DesignRecords<'_>) -> Vec<String> {

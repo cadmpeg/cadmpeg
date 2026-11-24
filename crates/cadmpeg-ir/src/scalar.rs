@@ -201,7 +201,18 @@ impl From<UnitBinary32> for f32 {
 }
 
 /// A positive value in a native signed 64-bit integer lane.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "i64", into = "i64")]
 pub struct PositiveI64(i64);
@@ -239,7 +250,7 @@ impl From<PositiveI64> for i64 {
 macro_rules! checked_scalar {
     ($(#[$attribute:meta])* $name:ident, $value:ident, $condition:expr, $error:literal) => {
         $(#[$attribute])*
-        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize)]
+        #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, cadmpeg_derive::StructuralOrd)]
         #[cfg_attr(feature = "schema", derive(JsonSchema))]
         #[serde(transparent)]
         pub struct $name(#[serde(serialize_with = "crate::math::serialize_one_zero")] f64);

@@ -238,7 +238,12 @@ mod tests {
         assert_eq!(design_errors(&ir), Vec::<String>::new());
         assert!(crate::validate::assembly_scope_findings(&ir, &joints).is_empty());
         ir.design.scopes[0].unproduced.remove(&body("embedded"));
-        assert_eq!(design_errors(&ir), Vec::<String>::new());
+        let errors = design_errors(&ir);
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert!(
+            errors[0].contains("belongs to no current state or unproduced set of that scope"),
+            "{errors:?}"
+        );
         assert_eq!(
             crate::validate::assembly_scope_findings(&ir, &joints).len(),
             1

@@ -14,19 +14,6 @@ use crate::report::{
 pub(super) fn check_presentation(ids: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
     let ir: &CadIr = ids.ir();
     let all_ids: &dyn IdentitySet = ids;
-    if ir.model.presentation_documents.len() > 1 {
-        record_finding(
-            findings,
-            Check::ReferentialIntegrity,
-            Severity::Error,
-            None,
-            crate::rule!(
-                "presentation.multiple-document-presentation-records",
-                "{}",
-                "multiple document presentation records"
-            ),
-        );
-    }
     for document in &ir.model.presentation_documents {
         let native_valid = match &document.native_ref {
             Some(native) => all_ids.contains(native),
@@ -56,7 +43,6 @@ pub(super) fn check_presentation(ids: &ModelIndex<'_>, findings: &mut Vec<Findin
         }
     }
 
-    let mut orders = std::collections::BTreeSet::new();
     for view in &ir.model.view_presentations {
         let mut references_valid = match &view.object {
             Some(object) => all_ids.contains(object),
@@ -67,16 +53,16 @@ pub(super) fn check_presentation(ids: &ModelIndex<'_>, findings: &mut Vec<Findin
                 references_valid = all_ids.contains(native);
             }
         }
-        if !references_valid || !orders.insert(view.order) {
+        if !references_valid {
             record_finding(
                 findings,
                 Check::ReferentialIntegrity,
                 Severity::Error,
                 Some(view.id.as_str()),
                 crate::rule!(
-                    "presentation.invalid-view-presentation-reference-order-size",
+                    "presentation.invalid-view-presentation-reference",
                     "{}",
-                    "invalid view presentation reference, order, or size"
+                    "invalid view presentation reference"
                 ),
             );
         }

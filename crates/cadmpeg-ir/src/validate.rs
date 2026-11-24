@@ -65,6 +65,7 @@ use topology::graphs::{
     check_child_list_reciprocity, check_closed_edges, check_coedge_pairing, check_partial_topology,
     check_shell_connectivity, check_wire_topology,
 };
+use topology::procedural_owners::check_procedural_owners;
 use topology::{
     check_references, check_subdivision_schemes, check_tolerances, check_topology_tolerances,
 };
@@ -111,6 +112,26 @@ fn record_related_finding(
     findings.push(finding);
 }
 
+/// The refusal of a chain of state bases `depth` states long where it is
+/// past the caller's ceiling `limit`: a refusal of the session, and no
+/// finding on the document (§2.5).
+fn state_chain_refusal(limit: u64, depth: u64) -> Option<CodecError> {
+    let additional = depth
+        .checked_sub(limit)
+        .filter(|additional| *additional > 0)?;
+    Some(CodecError::ResourceLimit(
+        cadmpeg_core::decode::ResourceLimit {
+            scope: cadmpeg_core::decode::LimitScope::Session,
+            dimension: cadmpeg_core::decode::ResourceDimension::RecursionDepth,
+            reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
+            limit,
+            used: limit,
+            additional,
+            operation: "CADIR state base chain depth",
+        },
+    ))
+}
+
 /// Validate `ir` and copy `losses` into the returned report unchanged.
 fn validate_model(
     ctx: &DecodeContext<'_>,
@@ -136,6 +157,7 @@ fn validate_model_with_index<'ir>(
     check_identity_and_order(ids, &mut findings)?;
     check_tolerances(ir, &mut findings);
     check_references(ctx, ir, ids, &mut findings)?;
+    check_procedural_owners(ir, &mut findings);
     check_evaluation_cycles(ctx, ir, ids, &mut findings)?;
     check_pmi(ir, &mut findings);
     check_topology_rules(ctx, ids, ids.native_view(), true, &mut findings)?;

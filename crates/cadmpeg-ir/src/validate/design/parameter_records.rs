@@ -28,6 +28,7 @@ pub(super) fn check_parameter_records(index: &DesignRecords<'_>, findings: &mut 
         .map(|cell| cell.parameter.as_str())
         .collect();
     let mut names: BTreeMap<NameKey<'_>, usize> = BTreeMap::new();
+    let mut unnamed = Vec::new();
     for parameter in &design.parameters {
         let id = parameter.id.as_str();
         match &parameter.name {
@@ -40,14 +41,7 @@ pub(super) fn check_parameter_records(index: &DesignRecords<'_>, findings: &mut 
                     ))
                     .or_default() += 1;
             }
-            None if !cells.contains(id) => super::error(
-                findings,
-                id,
-                crate::rule!(
-                    "design.parameter-states-no-name-no-spreadsheet",
-                    "parameter states no name but is no spreadsheet cell's parameter"
-                ),
-            ),
+            None if !cells.contains(id) => unnamed.push(id),
             None => {}
         }
         check_owner(index, parameter, findings);
@@ -61,6 +55,20 @@ pub(super) fn check_parameter_records(index: &DesignRecords<'_>, findings: &mut 
                     "an `Unset` parameter states a `value`; it has none"
                 ),
             );
+        }
+    }
+    if !unnamed.is_empty() {
+        let sketch_bound = super::dimensions::sketch_constraint_bindings(index);
+        for id in unnamed {
+            if !sketch_bound.contains(id) {
+                super::error(
+                    findings,
+                    id,
+                    crate::rule!("design.parameter-states-no-name-no-spreadsheet-cell", 
+                        "parameter states no name but is no spreadsheet cell's parameter and no sketch constraint's dimension binds it"
+                    ),
+                );
+            }
         }
     }
     for ((scope, owner, name), count) in names {

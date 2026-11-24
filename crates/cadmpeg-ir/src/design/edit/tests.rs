@@ -723,6 +723,10 @@ fn an_edit_clears_the_resolved_transformation_its_parameter_binds() {
     };
     document.design.features[2] = operation(3, moved(1));
     document
+        .design
+        .evaluations
+        .retain(|evaluation| evaluation.of != Evaluated::Tool(feature(3)));
+    document
         .edit()
         .unwrap()
         .set_dimension(
