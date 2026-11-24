@@ -146,8 +146,10 @@ fn tessellation_body_faces_and_deflection_each_have_export_loss() {
         Vec::new(),
     )
     .unwrap();
-    mesh.body = Some(ir.geometry.bodies[0].id.clone());
-    mesh.faces = vec![ir.geometry.faces[0].id.clone()];
+    mesh.of = cadmpeg_ir::tessellation::Meshed::Body {
+        body: ir.geometry.bodies[0].id.clone(),
+        faces: vec![ir.geometry.faces[0].id.clone()],
+    };
     mesh.set_chordal_deflection(Some(0.001)).unwrap();
     ir.model.tessellations.push(mesh);
     let plan = crate::test_support::plan_fixture_with_native_envelope(

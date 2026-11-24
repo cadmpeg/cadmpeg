@@ -210,6 +210,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         if let Some(current) = &current {
             root.bodies.retain(|body| current.contains(body));
         }
+        let root = root.id.clone();
+        decoded.ir.display_unresolved_meshes(&root);
     }
     stamp_local_digests(ctx, &mut decoded.ir)?;
     crate::codec_digests::move_to_sidecar(&mut decoded)?;
@@ -368,7 +370,7 @@ fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeBody) {
         .model
         .tessellations
         .iter()
-        .filter(|mesh| mesh.body.is_none() || mesh.faces.is_empty())
+        .filter(|mesh| mesh.of.faces().is_empty())
         .count();
     if unresolved > 0 {
         report.losses.push(

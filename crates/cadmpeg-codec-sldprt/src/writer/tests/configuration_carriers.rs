@@ -479,7 +479,10 @@ fn encoder_partitions_authored_with_retained_native_envelope_bodies_by_configura
                 Vec::new(),
             )
             .expect("valid tessellation")
-            .with_body(Some(body.clone()))
+            .with_of(cadmpeg_ir::tessellation::Meshed::Body {
+                body: body.clone(),
+                faces: Vec::new(),
+            })
         })
         .collect();
     ir.model.configurations = body_ids

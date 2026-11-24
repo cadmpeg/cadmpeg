@@ -1312,11 +1312,11 @@ pub(crate) fn transfers_binary_exact_curve_and_surface_carriers() {
     assert_eq!(result.ir().geometry.bodies.len(), 1);
     assert_eq!(result.ir().geometry.faces.len(), 1);
     assert_eq!(
-        result.ir().model.tessellations[0].body.as_ref(),
+        result.ir().model.tessellations[0].of.body(),
         Some(&result.ir().geometry.bodies[0].id)
     );
     assert_eq!(
-        result.ir().model.tessellations[0].faces,
+        result.ir().model.tessellations[0].of.faces(),
         [result.ir().geometry.faces[0].id.clone()]
     );
     assert_eq!(result.ir().geometry.coedges.len(), 1);

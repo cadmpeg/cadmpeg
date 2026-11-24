@@ -875,7 +875,10 @@ pub(crate) fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link(
             Vec::new(),
         )
         .expect("valid tessellation")
-        .with_body(Some(ir.geometry.bodies[0].id.clone())),
+        .with_of(cadmpeg_ir::tessellation::Meshed::Body {
+            body: ir.geometry.bodies[0].id.clone(),
+            faces: Vec::new(),
+        }),
     );
     let mut bytes = Vec::new();
     let report = write_step(
@@ -900,7 +903,7 @@ pub(crate) fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link(
     assert_eq!(mesh.vertices().len(), 3);
     assert_eq!(mesh.triangles(), [[0, 1, 2], [2, 1, 0]]);
     assert_eq!(mesh.vertex_normals().len(), 3);
-    assert!(mesh.body.is_some());
+    assert!(mesh.of.body().is_some());
 }
 
 #[test]

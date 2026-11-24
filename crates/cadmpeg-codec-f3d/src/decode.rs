@@ -3934,20 +3934,6 @@ impl<'a> F3dDecodeSession<'a> {
             prereqs.xref_table(),
             self.scan.manifest_lineage_urn.as_deref(),
         );
-        let mesh_projection = match &finalize_path {
-            FinalizePath::Geometry(index) => &index.mesh_projection,
-            FinalizePath::Bodyless(inputs) => &inputs.mesh_projection,
-        };
-        if matches!(
-            self.report_scope,
-            crate::report::ReportScope::ArchiveMember(_)
-        ) {
-            list_member_scopeless_tessellations(
-                self.ctx,
-                &mut self.ir.model,
-                &mesh_projection.scopeless_tessellations,
-            )?;
-        }
         let parents = crate::tree::parent_ids(
             &self.ir.model.product_definitions,
             &self.ir.model.occurrences,
@@ -4614,8 +4600,6 @@ struct MeshProjection {
     unjoined: usize,
     /// Tessellation identities grouped by their Design stream and feature scope record.
     tessellations_by_scope: std::collections::HashMap<(String, u32), Vec<String>>,
-    /// Tessellation identities of mesh bodies that name no feature scope.
-    scopeless_tessellations: Vec<String>,
 }
 
 fn extend_unique_assets(
@@ -4782,7 +4766,6 @@ fn project_mesh_bodies(
                 count: 0,
                 unjoined: 0,
                 tessellations_by_scope: std::collections::HashMap::new(),
-                scopeless_tessellations: Vec::new(),
             });
         }
     };
@@ -4893,7 +4876,6 @@ fn project_mesh_bodies(
         count: bodies.len(),
         unjoined,
         tessellations_by_scope: std::collections::HashMap::new(),
-        scopeless_tessellations: Vec::new(),
     };
     for mut body in bodies {
         let texture_table = texture_tables.remove(&body.id).ok_or_else(|| {
@@ -4948,7 +4930,10 @@ fn project_mesh_bodies(
         .with_feature_edges(body.feature_edges)
         .and_then(|mesh| mesh.with_triangle_groups(triangle_groups))
         .and_then(|mesh| mesh.with_texture_assignments(texture_assignments))
-        .map_err(|err| CodecError::Malformed(err.to_string()))?;
+        .map_err(|err| CodecError::Malformed(err.to_string()))?
+        .with_of(cadmpeg_ir::tessellation::Meshed::definition(
+            crate::tree::file_root_id(),
+        ));
         ir.model.tessellations.push(tessellation);
     }
     if !texture_tables.is_empty() {
@@ -4974,45 +4959,9 @@ fn project_mesh_bodies(
                     .filter_map(|body| body.tessellation_id.as_deref()),
             )?;
         }
-        projection.scopeless_tessellations.extend(
-            feature
-                .bodies()
-                .iter()
-                .filter(|body| body.scope_record_index.is_none())
-                .filter_map(|body| body.tessellation_id.clone()),
-        );
     }
     report_unresolved_mesh_attributes(report, &unresolved);
     Ok(projection)
-}
-
-/// List the meshes of scope-less mesh bodies among the tessellations of an
-/// F3Z member's file root, which `define_member` makes the member definition.
-/// They represent no body and no mesh feature.
-fn list_member_scopeless_tessellations(
-    ctx: &DecodeContext<'_>,
-    model: &mut cadmpeg_ir::document::Model,
-    tessellations: &[String],
-) -> Result<(), CodecError> {
-    if tessellations.is_empty() {
-        return Ok(());
-    }
-    let root_id = crate::tree::file_root_id();
-    if model
-        .product_definitions
-        .iter()
-        .all(|definition| definition.id != root_id)
-    {
-        ctx.charge_entities(1, "F3D member file root")?;
-    }
-    let root = crate::tree::file_root(model);
-    for tessellation in tessellations {
-        root.tessellations.push(
-            cadmpeg_ir::tessellation::TessellationId::mint(tessellation.clone())
-                .map_err(CodecError::malformed)?,
-        );
-    }
-    Ok(())
 }
 
 /// Resolve one-based `tid` values through a Design texture table. Zero leaves

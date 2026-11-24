@@ -188,7 +188,6 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
         .push(cadmpeg_ir::products::ProductDefinition {
             sketches: Vec::default(),
 
-            tessellations: Vec::new(),
             id: "test:model:product#group"
                 .try_into()
                 .expect("valid identity"),
@@ -868,11 +867,11 @@ fn writer_reports_reduced_tessellation_metadata_and_body_links() {
             .expect("valid channel")],
         )
         .expect("valid tessellation")
-        .with_body(Some(
-            cadmpeg_ir::ids::BodyId::mint("test:model:body#test:missing-body")
+        .with_of(cadmpeg_ir::tessellation::Meshed::Body {
+            body: cadmpeg_ir::ids::BodyId::mint("test:model:body#test:missing-body")
                 .expect("identity grammar"),
-        ))
-        .with_faces(vec![ir.geometry.faces[0].id.clone()])
+            faces: vec![ir.geometry.faces[0].id.clone()],
+        })
         .with_chordal_deflection(Some(0.01))
         .unwrap(),
     );
