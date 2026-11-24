@@ -57,32 +57,32 @@ pub(super) fn check_semantic_annotations(
     }
 }
 
-/// The count of an annotation's page-space reference anchors, "none or one
-/// pair" (§8): more than two is an Error; one, or two outside a dimension of
-/// a stated kind, is a Warning.
+/// The count of an annotation's page-space reference anchors (§8): at most
+/// one, or two on a dimension of a stated kind, its two end anchors.
 fn check_reference_anchors(
     annotation: &crate::semantic_annotations::SemanticAnnotation,
     findings: &mut Vec<Finding>,
 ) {
     let count = annotation.reference_anchors.len();
-    let severity = match count {
-        0 => return,
-        1 => Severity::Warning,
-        2 if annotation.kind == crate::semantic_annotations::SemanticAnnotationKind::Dimension
-            && annotation.dimension_kind.is_some() =>
-        {
-            return
-        }
-        2 => Severity::Warning,
-        _ => Severity::Error,
+    let admitted = if annotation.kind
+        == crate::semantic_annotations::SemanticAnnotationKind::Dimension
+        && annotation.dimension_kind.is_some()
+    {
+        2
+    } else {
+        1
     };
-    record_finding(
-        findings,
-        Check::ReferentialIntegrity,
-        severity,
-        Some(annotation.id.as_str()),
-        format_args!("semantic annotation states {count} reference anchors"),
-    );
+    if count > admitted {
+        record_finding(
+            findings,
+            Check::ReferentialIntegrity,
+            Severity::Error,
+            Some(annotation.id.as_str()),
+            format_args!(
+                "semantic annotation states {count} reference anchors, {admitted} at most"
+            ),
+        );
+    }
 }
 
 #[cfg(test)]
@@ -141,7 +141,7 @@ mod tests {
     }
 
     #[test]
-    fn reference_anchors_are_none_or_one_pair() {
+    fn reference_anchors_are_at_most_one_or_a_dimensions_two_ends() {
         use crate::report::Severity;
         use crate::semantic_annotations::{AnnotationDimensionKind, SemanticAnnotationKind};
         let mut ir = fixture();
@@ -158,20 +158,19 @@ mod tests {
                 .map(|finding| finding.severity)
                 .collect::<Vec<_>>()
         };
-        for (count, expected) in [
-            (0, Vec::new()),
-            (1, vec![Severity::Warning]),
-            (2, vec![Severity::Warning]),
-            (3, vec![Severity::Error]),
-        ] {
-            ir.model.semantic_annotations[0].reference_anchors = vec![anchor; count];
-            assert_eq!(severities(&ir), expected, "{count} anchors");
-        }
-        ir.model.semantic_annotations[0].reference_anchors = vec![anchor; 2];
+        let counts = |ir: &mut CadIr, expected: [Vec<Severity>; 4]| {
+            for (count, expected) in expected.into_iter().enumerate() {
+                ir.model.semantic_annotations[0].reference_anchors = vec![anchor; count];
+                assert_eq!(severities(ir), expected, "{count} anchors");
+            }
+        };
+        let error = || vec![Severity::Error];
+        counts(&mut ir, [Vec::new(), Vec::new(), error(), error()]);
         ir.model.semantic_annotations[0].kind = SemanticAnnotationKind::Dimension;
+        counts(&mut ir, [Vec::new(), Vec::new(), error(), error()]);
         ir.model.semantic_annotations[0].dimension_kind =
             Some(AnnotationDimensionKind::HorizontalDistance);
-        assert_eq!(severities(&ir), Vec::new());
+        counts(&mut ir, [Vec::new(), Vec::new(), Vec::new(), error()]);
     }
 
     #[test]
