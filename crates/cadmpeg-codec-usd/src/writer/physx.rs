@@ -8,7 +8,6 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::physics::solver::{SolverSettings, SolverTarget, SolverValue};
-use cadmpeg_ir::products::JointId;
 
 use super::text::{quoted, real, real32};
 use crate::schema::physx::{find, holder, split, Attribute, Holder, Value};
@@ -24,12 +23,14 @@ pub(super) fn placeholder(target: &SolverTarget) -> Option<String> {
         SolverTarget::Occurrence { occurrence } => {
             Some(format!("{MARK}occurrence:{occurrence}{MARK}"))
         }
+        SolverTarget::Joint { joint } => Some(joint_placeholder(joint.as_str())),
         _ => None,
     }
 }
 
-/// The placeholder of the prim of an assembly joint.
-pub(super) fn joint_placeholder(joint: &JointId) -> String {
+/// The placeholder of the prim of a joint: an assembly joint, or the design
+/// joint feature that shares its id.
+pub(super) fn joint_placeholder(joint: &str) -> String {
     format!("{MARK}joint:{joint}{MARK}")
 }
 

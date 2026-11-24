@@ -83,14 +83,29 @@ fn placeholders_resolve_to_paths_and_unresolved_lines_are_dropped() {
     let occurrence = SolverTarget::Occurrence {
         occurrence: OccurrenceId::mint("test:model:occurrence#0").unwrap(),
     };
-    let joint = JointId::mint("test:model:joint#0").unwrap();
+    let joint = SolverTarget::Joint {
+        joint: FeatureId::mint("test:model:joint#0").unwrap(),
+    };
     let text = format!(
         "rel a = [<{}>]\nrel b = [<{}>]\n",
         placeholder(&occurrence).unwrap(),
-        joint_placeholder(&joint)
+        placeholder(&joint).unwrap()
     );
     let paths = BTreeMap::from([(placeholder(&occurrence).unwrap(), "/World/Arm".to_owned())]);
     let (resolved, unresolved) = resolve(&text, &paths);
     assert_eq!(resolved, "rel a = [</World/Arm>]\n");
     assert_eq!(unresolved, 1);
+}
+
+#[test]
+fn a_joint_feature_target_is_the_prim_of_the_joint_that_shares_its_id() {
+    let id = "test:model:joint#0";
+    let feature = SolverTarget::Joint {
+        joint: FeatureId::mint(id).unwrap(),
+    };
+    let joint = JointId::mint(id).unwrap();
+    assert_eq!(
+        placeholder(&feature),
+        Some(joint_placeholder(joint.as_str()))
+    );
 }
