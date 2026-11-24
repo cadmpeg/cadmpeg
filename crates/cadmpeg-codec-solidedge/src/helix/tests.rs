@@ -5,7 +5,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::design::dimension::Dimension;
-use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
+use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::swept::{HelicalSection, HelicalSweep, HelixLaw, HelixShape};
 use cadmpeg_ir::design::options::{Boolean, BooleanOp, Hand, NativeOption};
 use cadmpeg_ir::design::selection::{PickTarget, Picks};
@@ -177,10 +177,9 @@ fn an_oblique_axis_gives_the_radial_direction_from_the_axis() {
 
 fn unread(result: &DecodeResult) {
     assert!(matches!(
-        result.ir().design.features[0].definition.operation,
-        FeatureOperation::Unresolved {
-            family: OperationFamily::HelicalSweep
-        }
+        &result.ir().design.features[0].definition.operation,
+        FeatureOperation::Native { native_options, .. }
+            if native_options.keys().any(|key| key.as_str() == "solidedge:profile")
     ));
     assert!(codes(result).contains(&"feature.extent-unread".to_owned()));
 }
