@@ -13,6 +13,7 @@
 
 mod assembly;
 mod body;
+mod bounds;
 mod dressup;
 mod options;
 mod picks;
@@ -46,6 +47,10 @@ pub(super) struct Site<'a> {
     scope: Option<&'a str>,
     /// Whether the definition that holds the operation states `assembly`.
     assembly: bool,
+    /// The design records, which give a bound dimension its cached values.
+    index: Option<&'a DesignRecords<'a>>,
+    /// The definition that holds the operation.
+    definition: Option<&'a FeatureDefinition>,
 }
 
 /// Check the sketches and every stated operation of `index` against the
@@ -136,13 +141,15 @@ pub(super) fn builds_tool_body(operation: &FeatureOperation) -> Option<bool> {
 /// Every feature definition the design states, with where it is stated:
 /// each feature's own, and each definition override of a configuration or
 /// an arrangement.
-fn definitions<'a>(index: &DesignRecords<'a>) -> Vec<(Site<'a>, &'a FeatureDefinition)> {
+fn definitions<'a>(index: &'a DesignRecords<'a>) -> Vec<(Site<'a>, &'a FeatureDefinition)> {
     let design = &index.ir.design;
-    let site = |entity: &'a str, feature: &'a str, definition: &FeatureDefinition| Site {
+    let site = |entity: &'a str, feature: &'a str, definition: &'a FeatureDefinition| Site {
         entity,
         feature,
         scope: index.scope_of(MemberKey::Feature(feature)),
         assembly: definition.assembly.is_some(),
+        index: Some(index),
+        definition: Some(definition),
     };
     let mut out: Vec<(Site<'a>, &'a FeatureDefinition)> = design
         .features
