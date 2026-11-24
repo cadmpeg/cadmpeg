@@ -1387,7 +1387,12 @@ fn semantic_writer_preserves_multiple_body_ownership() {
         .geometry
         .shells
         .iter()
-        .all(|shell| regenerated.ir().geometry.shell_faces(&shell.id).count() == 1));
+        .all(|shell| regenerated
+            .ir()
+            .geometry
+            .stated_shell_faces(&shell.id)
+            .count()
+            == 1));
     assert!(regenerated.ir().geometry.regions.iter().all(|region| {
         regenerated.source_fidelity().annotations.provenance[region.id.as_str()]
             .tag

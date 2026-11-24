@@ -4390,6 +4390,17 @@
           "description": "Optional world placement of the body's geometry.",
           "$ref": "#/$defs/Transform"
         },
+        "unstated": {
+          "description": "Marks a body a region of which the document does not state (§5.6,\nUnstated children).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Unstated"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "visible": {
           "description": "Whether the source document displays the body. `None` when the source\nformat does not record body visibility.",
           "type": "boolean"
@@ -6809,6 +6820,11 @@
           "description": "A face-bearing shell is disconnected through shared edges or vertices.",
           "type": "string",
           "const": "shell_topology"
+        },
+        {
+          "description": "A face does not state every loop, or a region, shell, or body does\nnot state every child (§5.6, Unstated children).",
+          "type": "string",
+          "const": "topology_partial"
         },
         {
           "description": "A surface, curve, pcurve, or point carrier is orphan: no topology or\nretained construction data reaches it.",
@@ -21277,7 +21293,7 @@
       "$ref": "#/$defs/Identity"
     },
     "FaceLoops": {
-      "description": "Face loop ids in one of the two states a source can state.\n\nThe wire is one tagged object, so a loop has no role of its own to disagree\nwith the face's classification and the round trip is stable by\nconstruction. `Unspecified` keeps source order when the source did not\nclassify outer versus inner; `Classified` names the outer loop once and\nrequires it, so a classification that states no outer boundary is not a\nstate.\n\n`loops` on `Unspecified` is a `Vec`, not a non-empty list: a closed surface\nwith no boundary is a face with no loop, and nx, sat, step and freecad all\nproduce one.",
+      "description": "Face loop ids in one of the states a source can state.\n\nThe wire is one tagged object, so a loop has no role of its own to disagree\nwith the face's classification and the round trip is stable by\nconstruction. `Unspecified` keeps source order when the source did not\nclassify outer versus inner; `Classified` names the outer loop once and\nrequires it, so a classification that states no outer boundary is not a\nstate. The two partial arms state a face at least one loop of which the\ndocument does not state (§5.6, Unstated children).\n\n`loops` on `Unspecified` is a `Vec`, not a non-empty list: a closed surface\nwith no boundary is a face with no loop, and nx, sat, step and freecad all\nproduce one.\n\nA reader takes the loops through [`Self::stated`], for a reference walk, or\nthrough [`Self::boundary`], which answers only for a complete face.",
       "oneOf": [
         {
           "description": "The source did not classify outer versus inner; loops keep source order.",
@@ -21325,6 +21341,61 @@
           "required": [
             "kind",
             "outer",
+            "inner"
+          ]
+        },
+        {
+          "description": "A loop is not stated, and the source does not classify the loops.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "partial_unspecified"
+            },
+            "loops": {
+              "description": "The loops stated, in source order.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/LoopId"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "loops"
+          ]
+        },
+        {
+          "description": "A loop is not stated, and the source classifies the loops.",
+          "type": "object",
+          "properties": {
+            "inner": {
+              "description": "The inner loops stated, in source order.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/LoopId"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "partial_classified"
+            },
+            "outer": {
+              "description": "The outer loop, where it is stated.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/LoopId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
             "inner"
           ]
         }
@@ -61218,7 +61289,7 @@
       ]
     },
     "Region": {
-      "description": "A connected region of a body.",
+      "description": "A connected region of a body.\n\nIts shell list is read through [`Region::stated_shells`] or\n[`crate::document::Topology::complete_shells`], so every reader states\nwhether it accepts a region whose shells are not all stated.",
       "type": "object",
       "properties": {
         "body": {
@@ -61239,6 +61310,17 @@
           "items": {
             "$ref": "#/$defs/ShellId"
           }
+        },
+        "unstated": {
+          "description": "Marks a region a shell of which the document does not state (§5.6,\nUnstated children).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RegionUnstated"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
@@ -61269,6 +61351,69 @@
           "description": "Both.",
           "type": "string",
           "const": "both"
+        }
+      ]
+    },
+    "RegionUnstated": {
+      "description": "Which shells of a region the document does not state (§5.6, Unstated\nchildren).",
+      "oneOf": [
+        {
+          "description": "`shells` holds the exterior first; a void is not stated.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "voids"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "The exterior is not stated; `shells` is empty.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "exterior"
+            },
+            "voids": {
+              "description": "The voids stated, in source order.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ShellId"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "voids"
+          ]
+        },
+        {
+          "description": "Which shell is the exterior is not stated; `shells` is empty.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "unclassified"
+            },
+            "shells": {
+              "description": "The shells stated, in source order.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ShellId"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "shells"
+          ]
         }
       ]
     },
@@ -68087,6 +68232,17 @@
         "region": {
           "description": "Owning region.",
           "$ref": "#/$defs/RegionId"
+        },
+        "unstated": {
+          "description": "Marks a shell a face, wire edge, free vertex, or cage of which the\ndocument does not state (§5.6, Unstated children).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Unstated"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
@@ -87791,6 +87947,16 @@
         "faces",
         "native_options",
         "source_settings"
+      ]
+    },
+    "Unstated": {
+      "description": "The child kind a record does not state in full (§5.6, Unstated children).",
+      "oneOf": [
+        {
+          "description": "A shell's face, wire edge, free vertex, or cage, or a body's region.",
+          "type": "string",
+          "const": "members"
+        }
       ]
     },
     "UntrimLoops": {

@@ -186,12 +186,9 @@ fn inactive_body_pruning_keeps_the_vertex_of_a_kept_vertex_loop() {
         region.clone(),
         other_vertex,
     ));
-    ir.geometry.regions.push(Region {
-        id: region,
-        body: body.clone(),
-        shells: vec![shell],
-        native_ref: None,
-    });
+    ir.geometry
+        .regions
+        .push(Region::new(region, body.clone(), vec![shell]));
     ir.geometry.bodies.push(Body {
         id: body,
         kind: BodyKind::General,
@@ -200,6 +197,7 @@ fn inactive_body_pruning_keeps_the_vertex_of_a_kept_vertex_loop() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
 
     super::prune_inactive_topology(&mut ir, &std::collections::BTreeSet::from([kept]));

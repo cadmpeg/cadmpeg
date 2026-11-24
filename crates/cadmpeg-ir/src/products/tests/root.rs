@@ -9,6 +9,7 @@ use crate::topology::{Body, BodyKind};
 
 fn body(id: &str) -> Body {
     Body {
+        unstated: None,
         id: id.try_into().unwrap(),
         kind: BodyKind::Solid,
         transform: None,
