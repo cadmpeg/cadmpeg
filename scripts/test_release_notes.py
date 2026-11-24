@@ -5,7 +5,10 @@
 from __future__ import annotations
 
 import importlib.util
+import os
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -84,6 +87,114 @@ class ApplyGithub(unittest.TestCase):
         notes.apply_github(change, None)
         self.assertEqual((change.number, change.login), (5, None))
 
+    def test_a_rewritten_commit_takes_the_merged_pull_request_its_subject_names(self) -> None:
+        change = notes.Change(SHA, "f3d: x (#9)", number=9)
+        commit = {
+            "author": {"user": {"__typename": "User", "login": "committer"}},
+            "associatedPullRequests": {"nodes": [pull(9, "b" * 40, "other", "other")]},
+        }
+        numbered = {
+            "__typename": "PullRequest",
+            "number": 9,
+            "body": "## Breaking change\n- Drop `--x`.\n",
+            "mergedAt": "2026-01-01T00:00:00Z",
+            "author": {"__typename": "User", "login": "author"},
+        }
+        notes.apply_github(change, commit, numbered)
+        self.assertEqual((change.number, change.login), (9, "author"))
+        self.assertEqual(notes.breaking_notes(change.body), ["Drop `--x`."])
+
+    def test_the_associated_pull_request_wins_over_the_subject_number(self) -> None:
+        change = notes.Change(SHA, "f3d: x (#9)", number=9)
+        commit = {"author": None, "associatedPullRequests": {"nodes": [pull(8, SHA, "body", "a")]}}
+        numbered = {"__typename": "PullRequest", "number": 9, "body": "other", "mergedAt": "t"}
+        notes.apply_github(change, commit, numbered)
+        self.assertEqual((change.number, change.body), (8, "body"))
+
+    def test_an_issue_or_open_pull_request_the_subject_names_is_not_taken(self) -> None:
+        commit = {
+            "author": {"user": {"__typename": "User", "login": "committer"}},
+            "associatedPullRequests": {"nodes": []},
+        }
+        for numbered in (
+            {"__typename": "Issue"},
+            {"__typename": "PullRequest", "number": 9, "body": "b", "mergedAt": None},
+            None,
+        ):
+            change = notes.Change(SHA, "f3d: x (#9)", number=9)
+            notes.apply_github(change, commit, numbered)
+            self.assertEqual((change.body, change.login), ("", "committer"))
+
+
+class GraphqlData(unittest.TestCase):
+    def test_a_subject_number_that_names_nothing_is_no_error(self) -> None:
+        output = (
+            '{"data": {"repository": {"c0": null, "p0": null}}, "errors": '
+            '[{"type": "NOT_FOUND", "path": ["repository", "p0"], "message": "m"}]}'
+        )
+        self.assertIsNone(notes.graphql_data(output, "", "p")["repository"]["p0"])
+
+    def test_every_other_error_refuses(self) -> None:
+        for output in (
+            '{"data": {"repository": {"c0": null}}, "errors": '
+            '[{"type": "NOT_FOUND", "path": ["repository", "c0"], "message": "m"}]}',
+            '{"data": null, "errors": [{"type": "RATE_LIMITED", "message": "m"}]}',
+            "",
+        ):
+            with self.assertRaises(RuntimeError):
+                notes.graphql_data(output, "HTTP 502", "p")
+
+
+class Fragments(unittest.TestCase):
+    def test_sections_by_heading_with_continuations_and_without_comments(self) -> None:
+        texts = [
+            "### Fixed\n\n- Keep a.\n  Continued.\n<!-- - hidden -->\n### Breaking\n\n- Drop `--x`.\n",
+            "- Unheaded.\n\nProse is no note.\n### Fixed\n* Keep b.\n",
+        ]
+        self.assertEqual(
+            notes.fragment_sections(texts),
+            {
+                "Fixed": ["Keep a. Continued.", "Keep b."],
+                "Breaking": ["Drop `--x`."],
+                "Changed": ["Unheaded."],
+            },
+        )
+
+    def test_a_fragment_without_bullets_gives_no_section(self) -> None:
+        self.assertEqual(notes.fragment_sections(["### Fixed\n\nProse only.\n"]), {})
+
+    def test_the_release_takes_only_the_fragments_it_adds(self) -> None:
+        cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as directory:
+            os.chdir(directory)
+            try:
+
+                isolated = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+
+                def git(*args: str) -> None:
+                    subprocess.run(
+                        ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid", *args],
+                        check=True,
+                        stdout=subprocess.DEVNULL,
+                        env=isolated,
+                    )
+
+                git("init", "-q")
+                os.mkdir("changelog.d")
+                Path("changelog.d/old.md").write_text("### Fixed\n- Old.\n")
+                git("add", ".")
+                git("commit", "-q", "-m", "one")
+                git("tag", "v1.0.0")
+                Path("changelog.d/new.md").write_text("### Fixed\n- New.\n")
+                Path("changelog.d/README.md").write_text("- Form.\n")
+                Path("changelog.d/old.md").write_text("### Fixed\n- Old, edited.\n")
+                git("add", ".")
+                git("commit", "-q", "-m", "two")
+                git("tag", "v1.1.0")
+                self.assertEqual(notes.added_fragments("v1.0.0", "v1.1.0"), ["### Fixed\n- New.\n"])
+            finally:
+                os.chdir(cwd)
+
     def test_bot_suffixed_login_is_not_a_contributor(self) -> None:
         self.assertIsNone(notes.login_of({"__typename": "User", "login": "helper[bot]"}))
 
@@ -104,6 +215,16 @@ class BreakingNotes(unittest.TestCase):
         self.assertEqual(notes.breaking_notes("## Breaking change\n\nNone.\n- n/a\n-\n"), [])
         self.assertEqual(
             notes.breaking_notes("## Breaking change\n<!--\n## Breaking change\nx\n-->\n"), []
+        )
+
+    def test_a_line_that_opens_with_a_placeholder_sentence_gives_no_note(self) -> None:
+        body = (
+            "## Breaking change\n\nNone. Faces now report area.\n- N/A. Nothing.\n"
+            "- No change under default flags: `A::b` is removed.\n- Library: `C` is renamed.\n"
+        )
+        self.assertEqual(
+            notes.breaking_notes(body),
+            ["No change under default flags: `A::b` is removed.", "Library: `C` is renamed."],
         )
 
     def test_body_without_the_section_gives_no_notes(self) -> None:
@@ -144,7 +265,7 @@ class Compatibility(unittest.TestCase):
             'pub const IR_VERSION: &str = "8";', 'pub const IR_VERSION: &str = "9";'
         )
         self.assertIn("use IR 9", line)
-        self.assertIn("does not read IR 8", line)
+        self.assertIn("does not read IR 8 files: decode the source files again", line)
 
     def test_unchanged_or_unknown_ir_gives_no_line(self) -> None:
         same = 'pub const IR_VERSION: &str = "9";'
@@ -199,6 +320,30 @@ class Render(unittest.TestCase):
         positions = [text.index(part) for part in order]
         self.assertEqual(positions, sorted(positions))
         self.assertNotIn("Highlights", text)
+
+    def test_fragments_follow_the_ir_line_and_precede_support_levels(self) -> None:
+        text = notes.render(
+            "v1.1.0",
+            "v1.0.0",
+            "o/r",
+            [notes.Change("1" * 40, "f3d: a", number=1, body="## Breaking change\n- PR note.\n")],
+            0,
+            "IR line.",
+            ["`step`: L7 → L8"],
+            {"Fixed": ["Fix."], "Notes": ["Note."], "Breaking": ["Fragment note."], "Added": ["Add."]},
+        )
+        order = [
+            "## Compatibility\n\n- IR line.\n- Fragment note.\n\n<details>",
+            "<b>Breaking changes by pull request</b> (1)</summary>\n\n- PR note. (#1)\n\n</details>",
+            "## Added\n\n- Add.",
+            "## Fixed\n\n- Fix.",
+            "## Notes\n\n- Note.",
+            "## Support levels",
+            "## Changes",
+        ]
+        positions = [text.index(part) for part in order]
+        self.assertEqual(positions, sorted(positions))
+        self.assertNotIn("## Breaking", text)
 
     def test_empty_release_has_only_the_footer(self) -> None:
         text = self.render([])
