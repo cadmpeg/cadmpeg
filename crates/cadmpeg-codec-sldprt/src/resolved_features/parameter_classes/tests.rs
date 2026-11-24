@@ -3,7 +3,7 @@
 use super::super::names::{class_declarations, object_names};
 use super::super::scalars::named_scalars;
 use super::super::{COMPACT_SCALAR_HEADER, SCALAR_HEADER, VALUE_ONLY_SCALAR_HEADER};
-use super::{stated_parameters, ConfigurationMap, StatedParameter, Statement};
+use super::{only_assignments, stated_parameters, ConfigurationMap, StatedParameter, Statement};
 use crate::records::FeatureInputLane;
 use crate::test_support::carchive::{config_object_stream, config_object_stream_declaring};
 use crate::test_support::container::{make_block, outer_header, scan};
@@ -830,5 +830,22 @@ fn a_compound_lane_token_only_its_declarations_name_is_assumed() {
             .all(|(_, statement)| matches!(statement, Some(Statement::Parameter(_)))),
         "{:?}",
         statements_in(&own.lane(), None)
+    );
+}
+
+#[test]
+fn a_token_takes_the_one_declaration_every_ordered_assignment_gives_it() {
+    // Token 10, first used at 100, can take only the declaration at 50;
+    // token 12, used at 200, then takes the declaration at 150.
+    assert_eq!(
+        only_assignments(&[(10, 100), (12, 200)], &[50, 150, 250]),
+        vec![Some(0), Some(1)]
+    );
+    // Two declarations precede the one token's first use.
+    assert_eq!(only_assignments(&[(10, 300)], &[50, 150]), vec![None]);
+    // No assignment gives the second token a declaration before its use.
+    assert_eq!(
+        only_assignments(&[(10, 100), (12, 120)], &[50, 150]),
+        vec![None, None]
     );
 }

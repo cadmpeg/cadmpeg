@@ -1,6 +1,8 @@
 //! Relation instance records and scalar roles.
 
-use super::parameter_classes::{relation_kind, stated_parameters, Statement, DECLARATION_PREFIX};
+use super::parameter_classes::{
+    relation_kind, stated_parameters, token_relation_classes, Statement, DECLARATION_PREFIX,
+};
 use super::scalars::FeatureObjectNames;
 use super::{is_class_token, RELATION_INSTANCE_ID_PREFIX, SKETCH_POINT_TOLERANCE};
 use crate::classification::{native_object_class, NativeClassKind};
@@ -483,11 +485,16 @@ pub(super) fn relation_instances(
     let stated = stated_parameters(lane, None);
     let mut declaration_candidates =
         relation_declaration_candidates_impl(&lane.classes, &lane.scalars, &intervals, true);
+    let mut refused = Vec::new();
     declaration_candidates.retain(|(class, scalar, _)| {
-        match (relation_kind(&class.name), stated.get(scalar.id.as_str())) {
+        let claims = match (relation_kind(&class.name), stated.get(scalar.id.as_str())) {
             (Some(kind), Some(Statement::Parameter(parameter))) => parameter.class() == kind,
             _ => true,
+        };
+        if !claims {
+            refused.push(*scalar);
         }
+        claims
     });
     let mut candidate_counts = HashMap::<&str, usize>::new();
     for (_, scalar, _) in &declaration_candidates {
@@ -496,6 +503,38 @@ pub(super) fn relation_instances(
     let mut declarations = HashMap::new();
     for (class, scalar, family) in declaration_candidates {
         if candidate_counts.get(scalar.id.as_str()) == Some(&1) {
+            declarations.insert(
+                scalar.id.as_str(),
+                (class.offset, family, class.id.as_str()),
+            );
+        }
+    }
+    // A dimension that its nearest declaration does not claim has the
+    // relation class its own relation-class token names, of the quantity its
+    // record states (§2).
+    let token_classes = if refused.is_empty() {
+        HashMap::new()
+    } else {
+        token_relation_classes(lane, &sketch_features)
+    };
+    for scalar in refused {
+        if candidate_counts.contains_key(scalar.id.as_str()) {
+            continue;
+        }
+        let Some(class) = token_classes.get(scalar.id.as_str()) else {
+            continue;
+        };
+        let Some(family) = relation_family(&class.name) else {
+            continue;
+        };
+        let stated_kind = match stated.get(scalar.id.as_str()) {
+            Some(Statement::Parameter(parameter)) => Some(parameter.class()),
+            _ => None,
+        };
+        if stated_kind.is_some()
+            && relation_kind(&class.name) == stated_kind
+            && relation_signature_for_declaration(family, scalar)
+        {
             declarations.insert(
                 scalar.id.as_str(),
                 (class.offset, family, class.id.as_str()),
@@ -2518,6 +2557,75 @@ mod relation_records_tests {
             FeatureInputRelationFamily::PointPointDistance
         );
         assert_eq!(dimension.class_ref, distance);
+    }
+
+    /// The lane of [`token_form_lane`] with an `sgAnglDim` declaration
+    /// directly after the scalar at `after`, and the second dimension's
+    /// scalars holding two line operands, which the angle family's signature
+    /// fits.
+    fn refused_dimension_lane(after: usize) -> (FeatureInputLane, FeatureInputClass) {
+        let mut lane = token_form_lane(0x30, 0x32);
+        let angle = class(lane.scalars[after].offset + 1, "sgAnglDim");
+        lane.classes.push(angle.clone());
+        for scalar in &mut lane.scalars[3..5] {
+            for operand in &mut scalar.operands {
+                operand.kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386);
+            }
+        }
+        (lane, angle)
+    }
+
+    /// A dimension that an angle declaration before it does not claim, its
+    /// record stating a length, takes the relation class its relation-class
+    /// token names: the one relation class declared before that token's
+    /// first use.
+    #[test]
+    fn a_refused_dimension_takes_the_relation_its_token_names() {
+        let (lane, angle) = refused_dimension_lane(2);
+        let distance = lane
+            .classes
+            .iter()
+            .find(|class| class.name == "sgPntPntDist")
+            .unwrap()
+            .id
+            .clone();
+        let instances = relation_instances(&sketch_history(), &lane).unwrap();
+        assert!(instances
+            .iter()
+            .all(|relation| relation.class_ref != angle.id));
+        let dimension = instances
+            .iter()
+            .find(|relation| relation.scalar_refs().contains(&lane.scalars[3].id))
+            .expect("the refused dimension's relation");
+        assert_eq!(
+            (
+                dimension.family,
+                dimension.class_ref.clone(),
+                dimension.scalar_refs().to_vec(),
+                dimension.parameter_scalar_ref().map(str::to_owned),
+            ),
+            (
+                FeatureInputRelationFamily::PointPointDistance,
+                distance,
+                vec![lane.scalars[3].id.clone(), lane.scalars[4].id.clone()],
+                Some(lane.scalars[4].id.clone()),
+            )
+        );
+    }
+
+    /// Where two relation classes are declared before the first use of a
+    /// refused dimension's relation-class token, the token names neither, and
+    /// the dimension forms no relation.
+    #[test]
+    fn a_refused_dimension_whose_token_two_classes_precede_forms_no_relation() {
+        let (mut lane, angle) = refused_dimension_lane(2);
+        lane.classes
+            .push(class(lane.scalars[0].offset + 1, "sgLLDist"));
+        let instances = relation_instances(&sketch_history(), &lane).unwrap();
+        assert!(instances
+            .iter()
+            .all(|relation| relation.class_ref != angle.id
+                && !relation.scalar_refs().contains(&lane.scalars[3].id)));
     }
 
     #[test]
