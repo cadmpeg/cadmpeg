@@ -12,7 +12,7 @@ pub(crate) mod incremental;
 use crate::annotations::Annotations;
 use crate::document::CadIr;
 use crate::report::{
-    check::{RuleName, ValidationReport},
+    check::{Check, Finding, RuleName, ValidationReport},
     loss::LossNote,
 };
 use cadmpeg_core::decode::DecodeContext;
@@ -34,10 +34,13 @@ impl Admission {
         Self { rules, annotations }
     }
 
-    /// Whether a finding of `rule` counts toward this route.
+    /// Whether `finding` counts toward this route: its rule is listed, and
+    /// it is no finding of the design or process layer, which gives up no
+    /// content (§3.3) though it reports a listed rule inside a stored state.
     #[must_use]
-    pub fn admits(&self, rule: &RuleName) -> bool {
-        self.rules.contains(rule)
+    pub fn admits(&self, finding: &Finding) -> bool {
+        !matches!(finding.check, Check::Design | Check::Process)
+            && self.rules.contains(&finding.rule)
     }
 
     /// The rules of this route.
@@ -305,9 +308,7 @@ pub const CATIA_ADMISSION: &Admission = DRAFT_CORE;
 
 /// Drop the findings whose rule `allowed` does not list.
 fn filter_rules(mut report: ValidationReport, allowed: &Admission) -> ValidationReport {
-    report
-        .findings
-        .retain(|finding| allowed.admits(&finding.rule));
+    report.findings.retain(|finding| allowed.admits(finding));
     report
 }
 
@@ -596,6 +597,28 @@ mod tests {
                 losses: Vec::new(),
             };
             assert!(super::filter_rules(report, allowed).is_ok());
+        }
+    }
+
+    /// A design-layer finding refuses no candidate, though it reports a
+    /// listed rule inside a stored state.
+    #[test]
+    fn a_design_finding_of_a_listed_rule_refuses_no_candidate() {
+        let listed = DRAFT_CORE
+            .rules()
+            .first()
+            .cloned()
+            .expect("the core route lists a rule");
+        for check in [Check::Design, Check::Process] {
+            let finding = Finding {
+                check,
+                rule: listed.clone(),
+                severity: Severity::Error,
+                message: "resolved state: a listed rule inside a stored state".into(),
+                entity: None,
+                related: Vec::new(),
+            };
+            assert!(!DRAFT_CORE.admits(&finding));
         }
     }
 

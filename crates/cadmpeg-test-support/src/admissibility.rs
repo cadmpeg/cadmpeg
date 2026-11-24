@@ -154,7 +154,7 @@ mod tests {
                 .findings
                 .iter()
                 .filter(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)
-                .all(|finding| !cadmpeg_ir::RHINO_DRAFT.admits(&finding.rule)),
+                .all(|finding| !cadmpeg_ir::RHINO_DRAFT.admits(finding)),
             "{report:?}"
         );
     }

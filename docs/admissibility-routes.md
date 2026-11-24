@@ -45,7 +45,8 @@ rules of the `Identity`, `ReferentialIntegrity`, `NativeLinks`,
 process layers, as the validator stated them when the routes became rule
 lists. A finding whose rule a route does not list refuses no candidate, so a
 rule added to the validator later changes no admission until a route lists it
-in `validate/admit.rs`. `python3 scripts/name-validation-rules.py --admission`
+in `validate/admit.rs`. A finding of the design or process layer refuses no
+candidate either, also where it reports a listed rule inside a stored state. `python3 scripts/name-validation-rules.py --admission`
 prints the rules of those checks as the validator states them now.
 
 API: `cadmpeg_ir::validate::admit::{admit, admit_with_annotations,
