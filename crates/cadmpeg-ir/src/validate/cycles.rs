@@ -92,9 +92,9 @@ mod tests {
     }
 
     #[test]
-    fn a_diamond_has_no_cycle_and_a_self_edge_is_one() {
-        let diamond = [("a", "b"), ("a", "c"), ("b", "d"), ("c", "d")];
-        assert!(on_cycles(&graph(&diamond)).is_empty());
+    fn paths_that_part_and_meet_again_have_no_cycle_and_a_self_edge_is_one() {
+        let rejoined = [("a", "b"), ("a", "c"), ("b", "d"), ("c", "d")];
+        assert!(on_cycles(&graph(&rejoined)).is_empty());
         assert_eq!(on_cycles(&graph(&[("a", "a")])), BTreeSet::from(["a"]));
     }
 
