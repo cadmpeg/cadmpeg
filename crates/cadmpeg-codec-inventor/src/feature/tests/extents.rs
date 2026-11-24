@@ -614,6 +614,12 @@ fn build_extent_extrusion(
         let mut model = cadmpeg_ir::document::Model::default();
         model.parameters.extend(neutral_parameters.iter().cloned());
         model.sketches.push(neutral_sketch.clone());
+        model.sketch_entities.extend(
+            index
+                .neutral_entities
+                .values()
+                .map(|entity| (*entity).clone()),
+        );
         let link = entity_link_record();
         let mut validation_features = vec![feature.clone()];
         let mut validation_labels = vec![label.clone()];

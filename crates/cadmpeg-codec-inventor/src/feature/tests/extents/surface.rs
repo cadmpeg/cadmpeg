@@ -279,7 +279,8 @@ fn from_to_surface_extrusion_orders_tilted_faces_along_the_travel() {
     // The end plane lies behind the start plane along the travel direction.
     assert!(from_to_tilted((4.0, tilt), (1.0, tilt)).is_none());
     // Planes that are not parallel meet the travel line in an order that
-    // depends on the profile point, so both orders of origins stay native.
+    // depends on the profile point; a sketch without curves has none, so
+    // both orders of origins stay native.
     let other = [0.0, 0.8, 0.6];
     assert!(from_to_tilted((1.0, tilt), (4.0, other)).is_none());
     assert!(from_to_tilted((4.0, tilt), (1.0, other)).is_none());
@@ -378,17 +379,83 @@ fn true_boolean(ordinal: u32) -> PmDcFeatureProperty {
     )
 }
 
+/// A from-to surface extrusion between two tilted faces whose profile sketch
+/// holds the given non-construction lines, in millimetres of the sketch plane.
+/// The sketch lies in the plane z = 0 with u = +x and v = +y.
+fn from_to_over_profile(
+    start: PmDcFeatureProperty,
+    end: PmDcFeatureProperty,
+    lines: &[([f64; 2], [f64; 2])],
+) -> Option<Feature> {
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometryDefinition as Curve};
+    let lines = lines.to_vec();
+    build_extent_extrusion(
+        ExtentCase {
+            output: Output::Surface,
+            operation: 5,
+            extent: 6,
+            symmetric: false,
+            solid_input: SolidInput::None,
+        },
+        &FROM_TO_SLOTS,
+        from_to_properties(1, start, end),
+        IDENTITY_MATRIX,
+        |index| {
+            let sketch = index
+                .sketch_ids
+                .values()
+                .next()
+                .expect("neutral sketch")
+                .clone();
+            for (ordinal, (a, b)) in lines.into_iter().enumerate() {
+                let id = SketchEntityId::mint(format!("test:design:entity#{ordinal}"))
+                    .expect("entity id");
+                let line = SketchEntity::new(
+                    id.clone(),
+                    sketch.clone(),
+                    Curve::Line {
+                        start: Point2::new(a[0], a[1]),
+                        end: Point2::new(b[0], b[1]),
+                    }
+                    .try_into()
+                    .expect("line geometry"),
+                );
+                let line: &'static SketchEntity = Box::leak(Box::new(line));
+                index
+                    .neutral_entities
+                    .insert(Box::leak(id.as_str().to_owned().into_boxed_str()), line);
+            }
+        },
+        |_, _, _, _| {},
+    )
+}
+
 #[test]
 fn from_to_surface_extrusion_orders_tilted_faces_at_the_profile() {
-    // Travel +z. Start normal (0, -0.8, 0.6) through z = 10 mm and end
-    // normal (0, -0.6, 0.8) through z = 40 mm: the origins order start before
-    // end, but at y = 100 mm the travel line meets the start plane at
-    // z = 10 + 100 * 0.8 / 0.6 = 143.3 mm and the end plane at
-    // z = 40 + 100 * 0.6 / 0.8 = 115 mm, so the order depends on the profile
-    // point and the extrusion stays native, in both origin orders.
-    let (start, end) = ([0.0, 0.6, 0.8], [0.0, 0.8, 0.6]);
-    assert!(from_to_tilted((1.0, start), (4.0, end)).is_none());
-    assert!(from_to_tilted((4.0, end), (1.0, start)).is_none());
+    const NEAR: [([f64; 2], [f64; 2]); 1] = [([0.0, 0.0], [10.0, 0.0])];
+    const FAR: [([f64; 2], [f64; 2]); 1] = [([0.0, 100.0], [10.0, 100.0])];
+    const SPAN: [([f64; 2], [f64; 2]); 1] = [([0.0, 0.0], [10.0, 100.0])];
+    // Travel +z. Face A has normal (0, -0.8, 0.6) through z = 10 mm and face
+    // B has normal (0, -0.6, 0.8) through z = 40 mm. The line through a
+    // profile point (0, y, 0) meets A at z = (10 + 0.8 y) / 0.6 and B at
+    // z = (40 + 0.6 y) / 0.8, so A comes first for y < 66.7 mm and B first
+    // beyond: y = 0 gives 16.7 and 50; y = 100 gives 143.3 and 115.
+    let a = || tilted_plane_face(21, 1.0, [0.0, 0.6, 0.8]);
+    let b = || tilted_plane_face(21, 4.0, [0.0, 0.8, 0.6]);
+    let b_end = || tilted_plane_face(23, 4.0, [0.0, 0.8, 0.6]);
+    let a_end = || tilted_plane_face(23, 1.0, [0.0, 0.6, 0.8]);
+    // Start A, end B: ordered at y = 0, reversed at y = 100.
+    assert!(from_to_over_profile(a(), b_end(), &NEAR).is_some());
+    assert!(from_to_over_profile(a(), b_end(), &FAR).is_none());
+    // Start B, end A: ordered at y = 100, reversed at y = 0.
+    assert!(from_to_over_profile(b(), a_end(), &FAR).is_some());
+    assert!(from_to_over_profile(b(), a_end(), &NEAR).is_none());
+    // A profile that spans y = 0 to 100 meets the faces in both orders.
+    assert!(from_to_over_profile(a(), b_end(), &SPAN).is_none());
+    assert!(from_to_over_profile(b(), a_end(), &SPAN).is_none());
+    // Without a profile curve the order is not defined for tilted planes.
+    assert!(from_to_over_profile(a(), b_end(), &[]).is_none());
 }
 
 #[test]
