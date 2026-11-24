@@ -10,10 +10,11 @@ use crate::design::container::Container;
 use crate::design::dimension::Dimension;
 use crate::design::feature::{Driver, Feature, FeatureOperation, OperationFamily};
 use crate::design::ops::assembly::{
-    AssemblyContext, ComponentPattern, MirrorComponents, Place, PlaceSet, RigidGroup,
+    AssemblyContext, ComponentPattern, ContextEffect, MirrorComponents, Place, PlaceSet,
+    PlacementBase, RigidGroup,
 };
-use crate::design::ops::body::{ScaleFactors, SplitMode};
-use crate::design::ops::dressup::OffsetResult;
+use crate::design::ops::body::{Kept, ScaleFactors, SplitMode};
+use crate::design::ops::dressup::{OffsetResult, StageHole};
 use crate::design::ops::shared::{
     AxisLimits, Bounds, Joint, JointConnector, JointKind, JointMotion, PathAxisControl,
     PathRollControl,
@@ -21,7 +22,8 @@ use crate::design::ops::shared::{
 use crate::design::ops::sheet_metal::SheetMetalKind;
 use crate::design::options::Boolean;
 use crate::design::selection::{
-    Keyed, Members, PickContext, PickTarget, Picked, Picks, SelectionRule, SetSelection, StepRef,
+    Keyed, Members, OccurrencePath, PickContext, PickTarget, Picked, Picks, SelectionRule,
+    SetSelection, StepRef,
 };
 use crate::ids::OccurrenceId;
 use crate::report::check::Finding;
@@ -90,6 +92,7 @@ pub(super) fn check_place(
 ) {
     let occurrence = place.occurrence.as_str();
     check_owned(index, site, "Place.occurrence", occurrence, findings);
+    check_own_occurrence(index, site, place, findings);
     if place.base.is_some() != place.placement.is_some() {
         error(
             findings,
@@ -205,6 +208,7 @@ pub(super) fn check_joint(
     findings: &mut Vec<Finding>,
 ) {
     check_connectors(site, &joint.connectors, &joint.kind, findings);
+    check_coupling_connectors(site, joint, findings);
     match &joint.kind {
         JointKind::Motion { motion, limits, .. } => {
             if let JointMotion::PinSlot { axis, slide } = motion {
@@ -529,6 +533,7 @@ pub(super) fn check_mirror(
 /// are `None`, and no `Boolean` in it is `NewBody`", and the rules on its
 /// participants.
 pub(super) fn check_assembly_feature(
+    index: &DesignRecords<'_>,
     site: Site<'_>,
     operation: &FeatureOperation,
     context: &AssemblyContext,
@@ -556,6 +561,7 @@ pub(super) fn check_assembly_feature(
         );
     }
     check_participants(site, context, findings);
+    check_participant_operands(index, site, operation, context, findings);
 }
 
 /// Part 10 (§6.7): "Every pick of `AssemblyContext.participants` carries an
@@ -918,6 +924,26 @@ pub(super) fn check_occurrence_creators(index: &DesignRecords<'_>, findings: &mu
                 ),
             );
         }
+        let placements: Vec<(&str, bool)> = namers
+            .iter()
+            .filter(|(_, namer, _)| *namer == Namer::Placement)
+            .map(|(feature, _, place)| (*feature, *place))
+            .collect();
+        for (at, &(first, first_place)) in placements.iter().enumerate() {
+            for &(second, second_place) in &placements[at + 1..] {
+                if (!first_place || !second_place)
+                    && ordered_pair(index, first, second) == Some(false)
+                {
+                    error(
+                        findings,
+                        second,
+                        format_args!(
+                            "the placements {first} and {second} of occurrence {occurrence} are not ordered in one container chain"
+                        ),
+                    );
+                }
+            }
+        }
         let combines: Vec<&str> = namers
             .iter()
             .filter(|(_, namer, _)| *namer == Namer::Combine)
@@ -948,6 +974,346 @@ pub(super) fn check_occurrence_creators(index: &DesignRecords<'_>, findings: &mu
                 occurrence,
                 format_args!("occurrence has {creators} creating features; it has at most one"),
             );
+        }
+    }
+}
+
+/// Part 10 (§6.7): "`OwnOccurrence` occurs only where the occurrence's
+/// prototype has an occurrence of its own in the scope": another occurrence
+/// of the prototype, owned by a definition the scope spans.
+fn check_own_occurrence(
+    index: &DesignRecords<'_>,
+    site: Site<'_>,
+    place: &Place,
+    findings: &mut Vec<Finding>,
+) {
+    if !matches!(place.base, Some(PlacementBase::OwnOccurrence)) {
+        return;
+    }
+    let (Some(prototype), Some(scope)) = (index.prototype(place.occurrence.as_str()), site.scope)
+    else {
+        return;
+    };
+    let spanned = index.spanned_definitions(scope);
+    let own = index.occurrences.iter().any(|(&id, occurrence)| {
+        id != place.occurrence.as_str()
+            && occurrence.prototype.as_str() == prototype
+            && owner(index, id).is_some_and(|owner| spanned.contains(owner))
+    });
+    if !own {
+        error(
+            findings,
+            site.entity,
+            format_args!(
+                "Place.base is OwnOccurrence, but {prototype} has no occurrence of its own in the scope"
+            ),
+        );
+    }
+}
+
+/// The containers above a feature, innermost first, each with the index of
+/// the member on the way down. `None` where the feature is in no container
+/// or the parents do not end.
+fn container_chain<'a>(
+    index: &DesignRecords<'a>,
+    feature: &'a str,
+) -> Option<Vec<(&'a str, usize)>> {
+    let mut chain = Vec::new();
+    let mut member = MemberKey::Feature(feature);
+    for _ in 0..=index.containers.len() {
+        let Some(&parent) = index.parents.get(&member) else {
+            return (!chain.is_empty()).then_some(chain);
+        };
+        let container = index.containers.get(parent)?;
+        let at = super::super::records::members(container)
+            .into_iter()
+            .position(|candidate| MemberKey::of(candidate) == member)?;
+        chain.push((parent, at));
+        member = MemberKey::Container(parent);
+    }
+    None
+}
+
+/// Whether one of two features is before the other in the other's container
+/// chain (§5.3): their innermost common container is ordered. `None` where
+/// either chain is not known.
+fn ordered_pair(index: &DesignRecords<'_>, first: &str, second: &str) -> Option<bool> {
+    let first = container_chain(index, first)?;
+    let second = container_chain(index, second)?;
+    let common = first
+        .iter()
+        .find(|(container, _)| second.iter().any(|(other, _)| other == container));
+    Some(common.is_some_and(|(container, _)| {
+        matches!(
+            index.containers.get(container),
+            Some(Container::Ordered { .. })
+        )
+    }))
+}
+
+/// Part 10 (§6.7): "A `Coupling` whose `joints` is absent has connectors that
+/// each pick a member it couples." A connector with no input picks nothing.
+fn check_coupling_connectors(site: Site<'_>, joint: &Joint, findings: &mut Vec<Finding>) {
+    if !matches!(joint.kind, JointKind::Coupling { joints: None, .. }) {
+        return;
+    }
+    let picks_nothing = joint.connectors.iter().any(|connector| match connector {
+        JointConnector::Frame(c) => c.inputs.is_empty(),
+        JointConnector::Plane(c) => c.inputs.is_empty(),
+        JointConnector::Axis(c) => c.inputs.is_empty(),
+        JointConnector::Point(c) => c.inputs.is_empty(),
+        JointConnector::Entity(_) => false,
+    });
+    if picks_nothing {
+        error(
+            findings,
+            site.entity,
+            format_args!("a Coupling with no joints has a connector that picks no member"),
+        );
+    }
+}
+
+/// The occurrence path a participant pick names.
+fn pick_path(pick: &Picked) -> Option<&OccurrencePath> {
+    match &pick.context {
+        Some(
+            PickContext::Occurrence(path)
+            | PickContext::InContext {
+                target: Some(path), ..
+            },
+        ) => Some(path),
+        _ => None,
+    }
+}
+
+/// The participants of a selection, as the picks that list them: its
+/// `Named` members, or a rule's stated `resolved`. `None` where the
+/// selection does not list them (§6.7: such a rule is not checked).
+fn listed_participants(selection: &SetSelection) -> Option<&[Picked]> {
+    match &selection.picks {
+        Picks::Unread => None,
+        Picks::Named(members) => Some(members.as_slice()),
+        Picks::Rule { resolved, .. } => resolved.as_ref().map(Members::as_slice),
+    }
+}
+
+/// The paths of the participants the selections under `effect` list, where
+/// every selection of the context lists them; `None` otherwise.
+fn participant_paths(
+    context: &AssemblyContext,
+    effect: impl Fn(Option<&ContextEffect>) -> bool,
+) -> Option<BTreeSet<&OccurrencePath>> {
+    let mut paths = BTreeSet::new();
+    for (key, selection) in &context.participants {
+        let listed = listed_participants(selection)?;
+        if effect(key.as_ref()) {
+            paths.extend(listed.iter().filter_map(pick_path));
+        }
+    }
+    Some(paths)
+}
+
+/// The prototype of a path's last occurrence.
+fn path_prototype<'a>(index: &DesignRecords<'a>, path: &OccurrencePath) -> Option<&'a str> {
+    match &path.0.last()?.occurrence {
+        StepRef::Occurrence(occurrence) => index.prototype(occurrence.as_str()),
+        StepRef::Native(_) => None,
+    }
+}
+
+/// Part 10 (§6.5, §6.7): a hole series' parts and a split's piece picks are
+/// participants. "Each `SeriesStage.parts` pick resolves to a member of one of
+/// that context's selections"; a `PartFeature` stage's feature "is a `Hole`
+/// of that part's definition; that definition has one occurrence among the
+/// members of the context's selections"; "a piece pick targets an entity ...
+/// of a participant where `targets` is `None`". A context whose selections
+/// do not list their participants is not checked.
+fn check_participant_operands(
+    index: &DesignRecords<'_>,
+    site: Site<'_>,
+    operation: &FeatureOperation,
+    context: &AssemblyContext,
+    findings: &mut Vec<Finding>,
+) {
+    let Some(members) = participant_paths(context, |_| true) else {
+        return;
+    };
+    match operation {
+        FeatureOperation::Hole(hole) => {
+            for stage in &hole.series {
+                let Some(parts) = picks::named(&stage.parts) else {
+                    continue;
+                };
+                for path in parts.iter().filter_map(pick_path) {
+                    if !members.contains(path) {
+                        error(
+                            findings,
+                            site.entity,
+                            format_args!("a series stage picks a part that is no participant"),
+                        );
+                    }
+                }
+                let StageHole::PartFeature(feature) = &stage.hole else {
+                    continue;
+                };
+                let [part] = parts else {
+                    continue;
+                };
+                let Some(definition) = pick_path(part).and_then(|path| path_prototype(index, path))
+                else {
+                    continue;
+                };
+                let held_by = index.features.get(feature.as_str()).and_then(|record| {
+                    record
+                        .component
+                        .as_ref()
+                        .map(crate::ids::ProductDefinitionId::as_str)
+                        .or_else(|| index.scope_of(MemberKey::Feature(feature.as_str())))
+                });
+                if held_by.is_some_and(|held_by| held_by != definition) {
+                    error(
+                        findings,
+                        site.entity,
+                        format_args!(
+                            "StageHole::PartFeature names {}, which is no feature of the part's definition {definition}",
+                            feature.as_str()
+                        ),
+                    );
+                }
+                let placed = members
+                    .iter()
+                    .filter(|path| path_prototype(index, path) == Some(definition))
+                    .count();
+                if placed != 1 {
+                    error(
+                        findings,
+                        site.entity,
+                        format_args!(
+                            "{definition}, the part of a PartFeature stage, has {placed} occurrences among the participants; it has one"
+                        ),
+                    );
+                }
+            }
+        }
+        FeatureOperation::Split(split) => {
+            let SplitMode::ByTools {
+                targets: None,
+                kept: Some(Kept::Pieces { keep, remove }),
+                ..
+            } = &split.mode
+            else {
+                return;
+            };
+            for list in [keep, remove].into_iter().flatten() {
+                let Some(pieces) = picks::named(list) else {
+                    continue;
+                };
+                for path in pieces.iter().filter_map(pick_path) {
+                    let of_participant = members.iter().any(|member| path.0.starts_with(&member.0));
+                    if !of_participant {
+                        error(
+                            findings,
+                            site.entity,
+                            format_args!("a piece pick targets an entity of no participant"),
+                        );
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Part 10 (§6.7): "A feature whose `driven_by` names an assembly feature that
+/// holds no `Native` participants is a feature of the definition one of its
+/// `Definitions` participants resolves in." The definitions the driver's
+/// configuration overrides state are read with its own; a context with an
+/// unstated effect, or whose selections do not list their participants, is
+/// not checked.
+pub(super) fn check_driven_definition(
+    index: &DesignRecords<'_>,
+    feature: &Feature,
+    findings: &mut Vec<Finding>,
+) {
+    let Some(Driver::Feature(driver)) = &feature.driven_by else {
+        return;
+    };
+    let Some(record) = index.features.get(driver.as_str()) else {
+        return;
+    };
+    let design = &index.ir.design;
+    let overrides = design
+        .configurations
+        .iter()
+        .map(|configuration| &configuration.overrides)
+        .chain(
+            design
+                .arrangements
+                .iter()
+                .map(|arrangement| &arrangement.overrides),
+        )
+        .filter_map(|overrides| overrides.features.get(driver)?.definition.as_ref());
+    let mut targets = BTreeSet::new();
+    let mut stated = false;
+    for definition in std::iter::once(&record.definition).chain(overrides) {
+        let Some(context) = &definition.assembly else {
+            continue;
+        };
+        stated = true;
+        if context
+            .participants
+            .keys()
+            .any(|key| matches!(key, None | Some(ContextEffect::Native(_))))
+        {
+            return;
+        }
+        let Some(paths) = participant_paths(context, |key| {
+            matches!(key, Some(ContextEffect::Definitions))
+        }) else {
+            return;
+        };
+        targets.extend(
+            paths
+                .into_iter()
+                .filter_map(|path| path_prototype(index, path)),
+        );
+    }
+    let own = feature
+        .component
+        .as_ref()
+        .map(crate::ids::ProductDefinitionId::as_str)
+        .or_else(|| index.scope_of(MemberKey::Feature(feature.id.as_str())));
+    if let (true, Some(own)) = (stated, own) {
+        if !targets.contains(own) {
+            error(
+                findings,
+                feature.id.as_str(),
+                format_args!(
+                    "the feature is driven by {}, whose Definitions participants resolve in no definition it belongs to",
+                    driver.as_str()
+                ),
+            );
+        }
+    }
+}
+
+/// Part 10 (§5.1): "No definition is spanned by two scopes."
+pub(super) fn check_spans(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
+    let mut spanned_by: BTreeMap<&str, &str> = BTreeMap::new();
+    for scope in &index.ir.design.scopes {
+        let own = scope.definition.as_str();
+        for definition in index.spanned_definitions(own) {
+            if let Some(first) = spanned_by.insert(definition, own) {
+                if first != own {
+                    error(
+                        findings,
+                        own,
+                        format_args!(
+                            "the scope spans {definition}, which the scope of {first} spans"
+                        ),
+                    );
+                }
+            }
         }
     }
 }

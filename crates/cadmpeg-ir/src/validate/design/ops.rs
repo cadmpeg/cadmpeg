@@ -55,7 +55,7 @@ pub(super) fn check_operations(index: &DesignRecords<'_>, findings: &mut Vec<Fin
     for (site, definition) in definitions(index) {
         check_operation(index, site, &definition.operation, findings);
         if let Some(context) = &definition.assembly {
-            assembly::check_assembly_feature(site, &definition.operation, context, findings);
+            assembly::check_assembly_feature(index, site, &definition.operation, context, findings);
         }
     }
     for feature in &index.ir.design.features {
@@ -63,6 +63,7 @@ pub(super) fn check_operations(index: &DesignRecords<'_>, findings: &mut Vec<Fin
     }
     body::check_template_inputs(index, findings);
     assembly::check_occurrence_creators(index, findings);
+    assembly::check_spans(index, findings);
     sheet_metal::check_rules(index, findings);
 }
 
@@ -216,6 +217,7 @@ fn check_feature(index: &DesignRecords<'_>, feature: &Feature, findings: &mut Ve
     }
     assembly::check_component(index, feature, findings);
     assembly::check_driven_by(index, feature, findings);
+    assembly::check_driven_definition(index, feature, findings);
 }
 
 fn error(findings: &mut Vec<Finding>, entity: &str, message: std::fmt::Arguments<'_>) {
