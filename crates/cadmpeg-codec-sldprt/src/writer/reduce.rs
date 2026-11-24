@@ -634,8 +634,7 @@ pub(super) fn unwritable_carriers(
         .iter()
         .flat_map(|region| {
             region
-                .shells
-                .iter()
+                .stated_shells()
                 .map(move |shell| (shell.as_str(), region.body.as_str()))
         })
         .collect::<HashMap<_, _>>();
@@ -643,7 +642,7 @@ pub(super) fn unwritable_carriers(
         .geometry
         .faces
         .iter()
-        .flat_map(|face| face.loops.iter().map(move |loop_| (loop_.as_str(), face)))
+        .flat_map(|face| face.loops.stated().map(move |loop_| (loop_.as_str(), face)))
         .collect::<HashMap<_, _>>();
     let edges = ir
         .geometry
@@ -774,7 +773,7 @@ fn dangling_references(geometry: &cadmpeg_ir::document::Topology) -> Vec<(&str, 
         .iter()
         .flat_map(|face| {
             face.loops
-                .iter()
+                .stated()
                 .map(move |loop_| (loop_.as_str(), face.id.as_str()))
         })
         .collect::<HashMap<_, _>>();
@@ -786,7 +785,7 @@ fn dangling_references(geometry: &cadmpeg_ir::document::Topology) -> Vec<(&str, 
                 format!("missing surface {}", face.surface.as_str()),
             ));
         }
-        for loop_ in &face.loops {
+        for loop_ in face.loops.stated() {
             match loops.get(loop_.as_str()) {
                 None => {
                     dangling.push((face.id.as_str(), format!("missing loop {}", loop_.as_str())));

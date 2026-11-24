@@ -468,7 +468,7 @@ fn disconnected_recovered_shells_keep_their_native_body_owner() {
     assert_eq!(ir.geometry.bodies.len(), 1);
     assert_eq!(ir.geometry.regions.len(), 1);
     assert_eq!(ir.geometry.shells.len(), 2);
-    assert_eq!(ir.geometry.regions[0].shells.len(), 2);
+    assert_eq!(ir.geometry.regions[0].stated_shells().count(), 2);
     assert_eq!(ir.geometry.regions[0].body, ir.geometry.bodies[0].id);
     assert_eq!(ir.geometry.faces.len(), 2);
     let report = cadmpeg_ir::validate_neutral(&ir, vec![]).expect("validate ownership");
@@ -499,7 +499,7 @@ fn one_native_body_keeps_multiple_face_rosters() {
     ir.finalize();
     assert_eq!(ir.geometry.bodies.len(), 1);
     assert_eq!(ir.geometry.regions.len(), 1);
-    assert_eq!(ir.geometry.regions[0].shells.len(), 2);
+    assert_eq!(ir.geometry.regions[0].stated_shells().count(), 2);
     assert_eq!(ir.geometry.faces.len(), 2);
     let report = cadmpeg_ir::validate_neutral(&ir, vec![]).expect("validate body ownership");
     assert!(report.is_ok(), "{:?}", report.findings);

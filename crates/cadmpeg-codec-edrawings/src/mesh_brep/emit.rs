@@ -301,15 +301,14 @@ pub(super) fn emit(
     }
     for (region_index, members) in region_shells.iter().enumerate() {
         let region_id = mesh_id!(RegionId, "region", key(region_index));
-        out.regions.push(Region {
-            id: region_id,
-            body: body_id.clone(),
-            shells: members
+        out.regions.push(Region::new(
+            region_id,
+            body_id.clone(),
+            members
                 .iter()
                 .map(|&shell| mesh_id!(ShellId, "shell", key(shell)))
                 .collect(),
-            native_ref: None,
-        });
+        ));
     }
     out.bodies.push(Body {
         id: body_id,
@@ -323,6 +322,7 @@ pub(super) fn emit(
         color: naming.color,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     Ok(out)
 }

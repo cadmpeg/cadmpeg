@@ -328,7 +328,8 @@ fn coordinates(index: &DesignRecords<'_>, layout: &PatternLayout, follow: bool) 
         | PatternLayout::Chain(_)
         | PatternLayout::Points { .. }
         | PatternLayout::Table(_)
-        | PatternLayout::Mirror(_) => Some(1),
+        | PatternLayout::Mirror(_)
+        | PatternLayout::Scale(_) => Some(1),
         PatternLayout::Dimensions(runs) => Some(runs.len()),
         PatternLayout::Composite(stages) => stages
             .iter()
@@ -337,14 +338,14 @@ fn coordinates(index: &DesignRecords<'_>, layout: &PatternLayout, follow: bool) 
                 CompositeStage::Circular(circular) => {
                     Some(1 + usize::from(circular.radial.is_some()))
                 }
-                CompositeStage::Mirror(_) => Some(1),
-                CompositeStage::Scale(_) | CompositeStage::Native(_) => None,
+                CompositeStage::Mirror(_) | CompositeStage::Scale(_) => Some(1),
+                CompositeStage::Native(_) => None,
             })
             .sum(),
         PatternLayout::Follow(followed) if follow => {
             coordinates(index, followed_layout(index, followed)?, false)
         }
-        PatternLayout::Follow(_) | PatternLayout::Scale(_) | PatternLayout::Native(_) => None,
+        PatternLayout::Follow(_) | PatternLayout::Native(_) => None,
     }
 }
 
@@ -924,8 +925,9 @@ pub(super) fn check_template_inputs(index: &DesignRecords<'_>, findings: &mut Ve
 }
 
 /// Part 10 (§6.5): "`target` is `None` only with `Join`, `Intersect`, or
-/// `Compound`, or where the definition states `assembly`". In an assembly
-/// feature `target` is `None` (§6.7), which `check_assembly_feature` checks.
+/// `Compound`, or where the definition states `assembly`". Where it states
+/// `assembly`, `target` is `None` (§6.7), which `check_assembly_feature`
+/// checks.
 pub(super) fn check_combine(site: Site<'_>, combine: &Combine, findings: &mut Vec<Finding>) {
     if matches!(combine.op, Some(BooleanOp::Sew)) {
         error(
@@ -958,7 +960,7 @@ pub(super) fn check_combine(site: Site<'_>, combine: &Combine, findings: &mut Ve
                 format_args!("a Compound combine states a target"),
             );
         }
-    } else if !site.in_assembly_feature
+    } else if !site.assembly
         && matches!(
             combine.op,
             Some(BooleanOp::Cut | BooleanOp::Assemble | BooleanOp::UnionTrim | BooleanOp::Sew)
@@ -983,12 +985,22 @@ pub(super) fn check_split(site: Site<'_>, split: &Split, findings: &mut Vec<Find
             kept,
         } => {
             let allowed = |class| picks::is_body(class) || picks::is_face(class);
-            if let Some(class) = picks::refused(targets, allowed) {
-                error(
+            match targets {
+                Some(targets) => {
+                    if let Some(class) = picks::refused(targets, allowed) {
+                        error(
+                            findings,
+                            site.entity,
+                            format_args!("ByTools.targets picks {class}; it picks bodies or faces"),
+                        );
+                    }
+                }
+                None if !site.assembly => error(
                     findings,
                     site.entity,
-                    format_args!("ByTools.targets picks {class}; it picks bodies or faces"),
-                );
+                    format_args!("ByTools.targets is None in a definition that states no assembly"),
+                ),
+                None => {}
             }
             let curves = match tools {
                 SplitTool::Geometry {

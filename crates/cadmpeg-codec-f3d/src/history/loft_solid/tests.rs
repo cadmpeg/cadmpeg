@@ -19,6 +19,7 @@ fn body(id: &str, kind: BodyKind) -> Body {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     }
 }
 

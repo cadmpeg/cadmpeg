@@ -390,6 +390,7 @@ pub(super) fn emit_faces(
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     for (component_index, component_faces) in &components {
         let region_id = region_ids[component_index].clone();
@@ -413,12 +414,9 @@ pub(super) fn emit_faces(
         let region_shell_id = shell_id.clone();
         let region_shells = vec![region_shell_id];
         admission.charge()?;
-        ir.geometry.regions.push(Region {
-            id: region_record_id,
-            body: region_body_id,
-            shells: region_shells,
-            native_ref: None,
-        });
+        ir.geometry
+            .regions
+            .push(Region::new(region_record_id, region_body_id, region_shells));
         annotate(
             annotations,
             &shell_id,

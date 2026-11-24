@@ -25,17 +25,27 @@ fn spellings() -> Spellings {
     }
 }
 
+/// The bytes `serde_json` writes for `value`, with negative zero written as
+/// zero (§2.5).
+fn one_zero_bytes(value: &Spellings) -> Vec<u8> {
+    serde_json::to_string(value)
+        .unwrap()
+        .replace("-0.0", "0.0")
+        .into_bytes()
+}
+
 #[test]
 fn compact_projection_writes_the_bytes_serde_json_writes() {
     let value = spellings();
-    let expected = serde_json::to_vec(&value).unwrap();
+    let expected = one_zero_bytes(&value);
+    assert_ne!(expected, serde_json::to_vec(&value).unwrap());
     assert_eq!(compact_json(&value, usize::MAX).unwrap(), expected);
 }
 
 #[test]
 fn compact_projection_refuses_one_byte_past_its_limit() {
     let value = spellings();
-    let length = serde_json::to_vec(&value).unwrap().len();
+    let length = one_zero_bytes(&value).len();
     assert_eq!(compact_json(&value, length).unwrap().len(), length);
     let error = compact_json(&value, length - 1).unwrap_err();
     assert!(

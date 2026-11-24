@@ -317,13 +317,12 @@ fn prepare_component(
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
-    prepared.geometry.regions.push(Region {
-        id: region.clone(),
-        body,
-        shells: vec![shell.clone()],
-        native_ref: None,
-    });
+    prepared
+        .geometry
+        .regions
+        .push(Region::new(region.clone(), body, vec![shell.clone()]));
     prepared
         .geometry
         .shells

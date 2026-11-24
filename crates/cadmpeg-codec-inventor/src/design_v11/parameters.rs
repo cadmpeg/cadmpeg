@@ -271,7 +271,7 @@ fn normalize(
     tree: &mut Node<ParameterRef>,
     kinds: &BTreeMap<cadmpeg_ir::features::ParameterId, ValueKind>,
 ) -> Option<ValueKind> {
-    use cadmpeg_ir::design::expr::{BinaryOp, Function, UnaryOp};
+    use cadmpeg_ir::design::expr::{BinaryOp, Function, MulOp, UnaryOp};
     match tree {
         Node::Number { unit, .. } => {
             let mut quantity = Quantity::REAL;
@@ -303,22 +303,6 @@ fn normalize(
                 return None;
             };
             let quantity = match op {
-                BinaryOp::Add | BinaryOp::Subtract if a == b => a,
-                BinaryOp::Multiply | BinaryOp::Divide => {
-                    let combine = |a: i8, b: i8| {
-                        if *op == BinaryOp::Multiply {
-                            a.checked_add(b)
-                        } else {
-                            a.checked_sub(b)
-                        }
-                    };
-                    Quantity {
-                        length: combine(a.length, b.length)?,
-                        mass: combine(a.mass, b.mass)?,
-                        angle: combine(a.angle, b.angle)?,
-                        time: combine(a.time, b.time)?,
-                    }
-                }
                 BinaryOp::Power if a == Quantity::REAL && b == Quantity::REAL => Quantity::REAL,
                 BinaryOp::Power if b == Quantity::REAL => {
                     let exponent = literal_number(right)?;
@@ -339,6 +323,39 @@ fn normalize(
                 _ => return None,
             };
             Some(ValueKind::Quantity(quantity))
+        }
+        Node::Sum { first, rest } => {
+            let ValueKind::Quantity(a) = normalize(first, kinds)? else {
+                return None;
+            };
+            for (_, operand) in rest.iter_mut() {
+                let ValueKind::Quantity(b) = normalize(operand, kinds)? else {
+                    return None;
+                };
+                (a == b).then_some(())?;
+            }
+            Some(ValueKind::Quantity(a))
+        }
+        Node::Product { first, rest } => {
+            let ValueKind::Quantity(mut held) = normalize(first, kinds)? else {
+                return None;
+            };
+            for (op, operand) in rest.iter_mut() {
+                let ValueKind::Quantity(b) = normalize(operand, kinds)? else {
+                    return None;
+                };
+                let combine = |a: i8, b: i8| match op {
+                    MulOp::Multiply => a.checked_add(b),
+                    MulOp::Divide => a.checked_sub(b),
+                };
+                held = Quantity {
+                    length: combine(held.length, b.length)?,
+                    mass: combine(held.mass, b.mass)?,
+                    angle: combine(held.angle, b.angle)?,
+                    time: combine(held.time, b.time)?,
+                };
+            }
+            Some(ValueKind::Quantity(held))
         }
         Node::Call {
             function: Function::Sin | Function::Cos | Function::Tan,

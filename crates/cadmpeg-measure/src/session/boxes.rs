@@ -38,7 +38,7 @@ impl<'ir> Measurer<'ir> {
             let Some(face) = self.owners.face(face) else {
                 continue;
             };
-            for loop_id in &face.loops {
+            for loop_id in face.loops.stated() {
                 if let Some(face_loop) = self.owners.loop_(loop_id.as_str()) {
                     for coedge in face_loop.coedges() {
                         if let Some(coedge) = self.owners.coedge(coedge.as_str()) {

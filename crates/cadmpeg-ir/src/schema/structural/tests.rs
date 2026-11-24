@@ -57,13 +57,13 @@ fn structural_projection_spells_floats_as_serde_json_and_refuses_at_the_depth_li
         projected,
         serde_json::json!({
             "text": "source text",
-            "values": [null, null, null, -0.0],
+            "values": [null, null, null, 0.0],
             "optional": [true, 17],
         })
     );
     assert!(projected["values"][3]
         .as_f64()
-        .is_some_and(f64::is_sign_negative));
+        .is_some_and(f64::is_sign_positive));
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 0;

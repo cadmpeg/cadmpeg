@@ -107,10 +107,7 @@
           "$ref": "#/$defs/StreamName"
         },
         "tag": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": "string"
         }
       },
       "additionalProperties": false,
@@ -316,14 +313,7 @@
         },
         "instance": {
           "description": "Instance of this format layer inside the containing document.\n\n`None` when the layer occurs once or has no report-local identity. This\nis not source-declared evidence and therefore does not belong in\n[`Self::declared`].",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/NonBlankString"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/NonBlankString"
         }
       },
       "additionalProperties": false,
@@ -552,10 +542,7 @@
         },
         "count": {
           "description": "The number of source instances the note reports together.",
-          "type": [
-            "integer",
-            "null"
-          ],
+          "type": "integer",
           "format": "uint64",
           "minimum": 0
         },
@@ -565,14 +552,7 @@
         },
         "provenance": {
           "description": "Where in the source the loss occurred, when attributable.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/SourceProvenance"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/SourceProvenance"
         },
         "severity": {
           "description": "How serious the loss is.",
@@ -831,14 +811,7 @@
         },
         "strict_floor": {
           "description": "Strict-mode severity floor pinned by this code; absent when it has none.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Severity"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/Severity"
         }
       },
       "additionalProperties": false,
@@ -1038,20 +1011,10 @@
           "minimum": 0
         },
         "stream": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/StreamName"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/StreamName"
         },
         "tag": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": "string"
         }
       },
       "additionalProperties": false,
@@ -1113,10 +1076,7 @@
             },
             "note": {
               "description": "Informational note about retention or semantic projection.",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             },
             "target": {
               "description": "Resulting native retained-record identity.",
@@ -1139,10 +1099,7 @@
             },
             "note": {
               "description": "Concise reason for the approximation.",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             },
             "target": {
               "description": "Resulting neutral or native identity.",
@@ -1165,10 +1122,7 @@
             },
             "note": {
               "description": "Concise reason for the omission.",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           "additionalProperties": false,

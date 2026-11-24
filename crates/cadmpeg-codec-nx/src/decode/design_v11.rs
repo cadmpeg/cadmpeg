@@ -62,6 +62,7 @@ pub(super) fn project(ir: &mut CadIr, definition: ProductDefinitionId) -> Result
             suppressed: feature.suppressed.map(Dimension::Literal),
             definition: FeatureDefinition {
                 operation: operation(feature)?,
+                assembly: None,
                 refine: None,
                 fuzzy_tolerance: None,
             },

@@ -14,8 +14,8 @@ use crate::design::construction::{
 };
 use crate::design::dimension::{Dimension, ParamRef, ParameterRef, RefTarget};
 use crate::design::expr::{
-    BendVariable, BinaryOp, Constant, Expression, ExpressionDialect, ExpressionToken, Function,
-    Measure, MeasureKind, MeasureTarget, Neutral, Node, UnaryOp,
+    AddOp, BendVariable, BinaryOp, Constant, Expression, ExpressionDialect, ExpressionToken,
+    Function, Measure, MeasureKind, MeasureTarget, Neutral, Node, UnaryOp,
 };
 use crate::design::ids::{ContainerId, ProcessParameterId, PublicationId};
 use crate::design::names::{
@@ -554,6 +554,7 @@ pub(super) fn selection_rules() -> Vec<SelectionRule> {
         SelectionRule::Intersection {
             with: members_of(&[3]),
         },
+        SelectionRule::Affected,
         SelectionRule::Native(crate::codec_name!("nx:tangent_curves")),
     ]
 }
@@ -887,11 +888,11 @@ pub(super) fn nodes() -> Vec<Node<ParameterRef>> {
             function: Function::Atan2,
             args: vec![*leaf(), Node::Reference(parameter_ref(2))],
         },
-        Node::If(Box::new([
+        Node::branch(
             Node::Boolean(true),
             number(1.0, Unit::default()),
             number(0.0, Unit::default()),
-        ])),
+        ),
     ]
 }
 
@@ -912,13 +913,14 @@ pub(super) fn expressions() -> Vec<Expression<ParameterRef>> {
 
 pub(super) fn process_expressions() -> Vec<Expression<ParamRef>> {
     vec![
-        Expression::Neutral(Neutral(Node::Binary {
-            op: BinaryOp::Subtract,
-            left: Box::new(Node::Reference(ParamRef::Design(parameter_ref(1)))),
-            right: Box::new(Node::Reference(ParamRef::Process(
-                id::<ProcessParameterId>("process-parameter", 1),
+        Expression::Neutral(Neutral(Node::add(
+            Node::Reference(ParamRef::Design(parameter_ref(1))),
+            AddOp::Subtract,
+            Node::Reference(ParamRef::Process(id::<ProcessParameterId>(
+                "process-parameter",
+                1,
             ))),
-        })),
+        ))),
         Expression::Source {
             dialect: ExpressionDialect::FreeCad,
             tokens: vec![ExpressionToken::Text("Box.Height".to_owned())],
