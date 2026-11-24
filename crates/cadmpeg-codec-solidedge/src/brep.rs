@@ -14,7 +14,7 @@ use cadmpeg_ir::ids::{
     ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::scalar::{Magnification, PositiveLength, PositiveReal};
+use cadmpeg_ir::scalar::{Magnification, PositiveLength};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, EdgeCarrier, EdgeEnds, Face, FaceLoops, Loop, LoopBoundary,
     LoopRing, Point, Region, Sense, Shell, Vertex,
@@ -64,7 +64,7 @@ fn reverse(value: Sense) -> Sense {
         Sense::Reversed => Sense::Forward,
     }
 }
-fn tolerance(node: Node<'_>, losses: &mut Vec<LossNote>) -> Option<PositiveReal> {
+fn tolerance(node: Node<'_>, losses: &mut Vec<LossNote>) -> Option<PositiveLength> {
     if node.is_null("tolerance") == Some(true) {
         return None;
     }
@@ -72,7 +72,7 @@ fn tolerance(node: Node<'_>, losses: &mut Vec<LossNote>) -> Option<PositiveReal>
     if raw == Some(0.0) {
         return None;
     }
-    let value = raw.and_then(|value| PositiveReal::new(value * MM_PER_METRE));
+    let value = raw.and_then(|value| PositiveLength::new(value * MM_PER_METRE));
     if value.is_none() {
         losses.push(
             SolidEdgeLossCode::TopologyToleranceInvalid
@@ -85,15 +85,15 @@ fn tolerance(node: Node<'_>, losses: &mut Vec<LossNote>) -> Option<PositiveReal>
 /// The stated tolerance, widened to the departure of the edge's carrier from
 /// its faces when that departure exceeds the document tolerance.
 fn widened(
-    stated: Option<PositiveReal>,
+    stated: Option<PositiveLength>,
     departure: Option<f64>,
     document: f64,
-) -> Option<PositiveReal> {
+) -> Option<PositiveLength> {
     let Some(departure) = departure.filter(|value| *value > document) else {
         return stated;
     };
     let wide = stated.map_or(departure, |value| value.get().max(departure));
-    PositiveReal::new(wide).or(stated)
+    PositiveLength::new(wide).or(stated)
 }
 
 /// A vertex's position in millimetres.
