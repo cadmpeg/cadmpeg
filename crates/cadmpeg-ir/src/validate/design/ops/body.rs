@@ -328,7 +328,8 @@ fn coordinates(index: &DesignRecords<'_>, layout: &PatternLayout, follow: bool) 
         | PatternLayout::Chain(_)
         | PatternLayout::Points { .. }
         | PatternLayout::Table(_)
-        | PatternLayout::Mirror(_) => Some(1),
+        | PatternLayout::Mirror(_)
+        | PatternLayout::Scale(_) => Some(1),
         PatternLayout::Dimensions(runs) => Some(runs.len()),
         PatternLayout::Composite(stages) => stages
             .iter()
@@ -337,14 +338,14 @@ fn coordinates(index: &DesignRecords<'_>, layout: &PatternLayout, follow: bool) 
                 CompositeStage::Circular(circular) => {
                     Some(1 + usize::from(circular.radial.is_some()))
                 }
-                CompositeStage::Mirror(_) => Some(1),
-                CompositeStage::Scale(_) | CompositeStage::Native(_) => None,
+                CompositeStage::Mirror(_) | CompositeStage::Scale(_) => Some(1),
+                CompositeStage::Native(_) => None,
             })
             .sum(),
         PatternLayout::Follow(followed) if follow => {
             coordinates(index, followed_layout(index, followed)?, false)
         }
-        PatternLayout::Follow(_) | PatternLayout::Scale(_) | PatternLayout::Native(_) => None,
+        PatternLayout::Follow(_) | PatternLayout::Native(_) => None,
     }
 }
 
