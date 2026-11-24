@@ -62,8 +62,8 @@ use semantic_annotations::check_semantic_annotations;
 use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
 use topology::graphs::{
-    check_child_list_reciprocity, check_closed_edges, check_coedge_pairing, check_partial_topology,
-    check_shell_connectivity, check_wire_topology,
+    check_child_list_reciprocity, check_closed_edges, check_coedge_pairing, check_loopless_faces,
+    check_partial_topology, check_shell_connectivity, check_wire_topology,
 };
 use topology::{
     check_references, check_subdivision_schemes, check_tolerances, check_topology_tolerances,
@@ -141,6 +141,7 @@ fn validate_model_with_index<'ir>(
     check_child_list_reciprocity(ir, &mut findings);
     check_closed_edges(ir, &mut findings);
     check_shell_connectivity(ir, &mut findings);
+    check_loopless_faces(ir, &mut findings);
     check_partial_topology(ir, &mut findings);
     check_wire_topology(ir, &mut findings);
     if ir.fragment {
