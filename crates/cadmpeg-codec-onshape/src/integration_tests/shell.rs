@@ -78,6 +78,13 @@ fn shell_controls_outside_the_stored_forms_keep_the_feature_native_with_a_named_
             Box::new(|p| p.push(json!({"parameterId": "parts", "queries": []}))),
         ),
         (
+            "repeated part selection",
+            Box::new(|p| {
+                p.push(json!({"parameterId": "parts", "queries": []}));
+                p.push(json!({"parameterId": "parts", "queries": []}));
+            }),
+        ),
+        (
             "unlisted control",
             Box::new(|p| p.push(json!({"parameterId": "unlisted", "value": false}))),
         ),
@@ -91,7 +98,8 @@ fn shell_controls_outside_the_stored_forms_keep_the_feature_native_with_a_named_
             "{name}"
         );
         let codes = losses(&result);
-        let want = if name == "unlisted control" {
+        // A repeated parameter is a malformed record, refused before shell support is assessed.
+        let want = if name == "unlisted control" || name == "repeated part selection" {
             "onshape/history.not-supported"
         } else {
             "onshape/shell.not-supported"

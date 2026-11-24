@@ -1024,7 +1024,11 @@ fn shell(
     if enabled(feature, "isHollow")? {
         return Err(shell_refusal("hollow shells are not supported yet"));
     }
-    if parameter(feature, "parts").is_ok() {
+    // Any `parts` row refuses, a repeated one too (`parameter` reports a repeat as an error).
+    if rows(feature, "parameters")?
+        .iter()
+        .any(|p| p.get("parameterId").and_then(Value::as_str) == Some("parts"))
+    {
         return Err(shell_refusal(
             "a hollow part selection on a face-removal shell is not supported yet",
         ));
