@@ -456,8 +456,8 @@
             "kind": "solved",
             "value": {
               "axis": {
-                "x": -0.0,
-                "y": -0.0,
+                "x": 0.0,
+                "y": 0.0,
                 "z": -1.0
               },
               "center": {
@@ -1071,8 +1071,8 @@
               },
               "u_axis": {
                 "x": -1.0,
-                "y": -0.0,
-                "z": -0.0
+                "y": 0.0,
+                "z": 0.0
               }
             }
           },
@@ -1086,7 +1086,7 @@
               "normal": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "origin": {
                 "x": 10.0,
@@ -1094,9 +1094,9 @@
                 "z": 0.0
               },
               "u_axis": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -1119,8 +1119,8 @@
               },
               "u_axis": {
                 "x": 1.0,
-                "y": -0.0,
-                "z": -0.0
+                "y": 0.0,
+                "z": 0.0
               }
             }
           },
@@ -1142,9 +1142,9 @@
                 "z": 0.0
               },
               "u_axis": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": -1.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -3757,6 +3757,19 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "source.record-extensions-unprojected",
+            "kind": "geometry_not_transferred",
+            "namespace": "alibre",
+            "strict_floor": "warning"
+          }
+        },
+        "message": "the extended entity base stores an integer in 103 record(s), and a body record stores one more in 1; the source states neither, and the decoder drops them",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "source.streams-undecoded",
             "kind": "metadata_not_transferred",
             "namespace": "alibre"
@@ -4712,6 +4725,8 @@
         }
       }
     },
+    "codec_digests": {},
+    "content_digest": "b9daac03b653e6fd2dc12204e17ffec9d3afa5f228cb6686e533c00b0e3ccbb1",
     "decode_digest": "a7fddcdb0d293a96783dae2f0a1ae0a2ac11c4fec864c4a4acdd675117ab45c2",
     "file_digests": {},
     "retained_records": {},

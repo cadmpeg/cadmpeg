@@ -68,8 +68,8 @@
             "kind": "solved",
             "value": {
               "axis": {
-                "x": -0.0,
-                "y": -0.0,
+                "x": 0.0,
+                "y": 0.0,
                 "z": -1.0
               },
               "center": {
@@ -1159,6 +1159,19 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "source.record-extensions-unprojected",
+            "kind": "geometry_not_transferred",
+            "namespace": "alibre",
+            "strict_floor": "warning"
+          }
+        },
+        "message": "the extended entity base stores an integer in 25 record(s), and a body record stores one more in 1; the source states neither, and the decoder drops them",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "source.streams-undecoded",
             "kind": "metadata_not_transferred",
             "namespace": "alibre"
@@ -1439,6 +1452,8 @@
         }
       }
     },
+    "codec_digests": {},
+    "content_digest": "dd1ced8192b8165c1848c4c4aadc5577fa2cc21a30f5de0e2638dfb33c1a2869",
     "decode_digest": "f89c07eb29466302d8aa7994905573b3dcb5261b44e5304f0cba2ba0b5e843bf",
     "file_digests": {},
     "retained_records": {},

@@ -247,8 +247,8 @@
             "kind": "solved",
             "value": {
               "axis": {
-                "x": -0.0,
-                "y": -0.0,
+                "x": 0.0,
+                "y": 0.0,
                 "z": -1.0
               },
               "center": {
@@ -291,8 +291,8 @@
             "kind": "solved",
             "value": {
               "axis": {
-                "x": -0.0,
-                "y": -0.0,
+                "x": 0.0,
+                "y": 0.0,
                 "z": -1.0
               },
               "center": {
@@ -335,8 +335,8 @@
             "kind": "solved",
             "value": {
               "axis": {
-                "x": -0.0,
-                "y": -0.0,
+                "x": 0.0,
+                "y": 0.0,
                 "z": -1.0
               },
               "center": {
@@ -360,8 +360,8 @@
             "kind": "solved",
             "value": {
               "axis": {
-                "x": -0.0,
-                "y": -0.0,
+                "x": 0.0,
+                "y": 0.0,
                 "z": -1.0
               },
               "center": {
@@ -4852,6 +4852,19 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "source.record-extensions-unprojected",
+            "kind": "geometry_not_transferred",
+            "namespace": "alibre",
+            "strict_floor": "warning"
+          }
+        },
+        "message": "the extended entity base stores an integer in 101 record(s), and a body record stores one more in 1; the source states neither, and the decoder drops them",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "source.streams-undecoded",
             "kind": "metadata_not_transferred",
             "namespace": "alibre"
@@ -4884,6 +4897,19 @@
           }
         },
         "message": "4 surface construction(s) are untyped; solved caches and source records retained",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "geometry.pcurve-undecoded",
+            "kind": "geometry_not_transferred",
+            "namespace": "alibre",
+            "strict_floor": "warning"
+          }
+        },
+        "message": "16 coedge(s) name a pcurve record with no decodable 2D carrier; those coedges carry no pcurve. Source kinds: pcurve=16",
         "severity": "warning"
       }
     ],
@@ -5773,6 +5799,8 @@
         }
       }
     },
+    "codec_digests": {},
+    "content_digest": "97cf919b2d9a9e54392b3b5474eedd78b84df33256142cd9e4f2794696335c48",
     "decode_digest": "fd43d82345eca4cb065d5390bd60c7d3569f6428dedb0baa639986feebfc3f46",
     "file_digests": {},
     "retained_records": {
