@@ -279,40 +279,42 @@ enum Pair {
     Or,
 }
 
-/// A run's first operand and each later operand with the step that joins it.
-type Run<'a, R> = (&'a Node<R>, Vec<(Pair, &'a Node<R>)>);
+/// The first operand of a two-operand node or a chain; `None` for any other
+/// node, and for a run of `and` or `or` with no operand.
+fn run_first<R>(node: &Node<R>) -> Option<&Node<R>> {
+    match node {
+        Node::Binary { left, .. } => Some(left.as_ref()),
+        Node::Sum { first, .. } | Node::Product { first, .. } => Some(first.as_ref()),
+        Node::All(operands) | Node::Any(operands) => operands.first(),
+        _ => None,
+    }
+}
 
-/// A two-operand node or a chain as its first operand and each later operand
-/// with the step that joins it, in order; `None` for any other node, and for
-/// a run of `and` or `or` with no operand.
-fn pairs<R>(node: &Node<R>) -> Option<Run<'_, R>> {
-    Some(match node {
-        Node::Binary { op, left, right } => {
-            (left.as_ref(), vec![(Pair::Binary(*op), right.as_ref())])
-        }
-        Node::Sum { first, rest } => (
-            first.as_ref(),
-            rest.iter()
-                .map(|(op, operand)| (Pair::Add(*op), operand))
-                .collect(),
-        ),
-        Node::Product { first, rest } => (
-            first.as_ref(),
-            rest.iter()
-                .map(|(op, operand)| (Pair::Mul(*op), operand))
-                .collect(),
-        ),
-        Node::All(operands) | Node::Any(operands) => {
-            let step = if matches!(node, Node::All(_)) {
-                Pair::And
-            } else {
-                Pair::Or
-            };
-            let (first, rest) = operands.split_first()?;
-            (first, rest.iter().map(|operand| (step, operand)).collect())
-        }
-        _ => return None,
-    })
+/// Each later operand of a two-operand node or a chain with the step that
+/// joins it, in order.
+fn run_steps<R>(node: &Node<R>) -> Vec<(Pair, &Node<R>)> {
+    match node {
+        Node::Binary { op, right, .. } => vec![(Pair::Binary(*op), right.as_ref())],
+        Node::Sum { rest, .. } => rest
+            .iter()
+            .map(|(op, operand)| (Pair::Add(*op), operand))
+            .collect(),
+        Node::Product { rest, .. } => rest
+            .iter()
+            .map(|(op, operand)| (Pair::Mul(*op), operand))
+            .collect(),
+        Node::All(operands) => operands
+            .iter()
+            .skip(1)
+            .map(|operand| (Pair::And, operand))
+            .collect(),
+        Node::Any(operands) => operands
+            .iter()
+            .skip(1)
+            .map(|operand| (Pair::Or, operand))
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
 fn binary<R>(
@@ -579,9 +581,9 @@ pub(super) fn evaluate_tree<R>(
                 | Node::Product { .. }
                 | Node::All(_)
                 | Node::Any(_) => {
-                    let (first, steps) =
-                        pairs(node).ok_or_else(|| type_error("a run states no operand"))?;
-                    for (op, operand) in steps.into_iter().rev() {
+                    let first =
+                        run_first(node).ok_or_else(|| type_error("a run states no operand"))?;
+                    for (op, operand) in run_steps(node).into_iter().rev() {
                         tasks.push(Task::Binary(op, operand));
                         tasks.push(Task::Visit(operand));
                     }
@@ -921,8 +923,8 @@ pub(crate) fn check_types<R>(
                 | Node::Product { .. }
                 | Node::All(_)
                 | Node::Any(_) => {
-                    let (first, steps) = pairs(node).ok_or("a run states no operand")?;
-                    for (op, operand) in steps.into_iter().rev() {
+                    let first = run_first(node).ok_or("a run states no operand")?;
+                    for (op, operand) in run_steps(node).into_iter().rev() {
                         tasks.push(Check::Binary(op, operand));
                         tasks.push(Check::Visit(operand));
                     }
