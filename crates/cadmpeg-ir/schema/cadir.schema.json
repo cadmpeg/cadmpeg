@@ -58588,7 +58588,7 @@
       ]
     },
     "Picked": {
-      "description": "One pick of a selection. Its identity key is\n`(target, context, native, domain)`; neither the witness nor `resolved`\nis part of it.",
+      "description": "One pick of a selection. Its identity key is\n`(target, context, native, domain)`, and a `Native` pick that carries no\nnative name adds its witness. `resolved` is never part of it.",
       "type": "object",
       "properties": {
         "context": {
