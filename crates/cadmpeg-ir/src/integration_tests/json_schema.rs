@@ -218,3 +218,41 @@ fn a_procedural_carrier_cache_is_a_member_of_its_schema() {
         }
     }
 }
+
+/// §2.5: an `Option` that is a list element, an array element, or a map
+/// value writes `null` for `None`. An assembly context's participants are
+/// `[effect, selection]` pairs, and a participant whose effect the source
+/// does not state has `null` as its pair's first element: the writer writes
+/// it, the reader reads it back, and the committed schema admits it there.
+#[test]
+fn a_null_pair_key_is_written_read_and_admitted() {
+    use std::collections::BTreeMap;
+
+    use crate::design::ops::assembly::AssemblyContext;
+    use crate::design::selection::{Anchor, Picks, Selection};
+
+    let context = AssemblyContext {
+        participants: BTreeMap::from([(
+            None,
+            Selection {
+                at: Anchor::Current,
+                picks: Picks::Unread,
+                native: None,
+            },
+        )]),
+    };
+    let written = serde_json::to_value(&context).unwrap();
+    assert_eq!(written["participants"][0][0], Value::Null, "{written}");
+    let read: AssemblyContext = serde_json::from_value(written).unwrap();
+    assert_eq!(read, context);
+
+    let schema: Value = serde_json::from_str(crate::CADIR_JSON_SCHEMA).unwrap();
+    let defs = schema["$defs"].as_object().unwrap();
+    let participants = &defs["AssemblyContext"]["properties"]["participants"];
+    assert!(admits_null(
+        &participants["items"]["prefixItems"][0],
+        defs,
+        0
+    ));
+    assert!(!admits_null(participants, defs, 0));
+}

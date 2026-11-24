@@ -19,7 +19,7 @@ use crate::design::construction::{
     InputRole, PlaneValue, Relation, ScalarDimension, Subject,
 };
 use crate::design::dimension::Dimension;
-use crate::design::feature::OperationFamily;
+use crate::design::feature::FeatureOperation;
 use crate::design::names::{NameKind, TopoName};
 use crate::design::ops::shared::{
     Alignment, AxisLimits, Bounds, ChainLayout, ChainLink, ChainLinks, Coupling, DimensionRun,
@@ -35,6 +35,7 @@ use crate::design::options::{NativeOption, SymmetricMeasure};
 use crate::design::read;
 use crate::design::selection::{
     Anchor, MemberOrder, Members, PathStep, PickTarget, Picked, Picks, Selection, StepRef,
+    Unordered,
 };
 use crate::design::tests::unit_variants::{self, assert_units_refuse_value, Reader};
 use crate::features::geometry::FinitePoint3;
@@ -1120,23 +1121,23 @@ fn context_effects() -> Vec<ContextEffect> {
     ]
 }
 
-fn assembly_features() -> Vec<AssemblyFeature> {
+fn assembly_contexts() -> Vec<AssemblyContext> {
     vec![
-        AssemblyFeature {
-            participants: selection(17),
-            effect: Some(ContextEffect::Instances),
-            operation: Box::new(FeatureOperation::Unresolved {
-                family: OperationFamily::Hole,
-            }),
+        AssemblyContext {
+            participants: BTreeMap::from([
+                (None, selection(16)),
+                (Some(ContextEffect::Instances), selection(17)),
+                (
+                    Some(ContextEffect::Native(text("creo:visibility_level:2"))),
+                    selection(18),
+                ),
+            ]),
         },
-        AssemblyFeature {
-            participants: unread(),
-            effect: None,
-            operation: Box::new(FeatureOperation::Native {
-                kind: crate::codec_name!("creo:assem_cut"),
-                native_options: options(),
-                source_settings: NativeOptions::new(),
-            }),
+        AssemblyContext {
+            participants: BTreeMap::from([(Some(ContextEffect::Definitions), unread())]),
+        },
+        AssemblyContext {
+            participants: BTreeMap::new(),
         },
     ]
 }
@@ -1150,16 +1151,15 @@ fn assembly_operations() -> Vec<FeatureOperation> {
         FeatureOperation::RigidGroup(Box::new(rigid_groups().remove(0))),
         FeatureOperation::ComponentPattern(Box::new(component_patterns().remove(0))),
         FeatureOperation::MirrorComponents(Box::new(mirror_components().remove(0))),
-        FeatureOperation::AssemblyFeature(Box::new(assembly_features().remove(0))),
     ]
 }
 
 #[test]
 fn every_assembly_operation_round_trips() {
     let mut report = Report::default();
-    report.check("AssemblyFeature", assembly_features());
+    report.check("AssemblyContext", assembly_contexts());
     report.check("FeatureOperation", assembly_operations());
-    report.variants("FeatureOperation", &assembly_operations(), 7);
+    report.variants("FeatureOperation", &assembly_operations(), 6);
     assert!(report.failures.is_empty(), "{:#?}", report.failures);
 }
 
@@ -1177,8 +1177,7 @@ fn an_assembly_operation_takes_the_adjacent_tag() {
             "joint",
             "rigid_group",
             "component_pattern",
-            "mirror_components",
-            "assembly_feature"
+            "mirror_components"
         ]
     );
     let place = places().remove(1);
@@ -1186,84 +1185,34 @@ fn an_assembly_operation_takes_the_adjacent_tag() {
         to_value(&FeatureOperation::Place(Box::new(place.clone()))),
         json!({"kind": "place", "value": to_value(&place)})
     );
-    let feature = assembly_features().remove(0);
-    assert_eq!(
-        to_value(&feature),
-        json!({
-            "participants": to_value(&feature.participants),
-            "effect": {"kind": "instances"},
-            "operation": {"kind": "unresolved", "value": {"family": "hole"}},
-        })
-    );
-    let mut bare = to_value(&assembly_features().remove(1));
-    assert!(bare.get("effect").is_none());
-    bare["effect"] = json!(null);
-    assert!(refuses::<AssemblyFeature>(&bare.to_string()).contains("effect"));
-    bare.as_object_mut().unwrap().remove("effect");
-    bare.as_object_mut().unwrap().remove("operation");
-    refuses::<AssemblyFeature>(&bare.to_string());
 }
 
-/// Runs `work` on a thread whose stack is 2 MiB, the default for a spawned
-/// thread.
-fn on_a_default_thread<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
-    std::thread::Builder::new()
-        .stack_size(2 << 20)
-        .spawn(work)
-        .unwrap()
-        .join()
-        .unwrap()
-}
-
-/// An assembly feature's operation can itself be an assembly feature, and
-/// the spec gives that nesting no ceiling; the JSON depth limit bounds it.
-/// One level past the deepest nesting the reader admits is refused by that
-/// limit, and the deepest reads, prints the same bytes, clones, compares, and
-/// drops on a default thread.
+/// §6.7: the participants are `[effect, selection]` pairs in key order, an
+/// unstated effect first as `null`, and an empty map is written `[]`.
 #[test]
-fn assembly_features_nest_to_the_json_depth_limit_on_a_default_thread() {
-    fn nested(depth: usize) -> String {
-        let leaf = FeatureOperation::Unresolved {
-            family: OperationFamily::Hole,
-        };
-        let operation = (0..depth).fold(leaf, |operation, _| {
-            FeatureOperation::AssemblyFeature(Box::new(AssemblyFeature {
-                participants: unread(),
-                effect: None,
-                operation: Box::new(operation),
-            }))
-        });
-        serde_json::to_string(&operation).unwrap()
-    }
-    let past = (1..128)
-        .find(|&depth| {
-            read::from_str::<FeatureOperation>(&nested(depth), &ResourceLimits::desktop()).is_err()
-        })
-        .expect("the reader refuses some depth below the JSON limit");
-    assert!(past > 1, "a single assembly feature is refused");
-    let refusal = on_a_default_thread({
-        let text = nested(past);
-        move || read::from_str::<FeatureOperation>(&text, &ResourceLimits::desktop()).err()
-    });
-    assert!(
-        matches!(&refusal, Some(cadmpeg_core::CodecError::Malformed(message)) if message.contains("recursion limit exceeded")),
-        "depth {past}: {refusal:?}"
+fn an_assembly_context_writes_its_participants_as_pairs_in_key_order() {
+    let context = assembly_contexts().remove(0);
+    assert_eq!(
+        to_value(&context),
+        json!({"participants": [
+            [null, to_value(&selection::<Unordered>(16))],
+            [{"kind": "instances"}, to_value(&selection::<Unordered>(17))],
+            [
+                {"kind": "native", "value": "creo:visibility_level:2"},
+                to_value(&selection::<Unordered>(18))
+            ],
+        ]})
     );
-    let deepest = nested(past - 1);
-    let printed = on_a_default_thread({
-        let deepest = deepest.clone();
-        move || {
-            let read: FeatureOperation =
-                read::from_str(&deepest, &ResourceLimits::desktop()).unwrap();
-            let printed = serde_json::to_string(&read).unwrap();
-            let cloned = read.clone();
-            assert_eq!(cloned, read);
-            drop(cloned);
-            drop(read);
-            printed
-        }
-    });
-    assert_eq!(printed, deepest);
+    assert_eq!(
+        to_value(&assembly_contexts().remove(2)),
+        json!({"participants": []})
+    );
+    refuses::<AssemblyContext>("{}");
+    let swapped = json!({"participants": [
+        [{"kind": "instances"}, to_value(&selection::<Unordered>(17))],
+        [null, to_value(&selection::<Unordered>(16))],
+    ]});
+    assert!(refuses::<AssemblyContext>(&swapped.to_string()).contains("out of key order"));
 }
 
 #[test]
@@ -1519,7 +1468,7 @@ fn every_assembly_and_shared_layout_type_has_a_schema() {
     generates::<MirrorOrientation>(&mut generator);
     generates::<MirrorReversal>(&mut generator);
     generates::<MirrorPivot>(&mut generator);
-    generates::<AssemblyFeature>(&mut generator);
+    generates::<AssemblyContext>(&mut generator);
     generates::<ContextEffect>(&mut generator);
     generates::<PairElement>(&mut generator);
     generates::<PatternLayout>(&mut generator);

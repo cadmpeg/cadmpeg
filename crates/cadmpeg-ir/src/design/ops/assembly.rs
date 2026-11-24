@@ -5,12 +5,14 @@
 //! design: the scope of the assembly definition, or a Fusion root scope with
 //! `Feature.component` naming the component. It may name an occurrence owned
 //! by any definition its scope spans. The operations place, connect, repeat,
-//! mirror, and modify occurrences: [`Place`], [`PlaceSet`], [`Joint`],
-//! [`ComponentPattern`], [`MirrorComponents`], and [`AssemblyFeature`], whose
-//! [`ContextEffect`] states what it changes. A [`RigidGroup`] holds occurrences
-//! in their relative placement.
+//! and mirror occurrences: [`Place`], [`PlaceSet`], [`Joint`],
+//! [`ComponentPattern`], and [`MirrorComponents`]. A [`RigidGroup`] holds
+//! occurrences in their relative placement. An assembly feature is a feature
+//! whose definition states an [`AssemblyContext`]: it runs its operation over
+//! participants, each keyed by the [`ContextEffect`] that states what the
+//! feature changes for it.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_derive::DeserializeName;
@@ -21,7 +23,6 @@ use serde::{Deserialize, Serialize};
 use super::body::ScaleFactors;
 use super::shared::{Joint, PatternLayout};
 use crate::design::construction::{kinds, Construction};
-use crate::design::feature::FeatureOperation;
 use crate::design::names::InstanceIndex;
 use crate::design::options::NativeOptions;
 use crate::design::selection::{OccurrencePath, OrderedSelection, SetSelection};
@@ -271,30 +272,28 @@ pub enum MirrorPivot {
     Origin,
 }
 
-/// An operation (an extrude or revolve cut, a hole, a split, a fillet) run in
-/// the assembly over the occurrences, or bodies through occurrence contexts,
-/// that it modifies.
+/// The context of an assembly feature: the occurrences, or bodies through
+/// occurrence contexts, that the feature's operation changes, keyed by what it
+/// changes for them. `None` keys the participants whose effect the source does
+/// not state. On the wire it is an array of `[effect, selection]` pairs in key
+/// order.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-pub struct AssemblyFeature {
-    /// What the feature modifies, its picks carrying occurrence contexts: the
-    /// only statement of it, since the operation states no body operand of
-    /// its own.
-    pub participants: SetSelection,
-    /// What the feature changes. `None`, not stated.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_effect"
+pub struct AssemblyContext {
+    /// The participants, one selection per effect.
+    #[serde(with = "cadmpeg_core::distinct_keys::pairs")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "BTreeSet<(Option<ContextEffect>, SetSelection)>")
     )]
-    pub effect: Option<ContextEffect>,
-    /// The operation the feature runs.
-    pub operation: Box<FeatureOperation>,
+    pub participants: BTreeMap<Option<ContextEffect>, SetSelection>,
 }
 
-/// What an assembly feature changes.
-#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
+/// What an assembly feature changes for the participants under it.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, cadmpeg_derive::DeserializeTagged,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -308,7 +307,8 @@ pub enum ContextEffect {
     #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Instances,
     /// The participants' definitions: each changed definition's scope holds a
-    /// resulting feature with `driven_by` naming the assembly feature.
+    /// resulting feature with `driven_by` naming the feature whose definition
+    /// states the context.
     #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Definitions,
     /// An effect whose meaning is not established.
@@ -317,7 +317,6 @@ pub enum ContextEffect {
 
 cadmpeg_core::named_optional_field!(deserialize_about<T>, T, "about");
 cadmpeg_core::named_optional_field!(deserialize_base<T>, T, "base");
-cadmpeg_core::named_optional_field!(deserialize_effect<T>, T, "effect");
 cadmpeg_core::named_optional_field!(deserialize_orientation<T>, T, "orientation");
 cadmpeg_core::named_optional_field!(deserialize_packaged<T>, T, "packaged");
 cadmpeg_core::named_optional_field!(deserialize_placement<T>, T, "placement");

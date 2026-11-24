@@ -554,6 +554,7 @@ pub(super) fn selection_rules() -> Vec<SelectionRule> {
         SelectionRule::Intersection {
             with: members_of(&[3]),
         },
+        SelectionRule::Affected,
         SelectionRule::Native(crate::codec_name!("nx:tangent_curves")),
     ]
 }
