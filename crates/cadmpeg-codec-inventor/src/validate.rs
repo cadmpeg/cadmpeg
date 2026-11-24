@@ -2538,6 +2538,10 @@ fn validate_features(
                                     .as_ref()?;
                                 Some((*parameter, value))
                             },
+                            crate::feature::history_states::loft_state_bound(
+                                &data.feature_history_states,
+                                &raw_feature.id(),
+                            ),
                         )
                     })
                 });
