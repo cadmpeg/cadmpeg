@@ -134,103 +134,13 @@
         "appearance_bindings": [],
         "appearances": [],
         "articulations": [],
-        "assembly_joints": [],
         "assets": [],
         "attributes": [],
         "colliders": [],
-        "configurations": [],
         "declared_measures": [],
         "drawings": [],
-        "feature_input_topologies": [],
-        "feature_result_topologies": [],
-        "features": [
-          {
-            "definition": {
-              "kind": "operation",
-              "value": {
-                "kind": "native",
-                "value": {
-                  "kind": "FSET",
-                  "parameters": {}
-                }
-              }
-            },
-            "dependencies": [],
-            "id": "nx:feature-history:feature#0000000000-0000000000",
-            "name": "FSET",
-            "native_ref": "nx:feature-history:operation-label#0000000000-0000000000",
-            "ordinal": 2,
-            "outputs": [],
-            "source_content": [],
-            "source_properties": {
-              "object_index.0": "null",
-              "object_index.1": "null",
-              "object_index.2": "null",
-              "object_index.3": "null",
-              "operation_record": "nx:feature-history:operation-record#0000000000-0000000000"
-            },
-            "source_tag": "FSET"
-          },
-          {
-            "definition": {
-              "kind": "operation",
-              "value": {
-                "kind": "native",
-                "value": {
-                  "kind": "FSET",
-                  "parameters": {}
-                }
-              }
-            },
-            "dependencies": [],
-            "id": "nx:feature-history:feature#0000000000-0000000001",
-            "name": "FSET",
-            "native_ref": "nx:feature-history:operation-label#0000000000-0000000001",
-            "ordinal": 1,
-            "outputs": [],
-            "source_content": [],
-            "source_properties": {
-              "object_index.0": "null",
-              "object_index.1": "null",
-              "object_index.2": "null",
-              "object_index.3": "null",
-              "operation_record": "nx:feature-history:operation-record#0000000000-0000000001",
-              "operation_terminal_frame": "nx:feature-history:operation-terminal-frame#0000000000-0000000001"
-            },
-            "source_tag": "FSET"
-          },
-          {
-            "definition": {
-              "kind": "operation",
-              "value": {
-                "kind": "native",
-                "value": {
-                  "kind": "FSET",
-                  "parameters": {}
-                }
-              }
-            },
-            "dependencies": [],
-            "id": "nx:feature-history:feature#0000000000-0000000002",
-            "name": "FSET",
-            "native_ref": "nx:feature-history:operation-label#0000000000-0000000002",
-            "ordinal": 0,
-            "outputs": [],
-            "source_content": [],
-            "source_properties": {
-              "object_index.0": "null",
-              "object_index.1": "null",
-              "object_index.2": "null",
-              "object_index.3": "null",
-              "operation_record": "nx:feature-history:operation-record#0000000000-0000000002"
-            },
-            "source_tag": "FSET"
-          }
-        ],
-        "history_bodies": [],
         "mass_properties": [],
         "occurrences": [],
-        "parameters": [],
         "physical_materials": [],
         "physics_scenes": [],
         "pmi": [],
@@ -246,7 +156,6 @@
             "kind": "part",
             "occurrences": [],
             "representations": [],
-            "sketches": [],
             "storage": {
               "document": {},
               "kind": "file"
@@ -255,14 +164,7 @@
         ],
         "rigid_bodies": [],
         "semantic_annotations": [],
-        "sketch_constraints": [],
-        "sketch_entities": [],
-        "sketches": [],
         "solver_settings": [],
-        "spatial_sketch_constraints": [],
-        "spatial_sketch_entities": [],
-        "spatial_sketches": [],
-        "spreadsheets": [],
         "tessellations": [],
         "view_presentations": []
       },

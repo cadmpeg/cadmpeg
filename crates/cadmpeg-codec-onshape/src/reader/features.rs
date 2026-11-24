@@ -238,8 +238,11 @@ fn whole_sketch_region_query(query: &Value) -> bool {
         Some(true) => "true",
         Some(false) | None => "false",
     };
-    let expected = format!("query = qSketchRegion(id + \"{sketch}\", {inner});");
-    string.split_whitespace().eq(expected.split_whitespace())
+    let expected = format!("query=qSketchRegion(id+\"{sketch}\",{inner});");
+    let stripped: String = string.chars().filter(|c| !c.is_whitespace()).collect();
+    // The literal keeps its exact text, so ids that differ only in whitespace stay distinct.
+    string.contains(&format!("\"{sketch}\""))
+        && stripped == expected.replace(char::is_whitespace, "")
 }
 fn sketch_entities(queries: &[Value], model: &Model, entity_type: &str) -> Mapping<Value> {
     sketch_entities_in_order(queries, model, entity_type, false)
@@ -475,7 +478,9 @@ pub(super) fn dependencies(
         return Ok(result);
     }
     let operation = definition.pointer("/value/kind").and_then(Value::as_str);
-    if operation == Some("sketch") && sketch::built_in_frame(source) {
+    if operation == Some("sketch") && sketch::built_in_frame(source)
+        || operation == Some("datum_offset_plane") && super::planes::built_in(source)
+    {
         return Ok(result);
     }
     let reference = |native: &str| -> Mapping<String> {
@@ -520,6 +525,7 @@ pub(super) fn dependencies(
             continue;
         }
         let consumed = match operation {
+            Some("datum_offset_plane") => key == "entities",
             Some("sketch") => key == "sketchPlane",
             Some("extrude") => {
                 key == if value(source, "bodyType") == Some("THIN") {
@@ -596,9 +602,9 @@ pub(super) fn dependencies(
             let historical = match (operation, key) {
                 (Some("extrude" | "revolve" | "sweep"), "booleanScope")
                 | (Some("hole"), "scope") => Some(topology::OperandKind::Body),
-                (Some("sketch"), "sketchPlane") | (Some("extrude"), "endBoundEntityFace") => {
-                    Some(topology::OperandKind::Face)
-                }
+                (Some("datum_offset_plane"), "entities")
+                | (Some("sketch"), "sketchPlane")
+                | (Some("extrude"), "endBoundEntityFace") => Some(topology::OperandKind::Face),
                 (Some("fillet" | "chamfer"), "entities") => Some(topology::OperandKind::Edge),
                 (Some("revolve"), "axis")
                     if query.get("queryType").and_then(Value::as_str) != Some("SKETCH_ENTITY") =>
@@ -608,7 +614,12 @@ pub(super) fn dependencies(
                 _ => None,
             };
             let mut producers = Vec::new();
-            if let Some(kind) = historical.filter(|_| query.get("deterministicIds").is_some()) {
+            if let Some(kind) = historical.filter(|_| {
+                query.get("deterministicIds").is_some()
+                    && !explicit
+                        .iter()
+                        .any(|native| super::planes::created(model, native).is_ok())
+            }) {
                 let ids = rows(&query, "deterministicIds")?;
                 if ids.is_empty() {
                     return Err("feature dependency selection is empty".into());
@@ -737,6 +748,7 @@ pub(super) fn map(
         None
     };
     match text(feature, "featureType")? {
+        "cPlane" => super::planes::map(feature, ordinal, inputs, model, unresolved),
         "newSketch" => sketch::map(feature, ordinal, inputs, model, report, unresolved),
         "assignVariable" => {
             if value(feature, "mode").is_some_and(|m| m != "ASSIGNED") {

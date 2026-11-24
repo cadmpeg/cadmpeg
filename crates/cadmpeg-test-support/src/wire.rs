@@ -64,3 +64,25 @@ pub fn value<T: DeserializeOwned>(value: &impl Serialize) -> T {
 pub fn coverage(report: &impl Serialize) -> std::collections::BTreeMap<String, usize> {
     field_or_default(report, "coverage")
 }
+
+/// The JSON form of `ir` with the arenas the CADIR wire omits restated under
+/// `model`, as the document holds them in memory.
+///
+/// # Panics
+///
+/// Panics if serialization fails.
+pub fn in_memory_json(ir: &cadmpeg_ir::CadIr) -> serde_json::Value {
+    let mut value = serde_json::to_value(ir).expect("serialize tested document");
+    let serde_json::Value::Object(omitted) = ir
+        .model
+        .omitted_arenas_value()
+        .expect("serialize the omitted arenas")
+    else {
+        panic!("the omitted arenas serialize as an object");
+    };
+    value["model"]
+        .as_object_mut()
+        .expect("the document states its model")
+        .extend(omitted);
+    value
+}

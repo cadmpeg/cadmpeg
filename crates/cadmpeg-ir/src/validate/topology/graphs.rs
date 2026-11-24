@@ -247,7 +247,7 @@ pub(in crate::validate) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Fi
             record_finding(
                 findings,
                 Check::WireTopology,
-                Severity::Error,
+                Severity::Warning,
                 Some(body.id.as_str()),
                 format_args!("wire body contains faces"),
             );

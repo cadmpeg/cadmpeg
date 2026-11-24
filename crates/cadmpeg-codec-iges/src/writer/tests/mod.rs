@@ -67,6 +67,7 @@ mod closed_edge_range;
 mod encode;
 mod extrusion_directrix;
 mod ownership;
+mod partial;
 mod pcurve_orientation;
 mod physical_dependence;
 mod quarantine;

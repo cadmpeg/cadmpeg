@@ -20,8 +20,9 @@ use crate::design::selection::{
 };
 use crate::design::units::{Duration, Unit, UnitFactor, UnitSymbol};
 use crate::features::geometry::FinitePoint3;
-use crate::geometry::analytic::{DegenerateCurve, LineCurve};
+use crate::geometry::analytic::{CircleCurve, DegenerateCurve, LineCurve};
 use crate::geometry::{InlineCurve, SolvedCurveGeometry, SolvedSurfaceGeometry};
+use crate::math::{Point3, Vector3};
 use crate::scalar::Length;
 use crate::transform::Transform;
 use crate::units::UnitVector3;
@@ -237,6 +238,131 @@ fn members_are_distinct_by_identity_not_by_witness() {
         .iter()
         .map(Picked::key)
         .eq(keys.iter().copied()));
+}
+
+/// A `Native` pick that carries no native name is stated by its witness, so the
+/// witness joins its identity key (§5.8) and orders it in §2.5's derived
+/// structural order: declared variant order, where a line precedes a circle
+/// although `"circle"` precedes `"line"` as written, and declared field order,
+/// where `point` precedes `direction` although `"direction"` precedes
+/// `"point"` as written.
+#[test]
+fn a_native_pick_with_no_name_is_identified_by_its_witness() {
+    let native = |witness: Witness| Picked {
+        target: PickTarget::Native { within: None },
+        witness: Some(witness),
+        ..picked(1)
+    };
+    let empty = fixtures::witnesses().remove(1);
+    let line = Witness {
+        curves: vec![InlineCurve::Line(LineCurve::new(
+            FinitePoint3::ZERO,
+            UnitVector3::X_AXIS,
+        ))],
+        ..empty.clone()
+    };
+    let circle_curve = CircleCurve::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        1.0,
+    )
+    .unwrap();
+    let circle = Witness {
+        curves: vec![InlineCurve::Circle(circle_curve)],
+        ..empty.clone()
+    };
+    let set = Members::<Picked, Unordered>::new(vec![native(circle.clone()), native(line.clone())])
+        .unwrap();
+    assert_eq!(set.as_slice()[0].witness.as_ref(), Some(&line));
+    assert!(Members::<Picked, Unordered>::try_from(vec![
+        native(circle.clone()),
+        native(line.clone())
+    ])
+    .is_err());
+    assert!(
+        Members::<Picked, Unordered>::new(vec![native(line.clone()), native(line.clone())])
+            .is_err()
+    );
+
+    let at_point = Witness {
+        point: Some(fixtures::point(1.0, 0.0, 0.0)),
+        ..empty.clone()
+    };
+    let along = Witness {
+        direction: Some(UnitVector3::X_AXIS),
+        ..empty.clone()
+    };
+    let set =
+        Members::<Picked, Unordered>::new(vec![native(at_point.clone()), native(along.clone())])
+            .unwrap();
+    assert_eq!(set.as_slice()[0].witness.as_ref(), Some(&along));
+
+    let at_zero = Witness {
+        point: Some(fixtures::point(0.0, 0.0, 0.0)),
+        ..empty.clone()
+    };
+    let at_negative_zero = Witness {
+        point: Some(fixtures::point(-0.0, 0.0, 0.0)),
+        ..empty.clone()
+    };
+    assert_eq!(
+        native(at_zero.clone()).key(),
+        native(at_negative_zero).key()
+    );
+
+    let named = |witness: Witness| Picked {
+        native: Some(fixtures::native_name()),
+        ..native(witness)
+    };
+    assert_eq!(named(line.clone()).key(), named(circle.clone()).key());
+    let entity = |witness: Witness| Picked {
+        witness: Some(witness),
+        ..picked(1)
+    };
+    assert_eq!(entity(line.clone()).key(), entity(circle.clone()).key());
+
+    let limited = |end: Picked| Picked {
+        domain: Some(PickDomain::Limits {
+            start: None,
+            end: Some(Box::new(end)),
+        }),
+        ..picked(3)
+    };
+    assert_ne!(
+        limited(native(line.clone())).key(),
+        limited(native(circle)).key()
+    );
+    assert_eq!(
+        limited(named(line.clone())).key(),
+        limited(named(at_zero)).key()
+    );
+}
+
+/// A carrier written through another form orders as written: a circle
+/// compares its `axis` before its `radius`, the order of its wire fields.
+#[test]
+fn a_witness_carrier_orders_by_its_written_fields() {
+    let circle = |axis_z: f64, radius: f64| Witness {
+        curves: vec![InlineCurve::Circle(
+            CircleCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, axis_z),
+                Vector3::new(1.0, 0.0, 0.0),
+                radius,
+            )
+            .unwrap(),
+        )],
+        ..fixtures::witnesses().remove(1)
+    };
+    let native = |witness: Witness| Picked {
+        target: PickTarget::Native { within: None },
+        witness: Some(witness),
+        ..picked(1)
+    };
+    let (up, down) = (circle(1.0, 1.0), circle(-1.0, 2.0));
+    let set = Members::<Picked, Unordered>::new(vec![native(up), native(down.clone())]).unwrap();
+    assert_eq!(set.as_slice()[0].witness.as_ref(), Some(&down));
 }
 
 /// An unordered member list sorts by `(target, context, native, domain)` and
