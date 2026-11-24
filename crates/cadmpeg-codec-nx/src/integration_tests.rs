@@ -354,7 +354,7 @@ fn loopless_sphere_face_is_bounded_by_a_vertex_loop_at_each_pole() {
     let result = decode(prt_with_partition(&whole_sphere_partition_stream()));
     let geometry = &result.ir().geometry;
     assert_eq!(geometry.faces.len(), 1);
-    assert_eq!(geometry.faces[0].loops.iter().count(), 2);
+    assert_eq!(geometry.faces[0].loops.stated().count(), 2);
     let mut heights = geometry
         .loops
         .iter()

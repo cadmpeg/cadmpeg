@@ -52,6 +52,7 @@ pub(crate) mod design_records;
 mod design_references;
 pub(crate) mod feature_parents;
 mod legacy;
+mod one_zero;
 pub mod procedural;
 
 struct UnknownProjection<T>(T);
@@ -2604,7 +2605,8 @@ impl CadIr {
     }
 
     /// Parse JSON and reject any unsupported `ir_version`, or a document
-    /// whose scope excludes a class it holds records of.
+    /// whose scope excludes a class it holds records of. Every float zero,
+    /// `-0` and `-0.0` included, reads as 0 (§2.5).
     ///
     /// Version is probed first (`ir_version` only) so the full document is
     /// materialized once after the version gate.
@@ -2623,7 +2625,7 @@ impl CadIr {
 
         let probe = serde_json::from_str::<VersionProbe>(s)?;
         check_ir_version(probe.ir_version.as_ref())?;
-        serde_json::from_str::<Self>(s)
+        one_zero::from_str::<Self>(s)
     }
 
     /// Sorts every arena of the document's homes and native namespaces by

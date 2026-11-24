@@ -11,7 +11,7 @@ use cadmpeg_ir::features::revolve::RevolveExtent;
 use cadmpeg_ir::features::selections::{
     BodySelection, DistinctMembers, EdgeSelection, FaceSelection,
 };
-use cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuityState;
+use cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuity;
 use cadmpeg_ir::features::sweeps::HelixShape;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
@@ -1086,7 +1086,7 @@ fn semantic_writer_preserves_missing_cut_with_surface_side_flag() {
 
 #[test]
 fn semantic_writer_round_trips_filled_surface() {
-    filled_surface_round_trip(FilledSurfaceContinuityState::uniform(
+    filled_surface_round_trip(FilledSurfaceContinuity::one(
         cadmpeg_ir::features::surface_inputs::SurfaceContinuity::Curvature,
     ));
 }
@@ -1097,16 +1097,16 @@ fn semantic_writer_accepts_all_equal_per_boundary_continuity() {
         vec![cadmpeg_ir::features::surface_inputs::SurfaceContinuity::Curvature],
         vec![cadmpeg_ir::features::surface_inputs::SurfaceContinuity::Curvature; 2],
     ] {
-        filled_surface_round_trip(FilledSurfaceContinuityState::per_boundary(
-            cadmpeg_ir::features::selections::NonEmptyMembers::try_from(
+        filled_surface_round_trip(FilledSurfaceContinuity {
+            conditions: cadmpeg_ir::features::selections::NonEmptyMembers::try_from(
                 conditions.into_iter().map(Into::into).collect::<Vec<_>>(),
             )
             .unwrap(),
-        ));
+        });
     }
 }
 
-fn filled_surface_round_trip(edited_continuity: FilledSurfaceContinuityState) {
+fn filled_surface_round_trip(edited_continuity: FilledSurfaceContinuity) {
     use cadmpeg_ir::features::surface_inputs::SurfaceContinuity;
 
     let base_bytes = sldprt_with_body(&triangle_body());
@@ -1138,7 +1138,7 @@ fn filled_surface_round_trip(edited_continuity: FilledSurfaceContinuityState) {
             merge_result: Some(false),
             interior_constraints,
             reverse_normal: None,
-        }) if continuity.uniform_value() == Some(SurfaceContinuity::Tangent)
+        }) if continuity.as_ref().and_then(cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuity::uniform_continuity) == Some(SurfaceContinuity::Tangent)
             && edges == std::slice::from_ref(&edge_id) && edge_native == &edge
             && faces == std::slice::from_ref(&face_id) && face_native == &face
             && interior_constraints.is_empty()
@@ -1161,7 +1161,7 @@ fn filled_surface_round_trip(edited_continuity: FilledSurfaceContinuityState) {
                 EdgeSelection::Edges(vec![edge_id.clone()]),
             );
             *support_faces = FaceSelection::Faces(vec![face_id.clone()]);
-            *continuity = edited_continuity;
+            *continuity = Some(edited_continuity);
             *merge_result = Some(true);
         });
     }
@@ -1188,7 +1188,7 @@ fn filled_surface_round_trip(edited_continuity: FilledSurfaceContinuityState) {
             ref continuity,
             merge_result: Some(true),
             ..
-        }) if continuity.uniform_value() == Some(SurfaceContinuity::Curvature)
+        }) if continuity.as_ref().and_then(cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuity::uniform_continuity) == Some(SurfaceContinuity::Curvature)
     ));
 }
 
@@ -1229,11 +1229,11 @@ fn semantic_writer_keeps_stored_filled_surface_weights_and_names_the_edit() {
             else {
                 panic!("filled surface");
             };
-            *continuity = FilledSurfaceContinuityState::per_boundary(NonEmptyMembers::one(
-                FilledSurfaceBoundaryCondition::Tangent {
+            *continuity = Some(FilledSurfaceContinuity {
+                conditions: NonEmptyMembers::one(FilledSurfaceBoundaryCondition::Tangent {
                     weight: cadmpeg_ir::scalar::PositiveReal::new(0.15),
-                },
-            ));
+                }),
+            });
         });
     }
     let unwritten =

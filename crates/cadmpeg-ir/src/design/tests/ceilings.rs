@@ -10,13 +10,15 @@ use cadmpeg_core::CodecError;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use super::expressions::Choices;
+use super::expressions::{Choices, Operator};
 use super::fixtures::{self, container, feature, picked};
 use crate::design::construction::{
     kinds, AnyConstruction, Construction, ConstructionInput, InputReference,
 };
 use crate::design::dimension::ParameterRef;
-use crate::design::expr::{self, BinaryOp, ExprError, Function, Neutral, NeutralWire, Node};
+use crate::design::expr::{
+    self, AddOp, BinaryOp, ExprError, Function, MulOp, Neutral, NeutralWire, Node,
+};
 use crate::design::names::{NameEntry, TopoName};
 use crate::design::read::{self, Ceiling};
 use crate::design::selection::{PickDomain, Picked};
@@ -194,23 +196,7 @@ fn depth(node: &Node<ParameterRef>) -> u64 {
     let mut work = vec![(node, 1)];
     while let Some((node, at)) = work.pop() {
         deepest = deepest.max(at);
-        match node {
-            Node::Unary { operand, .. } => work.push((operand, at + 1)),
-            Node::Binary { left, right, .. } => {
-                work.push((left, at + 1));
-                work.push((right, at + 1));
-            }
-            Node::Call { args, .. } => work.extend(args.iter().map(|arg| (arg, at + 1))),
-            Node::If(branches) => work.extend(branches.iter().map(|branch| (branch, at + 1))),
-            Node::Number { .. }
-            | Node::Constant(_)
-            | Node::Boolean(_)
-            | Node::Text(_)
-            | Node::Reference(_)
-            | Node::Measure(_)
-            | Node::LawParameter
-            | Node::Bend(_) => {}
-        }
+        work.extend(node.operands().map(|operand| (operand, at + 1)));
     }
     deepest
 }
@@ -257,20 +243,20 @@ fn a_mixed_expression_at_the_ceiling_reads_and_prints_on_a_small_stack() {
 }
 
 /// The binary operators by precedence, from the tightest to the loosest.
-const LADDER: [&[BinaryOp]; 6] = [
-    &[BinaryOp::Power],
-    &[BinaryOp::Multiply, BinaryOp::Divide],
-    &[BinaryOp::Add, BinaryOp::Subtract],
+const LADDER: [&[Operator]; 6] = [
+    &[Operator::Binary(BinaryOp::Power)],
+    &[Operator::Mul(MulOp::Multiply), Operator::Mul(MulOp::Divide)],
+    &[Operator::Add(AddOp::Add), Operator::Add(AddOp::Subtract)],
     &[
-        BinaryOp::Equal,
-        BinaryOp::NotEqual,
-        BinaryOp::Less,
-        BinaryOp::LessEqual,
-        BinaryOp::Greater,
-        BinaryOp::GreaterEqual,
+        Operator::Binary(BinaryOp::Equal),
+        Operator::Binary(BinaryOp::NotEqual),
+        Operator::Binary(BinaryOp::Less),
+        Operator::Binary(BinaryOp::LessEqual),
+        Operator::Binary(BinaryOp::Greater),
+        Operator::Binary(BinaryOp::GreaterEqual),
     ],
-    &[BinaryOp::And],
-    &[BinaryOp::Or],
+    &[Operator::And],
+    &[Operator::Or],
 ];
 
 /// Nests `inner` one level in a call or an `if`, at a random argument, then
@@ -289,7 +275,7 @@ fn wrapped(
     let mut node = if choices.below(4) == 0 {
         args.resize_with(3, || choices.pick(leaves));
         let [condition, then, otherwise] = <[_; 3]>::try_from(args).unwrap();
-        Node::If(Box::new([condition, then, otherwise]))
+        Node::branch(condition, then, otherwise)
     } else {
         Node::Call {
             function: choices.pick(&Function::ALL),
@@ -301,20 +287,11 @@ fn wrapped(
             continue;
         }
         let op = choices.pick(ops);
-        let leaf = Box::new(choices.pick(leaves));
-        let nested = Box::new(node);
-        node = if op == BinaryOp::Power || choices.below(2) == 0 {
-            Node::Binary {
-                op,
-                left: nested,
-                right: leaf,
-            }
+        let leaf = choices.pick(leaves);
+        node = if op == Operator::Binary(BinaryOp::Power) || choices.below(2) == 0 {
+            op.apply(node, leaf)
         } else {
-            Node::Binary {
-                op,
-                left: leaf,
-                right: nested,
-            }
+            op.apply(leaf, node)
         };
     }
     node
@@ -369,11 +346,7 @@ fn the_printer_refuses_a_chain_past_the_ceiling() {
         let one = || Node::<ParameterRef>::Boolean(true);
         let mut node = one();
         for _ in 1..operands {
-            node = Node::Binary {
-                op: BinaryOp::And,
-                left: Box::new(node),
-                right: Box::new(one()),
-            };
+            node = Node::and(node, one());
         }
         node
     };

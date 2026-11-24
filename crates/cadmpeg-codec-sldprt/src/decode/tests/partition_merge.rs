@@ -441,7 +441,7 @@ fn typed_ownership_can_close_across_partition_and_deltas() {
         result
             .ir()
             .geometry
-            .shell_faces(&result.ir().geometry.shells[0].id)
+            .stated_shell_faces(&result.ir().geometry.shells[0].id)
             .count(),
         1
     );

@@ -456,6 +456,7 @@ pub(crate) fn display_geometry(
                 color: None,
                 visible: None,
                 native_ref: None,
+                unstated: None,
             });
             body
         }

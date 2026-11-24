@@ -264,10 +264,14 @@ pub(super) fn measures<R>(root: &Node<R>) -> Vec<&Measure> {
     while let Some(node) = pending.pop() {
         match node {
             Node::Measure(measure) => found.push(&**measure),
-            Node::Unary { operand, .. } => pending.push(operand),
-            Node::Binary { left, right, .. } => pending.extend([&**left, &**right]),
-            Node::Call { args, .. } => pending.extend(args),
-            Node::If(branches) => pending.extend(branches.iter()),
+            Node::Unary { .. }
+            | Node::Binary { .. }
+            | Node::Sum { .. }
+            | Node::Product { .. }
+            | Node::All(_)
+            | Node::Any(_)
+            | Node::Call { .. }
+            | Node::If { .. } => pending.extend(node.operands()),
             Node::Number { .. }
             | Node::Constant(_)
             | Node::Boolean(_)

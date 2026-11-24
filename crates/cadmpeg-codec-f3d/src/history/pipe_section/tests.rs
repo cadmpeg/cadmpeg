@@ -101,7 +101,7 @@ fn pipe_projection_retains_square_triangle_and_unknown_section_values() {
             shape:
                 SweepShape::Solid {
                     op,
-                    section: SweepSection::Unresolved(None),
+                    section: SweepSection::Unresolved,
                     ..
                 },
             path: Some(PathRef::Native(_)),
@@ -173,7 +173,7 @@ fn pipe_projection_preserves_inactive_thickness_and_out_of_range_fractions() {
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape: SweepShape::Solid {
-                section: SweepSection::Unresolved(None),
+                section: SweepSection::Unresolved,
                 ..
             },
             path_extent: None,

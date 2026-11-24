@@ -166,6 +166,7 @@ fn component_body_coverage_uses_saved_edge_origin_and_keeps_ordinary_bodies() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     })
     .collect::<Vec<_>>();
     let path = super::super::FinalizePath::Geometry(super::super::GeometryIndex {

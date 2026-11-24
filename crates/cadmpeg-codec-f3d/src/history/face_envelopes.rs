@@ -286,7 +286,7 @@ pub(super) fn derive(brep: &AsmBrep) -> (Vec<AsmHistoricalEnvelope>, Vec<AsmHist
             let entity = super::body_closures::stable_ref(face.id.as_str())?;
             let mut boundary = Vec::new();
             let mut boundary_edges = Vec::new();
-            for loop_id in &face.loops {
+            for loop_id in face.loops.boundary()? {
                 for coedge in loops.get(loop_id)?.as_ref()?.coedges() {
                     let coedge = coedges.get(coedge)?.as_ref()?;
                     if coedge.use_curve.is_some() {
