@@ -60,6 +60,7 @@ impl<'a> ValidationIndex<'a> {
         definition: &FeatureDefinition,
         property: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
         parameter: impl Fn(PmDcReference) -> Option<(&'a PmDcParameter, &'a ParameterValue)>,
+        has_history_state: bool,
     ) -> bool {
         if !controls::validates(source, definition, property, parameter) {
             return false;
@@ -102,6 +103,10 @@ impl<'a> ValidationIndex<'a> {
         let [first, last] = selected.as_slice() else {
             return false;
         };
+        // The result faces are in the final model, or in the history state
+        // after the loft (spec section 13.2). The validator reads the model
+        // only, so a loft that the final model no longer proves needs the
+        // joined state.
         evidence::loft_result(
             self.ir,
             source.header.source_index,
@@ -120,5 +125,6 @@ impl<'a> ValidationIndex<'a> {
             },
         )
         .is_some()
+            || has_history_state
     }
 }
