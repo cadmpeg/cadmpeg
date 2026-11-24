@@ -115,15 +115,17 @@ in-plane rotation. The normal carries the attachment sense.
 A `sweep` feature stores solid cross-section selections in `profiles` and
 trajectory selections in `path`. `bodyType: "SOLID"` selects a solid result.
 `operationType: "NEW"` creates a body; `ADD` joins the swept volume to the
-merge scope. `profileControl` defaults to `NONE`, which transports the
-profile along the path. `hasTwist` and `hasScale` enable twist and scale
-controls. `pathOppositeDirection` reverses path travel; `extendToFullPath`
-extends travel to the full path.
+merge scope. `profileControl` has values `NONE`, `KEEP_ORIENTATION`,
+`LOCK_FACES`, and `LOCK_DIRECTION`. `lockFaces` and `lockDirectionQuery`
+store query lists. `hasTwist` and `hasScale` enable twist and scale controls.
+`turns`, `angle`, and `pitch` store twist quantities; `scaleFactor` stores
+the scale quantity. `trimEnds` stores a Boolean end-trim control.
+`pathOppositeDirection` reverses path travel; `extendToFullPath` extends
+travel to the full path.
 A sketch-edge path query has `queryType: "SKETCH_ENTITY"`,
 `historyType: "CREATION"`, `entityType: "EDGE"`, one `operationId` with the
 suffix `.wireOp`, and a `sketchEntityId`. The operation prefix identifies
-the source sketch. Path queries preserve source order and select distinct
-curves from that sketch. A `UNION` query stores its ordered operands in
+the source sketch. A `UNION` query stores its ordered operands in
 `subqueries`; nested unions preserve operand order.
 
 Thin extrusions select curves through `wallShape` in the `MODEL` domain.

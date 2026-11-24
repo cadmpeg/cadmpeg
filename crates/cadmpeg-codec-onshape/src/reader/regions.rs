@@ -504,6 +504,11 @@ fn ellipse_interval(
     Ok([start, end])
 }
 
+pub(super) fn curve_endpoints(entity: &Value) -> Mapping<[[f64; 2]; 2]> {
+    let edge = Edge::new(String::new(), entity)?;
+    Ok([edge.a, edge.b])
+}
+
 struct Edge {
     id: String,
     a: [f64; 2],

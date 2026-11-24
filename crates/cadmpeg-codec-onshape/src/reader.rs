@@ -7,6 +7,7 @@ mod features;
 pub(super) mod query;
 mod regions;
 mod sketch;
+mod sweep;
 mod thin;
 pub(super) mod topology;
 
@@ -95,6 +96,29 @@ fn definition(kind: &str, value: Value) -> Value {
         ("kind".into(), Value::String("operation".into())),
         ("value".into(), Value::Object(operation)),
     ]))
+}
+
+fn mapping_loss_code(
+    feature: &Value,
+    region_budget_exhausted: bool,
+    valid_suppression: bool,
+    reason: &str,
+) -> OnshapeLossCode {
+    if !region_budget_exhausted
+        && feature.get("featureType").and_then(Value::as_str) == Some("extrude")
+        && features::value(feature, "bodyType") == Some("THIN")
+    {
+        OnshapeLossCode::ThinNotSupported
+    } else if !region_budget_exhausted
+        && valid_suppression
+        && feature.get("featureType").and_then(Value::as_str) == Some("sweep")
+        && sweep::validate_record(feature).is_ok()
+        && !reason.starts_with(sweep::PATH_BUDGET_EXHAUSTED)
+    {
+        OnshapeLossCode::SweepNotSupported
+    } else {
+        OnshapeLossCode::HistoryNotSupported
+    }
 }
 
 fn loss(report: &mut Report, subject: &str, reason: &str, has_step: bool, code: OnshapeLossCode) {
@@ -690,16 +714,12 @@ pub(super) fn read(
                         .regions
                         .try_borrow()
                         .is_ok_and(|recovery| recovery.exhausted());
-                    let code = if !region_budget_exhausted
-                        && feature.get("featureType").and_then(Value::as_str) == Some("extrude")
-                        && features::value(feature, "bodyType") == Some("THIN")
-                    {
-                        OnshapeLossCode::ThinNotSupported
-                    } else if feature.get("featureType").and_then(Value::as_str) == Some("sweep") {
-                        OnshapeLossCode::SweepNotSupported
-                    } else {
-                        OnshapeLossCode::HistoryNotSupported
-                    };
+                    let code = mapping_loss_code(
+                        feature,
+                        region_budget_exhausted,
+                        suppressed.is_ok(),
+                        &reason,
+                    );
                     loss(report, name, &reason, model.source_step.is_some(), code);
                 }
                 definition(

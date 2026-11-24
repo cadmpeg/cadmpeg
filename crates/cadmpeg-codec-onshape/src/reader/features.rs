@@ -242,6 +242,15 @@ fn whole_sketch_region_query(query: &Value) -> bool {
     string.split_whitespace().eq(expected.split_whitespace())
 }
 fn sketch_entities(queries: &[Value], model: &Model, entity_type: &str) -> Mapping<Value> {
+    sketch_entities_in_order(queries, model, entity_type, false)
+}
+
+pub(super) fn sketch_entities_in_order(
+    queries: &[Value],
+    model: &Model,
+    entity_type: &str,
+    source_order: bool,
+) -> Mapping<Value> {
     let mut selected = std::collections::BTreeSet::new();
     let mut ordered = Vec::new();
     let mut selected_sketch = None;
@@ -288,6 +297,9 @@ fn sketch_entities(queries: &[Value], model: &Model, entity_type: &str) -> Mappi
             }
             ordered.push(entity_id);
         }
+    }
+    if !source_order {
+        ordered = selected.into_iter().collect();
     }
     Ok(
         json!({"kind":"sketch_entities","value":{"sketch":selected_sketch.ok_or("the sketch selection is empty")?,"entities":ordered}}),
@@ -366,7 +378,7 @@ fn sketch_axis(feature: &Value, model: &Model) -> Mapping<Value> {
         "reference":{"kind":"sketch_curves","value":{"sketch":sketch_id,"curves":[entity_id]}}}))
 }
 
-fn operation(feature: &Value) -> Mapping<&'static str> {
+pub(super) fn operation(feature: &Value) -> Mapping<&'static str> {
     match value(feature, "operationType") {
         Some("NEW") => Ok("new_body"),
         Some("ADD") => Ok("join"),
@@ -431,6 +443,8 @@ pub(super) fn report_evaluated_variables(
             ("angle", Ok("revolve")) => {
                 value(feature, "revolveType") == Some("FULL") || enabled(feature, "fullRevolve")?
             }
+            ("turns" | "angle" | "pitch", Ok("sweep")) => !enabled(feature, "hasTwist")?,
+            ("scaleFactor", Ok("sweep")) => !enabled(feature, "hasScale")?,
             _ => false,
         };
         let driven = unused
@@ -662,10 +676,14 @@ pub(super) fn map(
     report: &mut Report,
     unresolved: &BTreeSet<String>,
 ) -> Mapping<Value> {
-    let mut keys = std::collections::BTreeSet::new();
-    for parameter in rows(feature, "parameters")? {
-        if !keys.insert(text(parameter, "parameterId")?) {
-            return Err("feature parameter keys repeat".into());
+    if feature.get("featureType").and_then(Value::as_str) == Some("sweep") {
+        super::sweep::validate_record(feature)?;
+    } else {
+        let mut keys = std::collections::BTreeSet::new();
+        for parameter in rows(feature, "parameters")? {
+            if !keys.insert(text(parameter, "parameterId")?) {
+                return Err("feature parameter keys repeat".into());
+            }
         }
     }
     for key in [
@@ -831,56 +849,7 @@ pub(super) fn map(
             );
             Ok(definition)
         }
-        "sweep" => {
-            if value(feature, "bodyType") != Some("SOLID") {
-                return Err("this sweep body type is not supported yet".into());
-            }
-            if !matches!(value(feature, "operationType"), Some("NEW" | "ADD")) {
-                return Err("this sweep Boolean operation is not supported yet".into());
-            }
-            if let Ok(control) = parameter(feature, "profileControl") {
-                if text(control, "value")? != "NONE" {
-                    return Err("this sweep profile control is not supported yet".into());
-                }
-            }
-            for key in [
-                "pathOppositeDirection",
-                "extendToFullPath",
-                "hasTwist",
-                "hasScale",
-            ] {
-                if enabled(feature, key)? {
-                    return Err(format!("sweep {key} is not supported yet"));
-                }
-            }
-            let profile = profile(feature, "profiles", model, inputs)?;
-            let selected = sketch_entities(queries(feature, "path")?, model, "EDGE")?;
-            let selection = selected.get("value").ok_or("the sweep path is missing")?;
-            for entity_id in rows(selection, "entities")? {
-                let entity = model
-                    .sketch_entities
-                    .iter()
-                    .find(|e| Some(e.id().as_str()) == entity_id.as_str())
-                    .ok_or("the sweep path curve is missing")?;
-                if matches!(
-                    entity.geometry.definition(),
-                    cadmpeg_ir::sketches::SketchGeometryDefinition::Native { .. }
-                        | cadmpeg_ir::sketches::SketchGeometryDefinition::Point { .. }
-                ) {
-                    return Err("the sweep path needs resolved sketch curves".into());
-                }
-            }
-            Ok(definition(
-                "sweep",
-                json!({
-                    "shape": {"kind":"solid", "op":operation(feature)?,
-                        "section":{"kind":"profile", "value":profile}, "sections":[]},
-                    "path":{"kind":"sketch_curves", "value":{
-                        "sketch":selection["sketch"], "curves":selection["entities"]}},
-                    "path_tangent":false, "linearize":false
-                }),
-            ))
-        }
+        "sweep" => super::sweep::map(feature, model, inputs),
         "revolve" => {
             if value(feature, "bodyType") != Some("SOLID") {
                 return Err("non-solid revolves are not supported yet".into());
@@ -1187,3 +1156,6 @@ fn specification(
     }
     Ok(threaded)
 }
+
+#[cfg(test)]
+mod tests;
