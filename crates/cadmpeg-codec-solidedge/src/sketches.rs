@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketches (`docs/formats/solidedge.md` §5): the profile a feature consumes,
 //! stated as one planar design sketch on the stored frame with its lines,
-//! circles and arcs. Constraints and dimensions are not read.
+//! circles, arcs and hole positions. Constraints and dimensions are not read.
 //!
 //! A profile that does not read is a loss and the rest of the document still
 //! projects. Stored lengths are metres; the design states millimetres.
@@ -25,7 +25,7 @@ use cadmpeg_ir::units::{FinitePoint2, UnitVector3};
 
 use crate::construction;
 use crate::features::{feature_id, function_span, Kind, Listed};
-use crate::layout::{arc_2d, circle_2d, line_2d, profile, profile_2d};
+use crate::layout::{arc_2d, circle_2d, hole_2d, line_2d, profile, profile_2d};
 use crate::loss::SolidEdgeLossCode;
 use crate::psm::{Cluster, Object, TypeTable};
 
@@ -40,6 +40,8 @@ const LINE_CLASS: &str = "CLSID_JLine2d";
 const CIRCLE_CLASS: &str = "CLSID_JCircle2d";
 const ARC_CLASS: &str = "CLSID_JArc2d";
 const KEYPOINT_CLASS: &str = "CLSID_JKeyPoint2d";
+/// The class of a hole position of a profile (§7.2), stated as a sketch point.
+pub(crate) const HOLE_2D_CLASS: &str = "CLSID_JHole2d";
 
 /// Bytes from the end of a function name to the profile identifier of the
 /// functions that consume a profile of a sketch (§5.3).
@@ -77,7 +79,7 @@ fn profile_offset(function: &str) -> Option<usize> {
     }
 }
 
-fn sketch_id(profile: u32) -> SketchId {
+pub(crate) fn sketch_id(profile: u32) -> SketchId {
     SketchId::compose(
         &cadmpeg_ir::identity_namespace!("solidedge", "model", "sketch"),
         profile,
@@ -147,6 +149,10 @@ fn circle(bytes: &[u8]) -> Option<PlanarCurve> {
     })
 }
 
+fn hole_position(bytes: &[u8]) -> Option<PlanarCurve> {
+    Some(PlanarCurve::Point(point(bytes, hole_2d::X)?))
+}
+
 fn arc(bytes: &[u8]) -> Option<PlanarCurve> {
     Some(PlanarCurve::Arc {
         center: point(bytes, arc_2d::CENTER_X)?,
@@ -180,6 +186,7 @@ fn member(cluster: &Cluster<'_>, types: &TypeTable, id: u32) -> Member {
         LINE_CLASS => line(object.bytes),
         CIRCLE_CLASS => circle(object.bytes),
         ARC_CLASS => arc(object.bytes),
+        HOLE_2D_CLASS => hole_position(object.bytes),
         KEYPOINT_CLASS => return Member::Keypoint,
         _ => return Member::Other,
     };

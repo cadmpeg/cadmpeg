@@ -8,10 +8,12 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ops::dressup::{
-    Chamfer, ChamferSize, Fillet, FilletSet, FilletSize, Hole, HoleHead, HolePositions, HoleShape,
+    CenterSource, Chamfer, ChamferSize, Fillet, FilletSet, FilletSize, Hole, HoleHead,
+    HolePositions, HoleShape,
 };
 use cadmpeg_ir::design::ops::shared::Limit;
-use cadmpeg_ir::design::selection::Picks;
+use cadmpeg_ir::design::ops::sketch::{EntityDefinition, PlanarCurve};
+use cadmpeg_ir::design::selection::{PickTarget, Picks};
 use cadmpeg_ir::math::Vector3;
 
 use crate::test_support::{dressup_document, Dress, HoleProps, Member2d, ProfileFrame, Slot};
@@ -120,19 +122,39 @@ fn blind_mm(hole: &Hole) -> f64 {
     }
 }
 
-fn points(hole: &Hole) -> Vec<[f64; 3]> {
-    match &hole.positions {
-        HolePositions::Placed(points) => points
-            .iter()
-            .map(|point| {
-                let at = point.resolved.as_ref().unwrap().get();
-                [at.x, at.y, at.z]
-            })
-            .collect(),
-        other @ HolePositions::Points { .. } => {
-            panic!("expected placed positions, found {other:?}")
-        }
-    }
+/// The positions of the hole: the points of the sketch that the hole names as
+/// a whole, on the XY profile plane, as `[u, v, 0]` in millimetres.
+fn points(result: &DecodeResult, hole: &Hole) -> Vec<[f64; 3]> {
+    let HolePositions::Points { points, centers } = &hole.positions else {
+        panic!("expected sketch positions, found {:?}", hole.positions);
+    };
+    assert_eq!(
+        centers.as_ref().unwrap().iter().collect::<Vec<_>>(),
+        [&CenterSource::Points]
+    );
+    let Picks::Named(picks) = &points.picks else {
+        panic!("expected a named pick");
+    };
+    let [pick] = picks.as_slice() else {
+        panic!("expected one pick");
+    };
+    let PickTarget::Sketch(sketch) = &pick.target else {
+        panic!("expected a whole-sketch pick");
+    };
+    result
+        .ir()
+        .design
+        .sketch_entities
+        .iter()
+        .filter(|entity| &entity.sketch == sketch)
+        .map(|entity| match &entity.definition {
+            EntityDefinition::Free(PlanarCurve::Point(point)) => {
+                let at = point.get();
+                [at.u, at.v, 0.0]
+            }
+            other => panic!("expected a point, found {other:?}"),
+        })
+        .collect()
 }
 
 fn near(a: f64, b: f64) -> bool {
@@ -147,7 +169,7 @@ fn simple_hole_four_millimetres_through_all() {
     assert_eq!(bore(hole).head, Some(HoleHead::Plain));
     assert_eq!(hole.extent, Some(Limit::ThroughAll));
     assert_eq!(hole.thread, None);
-    let at = points(hole);
+    let at = points(&result, hole);
     assert_eq!(at.len(), 1);
     assert!(near(at[0][0], 10.0) && near(at[0][1], 20.0) && near(at[0][2], 0.0));
     let found = codes(&result);
@@ -286,7 +308,7 @@ fn two_positions_state_two_points_in_profile_order() {
         &[[0.01, 0.02], [0.03, 0.04]],
         &[],
     );
-    let at = points(hole(&result));
+    let at = points(&result, hole(&result));
     assert_eq!(at.len(), 2);
     assert!(near(at[0][0], 10.0) && near(at[0][1], 20.0));
     assert!(near(at[1][0], 30.0) && near(at[1][1], 40.0));

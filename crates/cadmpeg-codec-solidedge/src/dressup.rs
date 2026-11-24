@@ -9,30 +9,29 @@
 //! `feature.selection-unread` note for the document. Stored lengths are
 //! metres and stored angles are radians; the design states millimetres.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::design::construction::{kinds, Construction, FrameValue};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::dressup::{
-    BlendControls, Bore, Chamfer, ChamferSet, ChamferSize, Cone, Fillet, FilletSection, FilletSet,
-    FilletSize, Hole, HoleHead, HolePositions, HoleShape,
+    BlendControls, Bore, CenterSource, Chamfer, ChamferSet, ChamferSize, Cone, Fillet,
+    FilletSection, FilletSet, FilletSize, Hole, HoleHead, HolePositions, HoleShape,
 };
 use cadmpeg_ir::design::ops::shared::Limit;
 use cadmpeg_ir::design::ops::sketch::SketchPlane;
 use cadmpeg_ir::design::selection::{Anchor, MemberOrder, Picks, Selection};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::features::FeatureId;
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{InteriorAngle, Length, PositiveLength};
 use cadmpeg_ir::units::UnitVector3;
 
 use crate::construction;
 use crate::extents::{
-    dimension_value, double_slot, is, measure_slot, model_point, named, real_at, slot,
+    dimension_value, double_slot, is, measure_slot, named, profile_selection, real_at, slot,
     DIMENSION_CLASS, KIND_AFTER_NAME_HOLE, KIND_FINITE, KIND_THROUGH_ALL, MM_PER_M, PART_CLASS,
     SIDE_AFTER_NAME_HOLE, SIDE_AGAINST, SIDE_ALONG,
 };
@@ -40,10 +39,8 @@ use crate::features::{feature_id, function_span, Kind, Listed};
 use crate::layout::{hole_2d, hole_prop_data};
 use crate::loss::SolidEdgeLossCode;
 use crate::psm::{Cluster, Object, TypeTable};
-use crate::sketches::{profile_members, PROFILE_AFTER_NAME_SHORT};
+use crate::sketches::{profile_members, sketch_id, HOLE_2D_CLASS, PROFILE_AFTER_NAME_SHORT};
 
-/// The class of a hole position of a profile.
-const HOLE_2D_CLASS: &str = "CLSID_JHole2d";
 /// The class of the hole parameters.
 const PROP_DATA_CLASS: &str = "CLSID_JMHolePropData";
 /// The class of a stored edge or face selection.
@@ -180,19 +177,18 @@ fn frame_of(ir: &CadIr, owner: &FeatureId) -> Option<FrameValue> {
     plane.resolved.clone()
 }
 
-/// The hole positions of the profile the feature names, in the profile's
-/// member order, as model points in millimetres.
+/// The hole positions of the profile the feature names: the points of its
+/// sketch, which states one point per stored hole position (§7.2).
 fn positions(
     cluster: &Cluster<'_>,
     types: &TypeTable,
     object: &Object<'_>,
     end: usize,
-    frame: &FrameValue,
-) -> Result<Vec<Construction<kinds::Point>>, String> {
+) -> Result<HolePositions, String> {
     let profile = slot(object, end, PROFILE_AFTER_NAME_SHORT)?;
     let members = profile_members(cluster, types, profile)
         .ok_or_else(|| "its profile member list does not read".to_owned())?;
-    let mut points = Vec::new();
+    let mut count = 0_usize;
     for id in members {
         let Some(member) = cluster.object(id) else {
             continue;
@@ -200,21 +196,21 @@ fn positions(
         if types.class_name(member.form, member.flags) != Some(HOLE_2D_CLASS) {
             continue;
         }
-        let x = real_at(&member, hole_2d::X, "hole position")?;
-        let y = real_at(&member, hole_2d::Y, "hole position")?;
-        let at = model_point(frame, x * MM_PER_M, y * MM_PER_M);
-        points.push(Construction::<kinds::Point> {
-            resolved: Some(
-                FinitePoint3::new(Point3::new(at.x, at.y, at.z))
-                    .ok_or_else(|| "a hole position is not finite".to_owned())?,
-            ),
-            ..construction::empty()
-        });
+        for at in [hole_2d::X, hole_2d::Y] {
+            let value = real_at(&member, at, "hole position")?;
+            if !value.is_finite() {
+                return Err("a hole position is not finite".to_owned());
+            }
+        }
+        count += 1;
     }
-    if points.is_empty() {
+    if count == 0 {
         return Err("its profile holds no hole position".to_owned());
     }
-    Ok(points)
+    Ok(HolePositions::Points {
+        points: profile_selection(&sketch_id(profile))?,
+        centers: Some(BTreeSet::from([CenterSource::Points])),
+    })
 }
 
 /// The drilling direction of the side value: along the profile normal for
@@ -248,7 +244,7 @@ fn hole(
     end: usize,
     frame: &FrameValue,
 ) -> Result<Read, String> {
-    let points = positions(cluster, types, object, end, frame)?;
+    let positions = positions(cluster, types, object, end)?;
     let (prop, class) = named(
         cluster,
         types,
@@ -348,7 +344,7 @@ fn hole(
     };
     Ok(Read {
         operation: FeatureOperation::Hole(Box::new(Hole {
-            positions: HolePositions::Placed(points),
+            positions,
             start: None,
             direction: Some(direction(frame, side)?),
             shape: HoleShape::Bore(Bore {
