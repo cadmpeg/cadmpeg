@@ -181,7 +181,7 @@ fn output(cut: bool) -> SolidOutput {
     }
 }
 
-fn profile_selection(sketch: &SketchId) -> Result<OrderedSelection, String> {
+pub(crate) fn profile_selection(sketch: &SketchId) -> Result<OrderedSelection, String> {
     let pick = Picked {
         target: PickTarget::Sketch(sketch.clone()),
         context: None,
