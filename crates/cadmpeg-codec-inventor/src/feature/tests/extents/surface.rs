@@ -326,6 +326,169 @@ fn from_to_surface_extrusion_refuses_operands_it_does_not_define() {
     .is_none());
 }
 
+/// A plane face through `origin` centimetres with the given axes.
+fn framed_plane_face(
+    ordinal: u32,
+    origin: [f64; 3],
+    u: [f64; 3],
+    v: [f64; 3],
+) -> PmDcFeatureProperty {
+    let mut surface = plane_face_at(ordinal, 0.0);
+    surface.edit(|payload| {
+        if let PmDcFeaturePropertyKind::PlaneSurface {
+            origin: o,
+            u_axis,
+            v_axis,
+            ..
+        } = &mut payload.kind
+        {
+            *o = reals(origin);
+            *u_axis = reals(u);
+            *v_axis = reals(v);
+        }
+    });
+    surface
+}
+
+/// The four from-to properties with the given end flag and faces.
+fn from_to_properties(
+    end_flag: u8,
+    start: PmDcFeatureProperty,
+    end: PmDcFeatureProperty,
+) -> Vec<PmDcFeatureProperty> {
+    vec![
+        test_property(20, PmDcFeaturePropertyKind::TerminationFlag { value: 1 }),
+        start,
+        test_property(
+            22,
+            PmDcFeaturePropertyKind::TerminationFlag { value: end_flag },
+        ),
+        end,
+    ]
+}
+
+fn true_boolean(ordinal: u32) -> PmDcFeatureProperty {
+    test_property(
+        ordinal,
+        PmDcFeaturePropertyKind::Boolean {
+            name: String::new(),
+            name_value: 0,
+            value: true,
+        },
+    )
+}
+
+#[test]
+fn from_to_surface_extrusion_orders_tilted_faces_at_the_profile() {
+    // Travel +z. Start normal (0, -0.8, 0.6) through z = 10 mm and end
+    // normal (0, -0.6, 0.8) through z = 40 mm: the origins order start before
+    // end, but at y = 100 mm the travel line meets the start plane at
+    // z = 10 + 100 * 0.8 / 0.6 = 143.3 mm and the end plane at
+    // z = 40 + 100 * 0.6 / 0.8 = 115 mm, so the order depends on the profile
+    // point and the extrusion stays native, in both origin orders.
+    let (start, end) = ([0.0, 0.6, 0.8], [0.0, 0.8, 0.6]);
+    assert!(from_to_tilted((1.0, start), (4.0, end)).is_none());
+    assert!(from_to_tilted((4.0, end), (1.0, start)).is_none());
+}
+
+#[test]
+fn from_to_surface_extrusion_follows_the_slot_3_travel() {
+    // Slot 3 true reverses the travel to -z. The travel line meets the plane
+    // at z = 40 mm before the plane at z = 10 mm, so the start plane is the
+    // upper one.
+    let travel = vec![true_boolean(24)];
+    let slots = [(3, 24), (10, 20), (17, 21), (13, 22), (18, 23)];
+    let build = |start_z: f64, end_z: f64| {
+        let mut extra = from_to_properties(1, plane_face_at(21, start_z), plane_face_at(23, end_z));
+        extra.extend(travel.clone());
+        surface_extrusion(5, 6, &slots, extra)
+    };
+    assert!(build(4.0, 1.0).is_some());
+    assert!(build(1.0, 4.0).is_none());
+}
+
+#[test]
+fn from_to_surface_extrusion_follows_a_travel_other_than_z() {
+    // Direction record 62 is +x. Planes with normal u x v = (0,1,0) x (0,0,1)
+    // = +x at x = 10 mm and x = 40 mm: the line meets the start plane first.
+    let slots = [(2, 62), (10, 20), (17, 21), (13, 22), (18, 23)];
+    let face =
+        |ordinal, x| framed_plane_face(ordinal, [x, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
+    let build = |start_x: f64, end_x: f64| {
+        surface_extrusion(
+            5,
+            6,
+            &slots,
+            from_to_properties(1, face(21, start_x), face(23, end_x)),
+        )
+    };
+    assert!(build(1.0, 4.0).is_some());
+    assert!(build(4.0, 1.0).is_none());
+}
+
+#[test]
+fn from_to_surface_extrusion_requires_the_operands_of_its_form() {
+    let faces =
+        |end_flag| from_to_properties(end_flag, plane_face_at(21, 1.0), plane_face_at(23, 4.0));
+    // An end termination flag other than 1.
+    assert!(surface_extrusion(5, 6, &FROM_TO_SLOTS, faces(0)).is_none());
+    assert!(surface_extrusion(5, 6, &FROM_TO_SLOTS, faces(1)).is_some());
+    // Slot 8 holds no operand beside a start face.
+    let with_work_plane = faces(1);
+    assert!(surface_extrusion(
+        5,
+        6,
+        &[(8, 41), (10, 20), (17, 21), (13, 22), (18, 23)],
+        with_work_plane,
+    )
+    .is_none());
+    // Slot 29 holds a second extent: the two-sided form is not a from-to.
+    let mut two_sided = faces(1);
+    two_sided.push(enum_property(25, PmDcFeatureEnumFamily::Extent, 1));
+    let mut slots = FROM_TO_SLOTS.to_vec();
+    slots.push((29, 25));
+    assert!(surface_extrusion(5, 6, &slots, two_sided).is_none());
+    // The symmetric flag has no from-to meaning.
+    assert!(build_extent_extrusion(
+        ExtentCase {
+            output: Output::Surface,
+            operation: 5,
+            extent: 6,
+            symmetric: true,
+            solid_input: SolidInput::None,
+        },
+        &FROM_TO_SLOTS,
+        faces(1),
+        IDENTITY_MATRIX,
+        |_| {},
+        |_, _, _, _| {},
+    )
+    .is_none());
+    // Start-face slots with the through-all extent.
+    assert!(surface_extrusion(5, 5, &FROM_TO_SLOTS, faces(1)).is_none());
+}
+
+#[test]
+fn from_to_surface_extrusion_bounds_the_travel_crossing_by_a_cosine() {
+    // Both planes share the normal (s, 0, c), the cosine with the +z travel
+    // being c: u x v = (0,1,0) x (-c,0,s) = (s, 0, c). The planes are 30 mm
+    // apart along z, so the gap along the travel is 30 for every c.
+    let build = |c: f64| {
+        let s = (1.0 - c * c).sqrt();
+        let face =
+            |ordinal, z| framed_plane_face(ordinal, [0.0, 0.0, z], [0.0, 1.0, 0.0], [-c, 0.0, s]);
+        surface_extrusion(
+            5,
+            6,
+            &FROM_TO_SLOTS,
+            from_to_properties(1, face(21, 1.0), face(23, 4.0)),
+        )
+    };
+    // The bound is 1e-6: a cosine below it does not cross, above it does.
+    assert!(build(0.5e-6).is_none());
+    assert!(build(2.0e-6).is_some());
+}
+
 #[test]
 fn surface_extrusion_refuses_operands_it_does_not_define() {
     // Solid part operations select the solid decoder.
