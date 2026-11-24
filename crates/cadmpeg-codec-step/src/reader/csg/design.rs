@@ -105,6 +105,7 @@ pub(in crate::reader) fn attach(
                 suppressed: None,
                 definition: FeatureDefinition {
                     operation: operation(item, csg),
+                    assembly: None,
                     refine: None,
                     fuzzy_tolerance: None,
                 },
@@ -148,6 +149,7 @@ pub(in crate::reader) fn attach(
                         tessellations: Vec::new(),
                         origin: StoredOrigin::Base {},
                     },
+                    assembly: None,
                     refine: None,
                     fuzzy_tolerance: None,
                 },

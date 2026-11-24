@@ -57,7 +57,7 @@ pub(super) fn project(operation: &LegacyOperation, scope: &str) -> Option<Featur
     };
     Some(FeatureOperation::Split(Box::new(Split {
         mode: SplitMode::ByTools {
-            targets,
+            targets: Some(targets),
             tools: SplitTool::Silhouette(Box::new(Construction {
                 inputs: vec![ConstructionInput {
                     role: Some(InputRole {
@@ -92,7 +92,7 @@ fn native_selection<O: cadmpeg_ir::design::selection::MemberOrder>(
                 target: PickTarget::Native { within: None },
                 context: None,
                 native: Some(NativeName {
-                    codec: cadmpeg_core::nonblank_literal!("f3d").into(),
+                    codec: cadmpeg_ir::codec_id!("f3d"),
                     value: NativeNameValue::Text(NonBlankString::new(source)?),
                 }),
                 domain: None,

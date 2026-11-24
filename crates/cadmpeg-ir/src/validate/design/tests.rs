@@ -46,6 +46,7 @@ fn feature(name: &str, operation: Value) -> Feature {
         suppressed: None,
         definition: FeatureDefinition {
             operation: from(operation),
+            assembly: None,
             refine: None,
             fuzzy_tolerance: None,
         },

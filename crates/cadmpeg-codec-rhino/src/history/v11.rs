@@ -103,6 +103,7 @@ pub(crate) fn project(
                     native_options,
                     source_settings: NativeOptions::default(),
                 },
+                assembly: None,
                 refine: None,
                 fuzzy_tolerance: None,
             },

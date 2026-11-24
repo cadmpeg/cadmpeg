@@ -558,8 +558,10 @@ impl Walk<'_, '_, '_> {
                     );
                 }
                 for term in terms.iter().chain(excluded) {
-                    if matches!(term.rule, SelectionRule::All { .. })
-                        != term.seeds.as_slice().is_empty()
+                    if matches!(
+                        term.rule,
+                        SelectionRule::All { .. } | SelectionRule::Affected
+                    ) != term.seeds.as_slice().is_empty()
                     {
                         error(
                             self.findings,

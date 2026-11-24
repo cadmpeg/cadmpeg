@@ -413,6 +413,7 @@ fn feature(legacy: &LegacyFeature, source: &Source<'_>) -> Feature {
         suppressed: legacy.suppressed.map(Dimension::Literal),
         definition: FeatureDefinition {
             operation: self::operation(legacy, operation),
+            assembly: None,
             refine,
             fuzzy_tolerance,
         },
