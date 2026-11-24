@@ -178,6 +178,7 @@ fn datum_axis_bound_dimensions_resolve_within_the_consuming_definition() {
             });
         let identity = owner.id.clone();
         ir.model.features.push(owner);
+        crate::test_support::add_root(&mut ir);
         let report = crate::validate::validate_neutral(&ir, Vec::new()).unwrap();
         if valid {
             assert!(

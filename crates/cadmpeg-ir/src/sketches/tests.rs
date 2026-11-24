@@ -154,6 +154,7 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
         native_ref: None,
     });
     ir.finalize();
+    crate::test_support::add_root(&mut ir);
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .is_ok());

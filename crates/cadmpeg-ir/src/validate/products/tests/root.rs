@@ -41,15 +41,42 @@ fn summary(ir: &CadIr) -> Vec<(Check, Option<String>, String)> {
         .collect()
 }
 
+/// A document whose model arenas hold one occurrence, of an embedded
+/// definition.
+fn with_model_record(mut ir: CadIr) -> CadIr {
+    let mut part = ProductDefinition::new(
+        "test:model:product-definition#part".try_into().unwrap(),
+        Storage::Embedded,
+    );
+    part.occurrences
+        .push("test:model:occurrence#bolt".try_into().unwrap());
+    ir.model.product_definitions.push(part);
+    ir.model.occurrences.push(Occurrence::new(
+        "test:model:occurrence#bolt".try_into().unwrap(),
+        "test:model:product-definition#part".try_into().unwrap(),
+        None,
+    ));
+    ir
+}
+
 #[test]
-fn a_decoded_document_states_exactly_one_root_definition() {
+fn a_document_that_holds_a_model_record_states_exactly_one_root_definition() {
     assert!(summary(&CadIr::empty()).is_empty());
+    assert!(summary(&decoded()).is_empty());
     let mut container = decoded();
     container
         .set_scope(cadmpeg_core::decode::ContentScope::container())
         .unwrap();
     assert!(summary(&container).is_empty());
-    let mut ir = decoded();
+    assert_eq!(
+        summary(&with_model_record(CadIr::empty())),
+        [(
+            Check::Counts,
+            None,
+            "document states no root definition".to_owned()
+        )]
+    );
+    let mut ir = with_model_record(decoded());
     assert_eq!(
         summary(&ir),
         [(
@@ -60,12 +87,12 @@ fn a_decoded_document_states_exactly_one_root_definition() {
     );
     ir.model
         .product_definitions
-        .push(root("test:model:product-definition#root"));
+        .insert(0, root("test:model:product-definition#root"));
     assert!(summary(&ir).is_empty());
 
     ir.model
         .product_definitions
-        .push(root("test:model:product-definition#second"));
+        .insert(1, root("test:model:product-definition#second"));
     let found = root_findings(&ir);
     assert_eq!(found.len(), 1, "{found:?}");
     assert_eq!(found[0].check, Check::Counts);

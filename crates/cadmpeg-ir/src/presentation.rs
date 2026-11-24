@@ -560,6 +560,7 @@ mod tests {
             native_ref: None,
         });
 
+        crate::test_support::add_root(&mut ir);
         assert!(validate_neutral(&ir, Vec::new())
             .expect("validate the neutral model")
             .is_ok());
@@ -581,6 +582,7 @@ mod tests {
             native_ref: None,
         });
 
+        crate::test_support::add_root(&mut ir);
         assert!(validate_neutral(&ir, Vec::new())
             .expect("validate the neutral model")
             .is_ok());
