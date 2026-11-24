@@ -372,6 +372,7 @@ impl GivenUpPart {
             loss,
             ..
         } = self;
+        let codec = crate::native::namespace_codec(codec)?;
         let record = NativeRecord::from(&stub);
         let taken = ir.native.0.values().any(|namespace| {
             namespace

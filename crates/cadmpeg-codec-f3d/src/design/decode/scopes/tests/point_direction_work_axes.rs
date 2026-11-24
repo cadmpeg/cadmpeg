@@ -215,7 +215,9 @@ fn read(bytes: &[u8], types: &HashMap<u64, (&str, u32)>) -> ReadAxis {
     ir.model.features = projected.features;
     let mut native = crate::native::F3dNative::default();
     native.design_parameter_scopes.push(scope);
-    native.store(&ctx, ir.native.namespace_mut("f3d")).unwrap();
+    native
+        .store(&ctx, ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")))
+        .unwrap();
     let mut fidelity = cadmpeg_ir::SourceFidelity::for_root(source);
     let mut losses = projected.projection_losses;
     for part in parts {

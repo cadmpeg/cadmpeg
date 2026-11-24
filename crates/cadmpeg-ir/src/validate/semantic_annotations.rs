@@ -107,7 +107,7 @@ mod tests {
         let mut findings = Vec::new();
         check_semantic_annotations(&ir, &empty, &mut findings);
         assert!(findings.is_empty(), "{findings:?}");
-        ir.native.namespace_mut("test");
+        ir.native.namespace_mut(crate::codec_id!("test"));
         check_semantic_annotations(&ir, &empty, &mut findings);
         assert_eq!(findings.len(), 1);
     }

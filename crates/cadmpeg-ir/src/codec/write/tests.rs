@@ -740,14 +740,17 @@ fn carried_errors_follow_model_coverage_and_related_locations() {
 fn carried_errors_follow_native_format_and_complete_coverage() {
     let mut ir = CadIr::empty();
     let id = "f3d:test:asm-history#0";
-    ir.native.namespace_mut("f3d").arenas_mut().insert(
-        "asm_histories".into(),
-        vec![crate::NativeRecord::new(
-            crate::ids::Identity::new(id).expect("valid native identity"),
-            serde_json::Map::default(),
-        )
-        .expect("valid native record")],
-    );
+    ir.native
+        .namespace_mut(crate::codec_id!("f3d"))
+        .arenas_mut()
+        .insert(
+            "asm_histories".into(),
+            vec![crate::NativeRecord::new(
+                crate::ids::Identity::new(id).expect("valid native identity"),
+                serde_json::Map::default(),
+            )
+            .expect("valid native record")],
+        );
     ir.finalize();
     let report = validation_report(vec![finding(
         Some(id),

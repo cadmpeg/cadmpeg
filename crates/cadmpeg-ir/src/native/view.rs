@@ -111,7 +111,7 @@ impl<'a> NativeView<'a> {
                         continue;
                     }
                 }
-                visit(format, arena, NativeArena::Product(records))?;
+                visit(format.as_str(), arena, NativeArena::Product(records))?;
             }
             if let Some((replacement, sources, order)) = pending {
                 if replacement == format {

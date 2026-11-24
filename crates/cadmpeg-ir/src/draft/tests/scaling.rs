@@ -127,7 +127,10 @@ fn native_candidate_admission_does_not_build_an_unread_prefix_index() {
             None,
         )],
     );
-    candidate.native.0.insert("fixture".into(), native);
+    candidate
+        .native
+        .0
+        .insert(crate::codec_id!("fixture"), native);
     let annotations = Annotations::default();
     session
         .try_admit_append(

@@ -597,7 +597,7 @@ fn native_validation_rejects_a_changed_relief_form() {
         &mut Vec::new(),
     )
     .expect("projection");
-    let namespace = ir.native.namespace_mut("inventor");
+    let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("inventor"));
     namespace
         .set_arena(
             &ctx,

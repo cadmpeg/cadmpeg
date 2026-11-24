@@ -622,6 +622,7 @@ impl SourceFidelity {
         if records.is_empty() {
             return Ok(());
         }
+        let codec = crate::native::namespace_codec(format)?;
         let mut products: Vec<crate::NativeUnknownRecord> = match ir.native.namespace(format) {
             Some(namespace) => namespace.arena_as_for_decode(ctx, "unknowns")?,
             None => Vec::new(),
@@ -699,7 +700,7 @@ impl SourceFidelity {
         let arena_name = "unknowns".to_owned();
 
         ir.native
-            .namespace_mut(format)
+            .namespace_mut(codec)
             .arenas_mut()
             .insert(arena_name, native_records);
         self.retained_records.extend(retained);
@@ -760,7 +761,7 @@ mod tests {
 
     fn report() -> DecodeReport {
         DecodeReport::unclassified(
-            "test",
+            crate::codec_id!("test"),
             crate::report::decode::DecodeTransfer::full(true),
             std::collections::BTreeMap::default(),
             Vec::new(),

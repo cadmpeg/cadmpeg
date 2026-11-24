@@ -122,14 +122,17 @@ fn encoder_planning_owns_unknown_explicit_target_admission() {
 #[cfg(feature = "step")]
 fn step_ir_with_unrepresentable_native_content() -> CadIr {
     let mut ir = CadIr::empty();
-    ir.native.namespace_mut("f3d").arenas_mut().insert(
-        "asm_histories".into(),
-        vec![cadmpeg_ir::NativeRecord::new(
-            cadmpeg_ir::ids::Identity::new("f3d:test:asm-history#0").expect("valid identity"),
-            serde_json::Map::default(),
-        )
-        .expect("valid native identity")],
-    );
+    ir.native
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
+        .arenas_mut()
+        .insert(
+            "asm_histories".into(),
+            vec![cadmpeg_ir::NativeRecord::new(
+                cadmpeg_ir::ids::Identity::new("f3d:test:asm-history#0").expect("valid identity"),
+                serde_json::Map::default(),
+            )
+            .expect("valid native identity")],
+        );
     ir.finalize();
     ir
 }

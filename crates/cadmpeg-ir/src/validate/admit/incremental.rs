@@ -165,7 +165,7 @@ impl AdmittedState {
             }
             if !dependencies.is_empty() {
                 let arena = "unknowns".to_owned();
-                let namespace = format.to_owned();
+                let namespace = crate::native::namespace_codec(format)?;
                 let mut arenas = crate::native::NativeNamespace::default();
                 arenas.arenas_mut().insert(arena, dependencies);
                 candidate.native.0.insert(namespace, arenas);

@@ -36,25 +36,35 @@ use serde::{Deserialize, Serialize};
 
 /// The stable registry format namespace of one codec, as a typed value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FormatId(&'static str);
+pub struct FormatId(cadmpeg_core::text::StaticCodecId);
 
 impl FormatId {
-    /// Builds the format id for a registry namespace word.
+    /// Builds the format id for a registry namespace word, which is a codec
+    /// id (§2.2). In a constant, text of another form fails compilation.
     #[must_use]
     pub const fn new(namespace: &'static str) -> Self {
-        Self(namespace)
+        match cadmpeg_core::text::StaticCodecId::new(namespace) {
+            Some(id) => Self(id),
+            None => panic!("a format id is a codec id"),
+        }
     }
 
     /// The registry namespace word.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
-        self.0
+        self.0.as_str()
+    }
+
+    /// The registry namespace word as a codec id.
+    #[must_use]
+    pub const fn codec(self) -> crate::design::names::CodecId {
+        crate::design::names::CodecId::from_static(self.0)
     }
 }
 
 impl fmt::Display for FormatId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.pad(self.0)
+        f.pad(self.0.as_str())
     }
 }
 
@@ -302,10 +312,10 @@ impl DecodeResult {
                     FormatIdentity::classified(dialects.clone())
                 }
                 FormatIdentity::Unclassified { format } => {
-                    FormatIdentity::unclassified(format.to_owned())
+                    FormatIdentity::unclassified(format.clone())
                 }
             },
-            None => FormatIdentity::unclassified(format.as_str().to_owned()),
+            None => FormatIdentity::unclassified(format.codec()),
         };
         ir.finalize();
         match crate::design::normalize::normalize(&mut ir, policy) {

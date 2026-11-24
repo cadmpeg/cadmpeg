@@ -93,7 +93,7 @@ fn repro_native_feature_closure_keeps_numeric_joins_and_type_rows() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let ctx = cadmpeg_core::decode::DecodeContext::for_loaded_input(&arena, &policy, 0).unwrap();
-    let native = document.native.namespace_mut("synthetic");
+    let native = document.native.namespace_mut(crate::codec_id!("synthetic"));
     for (arena, records) in [
         (
             "scopes",

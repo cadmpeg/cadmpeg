@@ -265,7 +265,7 @@ fn inherit_refuses_a_schema_two_source_with_no_usable_baseline() {
         .expect("decode schema 2");
     let (mut ir, _, _) = decoded.into_parts();
     ir.native
-        .namespace_mut("fcstd")
+        .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
         .set_arena::<DocumentFacts>(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             "document",

@@ -213,7 +213,7 @@ fn diff_reports_design_material_assignment_changes() {
     let mut edited = decoded.ir().clone();
     let assignment = &mut edited
         .native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .arenas_mut()
         .get_mut("design_material_assignments")
         .unwrap()[0];

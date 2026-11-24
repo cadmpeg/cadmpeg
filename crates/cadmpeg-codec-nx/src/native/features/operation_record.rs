@@ -287,7 +287,7 @@ mod tests {
         crate::test_support::with_decode_context(|ctx| {
             let mut ir = cadmpeg_ir::CadIr::empty();
             ir.native
-                .namespace_mut("nx")
+                .namespace_mut(cadmpeg_ir::codec_id!("nx"))
                 .set_arena(
                     ctx,
                     "feature_operation_records",
@@ -311,7 +311,7 @@ mod tests {
                 let mut bad = wire.clone();
                 bad[field] = value;
                 ir.native
-                    .namespace_mut("nx")
+                    .namespace_mut(cadmpeg_ir::codec_id!("nx"))
                     .set_arena(ctx, "feature_operation_records", &[bad])
                     .unwrap();
                 let findings = crate::NxCodec::validate_native(ctx, &ir, None).unwrap();

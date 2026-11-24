@@ -2388,7 +2388,7 @@ fn extend_native(
     let Some(mut source) = component.0.remove("f3d") else {
         return Ok(());
     };
-    let target = root.namespace_mut("f3d");
+    let target = root.namespace_mut(cadmpeg_ir::codec_id!("f3d"));
     for name in crate::native::F3D_ARENA_NAMES
         .iter()
         .copied()

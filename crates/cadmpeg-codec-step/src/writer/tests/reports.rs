@@ -1950,14 +1950,17 @@ fn procedural_construction_reduction_is_reported() {
 #[test]
 fn source_native_record_reduction_is_reported() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.native.namespace_mut("f3d").arenas_mut().insert(
-        "asm_histories".into(),
-        vec![cadmpeg_ir::NativeRecord::new(
-            cadmpeg_ir::ids::Identity::new("f3d:test:asm-history#0").expect("valid identity"),
-            Default::default(),
-        )
-        .expect("valid native identity")],
-    );
+    ir.native
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
+        .arenas_mut()
+        .insert(
+            "asm_histories".into(),
+            vec![cadmpeg_ir::NativeRecord::new(
+                cadmpeg_ir::ids::Identity::new("f3d:test:asm-history#0").expect("valid identity"),
+                Default::default(),
+            )
+            .expect("valid native identity")],
+        );
     ir.finalize();
 
     let mut buf = Vec::new();

@@ -169,7 +169,7 @@ impl ContainerSummary {
     /// not classify, as when the part that declares the dialect was given up.
     #[must_use]
     pub fn unclassified(
-        format: impl Into<String>,
+        format: crate::design::names::CodecId,
         container_kind: ContainerKind,
         entries: Vec<ContainerEntry>,
         losses: Vec<LossNote>,
@@ -206,7 +206,9 @@ mod tests {
     #[test]
     fn an_unclassified_summary_states_its_format_inside_the_identity() {
         let summary = ContainerSummary {
-            identity: cadmpeg_core::dialect::FormatIdentity::unclassified("rhino"),
+            identity: cadmpeg_core::dialect::FormatIdentity::unclassified(crate::codec_id!(
+                "rhino"
+            )),
             container_kind: ContainerKind::Flat,
             entries: Vec::new(),
             losses: Vec::new(),
