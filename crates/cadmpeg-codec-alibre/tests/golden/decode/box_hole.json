@@ -3757,9 +3757,8 @@
           "kind": "namespaced",
           "value": {
             "code": "source.record-extensions-unprojected",
-            "kind": "geometry_not_transferred",
-            "namespace": "alibre",
-            "strict_floor": "warning"
+            "kind": "metadata_not_transferred",
+            "namespace": "alibre"
           }
         },
         "message": "the extended entity base stores an integer in 103 record(s), and a body record stores one more in 1; the source states neither, and the decoder drops them",
