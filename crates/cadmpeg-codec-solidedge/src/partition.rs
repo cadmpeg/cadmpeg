@@ -147,6 +147,9 @@ mod tests {
             "STREAM0.P_B",
             "PARASOLID/STREAM.P_B",
             "PARASOLID/STREAM0.D_B",
+            "PARASOLID/STREAM0A.P_B",
+            "PARASOLID/STREAM0.P_B.bak",
+            "PARASOLID/sub/STREAM0.P_B",
             "other/STREAM0.P_B",
         ] {
             assert!(!is_primary(path));

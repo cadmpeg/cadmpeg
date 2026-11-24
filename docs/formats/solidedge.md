@@ -32,9 +32,12 @@ first three fields little-endian.
 ## 2. Kernel stream map
 
 The `PARASOLID` storage contains binary kernel streams. A primary partition
-has the path `PARASOLID/STREAM<n>.P_B`, where `<n>` is a decimal stream index.
-Its paired delta stream has the path `PARASOLID/STREAM<n>.D_B`.
-Each stream has its own transmit header and node-index space.
+has the path `PARASOLID/STREAM<n>.P_B`, where `<n>` is a stream index of one or
+more ASCII decimal digits. Its paired delta stream has the path
+`PARASOLID/STREAM<n>.D_B`. Path components compare without regard to ASCII
+case. No other path is a primary partition: a stream below a deeper storage,
+a leaf with a non-digit in the index, and a leaf with another extension are
+not. Each stream has its own transmit header and node-index space.
 
 `JSitesList` also names document sites. Site storages use the name pattern
 `JSite<n>`. Assembly sites carry reference and physical-property streams,
