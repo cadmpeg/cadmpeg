@@ -23,7 +23,10 @@ use crate::report::{
 use crate::scalar::{ExtendedReal, FiniteReal};
 use crate::topology::{ParameterInterval, Sense};
 
-use crate::units::{coincidence_allowance, COINCIDENCE_TOLERANCE};
+use crate::geometry::legacy_cache::FitTolerance;
+use crate::units::{
+    binding_allowance, coincidence_allowance, tolerance_in_force, COINCIDENCE_TOLERANCE,
+};
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_core::CodecError;
 
@@ -99,14 +102,46 @@ fn worse_mismatch(first: f64, second: f64) -> f64 {
     }
 }
 
-/// Two independently evaluated procedural carriers can each consume the
-/// baseline coincidence allowance. The solved cache's explicit fit tolerance
-/// widens that allowance when it is larger.
+/// The bound a decoder applies to a procedural support side: two
+/// independently evaluated procedural carriers can each consume the binding
+/// allowance, which the solved cache's explicit fit tolerance widens when it
+/// is larger.
 fn procedural_support_allowance(
     document_tolerance: crate::scalar::PositiveLength,
     cache_fit_tolerance: Option<f64>,
 ) -> f64 {
-    COINCIDENCE_TOLERANCE + coincidence_allowance(document_tolerance, &[cache_fit_tolerance])
+    COINCIDENCE_TOLERANCE + binding_allowance(document_tolerance, &[cache_fit_tolerance])
+}
+
+/// The largest finite coordinate magnitude of `points`: the part of the
+/// magnitude that enters a comparison's evaluation that the compared
+/// positions give.
+fn magnitude(points: &[Point3]) -> f64 {
+    points
+        .iter()
+        .flat_map(|point| [point.x, point.y, point.z])
+        .filter(|coordinate| coordinate.is_finite())
+        .fold(0.0, |largest, coordinate| largest.max(coordinate.abs()))
+}
+
+/// The fit tolerance of the solved cache that a surface is evaluated
+/// through, where it states one.
+fn surface_cache_fit(index: &crate::index::ModelIndex<'_>, surface: &str) -> Option<f64> {
+    index
+        .procedural_surface_for_surface(surface, crate::index::StandardIndex)
+        .and_then(crate::geometry::ProceduralSurface::cache_fit_tolerance)
+        .or_else(|| {
+            index
+                .surfaces(surface, crate::index::StandardIndex)
+                .and_then(|surface| surface.geometry.solved())
+                .and_then(|surface| match surface {
+                    crate::geometry::SolvedSurfaceGeometry::Nurbs(surface) => {
+                        surface.cache_fit_tolerance()
+                    }
+                    _ => None,
+                })
+        })
+        .map(FitTolerance::get)
 }
 
 /// Embedded support pcurves must map through their surfaces onto the curve
@@ -128,10 +163,21 @@ pub(super) fn check_procedural_support_consistency(
         }
     });
     let owners = curve_owners(ir);
+    let curve_fits = BorrowedIdentities::build(|add| {
+        for curve in &ir.geometry.procedural_curves {
+            if let Some(owner) = owners.get_unique(curve.id.as_str()) {
+                add(
+                    owner.as_str(),
+                    curve.cache_fit_tolerance().map(FitTolerance::get),
+                );
+            }
+        }
+    });
     for procedural in &ir.geometry.procedural_curves {
         let Some(owner) = owners.get_unique(procedural.id.as_str()).copied() else {
             continue;
         };
+        let solved_fit = procedural.cache_fit_tolerance().map(FitTolerance::get);
         if let crate::geometry::procedural_curves::ProceduralCurveDefinition::TolerantIntersection {
             construction: intersection,
             parameterization: Some(parameterization),
@@ -169,7 +215,12 @@ pub(super) fn check_procedural_support_consistency(
                 Point3::distance(start, endpoints[0].get()),
                 Point3::distance(end, endpoints[1].get()),
             );
-            if !mismatch.is_finite() || mismatch > tolerance {
+            let bound = coincidence_allowance(
+                tolerance,
+                &[solved_fit],
+                magnitude(&[start, end, endpoints[0].get(), endpoints[1].get()]),
+            );
+            if !mismatch.is_finite() || mismatch > bound {
                 super::record_finding(
                     findings,
                     Check::GeometricConsistency,
@@ -213,12 +264,7 @@ pub(super) fn check_procedural_support_consistency(
                     parameter,
                 ))
             })?;
-            let bound = procedural_support_allowance(
-                ir.tolerances.linear,
-                procedural
-                    .cache_fit_tolerance()
-                    .map(crate::geometry::legacy_cache::FitTolerance::get),
-            );
+            let base_fit = curve_fits.get(base.as_str()).copied().flatten();
             let Some(base) = curves.get(base.as_str()) else {
                 continue;
             };
@@ -237,7 +283,7 @@ pub(super) fn check_procedural_support_consistency(
                         distance: offset.abs(),
                     },
                     model,
-                    bound,
+                    SideAllowance::validation(ir.tolerances.linear, solved_fit, solved_fit),
                     procedural.id.as_str(),
                     findings,
                 )?;
@@ -263,6 +309,15 @@ pub(super) fn check_procedural_support_consistency(
                 (Point3::distance(witness_start, base_start) - offset.abs()).abs(),
                 (Point3::distance(witness_end, base_end) - offset.abs()).abs(),
             );
+            let bound = coincidence_allowance(
+                ir.tolerances.linear.get(),
+                &[solved_fit, base_fit],
+                magnitude(&[witness_start, witness_end, base_start, base_end]),
+            )
+            .max(procedural_support_allowance(
+                ir.tolerances.linear,
+                solved_fit,
+            ));
             if !offset_mismatch.is_finite() || offset_mismatch > bound {
                 super::record_finding(
                     findings,
@@ -275,19 +330,26 @@ pub(super) fn check_procedural_support_consistency(
                     ),
                 );
             }
-            check_support_sides(
-                ctx,
-                (context, None, parameters, witness),
-                if parameters == construction {
-                    SupportEndpointContract::Coincident([base_start, base_end])
-                } else {
+            let (contract, constrained) = if parameters == construction {
+                (
+                    SupportEndpointContract::Coincident([base_start, base_end]),
+                    base_fit,
+                )
+            } else {
+                (
                     SupportEndpointContract::Offset {
                         endpoints: [solved_start, solved_end],
                         distance: offset.abs(),
-                    }
-                },
+                    },
+                    solved_fit,
+                )
+            };
+            check_support_sides(
+                ctx,
+                (context, None, parameters, witness),
+                contract,
                 model,
-                bound,
+                SideAllowance::validation(ir.tolerances.linear, constrained, solved_fit),
                 procedural.id.as_str(),
                 findings,
             )?;
@@ -345,23 +407,67 @@ pub(super) fn check_procedural_support_consistency(
         let witness = construction_witness(&context, parameters, |parameter| {
             measured_point(crate::eval::decode::curve_point(ctx, curve, parameter))
         })?;
-        let bound = procedural_support_allowance(
-            ir.tolerances.linear,
-            procedural
-                .cache_fit_tolerance()
-                .map(crate::geometry::legacy_cache::FitTolerance::get),
-        );
         check_support_sides(
             ctx,
             (&context, third, parameters, witness),
             SupportEndpointContract::Coincident([solved_start, solved_end]),
             model,
-            bound,
+            SideAllowance::validation(ir.tolerances.linear, solved_fit, solved_fit),
             procedural.id.as_str(),
             findings,
         )?;
     }
     Ok(())
+}
+
+/// The distance within which a support side meets its endpoint contract.
+#[derive(Clone, Copy)]
+struct SideAllowance {
+    /// The decoder's bound: the binding allowance of the solved cache,
+    /// widened per side by the support surface's.
+    binding: f64,
+    /// Where validation compares, the fit tolerance of the cache that the
+    /// contract's endpoints and the construction witness are each evaluated
+    /// through. Validation takes the larger of part 10's coincidence
+    /// allowance and the decoder's bound.
+    fits: Option<[Option<f64>; 2]>,
+}
+
+impl SideAllowance {
+    fn validation(
+        linear: crate::scalar::PositiveLength,
+        constrained: Option<f64>,
+        witness: Option<f64>,
+    ) -> Self {
+        Self {
+            binding: procedural_support_allowance(linear, witness),
+            fits: Some([constrained, witness]),
+        }
+    }
+
+    /// The bound for a side whose support surface's cache states
+    /// `surface_fit`, comparing positions of `magnitude`; `witness` where the
+    /// comparison takes the construction witness.
+    fn bound(
+        self,
+        linear: crate::scalar::PositiveLength,
+        surface_fit: Option<f64>,
+        magnitude: f64,
+        witness: bool,
+    ) -> f64 {
+        let binding = self
+            .binding
+            .max(procedural_support_allowance(linear, surface_fit));
+        match self.fits {
+            None => binding,
+            Some([constrained, witness_fit]) => coincidence_allowance(
+                linear.get(),
+                &[if witness { witness_fit } else { constrained }, surface_fit],
+                magnitude,
+            )
+            .max(binding),
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -383,7 +489,7 @@ fn check_support_sides(
     ),
     contract: SupportEndpointContract,
     model: PassEvaluator<'_, '_>,
-    bound: f64,
+    allowance: SideAllowance,
     entity: &str,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
@@ -392,7 +498,7 @@ fn check_support_sides(
         supports,
         contract,
         model,
-        bound,
+        allowance,
         |side_index, mismatch| {
             super::record_finding(
                 findings,
@@ -448,7 +554,13 @@ pub fn cache_support_endpoint_failures(
             index,
             pass: &evaluations,
         },
-        procedural_support_allowance(index.ir().tolerances.linear, cache_fit_tolerance),
+        SideAllowance {
+            binding: procedural_support_allowance(
+                index.ir().tolerances.linear,
+                cache_fit_tolerance,
+            ),
+            fits: None,
+        },
         |side, _mismatch| sides.push(side),
     )?;
     Ok(sides)
@@ -464,7 +576,7 @@ fn visit_support_failures(
     ),
     contract: SupportEndpointContract,
     model: PassEvaluator<'_, '_>,
-    bound: f64,
+    allowance: SideAllowance,
     mut failure: impl FnMut(usize, f64),
 ) -> Result<(), CodecError> {
     let (context, third, parameters, witness) = supports;
@@ -479,31 +591,15 @@ fn visit_support_failures(
         let (Some(surface_id), Some(pcurve)) = (&side.surface, &side.pcurve) else {
             continue;
         };
-        let support_fit = model
-            .index
-            .procedural_surface_for_surface(surface_id.as_str(), crate::index::StandardIndex)
-            .and_then(crate::geometry::ProceduralSurface::cache_fit_tolerance)
-            .or_else(|| {
-                model
-                    .index
-                    .surfaces(surface_id.as_str(), crate::index::StandardIndex)
-                    .and_then(|surface| surface.geometry.solved())
-                    .and_then(|surface| match surface {
-                        crate::geometry::SolvedSurfaceGeometry::Nurbs(surface) => {
-                            surface.cache_fit_tolerance()
-                        }
-                        _ => None,
-                    })
-            });
-        let bound = bound.max(procedural_support_allowance(
-            model.index.ir().tolerances.linear,
-            support_fit.map(crate::geometry::legacy_cache::FitTolerance::get),
-        ));
+        let surface_fit = surface_cache_fit(model.index, surface_id.as_str());
+        let linear = model.index.ir().tolerances.linear;
         // A non-finite pcurve or support point is measured as a finite one
-        // is: the mismatch it produces is the finding's measure.
+        // is: the mismatch it produces is the finding's measure. The bound
+        // goes with the positions compared.
         let mismatch_at = |constrained: [Point3; 2],
-                           parameters: [f64; 2]|
-         -> Result<Option<f64>, ResourceLimit> {
+                           parameters: [f64; 2],
+                           witness: bool|
+         -> Result<Option<(f64, f64)>, ResourceLimit> {
             let support = parameters.map(|parameter| -> Result<Option<Point3>, ResourceLimit> {
                 let Some(parameter) = side.pcurve_parameter(context.parameter_range(), parameter)
                 else {
@@ -531,33 +627,37 @@ fn visit_support_failures(
                 let distance = Point3::distance(constrained, support);
                 expected_distance.map_or(distance, |expected| (distance - expected).abs())
             };
-            Ok(Some(worse_mismatch(
+            let mismatch = worse_mismatch(
                 endpoint_mismatch(constrained[0], support_start),
                 endpoint_mismatch(constrained[1], support_end),
+            );
+            let positions = [constrained[0], constrained[1], support_start, support_end];
+            Ok(Some((
+                mismatch,
+                allowance.bound(linear, surface_fit, magnitude(&positions), witness),
             )))
         };
-        let Some(mismatch) = mismatch_at(constrained, parameters)? else {
+        let Some((mismatch, bound)) = mismatch_at(constrained, parameters, false)? else {
             continue;
         };
-        let meets = |mismatch: f64| mismatch.is_finite() && mismatch <= bound;
-        if !meets(mismatch) {
-            // A symmetric interval holds both signs of a hull, so the range
-            // does not show whether the curve is reversed.
-            let negated = parameters.map(|parameter| -parameter);
-            if on_construction(context, negated)
-                && mismatch_at(constrained, negated)?.is_some_and(meets)
-            {
+        let meets = |(mismatch, bound): (f64, f64)| mismatch.is_finite() && mismatch <= bound;
+        if meets((mismatch, bound)) {
+            continue;
+        }
+        // A symmetric interval holds both signs of a hull, so the range
+        // does not show whether the curve is reversed.
+        let negated = parameters.map(|parameter| -parameter);
+        if on_construction(context, negated)
+            && mismatch_at(constrained, negated, false)?.is_some_and(meets)
+        {
+            continue;
+        }
+        if let Some((endpoints, construction)) = witness {
+            if mismatch_at(endpoints, construction, true)?.is_some_and(meets) {
                 continue;
             }
-            if let Some((endpoints, construction)) = witness {
-                if mismatch_at(endpoints, construction)?.is_some_and(meets) {
-                    continue;
-                }
-            }
         }
-        if !mismatch.is_finite() || mismatch > bound {
-            failure(side_index, mismatch);
-        }
+        failure(side_index, mismatch);
     }
     Ok(())
 }
@@ -660,7 +760,7 @@ fn carrier_is_open(
     ctx: &DecodeContext<'_>,
     geometry: &crate::geometry::CurveGeometry,
     domain: Option<[f64; 2]>,
-    bound: f64,
+    bound: impl Fn([Point3; 2]) -> f64,
 ) -> Result<bool, CodecError> {
     if let Some([start_t, end_t]) = domain {
         let (Some(at_start), Some(at_end)) = (
@@ -671,7 +771,7 @@ fn carrier_is_open(
         };
         return Ok(!crate::eval::curve_endpoints_coincident(
             [at_start, at_end],
-            bound,
+            bound([at_start, at_end]),
         ));
     }
     Ok(matches!(
@@ -697,18 +797,20 @@ pub(super) fn vertexless_edge_on_open_carrier(
     if edge.param_range().is_some() {
         return Ok(false);
     }
-    let bound = coincidence_allowance(
+    let in_force = tolerance_in_force(
         linear,
-        &[
-            edge.tolerance.map(crate::scalar::PositiveLength::get),
-            cache_fit_tolerance.map(crate::geometry::legacy_cache::FitTolerance::get),
-        ],
+        &[edge.tolerance.map(crate::scalar::PositiveLength::get)],
+    );
+    let fit = cache_fit_tolerance.map(FitTolerance::get);
+    let binding = binding_allowance(
+        linear,
+        &[edge.tolerance.map(crate::scalar::PositiveLength::get), fit],
     );
     carrier_is_open(
         ctx,
         &curve.geometry,
         crate::eval::bounded_curve_domain(curve),
-        bound,
+        |ends| coincidence_allowance(in_force, &[fit], magnitude(&ends)).max(binding),
     )
 }
 
@@ -791,19 +893,25 @@ pub(super) fn check_edge_endpoint_consistency(
         ) else {
             continue;
         };
+        let tolerances = [
+            edge.tolerance.map(crate::scalar::PositiveLength::get),
+            *start_tol,
+            *end_tol,
+        ];
+        let fit = curve_cache_tolerances
+            .get(curve_id.as_str())
+            .copied()
+            .flatten()
+            .map(FitTolerance::get);
         let bound = coincidence_allowance(
+            tolerance_in_force(ir.tolerances.linear, &tolerances),
+            &[fit],
+            magnitude(&[at_start, at_end, *start, *end]),
+        )
+        .max(binding_allowance(
             ir.tolerances.linear,
-            &[
-                edge.tolerance.map(crate::scalar::PositiveLength::get),
-                *start_tol,
-                *end_tol,
-                curve_cache_tolerances
-                    .get(curve_id.as_str())
-                    .copied()
-                    .flatten()
-                    .map(crate::geometry::legacy_cache::FitTolerance::get),
-            ],
-        );
+            &[tolerances[0], tolerances[1], tolerances[2], fit],
+        ));
         let mismatch = worse_mismatch(
             Point3::distance(at_start, *start),
             Point3::distance(at_end, *end),
@@ -876,19 +984,25 @@ pub(super) fn check_edge_endpoint_consistency(
         ) else {
             continue;
         };
+        let tolerances = [
+            edge.tolerance.map(crate::scalar::PositiveLength::get),
+            *start_tol,
+            *end_tol,
+        ];
+        let fit = curve_cache_tolerances
+            .get(curve_id.as_str())
+            .copied()
+            .flatten()
+            .map(FitTolerance::get);
         let bound = coincidence_allowance(
+            tolerance_in_force(ir.tolerances.linear, &tolerances),
+            &[fit],
+            magnitude(&[at_start, at_end, *start, *end]),
+        )
+        .max(binding_allowance(
             ir.tolerances.linear,
-            &[
-                edge.tolerance.map(crate::scalar::PositiveLength::get),
-                *start_tol,
-                *end_tol,
-                curve_cache_tolerances
-                    .get(curve_id.as_str())
-                    .copied()
-                    .flatten()
-                    .map(crate::geometry::legacy_cache::FitTolerance::get),
-            ],
-        );
+            &[tolerances[0], tolerances[1], tolerances[2], fit],
+        ));
         let mismatch = worse_mismatch(
             Point3::distance(at_start, *start),
             Point3::distance(at_end, *end),
@@ -1022,33 +1136,55 @@ pub(super) fn check_pcurve_surface_consistency(
             Some(curve) => curves.get(curve.as_str()).copied(),
             None => None,
         };
-        let bound = coincidence_allowance(
+        let in_force = tolerance_in_force(
             ir.tolerances.linear,
             &[
                 edge.tolerance.map(crate::scalar::PositiveLength::get),
                 *start_tol,
                 *end_tol,
                 face.tolerance.map(crate::scalar::PositiveLength::get),
-                first
-                    .fit_tolerance()
-                    .map(crate::geometry::legacy_cache::FitTolerance::get),
-                last.fit_tolerance()
-                    .map(crate::geometry::legacy_cache::FitTolerance::get),
             ],
         );
+        let surface_fit = surface_cache_fit(index, face.surface.as_str());
+        // The image at the start is evaluated through the first pcurve and
+        // the one at the end through the last.
+        let image_fits = [
+            first.fit_tolerance().map(FitTolerance::get),
+            last.fit_tolerance().map(FitTolerance::get),
+        ];
+        let topology = [
+            edge.tolerance.map(crate::scalar::PositiveLength::get),
+            *start_tol,
+            *end_tol,
+            face.tolerance.map(crate::scalar::PositiveLength::get),
+        ];
+        let binding = binding_allowance(
+            ir.tolerances.linear,
+            &[
+                topology[0],
+                topology[1],
+                topology[2],
+                topology[3],
+                image_fits[0],
+                image_fits[1],
+            ],
+        );
+        let agrees = |image: Point3, vertex: Point3, end: usize| {
+            let distance = Point3::distance(image, vertex);
+            distance.is_finite()
+                && distance
+                    <= coincidence_allowance(
+                        in_force,
+                        &[image_fits[end], surface_fit],
+                        magnitude(&[image, vertex]),
+                    )
+                    .max(binding)
+        };
         // Recovering an occurrence interval is a topological operation. A
         // carrier fit tolerance may qualify the final image, but must not let
         // inverse recovery move an explicitly ranged occurrence onto a
         // different, merely nearby part of the carrier.
-        let recovery_bound = coincidence_allowance(
-            ir.tolerances.linear,
-            &[
-                edge.tolerance.map(crate::scalar::PositiveLength::get),
-                *start_tol,
-                *end_tol,
-                face.tolerance.map(crate::scalar::PositiveLength::get),
-            ],
-        );
+        let recovery_bound = binding_allowance(ir.tolerances.linear, &topology);
         // A malformed STEP export can retain a stale TRIMMED_CURVE interval
         // even though its carrier still reaches the edge vertices on another
         // interval. Check the declared interval, then recover a mapped
@@ -1090,6 +1226,7 @@ pub(super) fn check_pcurve_surface_consistency(
             }
         };
         let mut minimum_mismatch: Option<f64> = None;
+        let mut qualified = false;
         let mut qualifies = |ranges: &Option<Vec<[f64; 2]>>| -> Result<bool, CodecError> {
             for [t0, t1] in ranges.iter().flat_map(|ranges| ranges.iter()).copied() {
                 // A non-finite pcurve or surface point is measured as a finite
@@ -1125,7 +1262,10 @@ pub(super) fn check_pcurve_surface_consistency(
                 let mismatch = forward.min(reversed);
                 minimum_mismatch =
                     Some(minimum_mismatch.map_or(mismatch, |minimum| minimum.min(mismatch)));
-                if mismatch.is_finite() && mismatch <= bound {
+                if agrees(p0, *start, 0) && agrees(p1, *end, 1)
+                    || agrees(p0, *end, 0) && agrees(p1, *start, 1)
+                {
+                    qualified = true;
                     return Ok(true);
                 }
             }
@@ -1148,7 +1288,7 @@ pub(super) fn check_pcurve_surface_consistency(
         let Some(mismatch) = minimum_mismatch else {
             continue;
         };
-        if !mismatch.is_finite() || mismatch > bound {
+        if !qualified {
             super::record_finding(
                 findings,
                 Check::GeometricConsistency,
