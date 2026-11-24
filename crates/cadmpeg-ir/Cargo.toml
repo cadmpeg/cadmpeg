@@ -21,6 +21,11 @@ examples = []
 # `DECODE_SIDECAR_JSON_SCHEMA`, the committed `schema/*.json`. The CI
 # "Schema feature" step builds the derives and checks the committed files.
 schema = ["dep:schemars", "cadmpeg-core/schema"]
+# `schema-order` writes the committed schemas with each object's `properties`
+# in declared order. It turns on serde_json's `preserve_order` for the whole
+# build, which changes the order every `serde_json::Map` keeps, so only the
+# committed-schema test runs under it.
+schema-order = ["schema", "schemars/preserve_order"]
 
 [dependencies]
 cadmpeg-core.workspace = true

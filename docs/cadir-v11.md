@@ -5788,16 +5788,16 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Radius varying linearly from `start` to `end` along the spine.",
       "type": "object",
       "properties": {
-        "end": {
-          "description": "Signed radius at the spine end, in document length units.",
-          "$ref": "#/$defs/Length"
-        },
         "kind": {
           "type": "string",
           "const": "linear"
         },
         "start": {
           "description": "Signed radius at the spine start, in document length units.",
+          "$ref": "#/$defs/Length"
+        },
+        "end": {
+          "description": "Signed radius at the spine end, in document length units.",
           "$ref": "#/$defs/Length"
         }
       },
@@ -5812,13 +5812,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Radius varying along the spine per an explicit law curve.",
       "type": "object",
       "properties": {
-        "curve": {
-          "description": "Curve whose parameterization gives the signed radius along the spine.",
-          "$ref": "#/$defs/NurbsCurve"
-        },
         "kind": {
           "type": "string",
           "const": "law"
+        },
+        "curve": {
+          "description": "Curve whose parameterization gives the signed radius along the spine.",
+          "$ref": "#/$defs/NurbsCurve"
         }
       },
       "additionalProperties": false,
@@ -5838,13 +5838,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "One oriented support of a procedural blend.",
   "type": "object",
   "properties": {
-    "reversed": {
-      "description": "Selects the opposite surface-normal side when true.",
-      "type": "boolean"
-    },
     "surface": {
       "description": "The support surface.",
       "$ref": "#/$defs/SurfaceId"
+    },
+    "reversed": {
+      "description": "Selects the opposite surface-normal side when true.",
+      "type": "boolean"
     }
   },
   "additionalProperties": false,
@@ -5865,13 +5865,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Legacy layout, which states its own solved-cache tolerance.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Solved-cache fit contract, absent when the record stated none.",
-          "$ref": "#/$defs/LegacyCache"
-        },
         "kind": {
           "type": "string",
           "const": "legacy"
+        },
+        "cache": {
+          "description": "Solved-cache fit contract, absent when the record stated none.",
+          "$ref": "#/$defs/LegacyCache"
         }
       },
       "additionalProperties": false,
@@ -5883,13 +5883,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Revision-gated layout, which states the tolerance in its cache form.",
       "type": "object",
       "properties": {
-        "form": {
-          "description": "Revision-gated form.",
-          "$ref": "#/$defs/RevisionSurfaceForm"
-        },
         "kind": {
           "type": "string",
           "const": "revision"
+        },
+        "form": {
+          "description": "Revision-gated form.",
+          "$ref": "#/$defs/RevisionSurfaceForm"
         }
       },
       "additionalProperties": false,
@@ -5912,13 +5912,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Legacy layout, which states its own solved-cache tolerance.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Solved-cache fit contract, absent when the record stated none.",
-          "$ref": "#/$defs/LegacyCache"
-        },
         "kind": {
           "type": "string",
           "const": "legacy"
+        },
+        "cache": {
+          "description": "Solved-cache fit contract, absent when the record stated none.",
+          "$ref": "#/$defs/LegacyCache"
         }
       },
       "additionalProperties": false,
@@ -5930,13 +5930,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Revision-gated layout, which states the tolerance in its cache form.",
       "type": "object",
       "properties": {
-        "form": {
-          "description": "Revision-gated form.",
-          "$ref": "#/$defs/LoftRevisionForm"
-        },
         "kind": {
           "type": "string",
           "const": "revision"
+        },
+        "form": {
+          "description": "Revision-gated form.",
+          "$ref": "#/$defs/LoftRevisionForm"
         }
       },
       "additionalProperties": false,
@@ -5959,13 +5959,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Legacy layout, which states its own solved-cache tolerance.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Solved-cache fit contract, absent when the record stated none.",
-          "$ref": "#/$defs/LegacyCache"
-        },
         "kind": {
           "type": "string",
           "const": "legacy"
+        },
+        "cache": {
+          "description": "Solved-cache fit contract, absent when the record stated none.",
+          "$ref": "#/$defs/LegacyCache"
         }
       },
       "additionalProperties": false,
@@ -5977,13 +5977,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Revision-gated layout, which states the tolerance in its cache form.",
       "type": "object",
       "properties": {
-        "form": {
-          "description": "Revision-gated form.",
-          "$ref": "#/$defs/SweepRevisionForm"
-        },
         "kind": {
           "type": "string",
           "const": "revision"
+        },
+        "form": {
+          "description": "Revision-gated form.",
+          "$ref": "#/$defs/SweepRevisionForm"
         }
       },
       "additionalProperties": false,
@@ -6006,13 +6006,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Legacy layout, which states its own solved-cache tolerance.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Solved-cache fit contract, absent when the record stated none.",
-          "$ref": "#/$defs/LegacyCache"
-        },
         "kind": {
           "type": "string",
           "const": "legacy"
+        },
+        "cache": {
+          "description": "Solved-cache fit contract, absent when the record stated none.",
+          "$ref": "#/$defs/LegacyCache"
         }
       },
       "additionalProperties": false,
@@ -6024,13 +6024,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Revision-gated layout, which states the tolerance in its cache form.",
       "type": "object",
       "properties": {
-        "form": {
-          "description": "Revision-gated form.",
-          "$ref": "#/$defs/RollingBallConstruction"
-        },
         "kind": {
           "type": "string",
           "const": "revision"
+        },
+        "form": {
+          "description": "Revision-gated form.",
+          "$ref": "#/$defs/RollingBallConstruction"
         }
       },
       "additionalProperties": false,
@@ -6053,13 +6053,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Legacy layout, which states its own solved-cache tolerance.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Solved-cache fit contract, absent when the record stated none.",
-          "$ref": "#/$defs/LegacyCache"
-        },
         "kind": {
           "type": "string",
           "const": "legacy"
+        },
+        "cache": {
+          "description": "Solved-cache fit contract, absent when the record stated none.",
+          "$ref": "#/$defs/LegacyCache"
         }
       },
       "additionalProperties": false,
@@ -6071,13 +6071,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Revision-gated layout, which states the tolerance in its cache form.",
       "type": "object",
       "properties": {
-        "form": {
-          "description": "Revision-gated form.",
-          "$ref": "#/$defs/CacheFirstCurveForm"
-        },
         "kind": {
           "type": "string",
           "const": "revision"
+        },
+        "form": {
+          "description": "Revision-gated form.",
+          "$ref": "#/$defs/CacheFirstCurveForm"
         }
       },
       "additionalProperties": false,
@@ -6097,31 +6097,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Cache-first shared-context fields absent from the context-first layout.",
   "type": "object",
   "properties": {
-    "cache": {
-      "description": "Approximation-cache form selected by the shared context enum.",
-      "$ref": "#/$defs/RevisionCacheForm2"
-    },
-    "extension": {
-      "description": "Native integer ASM extension following the discontinuity arrays.",
-      "type": "integer",
-      "format": "int64"
-    },
     "revision": {
       "description": "Positive serializer-revision integer selecting the cache-first layout.",
       "$ref": "#/$defs/PositiveI64"
     },
-    "solved_range": {
-      "description": "Optional solved-curve interval endpoints; absent endpoints inherit the\nsolved NURBS domain.",
-      "type": "array",
-      "items": {
-        "type": [
-          "number",
-          "null"
-        ],
-        "format": "double"
-      },
-      "maxItems": 2,
-      "minItems": 2
+    "cache": {
+      "description": "Approximation-cache form selected by the shared context enum.",
+      "$ref": "#/$defs/RevisionCacheForm2"
     },
     "support_bounds": {
       "description": "Optional U/V bound fields following each ordered support surface.",
@@ -6135,11 +6117,29 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           ],
           "format": "double"
         },
-        "maxItems": 4,
-        "minItems": 4
+        "minItems": 4,
+        "maxItems": 4
       },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "solved_range": {
+      "description": "Optional solved-curve interval endpoints; absent endpoints inherit the\nsolved NURBS domain.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "extension": {
+      "description": "Native integer ASM extension following the discontinuity arrays.",
+      "type": "integer",
+      "format": "int64"
     }
   },
   "additionalProperties": false,
@@ -6231,14 +6231,14 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "One component and its native construction scalar.",
   "type": "object",
   "properties": {
-    "component": {
-      "description": "Component geometry or its resolved identity.",
-      "$ref": "#/$defs/SurfaceId"
-    },
     "parameter": {
       "description": "Scalar paired with this component.",
       "type": "number",
       "format": "double"
+    },
+    "component": {
+      "description": "Component geometry or its resolved identity.",
+      "$ref": "#/$defs/SurfaceId"
     }
   },
   "additionalProperties": false,
@@ -6256,14 +6256,14 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "One component and its native construction scalar.",
   "type": "object",
   "properties": {
-    "component": {
-      "description": "Component geometry or its resolved identity.",
-      "$ref": "#/$defs/CurveId"
-    },
     "parameter": {
       "description": "Scalar paired with this component.",
       "type": "number",
       "format": "double"
+    },
+    "component": {
+      "description": "Component geometry or its resolved identity.",
+      "$ref": "#/$defs/CurveId"
     }
   },
   "additionalProperties": false,
@@ -6281,18 +6281,18 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Complete native compound-loft construction graph.",
   "type": "object",
   "properties": {
+    "scales": {
+      "description": "Present scales, up to the five native slots.",
+      "$ref": "#/$defs/CompoundLoftScales_5"
+    },
     "flags": {
       "description": "Two flags before the tail kind.",
       "type": "array",
       "items": {
         "type": "boolean"
       },
-      "maxItems": 2,
-      "minItems": 2
-    },
-    "scales": {
-      "description": "Present scales, up to the five native slots.",
-      "$ref": "#/$defs/CompoundLoftScales_5"
+      "minItems": 2,
+      "maxItems": 2
     },
     "tail": {
       "description": "Kind-specific trailing graph.",
@@ -6337,13 +6337,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "BS3 direction curve and its nonzero native selector.",
       "type": "object",
       "properties": {
-        "curve": {
-          "description": "Stored curve.",
-          "$ref": "#/$defs/CurveId"
-        },
         "kind": {
           "type": "string",
           "const": "curve"
+        },
+        "curve": {
+          "description": "Stored curve.",
+          "$ref": "#/$defs/CurveId"
         },
         "selector": {
           "description": "Exact nonzero native selector retained for byte-faithful export.",
@@ -6372,13 +6372,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Complete `_readScaleClLoft` payload.",
   "type": "object",
   "properties": {
-    "auxiliaries": {
-      "description": "Ordered BS3 auxiliary curves.",
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/CurveId"
-      }
-    },
     "members": {
       "description": "Ordered scale members.",
       "type": "array",
@@ -6390,6 +6383,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Scale path curve.",
       "$ref": "#/$defs/CurveId"
     },
+    "auxiliaries": {
+      "description": "Ordered BS3 auxiliary curves.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/CurveId"
+      }
+    },
     "tail": {
       "description": "Two native trailing integers.",
       "type": "array",
@@ -6397,8 +6397,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "type": "integer",
         "format": "int64"
       },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
     }
   },
   "additionalProperties": false,
@@ -6418,6 +6418,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "One member of a compound-loft scale block.",
   "type": "object",
   "properties": {
+    "type_code": {
+      "description": "Native member integer.",
+      "type": "integer",
+      "format": "int64"
+    },
     "curve": {
       "description": "Member curve.",
       "$ref": "#/$defs/CurveId"
@@ -6425,11 +6430,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
     "data": {
       "description": "Native loft constraint data.",
       "$ref": "#/$defs/LoftProfileData"
-    },
-    "type_code": {
-      "description": "Native member integer.",
-      "type": "integer",
-      "format": "int64"
     }
   },
   "additionalProperties": false,
@@ -6475,13 +6475,9 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Native kind `6` tail.",
       "type": "object",
       "properties": {
-        "curve": {
-          "description": "BS3 tail curve.",
-          "$ref": "#/$defs/CurveId"
-        },
-        "direction": {
-          "description": "Stored direction.",
-          "$ref": "#/$defs/Vector3"
+        "kind": {
+          "type": "string",
+          "const": "six"
         },
         "flags": {
           "description": "Two leading flags.",
@@ -6489,22 +6485,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "items": {
             "type": "boolean"
           },
-          "maxItems": 2,
-          "minItems": 2
-        },
-        "kind": {
-          "type": "string",
-          "const": "six"
-        },
-        "parameter_range": {
-          "description": "Native parameter interval.",
-          "type": "array",
-          "items": {
-            "type": "number",
-            "format": "double"
-          },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         },
         "scale": {
           "description": "Required scale block.",
@@ -6514,6 +6496,24 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "description": "Native integer following the scale.",
           "type": "integer",
           "format": "int64"
+        },
+        "direction": {
+          "description": "Stored direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "parameter_range": {
+          "description": "Native parameter interval.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "curve": {
+          "description": "BS3 tail curve.",
+          "$ref": "#/$defs/CurveId"
         }
       },
       "additionalProperties": false,
@@ -6531,9 +6531,9 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Native kind `7` tail.",
       "type": "object",
       "properties": {
-        "direction": {
-          "description": "Stored direction.",
-          "$ref": "#/$defs/Vector3"
+        "kind": {
+          "type": "string",
+          "const": "seven"
         },
         "first_flag": {
           "description": "First flag.",
@@ -6542,10 +6542,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "first_scale": {
           "description": "First optional scale block.",
           "$ref": "#/$defs/CompoundLoftScale"
-        },
-        "kind": {
-          "type": "string",
-          "const": "seven"
         },
         "second_flag": {
           "description": "Second flag.",
@@ -6560,14 +6556,18 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "type": "integer",
           "format": "int64"
         },
+        "direction": {
+          "description": "Stored direction.",
+          "$ref": "#/$defs/Vector3"
+        },
         "trailing_flags": {
           "description": "Two trailing flags.",
           "type": "array",
           "items": {
             "type": "boolean"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         }
       },
       "additionalProperties": false,
@@ -6585,9 +6585,9 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Native kind `0` tail.",
       "type": "object",
       "properties": {
-        "direction": {
-          "description": "Vector or BS3 curve with its derived native selector.",
-          "$ref": "#/$defs/CompoundLoftDirection"
+        "kind": {
+          "type": "string",
+          "const": "zero"
         },
         "flags": {
           "description": "Two leading flags.",
@@ -6595,12 +6595,12 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "items": {
             "type": "boolean"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         },
-        "kind": {
-          "type": "string",
-          "const": "zero"
+        "direction": {
+          "description": "Vector or BS3 curve with its derived native selector.",
+          "$ref": "#/$defs/CompoundLoftDirection"
         },
         "trailing_flags": {
           "description": "Two trailing flags.",
@@ -6608,8 +6608,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "items": {
             "type": "boolean"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         }
       },
       "additionalProperties": false,
@@ -6631,8 +6631,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "A one-based coordinate of a curve-offset distance function.",
   "type": "integer",
   "format": "uint8",
-  "maximum": 255,
-  "minimum": 0
+  "minimum": 0,
+  "maximum": 255
 }
 ```
 
@@ -6646,13 +6646,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Linear interpolation between two distance controls.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "linear"
+        },
         "basis": {
           "description": "Independent-variable interpretation.",
           "$ref": "#/$defs/CurveOffsetLawBasis"
-        },
-        "control_range": {
-          "description": "Ordered arc-length or neutral carrier-parameter controls.",
-          "$ref": "#/$defs/IncreasingParameterInterval"
         },
         "distances": {
           "description": "Ordered signed distances in document length units.",
@@ -6661,12 +6661,12 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         },
-        "kind": {
-          "type": "string",
-          "const": "linear"
+        "control_range": {
+          "description": "Ordered arc-length or neutral carrier-parameter controls.",
+          "$ref": "#/$defs/IncreasingParameterInterval"
         }
       },
       "additionalProperties": false,
@@ -6681,17 +6681,21 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "One coordinate of another curve defines the signed distance.",
       "type": "object",
       "properties": {
-        "basis": {
-          "description": "Independent-variable interpretation.",
-          "$ref": "#/$defs/CurveOffsetLawBasis"
+        "kind": {
+          "type": "string",
+          "const": "coordinate"
+        },
+        "function": {
+          "description": "Curve carrying the distance function.",
+          "$ref": "#/$defs/CurveId"
         },
         "coordinate": {
           "description": "One-based coordinate number on `function`.",
           "$ref": "#/$defs/CurveOffsetCoordinate"
         },
-        "function": {
-          "description": "Curve carrying the distance function.",
-          "$ref": "#/$defs/CurveId"
+        "basis": {
+          "description": "Independent-variable interpretation.",
+          "$ref": "#/$defs/CurveOffsetLawBasis"
         },
         "function_parameter_offset": {
           "description": "Function parameter at zero source parameter or arc length.",
@@ -6702,10 +6706,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "description": "Function-parameter change per neutral source parameter or length unit.",
           "type": "number",
           "format": "double"
-        },
-        "kind": {
-          "type": "string",
-          "const": "coordinate"
         }
       },
       "additionalProperties": false,
@@ -6771,10 +6771,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Variable-distance offset over the interval used by its law.",
       "type": "object",
       "properties": {
-        "distance_law": {
-          "description": "Variable signed-distance law.",
-          "$ref": "#/$defs/CurveOffsetDistanceLaw"
-        },
         "kind": {
           "type": "string",
           "const": "variable"
@@ -6782,6 +6778,10 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "parameter_range": {
           "description": "Parameter interval on the source curve.",
           "$ref": "#/$defs/IncreasingParameterInterval"
+        },
+        "distance_law": {
+          "description": "Variable signed-distance law.",
+          "$ref": "#/$defs/CurveOffsetDistanceLaw"
         }
       },
       "additionalProperties": false,
@@ -6809,6 +6809,15 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "type": "string",
           "const": "vector_field"
         },
+        "vectors": {
+          "description": "Four ordered native vectors.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
         "parameter_pairs": {
           "description": "Ordered pairs from the mode-8 scalar table.",
           "type": "array",
@@ -6818,18 +6827,9 @@ Each type below is given by the JSON Schema of its wire form, generated from the
               "type": "number",
               "format": "double"
             },
-            "maxItems": 2,
-            "minItems": 2
+            "minItems": 2,
+            "maxItems": 2
           }
-        },
-        "vectors": {
-          "description": "Four ordered native vectors.",
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Vector3"
-          },
-          "maxItems": 4,
-          "minItems": 4
         }
       },
       "additionalProperties": false,
@@ -6843,37 +6843,9 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Mode 3 fixed deformation payload.",
       "type": "object",
       "properties": {
-        "frame_flags": {
-          "description": "Two flags following the frame scalar.",
-          "type": "array",
-          "items": {
-            "type": "boolean"
-          },
-          "maxItems": 2,
-          "minItems": 2
-        },
-        "frame_parameter": {
-          "description": "Scalar following the trailing frame.",
-          "type": "number",
-          "format": "double"
-        },
         "kind": {
           "type": "string",
           "const": "mode3"
-        },
-        "leading_flags": {
-          "description": "Three flags following the leading scalar.",
-          "type": "array",
-          "items": {
-            "type": "boolean"
-          },
-          "maxItems": 3,
-          "minItems": 3
-        },
-        "leading_parameter": {
-          "description": "Scalar following the leading vectors.",
-          "type": "number",
-          "format": "double"
         },
         "leading_vectors": {
           "description": "Four vectors at the start of the payload.",
@@ -6881,8 +6853,49 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "items": {
             "$ref": "#/$defs/Vector3"
           },
-          "maxItems": 4,
-          "minItems": 4
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "leading_parameter": {
+          "description": "Scalar following the leading vectors.",
+          "type": "number",
+          "format": "double"
+        },
+        "leading_flags": {
+          "description": "Three flags following the leading scalar.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "trailing_point": {
+          "description": "Position following the leading flags.",
+          "$ref": "#/$defs/Point3"
+        },
+        "trailing_vectors": {
+          "description": "Two vectors following the position.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "frame_parameter": {
+          "description": "Scalar following the trailing frame.",
+          "type": "number",
+          "format": "double"
+        },
+        "frame_flags": {
+          "description": "Two flags following the frame scalar.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "minItems": 2,
+          "maxItems": 2
         },
         "parameters": {
           "description": "Three ordered scalars following the frame flags.",
@@ -6891,8 +6904,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 3,
-          "minItems": 3
+          "minItems": 3,
+          "maxItems": 3
         },
         "trailing_flags": {
           "description": "Five flags following the ordered scalars.",
@@ -6900,31 +6913,18 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "items": {
             "type": "boolean"
           },
-          "maxItems": 5,
-          "minItems": 5
+          "minItems": 5,
+          "maxItems": 5
         },
         "trailing_parameter": {
           "description": "Final scalar before the trailing integer.",
           "type": "number",
           "format": "double"
         },
-        "trailing_point": {
-          "description": "Position following the leading flags.",
-          "$ref": "#/$defs/Point3"
-        },
         "trailing_value": {
           "description": "Integer closing the mode-3 payload.",
           "type": "integer",
           "format": "int64"
-        },
-        "trailing_vectors": {
-          "description": "Two vectors following the position.",
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Vector3"
-          },
-          "maxItems": 2,
-          "minItems": 2
         }
       },
       "additionalProperties": false,
@@ -6957,13 +6957,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Source geometry resolved to a neutral curve carrier.",
       "type": "object",
       "properties": {
-        "curve": {
-          "description": "Curve being deformed.",
-          "$ref": "#/$defs/CurveId"
-        },
         "kind": {
           "type": "string",
           "const": "curve"
+        },
+        "curve": {
+          "description": "Curve being deformed.",
+          "$ref": "#/$defs/CurveId"
         }
       },
       "additionalProperties": false,
@@ -6976,6 +6976,10 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Native intcurve reference whose target is absent from the active subtype table.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "native_reference"
+        },
         "flag": {
           "description": "Boolean stored before the reference scope.",
           "type": "boolean"
@@ -6984,10 +6988,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "description": "Integer stored by the native `ref` subtype.",
           "type": "integer",
           "format": "int64"
-        },
-        "kind": {
-          "type": "string",
-          "const": "native_reference"
         }
       },
       "additionalProperties": false,
@@ -7008,13 +7008,17 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Complete native deformable-surface construction.",
   "type": "object",
   "properties": {
-    "cache": {
-      "description": "Cache contract: the revision-gated fields surrounding the support and\nshared surface tail, or the legacy solved-cache tolerance this\nconstruction states instead.",
-      "$ref": "#/$defs/CacheContract"
+    "support": {
+      "description": "Surface being deformed.",
+      "$ref": "#/$defs/SurfaceId"
     },
     "data": {
       "description": "Discriminator-selected deformation data.",
       "$ref": "#/$defs/DeformableSurfaceData"
+    },
+    "cache": {
+      "description": "Cache contract: the revision-gated fields surrounding the support and\nshared surface tail, or the legacy solved-cache tolerance this\nconstruction states instead.",
+      "$ref": "#/$defs/CacheContract"
     },
     "discontinuities": {
       "description": "Six ordered solved-surface discontinuity arrays.",
@@ -7026,16 +7030,12 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "format": "double"
         }
       },
-      "maxItems": 6,
-      "minItems": 6
+      "minItems": 6,
+      "maxItems": 6
     },
     "discontinuity_flag": {
       "description": "Native discontinuity tail flag.",
       "type": "boolean"
-    },
-    "support": {
-      "description": "Surface being deformed.",
-      "$ref": "#/$defs/SurfaceId"
     }
   },
   "additionalProperties": false,
@@ -7059,45 +7059,9 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Mode-6 full embedded deformation payload.",
       "type": "object",
       "properties": {
-        "curve": {
-          "description": "Embedded deformation curve.",
-          "$ref": "#/$defs/CurveId"
-        },
-        "first_parameter": {
-          "description": "First scalar after the flag.",
-          "type": "number",
-          "format": "double"
-        },
-        "flag": {
-          "description": "Native support-side flag.",
-          "type": "boolean"
-        },
-        "frames": {
-          "description": "Two ordered full vector frames.",
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/DeformableVectorFrame"
-          },
-          "maxItems": 2,
-          "minItems": 2
-        },
         "kind": {
           "type": "string",
           "const": "full"
-        },
-        "leading_flags": {
-          "description": "Three leading flags.",
-          "type": "array",
-          "items": {
-            "type": "boolean"
-          },
-          "maxItems": 3,
-          "minItems": 3
-        },
-        "leading_parameter": {
-          "description": "Leading deformation scalar.",
-          "type": "number",
-          "format": "double"
         },
         "leading_vectors": {
           "description": "Four leading deformation vectors.",
@@ -7105,18 +7069,22 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "items": {
             "$ref": "#/$defs/Vector3"
           },
-          "maxItems": 4,
-          "minItems": 4
+          "minItems": 4,
+          "maxItems": 4
         },
-        "native_id": {
-          "description": "Native long after the support.",
-          "type": "integer",
-          "format": "int64"
-        },
-        "second_parameter": {
-          "description": "Second scalar after the optional long.",
+        "leading_parameter": {
+          "description": "Leading deformation scalar.",
           "type": "number",
           "format": "double"
+        },
+        "leading_flags": {
+          "description": "Three leading flags.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "minItems": 3,
+          "maxItems": 3
         },
         "selector": {
           "description": "Native selector before the secondary support.",
@@ -7127,13 +7095,45 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "description": "Secondary embedded support surface.",
           "$ref": "#/$defs/SurfaceId"
         },
-        "trailing_value": {
-          "description": "Native trailing long.",
+        "native_id": {
+          "description": "Native long after the support.",
           "type": "integer",
           "format": "int64"
         },
+        "flag": {
+          "description": "Native support-side flag.",
+          "type": "boolean"
+        },
+        "first_parameter": {
+          "description": "First scalar after the flag.",
+          "type": "number",
+          "format": "double"
+        },
         "version_value": {
           "description": "Version-gated ASM long when present.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "second_parameter": {
+          "description": "Second scalar after the optional long.",
+          "type": "number",
+          "format": "double"
+        },
+        "curve": {
+          "description": "Embedded deformation curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "frames": {
+          "description": "Two ordered full vector frames.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DeformableVectorFrame"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "trailing_value": {
+          "description": "Native trailing long.",
           "type": "integer",
           "format": "int64"
         }
@@ -7159,18 +7159,55 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Mode-5 surface-and-curve deformation payload.",
       "type": "object",
       "properties": {
-        "curve": {
-          "description": "Embedded deformation curve.",
-          "$ref": "#/$defs/CurveId"
+        "kind": {
+          "type": "string",
+          "const": "surface_curve"
+        },
+        "surface": {
+          "description": "Secondary embedded support surface.",
+          "$ref": "#/$defs/SurfaceId"
+        },
+        "native_id": {
+          "description": "Native long identifier.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "flag": {
+          "description": "Native leading flag.",
+          "type": "boolean"
         },
         "first_parameter": {
           "description": "First native scalar.",
           "type": "number",
           "format": "double"
         },
-        "flag": {
-          "description": "Native leading flag.",
-          "type": "boolean"
+        "selector": {
+          "description": "Native selector integer.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "second_parameter": {
+          "description": "Second native scalar.",
+          "type": "number",
+          "format": "double"
+        },
+        "curve": {
+          "description": "Embedded deformation curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "vectors": {
+          "description": "Four ordered deformation vectors.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "frame_parameter": {
+          "description": "Frame scalar after the vectors.",
+          "type": "number",
+          "format": "double"
         },
         "flags": {
           "description": "Three frame flags.",
@@ -7178,22 +7215,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "items": {
             "type": "boolean"
           },
-          "maxItems": 3,
-          "minItems": 3
-        },
-        "frame_parameter": {
-          "description": "Frame scalar after the vectors.",
-          "type": "number",
-          "format": "double"
-        },
-        "kind": {
-          "type": "string",
-          "const": "surface_curve"
-        },
-        "native_id": {
-          "description": "Native long identifier.",
-          "type": "integer",
-          "format": "int64"
+          "minItems": 3,
+          "maxItems": 3
         },
         "parameter_triples": {
           "description": "Counted ordered scalar triples.",
@@ -7204,32 +7227,9 @@ Each type below is given by the JSON Schema of its wire form, generated from the
               "type": "number",
               "format": "double"
             },
-            "maxItems": 3,
-            "minItems": 3
+            "minItems": 3,
+            "maxItems": 3
           }
-        },
-        "second_parameter": {
-          "description": "Second native scalar.",
-          "type": "number",
-          "format": "double"
-        },
-        "selector": {
-          "description": "Native selector integer.",
-          "type": "integer",
-          "format": "int64"
-        },
-        "surface": {
-          "description": "Secondary embedded support surface.",
-          "$ref": "#/$defs/SurfaceId"
-        },
-        "vectors": {
-          "description": "Four ordered deformation vectors.",
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Vector3"
-          },
-          "maxItems": 4,
-          "minItems": 4
         }
       },
       "additionalProperties": false,
@@ -7252,13 +7252,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Mode-1 deformation frame with counted parameter triples.",
       "type": "object",
       "properties": {
-        "frame": {
-          "description": "Shared full deformation frame.",
-          "$ref": "#/$defs/DeformableSurfaceFrame"
-        },
         "kind": {
           "type": "string",
           "const": "plain"
+        },
+        "frame": {
+          "description": "Shared full deformation frame.",
+          "$ref": "#/$defs/DeformableSurfaceFrame"
         },
         "parameter_triples": {
           "description": "Ordered native scalar triples.",
@@ -7269,8 +7269,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
               "type": "number",
               "format": "double"
             },
-            "maxItems": 3,
-            "minItems": 3
+            "minItems": 3,
+            "maxItems": 3
           }
         }
       },
@@ -7285,23 +7285,23 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Mode-3 deformation frame with a guide scalar.",
       "type": "object",
       "properties": {
-        "frame": {
-          "description": "Shared full deformation frame.",
-          "$ref": "#/$defs/DeformableSurfaceFrame"
-        },
-        "guide_parameter": {
-          "description": "Native guide scalar.",
-          "type": "number",
-          "format": "double"
-        },
         "kind": {
           "type": "string",
           "const": "guided"
+        },
+        "frame": {
+          "description": "Shared full deformation frame.",
+          "$ref": "#/$defs/DeformableSurfaceFrame"
         },
         "selector": {
           "description": "Native guide selector.",
           "type": "integer",
           "format": "int64"
+        },
+        "guide_parameter": {
+          "description": "Native guide scalar.",
+          "type": "number",
+          "format": "double"
         }
       },
       "additionalProperties": false,
@@ -7320,19 +7320,19 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "type": "string",
           "const": "minimal"
         },
-        "selector": {
-          "description": "Native trailing selector.",
-          "type": "integer",
-          "format": "int64"
-        },
         "vectors": {
           "description": "Four ordered deformation vectors.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/Vector3"
           },
-          "maxItems": 4,
-          "minItems": 4
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "selector": {
+          "description": "Native trailing selector.",
+          "type": "integer",
+          "format": "int64"
         }
       },
       "additionalProperties": false,
@@ -7346,37 +7346,9 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Revision-gated mode-3 deformation payload.",
       "type": "object",
       "properties": {
-        "frame_flags": {
-          "description": "Two flags following the trailing frame scalar.",
-          "type": "array",
-          "items": {
-            "type": "boolean"
-          },
-          "maxItems": 2,
-          "minItems": 2
-        },
-        "frame_parameter": {
-          "description": "Scalar following the trailing vectors.",
-          "type": "number",
-          "format": "double"
-        },
         "kind": {
           "type": "string",
           "const": "revision_mode3"
-        },
-        "leading_flags": {
-          "description": "Three flags following the leading scalar.",
-          "type": "array",
-          "items": {
-            "type": "boolean"
-          },
-          "maxItems": 3,
-          "minItems": 3
-        },
-        "leading_parameter": {
-          "description": "Scalar following the leading vectors.",
-          "type": "number",
-          "format": "double"
         },
         "leading_vectors": {
           "description": "Four leading deformation vectors.",
@@ -7384,8 +7356,49 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "items": {
             "$ref": "#/$defs/Vector3"
           },
-          "maxItems": 4,
-          "minItems": 4
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "leading_parameter": {
+          "description": "Scalar following the leading vectors.",
+          "type": "number",
+          "format": "double"
+        },
+        "leading_flags": {
+          "description": "Three flags following the leading scalar.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "trailing_point": {
+          "description": "Position anchoring the trailing frame.",
+          "$ref": "#/$defs/Point3"
+        },
+        "trailing_vectors": {
+          "description": "Two vectors following the trailing point.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "frame_parameter": {
+          "description": "Scalar following the trailing vectors.",
+          "type": "number",
+          "format": "double"
+        },
+        "frame_flags": {
+          "description": "Two flags following the trailing frame scalar.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "minItems": 2,
+          "maxItems": 2
         },
         "parameters": {
           "description": "Three ordered scalar parameters following the trailing frame.",
@@ -7394,8 +7407,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 3,
-          "minItems": 3
+          "minItems": 3,
+          "maxItems": 3
         },
         "trailing_flags": {
           "description": "Five flags following the ordered scalar parameters.",
@@ -7403,31 +7416,18 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "items": {
             "type": "boolean"
           },
-          "maxItems": 5,
-          "minItems": 5
+          "minItems": 5,
+          "maxItems": 5
         },
         "trailing_parameter": {
           "description": "Scalar preceding the payload's final integer.",
           "type": "number",
           "format": "double"
         },
-        "trailing_point": {
-          "description": "Position anchoring the trailing frame.",
-          "$ref": "#/$defs/Point3"
-        },
         "trailing_value": {
           "description": "Integer closing the revision mode-3 payload.",
           "type": "integer",
           "format": "int64"
-        },
-        "trailing_vectors": {
-          "description": "Two vectors following the trailing point.",
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Vector3"
-          },
-          "maxItems": 2,
-          "minItems": 2
         }
       },
       "additionalProperties": false,
@@ -7457,46 +7457,28 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Shared frame payload of deformable-surface modes 1 and 3.",
   "type": "object",
   "properties": {
-    "leading_flags": {
-      "description": "Three leading frame flags.",
-      "type": "array",
-      "items": {
-        "type": "boolean"
-      },
-      "maxItems": 3,
-      "minItems": 3
-    },
-    "leading_parameter": {
-      "description": "Leading frame scalar.",
-      "type": "number",
-      "format": "double"
-    },
     "leading_vectors": {
       "description": "Four leading deformation vectors.",
       "type": "array",
       "items": {
         "$ref": "#/$defs/Vector3"
       },
-      "maxItems": 4,
-      "minItems": 4
+      "minItems": 4,
+      "maxItems": 4
     },
-    "point": {
-      "description": "Native model-space frame point.",
-      "$ref": "#/$defs/Point3"
+    "leading_parameter": {
+      "description": "Leading frame scalar.",
+      "type": "number",
+      "format": "double"
     },
-    "secondary_flags": {
-      "description": "Two secondary frame flags.",
+    "leading_flags": {
+      "description": "Three leading frame flags.",
       "type": "array",
       "items": {
         "type": "boolean"
       },
-      "maxItems": 2,
-      "minItems": 2
-    },
-    "secondary_parameter": {
-      "description": "Secondary frame scalar.",
-      "type": "number",
-      "format": "double"
+      "minItems": 3,
+      "maxItems": 3
     },
     "secondary_vectors": {
       "description": "Three secondary deformation vectors.",
@@ -7504,8 +7486,26 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "items": {
         "$ref": "#/$defs/Vector3"
       },
-      "maxItems": 3,
-      "minItems": 3
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "secondary_parameter": {
+      "description": "Secondary frame scalar.",
+      "type": "number",
+      "format": "double"
+    },
+    "secondary_flags": {
+      "description": "Two secondary frame flags.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "point": {
+      "description": "Native model-space frame point.",
+      "$ref": "#/$defs/Point3"
     },
     "trailing_flags": {
       "description": "Five trailing frame flags.",
@@ -7513,8 +7513,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "items": {
         "type": "boolean"
       },
-      "maxItems": 5,
-      "minItems": 5
+      "minItems": 5,
+      "maxItems": 5
     }
   },
   "additionalProperties": false,
@@ -7538,28 +7538,28 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Four-vector frame used by full deformable surfaces.",
   "type": "object",
   "properties": {
-    "flags": {
-      "description": "Three ordered flags.",
-      "type": "array",
-      "items": {
-        "type": "boolean"
-      },
-      "maxItems": 3,
-      "minItems": 3
-    },
-    "parameter": {
-      "description": "Frame scalar.",
-      "type": "number",
-      "format": "double"
-    },
     "vectors": {
       "description": "Four ordered vectors.",
       "type": "array",
       "items": {
         "$ref": "#/$defs/Vector3"
       },
-      "maxItems": 4,
-      "minItems": 4
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "parameter": {
+      "description": "Frame scalar.",
+      "type": "number",
+      "format": "double"
+    },
+    "flags": {
+      "description": "Three ordered flags.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "minItems": 3,
+      "maxItems": 3
     }
   },
   "additionalProperties": false,
@@ -7591,15 +7591,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Legacy solved-cache layout with ordered U/V ranges.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Solved-cache fit contract this layout states itself.",
-          "$ref": "#/$defs/LegacyCache"
-        },
-        "extension": {
-          "description": "Native ASM extension integer following the ranges.",
-          "type": "integer",
-          "format": "int64"
-        },
         "kind": {
           "type": "string",
           "const": "legacy"
@@ -7613,11 +7604,20 @@ Each type below is given by the JSON Schema of its wire form, generated from the
               "type": "number",
               "format": "double"
             },
-            "maxItems": 2,
-            "minItems": 2
+            "minItems": 2,
+            "maxItems": 2
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "extension": {
+          "description": "Native ASM extension integer following the ranges.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "cache": {
+          "description": "Solved-cache fit contract this layout states itself.",
+          "$ref": "#/$defs/LegacyCache"
         }
       },
       "additionalProperties": false,
@@ -7631,14 +7631,9 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Revision-gated layout with optional interval bounds and shared form.",
       "type": "object",
       "properties": {
-        "extension": {
-          "description": "Native ASM extension enum following the intervals.",
-          "type": "integer",
-          "format": "int64"
-        },
-        "form": {
-          "description": "Required revision-gated form.",
-          "$ref": "#/$defs/RevisionSurfaceForm"
+        "kind": {
+          "type": "string",
+          "const": "revision"
         },
         "intervals": {
           "description": "Two optional-bound parameter intervals in wire order.",
@@ -7652,15 +7647,20 @@ Each type below is given by the JSON Schema of its wire form, generated from the
               ],
               "format": "double"
             },
-            "maxItems": 2,
-            "minItems": 2
+            "minItems": 2,
+            "maxItems": 2
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         },
-        "kind": {
-          "type": "string",
-          "const": "revision"
+        "extension": {
+          "description": "Native ASM extension enum following the intervals.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "form": {
+          "description": "Required revision-gated form.",
+          "$ref": "#/$defs/RevisionSurfaceForm"
         }
       },
       "additionalProperties": false,
@@ -7726,14 +7726,30 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Full native G2 blend construction graph.",
   "type": "object",
   "properties": {
+    "first": {
+      "description": "First side common fields.",
+      "$ref": "#/$defs/G2BlendSide"
+    },
+    "singularity": {
+      "description": "Native first-side singularity enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "first_shape": {
+      "description": "First-side singularity payload.",
+      "$ref": "#/$defs/G2BlendFirstShape"
+    },
+    "second": {
+      "description": "Second side common fields.",
+      "$ref": "#/$defs/G2BlendSide"
+    },
+    "second_exact_surface": {
+      "description": "Exact second-side spline support.",
+      "$ref": "#/$defs/SurfaceId"
+    },
     "center_curve": {
       "description": "Center or transition curve.",
       "$ref": "#/$defs/CurveId"
-    },
-    "center_flag": {
-      "description": "Native center tail integer.",
-      "type": "integer",
-      "format": "int64"
     },
     "center_parameters": {
       "description": "Ordered center-curve scalars.",
@@ -7742,8 +7758,38 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "type": "number",
         "format": "double"
       },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "center_flag": {
+      "description": "Native center tail integer.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "parameter_ranges": {
+      "description": "Native U and V intervals.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        },
+        "minItems": 2,
+        "maxItems": 2
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "trailing_parameters": {
+      "description": "Four ordered trailing scalars.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "minItems": 4,
+      "maxItems": 4
     },
     "discontinuities": {
       "description": "Three ordered ASM discontinuity arrays.",
@@ -7755,54 +7801,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "format": "double"
         }
       },
-      "maxItems": 3,
-      "minItems": 3
-    },
-    "first": {
-      "description": "First side common fields.",
-      "$ref": "#/$defs/G2BlendSide"
-    },
-    "first_shape": {
-      "description": "First-side singularity payload.",
-      "$ref": "#/$defs/G2BlendFirstShape"
-    },
-    "parameter_ranges": {
-      "description": "Native U and V intervals.",
-      "type": "array",
-      "items": {
-        "type": "array",
-        "items": {
-          "type": "number",
-          "format": "double"
-        },
-        "maxItems": 2,
-        "minItems": 2
-      },
-      "maxItems": 2,
-      "minItems": 2
-    },
-    "second": {
-      "description": "Second side common fields.",
-      "$ref": "#/$defs/G2BlendSide"
-    },
-    "second_exact_surface": {
-      "description": "Exact second-side spline support.",
-      "$ref": "#/$defs/SurfaceId"
-    },
-    "singularity": {
-      "description": "Native first-side singularity enum.",
-      "type": "integer",
-      "format": "int64"
-    },
-    "trailing_parameters": {
-      "description": "Four ordered trailing scalars.",
-      "type": "array",
-      "items": {
-        "type": "number",
-        "format": "double"
-      },
-      "maxItems": 4,
-      "minItems": 4
+      "minItems": 3,
+      "maxItems": 3
     }
   },
   "additionalProperties": false,
@@ -7850,6 +7850,10 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Non-singular nine-scalar frame and tertiary pcurve.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "none"
+        },
         "coefficients": {
           "description": "Ordered native frame scalars.",
           "type": "array",
@@ -7857,24 +7861,20 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 9,
-          "minItems": 9
+          "minItems": 9,
+          "maxItems": 9
+        },
+        "tolerance": {
+          "description": "Native fit tolerance.",
+          "$ref": "#/$defs/FitTolerance"
         },
         "extension": {
           "description": "Optional intervening native token.",
           "$ref": "#/$defs/LoftBridgeToken"
         },
-        "kind": {
-          "type": "string",
-          "const": "none"
-        },
         "pcurve": {
           "description": "Tertiary BS2 pcurve, absent for `nullbs`.",
           "$ref": "#/$defs/PcurveGeometry"
-        },
-        "tolerance": {
-          "description": "Native fit tolerance.",
-          "$ref": "#/$defs/FitTolerance"
         }
       },
       "additionalProperties": false,
@@ -7919,17 +7919,17 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Common carrier fields of one G2 blend side.",
   "type": "object",
   "properties": {
-    "curve": {
-      "description": "Primary side curve.",
-      "$ref": "#/$defs/CurveId"
-    },
-    "direction": {
-      "description": "Native side direction.",
-      "$ref": "#/$defs/Vector3"
-    },
     "label": {
       "description": "Native side label.",
       "type": "string"
+    },
+    "surface": {
+      "description": "Primary support surface.",
+      "$ref": "#/$defs/SurfaceId"
+    },
+    "curve": {
+      "description": "Primary side curve.",
+      "$ref": "#/$defs/CurveId"
     },
     "pcurves": {
       "description": "First and second ordered BS2 pcurves; each may be `nullbs`.",
@@ -7944,12 +7944,12 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           }
         ]
       },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
     },
-    "surface": {
-      "description": "Primary support surface.",
-      "$ref": "#/$defs/SurfaceId"
+    "direction": {
+      "description": "Native side direction.",
+      "$ref": "#/$defs/Vector3"
     }
   },
   "additionalProperties": false,
@@ -7977,17 +7977,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "type": "number",
         "format": "double"
       },
-      "maxItems": 2,
-      "minItems": 2
-    },
-    "apex_factor": {
-      "description": "Native apex taper factor.",
-      "type": "number",
-      "format": "double"
-    },
-    "axis": {
-      "description": "Helix axis direction.",
-      "$ref": "#/$defs/Vector3"
+      "minItems": 2,
+      "maxItems": 2
     },
     "center": {
       "description": "Helix center in model space.",
@@ -8003,6 +7994,15 @@ Each type below is given by the JSON Schema of its wire form, generated from the
     },
     "pitch": {
       "description": "Axial advance of one turn, as a vector.",
+      "$ref": "#/$defs/Vector3"
+    },
+    "apex_factor": {
+      "description": "Native apex taper factor.",
+      "type": "number",
+      "format": "double"
+    },
+    "axis": {
+      "description": "Helix axis direction.",
       "$ref": "#/$defs/Vector3"
     }
   },
@@ -8033,8 +8033,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "type": "number",
         "format": "double"
       },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
     },
     "dimension_range": {
       "description": "Native path angle interval.",
@@ -8043,8 +8043,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "type": "number",
         "format": "double"
       },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
     },
     "path": {
       "description": "Circular path of the helix surface.",
@@ -8075,14 +8075,14 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Circular profile swept along the helix.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "circle"
+        },
         "angle": {
           "description": "Native angle stored before the path, in radians.",
           "type": "number",
           "format": "double"
-        },
-        "kind": {
-          "type": "string",
-          "const": "circle"
         },
         "radius": {
           "description": "Signed circular profile radius.",
@@ -8101,13 +8101,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Linear profile swept along the helix.",
       "type": "object",
       "properties": {
-        "direction": {
-          "description": "Profile direction coefficients: `x` and `y` scale the path's rotated\nmajor and minor vectors, and `z` is a length along the path axis.",
-          "$ref": "#/$defs/Vector3"
-        },
         "kind": {
           "type": "string",
           "const": "line"
+        },
+        "direction": {
+          "description": "Profile direction coefficients: `x` and `y` scale the path's rotated\nmajor and minor vectors, and `z` is a length along the path axis.",
+          "$ref": "#/$defs/Vector3"
         }
       },
       "additionalProperties": false,
@@ -8127,6 +8127,25 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Shared support surfaces, UV curves, interval, and discontinuity arrays of a native intcurve.",
   "type": "object",
   "properties": {
+    "sides": {
+      "description": "Ordered support sides.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/IntcurveSupportSide"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "parameter_range": {
+      "description": "Solved-curve interval.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
     "discontinuities": {
       "description": "Ordered discontinuity arrays.",
       "type": "array",
@@ -8137,27 +8156,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "format": "double"
         }
       },
-      "maxItems": 3,
-      "minItems": 3
-    },
-    "parameter_range": {
-      "description": "Solved-curve interval.",
-      "type": "array",
-      "items": {
-        "type": "number",
-        "format": "double"
-      },
-      "maxItems": 2,
-      "minItems": 2
-    },
-    "sides": {
-      "description": "Ordered support sides.",
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/IntcurveSupportSide"
-      },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 3,
+      "maxItems": 3
     }
   },
   "additionalProperties": false,
@@ -8176,13 +8176,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "One paired surface and parameter-space curve in an intcurve construction.",
   "type": "object",
   "properties": {
-    "pcurve": {
-      "description": "UV curve on `surface`, absent for the native `nullbs` sentinel.",
-      "$ref": "#/$defs/SupportPcurve"
-    },
     "surface": {
       "description": "Supporting surface, absent for the native `null_surface` sentinel.",
       "$ref": "#/$defs/SurfaceId"
+    },
+    "pcurve": {
+      "description": "UV curve on `surface`, absent for the native `nullbs` sentinel.",
+      "$ref": "#/$defs/SupportPcurve"
     }
   },
   "additionalProperties": false
@@ -8196,6 +8196,16 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Version-stamp prefix and unbounded interval carried by the stamped\n`law_int_cur` serializer form.",
   "type": "object",
   "properties": {
+    "stamp": {
+      "description": "Serializer version stamp emitted after the subtype name.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "post_enum": {
+      "description": "Native enum following the version stamp.",
+      "type": "integer",
+      "format": "int64"
+    },
     "parameter_range": {
       "description": "Solved-curve interval endpoints; `None` records an unbounded bound.",
       "type": "array",
@@ -8206,18 +8216,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         ],
         "format": "double"
       },
-      "maxItems": 2,
-      "minItems": 2
-    },
-    "post_enum": {
-      "description": "Native enum following the version stamp.",
-      "type": "integer",
-      "format": "int64"
-    },
-    "stamp": {
-      "description": "Serializer version stamp emitted after the subtype name.",
-      "type": "integer",
-      "format": "int64"
+      "minItems": 2,
+      "maxItems": 2
     }
   },
   "additionalProperties": false,
@@ -8350,16 +8350,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Inline transform-law payload.",
       "type": "object",
       "properties": {
-        "enums": {
-          "description": "Three ordered transform enums.",
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "maxItems": 3,
-          "minItems": 3
-        },
         "kind": {
           "type": "string",
           "const": "transform"
@@ -8371,8 +8361,18 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 13,
-          "minItems": 13
+          "minItems": 13,
+          "maxItems": 13
+        },
+        "enums": {
+          "description": "Three ordered transform enums.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "minItems": 3,
+          "maxItems": 3
         }
       },
       "additionalProperties": false,
@@ -8386,23 +8386,9 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Vector-serialized transform-law payload: four ordered vectors, a scale,\nand three flags, in place of the thirteen-scalar/three-enum form.",
       "type": "object",
       "properties": {
-        "flags": {
-          "description": "Three ordered transform flags.",
-          "type": "array",
-          "items": {
-            "type": "boolean"
-          },
-          "maxItems": 3,
-          "minItems": 3
-        },
         "kind": {
           "type": "string",
           "const": "transform_vec"
-        },
-        "scale": {
-          "description": "Trailing transform scale.",
-          "type": "number",
-          "format": "double"
         },
         "vectors": {
           "description": "Four ordered transform vectors.",
@@ -8410,8 +8396,22 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "items": {
             "$ref": "#/$defs/Vector3"
           },
-          "maxItems": 4,
-          "minItems": 4
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "scale": {
+          "description": "Trailing transform scale.",
+          "type": "number",
+          "format": "double"
+        },
+        "flags": {
+          "description": "Three ordered transform flags.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "minItems": 3,
+          "maxItems": 3
         }
       },
       "additionalProperties": false,
@@ -8426,6 +8426,10 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Curve-backed edge law.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "edge"
+        },
         "curve": {
           "description": "Referenced curve carrier.",
           "$ref": "#/$defs/CurveId"
@@ -8440,12 +8444,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             ],
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
-        },
-        "kind": {
-          "type": "string",
-          "const": "edge"
+          "minItems": 2,
+          "maxItems": 2
         },
         "parameters": {
           "description": "Two native curve parameters.",
@@ -8454,8 +8454,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         }
       },
       "additionalProperties": false,
@@ -8469,17 +8469,14 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Spline-law payload.",
       "type": "object",
       "properties": {
-        "controls": {
-          "description": "Ordered spline-law controls.",
-          "type": "array",
-          "items": {
-            "type": "number",
-            "format": "double"
-          }
-        },
         "kind": {
           "type": "string",
           "const": "spline"
+        },
+        "native_id": {
+          "description": "Native spline-law integer.",
+          "type": "integer",
+          "format": "int64"
         },
         "knots": {
           "description": "Ordered spline-law knots.",
@@ -8489,10 +8486,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "format": "double"
           }
         },
-        "native_id": {
-          "description": "Native spline-law integer.",
-          "type": "integer",
-          "format": "int64"
+        "controls": {
+          "description": "Ordered spline-law controls.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
         },
         "point": {
           "description": "Native model-space point.",
@@ -8516,16 +8516,16 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "type": "string",
           "const": "algebraic"
         },
+        "operator": {
+          "description": "Native operator token.",
+          "type": "string"
+        },
         "operands": {
           "description": "Ordered operands.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/LawExpression"
           }
-        },
-        "operator": {
-          "description": "Native operator token.",
-          "type": "string"
         }
       },
       "additionalProperties": false,
@@ -8597,12 +8597,35 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Complete recursive construction stored by a native law spline surface.",
   "type": "object",
   "properties": {
+    "parameter_ranges": {
+      "description": "Legacy U and V parameter intervals; absent from modern layouts.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        },
+        "minItems": 2,
+        "maxItems": 2
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "primary": {
+      "description": "Primary recursive surface law.",
+      "$ref": "#/$defs/LawFormula"
+    },
     "additional": {
       "description": "Ordered counted auxiliary laws referenced by the primary law.",
       "type": "array",
       "items": {
         "$ref": "#/$defs/LawFormula"
       }
+    },
+    "tail": {
+      "description": "Standard surface-tail mode and its mode-specific fields.",
+      "$ref": "#/$defs/LawSurfaceTail"
     },
     "discontinuities": {
       "description": "Six ordered discontinuity arrays from the standard surface tail.",
@@ -8614,31 +8637,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "format": "double"
         }
       },
-      "maxItems": 6,
-      "minItems": 6
-    },
-    "parameter_ranges": {
-      "description": "Legacy U and V parameter intervals; absent from modern layouts.",
-      "type": "array",
-      "items": {
-        "type": "array",
-        "items": {
-          "type": "number",
-          "format": "double"
-        },
-        "maxItems": 2,
-        "minItems": 2
-      },
-      "maxItems": 2,
-      "minItems": 2
-    },
-    "primary": {
-      "description": "Primary recursive surface law.",
-      "$ref": "#/$defs/LawFormula"
-    },
-    "tail": {
-      "description": "Standard surface-tail mode and its mode-specific fields.",
-      "$ref": "#/$defs/LawSurfaceTail"
+      "minItems": 6,
+      "maxItems": 6
     }
   },
   "additionalProperties": false,
@@ -8661,13 +8661,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Selector 0; the surface record carries a solved NURBS cache, whose fit\ncontract this tail states.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Fit contract of the solved cache this tail requires.",
-          "$ref": "#/$defs/LegacyCache"
-        },
         "kind": {
           "type": "string",
           "const": "full"
+        },
+        "cache": {
+          "description": "Fit contract of the solved cache this tail requires.",
+          "$ref": "#/$defs/LegacyCache"
         }
       },
       "additionalProperties": false,
@@ -8680,20 +8680,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Selector 1; compact parameter summaries replace the solved cache.",
       "type": "object",
       "properties": {
-        "closures": {
-          "description": "Ordered U and V closure enums.",
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "maxItems": 2,
-          "minItems": 2
-        },
-        "fit_tolerance": {
-          "description": "Native model-space fit tolerance.",
-          "$ref": "#/$defs/FitTolerance"
-        },
         "kind": {
           "type": "string",
           "const": "summary"
@@ -8708,8 +8694,22 @@ Each type below is given by the JSON Schema of its wire form, generated from the
               "format": "double"
             }
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "fit_tolerance": {
+          "description": "Native model-space fit tolerance.",
+          "$ref": "#/$defs/FitTolerance"
+        },
+        "closures": {
+          "description": "Ordered U and V closure enums.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "minItems": 2,
+          "maxItems": 2
         },
         "singularities": {
           "description": "Ordered U and V singularity enums.",
@@ -8718,8 +8718,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "integer",
             "format": "int64"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         }
       },
       "additionalProperties": false,
@@ -8735,16 +8735,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Selector 2; exact parameter intervals and boundary classifications.",
       "type": "object",
       "properties": {
-        "closures": {
-          "description": "Ordered U and V closure enums.",
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "maxItems": 2,
-          "minItems": 2
-        },
         "kind": {
           "type": "string",
           "const": "none"
@@ -8758,11 +8748,21 @@ Each type below is given by the JSON Schema of its wire form, generated from the
               "type": "number",
               "format": "double"
             },
-            "maxItems": 2,
-            "minItems": 2
+            "minItems": 2,
+            "maxItems": 2
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "closures": {
+          "description": "Ordered U and V closure enums.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "minItems": 2,
+          "maxItems": 2
         },
         "singularities": {
           "description": "Ordered U and V singularity enums.",
@@ -8771,8 +8771,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "integer",
             "format": "int64"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         }
       },
       "additionalProperties": false,
@@ -8913,11 +8913,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "type": "boolean"
         }
       },
-      "additionalProperties": false,
       "required": [
         "kind",
         "value"
-      ]
+      ],
+      "additionalProperties": false
     },
     {
       "description": "Native integer token.",
@@ -8932,11 +8932,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "format": "int64"
         }
       },
-      "additionalProperties": false,
       "required": [
         "kind",
         "value"
-      ]
+      ],
+      "additionalProperties": false
     },
     {
       "description": "Native double token.",
@@ -8951,11 +8951,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "format": "double"
         }
       },
-      "additionalProperties": false,
       "required": [
         "kind",
         "value"
-      ]
+      ],
+      "additionalProperties": false
     },
     {
       "description": "Native string token.",
@@ -8969,11 +8969,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "type": "string"
         }
       },
-      "additionalProperties": false,
       "required": [
         "kind",
         "value"
-      ]
+      ],
+      "additionalProperties": false
     },
     {
       "description": "Native enum token.",
@@ -8988,11 +8988,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "format": "int64"
         }
       },
-      "additionalProperties": false,
       "required": [
         "kind",
         "value"
-      ]
+      ],
+      "additionalProperties": false
     }
   ]
 }
@@ -9008,30 +9008,18 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Support-surface form. Legacy layouts can use type zero; revision-gated\nlayouts select this form with a nonzero type code.",
       "type": "object",
       "properties": {
-        "asm_extension": {
-          "description": "ASM extension integer when the stream version carries it.",
-          "type": "integer",
-          "format": "int64"
-        },
-        "direction": {
-          "description": "Optional direction selected by the second native flag.",
-          "$ref": "#/$defs/Vector3"
-        },
-        "first_flag": {
-          "description": "First native constraint flag.",
-          "type": "boolean"
-        },
         "kind": {
           "type": "string",
           "const": "support"
         },
-        "pcurve": {
-          "description": "UV curve on the support, absent for `nullbs`.",
-          "$ref": "#/$defs/PcurveGeometry"
+        "type_code": {
+          "description": "Native member type discriminator.",
+          "type": "integer",
+          "format": "int64"
         },
-        "subdata": {
-          "description": "Native constraint table.",
-          "$ref": "#/$defs/LoftSubdata"
+        "surface": {
+          "description": "Constraint support surface, absent for the native `null_surface`\nsentinel.",
+          "$ref": "#/$defs/SurfaceId"
         },
         "support_bounds": {
           "description": "Optional U/V bound fields following the support surface in the\nrevision-gated encoding.",
@@ -9043,17 +9031,29 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             ],
             "format": "double"
           },
-          "maxItems": 4,
-          "minItems": 4
+          "minItems": 4,
+          "maxItems": 4
         },
-        "surface": {
-          "description": "Constraint support surface, absent for the native `null_surface`\nsentinel.",
-          "$ref": "#/$defs/SurfaceId"
+        "pcurve": {
+          "description": "UV curve on the support, absent for `nullbs`.",
+          "$ref": "#/$defs/PcurveGeometry"
         },
-        "type_code": {
-          "description": "Native member type discriminator.",
+        "first_flag": {
+          "description": "First native constraint flag.",
+          "type": "boolean"
+        },
+        "asm_extension": {
+          "description": "ASM extension integer when the stream version carries it.",
           "type": "integer",
           "format": "int64"
+        },
+        "subdata": {
+          "description": "Native constraint table.",
+          "$ref": "#/$defs/LoftSubdata"
+        },
+        "direction": {
+          "description": "Optional direction selected by the second native flag.",
+          "$ref": "#/$defs/Vector3"
         }
       },
       "additionalProperties": false,
@@ -9069,15 +9069,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Revision-gated type-zero form with two nullable UV curve slots.",
       "type": "object",
       "properties": {
-        "asm_extension": {
-          "description": "ASM extension integer when the stream version carries it.",
-          "type": "integer",
-          "format": "int64"
-        },
-        "direction": {
-          "description": "Optional direction selected by the second native flag.",
-          "$ref": "#/$defs/Vector3"
-        },
         "kind": {
           "type": "string",
           "const": "pcurve_pair"
@@ -9090,9 +9081,18 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "description": "Second UV curve slot, absent for `nullbs`.",
           "$ref": "#/$defs/PcurveGeometry"
         },
+        "asm_extension": {
+          "description": "ASM extension integer when the stream version carries it.",
+          "type": "integer",
+          "format": "int64"
+        },
         "subdata": {
           "description": "Native constraint table.",
           "$ref": "#/$defs/LoftSubdata"
+        },
+        "direction": {
+          "description": "Optional direction selected by the second native flag.",
+          "$ref": "#/$defs/Vector3"
         }
       },
       "additionalProperties": false,
@@ -9112,6 +9112,10 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Native path data attached to one loft section entry.",
   "type": "object",
   "properties": {
+    "path": {
+      "description": "Primary path curve and its optional endpoints, absent for `null_curve`.",
+      "$ref": "#/$defs/LoftPathCurve"
+    },
     "auxiliaries": {
       "description": "Ordered auxiliary BS3 curves.",
       "type": "array",
@@ -9123,10 +9127,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Native path tail integer.",
       "type": "integer",
       "format": "int64"
-    },
-    "path": {
-      "description": "Primary path curve and its optional endpoints, absent for `null_curve`.",
-      "$ref": "#/$defs/LoftPathCurve"
     }
   },
   "additionalProperties": false,
@@ -9158,8 +9158,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         ],
         "format": "double"
       },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
     }
   },
   "additionalProperties": false,
@@ -9176,30 +9176,30 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "The complete constraint payload of a classic loft or skin profile.\n\nEvery field the classic form carries is required and every field it cannot\ncarry is absent from the type, so the revision-gated `support_bounds` and\nthe type-zero `secondary_pcurve` are unknown keys here rather than values a\nreader has to refuse.",
   "type": "object",
   "properties": {
-    "asm_extension": {
-      "description": "ASM extension integer preceding the subdata.",
-      "type": "integer",
-      "format": "int64"
-    },
-    "direction": {
-      "description": "Optional direction selected by the second native flag.",
-      "$ref": "#/$defs/Vector3"
-    },
-    "first_flag": {
-      "description": "First native constraint flag.",
-      "type": "boolean"
+    "surface": {
+      "description": "Required support surface.",
+      "$ref": "#/$defs/SurfaceId"
     },
     "pcurve": {
       "description": "Nullable parameter curve on the support.",
       "$ref": "#/$defs/PcurveGeometry"
     },
+    "first_flag": {
+      "description": "First native constraint flag.",
+      "type": "boolean"
+    },
+    "asm_extension": {
+      "description": "ASM extension integer preceding the subdata.",
+      "type": "integer",
+      "format": "int64"
+    },
     "subdata": {
       "description": "Native constraint table.",
       "$ref": "#/$defs/LoftSubdata"
     },
-    "surface": {
-      "description": "Required support surface.",
-      "$ref": "#/$defs/SurfaceId"
+    "direction": {
+      "description": "Optional direction selected by the second native flag.",
+      "$ref": "#/$defs/Vector3"
     }
   },
   "additionalProperties": false,
@@ -9219,13 +9219,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "One curve member of a loft profile.",
   "type": "object",
   "properties": {
-    "form": {
-      "description": "Structurally selected surface-side constraint form.",
-      "$ref": "#/$defs/LoftMemberForm"
-    },
     "profile": {
       "description": "Profile curve and its revision-gated parameter endpoints.",
       "$ref": "#/$defs/LoftPathCurve"
+    },
+    "form": {
+      "description": "Structurally selected surface-side constraint form.",
+      "$ref": "#/$defs/LoftMemberForm"
     }
   },
   "additionalProperties": false,
@@ -9243,6 +9243,29 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Revision-gated `loft_spl_sur` form fields.",
   "type": "object",
   "properties": {
+    "revision": {
+      "description": "Positive serializer-revision integer following the subtype name.",
+      "$ref": "#/$defs/PositiveI64"
+    },
+    "flags": {
+      "description": "Four booleans following the parameter intervals.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "ints": {
+      "description": "Two integers preceding the shared tail.",
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "format": "int64"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
     "cache": {
       "description": "Approximation-cache form selected by the shared tail enum.",
       "$ref": "#/$defs/RevisionCacheForm"
@@ -9257,31 +9280,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "format": "double"
         }
       },
-      "maxItems": 6,
-      "minItems": 6
-    },
-    "flags": {
-      "description": "Four booleans following the parameter intervals.",
-      "type": "array",
-      "items": {
-        "type": "boolean"
-      },
-      "maxItems": 4,
-      "minItems": 4
-    },
-    "ints": {
-      "description": "Two integers preceding the shared tail.",
-      "type": "array",
-      "items": {
-        "type": "integer",
-        "format": "int64"
-      },
-      "maxItems": 2,
-      "minItems": 2
-    },
-    "revision": {
-      "description": "Positive serializer-revision integer following the subtype name.",
-      "$ref": "#/$defs/PositiveI64"
+      "minItems": 6,
+      "maxItems": 6
     },
     "tail_flag": {
       "description": "Boolean terminating the shared tail.",
@@ -9334,16 +9334,16 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "type": "number",
       "format": "double"
     },
-    "path": {
-      "description": "Native path data.",
-      "$ref": "#/$defs/LoftPath"
-    },
     "profile": {
       "description": "Ordered profile members.",
       "type": "array",
       "items": {
         "$ref": "#/$defs/LoftProfileMember"
       }
+    },
+    "path": {
+      "description": "Native path data.",
+      "$ref": "#/$defs/LoftPath"
     }
   },
   "additionalProperties": false,
@@ -9365,6 +9365,10 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Type 211 stores exactly one leading pair and no column pairs.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "type211"
+        },
         "dimensions": {
           "description": "Native row/column header values. They do not count this form's payload.",
           "type": "array",
@@ -9372,12 +9376,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "integer",
             "format": "int64"
           },
-          "maxItems": 2,
-          "minItems": 2
-        },
-        "kind": {
-          "type": "string",
-          "const": "type211"
+          "minItems": 2,
+          "maxItems": 2
         },
         "row": {
           "description": "The sole leading scalar pair.",
@@ -9386,8 +9386,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         }
       },
       "additionalProperties": false,
@@ -9405,17 +9405,17 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "type": "string",
           "const": "table"
         },
+        "type_code": {
+          "description": "Native loft table type code.",
+          "type": "integer",
+          "format": "int64"
+        },
         "rows": {
           "description": "Table rows, all of one column width.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/LoftSubdataRow"
           }
-        },
-        "type_code": {
-          "description": "Native loft table type code.",
-          "type": "integer",
-          "format": "int64"
         }
       },
       "additionalProperties": false,
@@ -9436,6 +9436,16 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "One scalar row in native loft subdata.",
   "type": "object",
   "properties": {
+    "parameters": {
+      "description": "Leading ordered scalar pair.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
     "columns": {
       "description": "Ordered per-column scalar pairs; empty for subdata type 211.",
       "type": "array",
@@ -9445,8 +9455,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "type": "number",
           "format": "double"
         },
-        "maxItems": 2,
-        "minItems": 2
+        "minItems": 2,
+        "maxItems": 2
       }
     },
     "extra": {
@@ -9456,18 +9466,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "type": "number",
         "format": "double"
       },
-      "maxItems": 2,
-      "minItems": 2
-    },
-    "parameters": {
-      "description": "Leading ordered scalar pair.",
-      "type": "array",
-      "items": {
-        "type": "number",
-        "format": "double"
-      },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
     }
   },
   "additionalProperties": false,
@@ -9485,14 +9485,47 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Complete native `net_spl_sur` construction graph.",
   "type": "object",
   "properties": {
+    "sections": {
+      "description": "Two ordered loft-section graphs.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/LoftSection"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "frame_parameters": {
+      "description": "Twelve ordered frame scalars.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "minItems": 12,
+      "maxItems": 12
+    },
+    "flag": {
+      "description": "Native frame integer.",
+      "type": "integer",
+      "format": "int64"
+    },
     "directions": {
       "description": "Four ordered frame directions.",
       "type": "array",
       "items": {
         "$ref": "#/$defs/Vector3"
       },
-      "maxItems": 4,
-      "minItems": 4
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "formulas": {
+      "description": "Four ordered parameter laws.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/LawFormula"
+      },
+      "minItems": 4,
+      "maxItems": 4
     },
     "discontinuities": {
       "description": "Six ordered solved-surface discontinuity arrays.",
@@ -9504,45 +9537,12 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "format": "double"
         }
       },
-      "maxItems": 6,
-      "minItems": 6
+      "minItems": 6,
+      "maxItems": 6
     },
     "discontinuity_flag": {
       "description": "Native discontinuity tail flag.",
       "type": "boolean"
-    },
-    "flag": {
-      "description": "Native frame integer.",
-      "type": "integer",
-      "format": "int64"
-    },
-    "formulas": {
-      "description": "Four ordered parameter laws.",
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/LawFormula"
-      },
-      "maxItems": 4,
-      "minItems": 4
-    },
-    "frame_parameters": {
-      "description": "Twelve ordered frame scalars.",
-      "type": "array",
-      "items": {
-        "type": "number",
-        "format": "double"
-      },
-      "maxItems": 12,
-      "minItems": 12
-    },
-    "sections": {
-      "description": "Two ordered loft-section graphs.",
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/LoftSection"
-      },
-      "maxItems": 2,
-      "minItems": 2
     }
   },
   "additionalProperties": false,
@@ -9605,13 +9605,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "format": "double"
       }
     },
-    "periodic": {
-      "description": "Whether the curve is periodic.",
-      "type": "boolean"
-    },
     "poles": {
       "description": "Poles in parameter order, with the curve's rational form.",
       "$ref": "#/$defs/NurbsPoles3"
+    },
+    "periodic": {
+      "description": "Whether the curve is periodic.",
+      "type": "boolean"
     }
   },
   "required": [
@@ -9744,20 +9744,14 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "A tensor-product NURBS surface.\n\nThe control grid is stored as rows: the outer index is u, the inner index\nis v, so the grid states both pole counts. `weights == None` denotes a\nnon-rational surface.",
   "type": "object",
   "properties": {
-    "cache_fit_tolerance": {
-      "description": "Fit tolerance of the source approximation cache, in model length units.",
-      "$ref": "#/$defs/FitTolerance"
-    },
-    "normal_reversed": {
-      "description": "Whether the carrier's oriented normal is opposite `Pu × Pv`.",
-      "type": "boolean"
-    },
-    "poles": {
-      "description": "Control grid rows, with the surface's rational form.",
-      "$ref": "#/$defs/NurbsPoleGrid"
-    },
     "u_degree": {
       "description": "Degree in the u parametric direction.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "v_degree": {
+      "description": "Degree in the v parametric direction.",
       "type": "integer",
       "format": "uint32",
       "minimum": 0
@@ -9770,16 +9764,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "format": "double"
       }
     },
-    "u_periodic": {
-      "description": "Whether the surface is periodic in u.",
-      "type": "boolean"
-    },
-    "v_degree": {
-      "description": "Degree in the v parametric direction.",
-      "type": "integer",
-      "format": "uint32",
-      "minimum": 0
-    },
     "v_knots": {
       "description": "Full knot vector in v.",
       "type": "array",
@@ -9788,9 +9772,25 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "format": "double"
       }
     },
+    "poles": {
+      "description": "Control grid rows, with the surface's rational form.",
+      "$ref": "#/$defs/NurbsPoleGrid"
+    },
+    "normal_reversed": {
+      "description": "Whether the carrier's oriented normal is opposite `Pu × Pv`.",
+      "type": "boolean"
+    },
+    "u_periodic": {
+      "description": "Whether the surface is periodic in u.",
+      "type": "boolean"
+    },
     "v_periodic": {
       "description": "Whether the surface is periodic in v.",
       "type": "boolean"
+    },
+    "cache_fit_tolerance": {
+      "description": "Fit tolerance of the source approximation cache, in model length units.",
+      "$ref": "#/$defs/FitTolerance"
     }
   },
   "required": [
@@ -9816,17 +9816,17 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Pre-revision conditional flag sequence.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Solved-cache fit contract this layout states itself.",
-          "$ref": "#/$defs/LegacyCache"
+        "kind": {
+          "type": "string",
+          "const": "legacy"
         },
         "flags": {
           "description": "Conditional flag sequence in its positional wire form.",
           "$ref": "#/$defs/LegacyExtensionFlags"
         },
-        "kind": {
-          "type": "string",
-          "const": "legacy"
+        "cache": {
+          "description": "Solved-cache fit contract this layout states itself.",
+          "$ref": "#/$defs/LegacyCache"
         }
       },
       "additionalProperties": false,
@@ -9839,13 +9839,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Revision-gated fields with the required four-boolean carrier run.",
       "type": "object",
       "properties": {
-        "form": {
-          "description": "Revision-gated form whose carrier run is exactly four booleans.",
-          "$ref": "#/$defs/RevisionSurfaceForm2"
-        },
         "kind": {
           "type": "string",
           "const": "revision"
+        },
+        "form": {
+          "description": "Revision-gated form whose carrier run is exactly four booleans.",
+          "$ref": "#/$defs/RevisionSurfaceForm2"
         }
       },
       "additionalProperties": false,
@@ -9887,13 +9887,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Explicit offset direction, optionally constrained to a support surface.",
       "type": "object",
       "properties": {
-        "direction": {
-          "description": "Nonzero offset direction.",
-          "$ref": "#/$defs/Vector3"
-        },
         "kind": {
           "type": "string",
           "const": "direction"
+        },
+        "direction": {
+          "description": "Nonzero offset direction.",
+          "$ref": "#/$defs/Vector3"
         },
         "support": {
           "description": "Support surface within which the offset is measured.",
@@ -9943,16 +9943,16 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "A straight line in parameter space.",
       "type": "object",
       "properties": {
-        "direction": {
-          "description": "Parameter-space line direction.",
-          "$ref": "#/$defs/Point2"
-        },
         "kind": {
           "type": "string",
           "const": "line"
         },
         "origin": {
           "description": "Parameter-space line origin.",
+          "$ref": "#/$defs/Point2"
+        },
+        "direction": {
+          "description": "Parameter-space line direction.",
           "$ref": "#/$defs/Point2"
         }
       },
@@ -9967,21 +9967,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Polar angle and axial coordinate of a first-order harmonic spatial curve.",
       "type": "object",
       "properties": {
-        "axial_cos": {
-          "description": "Cosine axial coefficient.",
-          "type": "number",
-          "format": "double"
-        },
-        "axial_origin": {
-          "description": "Constant axial coefficient.",
-          "type": "number",
-          "format": "double"
-        },
-        "axial_sin": {
-          "description": "Sine axial coefficient.",
-          "type": "number",
-          "format": "double"
-        },
         "kind": {
           "type": "string",
           "const": "polar_harmonic"
@@ -9997,6 +9982,21 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "radial_sin": {
           "description": "Sine radial coefficient.",
           "$ref": "#/$defs/Point2"
+        },
+        "axial_origin": {
+          "description": "Constant axial coefficient.",
+          "type": "number",
+          "format": "double"
+        },
+        "axial_cos": {
+          "description": "Cosine axial coefficient.",
+          "type": "number",
+          "format": "double"
+        },
+        "axial_sin": {
+          "description": "Sine axial coefficient.",
+          "type": "number",
+          "format": "double"
         }
       },
       "additionalProperties": false,
@@ -10014,14 +10014,14 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Polar angle and axial coordinate obtained from a rational NURBS vector.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "polar_nurbs"
+        },
         "degree": {
           "type": "integer",
           "format": "uint32",
           "minimum": 0
-        },
-        "kind": {
-          "type": "string",
-          "const": "polar_nurbs"
         },
         "knots": {
           "type": "array",
@@ -10030,11 +10030,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "format": "double"
           }
         },
-        "periodic": {
-          "type": "boolean"
-        },
         "poles": {
           "$ref": "#/$defs/PolarNurbsPoles"
+        },
+        "periodic": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false,
@@ -10050,6 +10050,10 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Great-circle locus in a sphere's azimuth/latitude parameter chart.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "spherical_great_circle"
+        },
         "azimuth_origin": {
           "description": "Azimuth at the parameter origin.",
           "type": "number",
@@ -10059,10 +10063,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "description": "Azimuth change for one unit of parameter.",
           "type": "number",
           "format": "double"
-        },
-        "kind": {
-          "type": "string",
-          "const": "spherical_great_circle"
         },
         "plane_phase": {
           "description": "Phase of the great-circle plane.",
@@ -10088,18 +10088,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Full circle in parameter space.",
       "type": "object",
       "properties": {
-        "center": {
-          "description": "Parameter-space circle center.",
-          "$ref": "#/$defs/Point2"
-        },
         "kind": {
           "type": "string",
           "const": "circle"
         },
-        "radius": {
-          "description": "Circle radius in parameter space.",
-          "type": "number",
-          "format": "double"
+        "center": {
+          "description": "Parameter-space circle center.",
+          "$ref": "#/$defs/Point2"
         },
         "x_axis": {
           "description": "First parameter-space axis.",
@@ -10108,6 +10103,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "y_axis": {
           "description": "Second parameter-space axis.",
           "$ref": "#/$defs/Point2"
+        },
+        "radius": {
+          "description": "Circle radius in parameter space.",
+          "type": "number",
+          "format": "double"
         }
       },
       "additionalProperties": false,
@@ -10123,13 +10123,21 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Full ellipse in parameter space.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "ellipse"
+        },
         "center": {
           "description": "Parameter-space ellipse center.",
           "$ref": "#/$defs/Point2"
         },
-        "kind": {
-          "type": "string",
-          "const": "ellipse"
+        "x_axis": {
+          "description": "First parameter-space axis.",
+          "$ref": "#/$defs/Point2"
+        },
+        "y_axis": {
+          "description": "Second parameter-space axis.",
+          "$ref": "#/$defs/Point2"
         },
         "major_radius": {
           "description": "Major semiaxis radius in parameter space.",
@@ -10140,14 +10148,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "description": "Minor semiaxis radius in parameter space.",
           "type": "number",
           "format": "double"
-        },
-        "x_axis": {
-          "description": "First parameter-space axis.",
-          "$ref": "#/$defs/Point2"
-        },
-        "y_axis": {
-          "description": "Second parameter-space axis.",
-          "$ref": "#/$defs/Point2"
         }
       },
       "additionalProperties": false,
@@ -10164,6 +10164,10 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "General first-order harmonic curve in parameter space.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "harmonic"
+        },
         "center": {
           "description": "Constant parameter-space coefficient.",
           "$ref": "#/$defs/Point2"
@@ -10171,10 +10175,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "cosine": {
           "description": "Cosine parameter-space coefficient.",
           "$ref": "#/$defs/Point2"
-        },
-        "kind": {
-          "type": "string",
-          "const": "harmonic"
         },
         "sine": {
           "description": "Sine parameter-space coefficient.",
@@ -10193,11 +10193,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Parabola in parameter space.",
       "type": "object",
       "properties": {
-        "focal_distance": {
-          "description": "Distance from the vertex to the focus, in parameter space.",
-          "type": "number",
-          "format": "double"
-        },
         "kind": {
           "type": "string",
           "const": "parabola"
@@ -10213,6 +10208,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "y_axis": {
           "description": "Second parameter-space axis.",
           "$ref": "#/$defs/Point2"
+        },
+        "focal_distance": {
+          "description": "Distance from the vertex to the focus, in parameter space.",
+          "type": "number",
+          "format": "double"
         }
       },
       "additionalProperties": false,
@@ -10228,13 +10228,21 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Hyperbola in parameter space.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "hyperbola"
+        },
         "center": {
           "description": "Parameter-space hyperbola center.",
           "$ref": "#/$defs/Point2"
         },
-        "kind": {
-          "type": "string",
-          "const": "hyperbola"
+        "x_axis": {
+          "description": "First parameter-space axis.",
+          "$ref": "#/$defs/Point2"
+        },
+        "y_axis": {
+          "description": "Second parameter-space axis.",
+          "$ref": "#/$defs/Point2"
         },
         "major_radius": {
           "description": "Transverse semiaxis radius in parameter space.",
@@ -10245,14 +10253,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "description": "Conjugate semiaxis radius in parameter space.",
           "type": "number",
           "format": "double"
-        },
-        "x_axis": {
-          "description": "First parameter-space axis.",
-          "$ref": "#/$defs/Point2"
-        },
-        "y_axis": {
-          "description": "Second parameter-space axis.",
-          "$ref": "#/$defs/Point2"
         }
       },
       "additionalProperties": false,
@@ -10269,6 +10269,10 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "General first-order hyperbolic curve in parameter space.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "hyperbolic"
+        },
         "center": {
           "description": "Constant parameter-space coefficient.",
           "$ref": "#/$defs/Point2"
@@ -10276,10 +10280,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "cosine": {
           "description": "Hyperbolic-cosine parameter-space coefficient.",
           "$ref": "#/$defs/Point2"
-        },
-        "kind": {
-          "type": "string",
-          "const": "hyperbolic"
         },
         "sine": {
           "description": "Hyperbolic-sine parameter-space coefficient.",
@@ -10298,14 +10298,14 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "A free-form NURBS curve in parameter space (control points are (u, v)).",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "nurbs"
+        },
         "degree": {
           "type": "integer",
           "format": "uint32",
           "minimum": 0
-        },
-        "kind": {
-          "type": "string",
-          "const": "nurbs"
         },
         "knots": {
           "type": "array",
@@ -10314,11 +10314,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "format": "double"
           }
         },
-        "periodic": {
-          "type": "boolean"
-        },
         "poles": {
           "$ref": "#/$defs/PcurveNurbsPoles"
+        },
+        "periodic": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false,
@@ -10334,13 +10334,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Affine replica of a parent pcurve in the same parameter space.",
       "type": "object",
       "properties": {
-        "basis": {
-          "description": "Exact parent pcurve and its parameterization.",
-          "$ref": "#/$defs/PcurveGeometry"
-        },
         "kind": {
           "type": "string",
           "const": "transformed"
+        },
+        "basis": {
+          "description": "Exact parent pcurve and its parameterization.",
+          "$ref": "#/$defs/PcurveGeometry"
         },
         "transform": {
           "description": "Two-dimensional affine map from parent coordinates to replica coordinates.",
@@ -10358,10 +10358,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Parameter restriction of an exact basis pcurve.",
       "type": "object",
       "properties": {
-        "basis": {
-          "description": "Curve this curve trims.",
-          "$ref": "#/$defs/PcurveGeometry"
-        },
         "kind": {
           "type": "string",
           "const": "trimmed"
@@ -10373,12 +10369,16 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         },
         "same_sense": {
           "description": "Whether the trim follows increasing basis parameters.",
           "type": "boolean"
+        },
+        "basis": {
+          "description": "Curve this curve trims.",
+          "$ref": "#/$defs/PcurveGeometry"
         }
       },
       "additionalProperties": false,
@@ -10393,18 +10393,18 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Signed planar offset of an exact basis pcurve.",
       "type": "object",
       "properties": {
-        "basis": {
-          "description": "Curve this curve is offset from.",
-          "$ref": "#/$defs/PcurveGeometry"
+        "kind": {
+          "type": "string",
+          "const": "offset"
         },
         "distance": {
           "description": "Signed parameter-space offset distance.",
           "type": "number",
           "format": "double"
         },
-        "kind": {
-          "type": "string",
-          "const": "offset"
+        "basis": {
+          "description": "Curve this curve is offset from.",
+          "$ref": "#/$defs/PcurveGeometry"
         }
       },
       "additionalProperties": false,
@@ -10437,11 +10437,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "format": "double"
       }
     },
-    "periodic": {
-      "type": "boolean"
-    },
     "poles": {
       "$ref": "#/$defs/PcurveNurbsPoles"
+    },
+    "periodic": {
+      "type": "boolean"
     }
   },
   "required": [
@@ -10572,14 +10572,14 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "One paired radial and axial pole of a polar parameter-space NURBS.",
   "type": "object",
   "properties": {
+    "radial": {
+      "description": "Euclidean radial-plane pole.",
+      "$ref": "#/$defs/Point2"
+    },
     "axial": {
       "description": "Axial pole value.",
       "type": "number",
       "format": "double"
-    },
-    "radial": {
-      "description": "Euclidean radial-plane pole.",
-      "$ref": "#/$defs/Point2"
     }
   },
   "additionalProperties": false,
@@ -10651,9 +10651,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Source-native polygonal surface with an explicit chordal error bound.",
   "type": "object",
   "properties": {
-    "chordal_deflection": {
-      "type": "number",
-      "format": "double"
+    "vertices": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Point3"
+      }
     },
     "triangles": {
       "type": "array",
@@ -10664,15 +10666,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "format": "uint32",
           "minimum": 0
         },
-        "maxItems": 3,
-        "minItems": 3
+        "minItems": 3,
+        "maxItems": 3
       }
     },
-    "vertices": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/Point3"
-      }
+    "chordal_deflection": {
+      "type": "number",
+      "format": "double"
     }
   },
   "required": [
@@ -10776,13 +10776,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "An exact native intcurve whose solved NURBS cache is authoritative.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Solved-cache fit contract this construction states itself.",
-          "$ref": "#/$defs/LegacyCache"
-        },
         "kind": {
           "type": "string",
           "const": "exact"
+        },
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "$ref": "#/$defs/LegacyCache"
         }
       },
       "required": [
@@ -10793,6 +10793,27 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Curve defined by recursive native law formulas.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "law"
+        },
+        "context": {
+          "description": "Shared support surfaces, UV curves, interval, and discontinuities.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "version": {
+          "description": "Version-stamped serializer form, absent for the legacy layout.",
+          "$ref": "#/$defs/LawCurveVersionForm"
+        },
+        "extension": {
+          "description": "Native ASM extension integer.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "primary": {
+          "description": "Primary recursive law formula.",
+          "$ref": "#/$defs/LawFormula"
+        },
         "additional": {
           "description": "Counted additional recursive law formulas.",
           "type": "array",
@@ -10803,27 +10824,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "cache": {
           "description": "Solved-cache fit contract this construction states itself.",
           "$ref": "#/$defs/LegacyCache"
-        },
-        "context": {
-          "description": "Shared support surfaces, UV curves, interval, and discontinuities.",
-          "$ref": "#/$defs/IntcurveSupportContext"
-        },
-        "extension": {
-          "description": "Native ASM extension integer.",
-          "type": "integer",
-          "format": "int64"
-        },
-        "kind": {
-          "type": "string",
-          "const": "law"
-        },
-        "primary": {
-          "description": "Primary recursive law formula.",
-          "$ref": "#/$defs/LawFormula"
-        },
-        "version": {
-          "description": "Version-stamped serializer form, absent for the legacy layout.",
-          "$ref": "#/$defs/LawCurveVersionForm"
         }
       },
       "required": [
@@ -10838,17 +10838,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Ordered compound of native child curves with construction parameters.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Solved-cache fit contract this construction states itself.",
-          "$ref": "#/$defs/LegacyCache"
-        },
-        "components": {
-          "description": "Component curves in construction order.",
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/CompoundComponent2"
-          }
-        },
         "kind": {
           "type": "string",
           "const": "compound"
@@ -10860,6 +10849,17 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           }
+        },
+        "components": {
+          "description": "Component curves in construction order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CompoundComponent2"
+          }
+        },
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "$ref": "#/$defs/LegacyCache"
         }
       },
       "additionalProperties": false,
@@ -10873,6 +10873,10 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Circular or conical helix around an axis.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "helix"
+        },
         "angle_range": {
           "description": "Native helix angle interval.",
           "type": "array",
@@ -10880,30 +10884,12 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
-        },
-        "apex_factor": {
-          "description": "Native apex taper factor.",
-          "type": "number",
-          "format": "double"
-        },
-        "axis": {
-          "description": "Helix axis direction.",
-          "$ref": "#/$defs/Vector3"
-        },
-        "cache": {
-          "description": "Solved-cache fit contract this construction states itself.",
-          "$ref": "#/$defs/LegacyCache",
-          "default": null
+          "minItems": 2,
+          "maxItems": 2
         },
         "center": {
           "description": "Helix center in model space.",
           "$ref": "#/$defs/Point3"
-        },
-        "kind": {
-          "type": "string",
-          "const": "helix"
         },
         "major": {
           "description": "Major radial axis vector.",
@@ -10916,6 +10902,20 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "pitch": {
           "description": "Axial advance of one turn, as a vector.",
           "$ref": "#/$defs/Vector3"
+        },
+        "apex_factor": {
+          "description": "Native apex taper factor.",
+          "type": "number",
+          "format": "double"
+        },
+        "axis": {
+          "description": "Helix axis direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "default": null,
+          "$ref": "#/$defs/LegacyCache"
         }
       },
       "additionalProperties": false,
@@ -10934,9 +10934,9 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Intersection of two support surfaces.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Solved-cache fit contract this construction states itself.",
-          "$ref": "#/$defs/LegacyCache"
+        "kind": {
+          "type": "string",
+          "const": "intersection"
         },
         "context": {
           "description": "Shared surfaces, UV curves, interval, and discontinuity metadata.",
@@ -10946,9 +10946,9 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "description": "Native boolean following the discontinuity arrays.",
           "type": "boolean"
         },
-        "kind": {
-          "type": "string",
-          "const": "intersection"
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "$ref": "#/$defs/LegacyCache"
         }
       },
       "required": [
@@ -10961,21 +10961,21 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Tolerance-bounded intersection relation selected by topology endpoints.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Solved-cache fit contract this construction states itself.",
-          "$ref": "#/$defs/LegacyCache"
+        "kind": {
+          "type": "string",
+          "const": "tolerant_intersection"
         },
         "construction": {
           "description": "Distinct supports and finite endpoint bounds.",
           "$ref": "#/$defs/TolerantIntersectionConstruction"
         },
-        "kind": {
-          "type": "string",
-          "const": "tolerant_intersection"
-        },
         "parameterization": {
           "description": "Atomic neutral parameterization established by validated support charts.",
           "$ref": "#/$defs/TolerantIntersectionParameterization"
+        },
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "$ref": "#/$defs/LegacyCache"
         }
       },
       "required": [
@@ -10987,13 +10987,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Intersection constrained by a third ordered support surface.",
       "type": "object",
       "properties": {
-        "context": {
-          "description": "Shared support surfaces, UV curves, interval, and discontinuity arrays.",
-          "$ref": "#/$defs/IntcurveSupportContext"
-        },
         "kind": {
           "type": "string",
           "const": "three_surface_intersection"
+        },
+        "context": {
+          "description": "Shared support surfaces, UV curves, interval, and discontinuity arrays.",
+          "$ref": "#/$defs/IntcurveSupportContext"
         },
         "selector": {
           "description": "Native branch selector code.",
@@ -11017,13 +11017,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Surface-related curve whose native subtype has no tail beyond the shared prefix.",
       "type": "object",
       "properties": {
-        "family": {
-          "description": "Native family, support context, and optional cache-first tail.",
-          "$ref": "#/$defs/SurfaceCurveFamily"
-        },
         "kind": {
           "type": "string",
           "const": "surface_curve"
+        },
+        "family": {
+          "description": "Native family, support context, and optional cache-first tail.",
+          "$ref": "#/$defs/SurfaceCurveFamily"
         }
       },
       "required": [
@@ -11035,25 +11035,25 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Silhouette of a cast surface in a light direction.",
       "type": "object",
       "properties": {
-        "cast_surface": {
-          "description": "Surface whose silhouette is constructed.",
-          "$ref": "#/$defs/SurfaceId"
+        "kind": {
+          "type": "string",
+          "const": "silhouette"
         },
         "context": {
           "description": "Shared first two support pairs.",
           "$ref": "#/$defs/IntcurveSupportContext"
         },
-        "kind": {
-          "type": "string",
-          "const": "silhouette"
+        "silhouette": {
+          "description": "Standard, parametric, or taper silhouette semantics.",
+          "$ref": "#/$defs/SilhouetteKind"
+        },
+        "cast_surface": {
+          "description": "Surface whose silhouette is constructed.",
+          "$ref": "#/$defs/SurfaceId"
         },
         "light_direction": {
           "description": "Native model-space light direction.",
           "$ref": "#/$defs/Vector3"
-        },
-        "silhouette": {
-          "description": "Standard, parametric, or taper silhouette semantics.",
-          "$ref": "#/$defs/SilhouetteKind"
         }
       },
       "additionalProperties": false,
@@ -11069,9 +11069,51 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Curve offset relative to a surface parameterization.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "surface_offset"
+        },
+        "context": {
+          "description": "Shared first two support pairs.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "discontinuity_flag": {
+          "description": "Native boolean following the discontinuity arrays.",
+          "type": "boolean"
+        },
+        "base_u_range": {
+          "description": "Native U interval on the base surface.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "base_v_range": {
+          "description": "Native V interval on the base surface.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
         "base": {
           "description": "Embedded base curve.",
           "$ref": "#/$defs/CurveId"
+        },
+        "base_range": {
+          "description": "Native interval on `base`.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "minItems": 2,
+          "maxItems": 2
         },
         "base_endpoints": {
           "description": "Optional parameter endpoints following the embedded base curve in\nthe cache-first layout.",
@@ -11083,67 +11125,25 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             ],
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
-        },
-        "base_range": {
-          "description": "Native interval on `base`.",
-          "type": "array",
-          "items": {
-            "type": "number",
-            "format": "double"
-          },
-          "maxItems": 2,
-          "minItems": 2
-        },
-        "base_u_range": {
-          "description": "Native U interval on the base surface.",
-          "type": "array",
-          "items": {
-            "type": "number",
-            "format": "double"
-          },
-          "maxItems": 2,
-          "minItems": 2
-        },
-        "base_v_range": {
-          "description": "Native V interval on the base surface.",
-          "type": "array",
-          "items": {
-            "type": "number",
-            "format": "double"
-          },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         },
         "cache": {
           "description": "Cache contract: the cache-first shared-context fields, or the legacy\nsolved-cache tolerance the context-first layout states instead.",
           "$ref": "#/$defs/CacheContract5"
-        },
-        "context": {
-          "description": "Shared first two support pairs.",
-          "$ref": "#/$defs/IntcurveSupportContext"
-        },
-        "discontinuity_flag": {
-          "description": "Native boolean following the discontinuity arrays.",
-          "type": "boolean"
         },
         "distance": {
           "description": "Signed model-space offset distance.",
           "type": "number",
           "format": "double"
         },
-        "kind": {
-          "type": "string",
-          "const": "surface_offset"
-        },
-        "scale": {
-          "description": "Native unscaled parameter scale.",
+        "shift": {
+          "description": "Native unscaled parameter shift.",
           "type": "number",
           "format": "double"
         },
-        "shift": {
-          "description": "Native unscaled parameter shift.",
+        "scale": {
+          "description": "Native unscaled parameter scale.",
           "type": "number",
           "format": "double"
         }
@@ -11168,11 +11168,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Blend spring guide between two support sides.",
       "type": "object",
       "properties": {
-        "direction": {
-          "description": "Native direction code.",
-          "type": "integer",
-          "format": "int64"
-        },
         "kind": {
           "type": "string",
           "const": "spring"
@@ -11180,6 +11175,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "layout": {
           "description": "Native spring record layout.",
           "$ref": "#/$defs/SpringLayout"
+        },
+        "direction": {
+          "description": "Native direction code.",
+          "type": "integer",
+          "format": "int64"
         }
       },
       "additionalProperties": false,
@@ -11193,21 +11193,17 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Deformation of an embedded source curve.",
       "type": "object",
       "properties": {
-        "cache_first": {
-          "description": "Cache-first serializer fields surrounding the solved curve cache.",
-          "$ref": "#/$defs/CacheFirstCurveForm"
+        "kind": {
+          "type": "string",
+          "const": "deformable"
         },
         "context": {
           "description": "Shared cache-first support context.",
           "$ref": "#/$defs/IntcurveSupportContext"
         },
-        "data": {
-          "description": "Discriminator-specific deformation payload.",
-          "$ref": "#/$defs/DeformableCurveData"
-        },
-        "kind": {
-          "type": "string",
-          "const": "deformable"
+        "cache_first": {
+          "description": "Cache-first serializer fields surrounding the solved curve cache.",
+          "$ref": "#/$defs/CacheFirstCurveForm"
         },
         "source": {
           "description": "Curve being deformed or its unresolved native reference.",
@@ -11223,8 +11219,12 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             ],
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "data": {
+          "description": "Discriminator-specific deformation payload.",
+          "$ref": "#/$defs/DeformableCurveData"
         }
       },
       "additionalProperties": false,
@@ -11241,6 +11241,10 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Projection of a source curve onto a support surface.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "projection"
+        },
         "context": {
           "description": "Shared support surfaces, UV curves, interval, and discontinuity arrays.",
           "$ref": "#/$defs/IntcurveSupportContext"
@@ -11248,10 +11252,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "discontinuity_flag": {
           "description": "Native boolean following the discontinuity arrays.",
           "type": "boolean"
-        },
-        "kind": {
-          "type": "string",
-          "const": "projection"
         },
         "source": {
           "description": "Curve being projected.",
@@ -11275,26 +11275,26 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Offset from a source curve.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "offset"
+        },
+        "source": {
+          "description": "Curve this curve is offset from.",
+          "$ref": "#/$defs/CurveId"
+        },
         "distance": {
           "description": "Signed offset distance, in document length units.",
           "type": "number",
           "format": "double"
         },
-        "kind": {
-          "type": "string",
-          "const": "offset"
-        },
-        "range": {
-          "description": "Retained parameter range, with its distance law when variable.",
-          "$ref": "#/$defs/CurveOffsetRange"
-        },
         "side": {
           "description": "Exclusive plane-normal or explicit-direction carrier.",
           "$ref": "#/$defs/OffsetSide"
         },
-        "source": {
-          "description": "Curve this curve is offset from.",
-          "$ref": "#/$defs/CurveId"
+        "range": {
+          "description": "Retained parameter range, with its distance law when variable.",
+          "$ref": "#/$defs/CurveOffsetRange"
         }
       },
       "additionalProperties": false,
@@ -11309,14 +11309,18 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Free-space 3D offset using a reference direction.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "spatial_offset"
+        },
+        "source": {
+          "description": "Curve being offset.",
+          "$ref": "#/$defs/CurveId"
+        },
         "distance": {
           "description": "Signed offset distance.",
           "type": "number",
           "format": "double"
-        },
-        "kind": {
-          "type": "string",
-          "const": "spatial_offset"
         },
         "reference_direction": {
           "description": "Reference direction controlling the offset frame.",
@@ -11326,10 +11330,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "description": "Whether the source classifies the result as self-intersecting.",
           "type": "boolean",
           "default": null
-        },
-        "source": {
-          "description": "Curve being offset.",
-          "$ref": "#/$defs/CurveId"
         }
       },
       "additionalProperties": false,
@@ -11344,10 +11344,9 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Intersection of two surfaces after applying independent signed offsets.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Solved-cache fit contract this construction states itself.",
-          "$ref": "#/$defs/LegacyCache",
-          "default": null
+        "kind": {
+          "type": "string",
+          "const": "two_sided_offset"
         },
         "context": {
           "description": "Shared surfaces, UV curves, interval, and discontinuity metadata.",
@@ -11357,10 +11356,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "description": "Native boolean following the discontinuity arrays.",
           "type": "boolean"
         },
-        "kind": {
-          "type": "string",
-          "const": "two_sided_offset"
-        },
         "offsets": {
           "description": "Signed offset distance for each support side, in document length units.",
           "type": "array",
@@ -11368,8 +11363,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "default": null,
+          "$ref": "#/$defs/LegacyCache"
         }
       },
       "additionalProperties": false,
@@ -11384,18 +11384,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Free-space vector offset of a source curve over a parameter interval.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Solved-cache fit contract this construction states itself.",
-          "$ref": "#/$defs/LegacyCache",
-          "default": null
-        },
         "kind": {
           "type": "string",
           "const": "vector_offset"
         },
-        "offset": {
-          "description": "Model-space offset vector.",
-          "$ref": "#/$defs/Vector3"
+        "source": {
+          "description": "Curve being offset.",
+          "$ref": "#/$defs/CurveId"
         },
         "parameter_range": {
           "description": "Native parameter interval on the source curve.",
@@ -11404,16 +11399,21 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "offset": {
+          "description": "Model-space offset vector.",
+          "$ref": "#/$defs/Vector3"
         },
         "roles": {
           "description": "Integer codes attached to the two native roles.",
           "$ref": "#/$defs/VectorOffsetRoles"
         },
-        "source": {
-          "description": "Curve being offset.",
-          "$ref": "#/$defs/CurveId"
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "default": null,
+          "$ref": "#/$defs/LegacyCache"
         }
       },
       "additionalProperties": false,
@@ -11429,14 +11429,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "A parameter sub-range of a parent curve.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Solved-cache fit contract this construction states itself.",
-          "$ref": "#/$defs/LegacyCache",
-          "default": null
-        },
         "kind": {
           "type": "string",
           "const": "subset"
+        },
+        "source": {
+          "description": "Parent curve being restricted.",
+          "$ref": "#/$defs/CurveId"
         },
         "parameter_range": {
           "description": "Native parameter interval retained from the parent.",
@@ -11445,16 +11444,17 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         },
         "sense": {
           "description": "Whether the subset follows increasing parent parameters.",
           "type": "boolean"
         },
-        "source": {
-          "description": "Parent curve being restricted.",
-          "$ref": "#/$defs/CurveId"
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "default": null,
+          "$ref": "#/$defs/LegacyCache"
         }
       },
       "additionalProperties": false,
@@ -11492,13 +11492,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Spine or center curve of a blend surface.",
       "type": "object",
       "properties": {
-        "blend_surface": {
-          "description": "The blend surface this curve is the spine of, when known.",
-          "$ref": "#/$defs/SurfaceId"
-        },
         "kind": {
           "type": "string",
           "const": "blend_spine"
+        },
+        "blend_surface": {
+          "description": "The blend surface this curve is the spine of, when known.",
+          "$ref": "#/$defs/SurfaceId"
         }
       },
       "required": [
@@ -11509,10 +11509,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Preserved construction without a neutral interpretation.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Solved-cache fit contract this construction states itself.",
-          "$ref": "#/$defs/LegacyCache"
-        },
         "kind": {
           "type": "string",
           "const": "unknown"
@@ -11524,6 +11520,10 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "record": {
           "description": "Reference to the preserved raw source record, when retained.",
           "$ref": "#/$defs/UnknownId"
+        },
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "$ref": "#/$defs/LegacyCache"
         }
       },
       "required": [
@@ -11563,10 +11563,9 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Ordered native compound of a solved surface and component surfaces.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Solved-cache fit contract this construction states itself.",
-          "$ref": "#/$defs/LegacyCache",
-          "default": null
+        "kind": {
+          "type": "string",
+          "const": "compound"
         },
         "components": {
           "description": "Component surfaces in construction order.",
@@ -11575,9 +11574,10 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "$ref": "#/$defs/CompoundComponent"
           }
         },
-        "kind": {
-          "type": "string",
-          "const": "compound"
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "default": null,
+          "$ref": "#/$defs/LegacyCache"
         }
       },
       "additionalProperties": false,
@@ -11594,6 +11594,10 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "type": "string",
           "const": "sub_surface"
         },
+        "support": {
+          "description": "Embedded support surface whose parameterization is retained.",
+          "$ref": "#/$defs/SurfaceId"
+        },
         "parameter_ranges": {
           "description": "Finite U and V parameter intervals, each with its endpoints in stored order.",
           "type": "array",
@@ -11603,15 +11607,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
               "type": "number",
               "format": "double"
             },
-            "maxItems": 2,
-            "minItems": 2
+            "minItems": 2,
+            "maxItems": 2
           },
-          "maxItems": 2,
-          "minItems": 2
-        },
-        "support": {
-          "description": "Embedded support surface whose parameterization is retained.",
-          "$ref": "#/$defs/SurfaceId"
+          "minItems": 2,
+          "maxItems": 2
         }
       },
       "additionalProperties": false,
@@ -11625,34 +11625,34 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Taper of a support surface around a reference curve.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Cache contract: the revision-gated form, or the legacy\nsolved-cache tolerance this construction states instead.",
-          "$ref": "#/$defs/CacheContract"
-        },
         "kind": {
           "type": "string",
           "const": "taper"
+        },
+        "support": {
+          "description": "Base surface being tapered.",
+          "$ref": "#/$defs/SurfaceId"
+        },
+        "reference": {
+          "description": "Reference curve on the support.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "pcurve": {
+          "description": "UV curve on the support, absent for `nullbs`.",
+          "$ref": "#/$defs/PcurveGeometry"
         },
         "parameter": {
           "description": "Native taper parameter or draft magnitude.",
           "type": "number",
           "format": "double"
         },
-        "pcurve": {
-          "description": "UV curve on the support, absent for `nullbs`.",
-          "$ref": "#/$defs/PcurveGeometry"
-        },
-        "reference": {
-          "description": "Reference curve on the support.",
-          "$ref": "#/$defs/CurveId"
-        },
-        "support": {
-          "description": "Base surface being tapered.",
-          "$ref": "#/$defs/SurfaceId"
-        },
         "taper": {
           "description": "Subtype-specific taper tail.",
           "$ref": "#/$defs/TaperSurfaceKind"
+        },
+        "cache": {
+          "description": "Cache contract: the revision-gated form, or the legacy\nsolved-cache tolerance this construction states instead.",
+          "$ref": "#/$defs/CacheContract"
         }
       },
       "additionalProperties": false,
@@ -11669,6 +11669,48 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Native loft defined by two section graphs and closure contracts.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "loft"
+        },
+        "sections": {
+          "description": "The two loft sections.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LoftSection"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "parameters": {
+          "description": "Spline surface parameters.",
+          "$ref": "#/$defs/SplineSurfaceParameters"
+        },
+        "closures": {
+          "description": "Native closure codes of the two parameter directions.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "singularities": {
+          "description": "Native singularity codes of the two parameter directions.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "mode": {
+          "description": "Native loft mode code.",
+          "type": "integer",
+          "format": "int64"
+        },
         "bridge": {
           "description": "Native bridge tokens in source order.",
           "type": "array",
@@ -11679,48 +11721,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "cache": {
           "description": "Cache contract: the revision-gated loft form, or the legacy solved-cache tolerance this construction states instead.",
           "$ref": "#/$defs/CacheContract2"
-        },
-        "closures": {
-          "description": "Native closure codes of the two parameter directions.",
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "maxItems": 2,
-          "minItems": 2
-        },
-        "kind": {
-          "type": "string",
-          "const": "loft"
-        },
-        "mode": {
-          "description": "Native loft mode code.",
-          "type": "integer",
-          "format": "int64"
-        },
-        "parameters": {
-          "description": "Spline surface parameters.",
-          "$ref": "#/$defs/SplineSurfaceParameters"
-        },
-        "sections": {
-          "description": "The two loft sections.",
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/LoftSection"
-          },
-          "maxItems": 2,
-          "minItems": 2
-        },
-        "singularities": {
-          "description": "Native singularity codes of the two parameter directions.",
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "maxItems": 2,
-          "minItems": 2
         }
       },
       "additionalProperties": false,
@@ -11739,18 +11739,18 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Native compound-loft construction.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Solved-cache fit contract this construction states itself.",
-          "$ref": "#/$defs/LegacyCache",
-          "default": null
+        "kind": {
+          "type": "string",
+          "const": "compound_loft"
         },
         "construction": {
           "description": "Compound loft construction.",
           "$ref": "#/$defs/CompoundLoftConstruction"
         },
-        "kind": {
-          "type": "string",
-          "const": "compound_loft"
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "default": null,
+          "$ref": "#/$defs/LegacyCache"
         }
       },
       "additionalProperties": false,
@@ -11763,13 +11763,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Revision-gated compound-loft construction.",
       "type": "object",
       "properties": {
-        "construction": {
-          "description": "Complete native revision-gated compound-loft graph.",
-          "$ref": "#/$defs/RevisionCompoundLoftConstruction"
-        },
         "kind": {
           "type": "string",
           "const": "revision_compound_loft"
+        },
+        "construction": {
+          "description": "Complete native revision-gated compound-loft graph.",
+          "$ref": "#/$defs/RevisionCompoundLoftConstruction"
         }
       },
       "required": [
@@ -11781,18 +11781,18 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Native scaled compound-loft construction.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Solved-cache fit contract this construction states itself.",
-          "$ref": "#/$defs/LegacyCache",
-          "default": null
+        "kind": {
+          "type": "string",
+          "const": "scaled_compound_loft"
         },
         "construction": {
           "description": "Scaled compound loft construction.",
           "$ref": "#/$defs/ScaledCompoundLoftConstruction"
         },
-        "kind": {
-          "type": "string",
-          "const": "scaled_compound_loft"
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "default": null,
+          "$ref": "#/$defs/LegacyCache"
         }
       },
       "additionalProperties": false,
@@ -11805,18 +11805,18 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Native skinned spline surface.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Solved-cache fit contract this construction states itself.",
-          "$ref": "#/$defs/LegacyCache",
-          "default": null
+        "kind": {
+          "type": "string",
+          "const": "skin"
         },
         "construction": {
           "description": "Skin surface construction.",
           "$ref": "#/$defs/SkinSurfaceConstruction"
         },
-        "kind": {
-          "type": "string",
-          "const": "skin"
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "default": null,
+          "$ref": "#/$defs/LegacyCache"
         }
       },
       "additionalProperties": false,
@@ -11829,13 +11829,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Native surface defined by recursive law formulas.",
       "type": "object",
       "properties": {
-        "construction": {
-          "description": "Law surface construction.",
-          "$ref": "#/$defs/LawSurfaceConstruction"
-        },
         "kind": {
           "type": "string",
           "const": "law"
+        },
+        "construction": {
+          "description": "Law surface construction.",
+          "$ref": "#/$defs/LawSurfaceConstruction"
         }
       },
       "additionalProperties": false,
@@ -11848,18 +11848,18 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Native curve-network spline surface.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Solved-cache fit contract this construction states itself.",
-          "$ref": "#/$defs/LegacyCache",
-          "default": null
+        "kind": {
+          "type": "string",
+          "const": "net"
         },
         "construction": {
           "description": "Net surface construction.",
           "$ref": "#/$defs/NetSurfaceConstruction"
         },
-        "kind": {
-          "type": "string",
-          "const": "net"
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "default": null,
+          "$ref": "#/$defs/LegacyCache"
         }
       },
       "additionalProperties": false,
@@ -11872,18 +11872,18 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Native curvature-continuous two-sided blend.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Solved-cache fit contract this construction states itself.",
-          "$ref": "#/$defs/LegacyCache",
-          "default": null
+        "kind": {
+          "type": "string",
+          "const": "g2_blend"
         },
         "construction": {
           "description": "G2 blend construction.",
           "$ref": "#/$defs/G2BlendConstruction"
         },
-        "kind": {
-          "type": "string",
-          "const": "g2_blend"
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "default": null,
+          "$ref": "#/$defs/LegacyCache"
         }
       },
       "additionalProperties": false,
@@ -11896,13 +11896,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Revision-gated curvature-continuous blend in the variable-blend side\nlayout.",
       "type": "object",
       "properties": {
-        "construction": {
-          "description": "Complete native revision-gated G2 construction graph.",
-          "$ref": "#/$defs/RevisionG2BlendConstruction"
-        },
         "kind": {
           "type": "string",
           "const": "revision_g2_blend"
+        },
+        "construction": {
+          "description": "Complete native revision-gated G2 construction graph.",
+          "$ref": "#/$defs/RevisionG2BlendConstruction"
         }
       },
       "required": [
@@ -11914,13 +11914,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Native variable-radius two-sided blend.",
       "type": "object",
       "properties": {
-        "construction": {
-          "description": "Variable blend construction.",
-          "$ref": "#/$defs/VariableBlendConstruction"
-        },
         "kind": {
           "type": "string",
           "const": "variable_blend"
+        },
+        "construction": {
+          "description": "Variable blend construction.",
+          "$ref": "#/$defs/VariableBlendConstruction"
         }
       },
       "additionalProperties": false,
@@ -11933,13 +11933,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Native vertex-blend patch.",
       "type": "object",
       "properties": {
-        "construction": {
-          "description": "Vertex blend construction.",
-          "$ref": "#/$defs/VertexBlendConstruction"
-        },
         "kind": {
           "type": "string",
           "const": "vertex_blend"
+        },
+        "construction": {
+          "description": "Vertex blend construction.",
+          "$ref": "#/$defs/VertexBlendConstruction"
         }
       },
       "additionalProperties": false,
@@ -11952,25 +11952,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Translation of a directrix along a direction.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Cache contract: the revision-gated form, or the legacy\nsolved-cache tolerance this construction states instead.\nThe directrix parameter interval is `parameter_interval`.",
-          "$ref": "#/$defs/CacheContract"
-        },
-        "direction": {
-          "description": "Length-bearing sweep direction, in document length units.",
-          "$ref": "#/$defs/Vector3"
-        },
-        "directrix": {
-          "description": "Curve swept along `direction` to form the surface.",
-          "$ref": "#/$defs/CurveId"
-        },
         "kind": {
           "type": "string",
           "const": "extrusion"
         },
-        "native_position": {
-          "description": "Native model-space position following the sweep direction, when carried.",
-          "$ref": "#/$defs/Point3"
+        "directrix": {
+          "description": "Curve swept along `direction` to form the surface.",
+          "$ref": "#/$defs/CurveId"
         },
         "parameter_interval": {
           "description": "Native source directrix parameter interval, when carried by the\nsource. The neutral surface-carrier interval is in\n`ProceduralSurface::record_bounds`.",
@@ -11979,8 +11967,20 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "direction": {
+          "description": "Length-bearing sweep direction, in document length units.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "native_position": {
+          "description": "Native model-space position following the sweep direction, when carried.",
+          "$ref": "#/$defs/Point3"
+        },
+        "cache": {
+          "description": "Cache contract: the revision-gated form, or the legacy\nsolved-cache tolerance this construction states instead.\nThe directrix parameter interval is `parameter_interval`.",
+          "$ref": "#/$defs/CacheContract"
         }
       },
       "additionalProperties": false,
@@ -11995,17 +11995,17 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Unbounded linear sweep of a directrix.",
       "type": "object",
       "properties": {
-        "direction": {
-          "description": "Length-bearing sweep vector.",
-          "$ref": "#/$defs/Vector3"
+        "kind": {
+          "type": "string",
+          "const": "linear_sweep"
         },
         "directrix": {
           "description": "Curve swept along `direction`.",
           "$ref": "#/$defs/CurveId"
         },
-        "kind": {
-          "type": "string",
-          "const": "linear_sweep"
+        "direction": {
+          "description": "Length-bearing sweep vector.",
+          "$ref": "#/$defs/Vector3"
         }
       },
       "additionalProperties": false,
@@ -12019,6 +12019,22 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Revolution of a directrix about an axis.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "revolution"
+        },
+        "directrix": {
+          "description": "Curve revolved about the axis to form the surface.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "axis_origin": {
+          "description": "A point on the revolution axis, with finite coordinates.",
+          "$ref": "#/$defs/Point3"
+        },
+        "axis_direction": {
+          "description": "Direction of the revolution axis, with norm within `1e-9` of one.",
+          "$ref": "#/$defs/Vector3"
+        },
         "angular_interval": {
           "description": "Angular start and end parameters, in radians.",
           "type": "array",
@@ -12026,8 +12042,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         },
         "angular_parameter_interval": {
           "description": "Surface-parameter interval that maps affinely to\n`angular_interval`. Absence means the surface parameter is already\nthe revolution angle in radians.",
@@ -12036,28 +12052,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
-        },
-        "axis_direction": {
-          "description": "Direction of the revolution axis, with norm within `1e-9` of one.",
-          "$ref": "#/$defs/Vector3"
-        },
-        "axis_origin": {
-          "description": "A point on the revolution axis, with finite coordinates.",
-          "$ref": "#/$defs/Point3"
-        },
-        "cache": {
-          "description": "Cache contract: the revision-gated form, or the legacy\nsolved-cache tolerance this construction states instead.\nThe profile curve's optional endpoints are `reference_endpoints`.",
-          "$ref": "#/$defs/CacheContract"
-        },
-        "directrix": {
-          "description": "Curve revolved about the axis to form the surface.",
-          "$ref": "#/$defs/CurveId"
-        },
-        "kind": {
-          "type": "string",
-          "const": "revolution"
+          "minItems": 2,
+          "maxItems": 2
         },
         "parameter_interval": {
           "description": "Native source directrix parameter start and end values, when\ncarried by the source representation. The neutral surface-carrier\ninterval is in `ProceduralSurface::record_bounds`.",
@@ -12066,12 +12062,16 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         },
         "transposed": {
           "description": "Whether the source parameter directions are transposed.",
           "type": "boolean"
+        },
+        "cache": {
+          "description": "Cache contract: the revision-gated form, or the legacy\nsolved-cache tolerance this construction states instead.\nThe profile curve's optional endpoints are `reference_endpoints`.",
+          "$ref": "#/$defs/CacheContract"
         }
       },
       "additionalProperties": false,
@@ -12089,21 +12089,21 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Full revolution of a directrix about an axis.",
       "type": "object",
       "properties": {
-        "axis_direction": {
-          "description": "Unit revolution-axis direction.",
-          "$ref": "#/$defs/Vector3"
-        },
-        "axis_origin": {
-          "description": "Point on the revolution axis.",
-          "$ref": "#/$defs/Point3"
+        "kind": {
+          "type": "string",
+          "const": "axis_revolution"
         },
         "directrix": {
           "description": "Curve revolved about the axis.",
           "$ref": "#/$defs/CurveId"
         },
-        "kind": {
-          "type": "string",
-          "const": "axis_revolution"
+        "axis_origin": {
+          "description": "Point on the revolution axis.",
+          "$ref": "#/$defs/Point3"
+        },
+        "axis_direction": {
+          "description": "Unit revolution-axis direction.",
+          "$ref": "#/$defs/Vector3"
         }
       },
       "additionalProperties": false,
@@ -12118,6 +12118,18 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Sum of two ordered curves from a base point.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "sum"
+        },
+        "first": {
+          "description": "First curve, varying in the first surface parameter.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "second": {
+          "description": "Second curve, varying in the second surface parameter.",
+          "$ref": "#/$defs/CurveId"
+        },
         "basepoint": {
           "description": "Surface base point.",
           "$ref": "#/$defs/Vector3"
@@ -12125,18 +12137,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "cache": {
           "description": "Cache contract: the revision-gated form, or the legacy\nsolved-cache tolerance this construction states instead.",
           "$ref": "#/$defs/CacheContract"
-        },
-        "first": {
-          "description": "First curve, varying in the first surface parameter.",
-          "$ref": "#/$defs/CurveId"
-        },
-        "kind": {
-          "type": "string",
-          "const": "sum"
-        },
-        "second": {
-          "description": "Second curve, varying in the second surface parameter.",
-          "$ref": "#/$defs/CurveId"
         }
       },
       "additionalProperties": false,
@@ -12156,10 +12156,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "type": "string",
           "const": "sweep"
         },
-        "native": {
-          "description": "Native sweep construction, when the source carries one.",
-          "$ref": "#/$defs/SweepSurfaceConstruction"
-        },
         "profile": {
           "description": "Curve swept along the spine.",
           "$ref": "#/$defs/CurveId"
@@ -12167,6 +12163,10 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "spine": {
           "description": "Curve the profile follows.",
           "$ref": "#/$defs/CurveId"
+        },
+        "native": {
+          "description": "Native sweep construction, when the source carries one.",
+          "$ref": "#/$defs/SweepSurfaceConstruction"
         }
       },
       "additionalProperties": false,
@@ -12180,13 +12180,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "T-spline face with its shared subtransform program.",
       "type": "object",
       "properties": {
-        "construction": {
-          "description": "Complete native T-spline wrapper construction.",
-          "$ref": "#/$defs/TSplineSurfaceConstruction"
-        },
         "kind": {
           "type": "string",
           "const": "t_spline"
+        },
+        "construction": {
+          "description": "Complete native T-spline wrapper construction.",
+          "$ref": "#/$defs/TSplineSurfaceConstruction"
         }
       },
       "required": [
@@ -12198,13 +12198,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Surface generated along an inline circular or linear helix path.",
       "type": "object",
       "properties": {
-        "construction": {
-          "description": "Complete native helix-surface construction.",
-          "$ref": "#/$defs/HelixSurfaceConstruction"
-        },
         "kind": {
           "type": "string",
           "const": "helix"
+        },
+        "construction": {
+          "description": "Complete native helix-surface construction.",
+          "$ref": "#/$defs/HelixSurfaceConstruction"
         }
       },
       "required": [
@@ -12216,13 +12216,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Native deformable spline surface.",
       "type": "object",
       "properties": {
-        "construction": {
-          "description": "Deformable surface construction.",
-          "$ref": "#/$defs/DeformableSurfaceConstruction"
-        },
         "kind": {
           "type": "string",
           "const": "deformable"
+        },
+        "construction": {
+          "description": "Deformable surface construction.",
+          "$ref": "#/$defs/DeformableSurfaceConstruction"
         }
       },
       "additionalProperties": false,
@@ -12235,26 +12235,18 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Offset from a support surface.",
       "type": "object",
       "properties": {
-        "distance": {
-          "description": "Signed offset distance, in document length units.",
-          "type": "number",
-          "format": "double"
-        },
-        "extension": {
-          "description": "Legacy conditional extension flags or the revision-gated form.",
-          "$ref": "#/$defs/OffsetExtension"
-        },
         "kind": {
           "type": "string",
           "const": "offset"
         },
-        "linear_support_extension": {
-          "description": "Whether the support continues as ruled linear strips outside its\nactive NURBS rectangle.",
-          "type": "boolean"
-        },
         "support": {
           "description": "Surface this surface is offset from.",
           "$ref": "#/$defs/SurfaceId"
+        },
+        "distance": {
+          "description": "Signed offset distance, in document length units.",
+          "type": "number",
+          "format": "double"
         },
         "u_sense": {
           "description": "Native U parameter-direction sense enum, when carried.",
@@ -12265,6 +12257,14 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "description": "Native V parameter-direction sense enum, when carried.",
           "type": "integer",
           "format": "int64"
+        },
+        "linear_support_extension": {
+          "description": "Whether the support continues as ruled linear strips outside its\nactive NURBS rectangle.",
+          "type": "boolean"
+        },
+        "extension": {
+          "description": "Legacy conditional extension flags or the revision-gated form.",
+          "$ref": "#/$defs/OffsetExtension"
         }
       },
       "additionalProperties": false,
@@ -12280,14 +12280,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Rectangular parameter sub-range of a support surface.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Solved-cache fit contract this construction states itself.",
-          "$ref": "#/$defs/LegacyCache",
-          "default": null
-        },
         "kind": {
           "type": "string",
           "const": "subset"
+        },
+        "support": {
+          "description": "Surface being restricted.",
+          "$ref": "#/$defs/SurfaceId"
         },
         "parameter_ranges": {
           "description": "U and V parameter endpoints in the support parameterization.\n\nThe endpoint order is significant for cyclic and reversed\ntrims. A producer that does not carry direction metadata may\nleave the sense fields absent and use increasing endpoints.",
@@ -12298,15 +12297,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
               "type": "number",
               "format": "double"
             },
-            "maxItems": 2,
-            "minItems": 2
+            "minItems": 2,
+            "maxItems": 2
           },
-          "maxItems": 2,
-          "minItems": 2
-        },
-        "support": {
-          "description": "Surface being restricted.",
-          "$ref": "#/$defs/SurfaceId"
+          "minItems": 2,
+          "maxItems": 2
         },
         "u_sense": {
           "description": "Whether the trimmed surface U direction agrees with the support.",
@@ -12315,6 +12310,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "v_sense": {
           "description": "Whether the trimmed surface V direction agrees with the support.",
           "type": "boolean"
+        },
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "default": null,
+          "$ref": "#/$defs/LegacyCache"
         }
       },
       "additionalProperties": false,
@@ -12351,23 +12351,23 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Parallel offset from a support surface.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "parallel_offset"
+        },
+        "support": {
+          "description": "Surface being offset.",
+          "$ref": "#/$defs/SurfaceId"
+        },
         "distance": {
           "description": "Signed offset distance.",
           "type": "number",
           "format": "double"
         },
-        "kind": {
-          "type": "string",
-          "const": "parallel_offset"
-        },
         "self_intersect": {
           "description": "Whether the source classifies the result as self-intersecting.",
           "type": "boolean",
           "default": null
-        },
-        "support": {
-          "description": "Surface being offset.",
-          "$ref": "#/$defs/SurfaceId"
         }
       },
       "additionalProperties": false,
@@ -12399,6 +12399,14 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Surface domain bounded by ordered curves on a supporting surface.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "curve_bounded"
+        },
+        "support": {
+          "description": "Supporting surface whose parameterization defines the domain.",
+          "$ref": "#/$defs/SurfaceId"
+        },
         "boundaries": {
           "description": "Boundary curves on the support.",
           "type": "array",
@@ -12416,14 +12424,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "implicit_outer": {
           "description": "Whether the support's natural outer boundary is implicit.",
           "type": "boolean"
-        },
-        "kind": {
-          "type": "string",
-          "const": "curve_bounded"
-        },
-        "support": {
-          "description": "Supporting surface whose parameterization defines the domain.",
-          "$ref": "#/$defs/SurfaceId"
         }
       },
       "required": [
@@ -12438,21 +12438,21 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Ruled surface joining two directrices.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Solved-cache fit contract this construction states itself.",
-          "$ref": "#/$defs/LegacyCache"
+        "kind": {
+          "type": "string",
+          "const": "ruled"
         },
         "first": {
           "description": "First bounding curve of the ruled surface.",
           "$ref": "#/$defs/CurveId"
         },
-        "kind": {
-          "type": "string",
-          "const": "ruled"
-        },
         "second": {
           "description": "Second bounding curve of the ruled surface.",
           "$ref": "#/$defs/CurveId"
+        },
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "$ref": "#/$defs/LegacyCache"
         }
       },
       "required": [
@@ -12465,25 +12465,9 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Rolling-ball or law-driven blend between two support surfaces.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Cache contract: the native rolling-ball construction, which states its\nown cache form, or the legacy solved-cache tolerance stated instead.",
-          "$ref": "#/$defs/CacheContract4"
-        },
-        "cross_section": {
-          "description": "Blend cross-section form.",
-          "$ref": "#/$defs/BlendCrossSection"
-        },
         "kind": {
           "type": "string",
           "const": "blend"
-        },
-        "radius": {
-          "description": "Blend radius law.",
-          "$ref": "#/$defs/BlendRadiusLaw"
-        },
-        "spine": {
-          "description": "Spine curve, when the source resolves one.",
-          "$ref": "#/$defs/CurveId"
         },
         "supports": {
           "description": "Blend support sides.",
@@ -12498,8 +12482,24 @@ Each type below is given by the JSON Schema of its wire form, generated from the
               }
             ]
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "spine": {
+          "description": "Spine curve, when the source resolves one.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "radius": {
+          "description": "Blend radius law.",
+          "$ref": "#/$defs/BlendRadiusLaw"
+        },
+        "cross_section": {
+          "description": "Blend cross-section form.",
+          "$ref": "#/$defs/BlendCrossSection"
+        },
+        "cache": {
+          "description": "Cache contract: the native rolling-ball construction, which states its\nown cache form, or the legacy solved-cache tolerance stated instead.",
+          "$ref": "#/$defs/CacheContract4"
         }
       },
       "additionalProperties": false,
@@ -12515,15 +12515,15 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Rolling-ball surface defined by aligned quintic value/derivative jets.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "rolling_ball_jet"
+        },
         "degree": {
           "description": "Polynomial degree of each scalar channel.",
           "type": "integer",
           "format": "uint32",
           "minimum": 0
-        },
-        "kind": {
-          "type": "string",
-          "const": "rolling_ball_jet"
         },
         "stations": {
           "description": "Ordered station data.",
@@ -12544,10 +12544,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Preserved construction without a neutral interpretation.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Solved-cache fit contract this construction states itself.",
-          "$ref": "#/$defs/LegacyCache"
-        },
         "kind": {
           "type": "string",
           "const": "unknown"
@@ -12555,6 +12551,10 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "record": {
           "description": "Reference to the preserved raw source record, when retained.",
           "$ref": "#/$defs/UnknownId"
+        },
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "$ref": "#/$defs/LegacyCache"
         }
       },
       "required": [
@@ -12595,13 +12595,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "The ASM flag is followed immediately by the subtype close.",
       "type": "object",
       "properties": {
-        "flag": {
-          "description": "Native ASM projection flag.",
-          "type": "boolean"
-        },
         "kind": {
           "type": "string",
           "const": "early_close"
+        },
+        "flag": {
+          "description": "Native ASM projection flag.",
+          "type": "boolean"
         }
       },
       "additionalProperties": false,
@@ -12614,13 +12614,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "The ASM flag is followed by a retained source interval and role text.",
       "type": "object",
       "properties": {
-        "flag": {
-          "description": "Native ASM projection flag.",
-          "type": "boolean"
-        },
         "kind": {
           "type": "string",
           "const": "ranged"
+        },
+        "flag": {
+          "description": "Native ASM projection flag.",
+          "type": "boolean"
         },
         "parameter_range": {
           "description": "Native parameter interval on the projected source curve.",
@@ -12629,8 +12629,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         },
         "role": {
           "description": "Projection support role.",
@@ -12659,13 +12659,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "A solved cache followed by its carrier-specific cache contract.",
       "type": "object",
       "properties": {
-        "fit_tolerance": {
-          "description": "Carrier-specific solved-cache contract.",
-          "$ref": "#/$defs/FitTolerance"
-        },
         "kind": {
           "type": "string",
           "const": "solved_cache"
+        },
+        "fit_tolerance": {
+          "description": "Carrier-specific solved-cache contract.",
+          "$ref": "#/$defs/FitTolerance"
         }
       },
       "additionalProperties": false,
@@ -12682,11 +12682,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "type": "string",
           "const": "parameterization"
         },
-        "u_closure": {
-          "description": "U closure enum.",
-          "type": "integer",
-          "format": "int64"
-        },
         "u_interval": {
           "description": "U parameter interval, an ordered `[lo, hi]` pair of optional bounds.\n`None` is a false bound-presence flag.",
           "type": "array",
@@ -12697,18 +12692,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             ],
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
-        },
-        "u_singularity": {
-          "description": "U singularity enum.",
-          "type": "integer",
-          "format": "int64"
-        },
-        "v_closure": {
-          "description": "V closure enum.",
-          "type": "integer",
-          "format": "int64"
+          "minItems": 2,
+          "maxItems": 2
         },
         "v_interval": {
           "description": "V parameter interval, an ordered `[lo, hi]` pair of optional bounds.\n`None` is a false bound-presence flag.",
@@ -12720,8 +12705,23 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             ],
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "u_closure": {
+          "description": "U closure enum.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "v_closure": {
+          "description": "V closure enum.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "u_singularity": {
+          "description": "U singularity enum.",
+          "type": "integer",
+          "format": "int64"
         },
         "v_singularity": {
           "description": "V singularity enum.",
@@ -12754,13 +12754,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "A solved cache followed by its carrier-specific cache contract.",
       "type": "object",
       "properties": {
-        "fit_tolerance": {
-          "description": "Carrier-specific solved-cache contract.",
-          "$ref": "#/$defs/FitTolerance"
-        },
         "kind": {
           "type": "string",
           "const": "solved_cache"
+        },
+        "fit_tolerance": {
+          "description": "Carrier-specific solved-cache contract.",
+          "$ref": "#/$defs/FitTolerance"
         }
       },
       "additionalProperties": false,
@@ -12773,10 +12773,9 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Parameterization stored in place of a solved cache.",
       "type": "object",
       "properties": {
-        "closed_form": {
-          "description": "Closed-form enum following the interval.",
-          "type": "integer",
-          "format": "int64"
+        "kind": {
+          "type": "string",
+          "const": "parameterization"
         },
         "interval": {
           "description": "Curve interval, an ordered `[lo, hi]` pair of optional bounds. `None` is\na false bound-presence flag.",
@@ -12788,12 +12787,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             ],
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         },
-        "kind": {
-          "type": "string",
-          "const": "parameterization"
+        "closed_form": {
+          "description": "Closed-form enum following the interval.",
+          "type": "integer",
+          "format": "int64"
         }
       },
       "additionalProperties": false,
@@ -12814,24 +12814,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Complete native revision-gated `cl_loft_spl_sur` construction. The\nrevision layout is cache-first: the revision integer and shared\nrevision-gated surface tail precede the construction fields.",
   "type": "object",
   "properties": {
-    "base_path": {
-      "description": "Path data of the leading scale block.",
-      "$ref": "#/$defs/LoftPath"
-    },
-    "base_profile": {
-      "description": "Leading unparameterized scale block: ordered profile members and path.",
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/LoftProfileMember"
-      }
+    "revision": {
+      "description": "Positive serializer-revision integer following the subtype name.",
+      "$ref": "#/$defs/PositiveI64"
     },
     "cache": {
       "description": "Approximation-cache form selected by the shared tail enum.",
       "$ref": "#/$defs/RevisionCacheForm"
-    },
-    "direction": {
-      "description": "Direction carrier selected by the kind-zero direction tag.",
-      "$ref": "#/$defs/CompoundLoftDirection"
     },
     "discontinuities": {
       "description": "Six ordered discontinuity arrays following the fit tolerance.",
@@ -12843,8 +12832,23 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "format": "double"
         }
       },
-      "maxItems": 6,
-      "minItems": 6
+      "minItems": 6,
+      "maxItems": 6
+    },
+    "tail_flag": {
+      "description": "Boolean terminating the shared tail.",
+      "type": "boolean"
+    },
+    "base_profile": {
+      "description": "Leading unparameterized scale block: ordered profile members and path.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/LoftProfileMember"
+      }
+    },
+    "base_path": {
+      "description": "Path data of the leading scale block.",
+      "$ref": "#/$defs/LoftPath"
     },
     "entries": {
       "description": "Counted parameterized entries; the native parameter trails each\nentry's fields.",
@@ -12859,8 +12863,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "items": {
         "type": "boolean"
       },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
     },
     "kind_flags": {
       "description": "Two flags opening the kind-zero payload.",
@@ -12868,20 +12872,16 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "items": {
         "type": "boolean"
       },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
     },
-    "revision": {
-      "description": "Positive serializer-revision integer following the subtype name.",
-      "$ref": "#/$defs/PositiveI64"
+    "direction": {
+      "description": "Direction carrier selected by the kind-zero direction tag.",
+      "$ref": "#/$defs/CompoundLoftDirection"
     },
     "tail": {
       "description": "Trailing bounds and their dependent BS3 curve.",
       "$ref": "#/$defs/RevisionCompoundLoftTail"
-    },
-    "tail_flag": {
-      "description": "Boolean terminating the shared tail.",
-      "type": "boolean"
     }
   },
   "additionalProperties": false,
@@ -12965,9 +12965,9 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Both parameter bounds and their selected curve.",
       "type": "object",
       "properties": {
-        "curve": {
-          "description": "Curve selected by the complete parameter pair.",
-          "$ref": "#/$defs/CurveId"
+        "kind": {
+          "type": "string",
+          "const": "curve"
         },
         "interval": {
           "description": "Ordered lower and upper parameter bounds.",
@@ -12976,12 +12976,12 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         },
-        "kind": {
-          "type": "string",
-          "const": "curve"
+        "curve": {
+          "description": "Curve selected by the complete parameter pair.",
+          "$ref": "#/$defs/CurveId"
         }
       },
       "additionalProperties": false,
@@ -13002,9 +13002,28 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Complete native revision-gated `g2_blend_spl_sur` construction. The\nrevision layout stores the two support sides in the variable-blend side\nlayout and ends with the shared revision-gated surface tail.",
   "type": "object",
   "properties": {
-    "cache": {
-      "description": "Approximation-cache form selected by the shared tail enum.",
-      "$ref": "#/$defs/RevisionCacheForm"
+    "revision": {
+      "description": "Positive serializer-revision integer following the subtype name.",
+      "$ref": "#/$defs/PositiveI64"
+    },
+    "leading_parameters": {
+      "description": "Two native scalars following the revision integer.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "sides": {
+      "description": "Two ordered support-side graphs in the variable-blend side layout.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/RollingBallSide"
+      },
+      "minItems": 2,
+      "maxItems": 2
     },
     "center": {
       "description": "Stored center curve.",
@@ -13020,31 +13039,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         ],
         "format": "double"
       },
-      "maxItems": 2,
-      "minItems": 2
-    },
-    "discontinuities": {
-      "description": "Six ordered discontinuity arrays following the fit tolerance.",
-      "type": "array",
-      "items": {
-        "type": "array",
-        "items": {
-          "type": "number",
-          "format": "double"
-        }
-      },
-      "maxItems": 6,
-      "minItems": 6
-    },
-    "leading_parameters": {
-      "description": "Two native scalars following the revision integer.",
-      "type": "array",
-      "items": {
-        "type": "number",
-        "format": "double"
-      },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
     },
     "radii": {
       "description": "Two signed blend radii in document length units.",
@@ -13053,59 +13049,12 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "type": "number",
         "format": "double"
       },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
     },
     "radius_selector": {
       "description": "Integer-valued optional-radius selector following the radii.",
       "$ref": "#/$defs/RollingBallRadiusSelector"
-    },
-    "revision": {
-      "description": "Positive serializer-revision integer following the subtype name.",
-      "$ref": "#/$defs/PositiveI64"
-    },
-    "shape_length": {
-      "description": "Native length before the solved shape, in document units.",
-      "type": "number",
-      "format": "double"
-    },
-    "shape_parameter": {
-      "description": "Native scalar before the solved shape.",
-      "type": "number",
-      "format": "double"
-    },
-    "shape_prefix": {
-      "description": "Native integer before the solved shape.",
-      "type": "integer",
-      "format": "int64"
-    },
-    "shape_tail": {
-      "description": "Native integer immediately before the shared tail.",
-      "type": "integer",
-      "format": "int64"
-    },
-    "sides": {
-      "description": "Two ordered support-side graphs in the variable-blend side layout.",
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/RollingBallSide"
-      },
-      "maxItems": 2,
-      "minItems": 2
-    },
-    "tail_extensions": {
-      "description": "Three ASM integers following the shared tail.",
-      "type": "array",
-      "items": {
-        "type": "integer",
-        "format": "int64"
-      },
-      "maxItems": 3,
-      "minItems": 3
-    },
-    "tail_flag": {
-      "description": "Boolean terminating the shared tail.",
-      "type": "boolean"
     },
     "u_range": {
       "description": "Native optional U interval endpoints.",
@@ -13117,8 +13066,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         ],
         "format": "double"
       },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
     },
     "v_range": {
       "description": "Native optional V interval endpoints.",
@@ -13130,8 +13079,59 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         ],
         "format": "double"
       },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "shape_prefix": {
+      "description": "Native integer before the solved shape.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "shape_parameter": {
+      "description": "Native scalar before the solved shape.",
+      "type": "number",
+      "format": "double"
+    },
+    "shape_length": {
+      "description": "Native length before the solved shape, in document units.",
+      "type": "number",
+      "format": "double"
+    },
+    "shape_tail": {
+      "description": "Native integer immediately before the shared tail.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "cache": {
+      "description": "Approximation-cache form selected by the shared tail enum.",
+      "$ref": "#/$defs/RevisionCacheForm"
+    },
+    "discontinuities": {
+      "description": "Six ordered discontinuity arrays following the fit tolerance.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "minItems": 6,
+      "maxItems": 6
+    },
+    "tail_flag": {
+      "description": "Boolean terminating the shared tail.",
+      "type": "boolean"
+    },
+    "tail_extensions": {
+      "description": "Three ASM integers following the shared tail.",
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "format": "int64"
+      },
+      "minItems": 3,
+      "maxItems": 3
     }
   },
   "additionalProperties": false,
@@ -13164,6 +13164,56 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Shared fields of a revision-gated spline-surface form: the revision\ninteger, optional support bounds and reference-curve endpoints, a\ncarrier-specific boolean run, and the shared tail enum, discontinuity\narrays, tail boolean, and post-tail boolean run.",
   "type": "object",
   "properties": {
+    "revision": {
+      "description": "Positive serializer-revision integer following the subtype name.",
+      "$ref": "#/$defs/PositiveI64"
+    },
+    "support_bounds": {
+      "description": "Optional U/V bound fields following the support surface.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "reference_endpoints": {
+      "description": "Optional parameter endpoints following the embedded reference curve.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "second_endpoints": {
+      "description": "Optional parameter endpoints following a second embedded curve, used\nby two-curve carriers such as `sum_spl_sur`.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "flags": {
+      "description": "Carrier-specific boolean run preceding the shared tail.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      }
+    },
     "cache": {
       "description": "Approximation-cache form selected by the shared tail enum.",
       "$ref": "#/$defs/RevisionCacheForm"
@@ -13178,58 +13228,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "format": "double"
         }
       },
-      "maxItems": 6,
-      "minItems": 6
-    },
-    "flags": {
-      "description": "Carrier-specific boolean run preceding the shared tail.",
-      "type": "array",
-      "items": {
-        "type": "boolean"
-      }
-    },
-    "reference_endpoints": {
-      "description": "Optional parameter endpoints following the embedded reference curve.",
-      "type": "array",
-      "items": {
-        "type": [
-          "number",
-          "null"
-        ],
-        "format": "double"
-      },
-      "maxItems": 2,
-      "minItems": 2
-    },
-    "revision": {
-      "description": "Positive serializer-revision integer following the subtype name.",
-      "$ref": "#/$defs/PositiveI64"
-    },
-    "second_endpoints": {
-      "description": "Optional parameter endpoints following a second embedded curve, used\nby two-curve carriers such as `sum_spl_sur`.",
-      "type": "array",
-      "items": {
-        "type": [
-          "number",
-          "null"
-        ],
-        "format": "double"
-      },
-      "maxItems": 2,
-      "minItems": 2
-    },
-    "support_bounds": {
-      "description": "Optional U/V bound fields following the support surface.",
-      "type": "array",
-      "items": {
-        "type": [
-          "number",
-          "null"
-        ],
-        "format": "double"
-      },
-      "maxItems": 4,
-      "minItems": 4
+      "minItems": 6,
+      "maxItems": 6
     },
     "tail_flag": {
       "description": "Boolean terminating the shared tail.",
@@ -13265,6 +13265,58 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Shared fields of a revision-gated spline-surface form: the revision\ninteger, optional support bounds and reference-curve endpoints, a\ncarrier-specific boolean run, and the shared tail enum, discontinuity\narrays, tail boolean, and post-tail boolean run.",
   "type": "object",
   "properties": {
+    "revision": {
+      "description": "Positive serializer-revision integer following the subtype name.",
+      "$ref": "#/$defs/PositiveI64"
+    },
+    "support_bounds": {
+      "description": "Optional U/V bound fields following the support surface.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "reference_endpoints": {
+      "description": "Optional parameter endpoints following the embedded reference curve.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "second_endpoints": {
+      "description": "Optional parameter endpoints following a second embedded curve, used\nby two-curve carriers such as `sum_spl_sur`.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "flags": {
+      "description": "Carrier-specific boolean run preceding the shared tail.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "minItems": 4,
+      "maxItems": 4
+    },
     "cache": {
       "description": "Approximation-cache form selected by the shared tail enum.",
       "$ref": "#/$defs/RevisionCacheForm"
@@ -13279,60 +13331,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "format": "double"
         }
       },
-      "maxItems": 6,
-      "minItems": 6
-    },
-    "flags": {
-      "description": "Carrier-specific boolean run preceding the shared tail.",
-      "type": "array",
-      "items": {
-        "type": "boolean"
-      },
-      "maxItems": 4,
-      "minItems": 4
-    },
-    "reference_endpoints": {
-      "description": "Optional parameter endpoints following the embedded reference curve.",
-      "type": "array",
-      "items": {
-        "type": [
-          "number",
-          "null"
-        ],
-        "format": "double"
-      },
-      "maxItems": 2,
-      "minItems": 2
-    },
-    "revision": {
-      "description": "Positive serializer-revision integer following the subtype name.",
-      "$ref": "#/$defs/PositiveI64"
-    },
-    "second_endpoints": {
-      "description": "Optional parameter endpoints following a second embedded curve, used\nby two-curve carriers such as `sum_spl_sur`.",
-      "type": "array",
-      "items": {
-        "type": [
-          "number",
-          "null"
-        ],
-        "format": "double"
-      },
-      "maxItems": 2,
-      "minItems": 2
-    },
-    "support_bounds": {
-      "description": "Optional U/V bound fields following the support surface.",
-      "type": "array",
-      "items": {
-        "type": [
-          "number",
-          "null"
-        ],
-        "format": "double"
-      },
-      "maxItems": 4,
-      "minItems": 4
+      "minItems": 6,
+      "maxItems": 6
     },
     "tail_flag": {
       "description": "Boolean terminating the shared tail.",
@@ -13368,11 +13368,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Parameterization carried by tail-enum form `2` of the shared revision-gated\nspline-surface tail. This form stores no approximation cache and no fit\ntolerance; it stores the two parameter intervals followed by four enums, in\nthe order the fields appear below.",
   "type": "object",
   "properties": {
-    "u_closure": {
-      "description": "U closure enum.",
-      "type": "integer",
-      "format": "int64"
-    },
     "u_interval": {
       "description": "U parameter interval, an ordered `[lo, hi]` pair of optional bounds.\n`None` is a false bound-presence flag.",
       "type": "array",
@@ -13383,18 +13378,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         ],
         "format": "double"
       },
-      "maxItems": 2,
-      "minItems": 2
-    },
-    "u_singularity": {
-      "description": "U singularity enum.",
-      "type": "integer",
-      "format": "int64"
-    },
-    "v_closure": {
-      "description": "V closure enum.",
-      "type": "integer",
-      "format": "int64"
+      "minItems": 2,
+      "maxItems": 2
     },
     "v_interval": {
       "description": "V parameter interval, an ordered `[lo, hi]` pair of optional bounds.\n`None` is a false bound-presence flag.",
@@ -13406,8 +13391,23 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         ],
         "format": "double"
       },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "u_closure": {
+      "description": "U closure enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "v_closure": {
+      "description": "V closure enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "u_singularity": {
+      "description": "U singularity enum.",
+      "type": "integer",
+      "format": "int64"
     },
     "v_singularity": {
       "description": "V singularity enum.",
@@ -13434,55 +13434,9 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Complete byte-backed rolling-ball or three-surface blend context.",
   "type": "object",
   "properties": {
-    "cache": {
-      "description": "Approximation-cache form selected by the shared tail enum.",
-      "$ref": "#/$defs/RevisionCacheForm"
-    },
-    "discontinuities": {
-      "description": "Six ordered ASM discontinuity arrays closing the shared tail.",
-      "type": "array",
-      "items": {
-        "type": "array",
-        "items": {
-          "type": "number",
-          "format": "double"
-        }
-      },
-      "maxItems": 6,
-      "minItems": 6
-    },
-    "offsets": {
-      "description": "Two signed support offsets in document length units.",
-      "type": "array",
-      "items": {
-        "type": "number",
-        "format": "double"
-      },
-      "maxItems": 2,
-      "minItems": 2
-    },
-    "parameters": {
-      "description": "Two ordered trailing scalars.",
-      "type": "array",
-      "items": {
-        "type": "number",
-        "format": "double"
-      },
-      "maxItems": 2,
-      "minItems": 2
-    },
-    "radius_selector": {
-      "description": "Optional-radius selector field.",
-      "$ref": "#/$defs/RollingBallRadiusSelector2"
-    },
     "revision": {
       "description": "Positive serializer-revision integer following the subtype name.",
       "$ref": "#/$defs/PositiveI64"
-    },
-    "shape_prefix": {
-      "description": "Native integer preceding the trailing scalars.",
-      "type": "integer",
-      "format": "int64"
     },
     "sides": {
       "description": "Two ordered primary support sides.",
@@ -13490,8 +13444,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "items": {
         "$ref": "#/$defs/RollingBallSide"
       },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
     },
     "slice": {
       "description": "Stored slice or center curve.",
@@ -13507,31 +13461,22 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         ],
         "format": "double"
       },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
     },
-    "tail": {
-      "description": "Native long following the trailing scalars.",
-      "type": "integer",
-      "format": "int64"
-    },
-    "tail_extensions": {
-      "description": "Three ASM integers preceding the subtype close.",
+    "offsets": {
+      "description": "Two signed support offsets in document length units.",
       "type": "array",
       "items": {
-        "type": "integer",
-        "format": "int64"
+        "type": "number",
+        "format": "double"
       },
-      "maxItems": 3,
-      "minItems": 3
+      "minItems": 2,
+      "maxItems": 2
     },
-    "tail_flag": {
-      "description": "Native Boolean closing the shared tail.",
-      "type": "boolean"
-    },
-    "third": {
-      "description": "Third side present only for `sss_blend_spl_sur`.",
-      "$ref": "#/$defs/RollingBallThirdSide"
+    "radius_selector": {
+      "description": "Optional-radius selector field.",
+      "$ref": "#/$defs/RollingBallRadiusSelector2"
     },
     "u_range": {
       "description": "Native optional U interval endpoints.",
@@ -13543,8 +13488,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         ],
         "format": "double"
       },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
     },
     "v_range": {
       "description": "Native optional V interval endpoints.",
@@ -13556,8 +13501,63 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         ],
         "format": "double"
       },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "shape_prefix": {
+      "description": "Native integer preceding the trailing scalars.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "parameters": {
+      "description": "Two ordered trailing scalars.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "tail": {
+      "description": "Native long following the trailing scalars.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "cache": {
+      "description": "Approximation-cache form selected by the shared tail enum.",
+      "$ref": "#/$defs/RevisionCacheForm"
+    },
+    "discontinuities": {
+      "description": "Six ordered ASM discontinuity arrays closing the shared tail.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "minItems": 6,
+      "maxItems": 6
+    },
+    "tail_flag": {
+      "description": "Native Boolean closing the shared tail.",
+      "type": "boolean"
+    },
+    "third": {
+      "description": "Third side present only for `sss_blend_spl_sur`.",
+      "$ref": "#/$defs/RollingBallThirdSide"
+    },
+    "tail_extensions": {
+      "description": "Three ASM integers preceding the subtype close.",
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "format": "int64"
+      },
+      "minItems": 3,
+      "maxItems": 3
     }
   },
   "additionalProperties": false,
@@ -13588,15 +13588,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "One derivative row for the four channels of a rolling-ball jet.",
   "type": "object",
   "properties": {
-    "angle": {
-      "description": "Derivative of the signed opening angle.",
-      "type": "number",
-      "format": "double"
-    },
-    "center": {
-      "description": "Derivative of the rolling-ball center.",
-      "$ref": "#/$defs/Vector3"
-    },
     "first_limit": {
       "description": "Derivative of the first limiting point.",
       "$ref": "#/$defs/Vector3"
@@ -13604,6 +13595,15 @@ Each type below is given by the JSON Schema of its wire form, generated from the
     "second_limit": {
       "description": "Derivative of the second limiting point.",
       "$ref": "#/$defs/Vector3"
+    },
+    "center": {
+      "description": "Derivative of the rolling-ball center.",
+      "$ref": "#/$defs/Vector3"
+    },
+    "angle": {
+      "description": "Derivative of the signed opening angle.",
+      "type": "number",
+      "format": "double"
     }
   },
   "additionalProperties": false,
@@ -13623,30 +13623,30 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "One aligned knot site of an exact rolling-ball surface jet.",
   "type": "object",
   "properties": {
-    "angle": {
-      "description": "Signed opening angle at the knot, in radians.",
-      "type": "number",
-      "format": "double"
+    "first_limit": {
+      "description": "First limiting point at the knot.",
+      "$ref": "#/$defs/Point3"
+    },
+    "second_limit": {
+      "description": "Second limiting point at the knot.",
+      "$ref": "#/$defs/Point3"
     },
     "center": {
       "description": "Rolling-ball center at the knot.",
       "$ref": "#/$defs/Point3"
     },
+    "angle": {
+      "description": "Signed opening angle at the knot, in radians.",
+      "type": "number",
+      "format": "double"
+    },
     "first_derivative": {
       "description": "First parameter derivative of all four value channels.",
       "$ref": "#/$defs/RollingBallJetDerivative"
     },
-    "first_limit": {
-      "description": "First limiting point at the knot.",
-      "$ref": "#/$defs/Point3"
-    },
     "second_derivative": {
       "description": "Second parameter derivative of all four value channels.",
       "$ref": "#/$defs/RollingBallJetDerivative"
-    },
-    "second_limit": {
-      "description": "Second limiting point at the knot.",
-      "$ref": "#/$defs/Point3"
     }
   },
   "additionalProperties": false,
@@ -13787,26 +13787,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "One complete native rolling-ball support side.",
   "type": "object",
   "properties": {
-    "curve": {
-      "description": "Side curve and bounds, absent for `null_curve`.",
-      "$ref": "#/$defs/RollingBallSupportCurve"
-    },
-    "extension": {
-      "description": "Native extension integer and nullable tertiary pcurve.",
-      "$ref": "#/$defs/RollingBallSideExtension"
-    },
-    "location": {
-      "description": "Native model-space side location.",
-      "$ref": "#/$defs/Point3"
-    },
-    "pcurve": {
-      "description": "Primary BS2 pcurve, absent for `nullbs`.",
-      "$ref": "#/$defs/PcurveGeometry"
-    },
-    "secondary_pcurve": {
-      "description": "ASM secondary BS2 pcurve, absent for `nullbs`.",
-      "$ref": "#/$defs/PcurveGeometry"
-    },
     "support_kind": {
       "description": "Geometry role selected by the support-side discriminator.",
       "$ref": "#/$defs/VariableBlendSupportKind"
@@ -13814,6 +13794,26 @@ Each type below is given by the JSON Schema of its wire form, generated from the
     "surface": {
       "description": "Primary support surface and bounds, absent for `null_surface`.",
       "$ref": "#/$defs/RollingBallSupportSurface"
+    },
+    "curve": {
+      "description": "Side curve and bounds, absent for `null_curve`.",
+      "$ref": "#/$defs/RollingBallSupportCurve"
+    },
+    "pcurve": {
+      "description": "Primary BS2 pcurve, absent for `nullbs`.",
+      "$ref": "#/$defs/PcurveGeometry"
+    },
+    "location": {
+      "description": "Native model-space side location.",
+      "$ref": "#/$defs/Point3"
+    },
+    "secondary_pcurve": {
+      "description": "ASM secondary BS2 pcurve, absent for `nullbs`.",
+      "$ref": "#/$defs/PcurveGeometry"
+    },
+    "extension": {
+      "description": "Native extension integer and nullable tertiary pcurve.",
+      "$ref": "#/$defs/RollingBallSideExtension"
     }
   },
   "additionalProperties": false,
@@ -13831,14 +13831,14 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "The optional rolling-ball extension clause.",
   "type": "object",
   "properties": {
-    "pcurve": {
-      "description": "Tertiary BS2 pcurve, absent for `nullbs`.",
-      "$ref": "#/$defs/PcurveGeometry"
-    },
     "value": {
       "description": "Native integer introducing the clause.",
       "type": "integer",
       "format": "int64"
+    },
+    "pcurve": {
+      "description": "Tertiary BS2 pcurve, absent for `nullbs`.",
+      "$ref": "#/$defs/PcurveGeometry"
     }
   },
   "additionalProperties": false,
@@ -13869,8 +13869,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         ],
         "format": "double"
       },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
     }
   },
   "additionalProperties": false,
@@ -13888,6 +13888,10 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "A present rolling-ball support surface and its native UV bounds.",
   "type": "object",
   "properties": {
+    "surface": {
+      "description": "Support surface or embedded geometry.",
+      "$ref": "#/$defs/SurfaceId"
+    },
     "parameter_ranges": {
       "description": "Optional native U and V endpoints.",
       "type": "array",
@@ -13900,15 +13904,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           ],
           "format": "double"
         },
-        "maxItems": 2,
-        "minItems": 2
+        "minItems": 2,
+        "maxItems": 2
       },
-      "maxItems": 2,
-      "minItems": 2
-    },
-    "surface": {
-      "description": "Support surface or embedded geometry.",
-      "$ref": "#/$defs/SurfaceId"
+      "minItems": 2,
+      "maxItems": 2
     }
   },
   "additionalProperties": false,
@@ -13926,42 +13926,42 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Third support graph appended by `sss_blend_spl_sur`.",
   "type": "object",
   "properties": {
+    "label": {
+      "description": "Native side label.",
+      "type": "string"
+    },
+    "surface": {
+      "description": "Third support surface.",
+      "$ref": "#/$defs/SurfaceId"
+    },
     "curve": {
       "description": "Third side curve.",
       "$ref": "#/$defs/CurveId"
     },
+    "pcurve": {
+      "description": "Primary BS2 pcurve, absent for `nullbs`.",
+      "$ref": "#/$defs/PcurveGeometry"
+    },
     "direction": {
       "description": "Native side vector.",
       "$ref": "#/$defs/Vector3"
+    },
+    "secondary_pcurve": {
+      "description": "ASM secondary BS2 pcurve, absent for `nullbs`.",
+      "$ref": "#/$defs/PcurveGeometry"
     },
     "extension": {
       "description": "Native ASM integer following the secondary pcurve.",
       "type": "integer",
       "format": "int64"
     },
-    "flag": {
-      "description": "Final ASM flag.",
-      "type": "boolean"
-    },
-    "label": {
-      "description": "Native side label.",
-      "type": "string"
-    },
-    "pcurve": {
-      "description": "Primary BS2 pcurve, absent for `nullbs`.",
-      "$ref": "#/$defs/PcurveGeometry"
-    },
-    "secondary_pcurve": {
-      "description": "ASM secondary BS2 pcurve, absent for `nullbs`.",
-      "$ref": "#/$defs/PcurveGeometry"
-    },
-    "surface": {
-      "description": "Third support surface.",
-      "$ref": "#/$defs/SurfaceId"
-    },
     "tertiary_pcurve": {
       "description": "ASM tertiary BS2 pcurve, absent for `nullbs`.",
       "$ref": "#/$defs/PcurveGeometry"
+    },
+    "flag": {
+      "description": "Final ASM flag.",
+      "type": "boolean"
     }
   },
   "additionalProperties": false,
@@ -13986,17 +13986,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Extended branch ending in a direction vector.",
       "type": "object",
       "properties": {
-        "direction": {
-          "description": "Stored direction vector.",
-          "$ref": "#/$defs/Vector3"
+        "kind": {
+          "type": "string",
+          "const": "extended_vector"
         },
         "first_scale": {
           "description": "Optional first scale block.",
           "$ref": "#/$defs/CompoundLoftScale"
-        },
-        "kind": {
-          "type": "string",
-          "const": "extended_vector"
         },
         "second_scale": {
           "description": "Required second scale block.",
@@ -14006,6 +14002,10 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "description": "Native selector integer.",
           "type": "integer",
           "format": "int64"
+        },
+        "direction": {
+          "description": "Stored direction vector.",
+          "$ref": "#/$defs/Vector3"
         }
       },
       "additionalProperties": false,
@@ -14020,14 +14020,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Extended branch ending in a singularity and curve.",
       "type": "object",
       "properties": {
-        "curve": {
-          "description": "Stored BS3 curve.",
-          "$ref": "#/$defs/CurveId"
-        },
-        "flag": {
-          "description": "Native branch flag.",
-          "type": "boolean"
-        },
         "kind": {
           "type": "string",
           "const": "extended_curve"
@@ -14036,10 +14028,18 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "description": "Optional scale block.",
           "$ref": "#/$defs/CompoundLoftScale"
         },
+        "flag": {
+          "description": "Native branch flag.",
+          "type": "boolean"
+        },
         "singularity": {
           "description": "Native singularity enum.",
           "type": "integer",
           "format": "int64"
+        },
+        "curve": {
+          "description": "Stored BS3 curve.",
+          "$ref": "#/$defs/CurveId"
         }
       },
       "additionalProperties": false,
@@ -14054,17 +14054,17 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Direct vector-or-curve branch.",
       "type": "object",
       "properties": {
-        "direction": {
-          "description": "Vector or BS3 curve with its derived native selector.",
-          "$ref": "#/$defs/CompoundLoftDirection"
+        "kind": {
+          "type": "string",
+          "const": "direct"
         },
         "flag": {
           "description": "Native branch flag.",
           "type": "boolean"
         },
-        "kind": {
-          "type": "string",
-          "const": "direct"
+        "direction": {
+          "description": "Vector or BS3 curve with its derived native selector.",
+          "$ref": "#/$defs/CompoundLoftDirection"
         }
       },
       "additionalProperties": false,
@@ -14085,9 +14085,14 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Complete native scaled compound-loft construction graph.",
   "type": "object",
   "properties": {
-    "branch": {
-      "description": "Structurally selected middle branch.",
-      "$ref": "#/$defs/ScaledCompoundLoftBranch"
+    "singularity": {
+      "description": "Native leading singularity enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "shape": {
+      "description": "Singularity-selected solved-shape payload.",
+      "$ref": "#/$defs/ScaledCompoundLoftShape"
     },
     "discontinuities": {
       "description": "Six ordered discontinuity arrays.",
@@ -14099,12 +14104,16 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "format": "double"
         }
       },
-      "maxItems": 6,
-      "minItems": 6
+      "minItems": 6,
+      "maxItems": 6
     },
     "discontinuity_flag": {
       "description": "Native discontinuity tail flag.",
       "type": "boolean"
+    },
+    "scales": {
+      "description": "Present leading scales within the three native slots.",
+      "$ref": "#/$defs/CompoundLoftScales_3"
     },
     "flags": {
       "description": "Two native flags preceding the selector.",
@@ -14112,49 +14121,17 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "items": {
         "type": "boolean"
       },
-      "maxItems": 2,
-      "minItems": 2
-    },
-    "scales": {
-      "description": "Present leading scales within the three native slots.",
-      "$ref": "#/$defs/CompoundLoftScales_3"
+      "minItems": 2,
+      "maxItems": 2
     },
     "selector": {
       "description": "Native integer preceding the middle branch.",
       "type": "integer",
       "format": "int64"
     },
-    "shape": {
-      "description": "Singularity-selected solved-shape payload.",
-      "$ref": "#/$defs/ScaledCompoundLoftShape"
-    },
-    "singularity": {
-      "description": "Native leading singularity enum.",
-      "type": "integer",
-      "format": "int64"
-    },
-    "tail_curve": {
-      "description": "Native trailing BS3 curve.",
-      "$ref": "#/$defs/CurveId"
-    },
-    "tail_directions": {
-      "description": "Two native trailing vectors.",
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/Vector3"
-      },
-      "maxItems": 2,
-      "minItems": 2
-    },
-    "tail_kind": {
-      "description": "Native trailing kind integer.",
-      "type": "integer",
-      "format": "int64"
-    },
-    "tail_singularity": {
-      "description": "Native trailing singularity enum.",
-      "type": "integer",
-      "format": "int64"
+    "branch": {
+      "description": "Structurally selected middle branch.",
+      "$ref": "#/$defs/ScaledCompoundLoftBranch"
     },
     "trailing_flags": {
       "description": "Two trailing branch flags.",
@@ -14162,8 +14139,31 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "items": {
         "type": "boolean"
       },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "tail_kind": {
+      "description": "Native trailing kind integer.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "tail_directions": {
+      "description": "Two native trailing vectors.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Vector3"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "tail_singularity": {
+      "description": "Native trailing singularity enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "tail_curve": {
+      "description": "Native trailing BS3 curve.",
+      "$ref": "#/$defs/CurveId"
     }
   },
   "additionalProperties": false,
@@ -14222,11 +14222,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
               "type": "number",
               "format": "double"
             },
-            "maxItems": 2,
-            "minItems": 2
+            "minItems": 2,
+            "maxItems": 2
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         },
         "parameters": {
           "description": "Two ordered native scalar arrays.",
@@ -14238,8 +14238,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
               "format": "double"
             }
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         }
       },
       "additionalProperties": false,
@@ -14291,13 +14291,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Draft/taper silhouette with an explicit factor.",
       "type": "object",
       "properties": {
-        "draft_factor": {
-          "description": "Native unscaled draft factor.",
-          "$ref": "#/$defs/FiniteReal"
-        },
         "kind": {
           "type": "string",
           "const": "taper"
+        },
+        "draft_factor": {
+          "description": "Native unscaled draft factor.",
+          "$ref": "#/$defs/FiniteReal"
         }
       },
       "additionalProperties": false,
@@ -14317,14 +14317,51 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Complete native `skin_spl_sur` construction graph.",
   "type": "object",
   "properties": {
+    "surface_boolean": {
+      "description": "Native `SURF_BOOL` enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "surface_normal": {
+      "description": "Native `SURF_NORM` enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "surface_direction": {
+      "description": "Native `SURF_DIR` enum.",
+      "type": "integer",
+      "format": "int64"
+    },
     "count": {
       "description": "Native leading count.",
       "type": "integer",
       "format": "int64"
     },
+    "parameter": {
+      "description": "Native leading scalar.",
+      "type": "number",
+      "format": "double"
+    },
+    "layout": {
+      "description": "Structurally selected skin payload.",
+      "$ref": "#/$defs/SkinSurfaceLayout"
+    },
     "direction": {
       "description": "Stored direction vector.",
       "$ref": "#/$defs/Vector3"
+    },
+    "trailing_parameter": {
+      "description": "Native scalar before the formula.",
+      "type": "number",
+      "format": "double"
+    },
+    "formula": {
+      "description": "Recursive parametric law.",
+      "$ref": "#/$defs/LawFormula"
+    },
+    "parameter_curve": {
+      "description": "Trailing curve after the formula.",
+      "$ref": "#/$defs/CurveId"
     },
     "discontinuities": {
       "description": "Six ordered solved-surface discontinuity arrays.",
@@ -14336,49 +14373,12 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "format": "double"
         }
       },
-      "maxItems": 6,
-      "minItems": 6
+      "minItems": 6,
+      "maxItems": 6
     },
     "discontinuity_flag": {
       "description": "Native discontinuity tail flag.",
       "type": "boolean"
-    },
-    "formula": {
-      "description": "Recursive parametric law.",
-      "$ref": "#/$defs/LawFormula"
-    },
-    "layout": {
-      "description": "Structurally selected skin payload.",
-      "$ref": "#/$defs/SkinSurfaceLayout"
-    },
-    "parameter": {
-      "description": "Native leading scalar.",
-      "type": "number",
-      "format": "double"
-    },
-    "parameter_curve": {
-      "description": "Trailing curve after the formula.",
-      "$ref": "#/$defs/CurveId"
-    },
-    "surface_boolean": {
-      "description": "Native `SURF_BOOL` enum.",
-      "type": "integer",
-      "format": "int64"
-    },
-    "surface_direction": {
-      "description": "Native `SURF_DIR` enum.",
-      "type": "integer",
-      "format": "int64"
-    },
-    "surface_normal": {
-      "description": "Native `SURF_NORM` enum.",
-      "type": "integer",
-      "format": "int64"
-    },
-    "trailing_parameter": {
-      "description": "Native scalar before the formula.",
-      "type": "number",
-      "format": "double"
     }
   },
   "additionalProperties": false,
@@ -14413,16 +14413,16 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "type": "string",
           "const": "profiles"
         },
-        "path": {
-          "description": "Trailing path curve.",
-          "$ref": "#/$defs/CurveId"
-        },
         "profiles": {
           "description": "Ordered profile entries.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/SkinSurfaceProfile"
           }
+        },
+        "path": {
+          "description": "Trailing path curve.",
+          "$ref": "#/$defs/CurveId"
         },
         "tail": {
           "description": "Two native trailing integers.",
@@ -14431,8 +14431,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "integer",
             "format": "int64"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         }
       },
       "additionalProperties": false,
@@ -14447,26 +14447,25 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Compact curve/subdata form.",
       "type": "object",
       "properties": {
-        "curve": {
-          "description": "Primary curve.",
-          "$ref": "#/$defs/CurveId"
-        },
-        "first_tail": {
-          "description": "Integer after the subdata.",
-          "type": "integer",
-          "format": "int64"
+        "kind": {
+          "type": "string",
+          "const": "compact"
         },
         "inner_count": {
           "description": "Native compact-layout inner integer.",
           "type": "integer",
           "format": "int64"
         },
-        "kind": {
-          "type": "string",
-          "const": "compact"
+        "curve": {
+          "description": "Primary curve.",
+          "$ref": "#/$defs/CurveId"
         },
-        "second_tail": {
-          "description": "Final compact-layout integer.",
+        "subdata": {
+          "description": "Native loft subdata.",
+          "$ref": "#/$defs/LoftSubdata"
+        },
+        "first_tail": {
+          "description": "Integer after the subdata.",
           "type": "integer",
           "format": "int64"
         },
@@ -14474,9 +14473,10 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "description": "Secondary curve.",
           "$ref": "#/$defs/CurveId"
         },
-        "subdata": {
-          "description": "Native loft subdata.",
-          "$ref": "#/$defs/LoftSubdata"
+        "second_tail": {
+          "description": "Final compact-layout integer.",
+          "type": "integer",
+          "format": "int64"
         }
       },
       "additionalProperties": false,
@@ -14501,6 +14501,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "One profile entry in the expanded skin layout.",
   "type": "object",
   "properties": {
+    "type_code": {
+      "description": "Native profile type integer.",
+      "type": "integer",
+      "format": "int64"
+    },
     "curve": {
       "description": "Profile curve.",
       "$ref": "#/$defs/CurveId"
@@ -14508,11 +14513,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
     "data": {
       "description": "Native loft constraint data.",
       "$ref": "#/$defs/LoftProfileData"
-    },
-    "type_code": {
-      "description": "Native profile type integer.",
-      "type": "integer",
-      "format": "int64"
     }
   },
   "additionalProperties": false,
@@ -14534,10 +14534,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Infinite line.",
       "type": "object",
       "properties": {
-        "direction": {
-          "description": "Line direction.",
-          "$ref": "#/$defs/Vector3"
-        },
         "kind": {
           "type": "string",
           "const": "line"
@@ -14545,6 +14541,10 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "origin": {
           "description": "Line origin.",
           "$ref": "#/$defs/Point3"
+        },
+        "direction": {
+          "description": "Line direction.",
+          "$ref": "#/$defs/Vector3"
         }
       },
       "additionalProperties": false,
@@ -14558,26 +14558,26 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Full circle.",
       "type": "object",
       "properties": {
-        "axis": {
-          "description": "Frame axis direction.",
-          "$ref": "#/$defs/Vector3"
+        "kind": {
+          "type": "string",
+          "const": "circle"
         },
         "center": {
           "description": "Circle center.",
           "$ref": "#/$defs/Point3"
         },
-        "kind": {
-          "type": "string",
-          "const": "circle"
+        "axis": {
+          "description": "Frame axis direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "ref_direction": {
+          "description": "Frame reference direction, perpendicular to `axis`.",
+          "$ref": "#/$defs/Vector3"
         },
         "radius": {
           "description": "Circle radius.",
           "type": "number",
           "format": "double"
-        },
-        "ref_direction": {
-          "description": "Frame reference direction, perpendicular to `axis`.",
-          "$ref": "#/$defs/Vector3"
         }
       },
       "additionalProperties": false,
@@ -14593,17 +14593,17 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Ellipse.",
       "type": "object",
       "properties": {
-        "axis": {
-          "description": "Frame axis direction.",
-          "$ref": "#/$defs/Vector3"
+        "kind": {
+          "type": "string",
+          "const": "ellipse"
         },
         "center": {
           "description": "Ellipse center.",
           "$ref": "#/$defs/Point3"
         },
-        "kind": {
-          "type": "string",
-          "const": "ellipse"
+        "axis": {
+          "description": "Frame axis direction.",
+          "$ref": "#/$defs/Vector3"
         },
         "major_direction": {
           "description": "Major-axis direction, perpendicular to `axis`.",
@@ -14634,26 +14634,26 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Parabola in STEP conic form.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "parabola"
+        },
+        "vertex": {
+          "description": "Parabola vertex.",
+          "$ref": "#/$defs/Point3"
+        },
         "axis": {
           "description": "Frame axis direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "major_direction": {
+          "description": "Major-axis direction, perpendicular to `axis`.",
           "$ref": "#/$defs/Vector3"
         },
         "focal_distance": {
           "description": "Distance from the vertex to the focus.",
           "type": "number",
           "format": "double"
-        },
-        "kind": {
-          "type": "string",
-          "const": "parabola"
-        },
-        "major_direction": {
-          "description": "Major-axis direction, perpendicular to `axis`.",
-          "$ref": "#/$defs/Vector3"
-        },
-        "vertex": {
-          "description": "Parabola vertex.",
-          "$ref": "#/$defs/Point3"
         }
       },
       "additionalProperties": false,
@@ -14669,17 +14669,17 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Hyperbola in STEP conic form.",
       "type": "object",
       "properties": {
-        "axis": {
-          "description": "Frame axis direction.",
-          "$ref": "#/$defs/Vector3"
+        "kind": {
+          "type": "string",
+          "const": "hyperbola"
         },
         "center": {
           "description": "Hyperbola center.",
           "$ref": "#/$defs/Point3"
         },
-        "kind": {
-          "type": "string",
-          "const": "hyperbola"
+        "axis": {
+          "description": "Frame axis direction.",
+          "$ref": "#/$defs/Vector3"
         },
         "major_direction": {
           "description": "Major-axis direction, perpendicular to `axis`.",
@@ -14766,11 +14766,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Source-native polyline with an explicit chordal error bound.",
       "type": "object",
       "properties": {
-        "chordal_deflection": {
-          "description": "Maximum chordal deviation recorded by the source.",
-          "type": "number",
-          "format": "double"
-        },
         "kind": {
           "type": "string",
           "const": "polyline"
@@ -14778,6 +14773,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "samples": {
           "description": "The polyline's sample rows.",
           "$ref": "#/$defs/PolylineSamples"
+        },
+        "chordal_deflection": {
+          "description": "Maximum chordal deviation recorded by the source.",
+          "type": "number",
+          "format": "double"
         }
       },
       "additionalProperties": false,
@@ -14791,13 +14791,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Exact affine placement of an inline basis curve.",
       "type": "object",
       "properties": {
-        "basis": {
-          "description": "Unplaced basis geometry with unchanged parameterization.",
-          "$ref": "#/$defs/SolvedCurveGeometry"
-        },
         "kind": {
           "type": "string",
           "const": "transformed"
+        },
+        "basis": {
+          "description": "Unplaced basis geometry with unchanged parameterization.",
+          "$ref": "#/$defs/SolvedCurveGeometry"
         },
         "transform": {
           "description": "Affine map from basis coordinates to model coordinates.",
@@ -14847,13 +14847,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "type": "string",
           "const": "plane"
         },
-        "normal": {
-          "description": "Plane normal.",
-          "$ref": "#/$defs/Vector3"
-        },
         "origin": {
           "description": "Plane origin.",
           "$ref": "#/$defs/Point3"
+        },
+        "normal": {
+          "description": "Plane normal.",
+          "$ref": "#/$defs/Vector3"
         },
         "u_axis": {
           "description": "First in-plane axis, perpendicular to `normal`.",
@@ -14872,10 +14872,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Right circular cylinder of the given `radius` about the axis line.",
       "type": "object",
       "properties": {
-        "axis": {
-          "description": "Frame axis direction.",
-          "$ref": "#/$defs/Vector3"
-        },
         "kind": {
           "type": "string",
           "const": "cylinder"
@@ -14884,14 +14880,18 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "description": "Cylinder frame origin.",
           "$ref": "#/$defs/Point3"
         },
-        "radius": {
-          "description": "Cylinder radius.",
-          "type": "number",
-          "format": "double"
+        "axis": {
+          "description": "Frame axis direction.",
+          "$ref": "#/$defs/Vector3"
         },
         "ref_direction": {
           "description": "Frame reference direction, perpendicular to `axis`.",
           "$ref": "#/$defs/Vector3"
+        },
+        "radius": {
+          "description": "Cylinder radius.",
+          "type": "number",
+          "format": "double"
         }
       },
       "additionalProperties": false,
@@ -14907,15 +14907,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Right elliptical cone. `radius` is the major radius at `origin`;\n`ratio` is the minor-to-major radius ratio; `half_angle` is the major\nhalf-angle between the axis and the cone surface, in radians.",
       "type": "object",
       "properties": {
-        "axis": {
-          "description": "Frame axis direction.",
-          "$ref": "#/$defs/Vector3"
-        },
-        "half_angle": {
-          "description": "Half angle of the cone, in radians.",
-          "type": "number",
-          "format": "double"
-        },
         "kind": {
           "type": "string",
           "const": "cone"
@@ -14923,6 +14914,14 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "origin": {
           "description": "Cone frame origin.",
           "$ref": "#/$defs/Point3"
+        },
+        "axis": {
+          "description": "Frame axis direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "ref_direction": {
+          "description": "Frame reference direction, perpendicular to `axis`.",
+          "$ref": "#/$defs/Vector3"
         },
         "radius": {
           "description": "Cross-section radius at the origin.",
@@ -14934,9 +14933,10 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "type": "number",
           "format": "double"
         },
-        "ref_direction": {
-          "description": "Frame reference direction, perpendicular to `axis`.",
-          "$ref": "#/$defs/Vector3"
+        "half_angle": {
+          "description": "Half angle of the cone, in radians.",
+          "type": "number",
+          "format": "double"
         }
       },
       "additionalProperties": false,
@@ -14954,26 +14954,26 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Sphere.",
       "type": "object",
       "properties": {
-        "axis": {
-          "description": "Frame axis direction.",
-          "$ref": "#/$defs/Vector3"
+        "kind": {
+          "type": "string",
+          "const": "sphere"
         },
         "center": {
           "description": "Sphere center.",
           "$ref": "#/$defs/Point3"
         },
-        "kind": {
-          "type": "string",
-          "const": "sphere"
+        "axis": {
+          "description": "Frame axis direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "ref_direction": {
+          "description": "Frame reference direction, perpendicular to `axis`.",
+          "$ref": "#/$defs/Vector3"
         },
         "radius": {
           "description": "Signed sphere radius.",
           "type": "number",
           "format": "double"
-        },
-        "ref_direction": {
-          "description": "Frame reference direction, perpendicular to `axis`.",
-          "$ref": "#/$defs/Vector3"
         }
       },
       "additionalProperties": false,
@@ -14989,17 +14989,21 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Torus. `major_radius` is the distance from `center` to the tube center;\n`minor_radius` is the tube radius.",
       "type": "object",
       "properties": {
-        "axis": {
-          "description": "Frame axis direction.",
-          "$ref": "#/$defs/Vector3"
+        "kind": {
+          "type": "string",
+          "const": "torus"
         },
         "center": {
           "description": "Torus center.",
           "$ref": "#/$defs/Point3"
         },
-        "kind": {
-          "type": "string",
-          "const": "torus"
+        "axis": {
+          "description": "Frame axis direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "ref_direction": {
+          "description": "Frame reference direction, perpendicular to `axis`.",
+          "$ref": "#/$defs/Vector3"
         },
         "major_radius": {
           "description": "Distance from the center to the tube center.",
@@ -15010,10 +15014,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "description": "Signed tube radius.",
           "type": "number",
           "format": "double"
-        },
-        "ref_direction": {
-          "description": "Frame reference direction, perpendicular to `axis`.",
-          "$ref": "#/$defs/Vector3"
         }
       },
       "additionalProperties": false,
@@ -15058,13 +15058,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Exact affine placement of an inline basis surface.",
       "type": "object",
       "properties": {
-        "basis": {
-          "description": "Unplaced basis geometry with unchanged parameterization.",
-          "$ref": "#/$defs/SolvedSurfaceGeometry"
-        },
         "kind": {
           "type": "string",
           "const": "transformed"
+        },
+        "basis": {
+          "description": "Unplaced basis geometry with unchanged parameterization.",
+          "$ref": "#/$defs/SolvedSurfaceGeometry"
         },
         "transform": {
           "description": "Affine map from basis coordinates to model coordinates.",
@@ -15123,11 +15123,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
               "type": "number",
               "format": "double"
             },
-            "maxItems": 2,
-            "minItems": 2
+            "minItems": 2,
+            "maxItems": 2
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         }
       },
       "additionalProperties": false,
@@ -15140,6 +15140,10 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Two parameter intervals in a revision-gated layout, each stored as an\nordered `[lo, hi]` pair of optional bounds. For exact and t-spline\nsurfaces these are the surface's unextended (pre-extension) parameter\nranges; for loft surfaces they are wrap ranges, where a reversed pair\n(`lo > hi`) encodes an empty interval (no wrap). `None` is a false\nbound-presence flag.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "revision_ranges"
+        },
         "intervals": {
           "description": "Two parameter intervals in serialized field order.",
           "type": "array",
@@ -15152,15 +15156,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
               ],
               "format": "double"
             },
-            "maxItems": 2,
-            "minItems": 2
+            "minItems": 2,
+            "maxItems": 2
           },
-          "maxItems": 2,
-          "minItems": 2
-        },
-        "kind": {
-          "type": "string",
-          "const": "revision_ranges"
+          "minItems": 2,
+          "maxItems": 2
         }
       },
       "additionalProperties": false,
@@ -15183,9 +15183,36 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Support-first layout with inline null-carrier replacement ranges.",
       "type": "object",
       "properties": {
-        "cache": {
-          "description": "Solved-cache fit contract this layout states itself.",
-          "$ref": "#/$defs/LegacyCache"
+        "kind": {
+          "type": "string",
+          "const": "context_first"
+        },
+        "supports": {
+          "description": "Two ordered support slots.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SpringSupport"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "first_pcurve": {
+          "description": "First pcurve or its null replacement range.",
+          "$ref": "#/$defs/SpringPcurve"
+        },
+        "second_pcurve": {
+          "description": "Nullable second pcurve slot.",
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        "parameter_range": {
+          "description": "Native solved-curve parameter interval.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "minItems": 2,
+          "maxItems": 2
         },
         "discontinuities": {
           "description": "Three ordered discontinuity arrays.",
@@ -15197,43 +15224,16 @@ Each type below is given by the JSON Schema of its wire form, generated from the
               "format": "double"
             }
           },
-          "maxItems": 3,
-          "minItems": 3
+          "minItems": 3,
+          "maxItems": 3
         },
         "discontinuity_flag": {
           "description": "Native boolean following the discontinuity arrays.",
           "type": "boolean"
         },
-        "first_pcurve": {
-          "description": "First pcurve or its null replacement range.",
-          "$ref": "#/$defs/SpringPcurve"
-        },
-        "kind": {
-          "type": "string",
-          "const": "context_first"
-        },
-        "parameter_range": {
-          "description": "Native solved-curve parameter interval.",
-          "type": "array",
-          "items": {
-            "type": "number",
-            "format": "double"
-          },
-          "maxItems": 2,
-          "minItems": 2
-        },
-        "second_pcurve": {
-          "description": "Nullable second pcurve slot.",
-          "$ref": "#/$defs/PcurveGeometry"
-        },
-        "supports": {
-          "description": "Two ordered support slots.",
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/SpringSupport"
-          },
-          "maxItems": 2,
-          "minItems": 2
+        "cache": {
+          "description": "Solved-cache fit contract this layout states itself.",
+          "$ref": "#/$defs/LegacyCache"
         }
       },
       "additionalProperties": false,
@@ -15250,6 +15250,10 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Cache-first layout, which carries no inline replacement ranges or\ncontext-first discontinuity flag.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "cache_first"
+        },
         "context": {
           "description": "Shared support context following the solved cache.",
           "$ref": "#/$defs/IntcurveSupportContext"
@@ -15257,10 +15261,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "form": {
           "description": "Cache-first serializer fields.",
           "$ref": "#/$defs/CacheFirstCurveForm"
-        },
-        "kind": {
-          "type": "string",
-          "const": "cache_first"
         }
       },
       "additionalProperties": false,
@@ -15292,11 +15292,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "$ref": "#/$defs/PcurveGeometry"
         }
       },
-      "additionalProperties": false,
       "required": [
         "kind",
         "value"
-      ]
+      ],
+      "additionalProperties": false
     },
     {
       "description": "Native interval stored in place of `nullbs`.",
@@ -15312,15 +15312,15 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         }
       },
-      "additionalProperties": false,
       "required": [
         "kind",
         "value"
-      ]
+      ],
+      "additionalProperties": false
     }
   ]
 }
@@ -15344,11 +15344,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "$ref": "#/$defs/SurfaceId"
         }
       },
-      "additionalProperties": false,
       "required": [
         "kind",
         "value"
-      ]
+      ],
+      "additionalProperties": false
     },
     {
       "description": "Native U/V ranges stored in place of `null_surface`.",
@@ -15366,18 +15366,18 @@ Each type below is given by the JSON Schema of its wire form, generated from the
               "type": "number",
               "format": "double"
             },
-            "maxItems": 2,
-            "minItems": 2
+            "minItems": 2,
+            "maxItems": 2
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         }
       },
-      "additionalProperties": false,
       "required": [
         "kind",
         "value"
-      ]
+      ],
+      "additionalProperties": false
     }
   ]
 }
@@ -15423,13 +15423,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Cache-first surface-curve tail paired with its family-specific flags.",
   "type": "object",
   "properties": {
-    "flags": {
-      "description": "Flags admitted by the selected surface-curve family.",
-      "type": "boolean"
-    },
     "form": {
       "description": "Family-independent cache-first fields.",
       "$ref": "#/$defs/SurfaceCurveTail"
+    },
+    "flags": {
+      "description": "Flags admitted by the selected surface-curve family.",
+      "type": "boolean"
     }
   },
   "additionalProperties": false,
@@ -15447,13 +15447,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Cache-first surface-curve tail paired with its family-specific flags.",
   "type": "object",
   "properties": {
-    "flags": {
-      "description": "Flags admitted by the selected surface-curve family.",
-      "$ref": "#/$defs/ParametricSurfaceCurveFlags"
-    },
     "form": {
       "description": "Family-independent cache-first fields.",
       "$ref": "#/$defs/SurfaceCurveTail"
+    },
+    "flags": {
+      "description": "Flags admitted by the selected surface-curve family.",
+      "$ref": "#/$defs/ParametricSurfaceCurveFlags"
     }
   },
   "additionalProperties": false,
@@ -15474,13 +15474,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Blend edge curve whose construction details live on its blend support.",
       "type": "object",
       "properties": {
-        "context": {
-          "description": "Shared support context.",
-          "$ref": "#/$defs/IntcurveSupportContext"
-        },
         "kind": {
           "type": "string",
           "const": "blend"
+        },
+        "context": {
+          "description": "Shared support context.",
+          "$ref": "#/$defs/IntcurveSupportContext"
         },
         "tail": {
           "description": "Cache-first fields, when this is not the prefix-first layout.",
@@ -15497,13 +15497,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Curve constrained to a support surface.",
       "type": "object",
       "properties": {
-        "context": {
-          "description": "Shared support context.",
-          "$ref": "#/$defs/IntcurveSupportContext"
-        },
         "kind": {
           "type": "string",
           "const": "surface_constrained"
+        },
+        "context": {
+          "description": "Shared support context.",
+          "$ref": "#/$defs/IntcurveSupportContext"
         },
         "tail": {
           "description": "Cache-first fields, when this is not the prefix-first layout.",
@@ -15520,13 +15520,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Parametric curve on a support surface.",
       "type": "object",
       "properties": {
-        "context": {
-          "description": "Shared support context.",
-          "$ref": "#/$defs/IntcurveSupportContext"
-        },
         "kind": {
           "type": "string",
           "const": "parametric"
+        },
+        "context": {
+          "description": "Shared support context.",
+          "$ref": "#/$defs/IntcurveSupportContext"
         },
         "tail": {
           "description": "Cache-first fields with the parametric-only second flag.",
@@ -15543,13 +15543,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Skin curve on a support surface.",
       "type": "object",
       "properties": {
-        "context": {
-          "description": "Shared support context.",
-          "$ref": "#/$defs/IntcurveSupportContext"
-        },
         "kind": {
           "type": "string",
           "const": "skin"
+        },
+        "context": {
+          "description": "Shared support context.",
+          "$ref": "#/$defs/IntcurveSupportContext"
         },
         "tail": {
           "description": "Cache-first fields, when this is not the prefix-first layout.",
@@ -15573,10 +15573,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Family-independent tail fields carried by a cache-first surface curve.",
   "type": "object",
   "properties": {
-    "cache": {
-      "description": "Approximation-cache form selected by the shared context enum.",
-      "$ref": "#/$defs/RevisionCacheForm2"
-    },
     "extension": {
       "description": "Native integer following the discontinuity arrays.",
       "type": "integer",
@@ -15586,18 +15582,9 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Positive serializer-revision integer opening the cache-first layout.",
       "$ref": "#/$defs/PositiveI64"
     },
-    "solved_range": {
-      "description": "Optional solved-curve interval endpoints; absent endpoints inherit the\nsolved NURBS domain.",
-      "type": "array",
-      "items": {
-        "type": [
-          "number",
-          "null"
-        ],
-        "format": "double"
-      },
-      "maxItems": 2,
-      "minItems": 2
+    "cache": {
+      "description": "Approximation-cache form selected by the shared context enum.",
+      "$ref": "#/$defs/RevisionCacheForm2"
     },
     "support_bounds": {
       "description": "Optional U/V bound fields following each ordered support surface.",
@@ -15611,11 +15598,24 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           ],
           "format": "double"
         },
-        "maxItems": 4,
-        "minItems": 4
+        "minItems": 4,
+        "maxItems": 4
       },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "solved_range": {
+      "description": "Optional solved-curve interval endpoints; absent endpoints inherit the\nsolved NURBS domain.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "minItems": 2,
+      "maxItems": 2
     }
   },
   "additionalProperties": false,
@@ -15636,22 +15636,9 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Revision-gated `sweep_sur` form fields.",
   "type": "object",
   "properties": {
-    "cache": {
-      "description": "Approximation-cache form selected by the shared tail enum.",
-      "$ref": "#/$defs/RevisionCacheForm"
-    },
-    "path_endpoints": {
-      "description": "Optional parameter endpoints following the embedded path curve.",
-      "type": "array",
-      "items": {
-        "type": [
-          "number",
-          "null"
-        ],
-        "format": "double"
-      },
-      "maxItems": 2,
-      "minItems": 2
+    "revision": {
+      "description": "Positive serializer-revision integer following the subtype name.",
+      "$ref": "#/$defs/PositiveI64"
     },
     "primary_flag": {
       "description": "Boolean replacing the pre-revision primary enum.",
@@ -15667,12 +15654,25 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         ],
         "format": "double"
       },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
     },
-    "revision": {
-      "description": "Positive serializer-revision integer following the subtype name.",
-      "$ref": "#/$defs/PositiveI64"
+    "path_endpoints": {
+      "description": "Optional parameter endpoints following the embedded path curve.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "cache": {
+      "description": "Approximation-cache form selected by the shared tail enum.",
+      "$ref": "#/$defs/RevisionCacheForm"
     }
   },
   "additionalProperties": false,
@@ -15693,9 +15693,18 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Complete native `sweep_spl_sur` construction graph.",
   "type": "object",
   "properties": {
+    "primary_kind": {
+      "description": "Leading native sweep enum.",
+      "type": "integer",
+      "format": "int64"
+    },
     "cache": {
       "description": "Cache contract: the revision-gated form, or the legacy solved-cache\ntolerance this construction states instead.",
       "$ref": "#/$defs/CacheContract3"
+    },
+    "layout": {
+      "description": "Structurally selected sweep layout.",
+      "$ref": "#/$defs/SweepSurfaceLayout"
     },
     "discontinuities": {
       "description": "Six ordered solved-surface discontinuity arrays.",
@@ -15707,21 +15716,12 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "format": "double"
         }
       },
-      "maxItems": 6,
-      "minItems": 6
+      "minItems": 6,
+      "maxItems": 6
     },
     "discontinuity_flag": {
       "description": "Native discontinuity tail flag.",
       "type": "boolean"
-    },
-    "layout": {
-      "description": "Structurally selected sweep layout.",
-      "$ref": "#/$defs/SweepSurfaceLayout"
-    },
-    "primary_kind": {
-      "description": "Leading native sweep enum.",
-      "type": "integer",
-      "format": "int64"
     }
   },
   "additionalProperties": false,
@@ -15745,27 +15745,23 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Profile-first modern ASM sweep layout.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "profile_first"
+        },
+        "secondary_kind": {
+          "description": "Second native sweep enum.",
+          "type": "integer",
+          "format": "int64"
+        },
         "directions": {
           "description": "Five ordered frame directions.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/Vector3"
           },
-          "maxItems": 5,
-          "minItems": 5
-        },
-        "formulas": {
-          "description": "Three ordered parametric laws.",
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/LawFormula"
-          },
-          "maxItems": 3,
-          "minItems": 3
-        },
-        "kind": {
-          "type": "string",
-          "const": "profile_first"
+          "minItems": 5,
+          "maxItems": 5
         },
         "origin": {
           "description": "Native model-space frame origin.",
@@ -15778,13 +15774,17 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 4,
-          "minItems": 4
+          "minItems": 4,
+          "maxItems": 4
         },
-        "secondary_kind": {
-          "description": "Second native sweep enum.",
-          "type": "integer",
-          "format": "int64"
+        "formulas": {
+          "description": "Three ordered parametric laws.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LawFormula"
+          },
+          "minItems": 3,
+          "maxItems": 3
         }
       },
       "additionalProperties": false,
@@ -15801,23 +15801,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Explicit sweep layout whose trajectory is controlled by a formula.",
       "type": "object",
       "properties": {
-        "directions": {
-          "description": "Three ordered sweep frame directions.",
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Vector3"
-          },
-          "maxItems": 3,
-          "minItems": 3
-        },
-        "formula": {
-          "description": "Parametric trajectory formula.",
-          "$ref": "#/$defs/LawFormula"
-        },
-        "formula_flag": {
-          "description": "Native formula-side boolean.",
-          "type": "boolean"
-        },
         "kind": {
           "type": "string",
           "const": "explicit_formula"
@@ -15827,14 +15810,46 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "type": "integer",
           "format": "int64"
         },
+        "profile_range": {
+          "description": "Profile parameter interval.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "profile_frame": {
+          "description": "Optional explicit profile frame.",
+          "type": "array",
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/Point3"
+            },
+            {
+              "$ref": "#/$defs/Vector3"
+            }
+          ],
+          "minItems": 2,
+          "maxItems": 2
+        },
         "origin": {
           "description": "Sweep frame origin.",
           "$ref": "#/$defs/Point3"
         },
-        "path_parameter": {
-          "description": "Native trajectory scalar.",
-          "type": "number",
-          "format": "double"
+        "directions": {
+          "description": "Three ordered sweep frame directions.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "trajectory_flag": {
+          "description": "Native trajectory boolean.",
+          "type": "boolean"
         },
         "path_range": {
           "description": "Path parameter interval in model length units.",
@@ -15843,39 +15858,24 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
-        },
-        "profile_frame": {
-          "description": "Optional explicit profile frame.",
-          "type": "array",
-          "maxItems": 2,
           "minItems": 2,
-          "prefixItems": [
-            {
-              "$ref": "#/$defs/Point3"
-            },
-            {
-              "$ref": "#/$defs/Vector3"
-            }
-          ]
+          "maxItems": 2
         },
-        "profile_range": {
-          "description": "Profile parameter interval.",
-          "type": "array",
-          "items": {
-            "type": "number",
-            "format": "double"
-          },
-          "maxItems": 2,
-          "minItems": 2
+        "path_parameter": {
+          "description": "Native trajectory scalar.",
+          "type": "number",
+          "format": "double"
+        },
+        "formula_flag": {
+          "description": "Native formula-side boolean.",
+          "type": "boolean"
+        },
+        "formula": {
+          "description": "Parametric trajectory formula.",
+          "$ref": "#/$defs/LawFormula"
         },
         "trailing_flag": {
           "description": "Native trailing boolean.",
-          "type": "boolean"
-        },
-        "trajectory_flag": {
-          "description": "Native trajectory boolean.",
           "type": "boolean"
         }
       },
@@ -15898,58 +15898,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Explicit sweep layout controlled by an auxiliary guide curve.",
       "type": "object",
       "properties": {
-        "directions": {
-          "description": "Three ordered sweep frame directions.",
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Vector3"
-          },
-          "maxItems": 3,
-          "minItems": 3
-        },
-        "guide_curve": {
-          "description": "Auxiliary guide curve.",
-          "$ref": "#/$defs/CurveId"
-        },
-        "guide_flags": {
-          "description": "Two guide-side booleans.",
-          "type": "array",
-          "items": {
-            "type": "boolean"
-          },
-          "maxItems": 2,
-          "minItems": 2
-        },
-        "guide_modes": {
-          "description": "Two native guide integers.",
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "maxItems": 2,
-          "minItems": 2
-        },
-        "guide_parameters": {
-          "description": "Six ordered guide scalars.",
-          "type": "array",
-          "items": {
-            "type": "number",
-            "format": "double"
-          },
-          "maxItems": 6,
-          "minItems": 6
-        },
-        "guide_range": {
-          "description": "Guide parameter interval.",
-          "type": "array",
-          "items": {
-            "type": "number",
-            "format": "double"
-          },
-          "maxItems": 2,
-          "minItems": 2
-        },
         "kind": {
           "type": "string",
           "const": "explicit_guide"
@@ -15959,14 +15907,46 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "type": "integer",
           "format": "int64"
         },
+        "profile_range": {
+          "description": "Profile parameter interval.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "profile_frame": {
+          "description": "Optional explicit profile frame.",
+          "type": "array",
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/Point3"
+            },
+            {
+              "$ref": "#/$defs/Vector3"
+            }
+          ],
+          "minItems": 2,
+          "maxItems": 2
+        },
         "origin": {
           "description": "Sweep frame origin.",
           "$ref": "#/$defs/Point3"
         },
-        "path_parameter": {
-          "description": "Native trajectory scalar.",
-          "type": "number",
-          "format": "double"
+        "directions": {
+          "description": "Three ordered sweep frame directions.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "trajectory_flag": {
+          "description": "Native trajectory boolean.",
+          "type": "boolean"
         },
         "path_range": {
           "description": "Path parameter interval in model length units.",
@@ -15975,32 +15955,56 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
-        },
-        "profile_frame": {
-          "description": "Optional explicit profile frame.",
-          "type": "array",
-          "maxItems": 2,
           "minItems": 2,
-          "prefixItems": [
-            {
-              "$ref": "#/$defs/Point3"
-            },
-            {
-              "$ref": "#/$defs/Vector3"
-            }
-          ]
+          "maxItems": 2
         },
-        "profile_range": {
-          "description": "Profile parameter interval.",
+        "path_parameter": {
+          "description": "Native trajectory scalar.",
+          "type": "number",
+          "format": "double"
+        },
+        "guide_flags": {
+          "description": "Two guide-side booleans.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "guide_curve": {
+          "description": "Auxiliary guide curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "guide_range": {
+          "description": "Guide parameter interval.",
           "type": "array",
           "items": {
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "guide_modes": {
+          "description": "Two native guide integers.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "guide_parameters": {
+          "description": "Six ordered guide scalars.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "minItems": 6,
+          "maxItems": 6
         },
         "trailing_flags": {
           "description": "Three trailing guide booleans.",
@@ -16008,12 +16012,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "items": {
             "type": "boolean"
           },
-          "maxItems": 3,
-          "minItems": 3
-        },
-        "trajectory_flag": {
-          "description": "Native trajectory boolean.",
-          "type": "boolean"
+          "minItems": 3,
+          "maxItems": 3
         }
       },
       "additionalProperties": false,
@@ -16038,64 +16038,14 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Explicit sweep layout controlled by a support surface.",
       "type": "object",
       "properties": {
-        "auxiliary_curve": {
-          "description": "Optional auxiliary curve.",
-          "$ref": "#/$defs/CurveId"
-        },
-        "directions": {
-          "description": "Three ordered sweep frame directions.",
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Vector3"
-          },
-          "maxItems": 3,
-          "minItems": 3
-        },
         "kind": {
           "type": "string",
           "const": "explicit_surface"
-        },
-        "legacy_flag": {
-          "description": "Legacy pre-219 trailing boolean when present.",
-          "type": "boolean"
         },
         "mode": {
           "description": "Native explicit-layout integer.",
           "type": "integer",
           "format": "int64"
-        },
-        "origin": {
-          "description": "Sweep frame origin.",
-          "$ref": "#/$defs/Point3"
-        },
-        "path_parameter": {
-          "description": "Native trajectory scalar.",
-          "type": "number",
-          "format": "double"
-        },
-        "path_range": {
-          "description": "Path parameter interval in model length units.",
-          "type": "array",
-          "items": {
-            "type": "number",
-            "format": "double"
-          },
-          "maxItems": 2,
-          "minItems": 2
-        },
-        "profile_frame": {
-          "description": "Optional explicit profile frame.",
-          "type": "array",
-          "maxItems": 2,
-          "minItems": 2,
-          "prefixItems": [
-            {
-              "$ref": "#/$defs/Point3"
-            },
-            {
-              "$ref": "#/$defs/Vector3"
-            }
-          ]
         },
         "profile_range": {
           "description": "Profile parameter interval.",
@@ -16104,24 +16054,74 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "profile_frame": {
+          "description": "Optional explicit profile frame.",
+          "type": "array",
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/Point3"
+            },
+            {
+              "$ref": "#/$defs/Vector3"
+            }
+          ],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "origin": {
+          "description": "Sweep frame origin.",
+          "$ref": "#/$defs/Point3"
+        },
+        "directions": {
+          "description": "Three ordered sweep frame directions.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "trajectory_flag": {
+          "description": "Native trajectory boolean.",
+          "type": "boolean"
+        },
+        "path_range": {
+          "description": "Path parameter interval in model length units.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "path_parameter": {
+          "description": "Native trajectory scalar.",
+          "type": "number",
+          "format": "double"
         },
         "singularity": {
           "description": "Native singularity enum.",
           "type": "integer",
           "format": "int64"
         },
-        "support_flag": {
-          "description": "Native support-side boolean.",
-          "type": "boolean"
-        },
         "support_surface": {
           "description": "Support surface controlling the sweep.",
           "$ref": "#/$defs/SurfaceId"
         },
-        "trajectory_flag": {
-          "description": "Native trajectory boolean.",
+        "auxiliary_curve": {
+          "description": "Optional auxiliary curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "support_flag": {
+          "description": "Native support-side boolean.",
+          "type": "boolean"
+        },
+        "legacy_flag": {
+          "description": "Legacy pre-219 trailing boolean when present.",
           "type": "boolean"
         }
       },
@@ -16144,14 +16144,51 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Explicit-prefix sweep layout controlled by recursive laws.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "law_driven"
+        },
+        "mode": {
+          "description": "Native explicit-layout integer.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "profile_range": {
+          "description": "Profile parameter interval.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "profile_frame": {
+          "description": "Optional explicit profile frame.",
+          "type": "array",
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/Point3"
+            },
+            {
+              "$ref": "#/$defs/Vector3"
+            }
+          ],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "origin": {
+          "description": "Sweep frame origin.",
+          "$ref": "#/$defs/Point3"
+        },
         "directions": {
           "description": "Three ordered sweep frame directions.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/Vector3"
           },
-          "maxItems": 3,
-          "minItems": 3
+          "minItems": 3,
+          "maxItems": 3
         },
         "first_law": {
           "description": "Leading recursive sweep law.",
@@ -16169,48 +16206,21 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
-        },
-        "formula": {
-          "description": "Parametric trajectory formula.",
-          "$ref": "#/$defs/LawFormula"
-        },
-        "formula_mode": {
-          "description": "Native integer before the formula.",
-          "type": "integer",
-          "format": "int64"
-        },
-        "kind": {
-          "type": "string",
-          "const": "law_driven"
+          "minItems": 2,
+          "maxItems": 2
         },
         "law_direction": {
           "description": "Native law direction.",
           "$ref": "#/$defs/Vector3"
-        },
-        "mode": {
-          "description": "Native explicit-layout integer.",
-          "type": "integer",
-          "format": "int64"
-        },
-        "origin": {
-          "description": "Sweep frame origin.",
-          "$ref": "#/$defs/Point3"
-        },
-        "path_flag": {
-          "description": "Native path boolean.",
-          "type": "boolean"
         },
         "path_mode": {
           "description": "Native path integer.",
           "type": "integer",
           "format": "int64"
         },
-        "path_parameter": {
-          "description": "Native path scalar.",
-          "type": "number",
-          "format": "double"
+        "path_flag": {
+          "description": "Native path boolean.",
+          "type": "boolean"
         },
         "path_range": {
           "description": "Path parameter interval.",
@@ -16219,40 +16229,30 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
-        },
-        "profile_frame": {
-          "description": "Optional explicit profile frame.",
-          "type": "array",
-          "maxItems": 2,
           "minItems": 2,
-          "prefixItems": [
-            {
-              "$ref": "#/$defs/Point3"
-            },
-            {
-              "$ref": "#/$defs/Vector3"
-            }
-          ]
+          "maxItems": 2
         },
-        "profile_range": {
-          "description": "Profile parameter interval.",
-          "type": "array",
-          "items": {
-            "type": "number",
-            "format": "double"
-          },
-          "maxItems": 2,
-          "minItems": 2
+        "path_parameter": {
+          "description": "Native path scalar.",
+          "type": "number",
+          "format": "double"
+        },
+        "second_law_flag": {
+          "description": "Native second-law boolean.",
+          "type": "boolean"
         },
         "second_law": {
           "description": "Trailing recursive sweep law.",
           "$ref": "#/$defs/LawExpression"
         },
-        "second_law_flag": {
-          "description": "Native second-law boolean.",
-          "type": "boolean"
+        "formula_mode": {
+          "description": "Native integer before the formula.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "formula": {
+          "description": "Parametric trajectory formula.",
+          "$ref": "#/$defs/LawFormula"
         },
         "trailing_flag": {
           "description": "Native trailing boolean.",
@@ -16324,13 +16324,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Resolved reference to an earlier subtype-table entry.",
       "type": "object",
       "properties": {
-        "index": {
-          "description": "Native subtype-table index.",
-          "$ref": "#/$defs/SubtypeTableIndex"
-        },
         "kind": {
           "type": "string",
           "const": "reference"
+        },
+        "index": {
+          "description": "Native subtype-table index.",
+          "$ref": "#/$defs/SubtypeTableIndex"
         },
         "resolved": {
           "description": "Resolved shared program.",
@@ -16355,9 +16355,34 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Complete native `t_spl_sur` wrapper.",
   "type": "object",
   "properties": {
-    "cache": {
-      "description": "Cache contract: the revision-gated form, or the legacy solved-cache\ntolerance this construction states instead. The revision layout stores\nthe shared tail first, then four optional parameter values\n(`support_bounds`), the type code as an enum, the nested subtransform\nscope, and the trailing integer.",
-      "$ref": "#/$defs/CacheContract"
+    "parameter_ranges": {
+      "description": "Ordered U and V native parameter intervals.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        },
+        "minItems": 2,
+        "maxItems": 2
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "type_code": {
+      "description": "Native T-spline type integer.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "subtransform": {
+      "description": "Inline or referenced shared subtransform object.",
+      "$ref": "#/$defs/TSplineSubtransform"
+    },
+    "trailing_value": {
+      "description": "Native trailing integer.",
+      "type": "integer",
+      "format": "int64"
     },
     "discontinuities": {
       "description": "Six ordered solved-surface discontinuity arrays.",
@@ -16369,41 +16394,16 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "format": "double"
         }
       },
-      "maxItems": 6,
-      "minItems": 6
+      "minItems": 6,
+      "maxItems": 6
     },
     "discontinuity_flag": {
       "description": "Native discontinuity tail flag.",
       "type": "boolean"
     },
-    "parameter_ranges": {
-      "description": "Ordered U and V native parameter intervals.",
-      "type": "array",
-      "items": {
-        "type": "array",
-        "items": {
-          "type": "number",
-          "format": "double"
-        },
-        "maxItems": 2,
-        "minItems": 2
-      },
-      "maxItems": 2,
-      "minItems": 2
-    },
-    "subtransform": {
-      "description": "Inline or referenced shared subtransform object.",
-      "$ref": "#/$defs/TSplineSubtransform"
-    },
-    "trailing_value": {
-      "description": "Native trailing integer.",
-      "type": "integer",
-      "format": "int64"
-    },
-    "type_code": {
-      "description": "Native T-spline type integer.",
-      "type": "integer",
-      "format": "int64"
+    "cache": {
+      "description": "Cache contract: the revision-gated form, or the legacy solved-cache\ntolerance this construction states instead. The revision layout stores\nthe shared tail first, then four optional parameter values\n(`support_bounds`), the type code as an enum, the nested subtransform\nscope, and the trailing integer.",
+      "$ref": "#/$defs/CacheContract"
     }
   },
   "additionalProperties": false,
@@ -16462,13 +16462,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Edge taper with a model-space draft vector.",
       "type": "object",
       "properties": {
-        "draft": {
-          "description": "Native draft vector.",
-          "$ref": "#/$defs/Vector3"
-        },
         "kind": {
           "type": "string",
           "const": "edge"
+        },
+        "draft": {
+          "description": "Native draft vector.",
+          "$ref": "#/$defs/Vector3"
         }
       },
       "additionalProperties": false,
@@ -16481,21 +16481,21 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Shadow taper with a pre-factored draft angle.",
       "type": "object",
       "properties": {
-        "cosine": {
-          "description": "Stored draft-angle cosine.",
-          "type": "number",
-          "format": "double"
+        "kind": {
+          "type": "string",
+          "const": "shadow"
         },
         "draft": {
           "description": "Native draft vector.",
           "$ref": "#/$defs/Vector3"
         },
-        "kind": {
-          "type": "string",
-          "const": "shadow"
-        },
         "sine": {
           "description": "Stored draft-angle sine.",
+          "type": "number",
+          "format": "double"
+        },
+        "cosine": {
+          "description": "Stored draft-angle cosine.",
           "type": "number",
           "format": "double"
         }
@@ -16512,26 +16512,26 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Ruled taper with a pre-factored angle and factor.",
       "type": "object",
       "properties": {
-        "cosine": {
-          "description": "Stored draft-angle cosine.",
-          "type": "number",
-          "format": "double"
+        "kind": {
+          "type": "string",
+          "const": "ruled"
         },
         "draft": {
           "description": "Native draft vector.",
           "$ref": "#/$defs/Vector3"
         },
-        "factor": {
-          "description": "Native ruled-taper factor.",
+        "sine": {
+          "description": "Stored draft-angle sine.",
           "type": "number",
           "format": "double"
         },
-        "kind": {
-          "type": "string",
-          "const": "ruled"
+        "cosine": {
+          "description": "Stored draft-angle cosine.",
+          "type": "number",
+          "format": "double"
         },
-        "sine": {
-          "description": "Stored draft-angle sine.",
+        "factor": {
+          "description": "Native ruled-taper factor.",
           "type": "number",
           "format": "double"
         }
@@ -16549,21 +16549,21 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Swept taper with a pre-factored draft angle.",
       "type": "object",
       "properties": {
-        "cosine": {
-          "description": "Stored draft-angle cosine.",
-          "type": "number",
-          "format": "double"
+        "kind": {
+          "type": "string",
+          "const": "swept"
         },
         "draft": {
           "description": "Native draft vector.",
           "$ref": "#/$defs/Vector3"
         },
-        "kind": {
-          "type": "string",
-          "const": "swept"
-        },
         "sine": {
           "description": "Stored draft-angle sine.",
+          "type": "number",
+          "format": "double"
+        },
+        "cosine": {
+          "description": "Stored draft-angle cosine.",
           "type": "number",
           "format": "double"
         }
@@ -16587,23 +16587,23 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Finite endpoint witnesses and distinct supports of a tolerant intersection.",
   "type": "object",
   "properties": {
-    "endpoints": {
-      "description": "Model-space endpoint witnesses.",
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/Point3"
-      },
-      "maxItems": 2,
-      "minItems": 2
-    },
     "supports": {
       "description": "Distinct support surfaces of the intersection.",
       "type": "array",
       "items": {
         "$ref": "#/$defs/SurfaceId"
       },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "endpoints": {
+      "description": "Model-space endpoint witnesses.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Point3"
+      },
+      "minItems": 2,
+      "maxItems": 2
     },
     "tolerance": {
       "description": "Finite non-negative intersection tolerance.",
@@ -16627,6 +16627,15 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Complete neutral parameterization of one topology-bounded intersection.",
   "type": "object",
   "properties": {
+    "pcurves": {
+      "description": "Coincident support charts in support order.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PcurveGeometry"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
     "parameter_range": {
       "description": "Common finite solved-curve interval.",
       "type": "array",
@@ -16634,17 +16643,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "type": "number",
         "format": "double"
       },
-      "maxItems": 2,
-      "minItems": 2
-    },
-    "pcurves": {
-      "description": "Coincident support charts in support order.",
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/PcurveGeometry"
-      },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
     }
   },
   "additionalProperties": false,
@@ -16696,22 +16696,22 @@ Each type below is given by the JSON Schema of its wire form, generated from the
     {
       "description": "Native selector `2`.",
       "type": "string",
-      "const": "Selector2"
+      "const": "selector2"
     },
     {
       "description": "Native selector `4`.",
       "type": "string",
-      "const": "Selector4"
+      "const": "selector4"
     },
     {
       "description": "Native selector `5`.",
       "type": "string",
-      "const": "Selector5"
+      "const": "selector5"
     },
     {
       "description": "Native selector `6`.",
       "type": "string",
-      "const": "Selector6"
+      "const": "selector6"
     }
   ]
 }
@@ -16727,10 +16727,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "A nonzero approximation-current flag with an active fit contract.",
       "type": "object",
       "properties": {
-        "fit_tolerance": {
-          "description": "Fit tolerance in document length units.",
-          "$ref": "#/$defs/FitTolerance"
-        },
         "kind": {
           "type": "string",
           "const": "current"
@@ -16742,6 +16738,10 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "not": {
             "const": 0
           }
+        },
+        "fit_tolerance": {
+          "description": "Fit tolerance in document length units.",
+          "$ref": "#/$defs/FitTolerance"
         }
       },
       "additionalProperties": false,
@@ -16773,14 +16773,14 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "type": "string",
           "const": "parameterization"
         },
-        "parameterization": {
-          "description": "Surface parameterization.",
-          "$ref": "#/$defs/RevisionSurfaceParameterization"
-        },
         "shape_prefix": {
           "description": "Native approximation-current flag, independent of the parameterization.",
           "type": "integer",
           "format": "int64"
+        },
+        "parameterization": {
+          "description": "Surface parameterization.",
+          "$ref": "#/$defs/RevisionSurfaceParameterization"
         }
       },
       "additionalProperties": false,
@@ -16801,92 +16801,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Complete native variable-radius blend construction graph.",
   "type": "object",
   "properties": {
-    "cache": {
-      "description": "Approximation-cache form selected by the shared tail enum.",
-      "$ref": "#/$defs/VariableBlendCache"
-    },
-    "convexity": {
-      "description": "Blend convexity.",
-      "$ref": "#/$defs/VariableBlendConvexity"
-    },
-    "cross_section": {
-      "description": "Cross-section clause following the complete radius-law sequence.\nAbsence denotes an elided default circular section; an explicit\ncircular clause remains distinct.",
-      "$ref": "#/$defs/VariableBlendCrossSection"
-    },
-    "discontinuities": {
-      "description": "Six ordered ASM discontinuity arrays closing the shared tail.",
-      "type": "array",
-      "items": {
-        "type": "array",
-        "items": {
-          "type": "number",
-          "format": "double"
-        }
-      },
-      "maxItems": 6,
-      "minItems": 6
-    },
-    "offsets": {
-      "description": "Two signed support offsets in document length units.",
-      "type": "array",
-      "items": {
-        "type": "number",
-        "format": "double"
-      },
-      "maxItems": 2,
-      "minItems": 2
-    },
-    "post_curve": {
-      "description": "Native post-shape BS3 curve, absent for `nullbs`.",
-      "$ref": "#/$defs/CurveId"
-    },
-    "post_pcurve": {
-      "description": "Native post-shape BS2 pcurve, absent for `nullbs`.",
-      "$ref": "#/$defs/PcurveGeometry"
-    },
-    "post_range": {
-      "description": "Native optional post-shape interval endpoints.",
-      "type": "array",
-      "items": {
-        "type": [
-          "number",
-          "null"
-        ],
-        "format": "double"
-      },
-      "maxItems": 2,
-      "minItems": 2
-    },
-    "radii": {
-      "description": "Structurally selected radius-control payloads.",
-      "$ref": "#/$defs/VariableBlendRadii"
-    },
-    "render_mode": {
-      "description": "Solved-surface representation.",
-      "$ref": "#/$defs/VariableBlendRenderMode"
+    "subtype": {
+      "description": "Native surface subtype selecting the variable-blend behavior class.",
+      "$ref": "#/$defs/VariableBlendSurfaceSubtype"
     },
     "revision": {
       "description": "Positive serializer-revision integer following the subtype name.",
       "$ref": "#/$defs/PositiveI64"
-    },
-    "secondary_curve": {
-      "description": "Secondary curve and its bounds, absent for `null_curve`.",
-      "$ref": "#/$defs/RollingBallSupportCurve"
-    },
-    "shape_length": {
-      "description": "Achieved fit tolerance for the surface cache, in document units.",
-      "type": "number",
-      "format": "double"
-    },
-    "shape_parameter": {
-      "description": "Requested fit tolerance for the surface cache.",
-      "type": "number",
-      "format": "double"
-    },
-    "shape_tail": {
-      "description": "Native integer immediately before the shared tail's enum.",
-      "type": "integer",
-      "format": "int64"
     },
     "sides": {
       "description": "Two ordered support-side graphs in the rolling-ball side layout.",
@@ -16894,8 +16815,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "items": {
         "$ref": "#/$defs/RollingBallSide"
       },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
     },
     "slice": {
       "description": "Stored slice curve.",
@@ -16911,26 +16832,26 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         ],
         "format": "double"
       },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
     },
-    "subtype": {
-      "description": "Native surface subtype selecting the variable-blend behavior class.",
-      "$ref": "#/$defs/VariableBlendSurfaceSubtype"
-    },
-    "tail_extensions": {
-      "description": "Three ASM integers following the tail Boolean.",
+    "offsets": {
+      "description": "Two signed support offsets in document length units.",
       "type": "array",
       "items": {
-        "type": "integer",
-        "format": "int64"
+        "type": "number",
+        "format": "double"
       },
-      "maxItems": 3,
-      "minItems": 3
+      "minItems": 2,
+      "maxItems": 2
     },
-    "tail_flag": {
-      "description": "Native Boolean following the discontinuity arrays.",
-      "type": "boolean"
+    "radii": {
+      "description": "Structurally selected radius-control payloads.",
+      "$ref": "#/$defs/VariableBlendRadii"
+    },
+    "cross_section": {
+      "description": "Cross-section clause following the complete radius-law sequence.\nAbsence denotes an elided default circular section; an explicit\ncircular clause remains distinct.",
+      "$ref": "#/$defs/VariableBlendCrossSection"
     },
     "u_range": {
       "description": "Support-side parameter interval `(T0, T1)`; both bounds present in\nevery instance.",
@@ -16939,13 +16860,92 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "type": "number",
         "format": "double"
       },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
     },
     "v_lower": {
       "description": "Second interval: a lower bound with an unbounded-above marker,\nencoded as `(T lo, F)` and decoding to `[Some(lo), None]`. The `F`\nupper-bound marker is an interval bound, not a standalone Boolean.",
       "type": "number",
       "format": "double"
+    },
+    "shape_parameter": {
+      "description": "Requested fit tolerance for the surface cache.",
+      "type": "number",
+      "format": "double"
+    },
+    "shape_length": {
+      "description": "Achieved fit tolerance for the surface cache, in document units.",
+      "type": "number",
+      "format": "double"
+    },
+    "shape_tail": {
+      "description": "Native integer immediately before the shared tail's enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "cache": {
+      "description": "Approximation-cache form selected by the shared tail enum.",
+      "$ref": "#/$defs/VariableBlendCache"
+    },
+    "discontinuities": {
+      "description": "Six ordered ASM discontinuity arrays closing the shared tail.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "minItems": 6,
+      "maxItems": 6
+    },
+    "tail_flag": {
+      "description": "Native Boolean following the discontinuity arrays.",
+      "type": "boolean"
+    },
+    "tail_extensions": {
+      "description": "Three ASM integers following the tail Boolean.",
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "format": "int64"
+      },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "secondary_curve": {
+      "description": "Secondary curve and its bounds, absent for `null_curve`.",
+      "$ref": "#/$defs/RollingBallSupportCurve"
+    },
+    "convexity": {
+      "description": "Blend convexity.",
+      "$ref": "#/$defs/VariableBlendConvexity"
+    },
+    "render_mode": {
+      "description": "Solved-surface representation.",
+      "$ref": "#/$defs/VariableBlendRenderMode"
+    },
+    "post_range": {
+      "description": "Native optional post-shape interval endpoints.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "post_curve": {
+      "description": "Native post-shape BS3 curve, absent for `nullbs`.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "post_pcurve": {
+      "description": "Native post-shape BS2 pcurve, absent for `nullbs`.",
+      "$ref": "#/$defs/PcurveGeometry"
     }
   },
   "additionalProperties": false,
@@ -17027,8 +17027,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         }
       },
       "additionalProperties": false,
@@ -17070,8 +17070,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         }
       },
       "additionalProperties": false,
@@ -17110,14 +17110,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "One interpolation control point in a variable blend-value law.",
   "type": "object",
   "properties": {
-    "location": {
-      "description": "Model-space control location.",
-      "$ref": "#/$defs/Point3"
-    },
-    "normal": {
-      "description": "Control normal.",
-      "$ref": "#/$defs/Vector3"
-    },
     "parameter": {
       "description": "Law parameter.",
       "type": "number",
@@ -17138,8 +17130,16 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         ],
         "format": "double"
       },
-      "maxItems": 2,
-      "minItems": 2
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "location": {
+      "description": "Model-space control location.",
+      "$ref": "#/$defs/Point3"
+    },
+    "normal": {
+      "description": "Control normal.",
+      "$ref": "#/$defs/Vector3"
     }
   },
   "additionalProperties": false,
@@ -17182,13 +17182,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Each support side has an independent radius law.",
       "type": "object",
       "properties": {
-        "first": {
-          "description": "First support-side radius law.",
-          "$ref": "#/$defs/VariableBlendValue"
-        },
         "kind": {
           "type": "string",
           "const": "two"
+        },
+        "first": {
+          "description": "First support-side radius law.",
+          "$ref": "#/$defs/VariableBlendValue"
         },
         "second": {
           "description": "Second support-side radius law.",
@@ -17315,11 +17315,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "format": "double"
         }
       },
-      "additionalProperties": false,
       "required": [
         "kind",
         "value"
-      ]
+      ],
+      "additionalProperties": false
     },
     {
       "description": "Native string token.",
@@ -17333,11 +17333,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "type": "string"
         }
       },
-      "additionalProperties": false,
       "required": [
         "kind",
         "value"
-      ]
+      ],
+      "additionalProperties": false
     }
   ]
 }
@@ -17350,14 +17350,14 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Complete recursive native `getBlendValues` payload.",
   "type": "object",
   "properties": {
+    "modern_flag": {
+      "description": "Native Boolean following the calibrated enum.",
+      "type": "boolean"
+    },
     "calibrated": {
       "description": "Native calibrated enum.",
       "type": "integer",
       "format": "int64"
-    },
-    "modern_flag": {
-      "description": "Native Boolean following the calibrated enum.",
-      "type": "boolean"
     },
     "payload": {
       "description": "Type-specific payload with its native sub-discriminator.",
@@ -17383,14 +17383,14 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Law-domain parameter range and two endpoint radii.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "two_ends"
+        },
         "discriminator": {
           "description": "Native sub-discriminator preceding the calibrated enum.",
           "type": "integer",
           "format": "int64"
-        },
-        "kind": {
-          "type": "string",
-          "const": "two_ends"
         },
         "parameters": {
           "description": "Law-domain parameter range (lower, upper).",
@@ -17399,8 +17399,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         },
         "radii": {
           "description": "Endpoint radii in document length units.",
@@ -17409,8 +17409,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         }
       },
       "additionalProperties": false,
@@ -17425,14 +17425,14 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Fixed-width branch: the parameter-range bounds and the chamfer width\nscalar, stored unscaled.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "fixed_width"
+        },
         "discriminator": {
           "description": "Native sub-discriminator preceding the calibrated enum.",
           "type": "integer",
           "format": "int64"
-        },
-        "kind": {
-          "type": "string",
-          "const": "fixed_width"
         },
         "parameters": {
           "description": "Parameter-range lower and upper bounds.",
@@ -17441,8 +17441,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         },
         "width": {
           "description": "Chamfer width.",
@@ -17462,23 +17462,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Edge-offset branch.",
       "type": "object",
       "properties": {
-        "discriminator": {
-          "description": "Native sub-discriminator preceding the calibrated enum.",
-          "$ref": "#/$defs/EdgeOffsetDiscriminator"
-        },
         "kind": {
           "type": "string",
           "const": "edge_offset"
         },
-        "lengths": {
-          "description": "Ordered length payload in document units.",
-          "type": "array",
-          "items": {
-            "type": "number",
-            "format": "double"
-          },
-          "maxItems": 1,
-          "minItems": 1
+        "discriminator": {
+          "description": "Native sub-discriminator preceding the calibrated enum.",
+          "$ref": "#/$defs/EdgeOffsetDiscriminator"
         },
         "scalars": {
           "description": "Ordered native scalar payload.",
@@ -17487,8 +17477,18 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "lengths": {
+          "description": "Ordered length payload in document units.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "minItems": 1,
+          "maxItems": 1
         }
       },
       "additionalProperties": false,
@@ -17503,18 +17503,14 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Functional radius law carried by a BS2 pcurve.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "functional"
+        },
         "discriminator": {
           "description": "Native sub-discriminator preceding the calibrated enum.",
           "type": "integer",
           "format": "int64"
-        },
-        "function": {
-          "description": "Scalar function whose first coordinate is radius in document units.",
-          "$ref": "#/$defs/PcurveGeometry"
-        },
-        "kind": {
-          "type": "string",
-          "const": "functional"
         },
         "parameter": {
           "description": "Leading scalar.",
@@ -17525,6 +17521,10 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "description": "Leading length in document units.",
           "type": "number",
           "format": "double"
+        },
+        "function": {
+          "description": "Scalar function whose first coordinate is radius in document units.",
+          "$ref": "#/$defs/PcurveGeometry"
         },
         "terminal": {
           "description": "Numeric or symbolic terminal value.",
@@ -17545,23 +17545,14 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Constant law followed by a recursive chamfer value.",
       "type": "object",
       "properties": {
-        "chamfer_type": {
-          "description": "Native chamfer-type enum.",
-          "type": "integer",
-          "format": "int64"
+        "kind": {
+          "type": "string",
+          "const": "constant"
         },
         "discriminator": {
           "description": "Native sub-discriminator preceding the calibrated enum.",
           "type": "integer",
           "format": "int64"
-        },
-        "kind": {
-          "type": "string",
-          "const": "constant"
-        },
-        "nested": {
-          "description": "Recursively nested blend value.",
-          "$ref": "#/$defs/VariableBlendValue"
         },
         "parameters": {
           "description": "Ordered native scalars.",
@@ -17570,8 +17561,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         },
         "radius": {
           "description": "Radius in document length units.",
@@ -17582,6 +17573,15 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "description": "Native variable-chamfer enum.",
           "type": "integer",
           "format": "int64"
+        },
+        "chamfer_type": {
+          "description": "Native chamfer-type enum.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "nested": {
+          "description": "Recursively nested blend value.",
+          "$ref": "#/$defs/VariableBlendValue"
         }
       },
       "additionalProperties": false,
@@ -17599,10 +17599,28 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Interpolated radius law.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "interpolated"
+        },
         "discriminator": {
           "description": "Native sub-discriminator preceding the calibrated enum.",
           "type": "integer",
           "format": "int64"
+        },
+        "parameter": {
+          "description": "Leading scalar.",
+          "type": "number",
+          "format": "double"
+        },
+        "radius": {
+          "description": "Leading radius in document length units.",
+          "type": "number",
+          "format": "double"
+        },
+        "function": {
+          "description": "Scalar function whose first coordinate is radius in document units.",
+          "$ref": "#/$defs/PcurveGeometry"
         },
         "enum_count": {
           "description": "Native extension enum, stored ahead of the radius-point count. It\ngates nothing; the payload ends at the last radius point.",
@@ -17613,30 +17631,12 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "description": "Whether the extension enum is stored as a `0x15` enum token\n(revision-gated streams) rather than a `0x04` integer.",
           "type": "boolean"
         },
-        "function": {
-          "description": "Scalar function whose first coordinate is radius in document units.",
-          "$ref": "#/$defs/PcurveGeometry"
-        },
-        "kind": {
-          "type": "string",
-          "const": "interpolated"
-        },
-        "parameter": {
-          "description": "Leading scalar.",
-          "type": "number",
-          "format": "double"
-        },
         "points": {
           "description": "Counted radius-point array: each control carries a parameter,\nradius, two derivative scalars, a position, and a vector.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/VariableBlendInterpolationPoint"
           }
-        },
-        "radius": {
-          "description": "Leading radius in document length units.",
-          "type": "number",
-          "format": "double"
         }
       },
       "additionalProperties": false,
@@ -17694,13 +17694,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Codes attached to the two native vector-offset roles.",
   "type": "object",
   "properties": {
-    "offset": {
-      "description": "Code of the offset role.",
+    "source": {
+      "description": "Code of the source role.",
       "type": "integer",
       "format": "int64"
     },
-    "source": {
-      "description": "Code of the source role.",
+    "offset": {
+      "description": "Code of the offset role.",
       "type": "integer",
       "format": "int64"
     }
@@ -17724,15 +17724,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Native cross flag. The wire form is a logical, so the value is the\ntag itself and no payload follows.",
       "type": "boolean"
     },
-    "fullness": {
-      "description": "Native fullness scalar.",
-      "type": "number",
-      "format": "double"
-    },
-    "geometry": {
-      "description": "Structurally selected boundary geometry.",
-      "$ref": "#/$defs/VertexBlendBoundaryGeometry"
-    },
     "magic": {
       "description": "Native magic direction with finite components, stored as read. It is a\ndirection, never a length, so it carries no unit scale.",
       "$ref": "#/$defs/Vector3"
@@ -17744,6 +17735,15 @@ Each type below is given by the JSON Schema of its wire form, generated from the
     "v_smoothing": {
       "description": "Native V-smoothing flag, a logical on the wire.",
       "type": "boolean"
+    },
+    "fullness": {
+      "description": "Native fullness scalar.",
+      "type": "number",
+      "format": "double"
+    },
+    "geometry": {
+      "description": "Structurally selected boundary geometry.",
+      "$ref": "#/$defs/VertexBlendBoundaryGeometry"
     }
   },
   "additionalProperties": false,
@@ -17768,6 +17768,10 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Curve boundary with a circle/ellipse/unknown twist form.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "circle"
+        },
         "curve": {
           "description": "Boundary curve.",
           "$ref": "#/$defs/CurveId"
@@ -17782,12 +17786,12 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             ],
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         },
-        "kind": {
-          "type": "string",
-          "const": "circle"
+        "twists": {
+          "description": "Twist payload. Pre-revision layouts store model-space locations;\nthe revision-gated layout stores unscaled twist vectors.",
+          "$ref": "#/$defs/VertexBlendTwists"
         },
         "parameters": {
           "description": "Two ordered curve parameters.",
@@ -17796,16 +17800,12 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         },
         "sense": {
           "description": "Native sense flag, a logical on the wire.",
           "type": "boolean"
-        },
-        "twists": {
-          "description": "Twist payload. Pre-revision layouts store model-space locations;\nthe revision-gated layout stores unscaled twist vectors.",
-          "$ref": "#/$defs/VertexBlendTwists"
         }
       },
       "additionalProperties": false,
@@ -17836,8 +17836,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "items": {
             "$ref": "#/$defs/Vector3"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         }
       },
       "additionalProperties": false,
@@ -17851,21 +17851,13 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Surface pcurve boundary.",
       "type": "object",
       "properties": {
-        "fit_tolerance": {
-          "description": "Parameter-space fit tolerance.",
-          "$ref": "#/$defs/FitTolerance"
-        },
         "kind": {
           "type": "string",
           "const": "pcurve"
         },
-        "pcurve": {
-          "description": "Native BS2 pcurve, absent for `nullbs`.",
-          "$ref": "#/$defs/PcurveGeometry"
-        },
-        "sense": {
-          "description": "Native sense flag, a logical on the wire.",
-          "type": "boolean"
+        "surface": {
+          "description": "Support surface.",
+          "$ref": "#/$defs/SurfaceId"
         },
         "support_bounds": {
           "description": "Optional U/V bound fields stored after the support by the\nrevision-gated layout.",
@@ -17877,12 +17869,20 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             ],
             "format": "double"
           },
-          "maxItems": 4,
-          "minItems": 4
+          "minItems": 4,
+          "maxItems": 4
         },
-        "surface": {
-          "description": "Support surface.",
-          "$ref": "#/$defs/SurfaceId"
+        "pcurve": {
+          "description": "Native BS2 pcurve, absent for `nullbs`.",
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        "sense": {
+          "description": "Native sense flag, a logical on the wire.",
+          "type": "boolean"
+        },
+        "fit_tolerance": {
+          "description": "Parameter-space fit tolerance.",
+          "$ref": "#/$defs/FitTolerance"
         }
       },
       "additionalProperties": false,
@@ -17898,23 +17898,6 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "description": "Planar boundary described by a normal and curve.",
       "type": "object",
       "properties": {
-        "curve": {
-          "description": "Boundary curve.",
-          "$ref": "#/$defs/CurveId"
-        },
-        "curve_endpoints": {
-          "description": "Optional native curve parameter endpoints stored by the\nrevision-gated layout.",
-          "type": "array",
-          "items": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
-          },
-          "maxItems": 2,
-          "minItems": 2
-        },
         "kind": {
           "type": "string",
           "const": "plane"
@@ -17930,8 +17913,25 @@ Each type below is given by the JSON Schema of its wire form, generated from the
             "type": "number",
             "format": "double"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "curve": {
+          "description": "Boundary curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "curve_endpoints": {
+          "description": "Optional native curve parameter endpoints stored by the\nrevision-gated layout.",
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "minItems": 2,
+          "maxItems": 2
         }
       },
       "additionalProperties": false,
@@ -17954,6 +17954,10 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "Complete native vertex-blend surface construction.",
   "type": "object",
   "properties": {
+    "revision": {
+      "description": "Positive serializer-revision integer selecting the revision-gated\nlayout; absent from the pre-revision layout.",
+      "$ref": "#/$defs/PositiveI64"
+    },
     "boundaries": {
       "description": "Ordered boundary records.",
       "type": "array",
@@ -17961,18 +17965,14 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         "$ref": "#/$defs/VertexBlendBoundary"
       }
     },
-    "fit_tolerance": {
-      "description": "Native model-space fit tolerance.",
-      "$ref": "#/$defs/FitTolerance"
-    },
     "grid_size": {
       "description": "Native grid-size integer.",
       "type": "integer",
       "format": "int64"
     },
-    "revision": {
-      "description": "Positive serializer-revision integer selecting the revision-gated\nlayout; absent from the pre-revision layout.",
-      "$ref": "#/$defs/PositiveI64"
+    "fit_tolerance": {
+      "description": "Native model-space fit tolerance.",
+      "$ref": "#/$defs/FitTolerance"
     }
   },
   "additionalProperties": false,
@@ -18037,8 +18037,8 @@ Each type below is given by the JSON Schema of its wire form, generated from the
           "items": {
             "$ref": "#/$defs/Point3"
           },
-          "maxItems": 2,
-          "minItems": 2
+          "minItems": 2,
+          "maxItems": 2
         }
       },
       "additionalProperties": false,
@@ -18058,14 +18058,14 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "description": "One rational polar pole: its radial and axial halves and its weight.",
   "type": "object",
   "properties": {
+    "radial": {
+      "description": "Euclidean radial-plane pole.",
+      "$ref": "#/$defs/Point2"
+    },
     "axial": {
       "description": "Axial pole value.",
       "type": "number",
       "format": "double"
-    },
-    "radial": {
-      "description": "Euclidean radial-plane pole.",
-      "$ref": "#/$defs/Point2"
     },
     "weight": {
       "description": "Rational weight at this pole.",
@@ -18178,13 +18178,13 @@ Each type below is given by the JSON Schema of its wire form in the decode sidec
 {
   "type": "object",
   "properties": {
+    "stream": {
+      "$ref": "#/$defs/StreamName"
+    },
     "offset": {
       "type": "integer",
       "format": "uint64",
       "minimum": 0
-    },
-    "stream": {
-      "$ref": "#/$defs/StreamName"
     },
     "tag": {
       "type": "string"
@@ -18205,18 +18205,18 @@ Each type below is given by the JSON Schema of its wire form in the decode sidec
   "description": "Document-wide provenance and exactness tables keyed by globally unique\nentity id.\n\nAn entity absent from `exactness` is byte-exact.",
   "type": "object",
   "properties": {
-    "exactness": {
-      "description": "Non-byte-exact entity or field annotations.",
-      "type": "object",
-      "additionalProperties": {
-        "$ref": "#/$defs/ExactnessNote"
-      }
-    },
     "provenance": {
       "description": "Source location for each annotated entity.",
       "type": "object",
       "additionalProperties": {
         "$ref": "#/$defs/AnnotationProvenance"
+      }
+    },
+    "exactness": {
+      "description": "Non-byte-exact entity or field annotations.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/ExactnessNote"
       }
     }
   },
@@ -18268,6 +18268,10 @@ Each type below is given by the JSON Schema of its wire form in the decode sidec
       "description": "The entity itself is not byte-exact; listed fields override it.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "entity"
+        },
         "entity": {
           "description": "Exactness of the entity except where overridden by `fields`.",
           "$ref": "#/$defs/Inexactness"
@@ -18281,10 +18285,6 @@ Each type below is given by the JSON Schema of its wire form in the decode sidec
               "$ref": "#/$defs/Exactness"
             }
           }
-        },
-        "kind": {
-          "type": "string",
-          "const": "entity"
         }
       },
       "additionalProperties": false,
@@ -18298,13 +18298,13 @@ Each type below is given by the JSON Schema of its wire form in the decode sidec
       "description": "The entity is byte-exact apart from the listed fields.",
       "type": "object",
       "properties": {
-        "fields": {
-          "description": "Exactness overrides keyed by serde field path.",
-          "$ref": "#/$defs/NonEmptyMap"
-        },
         "kind": {
           "type": "string",
           "const": "fields"
+        },
+        "fields": {
+          "description": "Exactness overrides keyed by serde field path.",
+          "$ref": "#/$defs/NonEmptyMap"
         }
       },
       "additionalProperties": false,
@@ -18348,12 +18348,12 @@ Each type below is given by the JSON Schema of its wire form in the decode sidec
 {
   "type": "object",
   "additionalProperties": false,
-  "minProperties": 1,
   "patternProperties": {
     "[\\s\\S]": {
       "$ref": "#/$defs/Exactness"
     }
-  }
+  },
+  "minProperties": 1
 }
 ```
 
@@ -18367,13 +18367,13 @@ Each type below is given by the JSON Schema of its wire form in the decode sidec
       "description": "The source bytes themselves. Their length and digest are functions of\nthem, so neither is stored.",
       "type": "object",
       "properties": {
-        "data": {
-          "description": "Retained source bytes.",
-          "type": "string"
-        },
         "kind": {
           "type": "string",
           "const": "inline"
+        },
+        "data": {
+          "description": "Retained source bytes.",
+          "type": "string"
         }
       },
       "additionalProperties": false,
@@ -18386,15 +18386,15 @@ Each type below is given by the JSON Schema of its wire form in the decode sidec
       "description": "Unavailable source bytes, described by their length and digest.",
       "type": "object",
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "digest"
+        },
         "byte_len": {
           "description": "Number of source bytes.",
           "type": "integer",
           "format": "uint64",
           "minimum": 0
-        },
-        "kind": {
-          "type": "string",
-          "const": "digest"
         },
         "sha256": {
           "description": "Lowercase hexadecimal SHA-256 of the source bytes.",
@@ -18419,9 +18419,9 @@ Each type below is given by the JSON Schema of its wire form in the decode sidec
   "description": "Source bytes retained for native recovery or replay.\n\nThe record is addressed by its id in\n[`SourceFidelity::retained_records`], so it carries no id of its own.",
   "type": "object",
   "properties": {
-    "bytes": {
-      "description": "Retained image of the source bytes.",
-      "$ref": "#/$defs/RetainedBytes"
+    "stream": {
+      "description": "Source stream containing the record.",
+      "type": "string"
     },
     "offset": {
       "description": "First byte offset in the source stream.",
@@ -18429,9 +18429,9 @@ Each type below is given by the JSON Schema of its wire form in the decode sidec
       "format": "uint64",
       "minimum": 0
     },
-    "stream": {
-      "description": "Source stream containing the record.",
-      "type": "string"
+    "bytes": {
+      "description": "Retained image of the source bytes.",
+      "$ref": "#/$defs/RetainedBytes"
     },
     "untyped": {
       "description": "Content classes the bytes can hold where the decoder keeps the record\nwithout decoding it.",
@@ -18458,24 +18458,6 @@ Each type below is given by the JSON Schema of its wire form in the decode sidec
   "description": "Decode-time source digests, annotations, and retained native records.\n\nRetained identities are admitted only through checked insertion.\n\n```compile_fail\nuse cadmpeg_ir::hash::digest::Sha256Digest;\nlet mut fidelity = cadmpeg_ir::SourceFidelity::new(Sha256Digest::digest(b\"source\"));\nfidelity.retained_records().clear();\n```",
   "type": "object",
   "properties": {
-    "annotations": {
-      "description": "Sparse source locations and conversion exactness.",
-      "$ref": "#/$defs/Annotations"
-    },
-    "codec_digests": {
-      "description": "The decoding codec's narrower digests, keyed as its format\nspecification lists.",
-      "type": "object",
-      "additionalProperties": false,
-      "patternProperties": {
-        "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
-          "$ref": "#/$defs/Sha256Digest"
-        }
-      }
-    },
-    "content_digest": {
-      "description": "SHA-256 of the canonical JSON of the document the decode returned.",
-      "$ref": "#/$defs/Sha256Digest"
-    },
     "decode_digest": {
       "description": "SHA-256 of the decode's root file.",
       "$ref": "#/$defs/Sha256Digest"
@@ -18490,13 +18472,18 @@ Each type below is given by the JSON Schema of its wire form in the decode sidec
         }
       }
     },
-    "retained_records": {
-      "description": "Native records retained for recovery or replay, keyed by record id.",
+    "content_digest": {
+      "description": "SHA-256 of the canonical JSON of the document the decode returned,\nabsent where that document has no canonical JSON.",
+      "default": null,
+      "$ref": "#/$defs/Sha256Digest"
+    },
+    "codec_digests": {
+      "description": "The decoding codec's narrower digests, keyed as its format\nspecification lists.",
       "type": "object",
       "additionalProperties": false,
       "patternProperties": {
-        "^(?:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+:){2}[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+#[^#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])": {
-          "$ref": "#/$defs/RetainedSourceRecord"
+        "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+          "$ref": "#/$defs/Sha256Digest"
         }
       }
     },
@@ -18506,13 +18493,26 @@ Each type below is given by the JSON Schema of its wire form in the decode sidec
       "items": {
         "type": "string"
       }
+    },
+    "annotations": {
+      "description": "Sparse source locations and conversion exactness.",
+      "$ref": "#/$defs/Annotations"
+    },
+    "retained_records": {
+      "description": "Native records retained for recovery or replay, keyed by record id.",
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^(?:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+:){2}[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+#[^#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])": {
+          "$ref": "#/$defs/RetainedSourceRecord"
+        }
+      }
     }
   },
   "additionalProperties": false,
   "required": [
     "decode_digest",
     "file_digests",
-    "content_digest",
     "codec_digests",
     "unrepresented",
     "annotations",
