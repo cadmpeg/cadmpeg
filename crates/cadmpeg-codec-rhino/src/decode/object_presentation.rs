@@ -431,3 +431,6 @@ impl<'a> UsedCarriers<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
