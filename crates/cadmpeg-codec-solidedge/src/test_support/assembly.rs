@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Synthetic assembly documents (`docs/formats/solidedge.md` §9).
 
-use super::{cluster_and_map, document, put_reals, put_words, type_table, Object};
+use super::patterns::{pattern_class_names, pattern_profile_objects, PATTERN_2D_OBJECT};
+use super::{cluster_and_map, document, put_reals, put_words, type_table, Object, PatternSpec};
 
 /// The class names of an assembly document, by form.
 const ASSEMBLY_CLASSES: [&str; 3] = [
@@ -101,7 +102,7 @@ pub(crate) fn link_stream(links: [&str; 2], long: [Option<&str>; 2]) -> Vec<u8> 
     bytes
 }
 
-fn occurrence_body(spec: &OccurrenceSpec) -> Vec<u8> {
+pub(super) fn occurrence_body(spec: &OccurrenceSpec) -> Vec<u8> {
     let mut body = vec![0_u8; OCCURRENCE_LEN - 8];
     put_words(&mut body, 16, &[spec.state]);
     put_words(&mut body, 113, &[spec.site]);
@@ -255,4 +256,144 @@ pub(crate) fn assembly_document_with_structure(
         .map(|(name, bytes)| (name.as_str(), bytes.clone()))
         .collect();
     document(&borrowed)
+}
+
+/// The copies of an assembly pattern: `(first index, second index, reference
+/// object)`.
+pub(crate) type CopySpec = (u32, u32, u32);
+
+/// An assembly pattern over the seed occurrence `references[0]`, whose copies
+/// are the other `references`.
+pub(crate) struct AssemblyPatternSpec<'a> {
+    pub(crate) pattern: &'a PatternSpec<'a>,
+    pub(crate) references: &'a [OccurrenceSpec],
+    pub(crate) copies: &'a [CopySpec],
+    /// The layout object the pattern names, or the pattern-2d object.
+    pub(crate) layout: Option<u32>,
+}
+
+/// The object of the pattern, the first object of its copies and the site.
+pub(crate) const PATTERN_OBJECT: u32 = 30;
+const FIRST_COPY_OBJECT: u32 = 40;
+pub(crate) const PATTERN_SITE: u32 = 6;
+
+fn pattern_object_body(spec: &AssemblyPatternSpec<'_>) -> Vec<u8> {
+    let mut body = vec![0_u8; 20 - 8 + 48];
+    put_words(&mut body, 16, &[spec.references[0].id]);
+    put_words(&mut body, 20, &[spec.layout.unwrap_or(PATTERN_2D_OBJECT)]);
+    body.extend_from_slice(&u32::try_from(spec.copies.len()).unwrap().to_le_bytes());
+    body.push(0);
+    for copy in 0..spec.copies.len() {
+        let id = FIRST_COPY_OBJECT + u32::try_from(copy).unwrap();
+        body.extend_from_slice(&id.to_le_bytes());
+        body.push(0x10);
+        body.extend_from_slice(id.to_string().as_bytes());
+        body.push(0);
+    }
+    body.extend_from_slice(&[0; 12]);
+    body
+}
+
+fn copy_object_body(spec: &AssemblyPatternSpec<'_>, copy: CopySpec) -> Vec<u8> {
+    let mut body = vec![0_u8; 40 - 8];
+    put_words(&mut body, 12, &[copy.1, copy.0]);
+    put_words(&mut body, 24, &[spec.references[0].id]);
+    put_words(&mut body, 36, &[copy.2]);
+    body
+}
+
+/// The bytes after the frame of the `CLSID_JPattern2d` object of an assembly
+/// layout: the references to the sketch geometry, the anchor text and the
+/// parameters 84 bytes after it.
+fn layout_object_body(pattern: &PatternSpec<'_>) -> Vec<u8> {
+    let mut object = vec![0_u8; 20];
+    for index in 0..pattern.geometry.len() {
+        let id = PATTERN_2D_OBJECT + 1 + u32::try_from(index).unwrap();
+        for word in [0x10_u32, 0x8000_0000, id] {
+            object.extend_from_slice(&word.to_le_bytes());
+        }
+    }
+    object.extend_from_slice(b"JPattern2dGeomsFunction\0");
+    let base = object.len() + 84;
+    object.resize(base + 50, 0);
+    object[base + 14..base + 18].copy_from_slice(&pattern.kind.to_le_bytes());
+    object[base + 26..base + 30].copy_from_slice(&pattern.counts[0].to_le_bytes());
+    object[base + 30..base + 34].copy_from_slice(&pattern.counts[1].to_le_bytes());
+    object[base + 34..base + 42].copy_from_slice(&pattern.steps[0].to_le_bytes());
+    object[base + 42..base + 50].copy_from_slice(&pattern.steps[1].to_le_bytes());
+    object
+}
+
+/// An assembly document with a pattern: the pattern part's profile objects,
+/// the references collection listing every reference, the references, one
+/// site, the pattern object and its copy objects.
+pub(crate) fn assembly_pattern_document(spec: &AssemblyPatternSpec<'_>) -> Vec<u8> {
+    let first = u32::try_from(pattern_class_names().len()).unwrap();
+    let form = |offset: u32| u16::try_from(first + offset).unwrap();
+    let mut names: Vec<&str> = pattern_class_names().to_vec();
+    names.extend([
+        "References Collection Object",
+        "CLSID_JAsmReference",
+        "CLSID_JSite",
+        "CLSID_JAsmPattern",
+        "CLSID_JAsmPatternOcc",
+    ]);
+    let listed: Vec<u32> = spec
+        .references
+        .iter()
+        .map(|occurrence| occurrence.id)
+        .collect();
+    let mut collection = vec![0_u8; 12];
+    put_words(&mut collection, 16, &[u32::try_from(listed.len()).unwrap()]);
+    collection.resize(12 + listed.len().div_ceil(8), 0);
+    for id in &listed {
+        collection.extend_from_slice(&id.to_le_bytes());
+    }
+    let mut objects = pattern_profile_objects(spec.pattern);
+    for object in &mut objects {
+        if object.id == PATTERN_2D_OBJECT {
+            object.body = layout_object_body(spec.pattern);
+        }
+    }
+    objects.push(Object {
+        id: COLLECTION,
+        form: form(0),
+        flags: 0,
+        body: collection,
+    });
+    for occurrence in spec.references {
+        objects.push(Object {
+            id: occurrence.id,
+            form: form(1),
+            flags: 0,
+            body: occurrence_body(occurrence),
+        });
+    }
+    objects.push(Object {
+        id: PATTERN_SITE,
+        form: form(2),
+        flags: 0,
+        body: vec![0; 16],
+    });
+    objects.push(Object {
+        id: PATTERN_OBJECT,
+        form: form(3),
+        flags: 0,
+        body: pattern_object_body(spec),
+    });
+    for (index, copy) in spec.copies.iter().enumerate() {
+        objects.push(Object {
+            id: FIRST_COPY_OBJECT + u32::try_from(index).unwrap(),
+            form: form(4),
+            flags: 0,
+            body: copy_object_body(spec, *copy),
+        });
+    }
+    objects.sort_by_key(|object| object.id);
+    let (cluster, map) = cluster_and_map(&objects);
+    document(&[
+        ("PSMcluster0", cluster),
+        ("PSMspacemap/0x00000000", map),
+        ("PSMtypetable", type_table(&names, &[])),
+    ])
 }

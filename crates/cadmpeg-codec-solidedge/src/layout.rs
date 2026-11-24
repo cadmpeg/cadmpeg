@@ -388,3 +388,25 @@ pub(crate) mod file_moniker_extension {
     /// Offset of `path_bytes` (`u32`, little-endian). Spec §9.3.
     pub(crate) const PATH_BYTES: usize = 24;
 }
+
+/// Byte offsets for the `asm_pattern` record.
+///
+/// Spec §9.5. Record length 24 B.
+pub(crate) mod asm_pattern {
+    /// Offset of `seed` (`u32`, little-endian). Spec §9.5.
+    pub(crate) const SEED: usize = 16;
+    /// Offset of `layout` (`u32`, little-endian). Spec §9.5.
+    pub(crate) const LAYOUT: usize = 20;
+}
+
+/// Byte offsets for the `asm_pattern_occurrence` record.
+///
+/// Spec §9.5. Record length 40 B.
+pub(crate) mod asm_pattern_occurrence {
+    /// Offset of `second_index` (`u32`, little-endian). Spec §9.5.
+    pub(crate) const SECOND_INDEX: usize = 12;
+    /// Offset of `first_index` (`u32`, little-endian). Spec §9.5.
+    pub(crate) const FIRST_INDEX: usize = 16;
+    /// Offset of `reference` (`u32`, little-endian). Spec §9.5.
+    pub(crate) const REFERENCE: usize = 36;
+}

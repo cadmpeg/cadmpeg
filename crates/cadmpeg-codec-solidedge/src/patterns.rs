@@ -269,39 +269,71 @@ fn read_pattern(
     let (Some(object), None) = (parameters.next(), parameters.next()) else {
         return Err("its profile has no single pattern-2d member".to_owned());
     };
-    let guide = object
+    let seeds = seeds(&[seed])?;
+    let base = parameter_base(&object)?;
+    let SketchLayout {
+        layout,
+        sense_unread,
+    } = sketch_layout(cluster, types, &frame, &object, base)?;
+    Ok(Read {
+        operation: pattern(seeds, layout),
+        sense_unread,
+    })
+}
+
+/// The layout a pattern-2d object states, with whether the pattern turns in a
+/// sense the document does not establish.
+pub(crate) struct SketchLayout {
+    pub(crate) layout: PatternLayout,
+    /// The pattern fills less than a full turn about its axis.
+    pub(crate) sense_unread: bool,
+}
+
+/// The offset `E` of the parameters of a part pattern's pattern-2d object: the
+/// offset after the last occurrence of the parameter GUID (§8.1).
+fn parameter_base(object: &Object<'_>) -> Result<usize, String> {
+    object
         .bytes
         .windows(PATTERN_GUID.len())
         .rposition(|window| window == PATTERN_GUID)
         .and_then(|at| at.checked_add(PATTERN_GUID.len()))
-        .ok_or_else(|| "the pattern object holds no parameter GUID".to_owned())?;
+        .ok_or_else(|| "the pattern object holds no parameter GUID".to_owned())
+}
+
+/// The layout of the pattern-2d object `object` in the profile frame `frame`,
+/// whose parameters stand at the offset `base` (§8.1).
+pub(crate) fn sketch_layout(
+    cluster: &Cluster<'_>,
+    types: &TypeTable,
+    frame: &FrameValue,
+    object: &Object<'_>,
+    base: usize,
+) -> Result<SketchLayout, String> {
     let after = |offset: usize| {
-        guide
-            .checked_add(offset)
+        base.checked_add(offset)
             .ok_or_else(|| "an offset overflows".to_owned())
     };
-    let kind = word(&object, after(KIND_AFTER_GUID)?, "pattern kind")?;
-    let first_count = word(&object, after(FIRST_COUNT_AFTER_GUID)?, "first count")?;
-    let second_count = word(&object, after(SECOND_COUNT_AFTER_GUID)?, "second count")?;
-    let first_step = real_at(&object, after(FIRST_STEP_AFTER_GUID)?, "first spacing")?;
-    let second_step = real_at(&object, after(SECOND_STEP_AFTER_GUID)?, "second spacing")?;
-    let seeds = seeds(&[seed])?;
+    let kind = word(object, after(KIND_AFTER_GUID)?, "pattern kind")?;
+    let first_count = word(object, after(FIRST_COUNT_AFTER_GUID)?, "first count")?;
+    let second_count = word(object, after(SECOND_COUNT_AFTER_GUID)?, "second count")?;
+    let first_step = real_at(object, after(FIRST_STEP_AFTER_GUID)?, "first spacing")?;
+    let second_step = real_at(object, after(SECOND_STEP_AFTER_GUID)?, "second spacing")?;
     match kind {
         KIND_RECTANGULAR => {
-            let lines = referenced(cluster, types, &object, LINE_CLASS);
+            let lines = referenced(cluster, types, object, LINE_CLASS);
             let [first, second, ..] = lines.as_slice() else {
                 return Err("a rectangular pattern references fewer than two lines".to_owned());
             };
             let layout = PatternLayout::Linear(LinearLayout {
                 first: linear_run(
-                    &frame,
+                    frame,
                     first,
                     count(first_count, "first")?,
                     first_step,
                     "first",
                 )?,
                 second: Some(linear_run(
-                    &frame,
+                    frame,
                     second,
                     count(second_count, "second")?,
                     second_step,
@@ -309,18 +341,18 @@ fn read_pattern(
                 )?),
                 seed_only: Some(Dimension::Literal(false)),
             });
-            Ok(Read {
-                operation: pattern(seeds, layout),
+            Ok(SketchLayout {
+                layout,
                 sense_unread: false,
             })
         }
         KIND_CIRCULAR => {
-            let arcs = referenced(cluster, types, &object, ARC_CLASS);
+            let arcs = referenced(cluster, types, object, ARC_CLASS);
             let Some(arc) = arcs.first() else {
                 return Err("a circular pattern references no arc".to_owned());
             };
             let [u, v] = pair(arc, arc_2d::CENTER_X, "pattern arc")?;
-            let centre = model_point(&frame, u * MM_PER_M, v * MM_PER_M);
+            let centre = model_point(frame, u * MM_PER_M, v * MM_PER_M);
             let axis = AxisValue {
                 origin: finite_point(centre)?,
                 direction: frame.z_axis,
@@ -341,8 +373,8 @@ fn read_pattern(
                 radial: None,
                 orientation: None,
             });
-            Ok(Read {
-                operation: pattern(seeds, layout),
+            Ok(SketchLayout {
+                layout,
                 sense_unread: extent < std::f64::consts::TAU - EPS_FULL_TURN,
             })
         }

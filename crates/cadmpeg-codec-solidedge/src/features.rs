@@ -298,7 +298,7 @@ pub(crate) fn feature_id(object: u32) -> FeatureId {
     )
 }
 
-fn container_id() -> ContainerId {
+pub(crate) fn container_id() -> ContainerId {
     ContainerId::from(cadmpeg_ir::ids::Identity::compose(
         &cadmpeg_ir::identity_namespace!("solidedge", "model", "container"),
         cadmpeg_ir::identity_key!("timeline"),

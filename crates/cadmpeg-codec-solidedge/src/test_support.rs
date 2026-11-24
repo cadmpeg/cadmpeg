@@ -1029,6 +1029,7 @@ pub(crate) use patterns::{mirror_document, pattern_document, MirrorSpec, Pattern
 
 mod assembly;
 pub(crate) use assembly::{
-    assembly_document, assembly_document_with_structure, link_stream, structure_entry,
-    structure_items, structure_node, structure_stream, OccurrenceSpec, SiteSpec,
+    assembly_document, assembly_document_with_structure, assembly_pattern_document, link_stream,
+    structure_entry, structure_items, structure_node, structure_stream, AssemblyPatternSpec,
+    OccurrenceSpec, SiteSpec, PATTERN_OBJECT, PATTERN_SITE,
 };

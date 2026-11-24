@@ -501,3 +501,39 @@ Parsed by:
 | 20 | 4 | `size` | `u32` | little | spec | \| 20 \| `u32` size `s` of the remaining extension, `0` when the moniker stores no Unicode path \| |
 | 24 | 4 | `path_bytes` | `u32` | little | spec | \| 24 \| `u32` byte count `m` of the Unicode path; `s` is `m` + 6 \| |
 | 28 | 2 | `key` | `u16` | little | spec | \| 28 \| `u16` key value \| |
+
+## `asm_pattern`
+
+Spec §9.5 · layout: byte offsets · size: 24 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/assembly/pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 16 | 4 | `seed` | `u32` | little | spec | \| 16 \| `u32` identifier of the seed `CLSID_JAsmReference` object \| |
+| 20 | 4 | `layout` | `u32` | little | spec | \| 20 \| `u32` identifier of the `CLSID_JPattern2d` object of the layout sketch \| |
+
+Unstated regions:
+
+- `0..16` (16 B): §9.5 states no field before the seed.
+
+## `asm_pattern_occurrence`
+
+Spec §9.5 · layout: byte offsets · size: 40 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/assembly/pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 12 | 4 | `second_index` | `u32` | little | spec | \| 12 \| `u32` index of the copy along the second run \| |
+| 16 | 4 | `first_index` | `u32` | little | spec | \| 16 \| `u32` index of the copy along the first run; for a circular pattern, the index of the copy \| |
+| 24 | 4 | `seed` | `u32` | little | spec | \| 24 \| `u32` identifier of the seed `CLSID_JAsmReference` object \| |
+| 36 | 4 | `reference` | `u32` | little | spec | \| 36 \| `u32` identifier of the `CLSID_JAsmReference` object of the copy \| |
+
+Unstated regions:
+
+- `0..12` (12 B): §9.5 states no field before the second index.
+- `20..24` (4 B): §9.5 states no field between the first index and the seed.
+- `28..36` (8 B): §9.5 states no field between the seed and the copy.

@@ -138,11 +138,9 @@ fn assemble(group: Vec<u8>, mut extra: Vec<Object>) -> Vec<u8> {
     ])
 }
 
-/// A document with a pattern group over the seed feature.
-pub(crate) fn pattern_document(spec: &PatternSpec<'_>) -> Vec<u8> {
-    let mut group = group_body();
-    put_words(&mut group, 106, &[FAST_PART]);
-    put_words(&mut group, 337, &[spec.seed]);
+/// The profile objects of a pattern: the profile group of the pattern part,
+/// whose first member is the `CLSID_JPattern2d` object [`FIRST_MEMBER`].
+pub(super) fn pattern_profile_objects(spec: &PatternSpec<'_>) -> Vec<Object> {
     let mut members = vec![Member2d::Constraint];
     members.extend(spec.geometry.iter().map(|member| match member {
         Member2d::Line(values) => Member2d::Line(*values),
@@ -157,6 +155,24 @@ pub(crate) fn pattern_document(spec: &PatternSpec<'_>) -> Vec<u8> {
             object.body = pattern_2d_body(spec);
         }
     }
+    extra
+}
+
+/// The class names of a pattern document, by form, and the identifier of the
+/// pattern object.
+pub(super) const fn pattern_class_names() -> [&'static str; 21] {
+    PATTERN_CLASSES
+}
+
+/// The identifier of the `CLSID_JPattern2d` object of [`pattern_profile_objects`].
+pub(super) const PATTERN_2D_OBJECT: u32 = FIRST_MEMBER;
+
+/// A document with a pattern group over the seed feature.
+pub(crate) fn pattern_document(spec: &PatternSpec<'_>) -> Vec<u8> {
+    let mut group = group_body();
+    put_words(&mut group, 106, &[FAST_PART]);
+    put_words(&mut group, 337, &[spec.seed]);
+    let mut extra = pattern_profile_objects(spec);
     extra.push(Object {
         id: FAST_PART,
         form: 1,

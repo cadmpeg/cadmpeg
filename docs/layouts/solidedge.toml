@@ -1138,3 +1138,81 @@ offset = 28
 type = "u16"
 source = "spec"
 anchor = "| 28 | `u16` key value |"
+
+[[record]]
+name = "asm_pattern"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/assembly/pattern.rs"
+section = "9.5"
+anchor = "A pattern object stores:"
+size = 24
+
+[[record.gap]]
+offset = 0
+size = 16
+note = "§9.5 states no field before the seed."
+
+[[record.field]]
+name = "seed"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "| 16 | `u32` identifier of the seed `CLSID_JAsmReference` object |"
+
+[[record.field]]
+name = "layout"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "| 20 | `u32` identifier of the `CLSID_JPattern2d` object of the layout sketch |"
+
+[[record]]
+name = "asm_pattern_occurrence"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/assembly/pattern.rs"
+section = "9.5"
+anchor = "A `CLSID_JAsmPatternOcc` object stores:"
+size = 40
+
+[[record.gap]]
+offset = 0
+size = 12
+note = "§9.5 states no field before the second index."
+
+[[record.field]]
+name = "second_index"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "| 12 | `u32` index of the copy along the second run |"
+
+[[record.field]]
+name = "first_index"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "| 16 | `u32` index of the copy along the first run; for a circular pattern, the index of the copy |"
+
+[[record.gap]]
+offset = 20
+size = 4
+note = "§9.5 states no field between the first index and the seed."
+
+[[record.field]]
+name = "seed"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "| 24 | `u32` identifier of the seed `CLSID_JAsmReference` object |"
+
+[[record.gap]]
+offset = 28
+size = 8
+note = "§9.5 states no field between the seed and the copy."
+
+[[record.field]]
+name = "reference"
+offset = 36
+type = "u32"
+source = "spec"
+anchor = "| 36 | `u32` identifier of the `CLSID_JAsmReference` object of the copy |"

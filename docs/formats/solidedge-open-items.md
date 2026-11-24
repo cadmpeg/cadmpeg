@@ -87,3 +87,27 @@
 **Known.** Set kind `1` is a constant radius with the layout of §7.3. One read round has set kind `2`. Its feature object is longer and holds two more `CLSID_JMTopologyProxy` identifiers and two `CLSID_JDim` identifiers after the kind.
 
 **Need.** A variable-radius round and a round with a setback or other non-constant section, each with a copy that differs in one value.
+
+### DR-1066. Live copies of an assembly pattern
+
+**Question.** Which `CLSID_JAsmReference` objects of an assembly with a pattern are live instances, and what does a copy whose indices repeat another copy's stand for?
+
+**Known.** A pattern lists its copies as `CLSID_JAsmPatternOcc` objects (§9.5). Some read patterns have a copy that repeats another copy's indices, and a `CLSID_JAsmReference` object at a copy's placement that no copy object names. The references collection and the structure list (§9.4) list every such object.
+
+**Need.** A pattern built at its final count and the same pattern with its count raised in a second edit, over the same seed and layout.
+
+### DR-1067. Mirror plane of an assembly mirror
+
+**Question.** Where does an assembly mirror store its plane, its seed and the reversal that makes the copy an occurrence rather than a reflection?
+
+**Known.** A mirrored occurrence is a `CLSID_JAsmReference` object whose rotation has determinant `+1` (§9.6). A `CLSID_JAsmGroup` object stores its identifier at offset 17.
+
+**Need.** Mirrors of one part about planes along each coordinate axis, and a mirror of a part that has no symmetry about the plane.
+
+### DR-1068. Declaration link word
+
+**Question.** What does the `u16` at offset 22 of a type table declaration state?
+
+**Known.** The value is `0xFFFF` for every declaration except `ReferencePlaneObject` and `JAsmRefPlane` in a document that holds an assembly layout or a mirror group, where it is `0x000E`. The class rule (§3.3) does not use it.
+
+**Need.** Documents that add a user reference plane to an assembly without a layout or a mirror.

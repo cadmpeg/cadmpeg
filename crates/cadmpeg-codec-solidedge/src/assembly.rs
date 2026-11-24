@@ -22,6 +22,8 @@
 //! `R` maps a row vector `p` to `p R + t`; CADIR applies a transform to a
 //! column vector, so its linear rows are the columns of `R`.
 
+mod pattern;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_container::compound::CompoundSnapshot;
@@ -301,9 +303,6 @@ fn link_path(bytes: &[u8]) -> Option<NonBlankString> {
     moniker(bytes, from.checked_add(found)?, RELATIVE_UP_LEVEL).map(|(path, _)| path)
 }
 
-/// The deepest node nesting of an occurrence structure list that is read.
-const MAX_STRUCTURE_DEPTH: usize = 16;
-
 /// A structure item that states one object: the flags of a leaf entry, or
 /// `None` for a node, which states no flags.
 type StructureItem = (u32, Option<u32>);
@@ -317,82 +316,123 @@ fn property_list_end(bytes: &[u8], at: usize) -> Option<usize> {
     (end <= bytes.len()).then_some(end)
 }
 
-/// The item at `at` in `bytes` and the offset after it (§9.4). A leaf entry
-/// is followed by its property list where its detail word has
-/// `PROPERTY_LIST_FLAG`. A node has the head `occurrence_structure_node`, the
-/// property list on the same condition, a `u32` member count and the members.
-/// Every object the items state is appended to `objects`.
+/// The item at `at` in `bytes` and the offset after it (§9.4), or `None` where
+/// it does not parse. A leaf entry is followed by its property list where its
+/// detail word has `PROPERTY_LIST_FLAG`. A node has the head
+/// `occurrence_structure_node`, the property list on the same condition, a
+/// `u32` member count and the members. Every object the items state is
+/// appended to `objects`, the item's own first. A node nests one level of the
+/// session's recursion depth.
 fn structure_item(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     at: usize,
-    depth: usize,
     objects: &mut Vec<StructureItem>,
-) -> Option<usize> {
-    if depth > MAX_STRUCTURE_DEPTH {
-        return None;
-    }
-    let first = View::u32_le_at(bytes, at)?;
-    let (detail, object, mut next) = if first == occurrence_structure_node::MARKER_VALUE {
+) -> Result<Option<usize>, CodecError> {
+    let Some(first) = View::u32_le_at(bytes, at) else {
+        return Ok(None);
+    };
+    let head = if first == occurrence_structure_node::MARKER_VALUE {
         (
-            View::u32_le_at(bytes, at.checked_add(occurrence_structure_node::DETAIL)?)?,
-            View::u32_le_at(bytes, at.checked_add(occurrence_structure_node::OBJECT)?)?,
-            at.checked_add(occurrence_structure_node::LEN)?,
+            at.checked_add(occurrence_structure_node::DETAIL),
+            at.checked_add(occurrence_structure_node::OBJECT),
+            at.checked_add(occurrence_structure_node::LEN),
         )
     } else {
-        let end = at.checked_add(occurrence_structure_entry::LEN)?;
-        if end > bytes.len() {
-            return None;
-        }
         (
-            View::u32_le_at(bytes, at.checked_add(occurrence_structure_entry::DETAIL)?)?,
-            View::u32_le_at(bytes, at.checked_add(occurrence_structure_entry::OBJECT)?)?,
-            end,
+            at.checked_add(occurrence_structure_entry::DETAIL),
+            at.checked_add(occurrence_structure_entry::OBJECT),
+            at.checked_add(occurrence_structure_entry::LEN),
         )
     };
-    if detail & PROPERTY_LIST_FLAG != 0 {
-        next = property_list_end(bytes, next)?;
+    let (Some(detail), Some(object), Some(mut next)) = head else {
+        return Ok(None);
+    };
+    let leaf = first != occurrence_structure_node::MARKER_VALUE;
+    if leaf && next > bytes.len() {
+        return Ok(None);
     }
-    if first != occurrence_structure_node::MARKER_VALUE {
+    let (Some(detail), Some(object)) = (
+        View::u32_le_at(bytes, detail),
+        View::u32_le_at(bytes, object),
+    ) else {
+        return Ok(None);
+    };
+    if detail & PROPERTY_LIST_FLAG != 0 {
+        let Some(end) = property_list_end(bytes, next) else {
+            return Ok(None);
+        };
+        next = end;
+    }
+    if leaf {
         objects.push((object, Some(first)));
-        return Some(next);
+        return Ok(Some(next));
     }
     objects.push((object, None));
-    let members = usize::try_from(View::u32_le_at(bytes, next)?).ok()?;
-    next = next.checked_add(4)?;
+    let _depth = ctx.enter_nested("Solid Edge occurrence structure nesting")?;
+    let Some(members) = View::u32_le_at(bytes, next).and_then(|count| usize::try_from(count).ok())
+    else {
+        return Ok(None);
+    };
+    let Some(mut next) = next.checked_add(4) else {
+        return Ok(None);
+    };
     // A member takes at least the 12 bytes of a node head.
-    if members > bytes.len().checked_sub(next)? / occurrence_structure_node::LEN {
-        return None;
+    let room = bytes
+        .len()
+        .checked_sub(next)
+        .map(|rest| rest / occurrence_structure_node::LEN);
+    if room.is_none_or(|room| members > room) {
+        return Ok(None);
     }
     // The members are objects of the referenced document, not of this one: a
     // nested item states none of this document's occurrences.
     let mut nested = Vec::new();
     for _ in 0..members {
-        next = structure_item(bytes, next, depth.checked_add(1)?, &mut nested)?;
+        match structure_item(ctx, bytes, next, &mut nested)? {
+            Some(end) => next = end,
+            None => return Ok(None),
+        }
     }
-    Some(next)
+    Ok(Some(next))
 }
 
 /// The flags of each top-level item of an occurrence structure list (§9.4) by
 /// occurrence object, `None` for a node, or `None` where the stream does not
 /// parse to its end for its stated count or states an object twice.
-fn structure_flags(bytes: &[u8]) -> Option<BTreeMap<u32, Option<u32>>> {
-    let count =
-        usize::try_from(View::u32_le_at(bytes, occurrence_structure_header::COUNT)?).ok()?;
+fn structure_flags(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<BTreeMap<u32, Option<u32>>>, CodecError> {
+    let Some(count) = View::u32_le_at(bytes, occurrence_structure_header::COUNT)
+        .and_then(|count| usize::try_from(count).ok())
+    else {
+        return Ok(None);
+    };
     let mut at = occurrence_structure_header::LEN;
-    if count > bytes.len().checked_sub(at)? / occurrence_structure_node::LEN {
-        return None;
+    let room = bytes
+        .len()
+        .checked_sub(at)
+        .map(|rest| rest / occurrence_structure_node::LEN);
+    if room.is_none_or(|room| count > room) {
+        return Ok(None);
     }
     let mut flags = BTreeMap::new();
     for _ in 0..count {
         let mut item = Vec::new();
-        at = structure_item(bytes, at, 0, &mut item)?;
+        let Some(end) = structure_item(ctx, bytes, at, &mut item)? else {
+            return Ok(None);
+        };
+        at = end;
         // The first object is the item's own; the rest are nested members.
-        let (object, entry) = *item.first()?;
+        let Some(&(object, entry)) = item.first() else {
+            return Ok(None);
+        };
         if flags.insert(object, entry).is_some() {
-            return None;
+            return Ok(None);
         }
     }
-    (at == bytes.len()).then_some(flags)
+    Ok((at == bytes.len()).then_some(flags))
 }
 
 fn site_stream(site: u32) -> String {
@@ -499,10 +539,13 @@ pub(crate) fn project<'a>(
     if occurrences.is_empty() {
         return Ok(());
     }
-    let structure = snapshot
+    let structure = match snapshot
         .stream(STRUCTURE_STREAM)
         .and_then(|entry| snapshot.open(ctx, entry).ok())
-        .and_then(|view| structure_flags(view.window()));
+    {
+        Some(view) => structure_flags(ctx, view.window())?,
+        None => None,
+    };
     match &structure {
         Some(flags) => {
             for (id, occurrence) in &mut occurrences {
@@ -516,6 +559,10 @@ pub(crate) fn project<'a>(
              or visibility",
         )),
     }
+    let stated: BTreeMap<u32, OccurrenceId> = occurrences
+        .iter()
+        .map(|(id, occurrence)| (*id, occurrence.id.clone()))
+        .collect();
     let occurrences: Vec<Occurrence> = occurrences
         .into_iter()
         .map(|(_, occurrence)| occurrence)
@@ -532,6 +579,7 @@ pub(crate) fn project<'a>(
     }
     ir.model.product_definitions.extend(new_definitions);
     ir.model.occurrences.extend(occurrences);
+    pattern::project(&cluster, &types, &stated, root, ir, losses);
     Ok(())
 }
 
