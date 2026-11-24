@@ -1676,3 +1676,61 @@ fn overlapping_source_loops_keep_all_sketch_regions() {
         );
     }
 }
+
+fn filtered_region_bytes(edit: impl Fn(&mut Value)) -> Vec<u8> {
+    changed(&fixture("default-plane-regions"), |path, value| {
+        if !path.ends_with("features.json") {
+            return;
+        }
+        region_fixture::frame(value, false);
+        value["features"][1]["parameters"][2]["queries"][0] = json!({
+            "btType":"BTMIndividualSketchRegionQuery-140", "featureId":"drawn-profile",
+            "deterministicIds":["outer-region"], "filterInnerLoops":true,
+            "queryString":"query = qSketchRegion(id + \"drawn-profile\", true);"});
+        edit(value);
+    })
+}
+
+fn filtered_refusal(report: &Report, detail: &str) -> bool {
+    report.losses().iter().any(|loss| {
+        loss.code.as_deref() == Some("onshape/history.not-supported")
+            && loss.detail.contains(detail)
+    })
+}
+
+#[test]
+fn an_island_inside_a_filtered_hole_keeps_the_extrude_native() {
+    // The island lies inside the hole circle, so it has two containing loops.
+    let bytes = filtered_region_bytes(|value| {
+        value["features"][0]["entities"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({
+            "btType":"BTMSketchCurve-4","entityId":"island","geometry":{
+            "btType":"BTCurveGeometryCircle-115","radius":0.001,"xCenter":0.005,
+            "yCenter":0.01,"xDir":1.0}}));
+    });
+    let (model, report) = read(&bytes).unwrap();
+    assert_eq!(kinds(&model)[1], "native", "{:?}", report.losses());
+    assert!(
+        filtered_refusal(&report, "nested more than one level"),
+        "{:?}",
+        report.losses()
+    );
+}
+
+#[test]
+fn a_filtered_query_that_is_not_a_region_query_keeps_the_extrude_native() {
+    let bytes = filtered_region_bytes(|value| {
+        let query = &mut value["features"][1]["parameters"][2]["queries"][0];
+        query["btType"] = json!("BTMIndividualCreatedByQuery-137");
+        query["deterministicIds"] = json!([]);
+    });
+    let (model, report) = read(&bytes).unwrap();
+    assert_eq!(kinds(&model)[1], "native", "{:?}", report.losses());
+    assert!(
+        filtered_refusal(&report, "filtered inner sketch regions"),
+        "{:?}",
+        report.losses()
+    );
+}

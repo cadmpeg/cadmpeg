@@ -278,8 +278,9 @@ pub(super) fn profile(
 }
 
 /// The regions `qSketchRegion(sketch, true)` selects: every region not contained in another
-/// region, each with the loops directly inside it as holes. The whole sketch when none is
-/// contained.
+/// region, each with the loops directly inside it as holes. The whole sketch when no loop is
+/// contained. Two crossing loops keep the whole sketch; crossing loops among three or more, and
+/// loops nested more than one level, are refused.
 pub(super) fn filtered_profile(
     sketch: &str,
     model: &Model,
@@ -323,6 +324,11 @@ pub(super) fn filtered_profile(
                 containers.get_mut(i).ok_or(BUDGET_LOSS)?.push(j);
             }
         }
+    }
+    if containers.iter().any(|c| c.len() > 1) {
+        return Err(
+            "filtered sketch regions nested more than one level are not supported yet".into(),
+        );
     }
     if containers.iter().all(Vec::is_empty) {
         return Ok(json!({"kind":"sketch", "value":sketch}));

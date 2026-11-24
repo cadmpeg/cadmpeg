@@ -215,6 +215,10 @@ pub(super) fn profile(
         return Err("the selected sketch contains unresolved geometry".into());
     }
     if super::boolean_field(query, "filterInnerLoops")? {
+        if query.get("btType").and_then(Value::as_str) != Some("BTMIndividualSketchRegionQuery-140")
+        {
+            return Err("filtered inner sketch regions are not supported yet".into());
+        }
         return super::regions::filtered_profile(&sketch_id, model, inputs);
     }
     Ok(json!({"kind": "sketch", "value": sketch_id}))
