@@ -151,6 +151,9 @@ fn changed_after(
         let Some(&before) = transition.previous_state_id.and_then(|id| states.get(&id)) else {
             return true;
         };
+        if attribute_only(history, before, state, work) {
+            continue;
+        }
         let changes = [
             (
                 state,
@@ -197,6 +200,123 @@ fn changed_after(
         }
     }
     false
+}
+
+fn attribute_only(
+    history: &AsmHistory,
+    before: &crate::history_records::AsmDeltaState,
+    after: &crate::history_records::AsmDeltaState,
+    work: &WorkBudget,
+) -> bool {
+    let Some(transition) = &after.transition else {
+        return false;
+    };
+    let mut topology = transition.topology.clone();
+    topology.bodies.updated.clear();
+    if topology != Default::default() {
+        return false;
+    }
+    let Some(cached) = history.cached_record_archive() else {
+        return false;
+    };
+    if !work.charge_by(work_units(
+        transition.records.updated.len()
+            + transition.records.inserted.len()
+            + transition.records.deleted.len(),
+    )) {
+        return false;
+    }
+    let Some(order) = history.states_oldest_first() else {
+        return false;
+    };
+    let mut versions = HashMap::new();
+    let mut old = None;
+    let mut new = None;
+    for index in order {
+        let state = &history.states()[index];
+        let Some(delta) = &state.transition else {
+            return false;
+        };
+        if !work.charge_by(work_units(
+            delta.records.deleted.len() + delta.record_revisions.len(),
+        )) {
+            return false;
+        }
+        for slot in &delta.records.deleted {
+            versions.remove(slot);
+        }
+        for row in &delta.record_revisions {
+            versions.insert(row.entity_ref, row.record_ref);
+        }
+        if state.state_id == before.state_id {
+            if !work.charge_by(work_units(versions.len())) {
+                return false;
+            }
+            old = Some(versions.clone());
+        }
+        if state.state_id == after.state_id {
+            new = Some(versions);
+            break;
+        }
+    }
+    let (Some(old), Some(new)) = (old, new) else {
+        return false;
+    };
+    let record = |versions: &HashMap<i64, i64>, slot| {
+        versions
+            .get(&slot)
+            .and_then(|revision| cached.archive.get(revision))
+    };
+    for slot in &transition.records.updated {
+        let (Some(left), Some(right)) = (record(&old, *slot), record(&new, *slot)) else {
+            return false;
+        };
+        if transition.topology.bodies.updated.contains(slot) {
+            if !same_body_shape(left, right) {
+                return false;
+            }
+        } else if !left.name.ends_with("-attrib") || !right.name.ends_with("-attrib") {
+            return false;
+        }
+    }
+    transition
+        .records
+        .deleted
+        .iter()
+        .all(|slot| record(&old, *slot).is_some_and(|record| record.name.ends_with("-attrib")))
+        && transition
+            .records
+            .inserted
+            .iter()
+            .all(|slot| record(&new, *slot).is_some_and(|record| record.name.ends_with("-attrib")))
+}
+
+fn same_body_shape(left: &cadmpeg_asm::sab::Record, right: &cadmpeg_asm::sab::Record) -> bool {
+    use cadmpeg_asm::sab::Token;
+    let fields = |record: &cadmpeg_asm::sab::Record| {
+        if record.name != "body" || record.chunk_len() != 6 {
+            return None;
+        }
+        match (
+            record.chunk(0),
+            record.chunk(1),
+            record.chunk(2),
+            record.chunk(3),
+            record.chunk(4),
+            record.chunk(5),
+        ) {
+            (
+                Some(Token::Ref(_)),
+                Some(Token::Long(key)),
+                Some(Token::Ref(pattern)),
+                Some(Token::Ref(lump)),
+                Some(Token::Ref(wire)),
+                Some(Token::Ref(transform)),
+            ) => Some((*key, *pattern, *lump, *wire, *transform)),
+            _ => None,
+        }
+    };
+    fields(left).is_some_and(|left| Some(left) == fields(right))
 }
 
 fn state_text(state: Option<i64>, noun: &str) -> String {

@@ -407,3 +407,87 @@ fn a_body_with_an_unknown_slot_retains_the_tail_native() {
         "f3d:BREP.panel.smbh:asm-delta-state#64",
     );
 }
+
+fn body_update(lump: i64, transform: i64) -> AsmHistory {
+    use cadmpeg_asm::sab::{Record, Token};
+    let base = history();
+    let states = base
+        .states()
+        .iter()
+        .enumerate()
+        .map(|(index, state)| {
+            let topology = self::topology(false);
+            let versions = topology
+                .slots()
+                .into_iter()
+                .map(|entity_ref| crate::history_records::AsmEntityVersion {
+                    entity_ref,
+                    record_ref: if entity_ref == 1 {
+                        if index == 0 {
+                            201
+                        } else {
+                            200
+                        }
+                    } else {
+                        entity_ref
+                    },
+                })
+                .collect();
+            (state.clone(), Some(topology), versions)
+        })
+        .collect();
+    let history = crate::test_support::history::history(base.id.clone(), 0, None, false, states);
+    let record = |attribute, lump, transform| Record {
+        index: 1,
+        name: "body".into(),
+        offset: 0,
+        len: 0,
+        tokens: vec![
+            Token::Ref(attribute),
+            Token::Long(0),
+            Token::Ref(-1),
+            Token::Ref(lump),
+            Token::Ref(-1),
+            Token::Ref(transform),
+        ]
+        .into(),
+    };
+    history.check_transitions().unwrap();
+    history.cache_record_archive(crate::history_records::CachedRecordArchive {
+        archive: HashMap::from([(200, record(149, 3, 4)), (201, record(5, lump, transform))]),
+        subtypes: cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&[]),
+    });
+    history
+}
+
+#[test]
+fn an_attribute_only_body_update_has_no_tail() {
+    let scope = scope(59);
+    assert!(
+        collect(&[feature(&scope, 1)], &[scope], &[body_update(3, 4)], None)
+            .tails
+            .is_empty()
+    );
+}
+
+#[test]
+fn a_body_lump_update_retains_a_tail() {
+    let scope = scope(59);
+    assert_eq!(
+        collect(&[feature(&scope, 1)], &[scope], &[body_update(8, 4)], None)
+            .tails
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn a_body_transform_update_retains_a_tail() {
+    let scope = scope(59);
+    assert_eq!(
+        collect(&[feature(&scope, 1)], &[scope], &[body_update(3, 8)], None)
+            .tails
+            .len(),
+        1
+    );
+}
