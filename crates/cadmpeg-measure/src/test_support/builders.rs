@@ -552,7 +552,7 @@ impl Builder {
             .faces
             .iter()
             .find(|candidate| candidate.id == *face)
-            .and_then(|face| face.loops.iter().nth(ring).cloned())
+            .and_then(|face| face.loops.stated().nth(ring).cloned())
             .expect("face loop");
         let coedge_id = self
             .ir
@@ -821,7 +821,7 @@ impl Builder {
             .faces
             .iter()
             .find(|candidate| candidate.id == *face)
-            .and_then(|face| face.loops.iter().nth(index).cloned())
+            .and_then(|face| face.loops.stated().nth(index).cloned())
             .expect("face loop");
         let face_loop = self
             .ir
@@ -857,12 +857,10 @@ impl Builder {
             wire_edges,
             Vec::new(),
         ));
-        self.ir.geometry.regions.push(Region {
-            id: region.clone(),
-            body: body.clone(),
-            shells: vec![shell],
-            native_ref: None,
-        });
+        self.ir
+            .geometry
+            .regions
+            .push(Region::new(region.clone(), body.clone(), vec![shell]));
         self.ir.geometry.bodies.push(Body {
             id: body,
             kind,
@@ -871,6 +869,7 @@ impl Builder {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
         let coedges = self.ir.geometry.coedges.clone();
         for coedge in &mut self.ir.geometry.coedges {

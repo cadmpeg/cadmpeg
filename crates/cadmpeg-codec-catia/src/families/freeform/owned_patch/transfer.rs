@@ -798,14 +798,11 @@ fn append_component(
         .iter_mut()
         .find(|owner| owner.id == region)
     {
-        owner.shells.push(shell);
+        owner.push_shell(shell);
     } else {
-        ir.geometry.regions.push(Region {
-            id: region,
-            body: body_id.clone(),
-            shells: vec![shell],
-            native_ref: None,
-        });
+        ir.geometry
+            .regions
+            .push(Region::new(region, body_id.clone(), vec![shell]));
     }
     if new_body {
         ir.geometry.bodies.push(Body {
@@ -816,6 +813,7 @@ fn append_component(
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
     }
     Ok(true)

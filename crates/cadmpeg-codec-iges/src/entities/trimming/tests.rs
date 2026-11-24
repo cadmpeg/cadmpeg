@@ -918,10 +918,10 @@ fn decode_classifies_explicit_outer_and_inner_trimmed_surface_loops() {
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#D15")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
-    assert_eq!(face.loops.len(), 2);
+    assert_eq!(face.loops.stated().count(), 2);
     let roles = face
         .loops
-        .iter()
+        .stated()
         .map(|id| face.loop_role(id))
         .collect::<Vec<_>>();
     assert_eq!(
@@ -936,7 +936,7 @@ fn decode_classifies_explicit_outer_and_inner_trimmed_surface_loops() {
     let cadmpeg_ir::topology::FaceLoops::Classified { outer, inner } = &face.loops else {
         panic!("an explicit outer boundary states a classified face");
     };
-    assert_eq!(Some(outer), face.loops.iter().next());
+    assert_eq!(Some(outer), face.loops.stated().next());
     assert_eq!(inner.len(), 1);
     assert!(
         result.report().losses.is_empty(),
@@ -969,7 +969,7 @@ fn decode_preserves_parameter_domain_as_implicit_outer_boundary() {
                     result.report().losses
                 )
             });
-        assert!(face.loops.is_empty());
+        assert!(face.loops.stated().next().is_none());
         // A parameter-domain outer boundary is no classification: the face
         // states an empty loop list, not a classified face with no outer.
         assert!(matches!(
@@ -1018,13 +1018,13 @@ fn decode_retains_inner_boundaries_after_an_omitted_outer_pointer() {
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#D15")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
-    assert_eq!(face.loops.len(), 1);
+    assert_eq!(face.loops.stated().count(), 1);
     let loop_ = result
         .ir()
         .geometry
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
+        .find(|loop_| Some(&loop_.id) == face.loops.stated().next())
         .unwrap();
     // The face states no outer boundary, so it states no classification: the
     // parameter domain supplies the exterior, and the procedural surface
@@ -1316,7 +1316,7 @@ fn decode_uses_model_curve_when_type_142_prefers_it() {
         .geometry
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
+        .find(|loop_| Some(&loop_.id) == face.loops.stated().next())
         .expect("outer loop");
     assert!(outer_loop.coedges().iter().all(|id| result
         .ir()

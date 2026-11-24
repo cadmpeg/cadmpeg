@@ -314,13 +314,11 @@ fn an_edited_compound_file_part_the_native_envelope_refuses_is_written_as_stored
 /// envelope, which holds none of the part's compound-file streams: the write
 /// names the stream.
 #[test]
-fn a_compound_file_part_with_no_decode_baseline_is_written_into_a_native_envelope() {
+fn a_compound_file_part_read_as_edited_is_written_into_a_native_envelope() {
     let source = cadmpeg_test_support::compound::compound_fixture();
     let mut decoded = EditableDecodeResult::from(decode(source));
-    if let Some(meta) = decoded.ir_mut().source.as_mut() {
-        meta.attributes
-            .remove(crate::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
-    }
+    decoded.source_fidelity_mut().content_digest =
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]);
 
     let (report, output) = write(&decoded);
 

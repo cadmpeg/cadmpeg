@@ -14,7 +14,7 @@ use crate::references::{InstanceTarget, ReferenceSelection};
 /// configuration, a feature, a sketch, or a parameter, or an attribute's
 /// parameter value or expression.
 pub(super) fn first(model: &Model) -> Option<ArenaName> {
-    let arenas: [(&str, bool); 13] = [
+    let arenas: [(&str, bool); 14] = [
         (
             "appearance_bindings",
             model
@@ -76,6 +76,15 @@ pub(super) fn first(model: &Model) -> Option<ArenaName> {
                         matches!(value, SolverValue::Targets { targets }
                             if targets.iter().any(InstanceTarget::reads_design))
                     })
+            }),
+        ),
+        (
+            "product_definitions",
+            model.product_definitions.iter().any(|definition| {
+                definition
+                    .representations
+                    .iter()
+                    .any(|representation| !representation.features.is_empty())
             }),
         ),
         (

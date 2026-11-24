@@ -93,7 +93,8 @@ impl<'a> BodyInput<'a, '_> {
                 faces: faces.len(),
             })
             .collect();
-        let volume = (!face_ids.is_empty()).then(|| {
+        let complete = self.owners.complete_body_shells(&body.id).is_some();
+        let volume = (!face_ids.is_empty() && complete).then(|| {
             let placement = self.placements.get(id);
             let handedness = handedness(placement);
             let placement_term = |dimension: u8, value: f64| match &placement {
@@ -324,12 +325,15 @@ impl<'a> BodyInput<'a, '_> {
     fn members(&self, body: &Body) -> Vec<Member<'a>> {
         let mut members = Vec::new();
         let mut position = 0;
-        for region in self.owners.body_regions(&body.id) {
-            for shell_id in &region.shells {
+        let Some(regions) = self.owners.complete_body_shells(&body.id) else {
+            return members;
+        };
+        for shells in regions {
+            for shell_id in shells {
                 let Some(shell) = self.owners.shell(shell_id.as_str()) else {
                     continue;
                 };
-                for face in self.owners.shell_faces(&shell.id) {
+                for face in self.owners.stated_shell_faces(&shell.id) {
                     if let Some((id, result)) = self.faces.get_key_value(face.id.as_str()) {
                         members.push(Member {
                             id,
@@ -346,11 +350,15 @@ impl<'a> BodyInput<'a, '_> {
 
     /// Shell rows in region order; a shell is closed when every edge its
     /// coedges use is used by exactly two of them with opposite senses and
-    /// no face's region reaches a natural domain edge.
+    /// no face's region reaches a natural domain edge. None for a body that
+    /// does not state every child.
     fn shells(&self, body: &Body) -> Vec<ShellMeasures> {
         let mut rows = Vec::new();
-        for region in self.owners.body_regions(&body.id) {
-            for (position, shell_id) in region.shells.iter().enumerate() {
+        let Some(regions) = self.owners.complete_body_shells(&body.id) else {
+            return rows;
+        };
+        for shells in regions {
+            for (position, shell_id) in shells.iter().enumerate() {
                 let Some(shell) = self.owners.shell(shell_id.as_str()) else {
                     continue;
                 };
@@ -365,7 +373,7 @@ impl<'a> BodyInput<'a, '_> {
                     } else {
                         ShellRole::Void
                     },
-                    closed: !self.owners.shell_faces(&shell.id).is_empty()
+                    closed: !self.owners.stated_shell_faces(&shell.id).is_empty()
                         && open.is_empty()
                         && natural_edge_faces.is_empty(),
                     open_edges: open
@@ -424,14 +432,14 @@ pub(crate) fn closure<'ir>(
 ) -> Closure<'ir> {
     let mut uses: BTreeMap<&'ir str, (usize, usize)> = BTreeMap::new();
     let mut natural_edge_faces = Vec::new();
-    for face in owners.shell_faces(&shell.id) {
+    for face in owners.stated_shell_faces(&shell.id) {
         if faces
             .get(face.id.as_str())
             .is_some_and(|result| result.natural)
         {
             natural_edge_faces.push(face.id.as_str().to_owned());
         }
-        for loop_id in &face.loops {
+        for loop_id in face.loops.stated() {
             let Some(face_loop) = owners.loop_(loop_id.as_str()) else {
                 continue;
             };

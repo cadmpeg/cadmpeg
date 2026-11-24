@@ -603,8 +603,13 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
             if reversed { reversed_range } else { range }
         );
         let mut ir = cadmpeg_ir::CadIr::empty();
-        super::super::transfer::transfer_into_ir(&asm_decode_ctx, &mut ir, "f3d", out)
-            .expect("transfer the decoded curve and its support");
+        super::super::transfer::transfer_into_ir(
+            &asm_decode_ctx,
+            &mut ir,
+            cadmpeg_ir::codec_id!("f3d"),
+            out,
+        )
+        .expect("transfer the decoded curve and its support");
         let ProceduralCurveDefinition::Spring(spring) =
             ir.geometry.procedural_curves[0].definition()
         else {

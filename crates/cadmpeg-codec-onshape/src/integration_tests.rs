@@ -9,4 +9,5 @@ mod rereview;
 mod review;
 mod rollback;
 mod second_review;
+mod sweep;
 mod thin_scope;

@@ -149,13 +149,4 @@
                 0.5
               ],
               "tag": "smooth_x",
-              "sector_coefficients": [
-                0.25,
-                0.75
-              ]
-            },
-            {
-              "vertices": [
-                2,
-                0
-            
+      

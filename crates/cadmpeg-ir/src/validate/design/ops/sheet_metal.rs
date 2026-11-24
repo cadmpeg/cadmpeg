@@ -5,7 +5,6 @@ use std::collections::BTreeSet;
 
 use super::picks::{self, Class};
 use super::{assembly, error, warning, Site};
-use crate::design::dimension::Dimension;
 use crate::design::ids::SheetMetalRuleId;
 use crate::design::names::NameKind;
 use crate::design::ops::shared::{Limit, Span};
@@ -238,21 +237,16 @@ pub(super) fn check_sheet_metal(
             }
             if let Some(Span::Between { start, end }) = extent {
                 for limit in [start, end] {
-                    let fits = match &**limit {
+                    let message = "a ContourFlange.extent end is other than AtOrigin, a positive Amount, ToPoint, ToPlane, or ToGeometry";
+                    match &**limit {
                         Limit::AtOrigin
                         | Limit::ToPoint(_)
                         | Limit::ToPlane(_)
-                        | Limit::ToGeometry { .. } => true,
-                        Limit::Amount(Dimension::Literal(amount)) => amount.get() > 0.0,
-                        Limit::Amount(_) => true,
-                        _ => false,
-                    };
-                    if !fits {
-                        error(
-                            findings,
-                            site.entity,
-                            format_args!("a ContourFlange.extent end is other than AtOrigin, a positive Amount, ToPoint, ToPlane, or ToGeometry"),
-                        );
+                        | Limit::ToGeometry { .. } => {}
+                        Limit::Amount(amount) => site.bound(findings, |values| {
+                            (values.get(amount)?.get() <= 0.0).then(|| message.to_owned())
+                        }),
+                        _ => error(findings, site.entity, format_args!("{message}")),
                     }
                 }
             }

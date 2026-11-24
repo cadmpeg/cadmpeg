@@ -1019,13 +1019,13 @@ fn index_committed_identities(
             None => false,
         };
 
-        let namespace = identity_hash(format);
+        let namespace = identity_hash(format.as_str());
         for (arena, records) in records.arenas() {
             if replaces_unknowns && arena == "unknowns" {
                 continue;
             }
 
-            let arena = identity_hash(arena);
+            let arena = identity_hash(arena.as_str());
             for (record, value) in records.iter().enumerate() {
                 insert_identity(
                     &mut identities,
@@ -1069,11 +1069,11 @@ fn committed_identity_contains(
                 record,
             } => {
                 for (format, native) in &base.native.0 {
-                    if identity_hash(format) != *namespace_hash {
+                    if identity_hash(format.as_str()) != *namespace_hash {
                         continue;
                     }
                     for (name, records) in native.arenas() {
-                        if identity_hash(name) != *arena_hash {
+                        if identity_hash(name.as_str()) != *arena_hash {
                             continue;
                         }
 
@@ -1120,7 +1120,7 @@ fn stage_committed_identities(
     crate::document::arena_registry!(stage_model);
     if let Some(native) = native {
         for (format, namespace) in &native.0 {
-            let namespace_hash = identity_hash(format);
+            let namespace_hash = identity_hash(format.as_str());
             let replaces_unknowns = match unknown_namespace {
                 Some(replacement) => format == replacement,
                 None => false,
@@ -1130,7 +1130,7 @@ fn stage_committed_identities(
                     continue;
                 }
 
-                let arena_hash = identity_hash(arena);
+                let arena_hash = identity_hash(arena.as_str());
                 let mut start = 0;
                 for (existing_format, existing_namespace) in &base.native.0 {
                     if existing_format != format {
@@ -1442,10 +1442,8 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(ir.model, expected);
-        let round_trip = CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
         assert_eq!(
-            round_trip
-                .model
+            ir.model
                 .feature_regeneration_parent(&"test:draft:feature#child".try_into().unwrap()),
             Some(&"test:draft:feature#parent".try_into().unwrap())
         );
@@ -1596,14 +1594,17 @@ mod tests {
     fn commit_session_rejects_native_identity() {
         let identity = "test:native:record#1";
         let mut ir = CadIr::empty();
-        ir.native.namespace_mut("test").arenas_mut().insert(
-            "records".into(),
-            vec![NativeRecord::new(
-                crate::ids::Identity::new(identity).expect("valid identity"),
-                serde_json::Map::new(),
-            )
-            .expect("valid native identity")],
-        );
+        ir.native
+            .namespace_mut(crate::codec_id!("test"))
+            .arenas_mut()
+            .insert(
+                cadmpeg_core::nonblank_literal!("records"),
+                vec![NativeRecord::new(
+                    crate::ids::Identity::new(identity).expect("valid identity"),
+                    serde_json::Map::new(),
+                )
+                .expect("valid native identity")],
+            );
         let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 

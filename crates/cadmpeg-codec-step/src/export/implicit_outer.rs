@@ -101,7 +101,7 @@ impl<'a> Builder<'a> {
         };
         if face
             .loops
-            .iter()
+            .stated()
             .any(|id| face.loop_role(id) == LoopBoundaryRole::Outer)
         {
             return ImplicitOuter::Stated;

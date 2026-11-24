@@ -31,11 +31,11 @@ use crate::resolved_features::scalars::FeatureObjectNames;
 /// return the relation point charges of the configuration states projected
 /// again for the write.
 ///
-/// Bitwise comparison against the machine-local document baseline; see
-/// [`cadmpeg_ir::hash::document_local_sha256`]. Absent baseline: sync lanes from
-/// the neutral side.
+/// Bitwise comparison against the codec digests the decode recorded in
+/// `digests`. Absent digest: sync lanes from the neutral side.
 pub(crate) fn prepare_configurations_for_write(
     ir: &cadmpeg_ir::CadIr,
+    digests: &cadmpeg_ir::source_fidelity::CodecDigests,
     native: &mut Option<crate::native::SldprtNative>,
     annotations: &cadmpeg_ir::Annotations,
     edits: &mut super::edits::SourceEdits<'_>,
@@ -52,13 +52,10 @@ pub(crate) fn prepare_configurations_for_write(
     )?;
 
     let feature_state_hash = configuration_feature_state_hash(&hash_ctx, &ir.model.configurations)?;
-    let baseline_feature_states = ir.source.as_ref().and_then(|source| {
-        source
-            .attributes
-            .get("sldprt_configuration_feature_states_local_sha256")
-    });
+    let baseline_feature_states =
+        crate::codec_digests::baseline(digests, "sldprt_configuration_feature_states_local_sha256");
     let feature_states_changed = baseline_feature_states
-        .is_some_and(|baseline| baseline != &feature_state_hash)
+        .is_some_and(|baseline| baseline != feature_state_hash)
         || baseline_feature_states.is_none()
             && ir
                 .model
@@ -67,13 +64,12 @@ pub(crate) fn prepare_configurations_for_write(
                 .any(|configuration| !configuration.feature_states.is_empty());
     let parameter_value_hash =
         configuration_parameter_value_hash(&hash_ctx, &ir.model.configurations)?;
-    let baseline_parameter_values = ir.source.as_ref().and_then(|source| {
-        source
-            .attributes
-            .get("sldprt_configuration_parameter_values_local_sha256")
-    });
+    let baseline_parameter_values = crate::codec_digests::baseline(
+        digests,
+        "sldprt_configuration_parameter_values_local_sha256",
+    );
     let parameter_values_changed = baseline_parameter_values
-        .is_some_and(|baseline| baseline != &parameter_value_hash)
+        .is_some_and(|baseline| baseline != parameter_value_hash)
         || baseline_parameter_values.is_none()
             && ir
                 .model
@@ -85,16 +81,11 @@ pub(crate) fn prepare_configurations_for_write(
         .as_ref()
         .map(|value| native_configuration_hash(&hash_ctx, &value.feature_histories))
         .transpose()?;
-    let baseline_neutral = ir.source.as_ref().and_then(|source| {
-        source
-            .attributes
-            .get("sldprt_neutral_configuration_local_sha256")
-    });
-    let baseline_native = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("sldprt_native_configuration_sha256"));
-    let neutral_changed = baseline_neutral.is_none_or(|hash| hash != &neutral_hash);
+    let baseline_neutral =
+        crate::codec_digests::baseline(digests, "sldprt_neutral_configuration_local_sha256");
+    let baseline_native =
+        crate::codec_digests::baseline(digests, "sldprt_native_configuration_sha256");
+    let neutral_changed = baseline_neutral.is_none_or(|hash| hash != neutral_hash);
     let native_changed = !edits.native_unedited()
         && match (&native_hash, baseline_native) {
             (Some(current), Some(baseline)) => current != baseline,
@@ -128,7 +119,14 @@ pub(crate) fn prepare_configurations_for_write(
             .as_ref()
             .map_or(&[][..], |native| native.feature_input_lanes.as_slice());
         let exact = exact(lanes)?;
-        return sync_configuration_design_state(ir, native, annotations, exact.as_ref(), edits);
+        return sync_configuration_design_state(
+            ir,
+            digests,
+            native,
+            annotations,
+            exact.as_ref(),
+            edits,
+        );
     }
     Ok(Vec::new())
 }
@@ -154,6 +152,7 @@ fn relation_point_charges(
 
 fn sync_configuration_design_state(
     ir: &cadmpeg_ir::CadIr,
+    digests: &cadmpeg_ir::source_fidelity::CodecDigests,
     native: &mut Option<crate::native::SldprtNative>,
     annotations: &cadmpeg_ir::Annotations,
     exact: Option<&crate::resolved_features::profiles::ExactProfiles>,
@@ -277,16 +276,16 @@ fn sync_configuration_design_state(
     // With the caller's native records unedited, a projection that differs
     // from the baseline shows the writer's own synchronization so far.
     let native_design_state_changed = !edits.native_unedited()
-        && ir.source.as_ref().is_some_and(|source| {
-            source
-                .attributes
-                .get("sldprt_configuration_parameter_values_local_sha256")
-                .is_some_and(|baseline| baseline != &current_parameter_hash)
-                || source
-                    .attributes
-                    .get("sldprt_configuration_feature_states_local_sha256")
-                    .is_some_and(|baseline| baseline != &current_feature_hash)
-        });
+        && (crate::codec_digests::baseline(
+            digests,
+            "sldprt_configuration_parameter_values_local_sha256",
+        )
+        .is_some_and(|baseline| baseline != current_parameter_hash)
+            || crate::codec_digests::baseline(
+                digests,
+                "sldprt_configuration_feature_states_local_sha256",
+            )
+            .is_some_and(|baseline| baseline != current_feature_hash));
     if native_design_state_changed {
         if exact.is_none() {
             return Err(CodecError::NotImplemented(

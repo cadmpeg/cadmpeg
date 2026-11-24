@@ -163,13 +163,9 @@ fn brep_qualification_rewrites_owned_ids_and_cross_references() {
                 color: None,
                 visible: None,
                 native_ref: None,
+                unstated: None,
             }],
-            regions: vec![Region {
-                id: region,
-                body: body.clone(),
-                shells: Vec::new(),
-                native_ref: None,
-            }],
+            regions: vec![Region::new(region, body.clone(), Vec::new())],
 
             body_native_keys: vec![BodyNativeKey {
                 source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
@@ -225,6 +221,7 @@ fn body_key_retention_keeps_only_the_selected_connected_graph() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     };
     let native_key = |index, key| BodyNativeKey {
         source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
@@ -246,18 +243,16 @@ fn body_key_retention_keeps_only_the_selected_connected_graph() {
                 body(3),
             ],
             regions: vec![
-                Region {
-                    id: RegionId::mint("f3d:brep:entity#2").expect("identity grammar"),
-                    body: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
-                    shells: Vec::new(),
-                    native_ref: None,
-                },
-                Region {
-                    id: RegionId::mint("f3d:brep:entity#4").expect("identity grammar"),
-                    body: BodyId::mint("f3d:brep:entity#3").expect("identity grammar"),
-                    shells: Vec::new(),
-                    native_ref: None,
-                },
+                Region::new(
+                    RegionId::mint("f3d:brep:entity#2").expect("identity grammar"),
+                    BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
+                    Vec::new(),
+                ),
+                Region::new(
+                    RegionId::mint("f3d:brep:entity#4").expect("identity grammar"),
+                    BodyId::mint("f3d:brep:entity#3").expect("identity grammar"),
+                    Vec::new(),
+                ),
             ],
 
             body_native_keys: vec![native_key(1, 10), native_key(3, 20)],
@@ -294,6 +289,7 @@ fn body_key_retention_preserves_derived_links_for_reachable_targets() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     };
     let native_key = |index, key| BodyNativeKey {
         source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
@@ -417,6 +413,7 @@ fn body_key_retention_preserves_selectorless_neutral_roots() {
                     color: None,
                     visible: None,
                     native_ref: None,
+                    unstated: None,
                 },
                 Body {
                     id: projected_body.clone(),
@@ -426,6 +423,7 @@ fn body_key_retention_preserves_selectorless_neutral_roots() {
                     color: None,
                     visible: None,
                     native_ref: None,
+                    unstated: None,
                 },
             ],
 
@@ -604,12 +602,11 @@ fn sketch_region_brep(bodies: &[RegionBody], key: Option<u64>) -> Brep {
         asm.bodies.push(
             serde_json::from_value(serde_json::json!({"id": body, "kind": "solid"})).unwrap(),
         );
-        asm.regions.push(Region {
-            id: RegionId::mint(region.clone()).unwrap(),
-            body: BodyId::mint(body.clone()).unwrap(),
-            shells: vec![cadmpeg_ir::ids::ShellId::mint(shell.clone()).unwrap()],
-            native_ref: None,
-        });
+        asm.regions.push(Region::new(
+            RegionId::mint(region.clone()).unwrap(),
+            BodyId::mint(body.clone()).unwrap(),
+            vec![cadmpeg_ir::ids::ShellId::mint(shell.clone()).unwrap()],
+        ));
         asm.shells.push(cadmpeg_ir::topology::Shell::with_members(
             cadmpeg_ir::ids::ShellId::mint(shell.clone()).unwrap(),
             RegionId::mint(region).unwrap(),

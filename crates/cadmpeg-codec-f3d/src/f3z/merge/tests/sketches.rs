@@ -16,15 +16,15 @@ fn sketch(name: &str) -> Sketch {
 }
 
 fn component(sketch: &Sketch) -> ProductDefinition {
-    serde_json::from_value(serde_json::json!({
+    let mut definition: ProductDefinition = serde_json::from_value(serde_json::json!({
         "id": "test:model:product#component",
         "kind": "part",
         "bom_properties": {}, "storage": {"kind": "embedded"}, "occurrences": [], "instance_bodies": [], "representations": [],
-        "bodies": [],
-        "sketches": [sketch.id],
-        "tessellations": []
+        "bodies": []
     }))
-    .unwrap()
+    .unwrap();
+    definition.sketches = vec![sketch.id.clone()];
+    definition
 }
 
 #[test]
