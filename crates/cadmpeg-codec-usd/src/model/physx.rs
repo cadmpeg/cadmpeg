@@ -24,8 +24,8 @@ const SOLVER: &str = "physx";
 pub(super) struct PendingSettings {
     path: String,
     schema: String,
-    /// `None` where the settings' holder is a joint: a joint is a design
-    /// feature (§6.7), which this decoder does not state.
+    /// `None` where the settings' holder is a joint with no design joint
+    /// feature.
     target: Option<SolverTarget>,
     values: Vec<(String, Read)>,
 }
@@ -121,8 +121,8 @@ impl super::Builder<'_, '_, '_, '_> {
             .factor(self.scale, self.kilograms_per_unit, radians, 1.0)
     }
 
-    /// The record that a relationship target names. A joint names none, as
-    /// for [`PendingSettings::target`].
+    /// The record that a relationship target names: for a joint, its design
+    /// joint feature.
     fn physx_target(&self, path: &str) -> Option<SolverTarget> {
         let prim = self.stage.find(path)?;
         let model = &self.ir.model;
@@ -131,7 +131,12 @@ impl super::Builder<'_, '_, '_, '_> {
             .and_then(crate::schema::physics::JointType::of)
             .is_some()
         {
-            return None;
+            return self
+                .joint_features
+                .get(&crate::ids::joint(path))
+                .map(|feature| SolverTarget::Joint {
+                    joint: feature.clone(),
+                });
         }
         let occurrence = crate::ids::occurrence(path);
         model

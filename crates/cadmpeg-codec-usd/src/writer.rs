@@ -131,10 +131,56 @@ const COVERAGE: ArenaDispositions = {
         physics_scenes: Written,
         solver_settings: Written,
         declared_measures: Omitted,
-        design: cadmpeg_ir::codec::write::DesignArenaDispositions::uniform(Omitted),
+        design: cadmpeg_ir::codec::write::DesignArenaDispositions {
+            scopes: Reported,
+            containers: Reported,
+            features: Reported,
+            ..cadmpeg_ir::codec::write::DesignArenaDispositions::uniform(Omitted)
+        },
         process: cadmpeg_ir::codec::write::ProcessArenaDispositions::uniform(Omitted),
     }
 };
+
+/// The loss of the design records the writer does not write: design
+/// features other than joints, except those that restate a model feature,
+/// whose arena the write omits, and the design state of scopes. A
+/// container only groups features, so its features account for it.
+fn design_losses(ir: &CadIr) -> Option<LossNote> {
+    let restated: BTreeSet<&str> = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.id.as_str())
+        .collect();
+    let features = ir
+        .design
+        .features
+        .iter()
+        .filter(|feature| {
+            !matches!(
+                feature.definition.operation,
+                cadmpeg_ir::design::feature::FeatureOperation::Joint(_)
+            ) && !restated.contains(feature.id.as_str())
+        })
+        .count();
+    let scopes = ir
+        .design
+        .scopes
+        .iter()
+        .filter(|scope| {
+            scope.active_configuration.is_some()
+                || !scope.active_arrangements.is_empty()
+                || !scope.occurrences.is_empty()
+        })
+        .count();
+    (features + scopes > 0).then(|| {
+        UsdLossCode::ExportDesignNotWritten.note(format!(
+            "{features} design features other than joints and the configuration, arrangement, \
+             and occurrence state of {scopes} design scopes have no UsdPhysics or PhysX form \
+             and were not written"
+        ))
+    })
+}
 
 /// A package member: its name and its content.
 pub(crate) type Member = (String, Vec<u8>);
@@ -600,7 +646,7 @@ impl<'ir> Writer<'ir> {
             || !free_curves.is_empty()
             || !free_points.is_empty();
         let mut names = Names::default();
-        let physics = !self.ir.model.assembly_joints.is_empty()
+        let physics = !self.physics.joints.is_empty()
             || !self.ir.model.physical_materials.is_empty()
             || !self.ir.model.physics_scenes.is_empty();
         let default_prim = match roots.as_slice() {
@@ -653,6 +699,8 @@ impl<'ir> Writer<'ir> {
         }
         let (prims, unresolved) = physx::resolve(&prims, &self.target_paths);
         self.unwritten.solver_properties += unresolved + self.physics.unwritten_settings;
+        self.unwritten.joints += self.physics.unwritten_joints;
+        self.unwritten.joint_properties += self.physics.unwritten_joint_properties;
         let mut header = Emitter::default();
         header.line(&format!("#usda {}", self.version));
         header.line("(");
@@ -1998,6 +2046,9 @@ impl<'ir> Writer<'ir> {
                  does not name and were not written",
                 unwritten.joint_drives
             )));
+        }
+        if let Some(note) = design_losses(self.ir) {
+            losses.push(note);
         }
         if !unwritten.unmeshed.is_empty() {
             losses.push(UsdLossCode::ExportFaceNotWritten.note(format!(

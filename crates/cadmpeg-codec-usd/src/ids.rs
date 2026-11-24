@@ -277,6 +277,23 @@ pub(crate) fn joint(path: &str) -> cadmpeg_ir::products::JointId {
     )
 }
 
+/// The design joint feature of the joint prim at `path`: it restates the
+/// joint of [`joint`] under its id.
+pub(crate) fn joint_feature(path: &str) -> cadmpeg_ir::features::FeatureId {
+    cadmpeg_ir::features::FeatureId::compose(
+        &cadmpeg_ir::identity_namespace!("usd", "stage", "joint"),
+        key(path),
+    )
+}
+
+/// The unordered group of the stage's joint features.
+pub(crate) fn joint_group() -> cadmpeg_ir::design::ids::ContainerId {
+    cadmpeg_ir::design::ids::ContainerId::from(cadmpeg_ir::ids::Identity::compose(
+        &cadmpeg_ir::identity_namespace!("usd", "stage", "container"),
+        cadmpeg_ir::identity_key!("joints"),
+    ))
+}
+
 /// The physical material of the material prim at `path`.
 pub(crate) fn physical_material(path: &str) -> cadmpeg_ir::ids::PhysicalMaterialId {
     cadmpeg_ir::ids::PhysicalMaterialId::compose(
