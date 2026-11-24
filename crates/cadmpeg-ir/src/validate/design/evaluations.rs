@@ -199,6 +199,19 @@ pub(super) fn check_evaluations(
                         feature.id.as_str()
                     ),
                 );
+            } else if matches!(of, OfKey::Tool(_))
+                && super::ops::builds_tool_body(
+                    &index.definition_in(feature, configuration).operation,
+                ) == Some(false)
+            {
+                super::error(
+                    findings,
+                    id,
+                    format_args!(
+                        "evaluation evaluates the tool body of {}, whose operation in the evaluation's configuration builds none",
+                        feature.id.as_str()
+                    ),
+                );
             }
         }
         let key = (scope, configuration, of);
@@ -505,30 +518,26 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
                 );
             }
         }
+        let here: BTreeSet<&str> = scope
+            .current
+            .iter()
+            .flat_map(|current| &current.bodies)
+            .chain(&scope.unproduced)
+            .map(crate::ids::BodyId::as_str)
+            .collect();
+        for body in owned.difference(&here) {
+            super::error(
+                findings,
+                body,
+                format_args!("body of a definition scope {entity} spans belongs to no current state or unproduced set of that scope"),
+            );
+        }
         for count in posed.into_values() {
             if count > 1 {
                 super::error(
                     findings,
                     entity,
                     format_args!("an instance path has a pose in {count} current states of the scope; it has one in at most one"),
-                );
-            }
-        }
-    }
-    // A body of a scoped definition is listed by some scope, not
-    // necessarily its own.
-    for scope in &ir.design.scopes {
-        let entity = scope.definition.as_str();
-        let own = index
-            .definitions
-            .get(entity)
-            .map_or(&[][..], |definition| &definition.bodies[..]);
-        for body in own.iter().map(crate::ids::BodyId::as_str) {
-            if !listed.contains_key(body) {
-                super::error(
-                    findings,
-                    body,
-                    format_args!("body of scoped definition {entity} belongs to no current state or unproduced set"),
                 );
             }
         }
