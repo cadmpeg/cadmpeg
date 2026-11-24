@@ -35,6 +35,12 @@ const SEED_SEGMENTS_PER_SPAN: usize = 4;
 /// tolerance states its midpoint departure.
 const MAX_DEPTH: u32 = 12;
 
+/// Points one sampled polyline may hold. A segment still outside the fit
+/// tolerance at the limit is kept, and the sampled fit tolerance states its
+/// midpoint departure. A seeding that alone needs more points leaves the edge
+/// without a sampled carrier.
+const MAX_SAMPLE_POINTS: usize = 16_384;
+
 /// The fewest seed segments.
 const MIN_SEED_SEGMENTS: usize = 8;
 
@@ -164,7 +170,13 @@ fn polyline(
         .windows(2)
         .filter(|pair| pair[0] < pair[1] && pair[0] < high && pair[1] > low)
         .count();
-    let seeds = (spans * SEED_SEGMENTS_PER_SPAN).max(MIN_SEED_SEGMENTS);
+    let Some(seeds) = spans
+        .checked_mul(SEED_SEGMENTS_PER_SPAN)
+        .map(|count| count.max(MIN_SEED_SEGMENTS))
+        .filter(|count| *count < MAX_SAMPLE_POINTS)
+    else {
+        return Ok(None);
+    };
     let geometry = PcurveGeometry::Nurbs {
         nurbs: pcurve.clone(),
     };
@@ -181,8 +193,12 @@ fn polyline(
         )?;
         Ok(solved.map(FinitePoint3::get))
     };
-    let mut parameters = Vec::with_capacity(seeds + 1);
-    let mut points = Vec::with_capacity(seeds + 1);
+    let mut parameters = ctx.alloc_filled(seeds + 1, 0.0_f64, "sample tolerant edge parameters")?;
+    let mut points = ctx.alloc_filled(
+        seeds + 1,
+        Point3::new(0.0, 0.0, 0.0),
+        "sample tolerant edge points",
+    )?;
     for step in 0..=seeds {
         let (Ok(step_count), Ok(seed_count)) = (u32::try_from(step), u32::try_from(seeds)) else {
             return Ok(None);
@@ -196,14 +212,17 @@ fn polyline(
         let Some(point) = point_at(parameter)? else {
             return Ok(None);
         };
-        parameters.push(parameter);
-        points.push(point);
+        parameters[step] = parameter;
+        points[step] = point;
     }
     let mut fit_tolerance = FIT_TOLERANCE_MM;
     let mut departure = 0.0_f64;
     let mut refined_parameters = vec![parameters[0]];
     let mut refined_points = vec![points[0]];
     for index in 1..parameters.len() {
+        // Every segment still to seed and every pending segment keeps at
+        // least its end point.
+        let reserved = parameters.len() - 1 - index;
         let mut pending = vec![(
             parameters[index - 1],
             points[index - 1],
@@ -228,7 +247,9 @@ fn polyline(
             });
             let split = match sagitta {
                 Some((point, distance)) if distance > target => {
-                    if depth < MAX_DEPTH {
+                    if depth < MAX_DEPTH
+                        && refined_points.len() + pending.len() + reserved + 2 <= MAX_SAMPLE_POINTS
+                    {
                         Some(point)
                     } else {
                         // A segment at the bisection cap is kept; the stated
@@ -256,6 +277,10 @@ fn polyline(
             }
         }
     }
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(refined_points.len()),
+        "sample tolerant edge carrier",
+    )?;
     let last = refined_points.len() - 1;
     let knot_count = refined_points.len() + 2;
     let mut knot_values = Vec::with_capacity(knot_count);
@@ -275,7 +300,7 @@ fn polyline(
 
 #[cfg(test)]
 mod tests {
-    use super::{ir_parameters, polyline, FIT_TOLERANCE_MM};
+    use super::{ir_parameters, polyline, FIT_TOLERANCE_MM, MAX_SAMPLE_POINTS};
     const TARGET_MM: f64 = 5.0e-6;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::geometry::analytic::{CylinderSurface, PlaneSurface};
@@ -405,6 +430,23 @@ mod tests {
         assert!(sampled.departure <= TARGET_MM);
         assert!(coarse.departure <= FIT_TOLERANCE_MM);
         assert!(coarse.departure > TARGET_MM);
+        ctx.finish_session().expect("session");
+    }
+
+    #[test]
+    fn sampling_stops_at_the_point_cap_and_states_the_departure() {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0; 4], &arena, &policy).expect("context");
+        let surface = cylinder();
+        let quarter = std::f64::consts::FRAC_PI_2;
+        let pcurve = map(&surface, line([0.0, 0.002], [quarter, 0.002]));
+        let sampled = polyline(&ctx, &surface, &pcurve, None, 1.0e-15)
+            .expect("evaluation")
+            .expect("polyline");
+        assert!(sampled.curve.control_points().len() <= MAX_SAMPLE_POINTS);
+        assert!(sampled.curve.control_points().len() > MAX_SAMPLE_POINTS / 2);
+        assert!(sampled.departure > 1.0e-15);
         ctx.finish_session().expect("session");
     }
 }
