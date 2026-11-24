@@ -9,6 +9,7 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::digest::Sha256Digest;
@@ -1055,6 +1056,15 @@ fn retain_unowned_carriers(
     ir.geometry
         .procedural_surfaces
         .retain(|surface| retains_carrier(surface.id.as_str(), &removed_closure, &protected));
+    ir.model.attributes.retain(|attribute| {
+        let carrier = match &attribute.target.entity {
+            AttributeTarget::Point(id) => id.as_str(),
+            AttributeTarget::Curve(id) => id.as_str(),
+            AttributeTarget::Surface(id) => id.as_str(),
+            _ => return true,
+        };
+        retains_carrier(carrier, &removed_closure, &protected)
+    });
     typed_records.retain(&mut |id| {
         !unowned_pcurves.contains(id) && (!removed_closure.contains(*id) || protected.contains(*id))
     });

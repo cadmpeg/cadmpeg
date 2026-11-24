@@ -348,24 +348,7 @@
       "articulations": [],
       "assembly_joints": [],
       "assets": [],
-      "attributes": [
-        {
-          "id": "step:data:attribute#point.48",
-          "name": "name",
-          "target": {
-            "entity": {
-              "kind": "point",
-              "value": "step:data:point#48"
-            }
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "centre point"
-            }
-          ]
-        }
-      ],
+      "attributes": [],
       "colliders": [],
       "configurations": [],
       "declared_measures": [
