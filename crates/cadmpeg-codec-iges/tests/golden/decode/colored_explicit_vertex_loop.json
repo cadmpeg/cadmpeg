@@ -127,10 +127,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "SPHERE",
-            "object_id": "D3",
-            "visible": true
+            "object_id": "D3"
           }
         }
       ],
@@ -231,8 +228,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],

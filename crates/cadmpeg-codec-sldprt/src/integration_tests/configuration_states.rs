@@ -148,8 +148,8 @@ fn a_display_table_binds_to_the_active_copy_of_a_stored_face() {
     let [mesh] = ir.model.tessellations.as_slice() else {
         panic!("one display table: {:#?}", ir.model.tessellations);
     };
-    assert_eq!(mesh.body.as_ref(), Some(&body.id));
-    assert_eq!(mesh.faces, std::slice::from_ref(&face.id));
+    assert_eq!(mesh.of.body(), Some(&body.id));
+    assert_eq!(mesh.of.faces(), std::slice::from_ref(&face.id));
     assert!(!result
         .report()
         .losses

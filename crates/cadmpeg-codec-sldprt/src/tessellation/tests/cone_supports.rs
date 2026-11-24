@@ -57,9 +57,9 @@ fn cone_support_binds_display_list_face() {
         assign_unique_surface_owners!(&mut ir).unwrap(),
         vec!["synthetic:test:tessellation#cone-mesh"]
     );
-    assert_eq!(ir.model.tessellations[0].faces, vec![face]);
+    assert_eq!(ir.model.tessellations[0].of.faces(), vec![face]);
     assert_eq!(
-        ir.model.tessellations[0].body,
+        ir.model.tessellations[0].of.body().cloned(),
         Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
     );
 }
@@ -127,9 +127,9 @@ fn cone_chordal_display_list_uses_analytic_normal_for_ownership() {
         assign_unique_surface_owners!(&mut ir).unwrap(),
         vec!["synthetic:test:tessellation#cone-cache-mesh"]
     );
-    assert_eq!(ir.model.tessellations[0].faces, vec![face]);
+    assert_eq!(ir.model.tessellations[0].of.faces(), vec![face]);
     assert_eq!(
-        ir.model.tessellations[0].body,
+        ir.model.tessellations[0].of.body().cloned(),
         Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
     );
     assert!(ir.model.tessellations[0]

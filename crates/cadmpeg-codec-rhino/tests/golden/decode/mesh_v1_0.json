@@ -75,10 +75,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": [
-            "rhino:object:tessellation#record-000000-offset-177"
-          ]
+          }
         }
       ],
       "rigid_bodies": [],
@@ -113,7 +110,6 @@
               "kind": 1380450306
             }
           ],
-          "faces": [],
           "feature_edges": [],
           "id": "rhino:object:tessellation#record-000000-offset-177",
           "mesh": {
@@ -186,11 +182,14 @@
               }
             ]
           },
+          "of": {
+            "definition": "rhino:model:product-definition#root",
+            "kind": "definition"
+          },
           "source_object": {
             "format": "rhino",
             "instance_path": [],
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           },
           "texture_assignments": [],
           "texture_coordinates": [],

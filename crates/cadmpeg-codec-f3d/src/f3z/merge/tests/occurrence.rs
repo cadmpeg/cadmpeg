@@ -336,7 +336,7 @@ fn occurrence_merge_rewrites_only_member_native_record_text() {
         .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .arenas_mut()
         .insert(
-            "operands".into(),
+            cadmpeg_core::nonblank_literal!("operands"),
             vec![NativeRecord::new(id.try_into().unwrap(), serde_json::Map::new()).unwrap()],
         );
     let targets = super::super::native_record_targets(&native, "member");
@@ -910,7 +910,6 @@ fn imported_definition_bodies_keep_their_definition_frame() {
             part_number: None,
             bom_properties: std::collections::BTreeMap::new(),
             sketches: Vec::new(),
-            tessellations: Vec::new(),
             native_ref: None,
             generated_from: None,
             storage: cadmpeg_ir::products::Storage::Embedded,

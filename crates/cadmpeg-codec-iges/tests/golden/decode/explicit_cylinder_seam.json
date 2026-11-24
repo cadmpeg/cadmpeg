@@ -64,10 +64,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "SEAMUV0",
-            "object_id": "D13",
-            "visible": true
+            "object_id": "D13"
           }
         },
         {
@@ -96,10 +93,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "SEAMEDGE",
-            "object_id": "D7",
-            "visible": true
+            "object_id": "D7"
           }
         }
       ],
@@ -142,10 +136,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "CYLINDER",
-            "object_id": "D5",
-            "visible": true
+            "object_id": "D5"
           }
         }
       ],
@@ -188,8 +179,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],

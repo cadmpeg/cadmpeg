@@ -166,10 +166,7 @@
             "format": "iges",
             "geometry_role": "independent",
             "instance_path": [],
-            "layer": "0",
-            "name": "SPLSURF",
-            "object_id": "D1",
-            "visible": true
+            "object_id": "D1"
           }
         }
       ],
@@ -212,8 +209,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],

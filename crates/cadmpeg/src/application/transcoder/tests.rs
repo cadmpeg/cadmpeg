@@ -126,7 +126,7 @@ fn step_ir_with_unrepresentable_native_content() -> CadIr {
         .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .arenas_mut()
         .insert(
-            "asm_histories".into(),
+            cadmpeg_core::nonblank_literal!("asm_histories"),
             vec![cadmpeg_ir::NativeRecord::new(
                 cadmpeg_ir::ids::Identity::new("f3d:test:asm-history#0").expect("valid identity"),
                 serde_json::Map::default(),
@@ -218,7 +218,6 @@ fn rhino_omitted_product_structure_is_rejected_by_the_shared_plan_gate() {
         .push(cadmpeg_ir::products::ProductDefinition {
             sketches: Vec::default(),
 
-            tessellations: Vec::new(),
             id: "cadir:model:product#group"
                 .try_into()
                 .expect("valid identity"),
@@ -268,7 +267,7 @@ struct NotImplementedEncoder;
 
 impl cadmpeg_ir::codec::write::EncoderBackend for NotImplementedEncoder {
     const FORMAT: cadmpeg_ir::codec::FormatId =
-        cadmpeg_ir::codec::FormatId::new("not-implemented-test");
+        cadmpeg_ir::codec::FormatId::new("notimplementedtest");
     const REQUEST: cadmpeg_core::decode::DecodeDepth = cadmpeg_core::decode::DecodeDepth::Full;
     type Target = cadmpeg_ir::codec::write::target::DialectFree;
     const TARGET: Self::Target = cadmpeg_ir::codec::write::target::DialectFree;

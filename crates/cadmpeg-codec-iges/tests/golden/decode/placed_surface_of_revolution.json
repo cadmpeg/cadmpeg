@@ -51,10 +51,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "AXIS",
-            "object_id": "D1",
-            "visible": true
+            "object_id": "D1"
           }
         },
         {
@@ -83,10 +80,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "PROFILE",
-            "object_id": "D3",
-            "visible": true
+            "object_id": "D3"
           }
         },
         {
@@ -124,10 +118,7 @@
             "format": "iges",
             "geometry_role": "independent",
             "instance_path": [],
-            "layer": "0",
-            "name": "REVOLVE",
-            "object_id": "D7",
-            "visible": true
+            "object_id": "D7"
           }
         }
       ],
@@ -267,10 +258,7 @@
             "format": "iges",
             "geometry_role": "independent",
             "instance_path": [],
-            "layer": "0",
-            "name": "REVOLVE",
-            "object_id": "D7",
-            "visible": true
+            "object_id": "D7"
           }
         }
       ],
@@ -313,8 +301,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],

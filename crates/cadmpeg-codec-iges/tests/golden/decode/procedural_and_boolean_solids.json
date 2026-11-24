@@ -51,10 +51,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "PROFILE1",
-            "object_id": "D1",
-            "visible": true
+            "object_id": "D1"
           }
         },
         {
@@ -89,10 +86,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "PROFILE2",
-            "object_id": "D3",
-            "visible": true
+            "object_id": "D3"
           }
         }
       ],
@@ -146,8 +140,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],

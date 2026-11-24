@@ -5865,7 +5865,7 @@
                 "settings": ""
               },
               "kind": {
-                "kind": "Camera",
+                "kind": "camera",
                 "value": {
                   "properties": {
                     "settings": ""
@@ -5892,8 +5892,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],

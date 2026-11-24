@@ -213,7 +213,13 @@ fn export_losses_are_emitted() {
     ));
     let (mut ir, _, _) = patch.into_parts();
     let body = ir.geometry.bodies[0].id.clone();
-    let tessellation = mesh_ir.model.tessellations[0].clone().with_body(Some(body));
+    let tessellation =
+        mesh_ir.model.tessellations[0]
+            .clone()
+            .with_of(cadmpeg_ir::tessellation::Meshed::Body {
+                body,
+                faces: Vec::new(),
+            });
     ir.model.tessellations.push(tessellation);
     ir.geometry.surfaces[0].geometry =
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
@@ -255,7 +261,10 @@ fn a_triangle_group_face_is_reported_as_not_written() {
     let group = TessellationTriangleGroup::new(Some("S".to_owned()), vec![0]).with_face(face);
     let tessellation = mesh_ir.model.tessellations[0]
         .clone()
-        .with_body(Some(body))
+        .with_of(cadmpeg_ir::tessellation::Meshed::Body {
+            body,
+            faces: Vec::new(),
+        })
         .with_triangle_groups(vec![group])
         .unwrap();
     ir.model.tessellations.push(tessellation);

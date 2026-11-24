@@ -27,9 +27,68 @@ pub(super) fn check_appearance_attributes(
     }
     let records = DesignRecords::of(ir);
     let model = ModelRecords::of(ir);
+    let assemblies: BTreeSet<&str> = ir
+        .model
+        .product_definitions
+        .iter()
+        .filter(|definition| !definition.occurrences.is_empty())
+        .map(|definition| definition.id.as_str())
+        .collect();
     let mut stated = std::collections::HashMap::new();
     for binding in &ir.model.appearance_bindings {
         let owner = binding.id.as_str();
+        match &binding.target.entity {
+            AppearanceTarget::Occurrence(id) if !model.occurrences.contains(id.as_str()) => {
+                missing(findings, owner, "occurrence", id.as_str());
+            }
+            AppearanceTarget::Definition(id) => {
+                if !model.product_definitions.contains(id.as_str()) {
+                    missing(findings, owner, "product definition", id.as_str());
+                }
+                if binding.target.path.is_some() {
+                    error(
+                        findings,
+                        owner,
+                        format_args!("a definition target states a path"),
+                    );
+                }
+            }
+            AppearanceTarget::Record { arena, id } => {
+                if ARM_ARENAS.contains(&arena.as_str()) {
+                    error(
+                        findings,
+                        owner,
+                        format_args!(
+                            "record target names `{arena}`, whose records another target arm names"
+                        ),
+                    );
+                }
+                record(ir, findings, owner, arena, id);
+            }
+            _ => {}
+        }
+        let orders = match &binding.target.entity {
+            AppearanceTarget::Occurrence(_) => true,
+            AppearanceTarget::Definition(id) => assemblies.contains(id.as_str()),
+            AppearanceTarget::Body(_) | AppearanceTarget::Tessellation(_) => {
+                binding.target.path.is_some()
+            }
+            _ => false,
+        };
+        if orders != binding.precedence.is_some() {
+            error(
+                findings,
+                owner,
+                format_args!(
+                    "{}",
+                    if orders {
+                        "states no precedence on a target a placed definition can state a nearer target under"
+                    } else {
+                        "states a precedence on a target no placed definition states a nearer target under"
+                    }
+                ),
+            );
+        }
         if let Some(other) = stated.insert(&binding.target, &binding.appearance) {
             if other != &binding.appearance {
                 super::record_finding(
@@ -38,17 +97,10 @@ pub(super) fn check_appearance_attributes(
                     Severity::Warning,
                     Some(owner),
                     format_args!(
-                        "another binding names the same target, path, and state with another appearance"
+                        "another binding names the same target, path, and state with a different appearance"
                     ),
                 );
             }
-        }
-        match &binding.target.entity {
-            AppearanceTarget::Occurrence(id) if !model.occurrences.contains(id.as_str()) => {
-                missing(findings, owner, "occurrence", id.as_str());
-            }
-            AppearanceTarget::Record { arena, id } => record(ir, findings, owner, arena, id),
-            _ => {}
         }
         if binding
             .source_entity_id
@@ -87,6 +139,21 @@ pub(super) fn check_appearance_attributes(
         }
     }
 }
+
+/// The arenas whose records an arm of `AppearanceTarget` other than `Record`
+/// names, which a `Record` target names instead of that arm.
+const ARM_ARENAS: [&str; 10] = [
+    "bodies",
+    "occurrences",
+    "product_definitions",
+    "faces",
+    "edges",
+    "vertices",
+    "surfaces",
+    "curves",
+    "points",
+    "tessellations",
+];
 
 /// The ids of the model arenas that an attribute or a binding names and
 /// that no [`ModelIndex`] lookup indexes.

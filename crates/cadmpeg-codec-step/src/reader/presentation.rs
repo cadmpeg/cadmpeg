@@ -228,6 +228,7 @@ pub(super) fn decode(
             description,
             visible: hidden_layer_ids.contains(&layer_id).then_some(false),
             items: items.into_iter().map(InstanceTarget::new).collect(),
+            native_ref: None,
         });
         typed.insert(layer_id);
     }
@@ -429,6 +430,7 @@ pub(super) fn decode(
                     .into(),
                     target: target.into(),
                     appearance: appearance_id.clone(),
+                    precedence: None,
                     source_entity_id: Some(format!("#{target_step}")),
                     object_type: None,
                     visible,

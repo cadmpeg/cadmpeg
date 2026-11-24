@@ -1217,7 +1217,7 @@ mod tests {
     #[test]
     fn check_findings_matches_separate_orientation_and_declared_passes() {
         use cadmpeg_ir::declared_measures::{
-            DeclaredMeasure, DeclaredMeasureProvenance, DeclaredQuantity, DeclaredTarget,
+            DeclaredMeasure, DeclaredQuantity, DeclaredTarget, MeasureBasis,
         };
         use cadmpeg_ir::ids::DeclaredMeasureId;
         use cadmpeg_ir::scalar::FiniteReal;
@@ -1232,9 +1232,9 @@ mod tests {
             quantity: DeclaredQuantity::Volume {
                 value: FiniteReal::new(999.0).expect("volume"),
             },
-            provenance: DeclaredMeasureProvenance::ValidationProperty,
-            source_error: None,
             label: None,
+            basis: Some(MeasureBasis::Validation),
+            precision: None,
             native_ref: None,
         });
         let options = MeasureOptions::default();

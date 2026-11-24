@@ -57,10 +57,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "LINE",
-            "object_id": "D1",
-            "visible": true
+            "object_id": "D1"
           }
         },
         {
@@ -102,10 +99,7 @@
             "format": "iges",
             "geometry_role": "independent",
             "instance_path": [],
-            "layer": "0",
-            "name": "OFFSET",
-            "object_id": "D3",
-            "visible": true
+            "object_id": "D3"
           }
         }
       ],
@@ -258,8 +252,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],

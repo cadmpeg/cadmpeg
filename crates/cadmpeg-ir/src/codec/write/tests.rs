@@ -744,7 +744,7 @@ fn carried_errors_follow_native_format_and_complete_coverage() {
         .namespace_mut(crate::codec_id!("f3d"))
         .arenas_mut()
         .insert(
-            "asm_histories".into(),
+            cadmpeg_core::nonblank_literal!("asm_histories"),
             vec![crate::NativeRecord::new(
                 crate::ids::Identity::new(id).expect("valid native identity"),
                 serde_json::Map::default(),

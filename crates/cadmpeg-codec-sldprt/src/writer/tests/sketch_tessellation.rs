@@ -942,8 +942,7 @@ fn semantic_writer_writes_default_channels_for_more_auxiliary_channels_than_the_
     )
     .unwrap();
     extended.id = original.id.clone();
-    extended.body = original.body.clone();
-    extended.faces = original.faces.clone();
+    extended.of = original.of.clone();
     decoded.ir_mut().model.tessellations[0] = extended;
 
     let report = SldprtCodec

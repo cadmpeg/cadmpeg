@@ -296,7 +296,6 @@
             "kind": "embedded"
           },
           "bodies": [],
-          "tessellations": [],
           "occurrences": [],
           "instance_bodies": [],
           "representations": [],
@@ -312,7 +311,6 @@
           "bodies": [
             "f3d:brep:entity#1"
           ],
-          "tessellations": [],
           "occurrences": [
             "f3d:model:occurrence#aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
             "f3d:model:occurrence#cccccccc-1111-2222-3333-dddddddddddd"

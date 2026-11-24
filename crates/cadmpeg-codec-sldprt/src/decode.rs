@@ -210,6 +210,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         if let Some(current) = &current {
             root.bodies.retain(|body| current.contains(body));
         }
+        let root = root.id.clone();
+        decoded.ir.display_unresolved_meshes(&root);
     }
     stamp_local_digests(ctx, &mut decoded.ir)?;
     crate::codec_digests::move_to_sidecar(&mut decoded)?;
@@ -368,7 +370,7 @@ fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeBody) {
         .model
         .tessellations
         .iter()
-        .filter(|mesh| mesh.body.is_none() || mesh.faces.is_empty())
+        .filter(|mesh| mesh.of.faces().is_empty())
         .count();
     if unresolved > 0 {
         report.losses.push(
@@ -3418,6 +3420,7 @@ fn retain_unresolved_appearance(
         id: binding_id,
         target: AppearanceTarget::Unresolved.into(),
         appearance: appearance_id,
+        precedence: None,
         source_entity_id: Some(unresolved.identity.clone()),
         object_type: Some(unresolved.owner_class.clone()),
         visible: None,
@@ -3599,6 +3602,7 @@ fn push_display_meshes(
                     ),
                     target: AppearanceTarget::Tessellation(id.clone()).into(),
                     appearance,
+                    precedence: None,
                     source_entity_id: Some(source_entity_id),
                     object_type: Some("DisplayFace".into()),
                     visible: None,
@@ -4326,6 +4330,7 @@ fn build_geometry_ir(
                     id: binding_id,
                     target: AppearanceTarget::Face(target).into(),
                     appearance: id,
+                    precedence: None,
                     source_entity_id: Some(face_color.face_attr.to_string()),
                     object_type: Some("Face".into()),
                     visible: None,
@@ -4495,6 +4500,7 @@ fn build_geometry_ir(
             ),
             target: AppearanceTarget::Face(face_id.clone()).into(),
             appearance,
+            precedence: None,
             source_entity_id: Some(format!(
                 "{}:{}",
                 definition.source_name.as_str(),
@@ -6722,6 +6728,7 @@ mod digest_tests {
             id: AppearanceBindingId::mint(id).unwrap(),
             target: target.into(),
             appearance: AppearanceId::mint(appearance).unwrap(),
+            precedence: None,
             source_entity_id: None,
             object_type: None,
             visible: None,

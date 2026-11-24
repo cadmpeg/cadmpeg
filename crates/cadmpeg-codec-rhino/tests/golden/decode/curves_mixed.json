@@ -70,8 +70,7 @@
           "source_object": {
             "format": "rhino",
             "instance_path": [],
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         },
         {
@@ -124,8 +123,7 @@
           "source_object": {
             "format": "rhino",
             "instance_path": [],
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         },
         {
@@ -168,8 +166,7 @@
           "source_object": {
             "format": "rhino",
             "instance_path": [],
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         },
         {
@@ -184,8 +181,7 @@
           "source_object": {
             "format": "rhino",
             "instance_path": [],
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         },
         {
@@ -222,8 +218,7 @@
           "source_object": {
             "format": "rhino",
             "instance_path": [],
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         },
         {
@@ -237,8 +232,7 @@
           "source_object": {
             "format": "rhino",
             "instance_path": [],
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         },
         {
@@ -275,8 +269,7 @@
           "source_object": {
             "format": "rhino",
             "instance_path": [],
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         }
       ],
@@ -295,8 +288,7 @@
           "source_object": {
             "format": "rhino",
             "instance_path": [],
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         },
         {
@@ -309,8 +301,7 @@
           "source_object": {
             "format": "rhino",
             "instance_path": [],
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         },
         {
@@ -323,8 +314,7 @@
           "source_object": {
             "format": "rhino",
             "instance_path": [],
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         }
       ],
@@ -469,8 +459,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],

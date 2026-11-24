@@ -50,17 +50,9 @@
             "z": 3.0
           },
           "source_object": {
-            "color": {
-              "a": 1.0,
-              "b": 0.0,
-              "g": 0.0,
-              "r": 0.0
-            },
             "format": "rhino",
             "instance_path": [],
-            "layer": "284434a6-8100-1c94-6093-9b8d5a958003",
-            "object_id": "d000213c-3fed-dfd4-5d93-120ab2084742",
-            "visible": true
+            "object_id": "d000213c-3fed-dfd4-5d93-120ab2084742"
           }
         }
       ],
@@ -135,8 +127,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],

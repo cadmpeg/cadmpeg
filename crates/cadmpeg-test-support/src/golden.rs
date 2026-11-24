@@ -530,10 +530,19 @@ pub fn fidelity_snapshot(fidelity: &cadmpeg_ir::SourceFidelity) -> serde_json::V
 /// goldens hold.
 ///
 /// Snapshots serialize through [`serde_json::Value`], whose maps order by key,
-/// so reordering a struct field does not rewrite every golden.
+/// so reordering a struct field does not rewrite every golden. The value is
+/// written with the CADIR writer's float form, so a golden holds 0 where the
+/// value holds negative zero (§2.5).
+///
+/// # Panics
+///
+/// Panics when the writer refuses the value, which a `serde_json::Value`
+/// never gives it cause to.
 #[must_use]
 pub fn snapshot_text(value: &serde_json::Value) -> String {
-    format!("{value:#}\n")
+    let written = cadmpeg_ir::hash::finite_json::to_json_value(value)
+        .expect("the writer writes every JSON value");
+    format!("{written:#}\n")
 }
 
 #[cfg(test)]
@@ -668,6 +677,15 @@ mod tests {
     /// codec drift, so the comparison must accept it.
     const LINUX_CONE_V: f64 = 1.802_581_857_082_682;
     const WINDOWS_CONE_V: f64 = 1.802_581_857_082_681_5;
+
+    #[test]
+    fn snapshot_text_writes_negative_zero_as_the_writer_does() {
+        let value = serde_json::json!({"x": -0.0, "y": [-0.0, -1.5], "n": -0});
+        assert_eq!(
+            snapshot_text(&value),
+            "{\n  \"n\": 0,\n  \"x\": 0.0,\n  \"y\": [\n    0.0,\n    -1.5\n  ]\n}\n"
+        );
+    }
 
     #[test]
     fn byte_identical_text_agrees_without_parsing() {

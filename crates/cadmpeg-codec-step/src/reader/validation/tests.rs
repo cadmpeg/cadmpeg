@@ -8,7 +8,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::declared_measures::{
-    DeclaredMeasure, DeclaredMeasureProvenance, DeclaredQuantity, DeclaredTarget,
+    DeclaredMeasure, DeclaredQuantity, DeclaredTarget, MeasureBasis,
 };
 use cadmpeg_ir::CadIr;
 
@@ -247,10 +247,7 @@ fn a_product_definition_shape_property_targets_the_definition() {
         ]
     );
     for measure in &measures {
-        assert_eq!(
-            measure.provenance,
-            DeclaredMeasureProvenance::ValidationProperty
-        );
+        assert_eq!(measure.basis, Some(MeasureBasis::Validation));
         assert_eq!(
             measure.target,
             DeclaredTarget::Definition {

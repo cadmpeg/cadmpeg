@@ -117,10 +117,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "INPCURVE",
-            "object_id": "D11",
-            "visible": true
+            "object_id": "D11"
           }
         },
         {
@@ -180,10 +177,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "OUTMODEL",
-            "object_id": "D3",
-            "visible": true
+            "object_id": "D3"
           }
         },
         {
@@ -243,10 +237,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "OUTPCURV",
-            "object_id": "D5",
-            "visible": true
+            "object_id": "D5"
           }
         },
         {
@@ -306,10 +297,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "INMODEL",
-            "object_id": "D9",
-            "visible": true
+            "object_id": "D9"
           }
         }
       ],
@@ -554,10 +542,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "PLANE",
-            "object_id": "D1",
-            "visible": true
+            "object_id": "D1"
           }
         }
       ],
@@ -613,8 +598,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],

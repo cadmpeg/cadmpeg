@@ -1532,7 +1532,7 @@ id_type!(
 );
 id_type!(
     /// Identifies a [`crate::topology::Point`] carrier (a vertex position).
-    PointId, compose
+    PointId, compose, key
 );
 id_type!(
     /// Identifies a passthrough [`crate::unknown::UnknownRecord`].

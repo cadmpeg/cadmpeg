@@ -875,7 +875,10 @@ pub(crate) fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link(
             Vec::new(),
         )
         .expect("valid tessellation")
-        .with_body(Some(ir.geometry.bodies[0].id.clone())),
+        .with_of(cadmpeg_ir::tessellation::Meshed::Body {
+            body: ir.geometry.bodies[0].id.clone(),
+            faces: Vec::new(),
+        }),
     );
     let mut bytes = Vec::new();
     let report = write_step(
@@ -900,7 +903,7 @@ pub(crate) fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link(
     assert_eq!(mesh.vertices().len(), 3);
     assert_eq!(mesh.triangles(), [[0, 1, 2], [2, 1, 0]]);
     assert_eq!(mesh.vertex_normals().len(), 3);
-    assert!(mesh.body.is_some());
+    assert!(mesh.of.body().is_some());
 }
 
 #[test]
@@ -1191,6 +1194,7 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
             .expect("valid identity"),
         target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()).into(),
         appearance,
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: Some(false),
@@ -1271,6 +1275,7 @@ fn writer_round_trips_surface_appearance_transparency() {
             .expect("valid identity"),
         target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()).into(),
         appearance,
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,
@@ -1283,6 +1288,7 @@ fn writer_round_trips_surface_appearance_transparency() {
             .expect("valid identity"),
         target: AppearanceTarget::Face(ir.geometry.faces[1].id.clone()).into(),
         appearance: second_appearance,
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,
@@ -1332,6 +1338,7 @@ fn writer_round_trips_presentation_layer_visibility() {
         description: Some("layer visibility".into()),
         visible: Some(false),
         items: vec![PresentationItem::Body { body }.into()],
+        native_ref: None,
     });
 
     let mut output = Vec::new();
@@ -1375,6 +1382,7 @@ fn writer_round_trips_empty_presentation_layer_label() {
         description: Some("unnamed layer".into()),
         visible: Some(false),
         items: vec![PresentationItem::Body { body }.into()],
+        native_ref: None,
     });
 
     let mut output = Vec::new();
