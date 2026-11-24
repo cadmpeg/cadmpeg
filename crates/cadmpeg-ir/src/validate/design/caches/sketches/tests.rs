@@ -224,3 +224,22 @@ fn a_point_lies_at_the_end_of_the_curve_it_bounds() {
         vec![Some("test:design:sketch-entity#end".to_owned())]
     );
 }
+
+#[test]
+fn a_direction_reads_the_linear_tolerance_of_its_segment_ends() {
+    let perpendicular = |lean: f64| {
+        sketched(
+            vec![
+                entity("a", line([0.0, 0.0], [10.0, 0.0]), Vec::new()),
+                entity("b", line([0.0, 0.0], [lean, 10.0]), Vec::new()),
+            ],
+            Some(SketchRelation::Perpendicular {
+                a: on("a"),
+                b: on("b"),
+            }),
+        )
+    };
+    assert!(warnings(&perpendicular(0.0), MISSES).is_empty());
+    assert!(warnings(&perpendicular(2.0 * LINEAR), MISSES).is_empty());
+    assert_eq!(warnings(&perpendicular(20.0 * LINEAR), MISSES).len(), 1);
+}

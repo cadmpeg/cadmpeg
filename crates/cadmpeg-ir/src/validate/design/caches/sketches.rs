@@ -3,8 +3,9 @@
 //! where the sketch's status is `Current`: the residual of each constraint
 //! that incidence and arithmetic on points, lines, circles, and arcs decide,
 //! and a point's position against the end or center of each curve it bounds.
-//! Lengths agree within the linear tolerance and directions within the
-//! angular tolerance; each disagreement is a Warning.
+//! Lengths agree within the linear tolerance, and directions within the
+//! angular tolerance and what the linear tolerance of a segment's ends
+//! leaves of its direction; each disagreement is a Warning.
 //!
 //! An entity is read where it is `Free`, or a `Frame` point: a spline, a
 //! conic, and a derived or instanced curve are not checked. A dimension
@@ -43,7 +44,10 @@ enum Shape {
 #[derive(Clone, Copy)]
 enum Measure {
     Length,
-    Angle,
+    /// An angle between directions that segments give, with the sum over
+    /// those segments of 2 / length: each end of a segment is known within
+    /// the linear tolerance, so its direction within that many times it.
+    Angle(f64),
 }
 
 struct Sketch<'a, 'v> {
@@ -95,7 +99,7 @@ pub(super) fn check_sketches(index: &DesignRecords<'_>, findings: &mut Vec<Findi
             };
             let within = match measure {
                 Measure::Length => linear,
-                Measure::Angle => angular,
+                Measure::Angle(spread) => linear.mul_add(spread, angular),
             };
             if residual > within {
                 warning(
@@ -214,13 +218,15 @@ impl Sketch<'_, '_> {
     /// arithmetic decide it.
     fn residual(&self, relation: &SketchRelation<Planar>) -> Option<(f64, Measure)> {
         let length = |residual: f64| Some((residual, Measure::Length));
-        let angle = |residual: f64| Some((residual, Measure::Angle));
+        let angle = |residual: f64, spread: f64| Some((residual, Measure::Angle(spread)));
         match relation {
             SketchRelation::Coincident { a, b } => {
                 length(incidence(self.shape(a)?, self.shape(b)?)?)
             }
             SketchRelation::Horizontal { a, b } => match (self.shape(a)?, b) {
-                (Shape::Line(_, direction, _), None) => angle(direction[1].abs().asin()),
+                (line @ Shape::Line(_, direction, _), None) => {
+                    angle(direction[1].abs().asin(), spread(line))
+                }
                 (Shape::Point(first), Some(b)) => {
                     let Shape::Point(second) = self.shape(b)? else {
                         return None;
@@ -230,7 +236,9 @@ impl Sketch<'_, '_> {
                 _ => None,
             },
             SketchRelation::Vertical { a, b } => match (self.shape(a)?, b) {
-                (Shape::Line(_, direction, _), None) => angle(direction[0].abs().asin()),
+                (line @ Shape::Line(_, direction, _), None) => {
+                    angle(direction[0].abs().asin(), spread(line))
+                }
                 (Shape::Point(first), Some(b)) => {
                     let Shape::Point(second) = self.shape(b)? else {
                         return None;
@@ -240,12 +248,20 @@ impl Sketch<'_, '_> {
                 _ => None,
             },
             SketchRelation::Parallel { a, b } => {
-                let (first, second) = (direction(self.shape(a)?)?, direction(self.shape(b)?)?);
-                angle(cross(first, second).abs().min(1.0).asin())
+                let (a, b) = (self.shape(a)?, self.shape(b)?);
+                let (first, second) = (direction(a)?, direction(b)?);
+                angle(
+                    cross(first, second).abs().min(1.0).asin(),
+                    spread(a) + spread(b),
+                )
             }
             SketchRelation::Perpendicular { a, b } => {
-                let (first, second) = (direction(self.shape(a)?)?, direction(self.shape(b)?)?);
-                angle(dot(first, second).abs().min(1.0).asin())
+                let (a, b) = (self.shape(a)?, self.shape(b)?);
+                let (first, second) = (direction(a)?, direction(b)?);
+                angle(
+                    dot(first, second).abs().min(1.0).asin(),
+                    spread(a) + spread(b),
+                )
             }
             SketchRelation::Tangent { a, b, .. } => {
                 length(tangency(self.shape(a)?, self.shape(b)?)?)
@@ -274,7 +290,8 @@ impl Sketch<'_, '_> {
                 ..
             } => {
                 let expected = self.value(value)?.get().rem_euclid(TAU);
-                let (first, second) = (direction(self.shape(a)?)?, direction(self.shape(b)?)?);
+                let (a, b) = (self.shape(a)?, self.shape(b)?);
+                let (first, second) = (direction(a)?, direction(b)?);
                 let between = dot(first, second).clamp(-1.0, 1.0).acos();
                 let candidates = [between, PI - between, PI + between, TAU - between];
                 angle(
@@ -285,6 +302,7 @@ impl Sketch<'_, '_> {
                             difference.min(TAU - difference)
                         })
                         .fold(f64::INFINITY, f64::min),
+                    spread(a) + spread(b),
                 )
             }
             SketchRelation::Radial {
@@ -354,6 +372,14 @@ fn dot(first: [f64; 2], second: [f64; 2]) -> f64 {
 
 fn cross(first: [f64; 2], second: [f64; 2]) -> f64 {
     first[0].mul_add(second[1], -(first[1] * second[0]))
+}
+
+/// 2 / length of a segment; an unbounded line gives its direction exactly.
+fn spread(shape: Shape) -> f64 {
+    match shape {
+        Shape::Line(_, _, Some(length)) => 2.0 / length,
+        Shape::Line(_, _, None) | Shape::Point(_) | Shape::Circle(..) => 0.0,
+    }
 }
 
 fn direction(shape: Shape) -> Option<[f64; 2]> {
