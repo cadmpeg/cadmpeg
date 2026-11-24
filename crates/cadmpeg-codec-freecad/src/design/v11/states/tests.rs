@@ -1,0 +1,165 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Body states as evaluations, with full-snapshot ids (§5.4).
+
+use std::io::Cursor;
+
+use cadmpeg_ir::design::evaluation::StateBase;
+use cadmpeg_ir::design::refs::{Evaluated, Member, Position, RecordRef};
+use cadmpeg_ir::document::Topology;
+use cadmpeg_ir::features::FeatureId;
+use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
+
+use super::{snapshot, Base, Resolved};
+use crate::FcstdCodec;
+
+fn topology(value: &serde_json::Value) -> Topology {
+    let mut wire = serde_json::Map::new();
+    for (arena, _) in super::ARENAS {
+        wire.insert(arena.to_owned(), serde_json::Value::Array(Vec::new()));
+    }
+    for (arena, records) in value.as_object().unwrap() {
+        wire.insert(arena.clone(), records.clone());
+    }
+    serde_json::from_value(serde_json::Value::Object(wire)).unwrap()
+}
+
+/// A body of one region and one shell, and the points `points`, all keyed by
+/// `key`.
+fn state(key: &str, points: &[(&str, f64)]) -> Topology {
+    let id = |kind: &str, child: &str| format!("fcstd:model:{kind}#{key}:{child}");
+    topology(&serde_json::json!({
+        "bodies": [{"id": id("body", "1"), "kind": "solid"}],
+        "regions": [{"id": id("region", "1"), "body": id("body", "1"), "shells": [id("shell", "1")]}],
+        "shells": [{"id": id("shell", "1"), "region": id("region", "1"), "members": []}],
+        "points": points
+            .iter()
+            .map(|(child, x)| serde_json::json!({"id": id("point", child), "position": {"x": x, "y": 0.0, "z": 0.0}}))
+            .collect::<Vec<_>>(),
+    }))
+}
+
+#[test]
+fn a_state_keeps_its_base_body_by_position_and_shares_equal_records() {
+    let first = snapshot(&state("Pad:Shape:A.brp", &[("1", 0.0), ("2", 1.0)]), None).unwrap();
+    assert_eq!(first.records.bodies.len(), 1);
+    assert_eq!(first.records.points.len(), 2);
+    assert!(first.removed.is_empty());
+    let base = Base {
+        reference: StateBase::Empty,
+        resolved: first.resolved,
+    };
+    let second = snapshot(
+        &state("Pocket:Shape:B.brp", &[("1", 1.0), ("2", 2.0)]),
+        Some(&base),
+    )
+    .unwrap();
+    // The body, its region, and its shell keep the base's ids and equal its
+    // records, so they are shared; the point at x = 1 equals the base's
+    // second point and is shared under its id.
+    assert!(second.records.bodies.is_empty());
+    assert!(second.records.regions.is_empty());
+    assert!(second.records.shells.is_empty());
+    let [new] = second.records.points.as_slice() else {
+        panic!("{:?}", second.records.points)
+    };
+    assert_eq!(new.id.as_str(), "fcstd:model:point#Pocket:Shape:B.brp:2");
+    assert!(second.renamed.contains(&(
+        "fcstd:model:point#Pocket:Shape:B.brp:1".to_owned(),
+        "fcstd:model:point#Pad:Shape:A.brp:2".to_owned()
+    )));
+    assert!(second.renamed.contains(&(
+        "fcstd:model:body#Pocket:Shape:B.brp:1".to_owned(),
+        "fcstd:model:body#Pad:Shape:A.brp:1".to_owned()
+    )));
+    let [RecordRef::Point(removed)] = second.removed.as_slice() else {
+        panic!("{:?}", second.removed)
+    };
+    assert_eq!(removed.as_str(), "fcstd:model:point#Pad:Shape:A.brp:1");
+}
+
+#[test]
+fn an_empty_base_shares_nothing() {
+    let empty = Base {
+        reference: StateBase::Empty,
+        resolved: Resolved::default(),
+    };
+    let state = snapshot(&state("Pad:Shape:A.brp", &[("1", 0.0)]), Some(&empty)).unwrap();
+    assert_eq!(state.records.bodies.len(), 1);
+    assert_eq!(state.records.points.len(), 1);
+    assert!(state.renamed.iter().all(|(old, new)| old == new));
+}
+
+fn decode(name: &str) -> CadIr {
+    let bytes = std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../corpus/freecad_fcstd/fixtures")
+            .join(name),
+    )
+    .unwrap();
+    FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap()
+        .ir()
+        .clone()
+}
+
+fn feature(name: &str) -> FeatureId {
+    FeatureId::mint(format!("fcstd:design:feature#{name}")).unwrap()
+}
+
+#[test]
+fn every_stored_body_state_but_the_tip_is_an_evaluation_on_its_nearest_earlier_state() {
+    let ir = decode("core_operations.FCStd");
+    let after = |name: &str| Evaluated::State(Position::After(Member::Feature(feature(name))));
+    let evaluation = |of: &Evaluated| {
+        ir.design
+            .evaluations
+            .iter()
+            .find(|evaluation| &evaluation.of == of)
+    };
+    // A Body's first stored state is based on `Empty`; the `Tip`'s state is
+    // the current state and has no evaluation.
+    let draft_base = evaluation(&after("DraftBase")).expect("DraftBase state");
+    assert_eq!(draft_base.content.as_ref().unwrap().base, StateBase::Empty);
+    assert!(evaluation(&after("Draft")).is_none());
+    assert!(evaluation(&after("Hole")).is_none());
+    // A state after the `Tip` is based on the current state.
+    let pattern = evaluation(&after("LinearPattern")).expect("LinearPattern state");
+    assert_eq!(
+        pattern.content.as_ref().unwrap().base,
+        StateBase::Current(Position::After(Member::Feature(feature("PatternBase"))))
+    );
+    // A hole's tool body is a state of its own.
+    let tool = evaluation(&Evaluated::Tool(feature("Hole"))).expect("Hole tool body");
+    assert_eq!(tool.content.as_ref().unwrap().base, StateBase::Empty);
+    // Each state resolves, and no body of the geometry is a Body member's.
+    for evaluation in &ir.design.evaluations {
+        let state = ir
+            .resolved_evaluation_state(
+                &evaluation.id,
+                &cadmpeg_core::decode::ResourceLimits::default(),
+            )
+            .unwrap();
+        assert!(
+            !state.records().bodies.is_empty(),
+            "{}",
+            evaluation.id.as_str()
+        );
+    }
+    for body in &ir.geometry.bodies {
+        for member in [
+            "DraftBase:",
+            "Draft:",
+            "HoleBase:",
+            "Hole:",
+            "PatternBase:",
+            "LinearPattern:",
+        ] {
+            assert!(
+                !body.id.as_str().contains(&format!("#{member}")),
+                "{}",
+                body.id.as_str()
+            );
+        }
+    }
+}
