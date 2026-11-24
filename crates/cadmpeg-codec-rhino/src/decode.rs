@@ -648,7 +648,7 @@ impl<'a> DecodeContext<'a> {
         let appended = self.session.try_admit_append(
             candidate,
             annotations,
-            cadmpeg_ir::RHINO_DRAFT_CHECKS,
+            cadmpeg_ir::RHINO_DRAFT,
             |validation, annotations| {
                 let validation = match validation {
                     Ok(report) => report,
@@ -2077,7 +2077,7 @@ impl<'a> DecodeContext<'a> {
             Ok(links) => {
                 let validation = self
                     .session
-                    .admit_appended(&self.annotations, cadmpeg_ir::RHINO_INSTANCE_CHECKS)?;
+                    .admit_appended(&self.annotations, cadmpeg_ir::RHINO_INSTANCE)?;
                 if validation
                     .as_ref()
                     .is_ok_and(cadmpeg_ir::report::check::ValidationReport::is_ok)

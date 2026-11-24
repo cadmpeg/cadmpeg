@@ -171,6 +171,13 @@ jobs:
           set -euo pipefail
           python3 scripts/check-codec-facade.py
 
+      - name: Validation rule names
+        # Every validation finding states its rule (rule!/rule_name!), and
+        # every rule an admission route lists is stated by a finding.
+        run: |
+          set -euo pipefail
+          python3 scripts/name-validation-rules.py --check
+
       - name: Dialect identity registry
         # Schema, id grammar, witness form, and the IGES admission lattice in
         # crates/cadmpeg-registry/docs/dialects.toml. Ids are pinned from the commit that adds them.
