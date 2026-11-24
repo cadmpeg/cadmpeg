@@ -106,7 +106,11 @@ impl Scan {
         match byte {
             b'"' => self.string = true,
             b'{' | b'[' => self.depth += 1,
-            b'}' | b']' => self.depth = self.depth.saturating_sub(1),
+            b'}' | b']' => {
+                if let Some(depth) = self.depth.checked_sub(1) {
+                    self.depth = depth;
+                }
+            }
             _ => {}
         }
     }
