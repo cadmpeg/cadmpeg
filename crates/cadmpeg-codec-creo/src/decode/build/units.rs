@@ -2528,7 +2528,7 @@ mod tests {
     fn generated_sweep_scaling_scales_generated_sections() {
         let shape = cadmpeg_ir::features::sweeps::SweepShape::Solid {
             op: cadmpeg_ir::features::sweeps::SolidSweepOperation::NewBody,
-            section: cadmpeg_ir::features::sweeps::SweepSection::Unresolved(None),
+            section: cadmpeg_ir::features::sweeps::SweepSection::Unresolved,
             sections: vec![cadmpeg_ir::features::sweeps::SweepSection::Generated(
                 cadmpeg_ir::features::sweeps::GeneratedSweepSection::CircularRegion {
                     region: cadmpeg_ir::features::sweeps::SweepCircularRegion::new(

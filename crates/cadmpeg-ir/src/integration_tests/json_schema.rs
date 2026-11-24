@@ -2,10 +2,9 @@
 //! The committed JSON Schema files are the schemas that the `JsonSchema`
 //! derives generate. `UPDATE_GOLDEN=1` rewrites them from the derives.
 
+use std::collections::BTreeSet;
 use std::path::Path;
 
-use schemars::transform::{RecursiveTransform, Transform};
-use schemars::Schema;
 use serde_json::{Map, Value};
 
 #[test]
@@ -48,7 +47,9 @@ fn committed_json_schemas_equal_the_derived_schemas() {
 }
 
 /// Whether `node` can admit `null`: false only where a keyword of the node,
-/// or of the definition it references, refuses it.
+/// or of the definition it references, refuses it. `not` refuses `null`
+/// where its schema admits it, so `{"not": {}}`, the schema of an enum with
+/// no variant, admits no value.
 fn admits_null(node: &Value, defs: &Map<String, Value>, depth: usize) -> bool {
     let Value::Object(node) = node else {
         return node.as_bool().unwrap_or(false);
@@ -85,60 +86,186 @@ fn admits_null(node: &Value, defs: &Map<String, Value>, depth: usize) -> bool {
         })
         || refuses("anyOf", &|branches| arms(branches, false))
         || refuses("oneOf", &|branches| arms(branches, false))
-        || refuses("allOf", &|branches| arms(branches, true)))
+        || refuses("allOf", &|branches| arms(branches, true))
+        || refuses("not", &|negated| admits_null(negated, defs, depth + 1)))
 }
 
-/// Every member that an object schema in `schema` declares and does not
-/// require, as `(location, member schema)`. A schema without `"type":
-/// "object"` refines members that another schema declares (`allOf`, `if`,
-/// `then`, `else`) and is left out.
-fn optional_members(schema: &Value) -> Vec<(String, Value)> {
-    let mut found = Vec::new();
-    let mut root: Schema = schema.clone().try_into().unwrap();
-    RecursiveTransform(|node: &mut Schema| {
+/// Every place in `schema` that admits `null` for a value that is not a list
+/// element, an array element, or a map value, as the path that reaches it.
+///
+/// Each such value is the root or a member that an object schema declares,
+/// required or not; `admits_null` follows the `$ref`, `anyOf`, `oneOf`, and
+/// `allOf` it states. An element or a map value may admit `null`, and the
+/// members of the objects it holds are checked in turn. A schema without
+/// `"type": "object"` refines members that another schema declares (`allOf`,
+/// `if`, `then`, `else`), so its members are left out.
+fn null_values(schema: &Value) -> BTreeSet<String> {
+    let defs = schema["$defs"].as_object().unwrap();
+    let mut walk = NullWalk {
+        defs,
+        visited: BTreeSet::new(),
+        found: BTreeSet::new(),
+    };
+    walk.value(schema, "$", false);
+    walk.found
+}
+
+struct NullWalk<'a> {
+    defs: &'a Map<String, Value>,
+    visited: BTreeSet<&'a str>,
+    found: BTreeSet<String>,
+}
+
+impl<'a> NullWalk<'a> {
+    /// A value at `at`: an element or a map value where `element` is true.
+    fn value(&mut self, node: &'a Value, at: &str, element: bool) {
+        if !element && admits_null(node, self.defs, 0) {
+            self.found.insert(at.to_owned());
+        }
+        self.members(node, at);
+    }
+
+    /// The values that `node`, or a schema it references or combines, holds.
+    fn members(&mut self, node: &'a Value, at: &str) {
+        let Value::Object(node) = node else {
+            return;
+        };
+        if let Some(name) = node
+            .get("$ref")
+            .and_then(Value::as_str)
+            .and_then(|reference| reference.strip_prefix("#/$defs/"))
+        {
+            if let Some((name, target)) = self.defs.get_key_value(name) {
+                if self.visited.insert(name) {
+                    self.members(target, &format!("{at} -> {name}"));
+                }
+            }
+        }
+        for keyword in ["anyOf", "oneOf", "allOf"] {
+            for arm in node
+                .get(keyword)
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                self.members(arm, at);
+            }
+        }
         let object = match node.get("type") {
             Some(Value::Array(kinds)) => kinds.iter().any(|kind| kind == "object"),
             Some(kind) => kind == "object",
             None => false,
         };
-        if !object {
-            return;
-        }
-        let Some(members) = node.get("properties").and_then(Value::as_object) else {
-            return;
-        };
-        let required = node.get("required").and_then(Value::as_array);
-        for (name, member) in members {
-            if !required.is_some_and(|required| required.iter().any(|r| r == name.as_str())) {
-                let at = node
-                    .get("description")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
-                found.push((format!("{name} (in: {at})"), member.clone()));
+        if object {
+            for (name, member) in node
+                .get("properties")
+                .and_then(Value::as_object)
+                .into_iter()
+                .flatten()
+            {
+                self.value(member, &format!("{at}.{name}"), false);
             }
         }
-    })
-    .transform(&mut root);
-    found
+        for (pattern, member) in node
+            .get("patternProperties")
+            .and_then(Value::as_object)
+            .into_iter()
+            .flatten()
+        {
+            self.value(member, &format!("{at}{{{pattern}}}"), true);
+        }
+        if let Some(member) = node
+            .get("additionalProperties")
+            .filter(|member| member.is_object())
+        {
+            self.value(member, &format!("{at}{{}}"), true);
+        }
+        if let Some(member) = node.get("items") {
+            self.value(member, &format!("{at}[]"), true);
+        }
+        for (position, member) in node
+            .get("prefixItems")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            self.value(member, &format!("{at}[{position}]"), true);
+        }
+    }
 }
 
-/// §2.5: an `Option` member is omitted for `None` and is never written
-/// `null`, so neither committed schema admits `null` for a member its object
-/// does not require.
+/// §2.5: an `Option` field is omitted for `None` and is never written
+/// `null`, and no newtype variant wraps an `Option`; only a list element, an
+/// array element, or a map value writes `null`. So neither committed schema
+/// admits `null` anywhere else.
 #[test]
-fn an_optional_member_admits_no_null() {
+fn null_is_admitted_only_as_an_element_or_a_map_value() {
     for committed in [crate::CADIR_JSON_SCHEMA, crate::DECODE_SIDECAR_JSON_SCHEMA] {
         let schema: Value = serde_json::from_str(committed).unwrap();
-        let defs = schema["$defs"].as_object().unwrap();
-        let members = optional_members(&schema);
-        assert!(!members.is_empty());
-        let nullable = members
-            .iter()
-            .filter(|(_, member)| admits_null(member, defs, 0))
-            .map(|(at, _)| at.as_str())
-            .collect::<Vec<_>>();
-        assert!(nullable.is_empty(), "{}", nullable.join("\n"));
+        let found = null_values(&schema);
+        assert!(
+            found.is_empty(),
+            "{}",
+            found.into_iter().collect::<Vec<_>>().join("\n")
+        );
     }
+}
+
+/// The walk finds the two spellings of an `Option` outside an element: a
+/// newtype variant's `value`, required, and an optional member whose
+/// definition is a newtype struct over an `Option`. It passes `null` as a
+/// list element, a pair key, and a map value, and checks the members of the
+/// objects they hold. A member with no value, `{"not": {}}`, admits no `null`.
+#[test]
+fn the_null_walk_finds_an_option_outside_an_element() {
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "section": {"$ref": "#/$defs/Section"},
+            "continuity": {"$ref": "#/$defs/State"},
+            "list": {"type": "array", "items": {"type": ["string", "null"]}},
+            "pairs": {
+                "type": "array",
+                "items": {
+                    "type": "array",
+                    "prefixItems": [{"type": ["string", "null"]}, {"$ref": "#/$defs/Entry"}]
+                }
+            },
+            "map": {"type": "object", "additionalProperties": {"type": ["string", "null"]}},
+            "never": {"not": {}},
+            "named": {
+                "type": "object",
+                "patternProperties": {"^a": {"anyOf": [{"type": "string"}, {"type": "null"}]}}
+            }
+        },
+        "required": ["section", "list", "pairs", "map", "named", "never"],
+        "$defs": {
+            "Section": {
+                "oneOf": [{
+                    "type": "object",
+                    "properties": {
+                        "kind": {"type": "string", "const": "unresolved"},
+                        "value": {"type": ["string", "null"]}
+                    },
+                    "required": ["kind", "value"]
+                }]
+            },
+            "State": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            "Entry": {
+                "type": "object",
+                "properties": {"tolerance": {"type": ["number", "null"]}}
+            }
+        }
+    });
+    assert_eq!(
+        null_values(&schema),
+        BTreeSet::from([
+            "$.continuity".to_owned(),
+            "$.pairs[][1] -> Entry.tolerance".to_owned(),
+            "$.section -> Section.value".to_owned(),
+        ])
+    );
 }
 
 /// A vertex `tolerance` stated `null` is refused by the reader and by the
