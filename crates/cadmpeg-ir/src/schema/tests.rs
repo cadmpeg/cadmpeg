@@ -269,7 +269,7 @@ fn schema_generation_produces_definitions() {
 
 #[cfg(feature = "schema")]
 #[test]
-fn model_feature_schema_describes_serialized_regeneration_parent() {
+fn model_wire_and_schema_leave_out_features_and_their_regeneration_parents() {
     use crate::document::Model;
     use crate::features::evaluation::FeatureEvaluation;
     use crate::features::selections::DistinctMembers;
@@ -313,16 +313,12 @@ fn model_feature_schema_describes_serialized_regeneration_parent() {
         .set_feature_regeneration_parent(&(child), &(parent.clone()))
         .unwrap();
     let wire = serde_json::to_value(&model).unwrap();
-    assert_eq!(wire["features"][1]["regeneration_parent"], parent.as_str());
+    assert!(wire.get("features").is_none());
+    let held = serde_json::to_value(model.sorted_omitted()).unwrap();
+    assert_eq!(held["features"][1]["regeneration_parent"], parent.as_str());
 
     let schema = serde_json::to_value(crate::cadir_json_schema()).unwrap();
-    let row = schema
-        .pointer("/$defs/Model/properties/features/items/$ref")
-        .and_then(serde_json::Value::as_str)
-        .and_then(|reference| reference.strip_prefix('#'))
-        .and_then(|path| schema.pointer(path))
-        .unwrap();
-    assert!(row.pointer("/properties/regeneration_parent").is_some());
+    assert!(schema.pointer("/$defs/Model/properties/features").is_none());
 
     let standalone = serde_json::to_value(schemars::schema_for!(Feature)).unwrap();
     assert!(standalone

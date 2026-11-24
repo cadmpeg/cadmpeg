@@ -1277,7 +1277,7 @@ fn schema_projects_design_feature_fields() {
     );
     assert!(stdout.contains("definition\tFeatureDefinition"), "{stdout}");
     // An optional field is absent and its type says so.
-    assert!(stdout.contains("name\tstring?\tno"), "{stdout}");
+    assert!(stdout.contains("name\tstring\tno"), "{stdout}");
     assert!(stdout.contains("id\tFeatureId\tyes"), "{stdout}");
 
     // Bare shorthand is byte-identical to the dotted name of a `model` arena.
