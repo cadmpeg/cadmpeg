@@ -141,8 +141,14 @@ const SURFACE_OPERATION: u16 = 5;
 /// as a cosine deficit, that still counts as perpendicular to the profile plane.
 const EPS_TRAVEL_NORMAL: f64 = 1e-9;
 /// Smallest cosine between the travel direction and a face-plane normal for
-/// the travel to cross the plane.
+/// the travel to cross the plane. It is a cosine bound, not a distance.
 const EPS_TRAVEL_CROSSING: f64 = 1e-6;
+/// Largest departure of the cosine between two face-plane normals from 1, in
+/// absolute value, that still counts as parallel planes.
+const EPS_PLANE_PARALLEL: f64 = 1e-9;
+/// Smallest distance in millimetres, along the travel direction, between the
+/// start face plane and the end face plane.
+const EPS_FACE_GAP: f64 = 1e-6;
 /// Smallest distance in millimetres by which a work point lies ahead of the
 /// profile plane.
 const EPS_POINT_AHEAD: f64 = 1e-6;
@@ -391,9 +397,12 @@ pub(super) fn indexed_operands(
 
 /// The surface extrusion extents that the format model defines: one side from
 /// the profile plane, through all or to a plane face; or from a start face to
-/// an end face, where the travel direction crosses both planes, the start
-/// plane origin lies behind the end plane and the end plane origin lies ahead
-/// of the start plane along it.
+/// an end face, where the two face planes are parallel, the travel direction
+/// crosses them, and the travel line through the profile meets the start plane
+/// before the end plane. For parallel planes the gap between the two meeting
+/// points along the travel direction does not depend on the profile point, so
+/// no profile point is read. Non-parallel planes order differently at
+/// different profile points and stay native.
 fn surface_extent(start: &ExtrudeStart, extent: &ExtrudeExtent, travel: &UnitVector3) -> bool {
     use cadmpeg_ir::features::extents::{ExtrudeSide, PlaneTargetSource};
     let ExtrudeExtent::OneSided {
@@ -423,19 +432,20 @@ fn surface_extent(start: &ExtrudeStart, extent: &ExtrudeExtent, travel: &UnitVec
                 ..
             },
         ) => {
-            // Distance along the travel direction from a point of one plane
-            // to the other plane.
             let travel = *travel.as_raw();
-            let along = |origin: cadmpeg_ir::math::Point3,
-                         target: &cadmpeg_ir::features::geometry::FeatureSupportPlaneFrame| {
-                let normal = target.normal().get();
-                let toward = normal.dot(travel);
-                (toward.abs() > EPS_TRAVEL_CROSSING).then(|| {
-                    target.origin().get().vector_from(origin).dot(normal) / toward
-                })
-            };
-            along(from.origin().get(), to).is_some_and(|ahead| ahead > EPS_POINT_AHEAD)
-                && along(to.origin().get(), from).is_some_and(|behind| behind < -EPS_POINT_AHEAD)
+            let (from_normal, to_normal) = (from.normal().get(), to.normal().get());
+            let toward = to_normal.dot(travel);
+            // Distance along the travel direction from the start plane to the
+            // end plane, measured from the start plane origin.
+            let gap = to
+                .origin()
+                .get()
+                .vector_from(from.origin().get())
+                .dot(to_normal)
+                / toward;
+            from_normal.dot(to_normal).abs() >= 1.0 - EPS_PLANE_PARALLEL
+                && toward.abs() > EPS_TRAVEL_CROSSING
+                && gap > EPS_FACE_GAP
         }
         _ => false,
     }
