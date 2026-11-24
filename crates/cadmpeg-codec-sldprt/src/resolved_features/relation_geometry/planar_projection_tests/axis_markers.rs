@@ -103,3 +103,77 @@ fn project_nested_axis_markers_with_policy(policy: &DecodePolicy) -> Result<(), 
 fn planar_nested_axis_markers_refuse_nesting_limit() {
     assert_owned_loci_refusal(project_nested_axis_markers_with_policy);
 }
+
+#[test]
+fn a_horizontal_relation_its_points_contradict_stays_native() {
+    let (sketch, feature, mut lane) = planar_fixture();
+    lane.relation_instances.clear();
+    lane.sketch_entities.clear();
+    let mut relation = SketchInputEntity::new(
+        "axis-relation",
+        "lane",
+        0,
+        0,
+        SketchInputKind::Relation(SketchRelationKind::Horizontal),
+    );
+    relation.feature_ref = Some("feature".into());
+    relation.links = SketchInputLinks::new(
+        0,
+        (0u16..2)
+            .map(|index| SketchInputLink {
+                local_id: index + 2,
+                entity_ref: format!("axis-point-{index}"),
+            })
+            .collect(),
+    );
+    lane.sketch_entities.push(relation);
+    let entities: Vec<_> = (0u32..2)
+        .map(|index| {
+            let marker_id = format!("axis-point-{index}");
+            let mut marker = SketchInputEntity::new(
+                marker_id.clone(),
+                "lane",
+                index + 2,
+                u64::from(index) + 2,
+                SketchInputKind::Point,
+            );
+            marker.feature_ref = Some("feature".into());
+            let position = f64::from(index);
+            marker.coordinates_m =
+                cadmpeg_ir::units::FiniteVector::new([2.0 * position * 0.001, position * 0.001]);
+            lane.sketch_entities.push(marker);
+            SketchEntity::new(
+                SketchEntityId::mint(format!("synthetic:test:id#axis-point-{index}")).unwrap(),
+                sketch.id.clone(),
+                SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                    position: cadmpeg_ir::math::Point2::new(2.0 * position, position),
+                })
+                .unwrap(),
+            )
+            .with_native_ref(Some(marker_id))
+        })
+        .collect();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut constraints = Vec::new();
+    project_relation_bindings(
+        &ctx,
+        &mut constraints,
+        &[sketch],
+        &[feature],
+        &entities,
+        &[],
+        &[lane],
+    )
+    .unwrap();
+    let constraint = constraints
+        .iter()
+        .find(|constraint| constraint.native_ref.as_deref() == Some("axis-relation"))
+        .unwrap();
+    assert!(matches!(
+        constraint.definition.kind(),
+        SketchConstraintDefinitionInput::Native { native_kind, .. }
+            if native_kind.as_str() == "sldprt:marker-relation:4"
+    ));
+    assert_eq!(constraint.active, None);
+}
