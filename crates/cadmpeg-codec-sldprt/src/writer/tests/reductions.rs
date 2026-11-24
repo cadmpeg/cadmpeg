@@ -506,7 +506,7 @@ fn validation_errors_outside_the_geometry_and_history_arenas_and_without_a_recor
     let rules = &losses[1].message;
     assert!(
         rules.starts_with("2 finding(s)")
-            && rules.contains("document finding")
+            && rules.contains("sldprt/test.fixture-reference (document finding)")
             && rules.contains("other:model:face#absent"),
         "{rules}"
     );
