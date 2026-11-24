@@ -1215,6 +1215,7 @@ fn ap203e1_reports_hidden_presentation_layer_visibility_loss() {
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#hidden").expect("identity grammar"),
         name: "hidden layer".into(),
+        parent: None,
         description: None,
         visible: Some(false),
         items: vec![PresentationItem::Body { body }.into()],

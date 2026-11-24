@@ -61170,6 +61170,17 @@
           "description": "Layer name.",
           "type": "string"
         },
+        "parent": {
+          "description": "The layer this layer is a sublayer of. A hidden layer hides the items\nof the layers below it.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LayerId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "visible": {
           "description": "Explicit layer visibility; `false` means the layer is hidden.",
           "type": [

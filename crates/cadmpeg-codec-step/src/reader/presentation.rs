@@ -224,6 +224,7 @@ pub(super) fn decode(
         ir.model.presentation_layers.push(PresentationLayer {
             id: LayerId::from(ids::presentation(kind!("layer"), layer_id)),
             name,
+            parent: None,
             description,
             visible: hidden_layer_ids.contains(&layer_id).then_some(false),
             items: items.into_iter().map(InstanceTarget::new).collect(),
