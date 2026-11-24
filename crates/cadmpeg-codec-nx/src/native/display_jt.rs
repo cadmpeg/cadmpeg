@@ -5798,7 +5798,7 @@ pub(super) fn display_jt_tessellations(
             mesh_tessellations.push((
                 tessellation.with_source_object(Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Nx,
+                    format: cadmpeg_ir::codec_id!("nx"),
                     object_id: required!(cadmpeg_core::text::NonBlankString::new(
                         shape_node.id.clone(),
                     )),

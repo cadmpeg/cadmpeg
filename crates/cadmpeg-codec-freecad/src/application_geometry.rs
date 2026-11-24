@@ -150,7 +150,7 @@ fn validate_value_root(
 fn association(property: &PropertyRecord) -> Result<SourceObjectAssociation, CodecError> {
     Ok(SourceObjectAssociation {
         geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Fcstd,
+        format: cadmpeg_ir::codec_id!("fcstd"),
         object_id: cadmpeg_core::text::NonBlankString::new(property.owner.clone())
             .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
         name: Some(property.name.clone()),

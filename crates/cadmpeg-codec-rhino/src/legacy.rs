@@ -1858,7 +1858,7 @@ fn append_legacy_brep(
             point: point_id,
             tolerance: (tolerance > 0.0)
                 .then(|| {
-                    cadmpeg_ir::scalar::PositiveReal::new(tolerance)
+                    cadmpeg_ir::scalar::PositiveLength::new(tolerance)
                         .ok_or_else(|| CodecError::malformed("vertex tolerance must be finite"))
                 })
                 .transpose()?,
@@ -1924,7 +1924,7 @@ fn append_legacy_brep(
                 .copied()
                 .filter(|value| *value > 0.0)
                 .map(|value| {
-                    cadmpeg_ir::scalar::PositiveReal::new(value)
+                    cadmpeg_ir::scalar::PositiveLength::new(value)
                         .ok_or_else(|| CodecError::malformed("edge tolerance must be finite"))
                 })
                 .transpose()?,

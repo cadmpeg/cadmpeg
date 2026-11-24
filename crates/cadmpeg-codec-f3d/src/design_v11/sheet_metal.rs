@@ -190,7 +190,7 @@ pub(super) fn project(
                         target,
                         context: None,
                         native: Some(NativeName {
-                            codec: cadmpeg_core::nonblank_literal!("f3d").into(),
+                            codec: cadmpeg_ir::codec_id!("f3d"),
                             value: NativeNameValue::Text(
                                 NonBlankString::new(profile_name).ok_or_else(|| {
                                     CodecError::malformed("F3D profile identity is blank")

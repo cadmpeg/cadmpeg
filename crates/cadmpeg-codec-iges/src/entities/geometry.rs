@@ -1405,7 +1405,7 @@ pub(super) fn source_object(
         } else {
             cadmpeg_ir::SourceGeometryRole::Independent
         }),
-        format: cadmpeg_ir::CodecFormat::Iges,
+        format: cadmpeg_ir::codec_id!("iges"),
         object_id: cadmpeg_core::text::NonBlankString::new(object_id).ok_or_else(|| {
             cadmpeg_core::CodecError::malformed("source object_id must not be empty")
         })?,

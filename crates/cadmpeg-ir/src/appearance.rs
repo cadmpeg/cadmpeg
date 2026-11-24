@@ -230,11 +230,11 @@ pub enum AppearanceTarget {
         /// The record's id.
         id: String,
     },
-    /// Native presentation carrier without a neutral geometry arena.
-    Source {
-        /// Native source entity identity.
-        source_id: String,
-    },
+    /// An object the source assigns the appearance to that the decoder did
+    /// not join to a record of the document. The binding's
+    /// `source_entity_id` or `native_ref` states what the decoder read of it.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Unresolved,
 }
 
 /// An explicit appearance assignment.

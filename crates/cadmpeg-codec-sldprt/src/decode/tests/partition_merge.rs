@@ -1064,7 +1064,11 @@ fn finite_vertex_tolerance_transfers_in_millimetres_and_nonpositive_is_counted()
                 .geometry
                 .vertices
                 .iter()
-                .filter_map(|vertex| vertex.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get))
+                .filter_map(|vertex| {
+                    vertex
+                        .tolerance
+                        .map(cadmpeg_ir::scalar::PositiveLength::get)
+                })
                 .collect();
             assert_eq!(values.len(), 1);
             assert!((values[0] - 0.1).abs() < f64::EPSILON);
