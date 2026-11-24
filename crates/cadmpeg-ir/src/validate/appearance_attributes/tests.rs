@@ -241,6 +241,39 @@ fn a_record_target_names_an_arena_and_an_id_of_it() {
 }
 
 #[test]
+fn an_unresolved_binding_states_what_the_decoder_read_and_no_instance() {
+    let findings = |edit: &dyn Fn(&mut AppearanceBinding)| {
+        let mut ir = unit_cube().unwrap();
+        ir.model.appearances.push(appearance());
+        let mut assigned = binding(AppearanceTarget::Unresolved);
+        assigned.source_entity_id = Some("#7".into());
+        edit(&mut assigned);
+        ir.model.appearance_bindings.push(assigned);
+        design_findings(&ir, BINDING)
+    };
+    assert!(findings(&|_| {}).is_empty());
+    assert_eq!(
+        findings(&|binding| binding.source_entity_id = None),
+        ["an unresolved target states neither source_entity_id nor native_ref"]
+    );
+    assert_eq!(
+        findings(&|binding| binding.source_entity_id = Some(" ".into())),
+        ["source_entity_id is blank"]
+    );
+    assert_eq!(
+        findings(&|binding| {
+            binding.target.state = Some(crate::design::refs::StateRef {
+                configuration: None,
+                of: crate::design::refs::Evaluated::Tool(
+                    crate::features::FeatureId::mint("test:design:feature#1").unwrap(),
+                ),
+            });
+        }),
+        ["an unresolved target states a path or a state"]
+    );
+}
+
+#[test]
 fn native_refs_of_appearances_bindings_and_attributes_resolve() {
     let mut ir = unit_cube().unwrap();
     ir.native.namespace_mut("native");
