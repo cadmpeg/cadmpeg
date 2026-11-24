@@ -12,7 +12,7 @@ use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId, AttributeId, IdentityKey, LayerId};
 use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::topology::Color;
+use cadmpeg_ir::topology::{Color, ShellMember};
 use cadmpeg_ir::CadIr;
 
 use super::super::geometry::SourceSequences;
@@ -268,7 +268,9 @@ fn entity_label(entry: &DirectoryEntry) -> Option<&str> {
         .filter(|label| !label.is_empty())
 }
 
-/// The carriers that edges, faces, coedges, and vertices name.
+/// The carriers that faces, coedges, and the edges and vertices of face
+/// topology name. A wire edge or free vertex of a shell is the topology of a
+/// free carrier, so its curve or point stays free.
 struct UsedCarriers<'a> {
     curves: BTreeSet<&'a str>,
     surfaces: BTreeSet<&'a str>,
@@ -278,8 +280,19 @@ struct UsedCarriers<'a> {
 impl<'a> UsedCarriers<'a> {
     fn of(ir: &'a CadIr) -> Self {
         let geometry = &ir.geometry;
+        let mut wire_edges = BTreeSet::new();
+        let mut free_vertices = BTreeSet::new();
+        for member in geometry.shells.iter().flat_map(|shell| &shell.members) {
+            match member {
+                ShellMember::WireEdge { id } => wire_edges.insert(id.as_str()),
+                ShellMember::FreeVertex { id } => free_vertices.insert(id.as_str()),
+            };
+        }
         let mut curves = BTreeSet::new();
         for edge in &geometry.edges {
+            if wire_edges.contains(edge.id.as_str()) {
+                continue;
+            }
             if let Some(curve) = edge.curve() {
                 curves.insert(curve.as_str());
             }
@@ -299,6 +312,7 @@ impl<'a> UsedCarriers<'a> {
             points: geometry
                 .vertices
                 .iter()
+                .filter(|vertex| !free_vertices.contains(vertex.id.as_str()))
                 .map(|vertex| vertex.point.as_str())
                 .collect(),
         }
