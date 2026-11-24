@@ -27,6 +27,7 @@ use crate::design::ops::sketch::{
     PlanarCurve, RadialMeasure, SketchConstraint, SketchEntity, SketchRelation,
 };
 use crate::design::selection::PrincipalEntity;
+use crate::math::portable::Portable;
 use crate::report::check::Finding;
 
 /// A point, a line, or a circle of the sketch plane.
@@ -121,7 +122,7 @@ pub(super) fn check_sketches(index: &DesignRecords<'_>, findings: &mut Vec<Findi
                 let Some(expected) = role_position(curve, &role.role) else {
                     continue;
                 };
-                let distance = (point[0] - expected[0]).hypot(point[1] - expected[1]);
+                let distance = (point[0] - expected[0]).portable_hypot(point[1] - expected[1]);
                 if distance > linear {
                     warning(
                         findings,
@@ -180,8 +181,8 @@ fn role_position(curve: &PlanarCurve, role: &DefiningRole) -> Option<[f64; 2]> {
             };
             let [x, y] = coordinates(*center);
             Some([
-                radius.get().mul_add(angle.cos(), x),
-                radius.get().mul_add(angle.sin(), y),
+                radius.get().mul_add(angle.portable_cos(), x),
+                radius.get().mul_add(angle.portable_sin(), y),
             ])
         }
         _ => None,
@@ -225,7 +226,7 @@ impl Sketch<'_, '_> {
             }
             SketchRelation::Horizontal { a, b } => match (self.shape(a)?, b) {
                 (line @ Shape::Line(_, direction, _), None) => {
-                    angle(direction[1].abs().asin(), spread(line))
+                    angle(direction[1].abs().portable_asin(), spread(line))
                 }
                 (Shape::Point(first), Some(b)) => {
                     let Shape::Point(second) = self.shape(b)? else {
@@ -237,7 +238,7 @@ impl Sketch<'_, '_> {
             },
             SketchRelation::Vertical { a, b } => match (self.shape(a)?, b) {
                 (line @ Shape::Line(_, direction, _), None) => {
-                    angle(direction[0].abs().asin(), spread(line))
+                    angle(direction[0].abs().portable_asin(), spread(line))
                 }
                 (Shape::Point(first), Some(b)) => {
                     let Shape::Point(second) = self.shape(b)? else {
@@ -251,7 +252,7 @@ impl Sketch<'_, '_> {
                 let (a, b) = (self.shape(a)?, self.shape(b)?);
                 let (first, second) = (direction(a)?, direction(b)?);
                 angle(
-                    cross(first, second).abs().min(1.0).asin(),
+                    cross(first, second).abs().min(1.0).portable_asin(),
                     spread(a) + spread(b),
                 )
             }
@@ -259,7 +260,7 @@ impl Sketch<'_, '_> {
                 let (a, b) = (self.shape(a)?, self.shape(b)?);
                 let (first, second) = (direction(a)?, direction(b)?);
                 angle(
-                    dot(first, second).abs().min(1.0).asin(),
+                    dot(first, second).abs().min(1.0).portable_asin(),
                     spread(a) + spread(b),
                 )
             }
@@ -292,7 +293,7 @@ impl Sketch<'_, '_> {
                 let expected = self.value(value)?.get().rem_euclid(TAU);
                 let (a, b) = (self.shape(a)?, self.shape(b)?);
                 let (first, second) = (direction(a)?, direction(b)?);
-                let between = dot(first, second).clamp(-1.0, 1.0).acos();
+                let between = dot(first, second).clamp(-1.0, 1.0).portable_acos();
                 let candidates = [between, PI - between, PI + between, TAU - between];
                 angle(
                     candidates
@@ -347,7 +348,7 @@ fn shape(curve: &PlanarCurve) -> Option<Shape> {
         PlanarCurve::Point(point) => Some(Shape::Point(coordinates(*point))),
         PlanarCurve::Line { start, end } => {
             let (start, end) = (coordinates(*start), coordinates(*end));
-            let length = (end[0] - start[0]).hypot(end[1] - start[1]);
+            let length = (end[0] - start[0]).portable_hypot(end[1] - start[1]);
             (length > 0.0).then(|| {
                 Shape::Line(
                     start,
@@ -395,7 +396,7 @@ fn to_line(point: [f64; 2], through: [f64; 2], direction: [f64; 2]) -> f64 {
 }
 
 fn between(first: [f64; 2], second: [f64; 2]) -> f64 {
-    (first[0] - second[0]).hypot(first[1] - second[1])
+    (first[0] - second[0]).portable_hypot(first[1] - second[1])
 }
 
 /// How far a point lies from the other operand, a point, a line, or a circle.

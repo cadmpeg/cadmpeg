@@ -32,6 +32,7 @@ use crate::design::refs::EntityRef;
 use crate::design::selection::{Anchor, PickTarget, Picks, PrincipalEntity};
 use crate::features::geometry::FinitePoint3;
 use crate::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
+use crate::math::portable::Portable;
 use crate::math::Vector3;
 use crate::report::check::Finding;
 use crate::units::UnitVector3;
@@ -246,7 +247,7 @@ fn direction(locus: Locus) -> Option<Vector3> {
 
 /// The angle between two undirected directions, in [0, π/2].
 fn skew(first: Vector3, second: Vector3) -> f64 {
-    first.cross(second).norm().min(1.0).asin()
+    first.cross(second).norm().min(1.0).portable_asin()
 }
 
 fn to_line(point: Vector3, origin: Vector3, direction: Vector3) -> f64 {
@@ -276,7 +277,10 @@ fn incidence(subject: Locus, reference: Locus) -> Option<Residuals> {
         }
         (Locus::Line(origin, direction), Locus::Plane(at, normal))
         | (Locus::Plane(at, normal), Locus::Line(origin, direction)) => Some(vec![
-            (direction.dot(normal).abs().min(1.0).asin(), Measure::Angle),
+            (
+                direction.dot(normal).abs().min(1.0).portable_asin(),
+                Measure::Angle,
+            ),
             (to_plane(origin, at, normal).abs(), Measure::Length),
         ]),
         (Locus::Line(origin, direction), Locus::Line(other, other_direction)) => Some(vec![
@@ -445,7 +449,7 @@ impl Reader<'_, '_> {
                         .dot(direction(reference)?)
                         .abs()
                         .min(1.0)
-                        .asin(),
+                        .portable_asin(),
                 )
             }
             Relation::Offset => {
@@ -485,7 +489,7 @@ impl Reader<'_, '_> {
                 };
                 let expected = self.value(expected)?.get().abs().rem_euclid(PI);
                 let (first, second) = (direction(subject)?, direction(reference)?);
-                let between = first.dot(second).clamp(-1.0, 1.0).acos();
+                let between = first.dot(second).clamp(-1.0, 1.0).portable_acos();
                 let difference = (expected - between).abs();
                 angle(difference.min((PI - expected - between).abs()))
             }

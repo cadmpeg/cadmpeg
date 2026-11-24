@@ -26,6 +26,7 @@ use crate::design::ops::assembly::{
 use crate::design::ops::body::{ScaleFactors, TransformStep, Transformation};
 use crate::design::refs::Member;
 use crate::design::selection::{PickContext, PickTarget, Picks, StepRef};
+use crate::math::portable::Portable;
 use crate::math::Vector3;
 use crate::report::check::Finding;
 use crate::transform::Transform;
@@ -360,7 +361,7 @@ fn frame_transform(frame: &FrameValue) -> Option<Transform> {
 /// A turn by `angle` about `axis`, right-handed about its direction.
 fn rotation(axis: &AxisValue, angle: f64) -> Option<Transform> {
     let k = Vector3::from(axis.direction);
-    let (sin, cos) = angle.sin_cos();
+    let (sin, cos) = angle.portable_sin_cos();
     let linear = [[0usize, 1, 2], [0, 1, 2], [0, 1, 2]];
     let component = |v: Vector3, i: usize| [v.x, v.y, v.z][i];
     let mut rows = [[0.0; 4]; 3];
