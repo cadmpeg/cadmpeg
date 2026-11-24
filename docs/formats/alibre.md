@@ -33,7 +33,7 @@ The stream is an ACIS binary stream as [`asm.md`](asm.md) §1 defines for the `A
 
 ### 2.1 Length unit
 
-The model unit is the centimetre, and the header `scale` is `10.0`, in millimetres per unit, in every committed part. The shared ACIS binary reader reads every model-space length as centimetres and multiplies it by 10 to obtain millimetres; the decoder does not take the factor from the header. A header that states any other scale is charged as `alibre/header.scale-unverified` (blocking), because the lengths would then be off by the ratio. The resolved tolerance `resabs` is multiplied by 10 in the same way.
+The model unit is the centimetre: the header `scale` is `10.0` millimetres per unit, and a part's STEP export states the same unit as `SI_UNIT(.CENTI.,.METRE.)`. The shared ACIS binary reader reads every model-space length as centimetres and multiplies it by 10 to obtain millimetres; the decoder does not take the factor from the header. A header that states any other scale is charged as `alibre/header.scale-unverified` (blocking), because the lengths would then be off by the ratio. The resolved tolerance `resabs` is multiplied by 10 in the same way.
 
 ### 2.2 Key string
 
