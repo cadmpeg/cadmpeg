@@ -397,6 +397,15 @@ fn feature_dimensions_of_their_parameters_value_type_break_no_rule() {
 }
 
 #[test]
+fn an_unset_parameter_has_no_value() {
+    let mut ir = with_width();
+    ir.design.parameters[0].definition = ParameterDefinition::Unset;
+    assert_finding(&ir, "an `Unset` parameter states a `value`");
+    ir.design.parameters[0].value = None;
+    assert_no_design_finding(&ir);
+}
+
+#[test]
 fn fit_designations_are_capital_letters_and_a_grade() {
     let mut ir = with_width();
     ir.design.parameters[0].tolerance = Some(Tolerance::Fit {
