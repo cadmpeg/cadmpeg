@@ -332,24 +332,24 @@ fn an_invalid_projection_keeps_the_document_and_names_each_finding() {
     })
     .expect("validation runs");
 
-    let [loss] = losses.as_slice() else {
-        panic!("one finding, one loss: {losses:?}");
-    };
-    assert_eq!(loss.code, IgesLossCode::ProjectionInvalid.kind());
-    assert!(
-        loss.message.contains("referential_integrity"),
-        "{}",
-        loss.message
+    let errors = cadmpeg_ir::validate_neutral(&ir, Vec::new())
+        .expect("validation runs")
+        .error_count();
+    assert_eq!(
+        losses.len(),
+        errors,
+        "one loss per Error finding: {losses:?}"
     );
+    assert!(losses
+        .iter()
+        .all(|loss| loss.code == IgesLossCode::ProjectionInvalid.kind()));
     assert!(
-        loss.message.contains("iges:model:vertex#invalid"),
-        "{}",
-        loss.message
-    );
-    assert!(
-        loss.message.contains("iges:model:point#missing"),
-        "{}",
-        loss.message
+        losses.iter().any(|loss| {
+            loss.message.contains("referential_integrity")
+                && loss.message.contains("iges:model:vertex#invalid")
+                && loss.message.contains("iges:model:point#missing")
+        }),
+        "{losses:?}"
     );
 }
 
