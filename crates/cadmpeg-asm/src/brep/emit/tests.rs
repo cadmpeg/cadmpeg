@@ -345,7 +345,7 @@ fn tolerant_vertex_uses_the_third_double_for_evaluation_and_unset_state() {
             assert_eq!(
                 out.vertices[0]
                     .tolerance
-                    .map(cadmpeg_ir::scalar::PositiveReal::get),
+                    .map(cadmpeg_ir::scalar::PositiveLength::get),
                 tolerance
             );
             assert_eq!(out.tolerant_vertex_tails.len(), 1);
@@ -603,8 +603,13 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
             if reversed { reversed_range } else { range }
         );
         let mut ir = cadmpeg_ir::CadIr::empty();
-        super::super::transfer::transfer_into_ir(&asm_decode_ctx, &mut ir, "f3d", out)
-            .expect("transfer the decoded curve and its support");
+        super::super::transfer::transfer_into_ir(
+            &asm_decode_ctx,
+            &mut ir,
+            cadmpeg_ir::codec_id!("f3d"),
+            out,
+        )
+        .expect("transfer the decoded curve and its support");
         let ProceduralCurveDefinition::Spring(spring) =
             ir.geometry.procedural_curves[0].definition()
         else {
@@ -677,7 +682,7 @@ fn evaluated_and_absent_vertex_slots_have_distinct_native_tail_wires() {
     let (evaluated_wire, tolerance) = decode(Some(0.125));
     let (absent_wire, absent_tolerance) = decode(None);
     assert_eq!(
-        tolerance.map(cadmpeg_ir::scalar::PositiveReal::get),
+        tolerance.map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(1.25)
     );
     assert_eq!(absent_tolerance, None);
@@ -1182,7 +1187,7 @@ fn legacy_tolerant_edge_tolerance_does_not_require_a_revision_field() {
             assert_eq!(
                 out.edges[0]
                     .tolerance
-                    .map(cadmpeg_ir::scalar::PositiveReal::get),
+                    .map(cadmpeg_ir::scalar::PositiveLength::get),
                 (value > 0.0).then_some(0.2)
             );
             assert!(out.tolerant_edge_tails.is_empty());

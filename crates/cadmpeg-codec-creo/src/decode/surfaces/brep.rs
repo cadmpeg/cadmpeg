@@ -2537,14 +2537,10 @@ pub(in super::super) fn transfer_native_brep(
                                 parameter_range: range,
                                 source_object: Some(SourceObjectAssociation {
                                     geometry_role: None,
-                                    format: cadmpeg_ir::CodecFormat::Creo,
+                                    format: cadmpeg_ir::codec_id!("creo"),
                                     object_id: crate::identity::source_object_id_checked(
                                         format_args!("VisibGeom:{}", row.id),
                                     )?,
-                                    name: None,
-                                    color: None,
-                                    visible: None,
-                                    layer: None,
                                     instance_path: Vec::new(),
                                 }),
                                 native_ref: None,
@@ -2629,14 +2625,10 @@ pub(in super::super) fn transfer_native_brep(
                                 parameter_range: None,
                                 source_object: Some(SourceObjectAssociation {
                                     geometry_role: None,
-                                    format: cadmpeg_ir::CodecFormat::Creo,
+                                    format: cadmpeg_ir::codec_id!("creo"),
                                     object_id: crate::identity::source_object_id_checked(
                                         format_args!("VisibGeom:{}", row.id),
                                     )?,
-                                    name: None,
-                                    color: None,
-                                    visible: None,
-                                    layer: None,
                                     instance_path: Vec::new(),
                                 }),
                                 native_ref: None,
@@ -2992,17 +2984,13 @@ pub(in super::super) fn transfer_native_brep(
         )?;
         let source_object = SourceObjectAssociation {
             geometry_role: None,
-            format: cadmpeg_ir::CodecFormat::Creo,
+            format: cadmpeg_ir::codec_id!("creo"),
             object_id: cadmpeg_core::text::NonBlankString::new(format!(
                 "topology:vertex#{vertex_id}"
             ))
             .ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("source object_id must not be empty")
             })?,
-            name: None,
-            color: None,
-            visible: None,
-            layer: None,
             instance_path: Vec::new(),
         };
         let position = cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::from(*position))
@@ -3267,7 +3255,7 @@ pub(in super::super) fn transfer_native_brep(
                     }),
                     source_object: Some(SourceObjectAssociation {
                         geometry_role: None,
-                        format: cadmpeg_ir::CodecFormat::Creo,
+                        format: cadmpeg_ir::codec_id!("creo"),
                         object_id: cadmpeg_core::text::NonBlankString::new(format!(
                             "VisibGeom:{curve_id}"
                         ))
@@ -3276,10 +3264,6 @@ pub(in super::super) fn transfer_native_brep(
                                 "source object_id must not be empty",
                             )
                         })?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                     native_ref: None,
@@ -3400,15 +3384,15 @@ pub(in super::super) fn transfer_native_brep(
                 color: None,
                 visible: None,
                 native_ref: None,
+                unstated: None,
             },
         )?;
         ctx.charge_entities(1, "admit Creo model regions")?;
-        ir.geometry.regions.push(Region {
-            id: crate::identity::copy_checked_id(region_id.as_str())?,
-            body: body_id,
-            shells: shell_ids,
-            native_ref: None,
-        });
+        ir.geometry.regions.push(Region::new(
+            crate::identity::copy_checked_id(region_id.as_str())?,
+            body_id,
+            shell_ids,
+        ));
         for face_key in faces {
             let native_loops = &eligible_regions[face_key];
             let BrepFaceReferences {
@@ -3458,7 +3442,7 @@ pub(in super::super) fn transfer_native_brep(
                         }),
                         source_object: Some(SourceObjectAssociation {
                             geometry_role: None,
-                            format: cadmpeg_ir::CodecFormat::Creo,
+                            format: cadmpeg_ir::codec_id!("creo"),
                             object_id: cadmpeg_core::text::NonBlankString::new(format!(
                                 "VisibGeom:{face_id}"
                             ))
@@ -3467,10 +3451,6 @@ pub(in super::super) fn transfer_native_brep(
                                     "source object_id must not be empty",
                                 )
                             })?,
-                            name: None,
-                            color: None,
-                            visible: None,
-                            layer: None,
                             instance_path: Vec::new(),
                         }),
                         native_ref: None,
@@ -3890,15 +3870,11 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 )),
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id: crate::identity::source_object_id_checked(format_args!(
                         "VisibGeom:{}",
                         pair.surface_id
                     ))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,
@@ -3970,14 +3946,10 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
                     source_object: Some(SourceObjectAssociation {
                         geometry_role: None,
-                        format: cadmpeg_ir::CodecFormat::Creo,
+                        format: cadmpeg_ir::codec_id!("creo"),
                         object_id: crate::identity::source_object_id_checked(format_args!(
                             "VisibGeom:{curve_id}"
                         ))?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                     native_ref: None,

@@ -213,7 +213,7 @@ fn diff_reports_design_material_assignment_changes() {
     let mut edited = decoded.ir().clone();
     let assignment = &mut edited
         .native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .arenas_mut()
         .get_mut("design_material_assignments")
         .unwrap()[0];
@@ -258,7 +258,7 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
         decoded
             .ir()
             .geometry
-            .shell_faces(&decoded.ir().geometry.shells[0].id)
+            .stated_shell_faces(&decoded.ir().geometry.shells[0].id)
             .count(),
         1
     );

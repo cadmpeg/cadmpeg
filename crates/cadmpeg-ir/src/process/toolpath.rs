@@ -9,7 +9,9 @@ use cadmpeg_core::text::NonBlankString;
 use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use std::fmt::Debug;
 
 use super::cycle::Cycle;
 use super::technology::{Coolant, SpindleDirection};
@@ -79,16 +81,19 @@ pub enum ToolpathContent {
     Native(String),
 }
 
-/// One motion or event of a toolpath.
+/// One motion or event of a toolpath. `C` is what a `Cycle` motion holds:
+/// a cycle, or [`NoCycle`] in a cycle's expansion, which holds none.
 #[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(bound = "C: JsonSchema"))]
 #[serde(
     tag = "kind",
     content = "value",
     rename_all = "snake_case",
-    deny_unknown_fields
+    deny_unknown_fields,
+    bound = ""
 )]
-pub enum Motion {
+pub enum Motion<C: Debug + Clone + PartialEq + Serialize + DeserializeOwned = Box<Cycle>> {
     /// A rapid move.
     Rapid {
         /// The target point.
@@ -155,7 +160,7 @@ pub enum Motion {
     /// The movement class of the motions after it until the next.
     Class(MotionClass),
     /// A drilling or probing cycle.
-    Cycle(Box<Cycle>),
+    Cycle(C),
     /// A tool change.
     ToolChange {
         /// The tool number.
@@ -212,6 +217,25 @@ pub enum Motion {
     /// A motion whose target the stored path does not determine in full,
     /// with its words.
     Native(NonBlankString),
+}
+
+/// What a `Cycle` motion of a cycle's expansion holds: it has no value, so an
+/// expansion holds no cycle.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum NoCycle {}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for NoCycle {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "NoCycle".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "description": "What a `Cycle` motion of a cycle's expansion holds: it has no value, so an expansion holds no cycle.",
+            "not": {}
+        })
+    }
 }
 
 /// A heater of an additive machine.

@@ -4523,7 +4523,7 @@ fn evaluated_vertex_tolerance(record: &Record) -> Option<f64> {
 
 fn invalid_vertex_tolerance(record: &Record) -> bool {
     evaluated_vertex_tolerance(record).is_some_and(|value| {
-        value != -1.0 && cadmpeg_ir::scalar::PositiveReal::new(value * LEN_TO_MM).is_none()
+        value != -1.0 && cadmpeg_ir::scalar::PositiveLength::new(value * LEN_TO_MM).is_none()
     })
 }
 
@@ -4556,7 +4556,7 @@ pub(super) fn emit_vertices(
                         // neutral vertex carries no tolerance and the native
                         // tail keeps the unset fact.
                         tolerance: evaluated_vertex_tolerance(r).and_then(|value| {
-                            cadmpeg_ir::scalar::PositiveReal::new(value * LEN_TO_MM)
+                            cadmpeg_ir::scalar::PositiveLength::new(value * LEN_TO_MM)
                         }),
                         native_ref: None,
                     });
@@ -4737,7 +4737,7 @@ pub(super) fn emit_edges(
             // x 100 + header revision) is at least 2250003. All forms are
             // retained verbatim.
             let tolerance = edge_tolerance(r)
-                .and_then(|value| cadmpeg_ir::scalar::PositiveReal::new(value * LEN_TO_MM));
+                .and_then(|value| cadmpeg_ir::scalar::PositiveLength::new(value * LEN_TO_MM));
             if edge_tolerance(r).is_some() && tolerance.is_none() {
                 count_kind(
                     &mut out.stats.other_record_kinds,
@@ -5224,12 +5224,11 @@ pub fn emit_containers(
             "region" | "lump" => {
                 let Some(owner) = r.ref_at(5) else { continue };
                 let shells = shell_chain(r, by_index, &emitted_shells, format);
-                out.regions.push(Region {
-                    id: <RegionId>::from(id(format, i)),
-                    body: <BodyId>::from(id(format, owner)),
+                out.regions.push(Region::new(
+                    <RegionId>::from(id(format, i)),
+                    <BodyId>::from(id(format, owner)),
                     shells,
-                    native_ref: None,
-                });
+                ));
             }
             "body" => {
                 out.chain_order
@@ -5292,6 +5291,7 @@ pub fn emit_containers(
                     color: attribute_color(r),
                     visible: None,
                     native_ref: None,
+                    unstated: None,
                 });
             }
             _ => {}
@@ -5309,13 +5309,13 @@ pub fn emit_containers(
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
-        out.regions.push(Region {
-            id: region_id.clone(),
-            body: body_id,
-            shells: vec![shell_id.clone()],
-            native_ref: None,
-        });
+        out.regions.push(Region::new(
+            region_id.clone(),
+            body_id,
+            vec![shell_id.clone()],
+        ));
         out.shells.push(Shell::with_wire_edge(
             shell_id,
             region_id,
@@ -5482,7 +5482,7 @@ pub(super) fn emit_passthrough_unknowns(
             || cached_unknown_procedural_surfaces.contains(&i)
             || invalid_vertex_tolerance(r)
             || edge_tolerance(r).is_some_and(|value| {
-                cadmpeg_ir::scalar::PositiveReal::new(value * LEN_TO_MM).is_none()
+                cadmpeg_ir::scalar::PositiveLength::new(value * LEN_TO_MM).is_none()
             })
             || r.head().is_empty()
             || (r.head() == "face" && r.ref_at(5).is_none())

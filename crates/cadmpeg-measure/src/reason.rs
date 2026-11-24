@@ -74,6 +74,8 @@ pub enum UnavailableReason {
     PlacementNonFinite,
     /// The face's region is unbounded.
     BoundaryUnboundedFace,
+    /// The face does not state every loop, so its extent is not stated.
+    BoundaryPartialFace,
     /// The ring's coedges do not form one closed traversal by oriented vertex
     /// identity, or an anchored pole use is not at the end of its coedge.
     BoundaryRingChainFailed,
@@ -170,7 +172,7 @@ pub enum UnavailableReason {
 
 impl UnavailableReason {
     /// Every reason, in declaration order.
-    pub const ALL: [Self; 47] = [
+    pub const ALL: [Self; 48] = [
         Self::CarrierUnknown,
         Self::CarrierUnresolved,
         Self::CarrierProceduralUnevaluated,
@@ -180,6 +182,7 @@ impl UnavailableReason {
         Self::PlacementNonSimilarity,
         Self::PlacementNonFinite,
         Self::BoundaryUnboundedFace,
+        Self::BoundaryPartialFace,
         Self::BoundaryRingChainFailed,
         Self::BoundaryRingChainAmbiguous,
         Self::BoundaryCoedgeUnresolved,
@@ -233,6 +236,7 @@ impl UnavailableReason {
             Self::PlacementNonSimilarity => "placement.non-similarity",
             Self::PlacementNonFinite => "placement.non-finite",
             Self::BoundaryUnboundedFace => "boundary.unbounded-face",
+            Self::BoundaryPartialFace => "boundary.partial-face",
             Self::BoundaryRingChainFailed => "boundary.ring-chain-failed",
             Self::BoundaryRingChainAmbiguous => "boundary.ring-chain-ambiguous",
             Self::BoundaryCoedgeUnresolved => "boundary.coedge-unresolved",
@@ -304,6 +308,7 @@ impl UnavailableReason {
             | Self::PlacementOccurrenceChainBroken
             | Self::BoundaryPeriodUnresolved => Category::Input,
             Self::BoundaryUnboundedFace
+            | Self::BoundaryPartialFace
             | Self::VolumeShellOpen
             | Self::MassPrincipalAxesDegenerate
             | Self::PlacementOccurrenceEmpty => Category::Undefined,
@@ -453,7 +458,7 @@ impl Serialize for CompareCause {
 mod tests {
     use super::{Category, CaveatCode, CompareCause, UnavailableReason};
 
-    const REASONS: [(&str, Option<&str>); 47] = [
+    const REASONS: [(&str, Option<&str>); 48] = [
         ("carrier.unknown", Some("input")),
         ("carrier.unresolved", Some("input")),
         ("carrier.procedural-unevaluated", Some("unsupported")),
@@ -463,6 +468,7 @@ mod tests {
         ("placement.non-similarity", Some("placement")),
         ("placement.non-finite", Some("placement")),
         ("boundary.unbounded-face", Some("undefined")),
+        ("boundary.partial-face", Some("undefined")),
         ("boundary.ring-chain-failed", Some("input")),
         ("boundary.ring-chain-ambiguous", Some("input")),
         ("boundary.coedge-unresolved", Some("input")),

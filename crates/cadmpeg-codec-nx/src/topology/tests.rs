@@ -727,7 +727,7 @@ fn face_loop_chain_order_is_emitted() {
         .expect("face");
     let ids = face
         .loops
-        .iter()
+        .stated()
         .map(cadmpeg_ir::ids::LoopId::as_str)
         .collect::<Vec<_>>();
     assert!(ids[0].ends_with("#21") && ids[1].ends_with("#5"), "{ids:?}");
@@ -1484,7 +1484,7 @@ fn vertex_loop_fin_emits_a_vertex_boundary_beside_the_ring_loop() {
     assert_eq!(model.faces.len(), 1);
     let loops = model.faces[0]
         .loops
-        .iter()
+        .stated()
         .map(cadmpeg_ir::ids::LoopId::as_str)
         .collect::<Vec<_>>();
     assert!(
@@ -1542,7 +1542,7 @@ fn an_unresolved_vertex_loop_is_omitted_and_its_face_is_kept() {
         .iter()
         .find(|face| face.id.as_str() == "nx:s0:face#30")
         .expect("FACE 30 is kept");
-    assert!(face.loops.is_empty(), "{:?}", face.loops);
+    assert!(face.loops.stated().next().is_none(), "{:?}", face.loops);
     assert!(model
         .loops
         .iter()
@@ -1576,7 +1576,7 @@ fn a_face_keeps_its_ring_loop_when_its_vertex_loop_is_unresolved() {
     assert_eq!(model.faces.len(), 1);
     let loops = model.faces[0]
         .loops
-        .iter()
+        .stated()
         .map(cadmpeg_ir::ids::LoopId::as_str)
         .collect::<Vec<_>>();
     assert!(loops.len() == 1 && loops[0].ends_with("#5"), "{loops:?}");

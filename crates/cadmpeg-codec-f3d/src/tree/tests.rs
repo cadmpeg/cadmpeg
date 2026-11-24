@@ -302,7 +302,7 @@ fn state_native_occurrence_key(ir: &mut CadIr, native_id: &str, key: &str) {
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     ir.native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(&ctx, "design_component_occurrences", &[carrier])
         .unwrap();
 }
@@ -342,7 +342,7 @@ fn shared_references_use_unique_native_keys_and_preserve_existing_paths() {
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     ir.native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(&ctx, "design_component_occurrences", &[carrier])
         .unwrap();
     let mut scoped = ir.clone();
@@ -371,7 +371,7 @@ fn shared_references_use_unique_native_keys_and_preserve_existing_paths() {
     }
     scoped
         .native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(&ctx, "design_parameter_scopes", &[scope])
         .unwrap();
     for row in scoped

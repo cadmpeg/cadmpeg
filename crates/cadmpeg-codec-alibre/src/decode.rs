@@ -195,7 +195,7 @@ fn from_kernel(
             stats,
             annotation_records,
         },
-    ) = transfer_into_ir(ctx, &mut ir, FORMAT, brep)?;
+    ) = transfer_into_ir(ctx, &mut ir, cadmpeg_ir::codec_id!(FORMAT), brep)?;
     let geometry_transferred = !(ir.geometry.surfaces.is_empty()
         && ir.geometry.points.is_empty()
         && ir.geometry.faces.is_empty());

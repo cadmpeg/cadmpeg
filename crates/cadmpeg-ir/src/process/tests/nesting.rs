@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The recursive process types the spec gives no ceiling: step folders,
-//! program groups, and motions nested through a cycle's expansion. The JSON
-//! depth limit bounds their reading, and every operation at the deepest
+//! The recursive process types the spec gives no ceiling: step folders and
+//! program groups. A cycle's expansion holds no cycle, so motions do not
+//! nest. The JSON depth limit bounds their reading, and every operation at the deepest
 //! depth the reader admits runs on a 256 KiB stack.
 
 use cadmpeg_core::CodecError;
@@ -27,15 +27,6 @@ fn groups(depth: usize) -> ProgramStep {
             name: None,
             steps: vec![step],
         }
-    })
-}
-
-fn expansions(depth: usize) -> Motion {
-    let leaf = || -> Cycle { cycles().remove(1) };
-    (0..depth).fold(Motion::Cycle(Box::new(leaf())), |motion, _| {
-        let mut cycle = leaf();
-        cycle.expansion = Some(vec![motion]);
-        Motion::Cycle(Box::new(cycle))
     })
 }
 
@@ -97,6 +88,9 @@ fn program_groups_nest_to_the_json_depth_limit_on_a_default_thread() {
 }
 
 #[test]
-fn cycle_expansions_nest_to_the_json_depth_limit_on_a_default_thread() {
-    nests_to_the_json_depth_limit(expansions);
+fn a_cycle_expansion_holds_no_cycle() {
+    let inner = serde_json::to_value(Motion::Cycle(Box::new(cycles().remove(1)))).unwrap();
+    let mut outer = serde_json::to_value(cycles().remove(1)).unwrap();
+    outer["expansion"] = serde_json::json!([inner]);
+    assert!(read_desktop::<Cycle>(&outer.to_string()).is_err());
 }

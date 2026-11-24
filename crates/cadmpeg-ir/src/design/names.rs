@@ -10,7 +10,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
-use cadmpeg_core::text::NonBlankString;
+use cadmpeg_core::text::{is_codec_id, NonBlankString};
+pub use cadmpeg_core::text::{CodecId, StaticCodecId};
 use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -22,24 +23,125 @@ use super::refs::EntityRef;
 use crate::features::FeatureId;
 use crate::sketches::{SketchEntityId, SpatialSketchEntityId};
 
-/// A format id of the dialect registry.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(transparent)]
-pub struct CodecId(NonBlankString);
+/// A text `codec:name` (§2.7): a codec id, `:`, and a name that holds a
+/// character that is not white space. Build a compile-time name with
+/// [`crate::codec_name!`].
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
+#[serde(try_from = "String")]
+pub struct CodecName(String);
 
-impl CodecId {
-    /// The format id.
+/// A static `codec:name` whose form was admitted during const evaluation:
+/// a codec id, `:`, and a name that starts with an ASCII character that is
+/// not white space.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StaticCodecName(&'static str);
+
+impl StaticCodecName {
+    /// Admit a static `codec:name`, returning `None` for text of another
+    /// form.
     #[must_use]
-    pub fn as_str(&self) -> &str {
-        self.0.as_str()
+    pub const fn new(text: &'static str) -> Option<Self> {
+        let bytes = text.as_bytes();
+        let mut colon = 0;
+        while colon < bytes.len() && bytes[colon] != b':' {
+            colon += 1;
+        }
+        if colon == 0 || colon + 1 >= bytes.len() {
+            return None;
+        }
+        let (codec, _) = bytes.split_at(colon);
+        if is_codec_id(codec) && bytes[colon + 1].is_ascii_graphic() {
+            Some(Self(text))
+        } else {
+            None
+        }
     }
 }
 
-impl From<NonBlankString> for CodecId {
-    fn from(value: NonBlankString) -> Self {
-        Self(value)
+impl CodecName {
+    /// The text `codec:name`, or `None` where `name` holds only white
+    /// space.
+    #[must_use]
+    pub fn new(codec: &CodecId, name: &str) -> Option<Self> {
+        name.chars()
+            .any(|character| !character.is_whitespace())
+            .then(|| Self(format!("{codec}:{name}")))
     }
+
+    /// Construct a name from a static proof.
+    #[must_use]
+    pub fn from_static(name: StaticCodecName) -> Self {
+        Self(name.0.to_owned())
+    }
+
+    /// The text `codec:name`.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for CodecName {
+    type Error = &'static str;
+
+    fn try_from(text: String) -> Result<Self, Self::Error> {
+        text.split_once(':')
+            .and_then(|(codec, name)| Self::new(&CodecId::new(codec)?, name))
+            .ok_or("not of the form codec:name")
+    }
+}
+
+impl Serialize for CodecName {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+impl std::fmt::Display for CodecName {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+/// Lookup by the plain string the name spells. `Ord` and `Hash` are derived
+/// over the same `String`.
+impl std::borrow::Borrow<str> for CodecName {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for CodecName {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "CodecName".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        // Unicode White_Space matches char::is_whitespace; ECMAScript \s does not.
+        schemars::json_schema!({
+            "description": "A codec id, `:`, and a name that holds a character that is not white space.",
+            "type": "string",
+            "pattern": r"^[a-z0-9]+:[\s\S]*[^\u0009-\u000d\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"
+        })
+    }
+}
+
+/// Build a checked [`CodecName`] from a constant.
+///
+/// ```compile_fail
+/// let _ = cadmpeg_ir::codec_name!("thickness");
+/// ```
+#[macro_export]
+macro_rules! codec_name {
+    ($name:expr) => {{
+        const STATIC_CODEC_NAME: $crate::design::names::StaticCodecName =
+            match $crate::design::names::StaticCodecName::new($name) {
+                Some(name) => name,
+                None => panic!("a codec name is a codec id, `:`, and a name"),
+            };
+        $crate::design::names::CodecName::from_static(STATIC_CODEC_NAME)
+    }};
 }
 
 /// A byte string, written in RFC 4648 base64.
@@ -577,7 +679,7 @@ pub enum GenerationRole {
     Hole(HoleFaceRole),
     /// A source role code whose meaning is not established, written
     /// `codec:code`.
-    Other(NonBlankString),
+    Other(CodecName),
 }
 
 /// The place of a face in a hole's shape.

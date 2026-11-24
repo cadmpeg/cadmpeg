@@ -1348,13 +1348,9 @@ fn transfers_zero_radius_brep_circles_as_degenerate_curves() {
     };
     let association = cadmpeg_ir::SourceObjectAssociation {
         geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Fcstd,
+        format: cadmpeg_ir::codec_id!("fcstd"),
         object_id: cadmpeg_core::text::NonBlankString::new("object")
             .expect("nonempty source identity"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     };
     let mut transfer = crate::brep::CurveTransfer::default();
@@ -1471,13 +1467,9 @@ fn transfers_occt_revolution_surface_parameter_order() {
     };
     let association = cadmpeg_ir::SourceObjectAssociation {
         geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Fcstd,
+        format: cadmpeg_ir::codec_id!("fcstd"),
         object_id: cadmpeg_core::text::NonBlankString::new("fcstd:native:object#Surface")
             .expect("nonempty source identity"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     };
     let mut curves = crate::brep::CurveTransfer::default();
@@ -1514,13 +1506,9 @@ fn transfers_a_signed_cone_half_angle_without_moving_the_frame() {
     };
     let association = cadmpeg_ir::SourceObjectAssociation {
         geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Fcstd,
+        format: cadmpeg_ir::codec_id!("fcstd"),
         object_id: cadmpeg_core::text::NonBlankString::new("fcstd:native:object#Surface")
             .expect("nonempty source identity"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     };
     let mut curves = crate::brep::CurveTransfer::default();

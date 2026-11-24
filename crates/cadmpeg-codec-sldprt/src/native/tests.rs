@@ -426,7 +426,10 @@ fn native_store_rejects_mismatched_nested_owners_atomically() {
     let error = native
         .store(
             &cadmpeg_core::decode::test_support::service_decode_context(),
-            decoded.ir_mut().native.namespace_mut("sldprt"),
+            decoded
+                .ir_mut()
+                .native
+                .namespace_mut(cadmpeg_ir::codec_id!("sldprt")),
         )
         .unwrap_err();
     assert!(error.to_string().contains("invalid owner"));

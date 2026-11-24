@@ -2089,8 +2089,8 @@
               "kind": "legacy"
             },
             "direction": {
-              "x": -0.0,
-              "y": -0.0,
+              "x": 0.0,
+              "y": 0.0,
               "z": -1.0
             },
             "directrix": "fcstd:model:surface#Body:Shape:Body.Shape.brp:1:directrix",
@@ -2105,8 +2105,8 @@
               "kind": "legacy"
             },
             "direction": {
-              "x": -0.0,
-              "y": -0.0,
+              "x": 0.0,
+              "y": 0.0,
               "z": -1.0
             },
             "directrix": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:1:directrix",
@@ -2121,8 +2121,8 @@
               "kind": "legacy"
             },
             "direction": {
-              "x": -0.0,
-              "y": -0.0,
+              "x": 0.0,
+              "y": 0.0,
               "z": -1.0
             },
             "directrix": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:1:directrix",
@@ -2137,8 +2137,8 @@
               "kind": "legacy"
             },
             "direction": {
-              "x": -0.0,
-              "y": -0.0,
+              "x": 0.0,
+              "y": 0.0,
               "z": -1.0
             },
             "directrix": "fcstd:model:surface#Sketch:Shape:Sketch.Shape.brp:1:directrix",
@@ -2363,7 +2363,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -2393,7 +2393,7 @@
                 "u_axis": {
                   "x": 1.0,
                   "y": 0.0,
-                  "z": -0.0
+                  "z": 0.0
                 }
               },
               "kind": "transformed",
@@ -2458,7 +2458,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -2488,7 +2488,7 @@
                 "u_axis": {
                   "x": 1.0,
                   "y": 0.0,
-                  "z": -0.0
+                  "z": 0.0
                 }
               },
               "kind": "transformed",
@@ -3658,7 +3658,6 @@
       "attributes": {
         "application_domains": "App,PartDesign,Sketcher",
         "document_kind": "part-design",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
         "program_version": "1.1R20260928 (Git shallow)"
       },
@@ -3733,6 +3732,10 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {
+      "fcstd_uncarried_local_sha256": "<elided: digest over tolerantly compared geometry>"
+    },
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "c55205033fe8d9931abcfacf4a827a4feb94b68db1815ff0047fb410d43befdd",
     "file_digests": {},
     "retained_records": {},

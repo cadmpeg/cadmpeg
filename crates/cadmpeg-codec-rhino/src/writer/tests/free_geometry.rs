@@ -615,13 +615,13 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
         ),
         visible: Some(false),
         native_ref: None,
+        unstated: None,
     });
-    ir.geometry.regions.push(cadmpeg_ir::topology::Region {
-        id: region_id.clone(),
-        body: body_id,
-        shells: vec![shell_id.clone()],
-        native_ref: None,
-    });
+    ir.geometry.regions.push(cadmpeg_ir::topology::Region::new(
+        region_id.clone(),
+        body_id,
+        vec![shell_id.clone()],
+    ));
     ir.geometry
         .shells
         .push(cadmpeg_ir::topology::Shell::with_members(
@@ -744,7 +744,7 @@ fn unsupported_retained_native_records_are_refused_before_output() {
     decoded
         .ir_mut()
         .native
-        .namespace_mut("rhino")
+        .namespace_mut(cadmpeg_ir::codec_id!("rhino"))
         .arenas_mut()
         .entry("materials".into())
         .or_default()
@@ -854,13 +854,9 @@ fn standalone_support_points_and_curves_are_withheld_with_counted_export_loss() 
         SourceGeometryRole, SourceObjectAssociation,
     };
     let support = SourceObjectAssociation {
-        format: cadmpeg_ir::CodecFormat::Iges,
+        format: cadmpeg_ir::codec_id!("iges"),
         object_id: cadmpeg_core::nonblank_literal!("D1"),
         geometry_role: Some(SourceGeometryRole::Support),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     };
     let mut ir = CadIr::empty();

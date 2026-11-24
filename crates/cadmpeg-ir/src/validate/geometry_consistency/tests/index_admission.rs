@@ -7,18 +7,21 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 #[test]
 fn geometric_checks_reuse_the_prepared_index_without_copying_native_identities() {
     let mut ir = CadIr::empty();
-    ir.native.namespace_mut("test").arenas_mut().insert(
-        "records".into(),
-        (0..1_000)
-            .map(|ordinal| {
-                crate::NativeRecord::new(
-                    crate::ids::Identity::new(format!("test:native:record#{ordinal}")).unwrap(),
-                    serde_json::Map::new(),
-                )
-                .unwrap()
-            })
-            .collect(),
-    );
+    ir.native
+        .namespace_mut(crate::codec_id!("test"))
+        .arenas_mut()
+        .insert(
+            "records".into(),
+            (0..1_000)
+                .map(|ordinal| {
+                    crate::NativeRecord::new(
+                        crate::ids::Identity::new(format!("test:native:record#{ordinal}")).unwrap(),
+                        serde_json::Map::new(),
+                    )
+                    .unwrap()
+                })
+                .collect(),
+        );
     let index = crate::index::ModelIndex::build(&ir);
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
@@ -71,7 +74,7 @@ fn geometric_vertex_indexes_keep_last_duplicate_and_skip_missing_points() {
             positions.get(vertex.id.as_str()),
             Some(&(
                 Point3::new(7.0, 8.0, 9.0),
-                vertex.tolerance.map(crate::scalar::PositiveReal::get)
+                vertex.tolerance.map(crate::scalar::PositiveLength::get)
             ))
         );
     }

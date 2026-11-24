@@ -90,6 +90,7 @@ pub mod units;
 pub mod validate;
 
 pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote};
+pub use cadmpeg_core::codec_id;
 pub use codec::{Codec, CodecBackend, Confidence, DecodeFailure, DecodeOptions, DecodeResult};
 pub use container::{ContainerKind, ContainerSummary};
 pub use diff::{
@@ -125,7 +126,7 @@ pub use products::{
 };
 /// Source location attached to a [`report::loss::LossNote`].
 pub use provenance::{
-    AnnotationLocation, AnnotationProvenance, CodecFormat, EmptyStreamName, Exactness, Provenance,
+    AnnotationLocation, AnnotationProvenance, EmptyStreamName, Exactness, Provenance,
     SourceGeometryRole, SourceLocation, SourceObjectAssociation, SourceProvenance,
     StaticStreamName, StreamName,
 };
@@ -175,7 +176,7 @@ pub const DECODE_SIDECAR_JSON_SCHEMA: &str = include_str!("../schema/decode-side
 /// Requires the `schema` feature.
 #[cfg(feature = "schema")]
 pub fn cadir_json_schema() -> schemars::Schema {
-    schemars::schema_for!(CadIr)
+    wire_schema::<CadIr>()
 }
 
 /// Generate the JSON Schema for the decode sidecar (`<stem>.fidelity.json`).
@@ -183,7 +184,85 @@ pub fn cadir_json_schema() -> schemars::Schema {
 /// Requires the `schema` feature.
 #[cfg(feature = "schema")]
 pub fn decode_sidecar_json_schema() -> schemars::Schema {
-    schemars::schema_for!(source_fidelity::DecodeSidecar)
+    wire_schema::<source_fidelity::DecodeSidecar>()
+}
+
+/// The schema of `T`'s JSON form. A member that its object does not require
+/// is omitted for `None` and is never `null` (§2.5); a list element, an array
+/// element, and a map value keep their `null`.
+#[cfg(feature = "schema")]
+fn wire_schema<T: schemars::JsonSchema>() -> schemars::Schema {
+    schemars::generate::SchemaSettings::draft2020_12()
+        .with_transform(schemars::transform::RecursiveTransform(
+            omit_null_from_optional_members,
+        ))
+        .into_generator()
+        .into_root_schema_for::<T>()
+}
+
+#[cfg(feature = "schema")]
+fn omit_null_from_optional_members(schema: &mut schemars::Schema) {
+    use serde_json::Value;
+
+    let Some(object) = schema.as_object_mut() else {
+        return;
+    };
+    let required = match object.get("required") {
+        Some(Value::Array(names)) => names.clone(),
+        _ => Vec::new(),
+    };
+    let Some(Value::Object(members)) = object.get_mut("properties") else {
+        return;
+    };
+    for (name, member) in members.iter_mut() {
+        if let Value::Object(member) = member {
+            if !required.iter().any(|required| required == name.as_str()) {
+                omit_null(member);
+            }
+        }
+    }
+}
+
+/// Remove the `null` arm that `schemars` gives an `Option`: from a `type`
+/// list, from an `enum`, or from an `anyOf`, whose one remaining arm then
+/// becomes the member's schema.
+#[cfg(feature = "schema")]
+fn omit_null(member: &mut serde_json::Map<String, serde_json::Value>) {
+    use serde_json::Value;
+
+    if let Some(Value::Array(kinds)) = member.get_mut("type") {
+        kinds.retain(|kind| kind != "null");
+        if let [kind] = kinds.as_slice() {
+            let kind = kind.clone();
+            member.insert("type".into(), kind);
+        }
+    }
+    if let Some(Value::Array(values)) = member.get_mut("enum") {
+        values.retain(|value| !value.is_null());
+        if let [value] = values.as_slice() {
+            let value = value.clone();
+            member.remove("enum");
+            member.insert("const".into(), value);
+        }
+    }
+    let null = |arm: &Value| arm.get("type").and_then(Value::as_str) == Some("null");
+    let Some(Value::Array(arms)) = member.get_mut("anyOf") else {
+        return;
+    };
+    if !arms.iter().any(null) {
+        return;
+    }
+    arms.retain(|arm| !null(arm));
+    if let [Value::Object(arm)] = arms.as_slice() {
+        let arm = arm.clone();
+        if arm
+            .keys()
+            .all(|key| key == "anyOf" || !member.contains_key(key))
+        {
+            member.remove("anyOf");
+            member.extend(arm);
+        }
+    }
 }
 
 #[cfg(test)]

@@ -7,7 +7,7 @@ use super::{
     region_shell_groups, region_shell_groups_without_records, scaled_tolerance, seal_for_test,
     set_exactness, stage_brep, stage_extrusion_caps, transform_decoded_curve, transform_surface,
     with_expand, with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
-    CommittedExtrusionBoundary, DecodeContext, ReferenceFailure, ReportBuckets,
+    CommittedExtrusionBoundary, DecodeContext, ObjectDisplay, ReferenceFailure, ReportBuckets,
 };
 use crate::chunks::ArchiveVersion;
 use crate::loss::Diagnostics;
@@ -189,13 +189,9 @@ fn candidate_validation_propagates_entity_limit() {
                         .expect("finite point"),
                     Some(SourceObjectAssociation {
                         geometry_role: None,
-                        format: cadmpeg_ir::CodecFormat::Rhino,
+                        format: cadmpeg_ir::codec_id!("rhino"),
                         object_id: cadmpeg_core::text::NonBlankString::new("point-limited")
                             .expect("nonblank source id"),
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                 ));
@@ -696,7 +692,7 @@ fn tolerance_scaling_maps_unset_and_zero_to_none() {
     assert_eq!(
         scaled_tolerance(admitted(0.5), crate::test_support::millimeter_scale(25.4))
             .expect("required invariant")
-            .map(cadmpeg_ir::scalar::PositiveReal::get),
+            .map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(12.7)
     );
     assert_eq!(
@@ -1011,6 +1007,7 @@ fn extrusion_cap_staging_preserves_pcurve_rejection_details() {
             &mut cadmpeg_ir::Annotations::default(),
             "caps",
             &test_association(),
+            &ObjectDisplay::default(),
             &extrusion,
             &boundaries,
         )
@@ -1053,13 +1050,9 @@ fn cap_extrusion(caps: [bool; 2]) -> crate::extrusion::DecodedExtrusion {
 fn test_association() -> SourceObjectAssociation {
     SourceObjectAssociation {
         geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Rhino,
+        format: cadmpeg_ir::codec_id!("rhino"),
         object_id: cadmpeg_core::text::NonBlankString::new("extrusion".to_string())
             .expect("nonempty source identity"),
-        name: Some("Extrusion".to_string()),
-        color: None,
-        visible: Some(true),
-        layer: None,
         instance_path: Vec::new(),
     }
 }
@@ -1140,15 +1133,19 @@ fn candidate_rejection_restores_native_records_annotations_and_all_model_arenas(
                     },
                     native_ref: None,
                 });
-                candidate.native.namespace_mut("rhino").arenas_mut().insert(
-                    "history_records".into(),
-                    vec![NativeRecord::new(
-                        cadmpeg_ir::ids::Identity::new("rhino:history:record#rejected")
-                            .expect("valid identity"),
-                        serde_json::Map::new(),
-                    )
-                    .unwrap()],
-                );
+                candidate
+                    .native
+                    .namespace_mut(cadmpeg_ir::codec_id!("rhino"))
+                    .arenas_mut()
+                    .insert(
+                        "history_records".into(),
+                        vec![NativeRecord::new(
+                            cadmpeg_ir::ids::Identity::new("rhino:history:record#rejected")
+                                .expect("valid identity"),
+                            serde_json::Map::new(),
+                        )
+                        .unwrap()],
+                    );
                 {
                     set_exactness(annotations, "rhino:test:asset#rejected", Exactness::Derived);
                 }
@@ -1209,13 +1206,9 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
                     .expect("a finite position is a point"),
                 Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Rhino,
+                    format: cadmpeg_ir::codec_id!("rhino"),
                     object_id: cadmpeg_core::text::NonBlankString::new(format!("point-{key}"))
                         .unwrap(),
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             )
@@ -1282,6 +1275,7 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
             &mut cadmpeg_ir::Annotations::default(),
             "caps",
             &association,
+            &ObjectDisplay::default(),
             &extrusion,
             &boundaries,
         )

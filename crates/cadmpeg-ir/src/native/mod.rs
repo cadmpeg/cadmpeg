@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::text::CodecId;
 use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::{JsonSchema, Schema, SchemaGenerator};
@@ -78,6 +79,26 @@ fn max_container_depth(value: &Value, limit: usize) -> Option<usize> {
         }
     }
     Some(deepest)
+}
+
+/// Rewrites every negative zero inside `value` as zero: a document holds one
+/// zero in every float, a native record's included (§2.5).
+fn hold_one_zero(value: &mut Value) {
+    let mut pending = vec![value];
+    while let Some(value) = pending.pop() {
+        match value {
+            Value::Array(items) => pending.extend(items.iter_mut()),
+            Value::Object(entries) => pending.extend(entries.values_mut()),
+            Value::Number(number)
+                if number
+                    .as_f64()
+                    .is_some_and(|number| number == 0.0 && number.is_sign_negative()) =>
+            {
+                *value = Value::from(0.0);
+            }
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+        }
+    }
 }
 
 /// Records `value` at `depth` when it is a container.
@@ -177,6 +198,14 @@ pub enum NativeConvertError {
     /// A source-independent unknown record has no retained source counterpart.
     #[error("native unknown record has no retained source record: {0}")]
     MissingRetainedSourceRecord(String),
+    /// A native namespace is named by text that is not a codec id (§2.2).
+    #[error("native namespace {0:?} is not a codec id")]
+    NamespaceNotCodecId(String),
+}
+
+/// The codec id that names the native namespace `format`.
+pub(crate) fn namespace_codec(format: &str) -> Result<CodecId, NativeConvertError> {
+    CodecId::new(format).ok_or_else(|| NativeConvertError::NamespaceNotCodecId(format.to_owned()))
 }
 
 impl From<NativeConvertError> for cadmpeg_core::CodecError {
@@ -287,6 +316,7 @@ impl NativeRecord {
             };
             max_field_depth = max_field_depth.max(field_depth);
         }
+        fields.values_mut().for_each(hold_one_zero);
         let json = render(&id, &fields);
         let depth = 1 + max_field_depth;
         Ok(Self { id, json, depth })
@@ -527,7 +557,8 @@ impl NativeRecord {
     }
 
     /// Build a canonical record directly from pre-formatted canonical compact
-    /// JSON text (`{"id":...}` with `id` first and remaining keys sorted) of
+    /// JSON text (`{"id":...}` with `id` first, remaining keys sorted, and a
+    /// float zero written `0.0`, never `-0.0`, per §2.5) of
     /// known container nesting `depth` (`>= 1`, `<= MAX_NATIVE_NESTING_DEPTH + 1`).
     ///
     /// Enforces identity validation, caller depth admission, and retained-byte
@@ -1036,13 +1067,13 @@ impl NativeNamespace {
     }
 }
 
-/// Native records grouped by source-format namespace id.
+/// Native records grouped by the codec id of their namespace.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct Native(
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    pub  BTreeMap<String, NativeNamespace>,
+    pub  BTreeMap<CodecId, NativeNamespace>,
 );
 
 impl Native {
@@ -1052,8 +1083,8 @@ impl Native {
     }
 
     /// Return or create a source-format namespace.
-    pub fn namespace_mut(&mut self, format: impl Into<String>) -> &mut NativeNamespace {
-        self.0.entry(format.into()).or_default()
+    pub fn namespace_mut(&mut self, format: CodecId) -> &mut NativeNamespace {
+        self.0.entry(format).or_default()
     }
 
     /// Whether every namespace arena is in increasing order of id.
@@ -1100,7 +1131,7 @@ impl Native {
                 namespace.arenas.iter().filter_map(move |(kind, records)| {
                     let count = NonZeroUsize::new(records.len())?;
                     Some(LossCount {
-                        format: format.clone(),
+                        format: format.to_string(),
                         kind: kind.clone(),
                         count,
                     })

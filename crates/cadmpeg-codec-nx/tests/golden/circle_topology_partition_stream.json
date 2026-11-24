@@ -518,6 +518,8 @@
           }
         }
       },
+      "codec_digests": {},
+      "content_digest": "<elided: digest over tolerantly compared geometry>",
       "decode_digest": "3c9d86b68782c69ceeebd574cfa15e0b711bb425107dbdd2c5b19f1571abfcf1",
       "file_digests": {},
       "retained_records": {

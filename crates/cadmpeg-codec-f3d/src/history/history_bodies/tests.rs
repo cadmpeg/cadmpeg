@@ -522,7 +522,13 @@ fn an_invalid_history_body_nest_reports_the_undecoded_body() {
         )
         .unwrap();
         let mut scratch = CadIr::empty();
-        cadmpeg_asm::brep::transfer::transfer_into_ir(&ctx, &mut scratch, "f3d", brep).unwrap();
+        cadmpeg_asm::brep::transfer::transfer_into_ir(
+            &ctx,
+            &mut scratch,
+            cadmpeg_ir::codec_id!("f3d"),
+            brep,
+        )
+        .unwrap();
         let body = &scratch.geometry.bodies[0];
         let Extract::Nest(topology) = extract(&ctx, &scratch.geometry, body.id.as_str()).unwrap()
         else {

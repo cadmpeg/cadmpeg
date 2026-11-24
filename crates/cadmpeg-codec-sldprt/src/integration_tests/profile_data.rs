@@ -38,7 +38,7 @@ fn profile_model(geometry: &Value, construction: bool) -> CadIr {
     crate::native::SldprtNative::default()
         .store(
             &cadmpeg_core::decode::test_support::service_decode_context(),
-            ir.native.namespace_mut("sldprt"),
+            ir.native.namespace_mut(cadmpeg_ir::codec_id!("sldprt")),
         )
         .expect("synthetic native namespace");
     ir

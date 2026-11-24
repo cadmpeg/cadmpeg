@@ -1424,9 +1424,17 @@ types do not supply page template or page-view carriers. CADIR decision: only
 field.
 
 For a page, the persisted `Template` link is represented as an optional local template identity only
-when its nonempty target resolves to a registered template drawing. Its typed relationship retains an
-explicit null, external target, or non-drawing target. The persisted `Views` link list is represented
-by an ordered typed relationship, including null, external, and non-drawing targets.
+when its nonempty target resolves to a registered template drawing; the relationship map then holds no
+`Template` entry, and otherwise retains the explicit null, external target, or non-template target. The
+`Views` link list of a page or a view collection (`DrawProjGroup`, `DrawViewClip`,
+`DrawViewCollection`) is represented by `Drawing.views`, in serialized order, for each target that is
+a drawing record other than a page or a template; the relationship map retains the other entries. The
+`BaseView` link of a section or a detail is `Drawing.base_view` when it names a view, projection,
+section, or detail record. Every other local link that names a drawing record is a drawing reference,
+and one that names an `App::Annotation` or `App::AnnotationLabel` a semantic-annotation reference; a
+dimension object, which is both, is named as its drawing record. A subelement of a drawing record
+(`Front.Edge3`) is an unread part of it, its name retained: TechDraw numbers projected edges and
+vertices that are runtime geometry, so no drawing curve holds them.
 
 The format-neutral semantic-annotation arena maps an exact core runtime-type registry. Text records
 are `App::Annotation`, `App::AnnotationLabel`, `TechDraw::DrawViewAnnotation`,
@@ -2154,3 +2162,11 @@ A TechDraw annotation's `TextSize` has physical millimetre units with the
 `App::PropertyLength` carrier. A positive value gives `text_style.height`.
 Its `App::PropertyFont` `Font` string gives `text_style.font_family` with that
 height. GUI point and pixel sizes are distinct from physical em height.
+
+## 13. Codec digests
+
+The `SourceFidelity.codec_digests` of a `Full` FCStd decode (CADIR §3.1, Rule B) holds one SHA-256 digest. It covers the records outside the `entries`, `extensions`, `objects`, and `properties` native arenas, whose content the archive entries store directly.
+
+| Key | Records |
+| --- | --- |
+| `fcstd_uncarried_local_sha256` | Every neutral record, the source metadata, and every native record outside the `entries`, `extensions`, `objects`, and `properties` arenas, without `scope`. |

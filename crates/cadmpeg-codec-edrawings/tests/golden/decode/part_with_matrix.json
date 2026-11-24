@@ -895,7 +895,7 @@
               "kind": "plane",
               "normal": {
                 "x": 0.0,
-                "y": -0.0,
+                "y": 0.0,
                 "z": 1.0
               },
               "origin": {
@@ -992,7 +992,7 @@
               "normal": {
                 "x": 0.0,
                 "y": 1.0,
-                "z": -0.0
+                "z": 0.0
               },
               "origin": {
                 "x": 6.666666517655055,
@@ -1200,6 +1200,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "1c8b8887add17ab165742302c43a36019d439d7cbd1bf3bb658e4caec5563921",
     "file_digests": {},
     "retained_records": {},

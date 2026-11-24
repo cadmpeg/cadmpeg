@@ -277,7 +277,6 @@ pub enum SurfaceGeometry {
             skip_serializing_if = "Option::is_none",
             deserialize_with = "deserialize_surface_geometry_cache"
         )]
-        #[cfg_attr(feature = "schema", schemars(skip))]
         cache: Option<SolvedSurfaceGeometry>,
     },
     /// A carrier whose shape is established without a construction.
@@ -510,6 +509,66 @@ impl TryFrom<PlacedCurveWire> for PlacedCurve {
     }
 }
 
+/// A curve carrier held outside a `Topology`: a leaf carrier, or an inline
+/// placement of one. It names no record.
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum InlineCurve {
+    /// Infinite line.
+    Line(LineCurve),
+    /// Full circle.
+    Circle(CircleCurve),
+    /// Ellipse.
+    Ellipse(EllipseCurve),
+    /// Parabola in STEP conic form.
+    Parabola(ParabolaCurve),
+    /// Hyperbola in STEP conic form.
+    Hyperbola(HyperbolaCurve),
+    /// Free-form NURBS curve.
+    Nurbs(NurbsCurve),
+    /// Source-native polyline with an explicit chordal error bound.
+    Polyline(PolylineCurve),
+    /// Exact affine placement of an inline basis curve.
+    Transformed {
+        /// Unplaced basis geometry with unchanged parameterization.
+        basis: Box<InlineCurve>,
+        /// Affine map from basis coordinates to model coordinates.
+        transform: Transform,
+    },
+}
+
+/// A surface carrier held outside a `Topology`: a leaf carrier, or an inline
+/// placement of one. It names no record.
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum InlineSurface {
+    /// Infinite plane.
+    Plane(PlaneSurface),
+    /// Right circular cylinder.
+    Cylinder(CylinderSurface),
+    /// Right elliptical cone.
+    Cone(ConeSurface),
+    /// Sphere.
+    Sphere(SphereSurface),
+    /// Torus.
+    Torus(TorusSurface),
+    /// Free-form NURBS surface.
+    Nurbs(NurbsSurface),
+    /// Source-native polygonal surface with an explicit chordal error bound.
+    Polygonal(PolygonalSurface),
+    /// Exact affine placement of an inline basis surface.
+    Transformed {
+        /// Unplaced basis geometry with unchanged parameterization.
+        basis: Box<InlineSurface>,
+        /// Affine map from basis coordinates to model coordinates.
+        transform: Transform,
+    },
+}
+
 /// The analytic, free-form, procedural, or opaque shape of a 3D curve carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -526,7 +585,6 @@ pub enum CurveGeometry {
             skip_serializing_if = "Option::is_none",
             deserialize_with = "deserialize_curve_geometry_cache"
         )]
-        #[cfg_attr(feature = "schema", schemars(skip))]
         cache: Option<SolvedCurveGeometry>,
     },
     /// A carrier whose shape is established without a construction.

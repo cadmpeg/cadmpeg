@@ -121,7 +121,14 @@ impl<'ir> FaceFrame<'_, 'ir> {
     /// Resolve every loop of the face.
     pub(crate) fn resolve(&self, eval: &Eval<'_, '_>) -> Measure<ResolvedFace<'ir>> {
         let mut loops = Vec::new();
-        for loop_id in &self.face.loops {
+        let Some(boundary) = self.face.loops.boundary() else {
+            return Err(MeasureFailure::unavailable(
+                UnavailableReason::BoundaryPartialFace,
+                Some(self.face.id.as_str()),
+                "the face does not state every loop, so its extent is not stated",
+            ));
+        };
+        for loop_id in boundary {
             let declared_role = declared(self.face.loop_role(loop_id));
             let Some(face_loop) = self.owners.loop_(loop_id.as_str()) else {
                 return Err(MeasureFailure::unavailable(

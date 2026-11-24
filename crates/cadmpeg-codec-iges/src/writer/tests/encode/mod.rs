@@ -78,13 +78,18 @@ fn encode_regenerates_a_degraded_type_102_as_an_exact_composite_carrier() {
                 }),
             "{version:?} output has no Type 102 entity"
         );
-        assert!(round_trip.ir().geometry.curves.iter().any(|curve| {
-            curve
-                .source_object
-                .as_ref()
-                .and_then(|source| source.name.as_deref())
-                == Some("COMPOSIT")
-        }));
+        assert!(round_trip
+            .ir()
+            .native
+            .namespace("iges")
+            .is_some_and(|namespace| {
+                namespace.arenas()["entities"].iter().any(|record| {
+                    record.field("entity_type").and_then(|value| value.as_i64()) == Some(102)
+                        && record.field("label").is_some_and(|label| {
+                            crate::test_support::native_bytes(&label).starts_with(b"COMPOSIT")
+                        })
+                })
+            }));
         let validation =
             cadmpeg_ir::validate_neutral(round_trip.ir(), round_trip.report().losses.clone())
                 .expect("validate the neutral model");
@@ -1064,12 +1069,9 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
     ir.geometry
         .shells
         .push(Shell::new(shell_id.clone(), region_id.clone()));
-    ir.geometry.regions.push(Region {
-        id: region_id,
-        body: body_id.clone(),
-        shells: vec![shell_id],
-        native_ref: None,
-    });
+    ir.geometry
+        .regions
+        .push(Region::new(region_id, body_id.clone(), vec![shell_id]));
     ir.geometry.bodies.push(Body {
         id: body_id,
         kind: BodyKind::Sheet,
@@ -1078,6 +1080,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
 
     let reversed_order = [
@@ -1555,7 +1558,7 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
         .faces
         .iter()
         .find(|face| {
-            face.loops.iter().any(|loop_id| {
+            face.loops.stated().any(|loop_id| {
                 decoded
                     .ir()
                     .geometry
@@ -1669,7 +1672,11 @@ fn encode_preserves_an_unclassified_brep_loop_without_an_outer_marker() {
     let mut decoded = EditableDecodeResult::from(decoded);
     {
         let mut ir = decoded.ir_mut();
-        let ids = ir.geometry.faces[0].loops.to_vec();
+        let ids = ir.geometry.faces[0]
+            .loops
+            .stated()
+            .cloned()
+            .collect::<Vec<_>>();
         ir.geometry.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(ids);
     }
 
@@ -1708,7 +1715,7 @@ fn encode_declares_the_largest_topology_tolerance_as_minimum_resolution() {
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     decoded.ir_mut().geometry.vertices[0].tolerance =
-        Some(cadmpeg_ir::scalar::PositiveReal::new(0.25).expect("positive finite tolerance"));
+        Some(cadmpeg_ir::scalar::PositiveLength::new(0.25).expect("positive finite tolerance"));
 
     let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
@@ -1770,9 +1777,16 @@ fn encode_regenerates_decoded_non_manifold_sheet_without_source_bytes() {
         .geometry
         .shells
         .iter()
-        .find(|shell| shell.id == region.shells[0])
+        .find(|shell| shell.id == region.stated_shells().cloned().collect::<Vec<_>>()[0])
         .unwrap();
-    assert_eq!(round_trip.ir().geometry.shell_faces(&shell.id).count(), 3);
+    assert_eq!(
+        round_trip
+            .ir()
+            .geometry
+            .stated_shell_faces(&shell.id)
+            .count(),
+        3
+    );
     let shared_edge = round_trip
         .ir()
         .geometry
@@ -1848,7 +1862,7 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
         .iter()
         .find(|region| region.body == body.id)
         .unwrap();
-    let shell_id = region.shells[0].clone();
+    let shell_id = region.stated_shells().cloned().collect::<Vec<_>>()[0].clone();
     let shell = decoded
         .ir()
         .geometry
@@ -1859,7 +1873,7 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
     let shell_faces = decoded
         .ir()
         .geometry
-        .shell_faces(&shell.id)
+        .stated_shell_faces(&shell.id)
         .map(|face| face.id.clone())
         .collect::<Vec<_>>();
     let target_face_id = shell_faces[0].clone();
@@ -1872,7 +1886,7 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
         .find(|face| face.id == target_face_id)
         .unwrap()
         .loops
-        .iter()
+        .stated()
         .next()
         .expect("a decoded face states a loop")
         .clone();
@@ -1884,7 +1898,7 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
         .find(|face| face.id == moved_face_id)
         .unwrap()
         .loops
-        .iter()
+        .stated()
         .next()
         .expect("a decoded face states a loop")
         .clone();
@@ -1921,7 +1935,7 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
         .geometry
         .faces
         .iter()
-        .flat_map(|face| face.loops.iter().cloned())
+        .flat_map(|face| face.loops.stated().cloned())
         .collect::<Vec<_>>();
     let outer_loop_index = emitted_loop_ids
         .iter()
