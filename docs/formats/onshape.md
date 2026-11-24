@@ -23,7 +23,9 @@ microversion across all responses that declare a microversion.
 `document.microversion` is a nonblank string. `elements` is an array of
 element records. Each record has a `type` and a nonblank `id`.
 `PARTSTUDIO` identifies a Part Studio. `ASSEMBLY` identifies an assembly.
-`root_element` identifies the selected root element.
+A single-Part-Studio bundle selects its sole element. For assembly selection,
+`root_element` accepts an element-ID string or an object with a string `id`.
+Omission and `null` select the first `ASSEMBLY` element in source order.
 The ID consists of ASCII letters, digits, underscores and hyphens. A Part
 Studio ID forms the member prefix `partstudios/<id>`. An assembly ID forms
 `assemblies/<id>`. `external` entries store `documentId`, `elementId`, and
@@ -236,6 +238,10 @@ feature in source operand order. Feature ordinals give timeline order.
 | Query text and expanded query text | 1 MiB |
 | Query cached values and strings | 4 MiB |
 | Query and expression nesting | 64 |
+| Expanded assembly instances; mate and parameter visits | 10,000 |
+| Assembly path depth | 64 |
+| Mate diagnostics per expanded assembly level | 16 |
+| Mate diagnostics per bundle, plus aggregate and work-limit notes | 256 |
 | Expression text | 65,536 bytes |
 | Region recovery work | 1,000,000 |
 | Region boundary output | 20,000 |
@@ -261,12 +267,16 @@ instance IDs from the root. `transform` holds 16 row-major coefficients. The
 matrix maps prototype coordinates to root assembly coordinates. Translation
 uses metres. The bottom row is `[0, 0, 0, 1]`. `fixed` grounds the occurrence.
 Nested placement is the inverse parent transform multiplied by the child
-transform. `suppressed` holds an instance out of the assembly.
+transform. An unresolved ancestor placement leaves descendant local transforms
+unstated. `suppressed` holds an instance and its descendants out of the assembly.
+Occurrence `hidden` is the inverse of its visibility state.
 
-An evaluated assembly feature stores `id`, `suppressed`, and `featureData`.
-A mate's `featureData` stores `mateType` and two `matedEntities`. Each mated
+An evaluated assembly feature stores `id`, `featureType`, `suppressed`, and
+`featureData`. `featureType: "mate"` selects a mate. Its `featureData` stores
+`mateType` and two `matedEntities`. Each mated
 entity stores `matedOccurrence`, an instance path relative to its assembly,
-and `matedCS`, its connector frame in the part coordinates. `matedCS` stores
+and `matedCS`, a connector frame. A direct part path gives the frame in the
+part coordinates. `matedCS` stores
 three-component `origin`, `xAxis`, `yAxis`, and `zAxis` arrays. The origin uses
 metres. The axes are the columns of the connector rotation matrix.
 
@@ -276,5 +286,21 @@ metres. The axes are the columns of the connector rotation matrix.
 | `REVOLUTE` | Revolute |
 | `SLIDER` | Slider |
 | `CYLINDRICAL` | Cylindrical |
-| `PLANAR` | Plane coincidence with aligned axes |
+| `PLANAR` | Plane coincidence |
 | `BALL` | Ball |
+
+The solved connector world frame is the occurrence transform multiplied by
+the connector frame. The sign of the dot product of the two world z axes
+gives aligned or opposed sense. A zero dot product leaves the sense unstated.
+
+### Part identity and final geometry
+
+A part binds to final Part Studio geometry when its document is local, its
+microversion matches the pinned document microversion or is omitted, and its
+configuration is omitted, empty, or `default`. Part and body names establish
+a binding when the name is unique in both the Part Studio's part list and
+its final bodies. A Part Studio with one part and one final body establishes
+a binding independently of the name. Two instances of the same part place
+the same product definition. External reference entries supply an omitted
+`documentMicroversion` through their `microversionId` when the document and
+element identify one microversion.

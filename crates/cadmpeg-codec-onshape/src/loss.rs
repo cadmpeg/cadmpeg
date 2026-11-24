@@ -27,6 +27,11 @@ pub(super) enum OnshapeLossCode {
     AssemblyRecordUnsupported,
     MateUnsupported,
     MateLimitsUnresolved,
+    AssemblyFeatureUnsupported,
+    MateFrameAssumed,
+    MateFrameUnresolved,
+    MateWorkLimited,
+    MateDiagnosticsAggregated,
 }
 impl OnshapeLossCode {
     const fn code(self) -> &'static str {
@@ -54,6 +59,11 @@ impl OnshapeLossCode {
             Self::AssemblyRecordUnsupported => "assembly.record-unsupported",
             Self::MateUnsupported => "assembly.mate-unsupported",
             Self::MateLimitsUnresolved => "assembly.mate-limits-unresolved",
+            Self::AssemblyFeatureUnsupported => "assembly.feature-unsupported",
+            Self::MateFrameAssumed => "assembly.mate-frame-assumed",
+            Self::MateFrameUnresolved => "assembly.mate-frame-unresolved",
+            Self::MateWorkLimited => "assembly.mate-work-limited",
+            Self::MateDiagnosticsAggregated => "assembly.mate-diagnostics-aggregated",
         }
     }
     pub(super) fn matches(self, note: &LossNote) -> bool {

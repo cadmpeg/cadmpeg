@@ -441,7 +441,6 @@ pub(super) fn read(
     report
         .notes
         .extend(bundle.retain_assets(ctx, &mut model.ir)?);
-    model.ir.finalize();
     Ok(model)
 }
 
@@ -862,7 +861,6 @@ fn studio(
         .notes
         .extend(inputs.sampling_report.into_inner().notes);
     annotate(&mut model, features)?;
-    model.ir.finalize();
     Ok(model)
 }
 

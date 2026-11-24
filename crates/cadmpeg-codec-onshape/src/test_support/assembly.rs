@@ -3,7 +3,7 @@
 
 use super::step;
 use serde_json::{json, Value};
-use std::io::{Cursor, Write};
+use std::io::{Cursor, Read, Write};
 
 pub(crate) fn placement(x: f64, y: f64) -> Value {
     json!([0., -1., 0., x, 1., 0., 0., y, 0., 0., 1., 0., 0., 0., 0., 1.])
@@ -43,6 +43,9 @@ pub(crate) fn bundle_with_studios(definition: Value, extra: bool) -> Vec<u8> {
             .push(json!({"id":"other","type":"PARTSTUDIO"}));
         members["partstudios/other/features.json"] = json!({"features":[]});
     }
+    pack(&members, extra)
+}
+pub(crate) fn pack(members: &Value, extra: bool) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let options = zip::write::SimpleFileOptions::default();
     for (name, value) in members.as_object().unwrap() {
@@ -58,4 +61,35 @@ pub(crate) fn bundle_with_studios(definition: Value, extra: bool) -> Vec<u8> {
         zip.write_all(step()).unwrap();
     }
     zip.finish().unwrap().into_inner()
+}
+
+pub(crate) fn edited(definition: Value, edit: impl FnOnce(&mut Value)) -> Vec<u8> {
+    let mut archive = zip::ZipArchive::new(Cursor::new(bundle(definition))).unwrap();
+    let mut members = serde_json::Map::new();
+    for ordinal in 0..archive.len() {
+        let mut member = archive.by_index(ordinal).unwrap();
+        let name = member.name().unwrap().into_owned();
+        if name
+            .rsplit_once('.')
+            .is_some_and(|(_, extension)| extension == "json")
+        {
+            let mut bytes = Vec::new();
+            member.read_to_end(&mut bytes).unwrap();
+            members.insert(name, serde_json::from_slice(&bytes).unwrap());
+        }
+    }
+    let mut members = Value::Object(members);
+    edit(&mut members);
+    pack(&members, false)
+}
+pub(crate) fn nested() -> Value {
+    let mut definition = definition();
+    definition["rootAssembly"]["instances"] = json!([{"id":"sub","name":"sub","type":"Assembly","documentId":"document","elementId":"nested","configuration":"default"}]);
+    definition["rootAssembly"]["occurrences"] = json!([
+        {"path":["sub"],"transform":placement(0.01,0.02)},
+        {"path":["sub","first"],"transform":placement(0.01,0.03)},
+        {"path":["sub","second"],"transform":placement(0.01,0.04)}
+    ]);
+    definition["subAssemblies"] = json!([{"documentId":"document","elementId":"nested","configuration":"default","instances":[part("first"),part("second")],"features":[mate("nestedMate","REVOLUTE")]}]);
+    definition
 }
