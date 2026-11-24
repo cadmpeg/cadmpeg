@@ -577,6 +577,36 @@ fn the_wrapper_charges_one_loss_per_omitted_nonempty_arena() {
     );
 }
 
+/// An `arena.omitted` loss lists every omitted id, sorted, after the count
+/// (§3.2).
+#[test]
+fn an_arena_omitted_loss_lists_the_sorted_ids_after_the_count() {
+    let mut ir = CadIr::empty();
+    for ordinal in [2, 10, 1] {
+        ir.process
+            .groups
+            .push(crate::process::groups::ProcessGroup {
+                id: crate::design::ids::ProcessGroupId::try_from(format!(
+                    "test:process:group#{ordinal}"
+                ))
+                .unwrap(),
+                kind: crate::process::groups::GroupKind::Method,
+                name: None,
+                parent: None,
+                native_ref: None,
+            });
+    }
+    let mut dispositions = uniform_dispositions(ArenaDisposition::Written);
+    dispositions.process.groups = ArenaDisposition::Omitted;
+    let losses = coverage_losses(&ir, ArenaCoverage::Declared(dispositions));
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert_eq!(
+        losses[0].message,
+        "the cadir write does not represent model arena `process.groups`: 3 record(s) omitted: \
+         test:process:group#1, test:process:group#10, test:process:group#2"
+    );
+}
+
 #[test]
 fn a_dropped_edit_is_an_error_named_by_its_record_kind() {
     assert!(super::edit_dropped(
