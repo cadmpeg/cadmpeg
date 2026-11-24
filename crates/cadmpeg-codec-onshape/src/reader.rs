@@ -444,6 +444,7 @@ pub(super) fn read(
             root,
             step_decoder,
             reference_budget: REFERENCE_BYTES,
+            studios: std::collections::BTreeMap::new(),
         };
         read_studio(&mut session, manifest, "", 0, report)?
     } else {
@@ -462,6 +463,9 @@ struct Session<'s, 'a> {
     root: View<'a>,
     step_decoder: crate::StepDecoder,
     reference_budget: usize,
+    /// The read of each referenced studio by its member folder. A studio that several
+    /// derived features name is read once.
+    studios: std::collections::BTreeMap<String, Result<std::rc::Rc<Model>, String>>,
 }
 
 /// The Part Studio element a manifest selects, or `None` when the manifest does not
@@ -541,6 +545,7 @@ fn studio<'a>(
         root,
         step_decoder,
         reference_budget: REFERENCE_BYTES,
+        studios: std::collections::BTreeMap::new(),
     };
     studio_in(&mut session, mid, eid, "", 0, report)
 }
@@ -788,7 +793,7 @@ fn studio_in(
                 Err(derived::Failure::Local(reason)) => Err(reason),
             }
         } else if has_derived
-            && feature.get("featureType").and_then(Value::as_str) == Some("boolean")
+            && feature.get("featureType").and_then(Value::as_str) == Some(derived::BOOLEAN_TYPE)
         {
             derived::boolean(feature, ordinal, &inputs, &model.ir.model)
         } else {

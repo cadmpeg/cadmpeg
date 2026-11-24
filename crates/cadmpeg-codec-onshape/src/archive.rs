@@ -232,14 +232,30 @@ impl<'a> Bundle<'a> {
                 Some((folder.to_owned(), mid.to_owned()))
             })
             .collect();
+        // The owning folder is the one whose studio prefix `{folder}partstudios/{id}/`
+        // is the longest prefix of the member path. An element id can itself end in
+        // `partstudios`, so the path is never split at the last `partstudios/`.
+        let studios: Vec<(String, &str)> = self
+            .json
+            .iter()
+            .filter_map(|(path, value)| {
+                let folder = path.strip_suffix("manifest.json")?;
+                Some((studio_prefix(folder, value)?, folder))
+            })
+            .collect();
         let mut omitted = Vec::new();
         for (path, value) in &self.json {
             if path.strip_suffix("manifest.json").is_some() {
                 continue;
             }
-            let expected = match path.rsplit_once("partstudios/") {
-                Some(("", _)) | None => expected,
-                Some((folder, _)) => match pins.get(folder) {
+            let owner = studios
+                .iter()
+                .filter(|(prefix, _)| path.starts_with(prefix.as_str()))
+                .max_by_key(|(prefix, _)| prefix.len())
+                .map(|(_, folder)| *folder);
+            let expected = match owner {
+                Some("") | None => expected,
+                Some(folder) => match pins.get(folder) {
                     Some(mid) => mid.as_str(),
                     None => {
                         self.losses.push(OnshapeLossCode::MemberUnreadable.note(format!(

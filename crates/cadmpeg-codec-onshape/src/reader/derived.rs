@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Pinned Part Studio references. Only neutral geometry crosses the writer seam.
 use std::collections::{BTreeMap, BTreeSet};
+use std::rc::Rc;
 
 use cadmpeg_core::decode::LimitScope;
 use cadmpeg_core::CodecError;
@@ -49,57 +50,43 @@ impl From<CodecError> for Failure {
     }
 }
 
+/// The Onshape feature type that inserts the bodies of another Part Studio.
+const DERIVED_TYPE: &str = "importDerived";
+/// The Onshape feature type of a Boolean.
+pub(super) const BOOLEAN_TYPE: &str = "booleanBodies";
+
 pub(super) fn is_derived(feature: &Value) -> bool {
-    matches!(
-        feature.get("featureType").and_then(Value::as_str),
-        Some("derived" | "importDerived")
-    )
+    feature.get("featureType").and_then(Value::as_str) == Some(DERIVED_TYPE)
 }
 
-/// A structured REST reference, never an evaluated `FeatureScript` query or a guessed URL.
-pub(super) fn reference(value: &Value, depth: usize) -> Mapping<Option<(&str, &str, &str)>> {
-    if depth > 64 {
-        return Err("the derived reference exceeds the nesting limit".into());
-    }
-    if let (Some(d), Some(v), Some(e)) = (
-        value.get("documentId").and_then(Value::as_str),
-        value.get("versionId").and_then(Value::as_str),
-        value.get("elementId").and_then(Value::as_str),
-    ) {
-        for part in [d, v, e] {
-            if part.len() != 24 || !part.bytes().all(|b| b.is_ascii_hexdigit()) {
-                return Err("the derived reference has no pinned document/version/element identity; fetch a new bundle".into());
-            }
-        }
-        if let Some(object) = value.as_object() {
-            for (key, value) in object {
-                match key.as_str() {
-                    "documentId" | "versionId" | "elementId" | "btType" => {}
-                    "configuration" if value.as_str() == Some("") => {}
-                    _ => return Err(format!("derived reference field {key} is not supported yet; its configuration and placement must be resolved")),
-                }
-            }
-        }
-        return Ok(Some((d, v, e)));
-    }
-    let children: Vec<&Value> = match value {
-        Value::Object(map) => map.values().collect(),
-        Value::Array(list) if list.len() <= super::ROWS => list.iter().collect(),
-        Value::Array(_) => return Err("the derived reference exceeds the row limit".into()),
-        _ => Vec::new(),
-    };
+/// The pinned document, version and element of the `partStudio` reference parameter.
+/// It is a structured REST reference, never an evaluated `FeatureScript` query or a
+/// guessed URL.
+fn reference(feature: &Value) -> Mapping<(&str, &str, &str)> {
     let mut found = None;
-    for child in children {
-        if let Some(next) = reference(child, depth + 1)? {
-            if found.is_some_and(|previous| previous != next) {
-                return Err(
-                    "deriving from several Part Studios in one feature is not supported yet".into(),
-                );
-            }
-            found = Some(next);
+    for parameter in rows(feature, "parameters")? {
+        if parameter.get("parameterId").and_then(Value::as_str) != Some("partStudio") {
+            continue;
         }
+        if found.is_some() {
+            return Err("the derived feature has several partStudio parameters".into());
+        }
+        let identity = |key| {
+            parameter
+                .get(key)
+                .and_then(Value::as_str)
+                .filter(|id| id.len() == 24 && id.bytes().all(|b| b.is_ascii_hexdigit()))
+        };
+        found = Some(
+            match (identity("documentId"), identity("versionId"), identity("elementId")) {
+                (Some(d), Some(v), Some(e)) => (d, v, e),
+                _ => return Err("the derived reference has no pinned document/version/element identity; fetch a new bundle".into()),
+            },
+        );
     }
-    Ok(found)
+    found.ok_or_else(|| {
+        "the derived Part Studio reference is not resolved; fetch a new bundle".into()
+    })
 }
 
 /// The wire payload of one captured neutral design. Fields stay in key order.
@@ -112,44 +99,147 @@ struct DesignReference<'a> {
     step: &'a str,
 }
 
-/// Validate the selected parts of a derived feature.
+/// A boolean parameter at the value its feature specification gives as default.
+fn at_default_flag(parameter: &Value, key: &str, default: bool) -> Mapping<()> {
+    if parameter.get("value").and_then(Value::as_bool) == Some(default) {
+        Ok(())
+    } else {
+        Err(format!("derived parameter {key} is not at its default; the insert placement and content must be resolved"))
+    }
+}
+
+/// A quantity parameter at the value its feature specification gives as default.
+fn at_default_quantity(parameter: &Value, key: &str, default: f64) -> Mapping<()> {
+    if parameter.get("value").and_then(Value::as_f64) == Some(default) {
+        Ok(())
+    } else {
+        Err(format!(
+            "derived parameter {key} is not at its default; the insert placement must be resolved"
+        ))
+    }
+}
+
+/// A query parameter with no stored query.
+fn empty_query(parameter: &Value, key: &str) -> Mapping<()> {
+    match parameter.get("queries") {
+        None => Ok(()),
+        Some(Value::Array(queries)) if queries.is_empty() => Ok(()),
+        _ => Err(format!("derived parameter {key} is not at its default; the insert placement and content must be resolved")),
+    }
+}
+
+/// Validate the `partStudio` reference parameter and collect the part identities of its
+/// `partQuery`. An empty `partQuery` selects the whole referenced studio.
+fn part_studio<'a>(parameter: &'a Value, selected: &mut BTreeSet<&'a str>) -> Mapping<()> {
+    if !parameter
+        .get("btType")
+        .and_then(Value::as_str)
+        .is_some_and(|name| name.starts_with("BTMParameterReferencePartStudio"))
+    {
+        return Err("the derived partStudio parameter is not a Part Studio reference".into());
+    }
+    for (key, value) in parameter.as_object().into_iter().flatten() {
+        match key.as_str() {
+            "btType" | "parameterId" | "parameterName" | "nodeId" | "libraryRelationType"
+            | "documentId" | "versionId" | "elementId" => {}
+            "namespace" | "standardContentParametersId" if value.as_str() == Some("") => {}
+            "elementLibraryData" | "partIdentity" if value.is_null() => {}
+            "configuration" if value.as_array().is_some_and(Vec::is_empty) => {}
+            "partQuery" => part_query(value, selected)?,
+            _ => return Err(format!("derived reference field {key} is not supported yet; its configuration and placement must be resolved")),
+        }
+    }
+    Ok(())
+}
+
+fn part_query<'a>(parameter: &'a Value, selected: &mut BTreeSet<&'a str>) -> Mapping<()> {
+    for (key, value) in parameter.as_object().into_iter().flatten() {
+        match key.as_str() {
+            "btType"
+            | "parameterId"
+            | "parameterName"
+            | "nodeId"
+            | "libraryRelationType"
+            | "queries" => {}
+            "filter" if value.is_null() => {}
+            _ => {
+                return Err(format!(
+                    "derived part query field {key} is not supported yet"
+                ))
+            }
+        }
+    }
+    if parameter.get("queries").is_none() {
+        return Ok(());
+    }
+    for query in rows(parameter, "queries")? {
+        let ids = rows(query, "deterministicIds")?;
+        if ids.is_empty()
+            || query.get("queryString").is_some()
+            || query
+                .get("namespace")
+                .and_then(Value::as_str)
+                .is_some_and(|namespace| !namespace.is_empty())
+        {
+            return Err("derived part queries are not fully resolved; select the whole referenced Part Studio".into());
+        }
+        for value in ids {
+            let native = value
+                .as_str()
+                .filter(|id| !id.trim().is_empty())
+                .ok_or("a selected derived part identity is missing")?;
+            if !selected.insert(native) || selected.len() > super::ROWS {
+                return Err("derived part identities repeat or exceed the row limit".into());
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Validate every parameter of an `importDerived` feature against its feature
+/// specification and return the part identities its `partQuery` selects. A parameter
+/// that is absent has its default. A parameter at a non-default value places or
+/// configures the insert and keeps the feature native.
 fn selected_parts(feature: &Value) -> Mapping<BTreeSet<&str>> {
     let mut selected = BTreeSet::new();
     for parameter in rows(feature, "parameters")? {
         let key = text(parameter, "parameterId")?;
-        if !matches!(
-            key,
-            "parts" | "partStudio" | "buildFunction" | "newParts" | "includeProperties"
-        ) {
-            return Err(format!("derived parameter {key} is not supported yet; transformed or configured inserts need a resolved placement"));
-        }
-        if parameter
-            .get("configuration")
-            .is_some_and(|v| v.as_str() != Some(""))
-        {
-            return Err("configured derived Part Studios are not supported yet".into());
-        }
-        if parameter.get("queries").is_some() {
-            for query in rows(parameter, "queries")? {
-                let ids = rows(query, "deterministicIds")?;
-                if ids.is_empty()
-                    || query.get("queryString").is_some()
-                    || query
+        match key {
+            "newUI" | "includeMateConnectors" | "includeProperties" => {
+                at_default_flag(parameter, key, true)?;
+            }
+            "preserveActiveSheetMetal" => at_default_flag(parameter, key, false)?,
+            "placement" => {
+                if parameter.get("value").and_then(Value::as_str) != Some("AT_ORIGIN") {
+                    return Err("derived placement at a mate connector is not supported yet; the insert placement must be resolved".into());
+                }
+            }
+            "mateConnectorIndex" | "mateConnectorIndexInFeature" => {
+                at_default_quantity(parameter, key, -1.0)?;
+            }
+            "mateConnectorId" => at_default_quantity(parameter, key, 0.0)?,
+            "location" | "parts" => empty_query(parameter, key)?,
+            "buildFunction" => {
+                let empty = |name| {
+                    parameter
+                        .get(name)
+                        .is_none_or(|v| v.as_array().is_some_and(Vec::is_empty))
+                };
+                if !empty("imports")
+                    || !empty("configuration")
+                    || parameter
                         .get("namespace")
                         .and_then(Value::as_str)
                         .is_some_and(|namespace| !namespace.is_empty())
                 {
-                    return Err("derived part queries are not fully resolved; select the whole referenced Part Studio".into());
+                    return Err("derived parameter buildFunction is not at its default".into());
                 }
-                for value in ids {
-                    let native = value
-                        .as_str()
-                        .filter(|id| !id.trim().is_empty())
-                        .ok_or("a selected derived part identity is missing")?;
-                    if !selected.insert(native) || selected.len() > super::ROWS {
-                        return Err("derived part identities repeat or exceed the row limit".into());
-                    }
-                }
+            }
+            "partStudio" => part_studio(parameter, &mut selected)?,
+            _ => {
+                return Err(format!(
+                    "derived parameter {key} is not in the importDerived feature specification"
+                ));
             }
         }
     }
@@ -180,8 +270,7 @@ pub(super) fn map(
         return Err("derived Part Studios exceed the reference depth limit".into());
     }
     let selected = selected_parts(feature)?;
-    let (d, v, e) = reference(feature, 0)?
-        .ok_or("the derived Part Studio reference is not resolved; fetch a new bundle")?;
+    let (d, v, e) = reference(feature)?;
     let bundle = session.bundle;
     let prefix = format!("{folder}references/{d}/{v}/{e}/");
     let manifest = bundle
@@ -198,12 +287,72 @@ pub(super) fn map(
     if manifest.get("consistent").and_then(Value::as_bool) == Some(false) {
         return Err("the referenced Part Studio is marked inconsistent: its files do not reflect one microversion; fetch a new bundle".into());
     }
+    // The checks that need only the host rollback states and the final parts of the
+    // referenced studio run before the referenced studio is read.
     let before = inputs.solid_parts(ordinal)?;
     let after = inputs.solid_parts(ordinal + 1)?;
     if before.iter().any(|(id, name)| after.get(id) != Some(name)) {
         return Err("the derived feature changes an existing body; only an unchanged-placement Part Studio insert is supported yet".into());
     }
-    let mut source = super::read_studio(session, manifest, &prefix, depth + 1, report)?;
+    let made: BTreeMap<_, _> = after
+        .iter()
+        .filter(|(key, _)| !before.contains_key(*key))
+        .collect();
+    if made.is_empty() {
+        return Err(
+            "the derived bodies cannot be matched to the whole referenced Part Studio".into(),
+        );
+    }
+    let source_prefix = format!("{prefix}partstudios/{e}");
+    let source_features = rows(
+        bundle
+            .json(&format!("{source_prefix}/features.json"))
+            .map_err(|e| e.to_string())?,
+        "features",
+    )?;
+    let mut scratch = Report::default();
+    let source_inputs = topology::Inputs::new(
+        bundle,
+        &source_prefix,
+        text(document, "microversion")?,
+        source_features,
+        &mut scratch,
+    );
+    // The final parts snapshot is needed only for a part subset and for a sole unnamed
+    // solid; its failure is raised there.
+    let source_parts = source_inputs
+        .solid_parts(source_features.len())
+        .map_err(|reason| {
+            format!(
+                "the referenced final parts snapshot cannot be used ({reason}); fetch a new bundle"
+            )
+        });
+    if !selected.is_empty() {
+        let parts = source_parts.as_ref().map_err(Clone::clone)?;
+        if selected.len() != parts.len() || !selected.iter().all(|id| parts.contains_key(*id)) {
+            return Err(
+                "derived part subsets are not supported yet; select the whole referenced Part Studio"
+                    .into(),
+            );
+        }
+    }
+    let source = match session.studios.get(&prefix) {
+        Some(cached) => cached.clone()?,
+        None => match super::read_studio(session, manifest, &prefix, depth + 1, report) {
+            Ok(read) => {
+                let read = Rc::new(read);
+                session.studios.insert(prefix.clone(), Ok(Rc::clone(&read)));
+                read
+            }
+            Err(error) => match Failure::from(error) {
+                Failure::Fatal(error) => return Err(Failure::Fatal(error)),
+                Failure::Local(reason) => {
+                    session.studios.insert(prefix.clone(), Err(reason.clone()));
+                    return Err(Failure::Local(reason));
+                }
+            },
+        },
+    };
     let element_name = manifest
         .get("elements")
         .and_then(Value::as_array)
@@ -216,71 +365,37 @@ pub(super) fn map(
         .and_then(Value::as_str)
         .filter(|name| !name.trim().is_empty())
         .unwrap_or(REFERENCED_STUDIO);
-    // A STEP export can omit its sole solid's name. One final rollback part and one
-    // neutral body give a unique correspondence without relying on STEP body order.
-    let missing_single_name = matches!(source.ir.geometry.bodies.as_slice(), [body]
-        if body.name.as_ref().is_none_or(|name| name.trim().is_empty()));
-    let source_parts = if missing_single_name || !selected.is_empty() {
-        let source_prefix = format!("{prefix}partstudios/{e}");
-        let source_features = rows(
-            bundle
-                .json(&format!("{source_prefix}/features.json"))
-                .map_err(|e| e.to_string())?,
-            "features",
-        )?;
-        let mut scratch = Report::default();
-        let source_inputs = topology::Inputs::new(
-            bundle,
-            &source_prefix,
-            text(document, "microversion")?,
-            source_features,
-            &mut scratch,
-        );
-        Some(source_inputs.solid_parts(source_features.len()).map_err(|reason| {
-            format!("the referenced final parts snapshot cannot be used ({reason}); fetch a new bundle")
-        })?)
-    } else {
-        None
-    };
-    if !selected.is_empty()
-        && !source_parts.as_ref().is_some_and(|parts| {
-            selected.len() == parts.len() && selected.iter().all(|id| parts.contains_key(*id))
-        })
-    {
-        return Err(
-            "derived part subsets are not supported yet; select the whole referenced Part Studio"
-                .into(),
-        );
-    }
-    if missing_single_name {
-        if let (Some(body), Some(parts)) =
-            (source.ir.geometry.bodies.first_mut(), source_parts.as_ref())
-        {
-            let names: Vec<_> = parts.values().collect();
-            if let [Some(name)] = names.as_slice() {
-                body.name = Some(name.clone());
-            }
-        }
-    }
     let step = source
         .source_step
         .as_deref()
         .ok_or("the derived Part Studio has no solid bodies")?;
-    let made: BTreeMap<_, _> = after
-        .iter()
-        .filter(|(key, _)| !before.contains_key(*key))
-        .collect();
-    if made.len() != source.ir.geometry.bodies.len() || made.is_empty() {
+    if made.len() != source.ir.geometry.bodies.len() {
         return Err(
             "the derived bodies cannot be matched to the whole referenced Part Studio".into(),
         );
     }
+    // A STEP export can omit its sole solid's name. The name of the sole solid in the
+    // final rollback state then names the body. It is stated in `bodies` only; the
+    // captured neutral design and the STEP text keep what the export states.
+    let sole_name = match source.ir.geometry.bodies.as_slice() {
+        [body] if body.name.as_ref().is_none_or(|name| name.trim().is_empty()) => {
+            let parts = source_parts.as_ref().map_err(Clone::clone)?;
+            let names: Vec<_> = parts.values().collect();
+            match names.as_slice() {
+                [Some(name)] => Some(name.as_str()),
+                _ => None,
+            }
+        }
+        _ => None,
+    };
     let mut bodies = Vec::new();
     let mut names = BTreeSet::new();
     for body in &source.ir.geometry.bodies {
         let name = body
             .name
             .as_deref()
+            .filter(|name| !name.trim().is_empty())
+            .or(sole_name)
             .ok_or("a referenced body has no unique name")?;
         let matches: Vec<_> = made
             .iter()
@@ -339,9 +454,37 @@ pub(super) fn boolean(
     let parameters = rows(feature, "parameters")?;
     for parameter in parameters {
         let key = text(parameter, "parameterId")?;
-        if !matches!(key, "targets" | "tools" | "operationType" | "keepTools") {
+        if !matches!(
+            key,
+            "targets"
+                | "tools"
+                | "operationType"
+                | "keepTools"
+                | "offset"
+                | "offsetAll"
+                | "entitiesToOffset"
+                | "offsetDistance"
+                | "oppositeDirection"
+                | "reFillet"
+        ) {
             return Err(format!("Boolean parameter {key} is not supported yet"));
         }
+    }
+    // The enumeration is exactly UNION, SUBTRACTION and INTERSECTION; UNION is its default.
+    let operation = match features::value(feature, "operationType") {
+        None | Some("UNION") => "UNION",
+        Some("SUBTRACTION") => "SUBTRACTION",
+        Some("INTERSECTION") => "INTERSECTION",
+        Some(_) => return Err("this Boolean operation is not supported yet".into()),
+    };
+    // The offset family is visible only for SUBTRACTION, and only `offset` set to true
+    // makes the rest operative. A hidden stale value is ignored.
+    if operation == "SUBTRACTION"
+        && features::parameter(feature, "offset")
+            .ok()
+            .is_some_and(|offset| offset.get("value").and_then(Value::as_bool) != Some(false))
+    {
+        return Err("Boolean parameter offset is not supported yet".into());
     }
     let keep = features::parameter(feature, "keepTools")?
         .get("value")
@@ -376,6 +519,16 @@ pub(super) fn boolean(
         }
         Ok(picked)
     };
+    // `targets` is visible only for SUBTRACTION. For UNION and INTERSECTION only `tools`
+    // is operative and a stored `targets` is stale. The combine form names one target
+    // body, so peer tools cannot be stated and the feature stays native.
+    if operation != "SUBTRACTION" {
+        let tools = selected("tools")?;
+        return Err(format!(
+            "a {operation} Boolean combines its {} tool bodies as peers; the combine form names one target body, so the operands cannot be stated",
+            tools.len()
+        ));
+    }
     let target = selected("targets")?;
     let tools = selected("tools")?;
     if target.len() != 1
@@ -386,12 +539,6 @@ pub(super) fn boolean(
     {
         return Err("this Boolean needs one target and disjoint tool bodies".into());
     }
-    let op = match features::value(feature, "operationType") {
-        Some("UNION" | "ADD") => "join",
-        Some("SUBTRACTION" | "REMOVE") => "cut",
-        Some("INTERSECTION" | "INTERSECT") => "intersect",
-        _ => return Err("this Boolean operation is not supported yet".into()),
-    };
     let generated = |selected: Vec<(String, String)>| -> Mapping<Value> {
         let mut references = Vec::new();
         for (local, producer) in selected {
@@ -419,6 +566,6 @@ pub(super) fn boolean(
     };
     Ok(definition(
         "combine",
-        json!({"operands": {"target": generated(target)?, "tools":generated(tools)?}, "op":op, "keep_tools":keep, "destination":"target_component"}),
+        json!({"operands": {"target": generated(target)?, "tools":generated(tools)?}, "op":"cut", "keep_tools":keep, "destination":"target_component"}),
     ))
 }

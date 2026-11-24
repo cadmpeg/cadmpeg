@@ -24,8 +24,9 @@ microversion across all responses that declare a microversion.
 element records. Each record has a `type` and a nonblank `id`.
 `PARTSTUDIO` identifies a Part Studio. `ASSEMBLY` identifies an assembly.
 A Part Studio bundle selects its sole element. A bundle whose elements are all
-`PARTSTUDIO` selects the element named by the string `root_element`; a repeated
-element ID in such a bundle is invalid. For assembly selection,
+`PARTSTUDIO` selects the element whose `id` equals the string `root_element`; a
+repeated element ID in such a bundle is invalid. A nonempty array of elements of
+which one is not `PARTSTUDIO` is not a Part Studio bundle. For assembly selection,
 `root_element` accepts an element-ID string or an object with a string `id`.
 Omission and `null` select the first `ASSEMBLY` element in source order.
 In an assembly bundle, an element ID declared more than once selects its first
@@ -52,10 +53,10 @@ sketches, variable assignments and suppressed features. Other feature lists
 require the STEP member. Configuration and variable response members are
 optional. Additional members carry opaque data.
 
-The optional manifest field `root_element` is a nonblank element ID. It selects
-the Part Studio of a manifest with several `PARTSTUDIO` elements. A manifest
-with several elements and no `root_element` is not a valid Part Studio bundle.
-Element IDs are unique within a manifest.
+The optional manifest field `root_element` is a nonblank element ID. A manifest
+with several elements has a `root_element`. When `root_element` is present it
+equals the `id` of one element, also in a manifest with one element; any other
+value makes the manifest not a Part Studio bundle.
 
 The manifest can carry document identity, names, fetch time, API version,
 fetcher identity, request counts, member path labels and configuration
@@ -95,12 +96,26 @@ common first intersection across the complete selected profile.
 
 ### 3.1 Referenced Part Studios
 
-A `derived` or `importDerived` feature inserts the bodies of another Part
-Studio. Its reference is a structured value with `documentId`, `versionId`
-and `elementId`, each 24 hexadecimal digits. The members `btType` and an
-empty `configuration` can accompany them. Any other member names a
-configuration or placement and is not part of the unchanged-placement
-insert. All reference values in one feature name one studio.
+An `importDerived` feature inserts the bodies of another Part Studio. Its
+`partStudio` parameter is a `BTMParameterReferencePartStudio` record with
+`documentId`, `versionId` and `elementId`, each 24 hexadecimal digits. The
+record also has `partQuery` (a query list), `partIdentity`, `configuration` (an
+array), `namespace`, `standardContentParametersId` and `elementLibraryData`.
+The default of `partIdentity` and `elementLibraryData` is null, of `namespace` and
+`standardContentParametersId` the empty string, and of `configuration` and of
+the queries of `partQuery` the empty array.
+
+The other parameters of the feature are `newUI` (Boolean, default true),
+`preserveActiveSheetMetal` (Boolean, default false), `location` (query list),
+`placement` (enumeration `AT_ORIGIN` or `AT_MATE_CONNECTOR`, default
+`AT_ORIGIN`), `mateConnectorIndex` and `mateConnectorIndexInFeature` (default
+-1), `mateConnectorId` (default 0), `includeMateConnectors` and
+`includeProperties` (Boolean, default true), `parts` (query list) and
+`buildFunction`. The members `parts` and `buildFunction` are hidden when `newUI`
+is true. An absent parameter has its default. The bodies insert at their source
+placement when every parameter has its default, except that `partQuery` can
+list part identities. A non-default `configuration`, `placement`, `location`,
+mate connector value or other parameter configures or places the insert.
 
 The captured studio is a nested bundle in the folder
 `references/<documentId>/<versionId>/<elementId>/`. The folder holds a
@@ -118,16 +133,22 @@ state after the feature and absent from the state before it. Bodies of the
 state before the feature are unchanged. These bodies match the bodies of the
 captured studio one to one by name. The name of a captured final body is the
 STEP product name or, for a sole unnamed solid, the name of the single solid
-in the final rollback state of the captured studio. A `parts` parameter lists
-deterministic body IDs. It selects the whole captured studio when it lists
-every solid of the final rollback state.
+in the final rollback state of the captured studio. The `partQuery` of the
+`partStudio` parameter lists deterministic body IDs. It selects the whole
+captured studio when it lists every solid of the final rollback state, or
+when it lists none.
 
-A `boolean` feature in a studio with a derived feature has `targets` and
-`tools` query lists of deterministic body IDs, an `operationType` of `UNION`,
-`ADD`, `SUBTRACTION`, `REMOVE`, `INTERSECTION` or `INTERSECT`, and a Boolean
-`keepTools`. It has one target body and one or more disjoint tool bodies,
-each present in the rollback state before the feature. Each body resolves
-to the single feature that made it in the rollback history.
+A `booleanBodies` feature has `operationType`, `tools`, `targets` and
+`keepTools` parameters. `operationType` is `UNION`, `SUBTRACTION` or
+`INTERSECTION`, default `UNION`. `keepTools` is Boolean, default false. `tools` and
+`targets` are query lists of deterministic body IDs. `targets` is operative
+for `SUBTRACTION` only; for `UNION` and `INTERSECTION` the operative bodies are
+the `tools`, which combine as peers, and a stored `targets` value is stale. The
+parameters `offset`, `offsetAll`, `entitiesToOffset`, `offsetDistance`,
+`oppositeDirection` and `reFillet` apply to `SUBTRACTION` with `offset` true. A
+`SUBTRACTION` with the default `offset` has one target body and one or more
+disjoint tool bodies, each present in the rollback state before the feature.
+Each body resolves to the single feature that made it in the rollback history.
 
 ## 4. Sketches, quantities and selections
 
