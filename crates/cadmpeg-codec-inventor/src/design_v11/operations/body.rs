@@ -67,21 +67,31 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
                 }))
             }
             LegacyOperation::SplitBody {
-                extend_tool: Some(_),
-                ..
-            } => return Err("the split body states a tool extension"),
-            LegacyOperation::SplitBody {
                 targets,
                 tool,
-                extend_tool: None,
+                extend_tool,
             } => split(
                 selections::set(selections::bodies(targets)?)?,
                 match tool {
+                    cadmpeg_ir::features::direct_edit::SplitBodyTool::Plane { .. }
+                        if extend_tool.is_some() =>
+                    {
+                        return Err("the split body states a tool extension beside a plane")
+                    }
                     cadmpeg_ir::features::direct_edit::SplitBodyTool::Plane { plane } => {
                         new::SplitTool::Plane(Box::new(swept::datum_plane(plane)?))
                     }
                     cadmpeg_ir::features::direct_edit::SplitBodyTool::Faces(faces) => {
-                        new::SplitTool::Geometry(selections::face(faces)?)
+                        new::SplitTool::Geometry {
+                            tools: selections::face(faces)?,
+                            extend: extend_tool.map(|extended| {
+                                if extended {
+                                    new::ToolExtension::Extended { method: None }
+                                } else {
+                                    new::ToolExtension::Off
+                                }
+                            }),
+                        }
                     }
                 },
                 Some(new::Kept::All {
@@ -108,7 +118,10 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
                         return Err("the split face has multiple plane tools")
                     }
                     cadmpeg_ir::features::direct_edit::SplitFaceTool::Faces(faces) => {
-                        new::SplitTool::Geometry(selections::face(faces)?)
+                        new::SplitTool::Geometry {
+                            tools: selections::face(faces)?,
+                            extend: None,
+                        }
                     }
                     cadmpeg_ir::features::direct_edit::SplitFaceTool::Native(_) => {
                         return Err("the split-face tool is native")
@@ -124,7 +137,10 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
             }
             LegacyOperation::TrimBodies { operands, keep } => split(
                 selections::set(selections::bodies(operands.targets())?)?,
-                new::SplitTool::Geometry(selections::set(selections::bodies(operands.tools())?)?),
+                new::SplitTool::Geometry {
+                    tools: selections::set(selections::bodies(operands.tools())?)?,
+                    extend: None,
+                },
                 kept(*keep),
             ),
             LegacyOperation::TrimBodiesAtPlane {

@@ -18,9 +18,9 @@ use crate::design::ops::assembly::{
     MirrorResult, Place, PlaceSet,
 };
 use crate::design::ops::body::{
-    Combine, DeleteBodies, InstanceChange, InstanceOverride, NewComponent, Pattern,
-    PatternInstances, PatternSeeds, Split, SplitMode, SplitTool, TemplateInput, TemplateInstance,
-    TransformBodies, TransformMode, TransformStep, Transformation,
+    Combine, DeleteBodies, InstanceChange, InstanceOverride, Kept, NewComponent, Pattern,
+    PatternInstances, PatternSeeds, PieceForm, Split, SplitMethod, SplitMode, SplitTool,
+    TemplateInput, TemplateInstance, TransformBodies, TransformMode, TransformStep, Transformation,
 };
 use crate::design::ops::datum::{Datum, DatumElement};
 use crate::design::ops::dressup::{
@@ -29,8 +29,9 @@ use crate::design::ops::dressup::{
     TransitionKind,
 };
 use crate::design::ops::shared::{
-    AxisLimits, Bounds, Coupling, Joint, JointConnector, JointKind, JointMotion, JointOffset,
-    Limit, LinearRun, PatternLayout, PatternRun, RunSides, Spacing, Span,
+    AxisLimits, Bounds, CompositeStage, Coupling, Joint, JointConnector, JointKind, JointMotion,
+    JointOffset, Limit, LinearLayout, LinearRun, Locus, PatternLayout, PatternRun, RunSides,
+    ScaleLayout, Spacing, Span,
 };
 use crate::design::ops::sheet_metal::{
     BendAllowance, BendSpec, Flange, FlangeWidth, KFactorRow, KFactorTable, SheetMetal,
@@ -61,7 +62,7 @@ use crate::ids::OccurrenceId;
 use crate::math::Point2;
 use crate::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
 use crate::report::Severity;
-use crate::scalar::{Angle, Fraction, Length, PositiveLength};
+use crate::scalar::{Angle, Fraction, Length, PositiveLength, PositiveReal};
 use crate::sketches::{SketchConstraintId, SketchEntityId, SketchId};
 use crate::transform::Transform;
 use crate::units::{FinitePoint2, UnitVector3};
@@ -611,7 +612,15 @@ fn a_hole_has_a_wider_head_and_a_series_only_in_an_assembly_feature() {
 // ----------------------------------------------------------------- patterns and body operations
 
 fn linear(sides: Option<RunSides<Length>>, count: u32) -> PatternLayout {
-    PatternLayout::Linear {
+    PatternLayout::Linear(linear_layout(sides, count))
+}
+
+fn linear_stage(count: u32) -> CompositeStage {
+    CompositeStage::Linear(linear_layout(None, count))
+}
+
+fn linear_layout(sides: Option<RunSides<Length>>, count: u32) -> LinearLayout {
+    LinearLayout {
         first: LinearRun {
             direction: Construction {
                 resolved: Some(UnitVector3::X_AXIS),
@@ -684,7 +693,7 @@ fn a_pattern_layout_and_its_indices_fit_its_runs() {
     );
     assert_finding(
         &with(pattern(
-            PatternLayout::Composite(vec![linear(None, 2)]),
+            PatternLayout::Composite(vec![linear_stage(2)]),
             Vec::new(),
         )),
         "fewer than two stages",
@@ -1574,7 +1583,7 @@ fn an_index_has_the_followed_and_composite_coordinates() {
     let mut ir = with(pattern(follow, vec![skipped(vec![1, 1, 1])]));
     ir.design.features[1].definition.operation = pattern(linear(None, 3), Vec::new());
     assert_finding(&ir, "other than one coordinate per run");
-    let composite = || PatternLayout::Composite(vec![linear(None, 2), linear(None, 2)]);
+    let composite = || PatternLayout::Composite(vec![linear_stage(2), linear_stage(2)]);
     assert_finding(
         &with(pattern(composite(), vec![skipped(vec![1])])),
         "other than one coordinate per run",
@@ -1621,7 +1630,10 @@ fn split_by_tools(targets: Option<SetSelection>) -> FeatureOperation {
     FeatureOperation::Split(Box::new(Split {
         mode: SplitMode::ByTools {
             targets,
-            tools: SplitTool::Geometry(named(vec![entity(NameKind::Face, 2)])),
+            tools: SplitTool::Geometry {
+                tools: named(vec![entity(NameKind::Face, 2)]),
+                extend: None,
+            },
             method: None,
             kept: None,
         },
@@ -1869,17 +1881,79 @@ fn an_assembly_feature_runs_no_operation_that_states_its_bodies() {
 }
 
 #[test]
-fn a_composite_stage_is_a_linear_circular_mirror_scale_or_native_layout() {
-    let follow = PatternLayout::Follow(named(vec![pick(PickTarget::Feature(feature("fillet")))]));
-    let stages = |stage| PatternLayout::Composite(vec![linear(None, 2), stage]);
-    let refused = "a Composite stage is no Linear";
-    assert_finding(&with(pattern(stages(follow), Vec::new())), refused);
-    let nested = stages(PatternLayout::Composite(vec![
-        linear(None, 2),
-        linear(None, 2),
-    ]));
-    assert_finding(&with(pattern(nested, Vec::new())), refused);
-    assert_no_finding_containing(&with(pattern(stages(linear(None, 2)), Vec::new())), refused);
+fn a_composite_scale_stage_divides_the_instances_before_it() {
+    let scale = |count| {
+        CompositeStage::Scale(ScaleLayout {
+            factor: Dimension::Literal(PositiveReal::new(2.0).unwrap()),
+            count: Dimension::Literal(count),
+            center: Locus::Centroid,
+        })
+    };
+    let refused = "does not divide the instances";
+    assert_finding(
+        &with(pattern(
+            PatternLayout::Composite(vec![linear_stage(4), scale(3)]),
+            Vec::new(),
+        )),
+        refused,
+    );
+    assert_no_finding_containing(
+        &with(pattern(
+            PatternLayout::Composite(vec![linear_stage(4), scale(2)]),
+            Vec::new(),
+        )),
+        refused,
+    );
+    assert_finding(
+        &with(pattern(
+            PatternLayout::Composite(vec![linear_stage(4), scale(1)]),
+            Vec::new(),
+        )),
+        "a Scale layout's literal count is below 2",
+    );
+}
+
+/// §10: a `ByTools` split whose tool is `Silhouette` has `method: None`, and
+/// its `kept`, where stated, is `All` or `Native`.
+#[test]
+fn a_silhouette_split_states_no_method_and_keeps_all_or_native() {
+    let silhouette = |method, kept| {
+        FeatureOperation::Split(Box::new(Split {
+            mode: SplitMode::ByTools {
+                targets: Some(named(vec![entity(NameKind::Body, 1)])),
+                tools: SplitTool::Silhouette(Box::new(Construction {
+                    resolved: Some(UnitVector3::Z_AXIS),
+                    ..empty_construction()
+                })),
+                method,
+                kept,
+            },
+            native_options: BTreeMap::new(),
+            source_settings: BTreeMap::new(),
+        }))
+    };
+    let all = || {
+        Some(Kept::All {
+            form: Some(PieceForm::Faces),
+        })
+    };
+    let native = Some(Kept::Native(
+        NonBlankString::new("f3d:silhouette_split_solid_body").unwrap(),
+    ));
+    for kept in [all(), native, None] {
+        assert_no_finding_containing(&with(silhouette(None, kept)), "Silhouette split");
+    }
+    assert_finding(
+        &with(silhouette(Some(SplitMethod::Intersect), all())),
+        "a Silhouette split states a method",
+    );
+    let side = Some(Kept::Side {
+        side: Dimension::Literal(true),
+    });
+    assert_finding(
+        &with(silhouette(None, side)),
+        "a Silhouette split keeps a side or pieces",
+    );
 }
 
 #[test]

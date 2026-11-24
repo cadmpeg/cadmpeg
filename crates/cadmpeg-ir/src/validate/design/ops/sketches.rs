@@ -19,7 +19,7 @@ use crate::design::ops::sketch::{
     SketchSpace, Spatial, SpatialCurve, TextLayout, TextVerticalBox,
 };
 use crate::design::selection::{PickTarget, PrincipalEntity};
-use crate::geometry::SolvedCurveGeometry;
+use crate::geometry::InlineCurve;
 use crate::math::Vector3;
 use crate::report::check::Finding;
 
@@ -147,19 +147,19 @@ impl Space for Spatial {
         };
         let bounded = curve.range.is_some();
         match &curve.carrier {
-            SolvedCurveGeometry::Line(_) if bounded => Shape::Line,
-            SolvedCurveGeometry::Line(_) => Shape::InfiniteLine,
-            SolvedCurveGeometry::Circle(_) if bounded => Shape::Arc,
-            SolvedCurveGeometry::Circle(_) => Shape::Circle,
-            SolvedCurveGeometry::Ellipse(_) => Shape::Ellipse(bounded),
-            SolvedCurveGeometry::Parabola(_) => Shape::Parabola(bounded),
-            SolvedCurveGeometry::Hyperbola(_) => Shape::Hyperbola(bounded),
-            SolvedCurveGeometry::Nurbs(nurbs) => Shape::Nurbs {
+            InlineCurve::Line(_) if bounded => Shape::Line,
+            InlineCurve::Line(_) => Shape::InfiniteLine,
+            InlineCurve::Circle(_) if bounded => Shape::Arc,
+            InlineCurve::Circle(_) => Shape::Circle,
+            InlineCurve::Ellipse(_) => Shape::Ellipse(bounded),
+            InlineCurve::Parabola(_) => Shape::Parabola(bounded),
+            InlineCurve::Hyperbola(_) => Shape::Hyperbola(bounded),
+            InlineCurve::Nurbs(nurbs) => Shape::Nurbs {
                 rational: nurbs.weights().is_some(),
                 poles: nurbs.control_points().len(),
                 knots: nurbs.knots().len(),
             },
-            _ => Shape::Other,
+            InlineCurve::Polyline(_) | InlineCurve::Transformed { .. } => Shape::Other,
         }
     }
 

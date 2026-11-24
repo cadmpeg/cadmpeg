@@ -28,6 +28,9 @@ use crate::design::ops::shared::{
     PathAxisControl, PathPosition, PathReference, PathRollControl, PatternRun, RunSides,
     SlotPosition, Spacing, TableRow, TangentContact, UpToFill, WidthMode,
 };
+use crate::design::ops::shared::{
+    CircularLayout, CompositeStage, LinearLayout, MirrorLayout, ScaleLayout,
+};
 use crate::design::options::{NativeOption, SymmetricMeasure};
 use crate::design::read;
 use crate::design::selection::{
@@ -479,28 +482,28 @@ fn pattern_layouts() -> Vec<PatternLayout> {
     let second = runs.pop();
     let first = runs.remove(0);
     vec![
-        PatternLayout::Linear {
+        PatternLayout::Linear(LinearLayout {
             first: first.clone(),
             second,
             seed_only: Some(literal(true)),
-        },
-        PatternLayout::Linear {
+        }),
+        PatternLayout::Linear(LinearLayout {
             first,
             second: None,
             seed_only: None,
-        },
-        PatternLayout::Circular {
+        }),
+        PatternLayout::Circular(CircularLayout {
             axis: axis_construction(),
             angular: pattern_runs(angle(0.5)).remove(0),
             radial: pattern_runs(length(4.0)).pop(),
             orientation: Some(InstanceOrientation::Follow),
-        },
-        PatternLayout::Circular {
+        }),
+        PatternLayout::Circular(CircularLayout {
             axis: axis_construction(),
             angular: pattern_runs(angle(0.25)).remove(1),
             radial: None,
             orientation: None,
-        },
+        }),
         PatternLayout::Path {
             path: selection(6),
             run: pattern_runs(length(3.0)).remove(0),
@@ -516,26 +519,26 @@ fn pattern_layouts() -> Vec<PatternLayout> {
         },
         PatternLayout::Dimensions(dimension_runs()),
         PatternLayout::Table(dimension_tables().remove(0)),
-        PatternLayout::Mirror {
+        PatternLayout::Mirror(MirrorLayout {
             plane: plane_construction(),
             stitch_tolerance: Some(literal(length(0.01))),
-        },
+        }),
         PatternLayout::Composite(vec![
-            PatternLayout::Mirror {
+            CompositeStage::Mirror(MirrorLayout {
                 plane: plane_construction(),
                 stitch_tolerance: None,
-            },
-            PatternLayout::Scale {
+            }),
+            CompositeStage::Scale(ScaleLayout {
                 factor: literal(positive_real(2.0)),
                 count: literal(3),
                 center: Locus::Centroid,
-            },
+            }),
         ]),
-        PatternLayout::Scale {
+        PatternLayout::Scale(ScaleLayout {
             factor: parameter(3),
             count: literal(2),
             center: Locus::Point(Box::new(point_construction())),
-        },
+        }),
         PatternLayout::Follow(selection(8)),
         PatternLayout::Chain(chain_layouts().remove(0)),
         PatternLayout::Native(text("nx:spiral")),

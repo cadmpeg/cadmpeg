@@ -16,7 +16,7 @@ use crate::design::refs::{ConfigurationRef, EntityRef};
 use crate::design::scope::OccurrenceDesign;
 use crate::design::selection::{OccurrencePath, PathStep, StepRef, Witness};
 use crate::geometry::nurbs::NurbsCurve;
-use crate::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
+use crate::geometry::{Curve, CurveGeometry, InlineCurve, SolvedCurveGeometry};
 use crate::ids::{EdgeId, OccurrenceId, ProductDefinitionId};
 use crate::math::Point3;
 use crate::process::feature::{MachiningFeature, MachiningFeatureClass};
@@ -775,7 +775,7 @@ fn a_rollback_after_a_nested_container_is_the_state_entering_it() {
 }
 
 /// The geometry of a line edge of the unit cube, and the edge.
-fn line_edge(ir: &CadIr) -> (EdgeId, SolvedCurveGeometry) {
+fn line_edge(ir: &CadIr) -> (EdgeId, InlineCurve) {
     ir.geometry
         .edges
         .iter()
@@ -790,8 +790,8 @@ fn line_edge(ir: &CadIr) -> (EdgeId, SolvedCurveGeometry) {
                 .iter()
                 .find(|curve| &curve.id == carrier)?;
             match &curve.geometry {
-                CurveGeometry::Solved(line @ SolvedCurveGeometry::Line(_)) => {
-                    Some((edge.id.clone(), line.clone()))
+                CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) => {
+                    Some((edge.id.clone(), InlineCurve::Line(*line)))
                 }
                 _ => None,
             }

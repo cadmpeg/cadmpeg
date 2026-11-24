@@ -26,7 +26,7 @@ use crate::design::selection::{OccurrencePath, StepRef};
 use crate::document::{Design, Topology};
 use crate::features::ConfigurationId;
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
-use crate::presentation::PresentationItem;
+use crate::presentation::{hidden_layers, PresentationItem};
 use crate::products::{NestedOverride, Occurrence, ProductDefinition};
 use crate::references::InstanceTarget;
 use crate::topology::Color;
@@ -59,14 +59,16 @@ impl Resolved {
 }
 
 /// One step of a path being resolved: its occurrence, the scope that states
-/// its design, the configuration of that scope that applies to it, and the
-/// prototype in force in that configuration.
+/// its design, the configuration of that scope that applies to it, the
+/// prototype in force in that configuration, and the arrangements in force
+/// for it, at most one of each kind.
 struct Level<'a> {
     occurrence: &'a OccurrenceId,
     record: &'a Occurrence,
     scope: Option<&'a DesignScope>,
     configuration: Option<ConfigurationId>,
     prototype: &'a ProductDefinitionId,
+    arrangements: Vec<&'a Arrangement>,
 }
 
 /// The records an occurrence path resolves through: the design, and the
@@ -159,8 +161,8 @@ impl CadIr {
     /// body that holds it, or of the body itself; the `visible` of each
     /// appearance binding on it or on that body, at its instance and in its
     /// state; and the `visible` of each presentation layer that lists it,
-    /// that body, or an occurrence of its path. A gate that states nothing
-    /// does not hide it.
+    /// that body, or an occurrence of its path, and of each layer above such
+    /// a layer through `parent`. A gate that states nothing does not hide it.
     ///
     /// # Errors
     ///
@@ -231,11 +233,12 @@ impl CadIr {
                     && (item.path.is_none() || item.path == target.path)
             }
         };
+        let hidden = hidden_layers(&self.model.presentation_layers);
         Ok(!self
             .model
             .presentation_layers
             .iter()
-            .any(|layer| layer.visible == Some(false) && layer.items.iter().any(listed)))
+            .any(|layer| hidden.contains(&layer.id) && layer.items.iter().any(listed)))
     }
 
     /// The display colour of `target`: its own explicit display colour
@@ -352,9 +355,9 @@ impl PathResolver<'_> {
                         .get(level.occurrence)
                         .and_then(|state| state.configuration.clone())
                 };
-                let arranged = self
-                    .in_force_at(level)?
-                    .into_iter()
+                let arranged = level
+                    .arrangements
+                    .iter()
                     .find_map(|arrangement| from(&arrangement.overrides));
                 let configured = match &level.configuration {
                     Some(configuration) => self
@@ -434,7 +437,9 @@ impl PathResolver<'_> {
                 scope,
                 configuration,
                 prototype,
+                arrangements: Vec::new(),
             });
+            levels[at].arrangements = self.arranged_for(&levels, &ids, at)?;
         }
         let mut resolved = Vec::with_capacity(levels.len());
         for at in 0..levels.len() {
@@ -487,7 +492,7 @@ impl PathResolver<'_> {
             }
         }
         let mut arranged = Resolved::default();
-        for arrangement in self.arranged_for(levels, at)? {
+        for arrangement in &level.arrangements {
             if let Some(entry) = arrangement.overrides.occurrences.get(level.occurrence) {
                 arranged.take(entry);
             }
@@ -547,13 +552,16 @@ impl PathResolver<'_> {
         Ok(nested)
     }
 
-    /// The arrangements in force for the occurrence at `at`: per kind, the
-    /// one its parent occurrence uses for the prototype where its scope is
-    /// that prototype's own, else the one in force in the configuration that
-    /// applies to it (§5.1, §5.11).
+    /// The arrangements in force for the occurrence at `at`, whose outer
+    /// levels hold theirs: per kind, where its scope is its parent's
+    /// prototype, the one a `nested` entry of an arrangement in force above
+    /// names for the parent instance, the outermost entry first, else the one
+    /// its parent occurrence uses for the prototype; else the one in force
+    /// in the configuration that applies to it (§4, §5.1, §5.11).
     fn arranged_for<'a>(
         &'a self,
         levels: &[Level<'a>],
+        ids: &[&OccurrenceId],
         at: usize,
     ) -> Result<Vec<&'a Arrangement>, EditError> {
         let level = &levels[at];
@@ -561,6 +569,38 @@ impl PathResolver<'_> {
         if let (Some(parent), Some(scope)) = (at.checked_sub(1).map(|up| &levels[up]), level.scope)
         {
             if &scope.definition == parent.prototype {
+                for (outer, holder) in levels[..at].iter().enumerate() {
+                    let Some(from) = holder.scope.and_then(|holder| {
+                        (0..=outer)
+                            .rev()
+                            .find(|&start| self.owned_by(ids[start], &holder.definition))
+                    }) else {
+                        continue;
+                    };
+                    let instance = &ids[from..at];
+                    let chosen = holder
+                        .arrangements
+                        .iter()
+                        .flat_map(|arrangement| &arrangement.nested)
+                        .filter(|entry| {
+                            occurrence_ids(&entry.path).is_some_and(|path| path == instance)
+                        })
+                        .filter_map(|entry| match &entry.arrangement {
+                            ArrangementRef::Local(id) => Some(id),
+                            ArrangementRef::Named(_) => None,
+                        });
+                    for id in chosen {
+                        if let Some(arrangement) =
+                            self.design.arrangements.iter().find(|candidate| {
+                                &candidate.id == id && candidate.scope == scope.definition
+                            })
+                        {
+                            if !in_force.iter().any(|held| held.kind == arrangement.kind) {
+                                in_force.push(arrangement);
+                            }
+                        }
+                    }
+                }
                 let named = parent
                     .scope
                     .and_then(|holder| holder.occurrences.get(parent.occurrence))
