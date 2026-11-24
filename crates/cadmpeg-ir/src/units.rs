@@ -108,7 +108,7 @@ pub fn binding_allowance(linear: crate::scalar::PositiveLength, tolerances: &[Op
 }
 
 /// An array of finite coordinates.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, cadmpeg_derive::StructuralOrd)]
 pub struct FiniteVector<const N: usize>([f64; N]);
 
 impl<const N: usize> FiniteVector<N> {
@@ -419,7 +419,7 @@ impl SumSquaresUnitVector3 {
 }
 
 /// A direction with unit length within the analytic frame tolerance.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "Vector3", into = "Vector3")]
 pub struct UnitVector3(Vector3);
@@ -702,7 +702,7 @@ impl From<UnitVector3> for Vector3 {
 }
 
 /// A finite direction whose Euclidean length exceeds machine epsilon.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::StructuralOrd)]
 #[serde(transparent)]
 pub struct DirectionAboveEpsilon(FiniteVector3);
 
@@ -1140,7 +1140,7 @@ impl Transform {
 }
 
 /// A parameter-space point with finite coordinates.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "Point2", into = "Point2")]
 pub struct FinitePoint2(Point2);
@@ -1216,7 +1216,7 @@ impl PartialEq<Point2> for FinitePoint2 {
 }
 
 /// A finite parameter-space direction whose squared norm exceeds machine epsilon.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "Point2", into = "Point2")]
 pub struct NonzeroPoint2(Point2);

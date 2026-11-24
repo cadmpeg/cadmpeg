@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 /// One component and its native construction scalar.
 // A source states a raw scalar; a compound construction holds the admitted
 // component, whose scalar is a `FiniteReal`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct CompoundComponent<T, R = f64> {
@@ -38,7 +38,7 @@ pub struct CompoundComponent<T, R = f64> {
 }
 
 /// A non-empty compound curve with finite construction parameters.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "CompoundCurveConstructionWire")]
 pub struct CompoundCurveConstruction {
@@ -300,7 +300,7 @@ impl ProceduralCurveDefinition {
 }
 
 /// A parameter-space support curve and its optional affine parameter map.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct SupportPcurve {
@@ -336,7 +336,7 @@ impl From<PcurveGeometry> for SupportPcurve {
 }
 
 /// A finite, non-zero-width directed parameter interval.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct DirectedParameterRange([f64; 2]);
@@ -419,7 +419,7 @@ pub(super) fn require_mapped_interval(
 }
 
 /// Discriminator-specific payload of a deformable native intcurve.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -459,7 +459,14 @@ pub enum DeformableCurveData<R = f64, V = Vector3, P = Point3> {
 }
 
 /// Source slot of a deformable native intcurve.
-#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -479,7 +486,7 @@ pub enum DeformableCurveSource {
 }
 
 /// Neutral semantics for a procedural curve.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ProceduralCurveDefinition {
@@ -709,7 +716,9 @@ impl<'de> Deserialize<'de> for ProceduralCurveDefinition {
 }
 
 /// Codes attached to the two native vector-offset roles.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct VectorOffsetRoles {

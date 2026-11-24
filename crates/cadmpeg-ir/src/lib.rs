@@ -35,6 +35,8 @@
 //! Product prototypes and occurrence trees retain assembly identity and
 //! placement. Joint and mate constraints are reserved.
 
+extern crate self as cadmpeg_ir;
+
 #[macro_use]
 mod identity_rewrite;
 
@@ -82,6 +84,7 @@ pub mod semantic_annotations;
 pub mod sketches;
 pub mod source_fidelity;
 pub mod spreadsheets;
+pub mod structural_order;
 pub mod subd;
 pub mod tessellation;
 pub mod topology;
