@@ -83,21 +83,46 @@ pub fn content_digest(
     canonical_json_digest(ctx, ir)
 }
 
+/// Returns [`content_digest`], and the records of `ir` past a bound of §2.5,
+/// found in the same walk.
+///
+/// # Errors
+///
+/// As [`content_digest`].
+pub(crate) fn measured_content_digest(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<(digest::Sha256Digest, crate::bounds::Measured), DigestError> {
+    measured_json_digest(ctx, ir)
+}
+
 fn canonical_json_digest<T: Serialize + ?Sized>(
     ctx: &DecodeContext<'_>,
     value: &T,
 ) -> Result<digest::Sha256Digest, DigestError> {
+    measured_json_digest(ctx, value).map(|(digest, _)| digest)
+}
+
+fn measured_json_digest<T: Serialize + ?Sized>(
+    ctx: &DecodeContext<'_>,
+    value: &T,
+) -> Result<(digest::Sha256Digest, crate::bounds::Measured), DigestError> {
     let mut buffered =
         std::io::BufWriter::with_capacity(DIGEST_BUFFER_BYTES, DigestWriter(Sha256::new()));
+    let mut measure = crate::bounds::Measure::new(&mut buffered);
     write_canonical_json(
         CanonicalAdmission::limited(ctx, "walk document digest"),
-        &mut buffered,
+        &mut measure,
         value,
     )?;
+    let measured = measure.finish();
     let writer = buffered
         .into_inner()
         .map_err(|error| DigestError::Write(error.into_error()))?;
-    Ok(digest::Sha256Digest::from_bytes(writer.0.finalize().into()))
+    Ok((
+        digest::Sha256Digest::from_bytes(writer.0.finalize().into()),
+        measured,
+    ))
 }
 
 /// A digest could not be computed.

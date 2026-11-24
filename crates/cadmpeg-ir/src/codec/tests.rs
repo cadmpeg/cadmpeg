@@ -833,3 +833,102 @@ fn a_document_without_canonical_json_keeps_no_content_digest_and_reads_as_edited
     };
     assert_eq!(loss.severity, crate::report::Severity::Warning);
 }
+
+/// A decoder that states, beside the unit cube, two native records: one at
+/// the document's depth bound and one a level past it. A native record sits
+/// at the document's fifth level, so its field nests at most 123 levels.
+struct PastTheBoundCodec;
+
+impl PastTheBoundCodec {
+    const WITHIN: &'static str = "test:within#1";
+    const PAST: &'static str = "test:past#1";
+}
+
+impl CodecBackend for PastTheBoundCodec {
+    const FORMAT: FormatId = FormatId::new("test");
+
+    fn detect_impl(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        Ok(Confidence::No)
+    }
+
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        panic!("the depth bound test does not inspect")
+    }
+
+    fn decode_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<Decoded, CodecError> {
+        let mut ir = unit_cube().expect("valid unit cube fixture");
+        let record = |id: &str, depth: usize| {
+            let field = (0..depth).fold(serde_json::Value::Null, |inner, _| {
+                serde_json::Value::Array(vec![inner])
+            });
+            crate::NativeRecord::new(
+                crate::ids::Identity::new(id).expect("valid native identity"),
+                [("field".to_owned(), field)].into_iter().collect(),
+            )
+            .expect("valid native record")
+        };
+        let within = crate::bounds::MAX_DOCUMENT_DEPTH - 5;
+        ir.native
+            .namespace_mut(crate::design::names::CodecId::new("test").expect("a codec id"))
+            .set_arena_records(
+                "deep",
+                vec![record(Self::WITHIN, within), record(Self::PAST, within + 1)],
+            )
+            .expect("a valid arena");
+        Ok(decoded(ir))
+    }
+}
+
+#[test]
+fn the_sealed_wrapper_gives_up_a_record_past_the_document_bound() {
+    let result = PastTheBoundCodec
+        .decode(&mut Cursor::new(Vec::new()), &DecodeOptions::default())
+        .expect("a record past the bound does not refuse the file");
+    let arena = result
+        .ir()
+        .native
+        .namespace("test")
+        .expect("the test namespace")
+        .arenas()
+        .get("deep")
+        .expect("the deep arena");
+    let kept = arena
+        .iter()
+        .map(crate::NativeRecord::id)
+        .collect::<Vec<_>>();
+    assert_eq!(kept, [PastTheBoundCodec::WITHIN]);
+    let unreadable = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::unknown::part::record_unreadable_kind())
+        .collect::<Vec<_>>();
+    let [loss] = unreadable.as_slice() else {
+        panic!("one loss for the one record: {unreadable:?}");
+    };
+    assert_eq!(loss.severity, crate::report::Severity::Error);
+    assert!(
+        loss.message.contains(PastTheBoundCodec::PAST) && loss.message.contains("native.test.deep"),
+        "{}",
+        loss.message
+    );
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    assert_eq!(
+        result.source_fidelity().content_digest,
+        crate::hash::content_digest(&ctx, result.ir()).unwrap()
+    );
+    let text = serde_json::to_string(result.ir()).unwrap();
+    assert!(CadIr::from_json(&text).is_ok());
+}

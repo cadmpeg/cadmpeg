@@ -387,10 +387,24 @@ impl DecodeResult {
     /// document has, so every writer reads it as edited, and a
     /// `decode/content-digest.unavailable` Warning says why (interim, inventory
     /// gap 20261124-ERR1-C-I7-1).
+    ///
+    /// The same walk finds each record the decoder stated past a bound of
+    /// §2.5, which §2.8 states none of. Each such record is given up, with a
+    /// `decode/record.unreadable` Error that names it, and the document is
+    /// digested again without it. Records that reference a given-up record
+    /// keep the reference (interim: the shared give-up pass of §2.8 does not
+    /// exist yet).
     fn record_content_digest(&mut self, policy: &DecodePolicy) -> Result<(), CodecError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (digest_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
-        match crate::hash::content_digest(&digest_ctx, &self.ir).map_err(CodecError::from) {
+        let digest = match crate::hash::measured_content_digest(&digest_ctx, &self.ir) {
+            Ok((_, measured)) if !measured.records.is_empty() || measured.outside.is_some() => {
+                self.give_up_records_past_the_bounds(measured);
+                crate::hash::content_digest(&digest_ctx, &self.ir)
+            }
+            measured => measured.map(|(digest, _)| digest),
+        };
+        match digest.map_err(CodecError::from) {
             Ok(digest) => self.source_fidelity.content_digest = digest,
             Err(error) => {
                 self.source_fidelity.content_digest =
@@ -404,6 +418,46 @@ impl DecodeResult {
             }
         }
         Ok(())
+    }
+
+    /// Gives up each record `measured` places past a bound, last first in
+    /// each arena so the places of the others hold. The document writes each
+    /// arena in identity order, so the arenas are put in that order first.
+    fn give_up_records_past_the_bounds(&mut self, measured: crate::bounds::Measured) {
+        self.ir.finalize();
+        for (place, bound) in measured.records.into_iter().rev() {
+            let Some(id) = self.ir.remove_record(&place) else {
+                continue;
+            };
+            let arena = match &place {
+                crate::bounds::Place::Home { home, arena, .. } => format!("{home}.{arena}"),
+                crate::bounds::Place::Native { codec, arena, .. } => {
+                    format!("native.{codec}.{arena}")
+                }
+            };
+            self.report.losses.push(
+                DecodeLoss::new(
+                    crate::unknown::part::record_unreadable_kind(),
+                    format!(
+                        "record {id} of arena {arena} {}, so the decode wrapper gave it up",
+                        bound.describe()
+                    ),
+                )
+                .with_severity(crate::report::Severity::Error),
+            );
+        }
+        if let Some(bound) = measured.outside {
+            self.report.losses.push(
+                DecodeLoss::new(
+                    crate::unknown::part::record_unreadable_kind(),
+                    format!(
+                        "the document {} outside every record, which the decode wrapper keeps",
+                        bound.describe()
+                    ),
+                )
+                .with_severity(crate::report::Severity::Error),
+            );
+        }
     }
 
     /// Borrow the finalized IR.

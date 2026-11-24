@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Cloning, comparing, and dropping a tree on a work stack.
+//! Measuring, cloning, comparing, and dropping a tree on a work stack.
 //!
-//! A tree the expression ceiling admits is several times deeper than the
-//! ceiling, since an operand of a two-operand chain or of a comparison nests
-//! no level. These walk it without recursion, so its depth does not reach the
+//! Reading bounds a tree's depth (§2.5), but a tree built in memory has no
+//! bound. These walk it without recursion, so its depth does not reach the
 //! thread's stack.
 
 use std::mem;
@@ -64,6 +63,19 @@ impl<R> Node<R> {
     }
 
     /// The node's operands, left to right, to change in place.
+    /// The depth of the tree (§2.5): a leaf is 1 and a node is one more than
+    /// its deepest operand, so a chain and an `if` ladder are each one node.
+    #[must_use]
+    pub fn depth(&self) -> usize {
+        let mut deepest = 0;
+        let mut work = vec![(self, 1)];
+        while let Some((node, at)) = work.pop() {
+            deepest = deepest.max(at);
+            work.extend(node.operands().map(|operand| (operand, at + 1)));
+        }
+        deepest
+    }
+
     pub(crate) fn operands_mut(&mut self) -> impl Iterator<Item = &mut Self> {
         let mut lead: [Option<&mut Self>; 2] = [None, None];
         let mut list: &mut [Self] = &mut [];

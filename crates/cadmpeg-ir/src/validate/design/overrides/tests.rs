@@ -102,10 +102,10 @@ fn a_dimension_at_a_place_the_base_lacks_is_not_compared() {
 }
 
 #[test]
-fn the_comparison_at_the_construction_ceiling_runs_on_a_small_stack() {
-    let ceiling =
-        usize::try_from(cadmpeg_core::decode::ResourceLimits::desktop().max_construction_depth)
-            .unwrap();
+fn the_comparison_of_the_deepest_construction_runs_on_a_small_stack() {
+    // A nested construction is four levels of JSON: inputs, input, reference
+    // and construction, so no document holds a deeper nesting.
+    let deepest = crate::bounds::MAX_DOCUMENT_DEPTH / 4;
     let mut inputs = json!([{
         "role": {"subject": "whole", "relation": {"kind": "offset"}},
         "reference": {"kind": "picks", "value": {
@@ -116,7 +116,7 @@ fn the_comparison_at_the_construction_ceiling_runs_on_a_small_stack() {
         }},
         "value": {"kind": "length", "value": literal(10.0)}
     }]);
-    for _ in 1..ceiling {
+    for _ in 1..deepest {
         inputs = json!([{
             "role": {"subject": "whole", "relation": {"kind": "parallel"}},
             "reference": {"kind": "built", "value": {"kind": "plane", "inputs": inputs, "after": [], "resolved_in": {}}}

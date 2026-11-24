@@ -83,7 +83,7 @@ impl DecodeSidecar {
 
     /// Parses a decode sidecar.
     pub fn from_json(text: &str) -> Result<Self, DecodeSidecarParseError> {
-        serde_json::from_str(text).map_err(DecodeSidecarParseError::Json)
+        crate::bounds::read_json::<Self>(text).map_err(DecodeSidecarParseError::Json)
     }
 }
 
