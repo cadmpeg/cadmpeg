@@ -59,7 +59,7 @@ fn typed_loopless_sphere_and_torus_keep_their_ownership() {
             (out.bodies.len(), out.shells.len(), out.faces.len()),
             (1, 1, 1)
         );
-        assert!(out.faces[0].loops.is_empty());
+        assert!(out.faces[0].loops.stated().next().is_none());
         assert!(out.loops.is_empty());
         assert!(out.edges.is_empty());
         assert!(out.vertices.is_empty());
@@ -124,7 +124,7 @@ fn a_compact_trimmed_face_supplies_topology_for_its_null_loop_ownership_face() {
             (out.bodies.len(), out.shells.len(), out.faces.len()),
             (1, 1, 1)
         );
-        assert_eq!(out.faces[0].loops.len(), usize::from(trimmed));
+        assert_eq!(out.faces[0].loops.stated().count(), usize::from(trimmed));
         assert_eq!(out.loops.len(), usize::from(trimmed));
         assert_eq!(out.faces[0].shell, out.shells[0].id);
         assert!(out.losses.is_empty(), "{:?}", out.losses);
@@ -392,7 +392,7 @@ fn a_loopless_nurbs_face_requires_both_periodic_parameters() {
         .unwrap();
         assert_eq!(out.faces.len(), usize::from(periodic == [true, true]));
         if let Some(face) = out.faces.first() {
-            assert!(face.loops.is_empty());
+            assert!(face.loops.stated().next().is_none());
             assert_eq!(face.shell, out.shells[0].id);
         }
     }

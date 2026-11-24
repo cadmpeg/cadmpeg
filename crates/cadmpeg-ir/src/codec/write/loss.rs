@@ -29,6 +29,11 @@ pub(crate) enum ExportLossCode {
     NativeRecordsOmitted,
     /// The output holds no geometry (§3.5).
     OutputEmpty,
+    /// A partial face is not written (§3.4, Content the target cannot hold).
+    FacePartial,
+    /// A region that is marked or holds a marked shell or a partial face is
+    /// not written as a solid (§3.4, Content the target cannot hold).
+    SolidPartial,
     /// A feature the target needs a state or names for is not written
     /// (§3.4, Features without their state).
     EvaluationMissing,
@@ -69,6 +74,8 @@ impl ExportLossCode {
             Self::EditDropped(_) => "edit.dropped",
             Self::NativeRecordsOmitted => "native.records-omitted",
             Self::OutputEmpty => "output.empty",
+            Self::FacePartial => "face.partial",
+            Self::SolidPartial => "solid.partial",
             Self::EvaluationMissing => "evaluation.missing",
             Self::EvaluationStale => "evaluation.stale",
             Self::ParameterFlattened => "parameter.flattened",
@@ -87,6 +94,8 @@ impl ExportLossCode {
             Self::ArenaOmitted(_)
             | Self::NativeRecordsOmitted
             | Self::OutputEmpty
+            | Self::FacePartial
+            | Self::SolidPartial
             | Self::EvaluationMissing
             | Self::EvaluationStale
             | Self::ParameterFlattened
@@ -106,6 +115,9 @@ impl ExportLossCode {
             Self::NativeRecordsOmitted => return LossTaxonomy::PassthroughRecordOmitted,
             Self::SourceCarried | Self::SourceUnchecked => return LossTaxonomy::RecordNotTyped,
             Self::OutputEmpty => return LossTaxonomy::NoExportableSolids,
+            Self::FacePartial | Self::SolidPartial => {
+                return LossTaxonomy::TopologyNotTransferred;
+            }
             Self::EvaluationMissing
             | Self::EvaluationStale
             | Self::ParameterFlattened
@@ -344,6 +356,50 @@ where
 #[must_use]
 pub fn output_empty(message: impl Into<String>) -> LossNote {
     ExportLossCode::OutputEmpty.note(message)
+}
+
+/// `export:face.partial`: the writer did not write the partial face `face`
+/// (§3.4, Content the target cannot hold).
+#[must_use]
+pub fn face_partial(format: &str, face: &crate::ids::FaceId) -> LossNote {
+    ExportLossCode::FacePartial.note(format!(
+        "{format} writes no partial face: {face} does not state every loop"
+    ))
+}
+
+/// `export:solid.partial`: the writer did not write `region` as a solid,
+/// because it is marked or holds a marked shell or a partial face (§3.4,
+/// Content the target cannot hold). `form` names what it wrote instead.
+#[must_use]
+pub fn solid_partial(format: &str, region: &crate::ids::RegionId, form: &str) -> LossNote {
+    ExportLossCode::SolidPartial.note(format!(
+        "{format} writes no solid for {region}, which does not state every shell or face: {form}"
+    ))
+}
+
+/// The losses of a writer that omits every partial face and writes no region
+/// [`crate::document::Topology::complete_shells`] does not answer for as a
+/// solid: `export:face.partial` naming each such face and
+/// `export:solid.partial` naming each such region, with `form` saying what the
+/// writer writes for it (§3.4, Content the target cannot hold).
+#[must_use]
+pub fn partial_topology_omitted(
+    format: &str,
+    geometry: &crate::document::Topology,
+    form: &str,
+) -> Vec<LossNote> {
+    let faces = geometry
+        .faces
+        .iter()
+        .filter(|face| face.loops.is_partial())
+        .map(|face| face_partial(format, &face.id));
+    let lists = geometry.child_lists();
+    let regions = geometry
+        .regions
+        .iter()
+        .filter(|region| lists.complete_shells(region).is_none())
+        .map(|region| solid_partial(format, &region.id, form));
+    faces.chain(regions).collect()
 }
 
 /// `export:record.invalid`: the writer wrote these records of `kind` from the

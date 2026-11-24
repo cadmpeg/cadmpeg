@@ -31,7 +31,7 @@ pub(crate) fn validate_native(
     if !namespace
         .arenas()
         .keys()
-        .any(|name| name.starts_with("drawing_"))
+        .any(|name| name.as_str().starts_with("drawing_"))
     {
         return Ok(());
     }

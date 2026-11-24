@@ -306,7 +306,17 @@ impl<'a> WritableModel<'a> {
         {
             return Err(CodecError::NotImplemented("Brep writing requires one shell with distinct explicit carriers and polygonal loops".into()));
         }
-        if geometry.body_regions(&body.id).count() != 1 || body.transform.is_some() {
+        if geometry
+            .complete_body_regions(&body.id)
+            .is_none_or(|regions| regions.count() != 1)
+            || geometry.complete_shells(&geometry.regions[0]).is_none()
+        {
+            return Err(CodecError::NotImplemented(
+                "Brep writing requires a body that states every region, shell, face, and loop"
+                    .into(),
+            ));
+        }
+        if body.transform.is_some() {
             return Err(CodecError::NotImplemented(
                 "Brep body placement is not writable".into(),
             ));
@@ -315,7 +325,7 @@ impl<'a> WritableModel<'a> {
         let region = &geometry.regions[0];
         let shell = &geometry.shells[0];
         if region.body != body.id
-            || region.shells != std::slice::from_ref(&shell.id)
+            || !region.stated_shells().eq(std::iter::once(&shell.id))
             || shell.region != region.id
             || geometry.faces.iter().any(|face| face.shell != shell.id)
             || !shell.members.is_empty()
@@ -333,11 +343,11 @@ impl<'a> WritableModel<'a> {
         let mut ordered_vertices = Vec::new();
         match layout {
             Layout::SingleFace => {
-                if !geometry.faces[0]
-                    .loops
-                    .iter()
-                    .eq(geometry.loops.iter().map(|loop_| &loop_.id))
-                {
+                if !geometry.faces[0].loops.boundary().is_some_and(|loops| {
+                    loops
+                        .iter()
+                        .eq(geometry.loops.iter().map(|loop_| &loop_.id))
+                }) {
                     return Err(CodecError::Malformed(
                         "single-face loop order is inconsistent".into(),
                     ));
@@ -575,8 +585,9 @@ impl<'a> WritableModel<'a> {
             .faces
             .iter()
             .map(|face| {
+                let boundary = face.loops.boundary().filter(|loops| !loops.is_empty());
                 if face.shell != shell.id
-                    || face.loops.is_empty()
+                    || boundary.is_none()
                     || face.name.is_some()
                     || face.color.is_some()
                     || !used_surfaces.insert(face.surface.as_str())
@@ -586,9 +597,9 @@ impl<'a> WritableModel<'a> {
                         face.id.as_str()
                     )));
                 }
-                let loops = face
-                    .loops
-                    .iter()
+                let loops = boundary
+                    .into_iter()
+                    .flatten()
                     .map(|id| {
                         if !owned_loops.insert(id.as_str()) {
                             return Err(CodecError::malformed(format_args!(

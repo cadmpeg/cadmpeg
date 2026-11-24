@@ -1160,6 +1160,54 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         "flag lane 5",
     );
 
+    let mut negative_zero_marker = extended_source_less.clone();
+    {
+        let mut zero_native = f3d_native_mut(&mut negative_zero_marker);
+        let point = &mut zero_native.sketch_points[0];
+        point
+            .try_set_record_form(
+                crate::records::sketch_geometry::SketchPointRecordForm::Version11 {
+                    depth: -0.0,
+                    entity_genesis: point.entity_genesis(),
+                    padded_paired_reference: true,
+                    derived_type: false,
+                    companion_prefix_present_zero: true,
+                    persistent_id: std::num::NonZeroU64::new(point.persistent_id().unwrap())
+                        .unwrap(),
+                    flags: [false, false, false, true, true, true, false, false],
+                    closure: crate::records::sketch_geometry::SketchPointClosure::Selector4State0,
+                },
+            )
+            .unwrap();
+        point.try_set_coordinates(Point2::new(-0.0, -0.0)).unwrap();
+    }
+    let mut negative_zero_encoded = Vec::new();
+    F3dCodec
+        .plan(
+            EncodeInput::new(&negative_zero_marker, None),
+            TargetRequest::Inherit,
+        )
+        .and_then(|plan| plan.write_to(&mut negative_zero_encoded))
+        .expect("source-less negative-zero sketch point encode");
+    let negative_zero_round_trip = F3dCodec
+        .decode(
+            &mut Cursor::new(negative_zero_encoded),
+            &DecodeOptions::default(),
+        )
+        .expect("source-less negative-zero sketch point round trip");
+    let negative_zero_native = f3d_native(negative_zero_round_trip.ir());
+    let negative_zero_point = &negative_zero_native.sketch_points[0];
+    assert_eq!(negative_zero_point.flags(), [0, 0, 0, 1, 1, 1, 0, 0]);
+    let coordinates = negative_zero_point.coordinates();
+    assert_eq!(
+        [
+            coordinates.u.to_bits(),
+            coordinates.v.to_bits(),
+            negative_zero_point.depth().to_bits()
+        ],
+        [0; 3]
+    );
+
     let mut inconsistent = round_trip.ir().clone();
     f3d_native_mut(&mut inconsistent).sketch_relations[0]
         .try_edit(|draft| {

@@ -135,6 +135,7 @@ fn malformed_auxiliary_owner_blocks_semantic_writes() {
     let result = crate::writer::write_semantic_with_records(
         decoded.ir(),
         &decoded.source_fidelity().annotations,
+        &decoded.source_fidelity().codec_digests,
         &records,
         &[],
         &mut output,

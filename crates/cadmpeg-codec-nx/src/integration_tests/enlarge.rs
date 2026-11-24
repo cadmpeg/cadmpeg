@@ -57,7 +57,7 @@ fn enlarge_pipeline_resolves_the_owning_class_without_inventing_face_roles() {
         let mut invalid = wire;
         invalid["scalars"][0] = serde_json::json!(2.0);
         ir.native
-            .namespace_mut("nx")
+            .namespace_mut(cadmpeg_ir::codec_id!("nx"))
             .set_arena(ctx, "feature_enlarge_construction_envelopes", &[invalid])
             .unwrap();
         let findings = <crate::NxCodec as CodecBackend>::validate_native(ctx, &ir, None).unwrap();

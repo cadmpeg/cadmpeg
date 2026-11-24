@@ -323,7 +323,7 @@ pub(crate) fn install(
         });
     }
 
-    let namespace = ir.native.namespace_mut("rhino");
+    let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("rhino"));
     namespace.set_arena(ctx, "product_definitions", &definitions)?;
     namespace.set_arena(ctx, "product_occurrences", &occurrences)?;
     namespace.set_arena(ctx, "external_references", &external)?;

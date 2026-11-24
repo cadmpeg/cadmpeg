@@ -202,36 +202,13 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [
-        {
-          "active": true,
-          "bodies": [
-            "sldprt:brep:body#900"
-          ],
-          "feature_states": {},
-          "id": "sldprt:model:configuration#886:0",
-          "name": "Default",
-          "native_ref": "sldprt:history:configuration#886:0",
-          "ordinal": 0,
-          "parameter_overrides": {},
-          "parameter_values": {},
-          "properties": {},
-          "source_index": 0
-        }
-      ],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -248,183 +225,15 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [
-        {
-          "definition": {
-            "kind": "coincident_loci",
-            "loci": [
-              {
-                "kind": "start",
-                "value": "sldprt:model:sketch-entity#348:0:0:0"
-              },
-              {
-                "kind": "end",
-                "value": "sldprt:model:sketch-entity#348:0:0:2"
-              }
-            ]
-          },
-          "id": "sldprt:model:sketch-constraint#348:0:0:0",
-          "sketch": "sldprt:model:sketch#348:0:0"
-        },
-        {
-          "definition": {
-            "kind": "coincident_loci",
-            "loci": [
-              {
-                "kind": "end",
-                "value": "sldprt:model:sketch-entity#348:0:0:0"
-              },
-              {
-                "kind": "start",
-                "value": "sldprt:model:sketch-entity#348:0:0:1"
-              }
-            ]
-          },
-          "id": "sldprt:model:sketch-constraint#348:0:0:1",
-          "sketch": "sldprt:model:sketch#348:0:0"
-        },
-        {
-          "definition": {
-            "kind": "coincident_loci",
-            "loci": [
-              {
-                "kind": "end",
-                "value": "sldprt:model:sketch-entity#348:0:0:1"
-              },
-              {
-                "kind": "start",
-                "value": "sldprt:model:sketch-entity#348:0:0:2"
-              }
-            ]
-          },
-          "id": "sldprt:model:sketch-constraint#348:0:0:2",
-          "sketch": "sldprt:model:sketch#348:0:0"
-        }
-      ],
-      "sketch_entities": [
-        {
-          "construction": false,
-          "endpoint_refs": [
-            "0:sldprt:brep:point#60",
-            "0:sldprt:brep:point#61"
-          ],
-          "geometry": {
-            "center": {
-              "u": 0.0,
-              "v": 0.0
-            },
-            "end_angle": 1.5707963267948966,
-            "kind": "arc",
-            "radius": 1000.0,
-            "start_angle": 0.0
-          },
-          "geometry_ref": "0:sldprt:brep:curve#70",
-          "id": "sldprt:model:sketch-entity#348:0:0:0",
-          "native_ref": "0:sldprt:brep:edge#40",
-          "sketch": "sldprt:model:sketch#348:0:0"
-        },
-        {
-          "construction": false,
-          "endpoint_refs": [
-            "0:sldprt:brep:point#61",
-            "0:sldprt:brep:point#62"
-          ],
-          "geometry": {
-            "end": {
-              "u": 0.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "start": {
-              "u": 0.0,
-              "v": 1000.0
-            }
-          },
-          "id": "sldprt:model:sketch-entity#348:0:0:1",
-          "native_ref": "0:sldprt:brep:edge#41",
-          "sketch": "sldprt:model:sketch#348:0:0"
-        },
-        {
-          "construction": false,
-          "endpoint_refs": [
-            "0:sldprt:brep:point#62",
-            "0:sldprt:brep:point#60"
-          ],
-          "geometry": {
-            "end": {
-              "u": 1000.0,
-              "v": 0.0
-            },
-            "kind": "line",
-            "start": {
-              "u": 0.0,
-              "v": 0.0
-            }
-          },
-          "id": "sldprt:model:sketch-entity#348:0:0:2",
-          "native_ref": "0:sldprt:brep:edge#42",
-          "sketch": "sldprt:model:sketch#348:0:0"
-        }
-      ],
-      "sketches": [
-        {
-          "configuration": "0",
-          "id": "sldprt:model:sketch#348:0:0",
-          "name": "feature input arc sketch",
-          "native_ref": "sldprt:feature-input:resolved-features#348",
-          "placement": {
-            "frame": {
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "kind": "resolved"
-          },
-          "profiles": [
-            [
-              {
-                "entity": "sldprt:model:sketch-entity#348:0:0:0",
-                "reversed": false
-              },
-              {
-                "entity": "sldprt:model:sketch-entity#348:0:0:1",
-                "reversed": false
-              },
-              {
-                "entity": "sldprt:model:sketch-entity#348:0:0:2",
-                "reversed": false
-              }
-            ]
-          ]
-        }
-      ],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -698,23 +507,10 @@
     "source": {
       "attributes": {
         "active_parasolid_block": "Contents/Config-0-Partition",
-        "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "outer_version": "0x00000004",
         "parasolid_description": "partition body",
         "parasolid_schema": "SCH_SW_33103_11000",
-        "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#886:0",
-        "sldprt_native_configuration_sha256": "650a5d3acbac9953422db20fbc4dea549e15c4c2cf1ea3a59a1a4120ffc033b8",
-        "sldprt_native_history_sha256": "388e813693990d4c3d1cf424d29a1f39af897f50484acfda011cf6a4966bad74",
-        "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "sldprt_native_sketch_sha256": "73c40037c78ea915626b65a257c4cb26f385c1a0add7aa8762a6d96b08af2db5",
-        "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sw_configuration_0_most_recent": "YES",
         "sw_configuration_name": "Default"
       },
@@ -1065,6 +861,21 @@
         }
       }
     },
+    "codec_digests": {
+      "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_native_configuration_sha256": "650a5d3acbac9953422db20fbc4dea549e15c4c2cf1ea3a59a1a4120ffc033b8",
+      "sldprt_native_history_sha256": "388e813693990d4c3d1cf424d29a1f39af897f50484acfda011cf6a4966bad74",
+      "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "sldprt_native_sketch_sha256": "73c40037c78ea915626b65a257c4cb26f385c1a0add7aa8762a6d96b08af2db5",
+      "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_feature_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_parameter_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_sketch_constraint_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
+    },
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "1bcaff52852e1d4a3c632a2fb793593002df3c73b2c6e76cafc80ca7289aa117",
     "file_digests": {},
     "retained_records": {

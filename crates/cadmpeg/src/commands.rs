@@ -383,8 +383,14 @@ pub(crate) fn dump(
                 TargetRequest::Inherit,
             )
             .map_err(|error| ApplicationError::from(error).at_stage(RefusalStage::Plan))?;
-        let emission = emit_export_plan(plan, Format::Cadir, &destination, &loaded.origin)
-            .map_err(|error| ApplicationError::from(error).at_stage(RefusalStage::Export))?;
+        let emission = emit_export_plan(
+            plan,
+            Format::Cadir,
+            &destination,
+            &loaded.origin,
+            &loaded.ir,
+        )
+        .map_err(|error| ApplicationError::from(error).at_stage(RefusalStage::Export))?;
         print_export_emission(&mut io::stderr(), &emission)?;
         if let Some(report) = loaded.decode_report() {
             print_decode_report(&mut io::stderr(), report)?;
@@ -399,7 +405,7 @@ pub(crate) fn dump(
             CommandReportBody::Ok {
                 decode_report: loaded.decode_report(),
                 check_report: None,
-                export: None,
+                export: Some(&emission.report),
             },
         )?;
         Ok(())

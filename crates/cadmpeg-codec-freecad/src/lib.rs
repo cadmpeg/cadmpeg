@@ -153,9 +153,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             None,
         ));
     }
-    let derived_census = ir
-        .scope()
-        .design
+    let derived_census = (ir.scope().design && ir.model.omitted_arenas_held())
         .then(|| design::census(&objects, &ir.model.features));
     match derived_census {
         None => {}
@@ -946,7 +944,7 @@ impl CodecBackend for FcstdCodec {
         }
         let unreadable_losses_at = scan.losses.len();
         let mut unreadable_drops = std::collections::BTreeMap::new();
-        let namespace = ir.native.namespace_mut("fcstd");
+        let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("fcstd"));
         if let Some(persistence) = &scan.persistence {
             namespace.set_arena(ctx, "document", std::slice::from_ref(&persistence.document))?;
         }
@@ -1143,7 +1141,7 @@ impl CodecBackend for FcstdCodec {
             if ctx.depth() >= DecodeDepth::Design {
                 let design_census = design::census(&graph.objects, &ir.model.features)?;
                 ir.native
-                    .namespace_mut("fcstd")
+                    .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
                     .set_arena(ctx, "design_census", &design_census)?;
             }
             element_map::bind_topology(&mut element_maps, &topology_occurrences);
@@ -1213,23 +1211,17 @@ impl CodecBackend for FcstdCodec {
                 }
             }
             ir.native
-                .namespace_mut("fcstd")
+                .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
                 .set_arena(ctx, "entries", &entry_records)?;
-            ir.native.namespace_mut("fcstd").set_arena(
-                ctx,
-                "gui_documents",
-                &gui_graph.documents,
-            )?;
-            ir.native.namespace_mut("fcstd").set_arena(
-                ctx,
-                "gui_view_providers",
-                &gui_graph.providers,
-            )?;
-            ir.native.namespace_mut("fcstd").set_arena(
-                ctx,
-                "gui_properties",
-                &gui_graph.properties,
-            )?;
+            ir.native
+                .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
+                .set_arena(ctx, "gui_documents", &gui_graph.documents)?;
+            ir.native
+                .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
+                .set_arena(ctx, "gui_view_providers", &gui_graph.providers)?;
+            ir.native
+                .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
+                .set_arena(ctx, "gui_properties", &gui_graph.properties)?;
             let logical_ledger = container::logical_ledger(
                 &entry_records,
                 &graph.properties,
@@ -1239,7 +1231,7 @@ impl CodecBackend for FcstdCodec {
                 &element_maps,
             )?;
             ir.native
-                .namespace_mut("fcstd")
+                .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
                 .set_arena(ctx, "logical_ledger", &logical_ledger)?;
             let physical_byte_len = scan.ledger.last().map_or(0, |span| span.span.end());
             let coverage = container::byte_coverage(
@@ -1248,13 +1240,11 @@ impl CodecBackend for FcstdCodec {
                 &logical_ledger,
                 physical_byte_len,
             );
-            ir.native.namespace_mut("fcstd").set_arena(
-                ctx,
-                "byte_coverage",
-                std::slice::from_ref(&coverage),
-            )?;
             ir.native
-                .namespace_mut("fcstd")
+                .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
+                .set_arena(ctx, "byte_coverage", std::slice::from_ref(&coverage))?;
+            ir.native
+                .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
                 .set_arena(ctx, "element_maps", &element_maps)?;
         } else if decode_document {
             let entry_records = container::entry_records(ctx, &scan, &[])?;
@@ -1266,18 +1256,16 @@ impl CodecBackend for FcstdCodec {
                 &logical_ledger,
                 physical_byte_len,
             );
-            let namespace = ir.native.namespace_mut("fcstd");
+            let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("fcstd"));
             namespace.set_arena(ctx, "entries", &entry_records)?;
             namespace.set_arena(ctx, "logical_ledger", &logical_ledger)?;
             namespace.set_arena(ctx, "byte_coverage", std::slice::from_ref(&coverage))?;
         } else {
             let physical_byte_len = scan.ledger.last().map_or(0, |span| span.span.end());
             let coverage = container::byte_coverage(&scan.ledger, &[], &[], physical_byte_len);
-            ir.native.namespace_mut("fcstd").set_arena(
-                ctx,
-                "byte_coverage",
-                std::slice::from_ref(&coverage),
-            )?;
+            ir.native
+                .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
+                .set_arena(ctx, "byte_coverage", std::slice::from_ref(&coverage))?;
         }
         for (index, entry) in std::mem::take(&mut scan.unreadable).into_iter().enumerate() {
             let drops = unreadable_drops.get(&entry.name);
@@ -1319,15 +1307,11 @@ impl CodecBackend for FcstdCodec {
         // without one and reports the edits unverified, so the serialization and
         // hash are not paid there.
         if ctx.depth() == DecodeDepth::Full {
-            let document_digest = writer::target::document_local_sha256(ctx, &ir)?;
-            if let Some(source) = &mut ir.source {
-                source.attributes.insert(
-                    cadmpeg_core::nonblank_const!(
-                        cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE
-                    ),
-                    document_digest,
-                );
-            }
+            let digest = writer::target::uncarried_digest(ctx, &ir)?;
+            source_fidelity.codec_digests.insert(
+                cadmpeg_core::nonblank_const!(writer::target::UNCARRIED_DIGEST),
+                digest,
+            );
         }
         Ok(Decoded {
             ir,
