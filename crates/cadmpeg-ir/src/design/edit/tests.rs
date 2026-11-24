@@ -45,6 +45,7 @@ use crate::topology::{Body, BodyKind, Region};
 use crate::CadIr;
 
 mod configurations;
+mod held_errors;
 mod rollback;
 
 fn id<T>(kind: &str, key: u32) -> T
@@ -632,19 +633,6 @@ fn errors_only(findings: &[crate::report::check::Finding]) -> bool {
 }
 
 #[test]
-fn an_editor_is_only_had_over_a_valid_document() {
-    let mut document = timeline();
-    let Container::Ordered { rollback, .. } = &mut document.design.containers[0] else {
-        panic!("ordered");
-    };
-    *rollback = Some(Rollback::Before(Member::Feature(feature(2))));
-    match document.edit() {
-        Err(EditError::Invalid(findings)) => assert!(errors_only(&findings), "{findings:?}"),
-        other => panic!("a current state off the rollback is an Error: {other:?}"),
-    }
-}
-
-#[test]
 fn an_edit_whose_result_holds_an_error_is_refused() {
     let mut document = timeline();
     let before = document.clone();
@@ -734,6 +722,10 @@ fn an_edit_clears_the_resolved_transformation_its_parameter_binds() {
         .unwrap()
     };
     document.design.features[2] = operation(3, moved(1));
+    document
+        .design
+        .evaluations
+        .retain(|evaluation| evaluation.of != Evaluated::Tool(feature(3)));
     document
         .edit()
         .unwrap()
