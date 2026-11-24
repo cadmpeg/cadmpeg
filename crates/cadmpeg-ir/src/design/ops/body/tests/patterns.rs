@@ -1,16 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Patterns, their layouts, runs, spacing, and instances.
 
-use std::collections::BTreeMap;
-use std::thread;
-
 use cadmpeg_core::decode::ResourceLimits;
 use serde_json::json;
+use std::collections::BTreeMap;
 
 use super::{
     angle, axis_construction, direction_construction, faces, id, length, literal, options, ordered,
-    parameter, plane_construction, point_construction, refuses, round_trip, settings, text,
-    to_value, unread, Report,
+    parameter, plane_construction, point_construction, refuses, settings, text, to_value, unread,
+    Report,
 };
 use crate::design::construction::{FrameAxis, ScalarDimension};
 use crate::design::expr::{Expression, ExpressionDialect, ExpressionToken, Neutral, Node};
@@ -20,9 +18,9 @@ use crate::design::ops::body::{
     PatternMethod, PatternSeeds,
 };
 use crate::design::ops::shared::{
-    ChainLayout, ChainLink, ChainLinks, DimensionRun, DimensionTable, Increment,
-    InstanceOrientation, LinearRun, Locus, PathReference, PatternLayout, PatternRun, RunSides,
-    Spacing, TableRow, UpToFill,
+    ChainLayout, ChainLink, ChainLinks, CircularLayout, CompositeStage, DimensionRun,
+    DimensionTable, Increment, InstanceOrientation, LinearLayout, LinearRun, Locus, MirrorLayout,
+    PathReference, PatternLayout, PatternRun, RunSides, ScaleLayout, Spacing, TableRow, UpToFill,
 };
 use crate::design::options::SymmetricMeasure;
 use crate::design::read;
@@ -285,33 +283,86 @@ fn chain_layouts() -> Vec<ChainLayout> {
         .collect()
 }
 
-fn layouts() -> Vec<PatternLayout> {
+fn linear_layouts() -> Vec<LinearLayout> {
     let mut linear = linear_runs();
     let second = linear.pop();
     let first = linear.pop().unwrap();
     vec![
-        PatternLayout::Linear {
+        LinearLayout {
             first: first.clone(),
             second,
             seed_only: Some(literal(true)),
         },
-        PatternLayout::Linear {
+        LinearLayout {
             first,
             second: None,
             seed_only: None,
         },
-        PatternLayout::Circular {
+    ]
+}
+
+fn circular_layouts() -> Vec<CircularLayout> {
+    vec![
+        CircularLayout {
             axis: axis_construction(),
             angular: angle_runs().remove(0),
             radial: length_runs().pop(),
             orientation: Some(InstanceOrientation::Follow),
         },
-        PatternLayout::Circular {
+        CircularLayout {
             axis: axis_construction(),
             angular: angle_runs().remove(1),
             radial: None,
             orientation: None,
         },
+    ]
+}
+
+fn mirror_layouts() -> Vec<MirrorLayout> {
+    vec![
+        MirrorLayout {
+            plane: plane_construction(),
+            stitch_tolerance: Some(literal(length(0.01))),
+        },
+        MirrorLayout {
+            plane: plane_construction(),
+            stitch_tolerance: None,
+        },
+    ]
+}
+
+fn scale_layouts() -> Vec<ScaleLayout> {
+    vec![
+        ScaleLayout {
+            factor: literal(PositiveReal::new(2.0).unwrap()),
+            count: literal(2),
+            center: Locus::Centroid,
+        },
+        ScaleLayout {
+            factor: parameter(12),
+            count: literal(3),
+            center: Locus::Point(Box::new(point_construction())),
+        },
+    ]
+}
+
+fn stages() -> Vec<CompositeStage> {
+    vec![
+        CompositeStage::Linear(linear_layouts().remove(0)),
+        CompositeStage::Circular(circular_layouts().remove(1)),
+        CompositeStage::Mirror(mirror_layouts().remove(1)),
+        CompositeStage::Scale(scale_layouts().remove(0)),
+        CompositeStage::Native(text("fcstd:Transformed")),
+    ]
+}
+
+fn layouts() -> Vec<PatternLayout> {
+    let mut layouts: Vec<PatternLayout> = linear_layouts()
+        .into_iter()
+        .map(PatternLayout::Linear)
+        .collect();
+    layouts.extend(circular_layouts().into_iter().map(PatternLayout::Circular));
+    layouts.extend([
         PatternLayout::Path {
             path: ordered(10),
             run: length_runs().remove(0),
@@ -332,34 +383,16 @@ fn layouts() -> Vec<PatternLayout> {
         },
         PatternLayout::Dimensions(dimension_runs()),
         PatternLayout::Table(tables().remove(0)),
-        PatternLayout::Mirror {
-            plane: plane_construction(),
-            stitch_tolerance: Some(literal(length(0.01))),
-        },
-        PatternLayout::Mirror {
-            plane: plane_construction(),
-            stitch_tolerance: None,
-        },
-        PatternLayout::Composite(vec![
-            PatternLayout::Mirror {
-                plane: plane_construction(),
-                stitch_tolerance: None,
-            },
-            PatternLayout::Scale {
-                factor: literal(PositiveReal::new(2.0).unwrap()),
-                count: literal(2),
-                center: Locus::Centroid,
-            },
-        ]),
-        PatternLayout::Scale {
-            factor: parameter(12),
-            count: literal(3),
-            center: Locus::Point(Box::new(point_construction())),
-        },
+    ]);
+    layouts.extend(mirror_layouts().into_iter().map(PatternLayout::Mirror));
+    layouts.push(PatternLayout::Composite(stages()));
+    layouts.extend(scale_layouts().into_iter().map(PatternLayout::Scale));
+    layouts.extend([
         PatternLayout::Follow(ordered(13)),
         PatternLayout::Chain(chain_layouts().remove(0)),
         PatternLayout::Native(text("nx:along_path")),
-    ]
+    ]);
+    layouts
 }
 
 fn indices() -> Vec<InstanceIndex> {
@@ -473,10 +506,7 @@ fn patterns() -> Vec<Pattern> {
         },
         Pattern {
             seeds: seeds().remove(3),
-            layout: PatternLayout::Mirror {
-                plane: plane_construction(),
-                stitch_tolerance: None,
-            },
+            layout: PatternLayout::Mirror(mirror_layouts().remove(1)),
             instances: PatternInstances::Members(members()),
             native_options: BTreeMap::new(),
             source_settings: BTreeMap::new(),
@@ -495,6 +525,11 @@ fn every_pattern_type_round_trips() {
         vec![AdjustAgainst::ModelSoFar, AdjustAgainst::ModelBefore],
     );
     report.check("PatternLayout", layouts());
+    report.check("CompositeStage", stages());
+    report.check("LinearLayout", linear_layouts());
+    report.check("CircularLayout", circular_layouts());
+    report.check("MirrorLayout", mirror_layouts());
+    report.check("ScaleLayout", scale_layouts());
     report.check("ChainLayout", chain_layouts());
     report.check("ChainLinks", chain_links());
     report.check(
@@ -651,42 +686,57 @@ fn a_chain_link_holds_two_pins() {
     refuses::<ChainLink>(&value.to_string());
 }
 
-/// The deepest `Composite` nesting the reader admits, in layouts with the
-/// leaf: each level above the leaf is an object and an array under the JSON
-/// depth limit of 128.
-const DEEPEST_COMPOSITE: usize = 64;
-
-/// `depth` layouts, each a `Composite` of the next, around a native leaf.
-fn nested_composite(depth: usize) -> String {
-    let mut text = r#"{"kind":"native","value":"leaf"}"#.to_owned();
-    for _ in 1..depth {
-        text = format!(r#"{{"kind":"composite","value":[{text}]}}"#);
-    }
-    text
+/// §6.5: a stage is a linear, circular, mirror, or scale layout or a native
+/// stage, holding the struct of the layout of that name and written as that
+/// layout's arm.
+#[test]
+fn a_composite_stage_is_written_as_the_layout_of_its_name() {
+    let stage = |stage: &CompositeStage| to_value(stage);
+    let layout = |layout: PatternLayout| to_value(&layout);
+    let stages = stages();
+    assert_eq!(
+        stage(&stages[0]),
+        layout(PatternLayout::Linear(linear_layouts().remove(0)))
+    );
+    assert_eq!(
+        stage(&stages[1]),
+        layout(PatternLayout::Circular(circular_layouts().remove(1)))
+    );
+    assert_eq!(
+        stage(&stages[2]),
+        layout(PatternLayout::Mirror(mirror_layouts().remove(1)))
+    );
+    assert_eq!(
+        stage(&stages[3]),
+        layout(PatternLayout::Scale(scale_layouts().remove(0)))
+    );
+    assert_eq!(
+        stage(&stages[4]),
+        layout(PatternLayout::Native(text("fcstd:Transformed")))
+    );
 }
 
-/// `Composite` nesting has no ceiling of its own; the JSON depth limit bounds
-/// it. The deepest nesting it admits reads, clones, compares, writes back the
-/// same bytes, and drops on a default 2 MiB thread, and one level more is
-/// refused.
+/// §6.5: a `Composite` does not nest a `Composite`, and no stage is a path,
+/// points, dimensions, table, follow, or chain layout.
 #[test]
-fn the_deepest_admitted_composite_nesting_reads_on_a_default_thread() {
-    thread::Builder::new()
-        .stack_size(2 * 1024 * 1024)
-        .spawn(|| {
-            let text = nested_composite(DEEPEST_COMPOSITE);
-            let layout: PatternLayout = read::from_str(&text, &ResourceLimits::desktop())
-                .expect("the deepest admitted nesting reads");
-            let copy = layout.clone();
-            assert_eq!(copy, layout);
-            assert_eq!(serde_json::to_string(&copy).unwrap(), text);
-            round_trip(&layout).unwrap();
-            drop(copy);
-            drop(layout);
-            let message = refuses::<PatternLayout>(&nested_composite(DEEPEST_COMPOSITE + 1));
-            assert!(message.contains("recursion limit exceeded"), "{message}");
-        })
-        .unwrap()
-        .join()
-        .unwrap();
+fn a_composite_stage_is_no_other_layout() {
+    let native = r#"{"kind":"native","value":"leaf"}"#;
+    let composite = |stage: &str| format!(r#"{{"kind":"composite","value":[{native},{stage}]}}"#);
+    assert!(
+        read::from_str::<PatternLayout>(&composite(native), &ResourceLimits::desktop()).is_ok()
+    );
+    let nested = composite(&composite(native));
+    refuses::<PatternLayout>(&nested);
+    for layout in layouts().into_iter().filter(|layout| {
+        !matches!(
+            layout,
+            PatternLayout::Linear(_)
+                | PatternLayout::Circular(_)
+                | PatternLayout::Mirror(_)
+                | PatternLayout::Scale(_)
+                | PatternLayout::Native(_)
+        )
+    }) {
+        refuses::<PatternLayout>(&composite(&to_value(&layout).to_string()));
+    }
 }

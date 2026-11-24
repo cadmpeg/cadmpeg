@@ -33,7 +33,6 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{EdgeId, PointId, ShellId, VertexId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
 use cadmpeg_ir::schema::EntityKind;
 use cadmpeg_ir::topology::{
@@ -602,7 +601,10 @@ impl<'a> Reduction<'a> {
                     && position.distance(*point)
                         <= coincidence_allowance(
                             linear,
-                            &[edge.tolerance.map(PositiveReal::get), *tolerance],
+                            &[
+                                edge.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get),
+                                *tolerance,
+                            ],
                         )
             })
             .map(|(index, _)| index)
@@ -691,7 +693,7 @@ impl<'a> Reduction<'a> {
                     .last()
                     .and_then(|construction| construction.cache_fit_tolerance())
                     .map(FitTolerance::get);
-                let edge_tolerance = edge.tolerance.map(PositiveReal::get);
+                let edge_tolerance = edge.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get);
                 let allowance = coincidence_allowance(
                     linear,
                     &[edge_tolerance, start_tolerance, end_tolerance, fit],
@@ -917,7 +919,12 @@ impl<'a> Reduction<'a> {
         drop(index);
         let tolerant = tolerant
             .into_iter()
-            .filter_map(|(vertex, distance)| Some((vertex.clone(), PositiveReal::new(distance)?)))
+            .filter_map(|(vertex, distance)| {
+                Some((
+                    vertex.clone(),
+                    cadmpeg_ir::scalar::PositiveLength::new(distance)?,
+                ))
+            })
             .collect::<BTreeMap<_, _>>();
         let widened = tolerant
             .iter()
@@ -1769,7 +1776,9 @@ fn vertex_positions(
                 vertex.id.as_str(),
                 (
                     *points.get(vertex.point.as_str())?,
-                    vertex.tolerance.map(PositiveReal::get),
+                    vertex
+                        .tolerance
+                        .map(cadmpeg_ir::scalar::PositiveLength::get),
                 ),
             ))
         })

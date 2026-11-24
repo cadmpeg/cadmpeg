@@ -439,7 +439,7 @@ fn native_operation_keeps_all_source_parameter_strings() {
     };
     assert_eq!(kind.as_str(), "inventor:synthetic");
     let cadmpeg_ir::design::options::NativeOption::Text(Dimension::Literal(text)) =
-        &native_options[&cadmpeg_core::nonblank_literal!("inventor:parameters")]
+        &native_options["inventor:parameters"]
     else {
         panic!("native parameter map");
     };

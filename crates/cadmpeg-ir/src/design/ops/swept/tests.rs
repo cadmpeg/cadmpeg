@@ -161,7 +161,7 @@ fn frame() -> Construction<kinds::Frame> {
 
 fn native_options() -> NativeOptions {
     NativeOptions::from([(
-        text("sldprt:translate_surface"),
+        crate::codec_name!("sldprt:translate_surface"),
         crate::design::options::NativeOption::Bool(lit(true)),
     )])
 }

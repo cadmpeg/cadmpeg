@@ -5176,7 +5176,7 @@ pub(crate) fn embedded_brep_json(
     };
     let association = SourceObjectAssociation {
         geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Rhino,
+        format: cadmpeg_ir::codec_id!("rhino"),
         object_id: cadmpeg_core::text::NonBlankString::new("embedded-history-brep".to_string())?,
         name: None,
         color: None,
@@ -5720,14 +5720,14 @@ fn c2_curve_to_nurbs_join(
 fn scaled_tolerance(
     value: crate::brep::BrepTolerance,
     scale: MillimeterScale,
-) -> Result<Option<cadmpeg_ir::scalar::PositiveReal>, crate::curves::GeometryError> {
+) -> Result<Option<cadmpeg_ir::scalar::PositiveLength>, crate::curves::GeometryError> {
     let Some(source) = value.positive() else {
         return Ok(None);
     };
     let scaled = crate::wire::scaled_coordinate(source.get(), scale)
         .ok_or_else(|| crate::curves::GeometryError::unpositioned("scaled tolerance is invalid"))?;
     Ok(Some(
-        cadmpeg_ir::scalar::PositiveReal::from_finite(scaled).ok_or_else(|| {
+        cadmpeg_ir::scalar::PositiveLength::from_assigned_real(scaled).ok_or_else(|| {
             crate::curves::GeometryError::unpositioned(
                 "scaled tolerance must be positive and finite",
             )
@@ -6370,7 +6370,7 @@ fn source_association(
     }
     Ok(SourceObjectAssociation {
         geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Rhino,
+        format: cadmpeg_ir::codec_id!("rhino"),
         object_id,
         name,
         color: identity.effective_color.map(color).or(parent_color),

@@ -4,11 +4,11 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::construction::{
     Construction, ConstructionInput, ConstructionKind, InputReference, InputRole, Relation, Subject,
 };
 use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
+use cadmpeg_ir::design::names::CodecName;
 use cadmpeg_ir::design::ops::datum::{Datum, DatumElement};
 use cadmpeg_ir::design::options::NativeOptions;
 use cadmpeg_ir::design::selection::{
@@ -125,8 +125,8 @@ fn unresolved(family: OperationFamily) -> FeatureOperation {
 
 /// The native operation of `feature`, written `sldprt:<type>`.
 fn native(feature: &Feature) -> FeatureOperation {
-    let kind = NonBlankString::new(format!("sldprt:{}", feature.kind))
-        .unwrap_or_else(|| cadmpeg_core::nonblank_literal!("sldprt:feature"));
+    let kind = CodecName::new(&cadmpeg_ir::codec_id!("sldprt"), &feature.kind)
+        .unwrap_or_else(|| cadmpeg_ir::codec_name!("sldprt:feature"));
     FeatureOperation::Native {
         kind,
         native_options: NativeOptions::new(),

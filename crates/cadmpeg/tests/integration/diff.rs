@@ -27,7 +27,7 @@ fn diff_reports_modified_entities_and_uses_diff_exit_codes() {
         .expect("a finite position is a point"),
     );
     right.geometry.edges[0].tolerance =
-        Some(cadmpeg_ir::scalar::PositiveReal::new(0.01).expect("positive finite tolerance"));
+        Some(cadmpeg_ir::scalar::PositiveLength::new(0.01).expect("positive finite tolerance"));
     right.geometry.coedges[0].sense = match right.geometry.coedges[0].sense {
         cadmpeg_ir::topology::Sense::Forward => cadmpeg_ir::topology::Sense::Reversed,
         cadmpeg_ir::topology::Sense::Reversed => cadmpeg_ir::topology::Sense::Forward,

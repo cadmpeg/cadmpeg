@@ -71,7 +71,7 @@ fn geometric_vertex_indexes_keep_last_duplicate_and_skip_missing_points() {
             positions.get(vertex.id.as_str()),
             Some(&(
                 Point3::new(7.0, 8.0, 9.0),
-                vertex.tolerance.map(crate::scalar::PositiveReal::get)
+                vertex.tolerance.map(crate::scalar::PositiveLength::get)
             ))
         );
     }

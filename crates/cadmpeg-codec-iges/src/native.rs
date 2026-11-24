@@ -5545,7 +5545,7 @@ pub(crate) fn store(
         if let Some(sequence) = curve
             .source_object
             .as_ref()
-            .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
+            .filter(|source| source.format == cadmpeg_ir::codec_id!("iges"))
             .and_then(|_| sequences.curve(&curve.id))
         {
             push_occurrence_neutral_link(
@@ -5559,7 +5559,7 @@ pub(crate) fn store(
         if let Some(sequence) = surface
             .source_object
             .as_ref()
-            .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
+            .filter(|source| source.format == cadmpeg_ir::codec_id!("iges"))
             .and_then(|_| sequences.surface(&surface.id))
         {
             push_occurrence_neutral_link(

@@ -259,7 +259,7 @@ fn transfer_reference_lines(
                 )),
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id,
                     name: None,
                     color: None,
@@ -342,7 +342,7 @@ fn transfer_reference_circles(
                 )),
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id,
                     name: None,
                     color: None,
@@ -428,7 +428,7 @@ fn transfer_reference_ellipses(
                 )),
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id,
                     name: None,
                     color: None,
@@ -615,7 +615,7 @@ fn transfer_datum_plane_surfaces(
                 )),
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id: source_object_id_checked(format_args!("ActDatums:{}", plane.id))?,
                     name: None,
                     color: None,
@@ -738,7 +738,7 @@ fn transfer_placed_planes(
                 )),
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id: source_object_id_checked(format_args!("VisibGeom:{surface_id}"))?,
                     name: None,
                     color: None,
