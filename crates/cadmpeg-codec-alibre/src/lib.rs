@@ -20,6 +20,8 @@ mod coverage;
 mod decode;
 mod design;
 mod dialect;
+#[doc(hidden)]
+pub mod fuzz;
 mod history;
 mod loss;
 mod part21;

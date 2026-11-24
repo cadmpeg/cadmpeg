@@ -74,6 +74,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-codec-alibre"
+version = "0.6.12"
+dependencies = [
+ "cadmpeg-asm",
+ "cadmpeg-container",
+ "cadmpeg-core",
+ "cadmpeg-ir",
+]
+
+[[package]]
 name = "cadmpeg-codec-catia"
 version = "0.6.12"
 dependencies = [
@@ -302,6 +312,7 @@ name = "cadmpeg-fuzz"
 version = "0.0.0"
 dependencies = [
  "cadmpeg-asm",
+ "cadmpeg-codec-alibre",
  "cadmpeg-codec-catia",
  "cadmpeg-codec-creo",
  "cadmpeg-codec-edrawings",

@@ -67,8 +67,7 @@ fuzz = "required"
 [[crate]]
 id = "alibre"
 names = ["AlibreCodec"]
-fuzz = "absent"
-fuzz_reason = "focused targets call AlibreCodec"
+fuzz = "required"
 
 [[crate]]
 id = "edrawings"

@@ -1230,7 +1230,7 @@ id = "alibre:unknown"
 unknown_kind = "refused-residual"
 title = "Alibre Design part whose SAB_DATA stream is not an ACIS binary stream"
 discriminants = { cfb_streams = "SAB_DATA and STEP_DATA", sab_magic = "any other" }
-witness = "code:crates/cadmpeg-codec-alibre/src/dialect.rs:1"
+witness = "code:crates/cadmpeg-codec-alibre/src/dialect.rs:56"
 
 # --------------------------------------------------------------------------
 # PTC Creo View / ProductView .pvz packages
