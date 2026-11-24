@@ -1111,6 +1111,17 @@ impl Native {
         })
     }
 
+    /// The first arena, as `<codec>.<arena>`, whose records do not state
+    /// their ids in strictly increasing order.
+    pub(crate) fn unordered_arena(&self) -> Option<String> {
+        self.0.iter().find_map(|(format, namespace)| {
+            namespace.arenas.iter().find_map(|(arena, records)| {
+                (!records.windows(2).all(|pair| pair[0].id() < pair[1].id()))
+                    .then(|| format!("{format}.{arena}"))
+            })
+        })
+    }
+
     /// Keeps the first record of each id in each sorted namespace arena and
     /// drops the later ones, returning each repeated id whose copies differ.
     pub(crate) fn drop_repeated_ids(&mut self) -> Vec<crate::document::RepeatedId> {

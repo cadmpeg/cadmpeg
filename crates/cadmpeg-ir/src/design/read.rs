@@ -108,18 +108,28 @@ thread_local! {
 /// Returns [`CodecError::ResourceLimit`] for a value nested past a ceiling,
 /// and [`CodecError::Malformed`] for text that is not the value's wire form.
 pub fn from_str<T: DeserializeOwned>(text: &str, limits: &ResourceLimits) -> Result<T, CodecError> {
+    let (read, refusal) = with_limits(limits, || serde_json::from_str::<T>(text));
+    read.map_err(|error| match refusal {
+        Some(limit) => CodecError::ResourceLimit(limit),
+        None => CodecError::malformed(error),
+    })
+}
+
+/// Runs `read` under the nesting ceilings of `limits` and returns its result
+/// with the first ceiling it ran past.
+pub(crate) fn with_limits<R>(
+    limits: &ResourceLimits,
+    read: impl FnOnce() -> R,
+) -> (R, Option<ResourceLimit>) {
     let outer = SESSION.replace(Session {
         limits: Some(*limits),
         ..Session::IDLE
     });
     let restore = Restore(outer);
-    let read = serde_json::from_str::<T>(text);
+    let result = read();
     let refusal = SESSION.get().refusal;
     drop(restore);
-    read.map_err(|error| match refusal {
-        Some(limit) => CodecError::ResourceLimit(limit),
-        None => CodecError::malformed(error),
-    })
+    (result, refusal)
 }
 
 struct Restore(Session);

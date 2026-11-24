@@ -190,6 +190,7 @@ pub struct CurrentState {
 /// evaluations with one id, the first keeps it.
 pub(crate) fn admit_state_chains(
     evaluations: &[Evaluation],
+    cycles: Cycles,
 ) -> Result<BTreeMap<&str, u64>, String> {
     let mut index = BTreeMap::new();
     for (at, evaluation) in evaluations.iter().enumerate() {
@@ -208,6 +209,7 @@ pub(crate) fn admit_state_chains(
             Some(_) => ChainLink::Below(0),
         },
         |evaluation| format!("evaluation {}", evaluation.id.as_str()),
+        cycles,
     )?;
     Ok(index.into_iter().map(|(id, at)| (id, depths[at])).collect())
 }
@@ -223,9 +225,18 @@ pub(crate) enum ChainLink {
     Below(u64),
 }
 
+/// What a walk of state bases does at a state it has already passed through.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Cycles {
+    /// Refuses the chain.
+    Refuse,
+    /// Ends the chain there (§2.5, Resource ceilings); part 10 reports it.
+    End,
+}
+
 /// The depth of each of the `states` of one arena, whose bases `link`
-/// states, refusing a chain deeper than [`Ceiling::StateChain`] or one that
-/// is a cycle.
+/// states, refusing a chain deeper than [`Ceiling::StateChain`], and one
+/// that is a cycle where `cycles` refuses it.
 ///
 /// A state with content has depth one more than its base. `name` names a
 /// state in the refusal of a cycle. The walk is iterative, and visits each
@@ -234,6 +245,7 @@ pub(crate) fn chain_depths<T>(
     states: &[T],
     link: impl Fn(&T) -> ChainLink,
     name: impl Fn(&T) -> String,
+    cycles: Cycles,
 ) -> Result<Vec<u64>, String> {
     #[derive(Clone, Copy)]
     enum Mark {
@@ -249,6 +261,7 @@ pub(crate) fn chain_depths<T>(
         let tail = loop {
             match marks[at] {
                 Mark::Depth(depth) => break depth,
+                Mark::OnChain if cycles == Cycles::End => break 0,
                 Mark::OnChain => {
                     return Err(format!(
                         "{} is its own ancestor through its state bases",

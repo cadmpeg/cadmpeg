@@ -293,7 +293,7 @@ pub fn select(
             }
         }
     }
-    serde_json::from_str(&value.to_string())
+    Document::from_projection(&value.to_string())
         .map(Some)
         .map_err(CodecError::malformed)
 }
