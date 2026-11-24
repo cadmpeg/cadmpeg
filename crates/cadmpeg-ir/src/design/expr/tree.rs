@@ -62,7 +62,6 @@ impl<R> Node<R> {
             .chain(last)
     }
 
-    /// The node's operands, left to right, to change in place.
     /// The depth of the tree (§2.5): a leaf is 1 and a node is one more than
     /// its deepest operand, so a chain and an `if` ladder are each one node.
     #[must_use]
@@ -76,6 +75,7 @@ impl<R> Node<R> {
         deepest
     }
 
+    /// The node's operands, left to right, to change in place.
     pub(crate) fn operands_mut(&mut self) -> impl Iterator<Item = &mut Self> {
         let mut lead: [Option<&mut Self>; 2] = [None, None];
         let mut list: &mut [Self] = &mut [];
