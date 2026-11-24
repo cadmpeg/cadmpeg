@@ -9,9 +9,11 @@ use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ops::dressup::ShellFeature;
 use cadmpeg_ir::design::ops::dressup::{
-    Chamfer, ChamferSize, Fillet, FilletSet, FilletSize, Hole, HoleHead, HolePositions, HoleShape,
+    CenterSource, Chamfer, ChamferSize, Fillet, FilletSet, FilletSize, Hole, HoleHead,
+    HolePositions, HoleShape,
 };
 use cadmpeg_ir::design::ops::shared::Limit;
+use cadmpeg_ir::design::ops::sketch::{EntityDefinition, PlanarCurve};
 use cadmpeg_ir::design::options::{Thickness, WallSide};
 use cadmpeg_ir::design::selection::{MemberOrder, PickTarget, Picks, Selection};
 use cadmpeg_ir::math::Vector3;
@@ -56,6 +58,15 @@ fn operation(result: &DecodeResult) -> &FeatureOperation {
 
 fn unresolved(result: &DecodeResult, family: OperationFamily) -> bool {
     operation(result) == &FeatureOperation::Unresolved { family }
+}
+
+/// Whether the feature stays untyped and names its sketch natively.
+fn names_profile(result: &DecodeResult) -> bool {
+    matches!(
+        operation(result),
+        FeatureOperation::Native { native_options, .. }
+            if native_options.keys().any(|key| key.as_str() == "solidedge:profile")
+    )
 }
 
 fn props(kind: u32, diameter: f64) -> HoleProps {
@@ -124,19 +135,39 @@ fn blind_mm(hole: &Hole) -> f64 {
     }
 }
 
-fn points(hole: &Hole) -> Vec<[f64; 3]> {
-    match &hole.positions {
-        HolePositions::Placed(points) => points
-            .iter()
-            .map(|point| {
-                let at = point.resolved.as_ref().unwrap().get();
-                [at.x, at.y, at.z]
-            })
-            .collect(),
-        other @ HolePositions::Points { .. } => {
-            panic!("expected placed positions, found {other:?}")
-        }
-    }
+/// The positions of the hole: the points of the sketch that the hole names as
+/// a whole, on the XY profile plane, as `[u, v, 0]` in millimetres.
+fn points(result: &DecodeResult, hole: &Hole) -> Vec<[f64; 3]> {
+    let HolePositions::Points { points, centers } = &hole.positions else {
+        panic!("expected sketch positions, found {:?}", hole.positions);
+    };
+    assert_eq!(
+        centers.as_ref().unwrap().iter().collect::<Vec<_>>(),
+        [&CenterSource::Points]
+    );
+    let Picks::Named(picks) = &points.picks else {
+        panic!("expected a named pick");
+    };
+    let [pick] = picks.as_slice() else {
+        panic!("expected one pick");
+    };
+    let PickTarget::Sketch(sketch) = &pick.target else {
+        panic!("expected a whole-sketch pick");
+    };
+    result
+        .ir()
+        .design
+        .sketch_entities
+        .iter()
+        .filter(|entity| &entity.sketch == sketch)
+        .map(|entity| match &entity.definition {
+            EntityDefinition::Free(PlanarCurve::Point(point)) => {
+                let at = point.get();
+                [at.u, at.v, 0.0]
+            }
+            other => panic!("expected a point, found {other:?}"),
+        })
+        .collect()
 }
 
 fn near(a: f64, b: f64) -> bool {
@@ -151,7 +182,7 @@ fn simple_hole_four_millimetres_through_all() {
     assert_eq!(bore(hole).head, Some(HoleHead::Plain));
     assert_eq!(hole.extent, Some(Limit::ThroughAll));
     assert_eq!(hole.thread, None);
-    let at = points(hole);
+    let at = points(&result, hole);
     assert_eq!(at.len(), 1);
     assert!(near(at[0][0], 10.0) && near(at[0][1], 20.0) && near(at[0][2], 0.0));
     let found = codes(&result);
@@ -290,7 +321,7 @@ fn two_positions_state_two_points_in_profile_order() {
         &[[0.01, 0.02], [0.03, 0.04]],
         &[],
     );
-    let at = points(hole(&result));
+    let at = points(&result, hole(&result));
     assert_eq!(at.len(), 2);
     assert!(near(at[0][0], 10.0) && near(at[0][1], 20.0));
     assert!(near(at[1][0], 30.0) && near(at[1][1], 40.0));
@@ -299,14 +330,14 @@ fn two_positions_state_two_points_in_profile_order() {
 #[test]
 fn profile_without_hole_positions_stays_unresolved() {
     let result = hole_with(props(0, 0.004), 16.0, 1.0, &[], &[]);
-    assert!(unresolved(&result, OperationFamily::Hole));
+    assert!(names_profile(&result));
     assert!(codes(&result).contains(&"feature.dressup-unread".to_owned()));
 }
 
 #[test]
 fn unknown_hole_type_stays_unresolved_and_names_the_feature() {
     let result = hole_with(props(9, 0.004), 16.0, 1.0, &[[0.0, 0.0]], &[]);
-    assert!(unresolved(&result, OperationFamily::Hole));
+    assert!(names_profile(&result));
     let notes: Vec<_> = result
         .report()
         .losses
@@ -335,7 +366,7 @@ fn dimension_with_p_148_reads() {
 fn dimension_whose_repeated_target_differs_does_not_read() {
     let depth = (264, Dress::Value(Slot::DimBroken(0.008)));
     let result = hole_with(props(0, 0.004), 13.0, 1.0, &[[0.0, 0.0]], &[depth]);
-    assert!(unresolved(&result, OperationFamily::Hole));
+    assert!(names_profile(&result));
     assert!(codes(&result).contains(&"feature.dressup-unread".to_owned()));
 }
 

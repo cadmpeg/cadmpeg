@@ -4,7 +4,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
-use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
+use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::swept::{Sweep, SweepSection};
 use cadmpeg_ir::design::options::{BodyForm, Boolean, BooleanOp};
 use cadmpeg_ir::design::selection::{PickTarget, Picks};
@@ -126,11 +126,10 @@ fn a_square_section_along_a_straight_path_is_a_sweep() {
 #[test]
 fn a_sweep_without_a_section_stays_unresolved() {
     let result = decode(sweep_document(Some((&PATH_FRAME, &path())), None));
-    assert_eq!(
+    assert!(matches!(
         operation(&result),
-        &FeatureOperation::Unresolved {
-            family: OperationFamily::Sweep
-        }
-    );
+        FeatureOperation::Native { native_options, .. }
+            if native_options.keys().any(|key| key.as_str() == "solidedge:profile")
+    ));
     assert!(codes(&result).contains(&"feature.extent-unread".to_owned()));
 }
