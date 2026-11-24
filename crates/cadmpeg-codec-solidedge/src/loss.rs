@@ -20,7 +20,6 @@ pub(crate) enum SolidEdgeLossCode {
     AttributesPending,
     WireTopologyUnsupported,
     BodyKindAssumed,
-    IntersectionFrameFromChart,
     IntersectionChartReduced,
     EdgeCarrierSampled,
     IntersectionFrameFromSupportsAssumed,
@@ -105,10 +104,6 @@ impl SolidEdgeLossCode {
             Self::IntersectionChartReduced => (
                 "curve.intersection-chart-reduced",
                 LossTaxonomy::MetadataNotTransferred,
-            ),
-            Self::IntersectionFrameFromChart => (
-                "curve.intersection-frame-from-chart",
-                LossTaxonomy::CarrierAxisInferred,
             ),
             Self::BodyKindAssumed => ("body.kind-assumed", LossTaxonomy::TopologyGaugeSubstituted),
             Self::WireTopologyUnsupported => (
