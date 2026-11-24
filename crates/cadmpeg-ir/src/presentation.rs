@@ -677,6 +677,45 @@ mod tests {
     }
 
     #[test]
+    fn layer_parents_form_no_cycle() {
+        let on_cycle = |ir: &CadIr| {
+            let mut layers: Vec<String> = validate_neutral(ir, Vec::new())
+                .expect("validate the neutral model")
+                .findings
+                .into_iter()
+                .filter(|finding| {
+                    finding.severity == crate::report::Severity::Error
+                        && finding.message
+                            == "presentation layer is its own ancestor through `parent`"
+                })
+                .filter_map(|finding| finding.entity)
+                .collect();
+            layers.sort_unstable();
+            layers
+        };
+        let mut ir = CadIr::empty();
+        ir.model.presentation_layers = vec![
+            layer("a", Some("c"), None),
+            layer("b", Some("a"), None),
+            layer("c", Some("b"), None),
+            layer("d", Some("a"), None),
+        ];
+        assert_eq!(
+            on_cycle(&ir),
+            [
+                "test:presentation:layer#a",
+                "test:presentation:layer#b",
+                "test:presentation:layer#c",
+            ]
+        );
+        ir.model.presentation_layers[0].parent = None;
+        assert!(on_cycle(&ir).is_empty());
+        ir.model.presentation_layers[3].parent =
+            Some(LayerId::mint("test:presentation:layer#d".to_owned()).unwrap());
+        assert_eq!(on_cycle(&ir), ["test:presentation:layer#d"]);
+    }
+
+    #[test]
     fn source_identity_admission_preserves_nonempty_wire() {
         let wire = serde_json::json!({"kind": "source", "source_id": "#42"});
         let value: PresentationItem =
@@ -709,6 +748,7 @@ mod tests {
                 .expect("valid wire"),
             );
         }
+        crate::examples::add_document_root(&mut ir);
         let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
         assert!(report.is_ok(), "{:?}", report.findings);
     }
