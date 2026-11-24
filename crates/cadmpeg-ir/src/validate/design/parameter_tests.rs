@@ -13,10 +13,12 @@ use crate::design::expr::{
     parse, Expression, ExpressionDialect, ExpressionToken, Measure, MeasureKind, MeasureTarget,
     Neutral,
 };
-use crate::design::feature::FeatureOperation;
-use crate::design::ops::shared::Law;
+use crate::design::feature::{FeatureOperation, FuzzyTolerance};
+use crate::design::ops::shared::{Law, Limit, Span};
 use crate::design::ops::sketch::{SketchConstraint, SketchRelation};
 use crate::design::ops::surface::{CurveDefinition, CurveFeature, EquationCoordinates};
+use crate::design::ops::swept::Extrude;
+use crate::design::options::SolidOutput;
 use crate::design::parameter::{
     Deviations, ParameterDefinition, ParameterOwner, ParameterValue, Tolerance,
 };
@@ -33,7 +35,7 @@ use crate::products::{
     ProductDefinition, Storage,
 };
 use crate::report::Severity;
-use crate::scalar::FiniteReal;
+use crate::scalar::{FiniteReal, Length};
 use crate::validate::design::fixture::{
     assert_finding, assert_no_design_finding, design_findings, document, feature, id, parameter,
     unresolved,
@@ -316,6 +318,91 @@ fn driven_parameters_are_bound() {
     );
     assert_finding(&ir, "a positive real dimension is `negated`");
     assert_finding(&ir, "binds test:design:parameter#measured, whose kind is");
+}
+
+/// `with_width`, a Boolean parameter `flag`, and the fixture's extrude made
+/// an extrude whose depth is `depth`.
+fn extruding(depth: Dimension<Length>) -> CadIr {
+    let mut ir = with_width();
+    let mut flag = parameter("flag", ValueKind::Boolean);
+    flag.definition = expression("false", &[]);
+    flag.value = Some(ParameterValue::Boolean(false));
+    ir.design.parameters.push(flag);
+    ir.design.features[0].definition.operation = FeatureOperation::Extrude(Box::new(Extrude {
+        profile: Selection {
+            at: Anchor::Input,
+            picks: Picks::Unread,
+            native: None,
+        },
+        loops: None,
+        direction: None,
+        origin: None,
+        span: Some(Span::Between {
+            start: Box::new(Limit::AtOrigin),
+            end: Box::new(Limit::Amount(depth)),
+        }),
+        draft: None,
+        fit: None,
+        outside: None,
+        sheet_cut: None,
+        output: SolidOutput {
+            body: None,
+            boolean: None,
+        },
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    }));
+    ir
+}
+
+#[test]
+fn a_feature_dimension_binds_a_parameter_of_its_value_type() {
+    let ir = extruding(Dimension::Parameter(id("parameter", "flag")));
+    assert_finding(
+        &ir,
+        "a length dimension binds test:design:parameter#flag, whose kind is Boolean",
+    );
+    let mut ir = with_width();
+    ir.design.features[0].definition.fuzzy_tolerance = Some(FuzzyTolerance::Explicit(
+        Dimension::Negated(id("parameter", "width")),
+    ));
+    assert_finding(&ir, "a positive length dimension is `negated`");
+    let mut ir = with_width();
+    ir.design.parameters[0].definition = expression("-2[mm]", &[]);
+    ir.design.parameters[0].value = Some(number(-2.0));
+    ir.design.features[0].definition.fuzzy_tolerance = Some(FuzzyTolerance::Explicit(
+        Dimension::Parameter(id("parameter", "width")),
+    ));
+    assert_warning(
+        &ir,
+        "a positive length dimension binds test:design:parameter#width, whose cached value",
+    );
+}
+
+#[test]
+fn feature_dimensions_of_their_parameters_value_type_break_no_rule() {
+    let mut ir = with_width();
+    ir.design.features[0].definition.fuzzy_tolerance = Some(FuzzyTolerance::Explicit(
+        Dimension::Parameter(id("parameter", "width")),
+    ));
+    assert_no_design_finding(&ir);
+    let ir = extruding(Dimension::Negated(id("parameter", "width")));
+    let findings = design_findings(&ir);
+    assert!(
+        !findings
+            .iter()
+            .any(|finding| finding.message.contains("dimension")),
+        "{findings:#?}"
+    );
+}
+
+#[test]
+fn an_unset_parameter_has_no_value() {
+    let mut ir = with_width();
+    ir.design.parameters[0].definition = ParameterDefinition::Unset;
+    assert_finding(&ir, "an `Unset` parameter states a `value`");
+    ir.design.parameters[0].value = None;
+    assert_no_design_finding(&ir);
 }
 
 #[test]
