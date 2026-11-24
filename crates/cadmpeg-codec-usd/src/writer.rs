@@ -2221,7 +2221,6 @@ fn grow(bounds: Option<([f32; 3], [f32; 3])>, point: [f32; 3]) -> ([f32; 3], [f3
 #[cfg(test)]
 mod tests;
 
-/// The arena position of each region, shell, face, and edge of `ir`.
 /// The prim name of a mesh: a mesh body's name, else `Mesh`.
 fn mesh_name(tessellation: &Tessellation) -> String {
     match &tessellation.of {
@@ -2243,6 +2242,7 @@ fn mesh_named_as(mesh: &Tessellation, name: &str) -> bool {
     }
 }
 
+/// The arena position of each region, shell, face, and edge of `ir`.
 /// Whether the prim named after `name` can carry `body` under its own
 /// name: the body has no name, or the same prim name.
 fn named_as(body: &Body, name: &str) -> bool {
