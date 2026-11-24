@@ -3,18 +3,956 @@
     "design": {
       "arrangements": [],
       "configurations": [],
-      "containers": [],
+      "containers": [
+        {
+          "kind": "ordered",
+          "value": {
+            "folders": [],
+            "id": "alibre:step:container#timeline",
+            "kind": "timeline",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "alibre:step:feature#185"
+              },
+              {
+                "kind": "feature",
+                "value": "alibre:step:feature#186"
+              },
+              {
+                "kind": "feature",
+                "value": "alibre:step:feature#187"
+              },
+              {
+                "kind": "feature",
+                "value": "alibre:step:feature#188"
+              },
+              {
+                "kind": "feature",
+                "value": "alibre:step:feature#189"
+              },
+              {
+                "kind": "feature",
+                "value": "alibre:step:feature#190"
+              },
+              {
+                "kind": "feature",
+                "value": "alibre:step:feature#191"
+              },
+              {
+                "kind": "feature",
+                "value": "alibre:step:feature#192"
+              },
+              {
+                "kind": "feature",
+                "value": "alibre:step:feature#193"
+              }
+            ],
+            "rollback": {
+              "kind": "end"
+            }
+          }
+        }
+      ],
       "evaluations": [],
-      "features": [],
+      "features": [
+        {
+          "definition": {
+            "operation": {
+              "kind": "datum",
+              "value": {
+                "element": {
+                  "kind": "points",
+                  "value": [
+                    {
+                      "after": [],
+                      "inputs": [],
+                      "resolved": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                      },
+                      "resolved_in": {}
+                    }
+                  ]
+                },
+                "native_options": {},
+                "source_settings": {}
+              }
+            }
+          },
+          "id": "alibre:step:feature#185",
+          "name": "Origin"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "datum",
+              "value": {
+                "element": {
+                  "kind": "axis",
+                  "value": {
+                    "after": [],
+                    "inputs": [],
+                    "resolved": {
+                      "direction": {
+                        "x": 1.0,
+                        "y": 0.0,
+                        "z": 0.0
+                      },
+                      "origin": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                      }
+                    },
+                    "resolved_in": {}
+                  }
+                },
+                "native_options": {},
+                "source_settings": {}
+              }
+            }
+          },
+          "id": "alibre:step:feature#186",
+          "name": "X-Axis"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "datum",
+              "value": {
+                "element": {
+                  "kind": "axis",
+                  "value": {
+                    "after": [],
+                    "inputs": [],
+                    "resolved": {
+                      "direction": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0
+                      },
+                      "origin": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                      }
+                    },
+                    "resolved_in": {}
+                  }
+                },
+                "native_options": {},
+                "source_settings": {}
+              }
+            }
+          },
+          "id": "alibre:step:feature#187",
+          "name": "Y-Axis"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "datum",
+              "value": {
+                "element": {
+                  "kind": "axis",
+                  "value": {
+                    "after": [],
+                    "inputs": [],
+                    "resolved": {
+                      "direction": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 1.0
+                      },
+                      "origin": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                      }
+                    },
+                    "resolved_in": {}
+                  }
+                },
+                "native_options": {},
+                "source_settings": {}
+              }
+            }
+          },
+          "id": "alibre:step:feature#188",
+          "name": "Z-Axis"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "datum",
+              "value": {
+                "element": {
+                  "kind": "plane",
+                  "value": {
+                    "after": [],
+                    "inputs": [],
+                    "resolved": {
+                      "normal": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 1.0
+                      },
+                      "origin": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                      },
+                      "x_axis": {
+                        "x": 1.0,
+                        "y": 0.0,
+                        "z": 0.0
+                      }
+                    },
+                    "resolved_in": {}
+                  }
+                },
+                "native_options": {},
+                "source_settings": {}
+              }
+            }
+          },
+          "id": "alibre:step:feature#189",
+          "name": "XY-Plane"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "datum",
+              "value": {
+                "element": {
+                  "kind": "plane",
+                  "value": {
+                    "after": [],
+                    "inputs": [],
+                    "resolved": {
+                      "normal": {
+                        "x": 1.0,
+                        "y": 0.0,
+                        "z": 0.0
+                      },
+                      "origin": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                      },
+                      "x_axis": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0
+                      }
+                    },
+                    "resolved_in": {}
+                  }
+                },
+                "native_options": {},
+                "source_settings": {}
+              }
+            }
+          },
+          "id": "alibre:step:feature#190",
+          "name": "YZ-Plane"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "datum",
+              "value": {
+                "element": {
+                  "kind": "plane",
+                  "value": {
+                    "after": [],
+                    "inputs": [],
+                    "resolved": {
+                      "normal": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0
+                      },
+                      "origin": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                      },
+                      "x_axis": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 1.0
+                      }
+                    },
+                    "resolved_in": {}
+                  }
+                },
+                "native_options": {},
+                "source_settings": {}
+              }
+            }
+          },
+          "id": "alibre:step:feature#191",
+          "name": "ZX-Plane"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "sketch",
+              "value": "alibre:step:sketch#165"
+            }
+          },
+          "id": "alibre:step:feature#192",
+          "name": "S1"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "extrude",
+              "value": {
+                "direction": {
+                  "kind": "profile_normal",
+                  "reversed": {
+                    "kind": "literal",
+                    "value": false
+                  }
+                },
+                "native_options": {},
+                "origin": {
+                  "kind": "profile_plane"
+                },
+                "output": {},
+                "profile": {
+                  "at": {
+                    "kind": "input"
+                  },
+                  "picks": {
+                    "kind": "named",
+                    "value": [
+                      {
+                        "target": {
+                          "kind": "sketch",
+                          "value": "alibre:step:sketch#165"
+                        }
+                      }
+                    ]
+                  }
+                },
+                "source_settings": {},
+                "span": {
+                  "end": {
+                    "kind": "amount",
+                    "value": {
+                      "kind": "parameter",
+                      "value": "alibre:step:parameter#195"
+                    }
+                  },
+                  "kind": "between",
+                  "start": {
+                    "kind": "at_origin"
+                  }
+                }
+              }
+            }
+          },
+          "id": "alibre:step:feature#193",
+          "name": "E1"
+        }
+      ],
       "names": [],
-      "parameters": [],
+      "parameters": [
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "10[mm]"
+              }
+            }
+          },
+          "id": "alibre:step:parameter#195",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "D1",
+          "native_options": {},
+          "owner": {
+            "kind": "feature",
+            "value": "alibre:step:feature#193"
+          },
+          "scope": "alibre:model:product-definition#root",
+          "source_settings": {
+            "alibre:guid": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "6EDD372D-E52E-48FC-AB0E-3A0CD48EF720"
+              }
+            }
+          },
+          "unit": [
+            {
+              "power": 1,
+              "symbol": "mm"
+            }
+          ],
+          "value": {
+            "kind": "number",
+            "value": 10.0
+          }
+        }
+      ],
       "programs": [],
       "publications": [],
-      "scopes": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "current": [
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "alibre:step:feature#193"
+                }
+              },
+              "bodies": [
+                "alibre:brep:entity#0"
+              ],
+              "poses": [],
+              "status": "current"
+            }
+          ],
+          "definition": "alibre:model:product-definition#root",
+          "occurrences": {},
+          "roots": [
+            "alibre:step:container#timeline"
+          ],
+          "unproduced": []
+        }
+      ],
       "sheet_metal_rules": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
+      "sketch_constraints": [
+        {
+          "id": "alibre:step:sketch-constraint#144",
+          "native_options": {},
+          "relation": {
+            "kind": "coincident",
+            "value": {
+              "a": {
+                "kind": "entity",
+                "value": "alibre:step:sketch-entity#134"
+              },
+              "b": {
+                "kind": "entity",
+                "value": "alibre:step:sketch-entity#127"
+              }
+            }
+          },
+          "sketch": "alibre:step:sketch#165",
+          "source_settings": {}
+        },
+        {
+          "id": "alibre:step:sketch-constraint#145",
+          "native_options": {},
+          "relation": {
+            "kind": "coincident",
+            "value": {
+              "a": {
+                "kind": "entity",
+                "value": "alibre:step:sketch-entity#128"
+              },
+              "b": {
+                "kind": "entity",
+                "value": "alibre:step:sketch-entity#129"
+              }
+            }
+          },
+          "sketch": "alibre:step:sketch#165",
+          "source_settings": {}
+        },
+        {
+          "id": "alibre:step:sketch-constraint#146",
+          "native_options": {},
+          "relation": {
+            "kind": "coincident",
+            "value": {
+              "a": {
+                "kind": "entity",
+                "value": "alibre:step:sketch-entity#130"
+              },
+              "b": {
+                "kind": "entity",
+                "value": "alibre:step:sketch-entity#131"
+              }
+            }
+          },
+          "sketch": "alibre:step:sketch#165",
+          "source_settings": {}
+        },
+        {
+          "id": "alibre:step:sketch-constraint#147",
+          "native_options": {},
+          "relation": {
+            "kind": "coincident",
+            "value": {
+              "a": {
+                "kind": "entity",
+                "value": "alibre:step:sketch-entity#132"
+              },
+              "b": {
+                "kind": "entity",
+                "value": "alibre:step:sketch-entity#133"
+              }
+            }
+          },
+          "sketch": "alibre:step:sketch#165",
+          "source_settings": {}
+        },
+        {
+          "id": "alibre:step:sketch-constraint#148",
+          "native_options": {},
+          "relation": {
+            "kind": "parallel",
+            "value": {
+              "a": {
+                "kind": "entity",
+                "value": "alibre:step:sketch-entity#159"
+              },
+              "b": {
+                "kind": "frame",
+                "value": "y_axis"
+              }
+            }
+          },
+          "sketch": "alibre:step:sketch#165",
+          "source_settings": {}
+        },
+        {
+          "id": "alibre:step:sketch-constraint#149",
+          "native_options": {},
+          "relation": {
+            "kind": "parallel",
+            "value": {
+              "a": {
+                "kind": "entity",
+                "value": "alibre:step:sketch-entity#160"
+              },
+              "b": {
+                "kind": "frame",
+                "value": "x_axis"
+              }
+            }
+          },
+          "sketch": "alibre:step:sketch#165",
+          "source_settings": {}
+        },
+        {
+          "id": "alibre:step:sketch-constraint#150",
+          "native_options": {},
+          "relation": {
+            "kind": "parallel",
+            "value": {
+              "a": {
+                "kind": "entity",
+                "value": "alibre:step:sketch-entity#161"
+              },
+              "b": {
+                "kind": "frame",
+                "value": "y_axis"
+              }
+            }
+          },
+          "sketch": "alibre:step:sketch#165",
+          "source_settings": {}
+        },
+        {
+          "id": "alibre:step:sketch-constraint#151",
+          "native_options": {},
+          "relation": {
+            "kind": "parallel",
+            "value": {
+              "a": {
+                "kind": "entity",
+                "value": "alibre:step:sketch-entity#162"
+              },
+              "b": {
+                "kind": "frame",
+                "value": "x_axis"
+              }
+            }
+          },
+          "sketch": "alibre:step:sketch#165",
+          "source_settings": {}
+        }
+      ],
+      "sketch_entities": [
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": -10.0,
+                "v": -15.0
+              }
+            }
+          },
+          "id": "alibre:step:sketch-entity#127",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "alibre:step:sketch-entity#159",
+              "role": {
+                "kind": "start"
+              }
+            }
+          ],
+          "sketch": "alibre:step:sketch#165",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": -10.0,
+                "v": 15.0
+              }
+            }
+          },
+          "id": "alibre:step:sketch-entity#128",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "alibre:step:sketch-entity#159",
+              "role": {
+                "kind": "end"
+              }
+            }
+          ],
+          "sketch": "alibre:step:sketch#165",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": -10.0,
+                "v": 15.0
+              }
+            }
+          },
+          "id": "alibre:step:sketch-entity#129",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "alibre:step:sketch-entity#160",
+              "role": {
+                "kind": "start"
+              }
+            }
+          ],
+          "sketch": "alibre:step:sketch#165",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": 10.0,
+                "v": 15.0
+              }
+            }
+          },
+          "id": "alibre:step:sketch-entity#130",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "alibre:step:sketch-entity#160",
+              "role": {
+                "kind": "end"
+              }
+            }
+          ],
+          "sketch": "alibre:step:sketch#165",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": 10.0,
+                "v": 15.0
+              }
+            }
+          },
+          "id": "alibre:step:sketch-entity#131",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "alibre:step:sketch-entity#161",
+              "role": {
+                "kind": "start"
+              }
+            }
+          ],
+          "sketch": "alibre:step:sketch#165",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": 10.0,
+                "v": -15.0
+              }
+            }
+          },
+          "id": "alibre:step:sketch-entity#132",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "alibre:step:sketch-entity#161",
+              "role": {
+                "kind": "end"
+              }
+            }
+          ],
+          "sketch": "alibre:step:sketch#165",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": 10.0,
+                "v": -15.0
+              }
+            }
+          },
+          "id": "alibre:step:sketch-entity#133",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "alibre:step:sketch-entity#162",
+              "role": {
+                "kind": "start"
+              }
+            }
+          ],
+          "sketch": "alibre:step:sketch#165",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "point",
+              "value": {
+                "u": -10.0,
+                "v": -15.0
+              }
+            }
+          },
+          "id": "alibre:step:sketch-entity#134",
+          "native_options": {},
+          "roles": [
+            {
+              "of": "alibre:step:sketch-entity#162",
+              "role": {
+                "kind": "end"
+              }
+            }
+          ],
+          "sketch": "alibre:step:sketch#165",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "line",
+              "value": {
+                "end": {
+                  "u": -10.0,
+                  "v": 15.0
+                },
+                "start": {
+                  "u": -10.0,
+                  "v": -15.0
+                }
+              }
+            }
+          },
+          "id": "alibre:step:sketch-entity#159",
+          "native_options": {},
+          "roles": [],
+          "sketch": "alibre:step:sketch#165",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "line",
+              "value": {
+                "end": {
+                  "u": 10.0,
+                  "v": 15.0
+                },
+                "start": {
+                  "u": -10.0,
+                  "v": 15.0
+                }
+              }
+            }
+          },
+          "id": "alibre:step:sketch-entity#160",
+          "native_options": {},
+          "roles": [],
+          "sketch": "alibre:step:sketch#165",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "line",
+              "value": {
+                "end": {
+                  "u": 10.0,
+                  "v": -15.0
+                },
+                "start": {
+                  "u": 10.0,
+                  "v": 15.0
+                }
+              }
+            }
+          },
+          "id": "alibre:step:sketch-entity#161",
+          "native_options": {},
+          "roles": [],
+          "sketch": "alibre:step:sketch#165",
+          "source_settings": {}
+        },
+        {
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "line",
+              "value": {
+                "end": {
+                  "u": -10.0,
+                  "v": -15.0
+                },
+                "start": {
+                  "u": 10.0,
+                  "v": -15.0
+                }
+              }
+            }
+          },
+          "id": "alibre:step:sketch-entity#162",
+          "native_options": {},
+          "roles": [],
+          "sketch": "alibre:step:sketch#165",
+          "source_settings": {}
+        }
+      ],
+      "sketches": [
+        {
+          "id": "alibre:step:sketch#165",
+          "name": "S1",
+          "native_options": {},
+          "owner": "alibre:step:feature#192",
+          "plane": {
+            "after": [],
+            "inputs": [
+              {
+                "reference": {
+                  "kind": "picks",
+                  "value": {
+                    "at": {
+                      "kind": "input"
+                    },
+                    "picks": {
+                      "kind": "named",
+                      "value": [
+                        {
+                          "target": {
+                            "kind": "datum",
+                            "value": {
+                              "feature": "alibre:step:feature#189"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                },
+                "role": {
+                  "relation": {
+                    "kind": "coincident"
+                  },
+                  "subject": "whole"
+                }
+              }
+            ],
+            "kind": "placed",
+            "resolved": {
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "x_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "y_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "z_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
+            },
+            "resolved_in": {}
+          },
+          "solve": {
+            "status": "current"
+          },
+          "source_settings": {}
+        }
+      ],
       "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
@@ -3197,7 +4135,7 @@
             "namespace": "alibre"
           }
         },
-        "message": "streams without a decoder: DESIGN_PARAMETER_DATA, AUTOGRAPH_DATA, PROP_DATA, VERSION, STEP_DATA, HOLE_OPERATIONS_DATA, CUSTOM_ITEM_PROP_DATA, GLOBAL_PARAMETER_DATA_CACHE, STANDARD_DESIGN_PROP_DATA, LIGHT_CONFIGURATION_DATA, EXTERNAL_THREAD_OPERATIONS_DATA",
+        "message": "streams without a decoder: DESIGN_PARAMETER_DATA, AUTOGRAPH_DATA, PROP_DATA, VERSION, HOLE_OPERATIONS_DATA, CUSTOM_ITEM_PROP_DATA, GLOBAL_PARAMETER_DATA_CACHE, STANDARD_DESIGN_PROP_DATA, LIGHT_CONFIGURATION_DATA, EXTERNAL_THREAD_OPERATIONS_DATA",
         "severity": "warning"
       },
       {
@@ -3211,6 +4149,42 @@
           }
         },
         "message": "the SAB_DATA stream declares save format 33.0, which no verified Spatial ACIS band declares; its records were read with the grammar `acis:save-format-217` declares, and what they decoded is reported as it decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "history.dimension-annotation-unmapped",
+            "kind": "feature_history_retained",
+            "namespace": "alibre"
+          }
+        },
+        "message": "state E1 holds a dimension annotation, which the history does not map",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "history.direction-flag-assumed",
+            "kind": "feature_history_retained",
+            "namespace": "alibre"
+          }
+        },
+        "message": "the logical of a blind end condition is read as the reversal of the sketch normal",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "history.presentation-unmapped",
+            "kind": "feature_history_retained",
+            "namespace": "alibre"
+          }
+        },
+        "message": "document profile, measurement format, font, hatch, configuration, and version records are not mapped",
         "severity": "warning"
       }
     ],
@@ -3985,7 +4959,7 @@
       }
     },
     "codec_digests": {},
-    "content_digest": "7fc0e59e74d400ed737c6ee77a6b6d6c29b2c0a7c91fdd99e84195ca8a84c863",
+    "content_digest": "ea579e78fae8ed9d27a86d59dcfef4ab3621baaea35d0240dfcbe85b43dd627d",
     "decode_digest": "3748e1ccaa7813ef7fb868eac6fe0afdd1c76938c3fc3f84b83b401ad1bcfb26",
     "file_digests": {},
     "retained_records": {},
