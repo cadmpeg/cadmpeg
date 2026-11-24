@@ -85,6 +85,9 @@ pub(crate) enum Kind {
     Folder,
     /// An object of another class.
     Other(String),
+    /// A listed object that the cluster does not hold or whose class the
+    /// type table does not name.
+    Unreadable,
 }
 
 /// The navigator of `cluster`, with the kind of each feature it lists.
@@ -204,8 +207,8 @@ fn entries(bytes: &[u8]) -> Option<Vec<u32>> {
     matches!(bytes.len().checked_sub(at)?, 0 | 4).then_some(features)
 }
 
-/// The kind of each listed object. An identifier the cluster does not hold,
-/// or one listed twice, makes the list unreadable.
+/// The kind of each listed object. An identifier listed twice makes the list
+/// unreadable; an object that does not read is `Kind::Unreadable`.
 fn listed(cluster: &Cluster<'_>, types: &TypeTable, entries: &[u32]) -> Option<Vec<Listed>> {
     let mut seen = BTreeSet::new();
     let mut features = Vec::new();
@@ -213,13 +216,15 @@ fn listed(cluster: &Cluster<'_>, types: &TypeTable, entries: &[u32]) -> Option<V
         if !seen.insert(id) {
             return None;
         }
-        let object = cluster.object(id)?;
-        let class = types.class_name(object.form, object.flags)?;
-        let kind = match class {
-            PART_CLASS => Kind::Function(function_name(&object)),
-            GROUP_CLASS => Kind::Group,
-            FOLDER_CLASS => Kind::Folder,
-            other => Kind::Other(other.to_owned()),
+        let kind = match cluster.object(id) {
+            Some(object) => match types.class_name(object.form, object.flags) {
+                Some(PART_CLASS) => Kind::Function(function_name(&object)),
+                Some(GROUP_CLASS) => Kind::Group,
+                Some(FOLDER_CLASS) => Kind::Folder,
+                Some(other) => Kind::Other(other.to_owned()),
+                None => Kind::Unreadable,
+            },
+            None => Kind::Unreadable,
         };
         features.push(Listed { object: id, kind });
     }
@@ -274,7 +279,7 @@ fn operation(kind: &Kind) -> Option<(FeatureOperation, Option<String>)> {
         Kind::Group => Some(OperationFamily::Pattern),
         Kind::Function(Some(function)) => function_family(function),
         Kind::Function(None) | Kind::Other(_) => None,
-        Kind::Folder => return None,
+        Kind::Folder | Kind::Unreadable => return None,
     };
     if let Some(family) = family {
         return Some((FeatureOperation::Unresolved { family }, None));
@@ -283,7 +288,7 @@ fn operation(kind: &Kind) -> Option<(FeatureOperation, Option<String>)> {
         Kind::Function(Some(function)) => function.as_str(),
         Kind::Function(None) => PART_CLASS,
         Kind::Other(class) => class.as_str(),
-        Kind::Group | Kind::Folder => return None,
+        Kind::Group | Kind::Folder | Kind::Unreadable => return None,
     };
     let native = FeatureOperation::Native {
         kind: CodecName::new(&cadmpeg_ir::codec_id!("solidedge"), name)?,
@@ -322,6 +327,13 @@ fn timeline(listed: &[Listed], losses: &mut Vec<LossNote>) -> Option<Vec<Feature
         )));
     }
     for entry in listed.iter().filter(|entry| entry.kind != Kind::Folder) {
+        if entry.kind == Kind::Unreadable {
+            losses.push(SolidEdgeLossCode::FeatureStorageUnread.note(format!(
+                "listed feature object {:#x} does not read; it is not stated",
+                entry.object
+            )));
+            continue;
+        }
         let (operation, unmapped) = operation(&entry.kind)?;
         if let Some(name) = unmapped {
             losses.push(SolidEdgeLossCode::FeatureKindUnknown.note(format!(
@@ -368,8 +380,19 @@ pub(crate) fn project<'a>(
     ) else {
         return Ok(());
     };
-    let map = snapshot.open(ctx, map)?;
-    let types = snapshot.open(ctx, types)?;
+    let streams = match (snapshot.open(ctx, map), snapshot.open(ctx, types)) {
+        (Ok(map), Ok(types)) => (map, types),
+        (Err(error @ CodecError::ResourceLimit(_)), _)
+        | (_, Err(error @ CodecError::ResourceLimit(_))) => return Err(error),
+        (Err(error), _) | (_, Err(error)) => {
+            losses.push(SolidEdgeLossCode::FeatureStorageUnread.note(format!(
+                "the PSM space map or type table could not be read: {error}; the feature order \
+                 is not transferred"
+            )));
+            return Ok(());
+        }
+    };
+    let (map, types) = streams;
     let (Some(map), Some(types)) = (
         SpaceMap::parse(map.window()),
         TypeTable::parse(types.window()),

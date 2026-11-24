@@ -123,6 +123,43 @@ fn malformed_set_is_skipped_and_a_later_set_is_read() {
 }
 
 #[test]
+fn only_the_set_with_index_2_states_the_document_units() {
+    // §2.2: the set with index 2 stores the document units. An earlier set
+    // with another index that stores the same record names does not.
+    let mut bytes = property_set(
+        1,
+        &[
+            ("DefaultDistancePrimary", RecordValue::Word(2, 64)),
+            ("DefaultAnglePrimary", RecordValue::Word(2, 77)),
+        ],
+    );
+    bytes.extend(units(61, 357));
+    let found = sets(&bytes);
+    assert_eq!(found.len(), 2);
+    let mut losses = Vec::new();
+    let system = unit_system(&found, &mut losses).unwrap();
+    assert_eq!(
+        (system.length, system.angle),
+        (UnitSymbol::Mm, UnitSymbol::Deg)
+    );
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn a_set_with_another_index_states_no_document_units() {
+    let bytes = property_set(
+        1,
+        &[
+            ("DefaultDistancePrimary", RecordValue::Word(2, 61)),
+            ("DefaultAnglePrimary", RecordValue::Word(2, 357)),
+        ],
+    );
+    let mut losses = Vec::new();
+    assert!(unit_system(&sets(&bytes), &mut losses).is_none());
+    assert_eq!(losses[0].code.local_code(), "units.unread");
+}
+
+#[test]
 fn truncated_set_yields_no_set() {
     let bytes = units(61, 357);
     assert!(sets(&bytes[..bytes.len() - 3]).is_empty());

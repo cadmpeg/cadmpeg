@@ -608,6 +608,8 @@ pub(crate) enum Member2d {
     None,
     /// A hole position by x and y.
     Hole([f64; 2]),
+    /// The identifier of the member at this earlier index, listed again.
+    Repeat(usize),
 }
 
 /// The frame of a synthetic profile: origin, normal `A` and x axis `B`.
@@ -694,10 +696,14 @@ pub(crate) fn profile_group(
             ids.push(u32::MAX);
             continue;
         }
+        if let Member2d::Repeat(earlier) = member {
+            ids.push(ids[*earlier]);
+            continue;
+        }
         let id = first_member + u32::try_from(index).unwrap();
         ids.push(id);
         let (form, body) = match member {
-            Member2d::None => unreachable!("handled above"),
+            Member2d::None | Member2d::Repeat(_) => unreachable!("handled above"),
             Member2d::Line(values) => (8, curve_body(&values[..], 42)),
             Member2d::Circle(values) => (9, curve_body(&values[..3], 34)),
             Member2d::Arc(values) => (10, arc_body(values)),
