@@ -121,7 +121,10 @@ fn a_right_hand_helix_runs_along_the_axis() {
 fn the_revolutions_and_unsettled_slots_stay_native() {
     let result = helix(&HelixSpec::default());
     let options = &sweep_of(&result).native_options;
-    let real = |name: &str| match options.iter().find(|(key, _)| key.as_str() == name) {
+    let real = |name: &str| match options
+        .iter()
+        .find(|(key, _)| key.as_str() == format!("solidedge:{name}").as_str())
+    {
         Some((_, NativeOption::Real(Dimension::Literal(value)))) => value.get(),
         other => panic!("expected a real option {name}, found {other:?}"),
     };

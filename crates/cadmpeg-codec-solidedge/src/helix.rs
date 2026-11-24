@@ -23,7 +23,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
 use cadmpeg_ir::units::UnitVector3;
 
-use cadmpeg_core::text::NonBlankString;
+use cadmpeg_ir::design::names::CodecName;
 
 use crate::construction;
 use crate::extents::{
@@ -208,7 +208,7 @@ fn helix(
 }
 
 fn insert(options: &mut NativeOptions, name: &str, value: NativeOption) {
-    if let Some(key) = NonBlankString::new(name.to_owned()) {
+    if let Some(key) = CodecName::new(&cadmpeg_ir::codec_id!("solidedge"), name) {
         options.insert(key, value);
     }
 }
