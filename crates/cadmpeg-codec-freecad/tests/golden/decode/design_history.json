@@ -3375,7 +3375,7 @@
                 "bodies": [],
                 "coedges": [
                   {
-                    "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:10%40location30",
+                    "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:18%40location12",
                     "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:12%40location28%3A1%3A1",
                     "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:12%40location28%3A1",
                     "pcurves": [],
@@ -3383,7 +3383,7 @@
                     "sense": "reversed"
                   },
                   {
-                    "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:10%40location31",
+                    "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:18%40location14",
                     "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:12%40location28%3A1%3A2",
                     "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:12%40location28%3A1",
                     "pcurves": [],
@@ -3391,7 +3391,7 @@
                     "sense": "forward"
                   },
                   {
-                    "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:2%40location28",
+                    "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:2%40location1",
                     "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:12%40location28%3A1%3A3",
                     "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:12%40location28%3A1",
                     "pcurves": [],
@@ -3399,7 +3399,7 @@
                     "sense": "forward"
                   },
                   {
-                    "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:9%40location28",
+                    "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:14%40location1",
                     "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:12%40location28%3A1%3A4",
                     "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:12%40location28%3A1",
                     "pcurves": [],
@@ -3407,7 +3407,7 @@
                     "sense": "reversed"
                   },
                   {
-                    "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:15%40location30",
+                    "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:10%40location12",
                     "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:17%40location28%3A1%3A1",
                     "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:17%40location28%3A1",
                     "pcurves": [],
@@ -3415,7 +3415,7 @@
                     "sense": "reversed"
                   },
                   {
-                    "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:15%40location31",
+                    "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:10%40location14",
                     "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:17%40location28%3A1%3A2",
                     "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:17%40location28%3A1",
                     "pcurves": [],
@@ -3423,7 +3423,7 @@
                     "sense": "forward"
                   },
                   {
-                    "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:14%40location28",
+                    "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:9%40location1",
                     "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:17%40location28%3A1%3A3",
                     "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:17%40location28%3A1",
                     "pcurves": [],
@@ -3431,7 +3431,7 @@
                     "sense": "forward"
                   },
                   {
-                    "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:4%40location28",
+                    "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:4%40location1",
                     "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:17%40location28%3A1%3A4",
                     "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:17%40location28%3A1",
                     "pcurves": [],
@@ -3439,7 +3439,7 @@
                     "sense": "reversed"
                   },
                   {
-                    "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:10%40location31",
+                    "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:18%40location14",
                     "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:20%40location32%3A1%3A1",
                     "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:20%40location32%3A1",
                     "pcurves": [],
@@ -3447,7 +3447,7 @@
                     "sense": "reversed"
                   },
                   {
-                    "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:18%40location31",
+                    "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:15%40location14",
                     "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:20%40location32%3A1%3A2",
                     "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:20%40location32%3A1",
                     "pcurves": [],
@@ -3455,7 +3455,7 @@
                     "sense": "reversed"
                   },
                   {
-                    "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:15%40location31",
+                    "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:10%40location14",
                     "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:20%40location32%3A1%3A3",
                     "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:20%40location32%3A1",
                     "pcurves": [],
@@ -3463,7 +3463,7 @@
                     "sense": "reversed"
                   },
                   {
-                    "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:5%40location31",
+                    "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:5%40location14",
                     "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:20%40location32%3A1%3A4",
                     "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:20%40location32%3A1",
                     "pcurves": [],
@@ -3471,7 +3471,7 @@
                     "sense": "reversed"
                   },
                   {
-                    "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:5%40location30",
+                    "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:5%40location12",
                     "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:25%40location1%3A1%3A1",
                     "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:25%40location1%3A1",
                     "pcurves": [],
@@ -3479,7 +3479,7 @@
                     "sense": "forward"
                   },
                   {
-                    "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:10%40location30",
+                    "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:18%40location12",
                     "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:25%40location1%3A1%3A2",
                     "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:25%40location1%3A1",
                     "pcurves": [],
@@ -3487,7 +3487,7 @@
                     "sense": "forward"
                   },
                   {
-                    "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:15%40location30",
+                    "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:10%40location12",
                     "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:25%40location1%3A1%3A3",
                     "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:25%40location1%3A1",
                     "pcurves": [],
@@ -3495,7 +3495,7 @@
                     "sense": "forward"
                   },
                   {
-                    "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:18%40location30",
+                    "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:15%40location12",
                     "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:25%40location1%3A1%3A4",
                     "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:25%40location1%3A1",
                     "pcurves": [],
@@ -3511,7 +3511,7 @@
                     "sense": "reversed"
                   },
                   {
-                    "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:18%40location30",
+                    "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:15%40location12",
                     "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:27%40location28%3A1%3A1",
                     "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:27%40location28%3A1",
                     "pcurves": [],
@@ -3519,7 +3519,7 @@
                     "sense": "reversed"
                   },
                   {
-                    "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:18%40location31",
+                    "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:15%40location14",
                     "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:27%40location28%3A1%3A2",
                     "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:27%40location28%3A1",
                     "pcurves": [],
@@ -3527,7 +3527,7 @@
                     "sense": "forward"
                   },
                   {
-                    "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:9%40location28",
+                    "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:14%40location1",
                     "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:27%40location28%3A1%3A3",
                     "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:27%40location28%3A1",
                     "pcurves": [],
@@ -3535,7 +3535,7 @@
                     "sense": "forward"
                   },
                   {
-                    "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:14%40location28",
+                    "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:9%40location1",
                     "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:27%40location28%3A1%3A4",
                     "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:27%40location28%3A1",
                     "pcurves": [],
@@ -3615,7 +3615,7 @@
                     "sense": "forward"
                   },
                   {
-                    "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:5%40location30",
+                    "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:5%40location12",
                     "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:7%40location28%3A1%3A1",
                     "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:7%40location28%3A1",
                     "pcurves": [],
@@ -3623,7 +3623,7 @@
                     "sense": "reversed"
                   },
                   {
-                    "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:5%40location31",
+                    "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:5%40location14",
                     "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:7%40location28%3A1%3A2",
                     "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:7%40location28%3A1",
                     "pcurves": [],
@@ -3631,7 +3631,7 @@
                     "sense": "forward"
                   },
                   {
-                    "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:4%40location28",
+                    "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:4%40location1",
                     "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:7%40location28%3A1%3A3",
                     "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:7%40location28%3A1",
                     "pcurves": [],
@@ -3639,7 +3639,7 @@
                     "sense": "forward"
                   },
                   {
-                    "edge": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:2%40location28",
+                    "edge": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:2%40location1",
                     "id": "fcstd:model:coedge#Pocket:Shape:Pocket.Shape.brp:7%40location28%3A1%3A4",
                     "owner_loop": "fcstd:model:loop#Pocket:Shape:Pocket.Shape.brp:7%40location28%3A1",
                     "pcurves": [],
@@ -3648,30 +3648,6 @@
                   }
                 ],
                 "curves": [
-                  {
-                    "geometry": {
-                      "kind": "solved",
-                      "value": {
-                        "direction": {
-                          "x": 0.0,
-                          "y": 0.0,
-                          "z": 1.0
-                        },
-                        "kind": "line",
-                        "origin": {
-                          "x": 0.0,
-                          "y": 0.0,
-                          "z": 0.0
-                        }
-                      }
-                    },
-                    "id": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:1",
-                    "source_object": {
-                      "format": "fcstd",
-                      "instance_path": [],
-                      "object_id": "fcstd:native:object#Pocket"
-                    }
-                  },
                   {
                     "geometry": {
                       "kind": "solved",
@@ -3690,362 +3666,6 @@
                       }
                     },
                     "id": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:10",
-                    "source_object": {
-                      "format": "fcstd",
-                      "instance_path": [],
-                      "object_id": "fcstd:native:object#Pocket"
-                    }
-                  },
-                  {
-                    "geometry": {
-                      "kind": "solved",
-                      "value": {
-                        "direction": {
-                          "x": 0.0,
-                          "y": 0.0,
-                          "z": 1.0
-                        },
-                        "kind": "line",
-                        "origin": {
-                          "x": 24.0,
-                          "y": 0.0,
-                          "z": 0.0
-                        }
-                      }
-                    },
-                    "id": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:2",
-                    "source_object": {
-                      "format": "fcstd",
-                      "instance_path": [],
-                      "object_id": "fcstd:native:object#Pocket"
-                    }
-                  },
-                  {
-                    "geometry": {
-                      "kind": "solved",
-                      "value": {
-                        "direction": {
-                          "x": 1.0,
-                          "y": 0.0,
-                          "z": 0.0
-                        },
-                        "kind": "line",
-                        "origin": {
-                          "x": 0.0,
-                          "y": 0.0,
-                          "z": 0.0
-                        }
-                      }
-                    },
-                    "id": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:3",
-                    "source_object": {
-                      "format": "fcstd",
-                      "instance_path": [],
-                      "object_id": "fcstd:native:object#Pocket"
-                    }
-                  },
-                  {
-                    "geometry": {
-                      "kind": "solved",
-                      "value": {
-                        "basis": {
-                          "direction": {
-                            "x": 1.0,
-                            "y": 0.0,
-                            "z": 0.0
-                          },
-                          "kind": "line",
-                          "origin": {
-                            "x": 0.0,
-                            "y": 0.0,
-                            "z": 0.0
-                          }
-                        },
-                        "kind": "transformed",
-                        "transform": [
-                          [
-                            1.0,
-                            0.0,
-                            0.0,
-                            0.0
-                          ],
-                          [
-                            0.0,
-                            1.0,
-                            0.0,
-                            0.0
-                          ],
-                          [
-                            0.0,
-                            0.0,
-                            1.0,
-                            10.0
-                          ]
-                        ]
-                      }
-                    },
-                    "id": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:3%4076889a8b8100da92",
-                    "source_object": {
-                      "format": "fcstd",
-                      "instance_path": [],
-                      "object_id": "fcstd:native:object#Pocket"
-                    }
-                  },
-                  {
-                    "geometry": {
-                      "kind": "solved",
-                      "value": {
-                        "direction": {
-                          "x": 0.0,
-                          "y": 0.0,
-                          "z": 1.0
-                        },
-                        "kind": "line",
-                        "origin": {
-                          "x": 0.0,
-                          "y": 16.0,
-                          "z": 0.0
-                        }
-                      }
-                    },
-                    "id": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:4",
-                    "source_object": {
-                      "format": "fcstd",
-                      "instance_path": [],
-                      "object_id": "fcstd:native:object#Pocket"
-                    }
-                  },
-                  {
-                    "geometry": {
-                      "kind": "solved",
-                      "value": {
-                        "direction": {
-                          "x": 0.0,
-                          "y": -1.0,
-                          "z": 0.0
-                        },
-                        "kind": "line",
-                        "origin": {
-                          "x": 0.0,
-                          "y": 16.0,
-                          "z": 0.0
-                        }
-                      }
-                    },
-                    "id": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:5",
-                    "source_object": {
-                      "format": "fcstd",
-                      "instance_path": [],
-                      "object_id": "fcstd:native:object#Pocket"
-                    }
-                  },
-                  {
-                    "geometry": {
-                      "kind": "solved",
-                      "value": {
-                        "basis": {
-                          "direction": {
-                            "x": 0.0,
-                            "y": -1.0,
-                            "z": 0.0
-                          },
-                          "kind": "line",
-                          "origin": {
-                            "x": 0.0,
-                            "y": 16.0,
-                            "z": 0.0
-                          }
-                        },
-                        "kind": "transformed",
-                        "transform": [
-                          [
-                            1.0,
-                            0.0,
-                            0.0,
-                            0.0
-                          ],
-                          [
-                            0.0,
-                            1.0,
-                            0.0,
-                            0.0
-                          ],
-                          [
-                            0.0,
-                            0.0,
-                            1.0,
-                            10.0
-                          ]
-                        ]
-                      }
-                    },
-                    "id": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:5%4076889a8b8100da92",
-                    "source_object": {
-                      "format": "fcstd",
-                      "instance_path": [],
-                      "object_id": "fcstd:native:object#Pocket"
-                    }
-                  },
-                  {
-                    "geometry": {
-                      "kind": "solved",
-                      "value": {
-                        "direction": {
-                          "x": 0.0,
-                          "y": 0.0,
-                          "z": 1.0
-                        },
-                        "kind": "line",
-                        "origin": {
-                          "x": 24.0,
-                          "y": 16.0,
-                          "z": 0.0
-                        }
-                      }
-                    },
-                    "id": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:6",
-                    "source_object": {
-                      "format": "fcstd",
-                      "instance_path": [],
-                      "object_id": "fcstd:native:object#Pocket"
-                    }
-                  },
-                  {
-                    "geometry": {
-                      "kind": "solved",
-                      "value": {
-                        "direction": {
-                          "x": 0.0,
-                          "y": 1.0,
-                          "z": 0.0
-                        },
-                        "kind": "line",
-                        "origin": {
-                          "x": 24.0,
-                          "y": 0.0,
-                          "z": 0.0
-                        }
-                      }
-                    },
-                    "id": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:7",
-                    "source_object": {
-                      "format": "fcstd",
-                      "instance_path": [],
-                      "object_id": "fcstd:native:object#Pocket"
-                    }
-                  },
-                  {
-                    "geometry": {
-                      "kind": "solved",
-                      "value": {
-                        "basis": {
-                          "direction": {
-                            "x": 0.0,
-                            "y": 1.0,
-                            "z": 0.0
-                          },
-                          "kind": "line",
-                          "origin": {
-                            "x": 24.0,
-                            "y": 0.0,
-                            "z": 0.0
-                          }
-                        },
-                        "kind": "transformed",
-                        "transform": [
-                          [
-                            1.0,
-                            0.0,
-                            0.0,
-                            0.0
-                          ],
-                          [
-                            0.0,
-                            1.0,
-                            0.0,
-                            0.0
-                          ],
-                          [
-                            0.0,
-                            0.0,
-                            1.0,
-                            10.0
-                          ]
-                        ]
-                      }
-                    },
-                    "id": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:7%4076889a8b8100da92",
-                    "source_object": {
-                      "format": "fcstd",
-                      "instance_path": [],
-                      "object_id": "fcstd:native:object#Pocket"
-                    }
-                  },
-                  {
-                    "geometry": {
-                      "kind": "solved",
-                      "value": {
-                        "direction": {
-                          "x": -1.0,
-                          "y": 0.0,
-                          "z": 0.0
-                        },
-                        "kind": "line",
-                        "origin": {
-                          "x": 24.0,
-                          "y": 16.0,
-                          "z": 0.0
-                        }
-                      }
-                    },
-                    "id": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:8",
-                    "source_object": {
-                      "format": "fcstd",
-                      "instance_path": [],
-                      "object_id": "fcstd:native:object#Pocket"
-                    }
-                  },
-                  {
-                    "geometry": {
-                      "kind": "solved",
-                      "value": {
-                        "basis": {
-                          "direction": {
-                            "x": -1.0,
-                            "y": 0.0,
-                            "z": 0.0
-                          },
-                          "kind": "line",
-                          "origin": {
-                            "x": 24.0,
-                            "y": 16.0,
-                            "z": 0.0
-                          }
-                        },
-                        "kind": "transformed",
-                        "transform": [
-                          [
-                            1.0,
-                            0.0,
-                            0.0,
-                            0.0
-                          ],
-                          [
-                            0.0,
-                            1.0,
-                            0.0,
-                            0.0
-                          ],
-                          [
-                            0.0,
-                            0.0,
-                            1.0,
-                            10.0
-                          ]
-                        ]
-                      }
-                    },
-                    "id": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:8%4076889a8b8100da92",
                     "source_object": {
                       "format": "fcstd",
                       "instance_path": [],
@@ -4192,126 +3812,6 @@
                 "edges": [
                   {
                     "carrier": {
-                      "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:5%4076889a8b8100da92",
-                      "param_range": [
-                        0.0,
-                        16.0
-                      ]
-                    },
-                    "ends": {
-                      "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:1%40location30",
-                      "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:8%40location30"
-                    },
-                    "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:10%40location30",
-                    "tolerance": 1e-7
-                  },
-                  {
-                    "carrier": {
-                      "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:5",
-                      "param_range": [
-                        0.0,
-                        16.0
-                      ]
-                    },
-                    "ends": {
-                      "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:1%40location31",
-                      "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:8%40location31"
-                    },
-                    "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:10%40location31",
-                    "tolerance": 1e-7
-                  },
-                  {
-                    "carrier": {
-                      "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:6",
-                      "param_range": [
-                        0.0,
-                        10.0
-                      ]
-                    },
-                    "ends": {
-                      "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:13%40location30",
-                      "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:13%40location31"
-                    },
-                    "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:14%40location28",
-                    "tolerance": 1e-7
-                  },
-                  {
-                    "carrier": {
-                      "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:7%4076889a8b8100da92",
-                      "param_range": [
-                        0.0,
-                        16.0
-                      ]
-                    },
-                    "ends": {
-                      "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:13%40location30",
-                      "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:3%40location30"
-                    },
-                    "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:15%40location30",
-                    "tolerance": 1e-7
-                  },
-                  {
-                    "carrier": {
-                      "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:7",
-                      "param_range": [
-                        0.0,
-                        16.0
-                      ]
-                    },
-                    "ends": {
-                      "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:13%40location31",
-                      "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:3%40location31"
-                    },
-                    "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:15%40location31",
-                    "tolerance": 1e-7
-                  },
-                  {
-                    "carrier": {
-                      "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:8%4076889a8b8100da92",
-                      "param_range": [
-                        0.0,
-                        24.0
-                      ]
-                    },
-                    "ends": {
-                      "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:8%40location30",
-                      "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:13%40location30"
-                    },
-                    "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:18%40location30",
-                    "tolerance": 1e-7
-                  },
-                  {
-                    "carrier": {
-                      "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:8",
-                      "param_range": [
-                        0.0,
-                        24.0
-                      ]
-                    },
-                    "ends": {
-                      "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:8%40location31",
-                      "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:13%40location31"
-                    },
-                    "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:18%40location31",
-                    "tolerance": 1e-7
-                  },
-                  {
-                    "carrier": {
-                      "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:1",
-                      "param_range": [
-                        0.0,
-                        10.0
-                      ]
-                    },
-                    "ends": {
-                      "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:1%40location30",
-                      "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:1%40location31"
-                    },
-                    "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:2%40location28",
-                    "tolerance": 1e-7
-                  },
-                  {
-                    "carrier": {
                       "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:9%4076889a8b8100da92",
                       "param_range": [
                         0.0,
@@ -4354,66 +3854,6 @@
                     },
                     "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:30%40location25",
                     "tolerance": 1e-7
-                  },
-                  {
-                    "carrier": {
-                      "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:2",
-                      "param_range": [
-                        0.0,
-                        10.0
-                      ]
-                    },
-                    "ends": {
-                      "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:3%40location30",
-                      "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:3%40location31"
-                    },
-                    "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:4%40location28",
-                    "tolerance": 1e-7
-                  },
-                  {
-                    "carrier": {
-                      "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:3%4076889a8b8100da92",
-                      "param_range": [
-                        0.0,
-                        24.0
-                      ]
-                    },
-                    "ends": {
-                      "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:3%40location30",
-                      "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:1%40location30"
-                    },
-                    "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:5%40location30",
-                    "tolerance": 1e-7
-                  },
-                  {
-                    "carrier": {
-                      "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:3",
-                      "param_range": [
-                        0.0,
-                        24.0
-                      ]
-                    },
-                    "ends": {
-                      "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:3%40location31",
-                      "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:1%40location31"
-                    },
-                    "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:5%40location31",
-                    "tolerance": 1e-7
-                  },
-                  {
-                    "carrier": {
-                      "curve": "fcstd:model:curve#Pocket:Shape:Pocket.Shape.brp:4",
-                      "param_range": [
-                        0.0,
-                        10.0
-                      ]
-                    },
-                    "ends": {
-                      "end": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:8%40location30",
-                      "start": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:8%40location31"
-                    },
-                    "id": "fcstd:model:edge#Pocket:Shape:Pocket.Shape.brp:9%40location28",
-                    "tolerance": 1e-7
                   }
                 ],
                 "faces": [
@@ -4427,7 +3867,7 @@
                     },
                     "sense": "reversed",
                     "shell": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:23%40location1",
-                    "surface": "fcstd:model:surface#Pocket:Shape:Pocket.Shape.brp:2",
+                    "surface": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:4",
                     "tolerance": 1e-7
                   },
                   {
@@ -4440,7 +3880,7 @@
                     },
                     "sense": "reversed",
                     "shell": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:23%40location1",
-                    "surface": "fcstd:model:surface#Pocket:Shape:Pocket.Shape.brp:3",
+                    "surface": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:2",
                     "tolerance": 1e-7
                   },
                   {
@@ -4453,7 +3893,7 @@
                     },
                     "sense": "reversed",
                     "shell": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:23%40location1",
-                    "surface": "fcstd:model:surface#Pocket:Shape:Pocket.Shape.brp:4",
+                    "surface": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:5",
                     "tolerance": 1e-7
                   },
                   {
@@ -4467,7 +3907,7 @@
                     },
                     "sense": "forward",
                     "shell": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:23%40location1",
-                    "surface": "fcstd:model:surface#Pocket:Shape:Pocket.Shape.brp:4%4076889a8b8100da92",
+                    "surface": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:5%4076889a8b8100da92",
                     "tolerance": 1e-7
                   },
                   {
@@ -4480,7 +3920,7 @@
                     },
                     "sense": "reversed",
                     "shell": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:23%40location1",
-                    "surface": "fcstd:model:surface#Pocket:Shape:Pocket.Shape.brp:6",
+                    "surface": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:3",
                     "tolerance": 1e-7
                   },
                   {
@@ -4519,7 +3959,7 @@
                     },
                     "sense": "reversed",
                     "shell": "fcstd:model:shell#Pad:Shape:Pad.Shape.brp:23%40location1",
-                    "surface": "fcstd:model:surface#Pocket:Shape:Pocket.Shape.brp:1",
+                    "surface": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:1",
                     "tolerance": 1e-7
                   }
                 ],
@@ -4741,58 +4181,6 @@
                 ],
                 "points": [
                   {
-                    "id": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:1%40location30",
-                    "position": {
-                      "x": 0.0,
-                      "y": 0.0,
-                      "z": 10.0
-                    },
-                    "source_object": {
-                      "format": "fcstd",
-                      "instance_path": [],
-                      "object_id": "fcstd:native:object#Pocket"
-                    }
-                  },
-                  {
-                    "id": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:1%40location31",
-                    "position": {
-                      "x": 0.0,
-                      "y": 0.0,
-                      "z": 0.0
-                    },
-                    "source_object": {
-                      "format": "fcstd",
-                      "instance_path": [],
-                      "object_id": "fcstd:native:object#Pocket"
-                    }
-                  },
-                  {
-                    "id": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:13%40location30",
-                    "position": {
-                      "x": 24.0,
-                      "y": 16.0,
-                      "z": 10.0
-                    },
-                    "source_object": {
-                      "format": "fcstd",
-                      "instance_path": [],
-                      "object_id": "fcstd:native:object#Pocket"
-                    }
-                  },
-                  {
-                    "id": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:13%40location31",
-                    "position": {
-                      "x": 24.0,
-                      "y": 16.0,
-                      "z": 0.0
-                    },
-                    "source_object": {
-                      "format": "fcstd",
-                      "instance_path": [],
-                      "object_id": "fcstd:native:object#Pocket"
-                    }
-                  },
-                  {
                     "id": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:22%40location1",
                     "position": {
                       "x": 15.0,
@@ -4817,58 +4205,6 @@
                       "instance_path": [],
                       "object_id": "fcstd:native:object#Pocket"
                     }
-                  },
-                  {
-                    "id": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:3%40location30",
-                    "position": {
-                      "x": 24.0,
-                      "y": 0.0,
-                      "z": 10.0
-                    },
-                    "source_object": {
-                      "format": "fcstd",
-                      "instance_path": [],
-                      "object_id": "fcstd:native:object#Pocket"
-                    }
-                  },
-                  {
-                    "id": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:3%40location31",
-                    "position": {
-                      "x": 24.0,
-                      "y": 0.0,
-                      "z": 0.0
-                    },
-                    "source_object": {
-                      "format": "fcstd",
-                      "instance_path": [],
-                      "object_id": "fcstd:native:object#Pocket"
-                    }
-                  },
-                  {
-                    "id": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:8%40location30",
-                    "position": {
-                      "x": 0.0,
-                      "y": 16.0,
-                      "z": 10.0
-                    },
-                    "source_object": {
-                      "format": "fcstd",
-                      "instance_path": [],
-                      "object_id": "fcstd:native:object#Pocket"
-                    }
-                  },
-                  {
-                    "id": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:8%40location31",
-                    "position": {
-                      "x": 0.0,
-                      "y": 16.0,
-                      "z": 0.0
-                    },
-                    "source_object": {
-                      "format": "fcstd",
-                      "instance_path": [],
-                      "object_id": "fcstd:native:object#Pocket"
-                    }
                   }
                 ],
                 "procedural_curves": [],
@@ -4877,174 +4213,6 @@
                 "shells": [],
                 "subds": [],
                 "surfaces": [
-                  {
-                    "geometry": {
-                      "kind": "solved",
-                      "value": {
-                        "kind": "plane",
-                        "normal": {
-                          "x": 0.0,
-                          "y": 1.0,
-                          "z": 0.0
-                        },
-                        "origin": {
-                          "x": 0.0,
-                          "y": 0.0,
-                          "z": 0.0
-                        },
-                        "u_axis": {
-                          "x": 1.0,
-                          "y": 0.0,
-                          "z": 0.0
-                        }
-                      }
-                    },
-                    "id": "fcstd:model:surface#Pocket:Shape:Pocket.Shape.brp:1",
-                    "source_object": {
-                      "format": "fcstd",
-                      "instance_path": [],
-                      "object_id": "fcstd:native:object#Pocket"
-                    }
-                  },
-                  {
-                    "geometry": {
-                      "kind": "solved",
-                      "value": {
-                        "kind": "plane",
-                        "normal": {
-                          "x": 1.0,
-                          "y": 0.0,
-                          "z": 0.0
-                        },
-                        "origin": {
-                          "x": 0.0,
-                          "y": 16.0,
-                          "z": 0.0
-                        },
-                        "u_axis": {
-                          "x": 0.0,
-                          "y": -1.0,
-                          "z": 0.0
-                        }
-                      }
-                    },
-                    "id": "fcstd:model:surface#Pocket:Shape:Pocket.Shape.brp:2",
-                    "source_object": {
-                      "format": "fcstd",
-                      "instance_path": [],
-                      "object_id": "fcstd:native:object#Pocket"
-                    }
-                  },
-                  {
-                    "geometry": {
-                      "kind": "solved",
-                      "value": {
-                        "kind": "plane",
-                        "normal": {
-                          "x": -1.0,
-                          "y": 0.0,
-                          "z": 0.0
-                        },
-                        "origin": {
-                          "x": 24.0,
-                          "y": 0.0,
-                          "z": 0.0
-                        },
-                        "u_axis": {
-                          "x": 0.0,
-                          "y": 1.0,
-                          "z": 0.0
-                        }
-                      }
-                    },
-                    "id": "fcstd:model:surface#Pocket:Shape:Pocket.Shape.brp:3",
-                    "source_object": {
-                      "format": "fcstd",
-                      "instance_path": [],
-                      "object_id": "fcstd:native:object#Pocket"
-                    }
-                  },
-                  {
-                    "geometry": {
-                      "kind": "solved",
-                      "value": {
-                        "kind": "plane",
-                        "normal": {
-                          "x": 0.0,
-                          "y": 0.0,
-                          "z": 1.0
-                        },
-                        "origin": {
-                          "x": 12.0,
-                          "y": 8.0,
-                          "z": 0.0
-                        },
-                        "u_axis": {
-                          "x": 1.0,
-                          "y": 0.0,
-                          "z": 0.0
-                        }
-                      }
-                    },
-                    "id": "fcstd:model:surface#Pocket:Shape:Pocket.Shape.brp:4",
-                    "source_object": {
-                      "format": "fcstd",
-                      "instance_path": [],
-                      "object_id": "fcstd:native:object#Pocket"
-                    }
-                  },
-                  {
-                    "geometry": {
-                      "kind": "solved",
-                      "value": {
-                        "basis": {
-                          "kind": "plane",
-                          "normal": {
-                            "x": 0.0,
-                            "y": 0.0,
-                            "z": 1.0
-                          },
-                          "origin": {
-                            "x": 12.0,
-                            "y": 8.0,
-                            "z": 0.0
-                          },
-                          "u_axis": {
-                            "x": 1.0,
-                            "y": 0.0,
-                            "z": 0.0
-                          }
-                        },
-                        "kind": "transformed",
-                        "transform": [
-                          [
-                            1.0,
-                            0.0,
-                            0.0,
-                            0.0
-                          ],
-                          [
-                            0.0,
-                            1.0,
-                            0.0,
-                            0.0
-                          ],
-                          [
-                            0.0,
-                            0.0,
-                            1.0,
-                            10.0
-                          ]
-                        ]
-                      }
-                    },
-                    "id": "fcstd:model:surface#Pocket:Shape:Pocket.Shape.brp:4%4076889a8b8100da92",
-                    "source_object": {
-                      "format": "fcstd",
-                      "instance_path": [],
-                      "object_id": "fcstd:native:object#Pocket"
-                    }
-                  },
                   {
                     "geometry": {
                       "kind": "solved",
@@ -5069,35 +4237,6 @@
                       }
                     },
                     "id": "fcstd:model:surface#Pocket:Shape:Pocket.Shape.brp:5",
-                    "source_object": {
-                      "format": "fcstd",
-                      "instance_path": [],
-                      "object_id": "fcstd:native:object#Pocket"
-                    }
-                  },
-                  {
-                    "geometry": {
-                      "kind": "solved",
-                      "value": {
-                        "kind": "plane",
-                        "normal": {
-                          "x": 0.0,
-                          "y": -1.0,
-                          "z": 0.0
-                        },
-                        "origin": {
-                          "x": 24.0,
-                          "y": 16.0,
-                          "z": 0.0
-                        },
-                        "u_axis": {
-                          "x": -1.0,
-                          "y": 0.0,
-                          "z": 0.0
-                        }
-                      }
-                    },
-                    "id": "fcstd:model:surface#Pocket:Shape:Pocket.Shape.brp:6",
                     "source_object": {
                       "format": "fcstd",
                       "instance_path": [],
@@ -5188,26 +4327,6 @@
                 ],
                 "vertices": [
                   {
-                    "id": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:1%40location30",
-                    "point": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:1%40location30",
-                    "tolerance": 1e-7
-                  },
-                  {
-                    "id": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:1%40location31",
-                    "point": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:1%40location31",
-                    "tolerance": 1e-7
-                  },
-                  {
-                    "id": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:13%40location30",
-                    "point": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:13%40location30",
-                    "tolerance": 1e-7
-                  },
-                  {
-                    "id": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:13%40location31",
-                    "point": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:13%40location31",
-                    "tolerance": 1e-7
-                  },
-                  {
                     "id": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:22%40location1",
                     "point": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:22%40location1",
                     "tolerance": 1e-7
@@ -5215,26 +4334,6 @@
                   {
                     "id": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:28%40location25",
                     "point": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:28%40location25",
-                    "tolerance": 1e-7
-                  },
-                  {
-                    "id": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:3%40location30",
-                    "point": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:3%40location30",
-                    "tolerance": 1e-7
-                  },
-                  {
-                    "id": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:3%40location31",
-                    "point": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:3%40location31",
-                    "tolerance": 1e-7
-                  },
-                  {
-                    "id": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:8%40location30",
-                    "point": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:8%40location30",
-                    "tolerance": 1e-7
-                  },
-                  {
-                    "id": "fcstd:model:vertex#Pocket:Shape:Pocket.Shape.brp:8%40location31",
-                    "point": "fcstd:model:point#Pocket:Shape:Pocket.Shape.brp:8%40location31",
                     "tolerance": 1e-7
                   }
                 ]
@@ -5383,190 +4482,6 @@
                 {
                   "kind": "coedge",
                   "value": "fcstd:model:coedge#Pad:Shape:Pad.Shape.brp:7%40location1%3A1%3A4"
-                },
-                {
-                  "kind": "edge",
-                  "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:10%40location12"
-                },
-                {
-                  "kind": "edge",
-                  "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:10%40location14"
-                },
-                {
-                  "kind": "edge",
-                  "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:14%40location1"
-                },
-                {
-                  "kind": "edge",
-                  "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:15%40location12"
-                },
-                {
-                  "kind": "edge",
-                  "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:15%40location14"
-                },
-                {
-                  "kind": "edge",
-                  "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:18%40location12"
-                },
-                {
-                  "kind": "edge",
-                  "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:18%40location14"
-                },
-                {
-                  "kind": "edge",
-                  "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:2%40location1"
-                },
-                {
-                  "kind": "edge",
-                  "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:4%40location1"
-                },
-                {
-                  "kind": "edge",
-                  "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:5%40location12"
-                },
-                {
-                  "kind": "edge",
-                  "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:5%40location14"
-                },
-                {
-                  "kind": "edge",
-                  "value": "fcstd:model:edge#Pad:Shape:Pad.Shape.brp:9%40location1"
-                },
-                {
-                  "kind": "vertex",
-                  "value": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%40location12"
-                },
-                {
-                  "kind": "vertex",
-                  "value": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:1%40location14"
-                },
-                {
-                  "kind": "vertex",
-                  "value": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13%40location12"
-                },
-                {
-                  "kind": "vertex",
-                  "value": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:13%40location14"
-                },
-                {
-                  "kind": "vertex",
-                  "value": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3%40location12"
-                },
-                {
-                  "kind": "vertex",
-                  "value": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:3%40location14"
-                },
-                {
-                  "kind": "vertex",
-                  "value": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8%40location12"
-                },
-                {
-                  "kind": "vertex",
-                  "value": "fcstd:model:vertex#Pad:Shape:Pad.Shape.brp:8%40location14"
-                },
-                {
-                  "kind": "point",
-                  "value": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:1%40location12"
-                },
-                {
-                  "kind": "point",
-                  "value": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:1%40location14"
-                },
-                {
-                  "kind": "point",
-                  "value": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:13%40location12"
-                },
-                {
-                  "kind": "point",
-                  "value": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:13%40location14"
-                },
-                {
-                  "kind": "point",
-                  "value": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:3%40location12"
-                },
-                {
-                  "kind": "point",
-                  "value": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:3%40location14"
-                },
-                {
-                  "kind": "point",
-                  "value": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:8%40location12"
-                },
-                {
-                  "kind": "point",
-                  "value": "fcstd:model:point#Pad:Shape:Pad.Shape.brp:8%40location14"
-                },
-                {
-                  "kind": "surface",
-                  "value": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:1"
-                },
-                {
-                  "kind": "surface",
-                  "value": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:2"
-                },
-                {
-                  "kind": "surface",
-                  "value": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:3"
-                },
-                {
-                  "kind": "surface",
-                  "value": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:4"
-                },
-                {
-                  "kind": "surface",
-                  "value": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:5"
-                },
-                {
-                  "kind": "surface",
-                  "value": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:5%4076889a8b8100da92"
-                },
-                {
-                  "kind": "curve",
-                  "value": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:1"
-                },
-                {
-                  "kind": "curve",
-                  "value": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:2"
-                },
-                {
-                  "kind": "curve",
-                  "value": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:3"
-                },
-                {
-                  "kind": "curve",
-                  "value": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:3%4076889a8b8100da92"
-                },
-                {
-                  "kind": "curve",
-                  "value": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:4"
-                },
-                {
-                  "kind": "curve",
-                  "value": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:5"
-                },
-                {
-                  "kind": "curve",
-                  "value": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:5%4076889a8b8100da92"
-                },
-                {
-                  "kind": "curve",
-                  "value": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:6"
-                },
-                {
-                  "kind": "curve",
-                  "value": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:7"
-                },
-                {
-                  "kind": "curve",
-                  "value": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:7%4076889a8b8100da92"
-                },
-                {
-                  "kind": "curve",
-                  "value": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:8"
-                },
-                {
-                  "kind": "curve",
-                  "value": "fcstd:model:curve#Pad:Shape:Pad.Shape.brp:8%4076889a8b8100da92"
                 }
               ]
             }

@@ -619,6 +619,17 @@ fn arenas(topology: &Topology) -> Result<Vec<(&'static str, Records)>, CodecErro
     Ok(out)
 }
 
+/// The fields of record `value` that matching compares: every field but
+/// `source_object`, which names the object whose stored shape holds the
+/// record (§5.4, Full snapshots).
+fn compared(value: &Value) -> Value {
+    let mut value = value.clone();
+    if let Value::Object(fields) = &mut value {
+        fields.remove("source_object");
+    }
+    value
+}
+
 /// `value` with every string that `map` maps replaced by its image.
 fn mapped(value: &Value, map: &HashMap<String, String>) -> Value {
     match value {
@@ -682,9 +693,9 @@ struct Snapshot {
 /// is `Empty`), with ids minted by the full-snapshot procedure (§5.4): a
 /// body keeps its base body's id by position, and so do the regions of that
 /// body and the shells of those regions; every other record that equals a
-/// base record once the ids it holds are mapped keeps the base record's id
-/// and is shared; every other record is new and keeps the key of the shape
-/// that holds it.
+/// base record but for `source_object` once the ids it holds are mapped
+/// keeps the base record's id and `source_object` and is shared; every other
+/// record is new and keeps the key of the shape that holds it.
 fn snapshot(topology: &Topology, base: Option<&Base>) -> Result<Snapshot, CodecError> {
     let empty = Resolved::default();
     let base = base.map_or(&empty, |base| &base.resolved);
@@ -746,14 +757,17 @@ fn snapshot(topology: &Topology, base: Option<&Base>) -> Result<Snapshot, CodecE
             let mut by_content = HashMap::<String, Vec<&String>>::new();
             for (id, value) in base_records {
                 if !used.contains(id) {
-                    by_content.entry(value.to_string()).or_default().push(id);
+                    by_content
+                        .entry(compared(value).to_string())
+                        .or_default()
+                        .push(id);
                 }
             }
             for (id, value) in rows(arena) {
                 if map.contains_key(id) {
                     continue;
                 }
-                let content = mapped(value, &map).to_string();
+                let content = compared(&mapped(value, &map)).to_string();
                 let Some(old) = by_content.get_mut(&content).and_then(|candidates| {
                     candidates.retain(|candidate| !used.contains(*candidate));
                     candidates.first().copied()
@@ -788,12 +802,12 @@ fn snapshot(topology: &Topology, base: Option<&Base>) -> Result<Snapshot, CodecE
         let mut by_shape = HashMap::<String, Vec<(&str, Vec<String>)>>::new();
         for (id, value) in base_rows(arena).into_iter().flatten() {
             let mut held = Vec::new();
-            let shape = placeheld(value, &HashMap::new(), &open, &mut held).to_string();
+            let shape = placeheld(&compared(value), &HashMap::new(), &open, &mut held).to_string();
             by_shape.entry(shape).or_default().push((id.as_str(), held));
         }
         for (id, value) in rows(arena) {
             let mut held = Vec::new();
-            let shape = placeheld(value, &map, &open, &mut held).to_string();
+            let shape = placeheld(&compared(value), &map, &open, &mut held).to_string();
             if let Some(bases) = by_shape.get(&shape) {
                 candidates.insert(
                     id.as_str(),
@@ -876,7 +890,8 @@ fn snapshot(topology: &Topology, base: Option<&Base>) -> Result<Snapshot, CodecE
     }
 
     // The state: every record under its id in the state; a record equal to
-    // the base's record of that id is shared, every other is in the delta.
+    // the base's record of that id but for `source_object` is shared and
+    // keeps the base's, every other is in the delta.
     let mut resolved = Resolved::default();
     let mut delta = Map::new();
     let mut renamed = Vec::new();
@@ -885,11 +900,13 @@ fn snapshot(topology: &Topology, base: Option<&Base>) -> Result<Snapshot, CodecE
         let mut state = BTreeMap::new();
         for (id, value) in rows(arena) {
             let id_in_state = map.get(id).cloned().unwrap_or_else(|| id.clone());
-            let value = mapped(value, &map);
+            let mut value = mapped(value, &map);
             let shared = base_rows(arena)
                 .and_then(|records| records.get(&id_in_state))
-                .is_some_and(|base_value| base_value == &value);
-            if !shared {
+                .filter(|base_value| compared(base_value) == compared(&value));
+            if let Some(base_value) = shared {
+                value = base_value.clone();
+            } else {
                 let mut record = value.clone();
                 if let Value::Object(fields) = &mut record {
                     fields.insert("id".to_owned(), Value::String(id_in_state.clone()));

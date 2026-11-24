@@ -77,6 +77,40 @@ fn a_state_keeps_its_base_body_by_position_and_shares_equal_records() {
     assert_eq!(removed.as_str(), "fcstd:model:point#Pad:Shape:A.brp:1");
 }
 
+/// A record equal to a base record but for `source_object` is shared and
+/// keeps the base's `source_object` (§5.4, Full snapshots).
+#[test]
+fn a_record_that_differs_only_in_its_source_object_is_shared() {
+    let with_source = |key: &str, object: &str| {
+        let mut topology = state(key, &[("1", 3.0)]);
+        let mut wire = serde_json::to_value(&topology).unwrap();
+        wire["points"][0]["source_object"] = serde_json::json!({
+            "format": "fcstd",
+            "object_id": format!("fcstd:native:object#{object}"),
+            "instance_path": [],
+        });
+        topology = serde_json::from_value(wire).unwrap();
+        topology
+    };
+    let first = snapshot(&with_source("Pad:Shape:A.brp", "Pad"), None).unwrap();
+    let base = Base {
+        reference: StateBase::Empty,
+        resolved: first.resolved,
+    };
+    let second = snapshot(&with_source("Pocket:Shape:B.brp", "Pocket"), Some(&base)).unwrap();
+    assert!(
+        second.records.points.is_empty(),
+        "{:?}",
+        second.records.points
+    );
+    assert!(second.removed.is_empty());
+    let kept = &second.resolved.arenas["points"]["fcstd:model:point#Pad:Shape:A.brp:1"];
+    assert_eq!(
+        kept["source_object"]["object_id"],
+        "fcstd:native:object#Pad"
+    );
+}
+
 #[test]
 fn an_empty_base_shares_nothing() {
     let empty = Base {
