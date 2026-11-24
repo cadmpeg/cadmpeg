@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Base contour flanges (`docs/formats/solidedge.md` §10.5): a
-//! `JMBaseContourFlangeFunction` feature states its open profile and its
-//! inside bend radius. The extent along the profile normal is a native option:
-//! the stored side is not separated from a second slot that holds the same
-//! value.
+//! `JMBaseContourFlangeFunction` feature states its open profile, its inside
+//! bend radius and its extent distance as native options. The extent side is
+//! not separated from a second slot that holds the same value, so no typed
+//! extent is stated.
 //!
 //! A feature whose profile is not a stated sketch stays unresolved and adds
 //! `sheet-metal.contour-flange-unread`. Stored lengths are metres; the design
@@ -11,12 +11,11 @@
 
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
-use cadmpeg_ir::design::ops::sheet_metal::{BendSpec, SheetMetal, SheetMetalKind};
 use cadmpeg_ir::design::options::{NativeOption, NativeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 
-use super::{features_of, millimetres, option_key, positive};
+use super::{features_of, millimetres, option_key};
 use crate::extents::{double_slot, is, measure_slot, profile_of, profile_selection};
 use crate::features::{feature_id, Listed};
 use crate::loss::SolidEdgeLossCode;
@@ -67,24 +66,26 @@ pub(crate) fn project(
                 continue;
             }
         };
-        let radius = match double_slot(cluster, types, &object, end, RADIUS_AFTER_NAME, "radius") {
-            Ok(metres) => {
-                let radius = positive(metres);
-                if radius.is_none() {
-                    unread(
-                        losses,
-                        entry,
-                        &format!("the bend radius {metres} is not positive"),
-                    );
-                }
-                radius
-            }
-            Err(reason) => {
-                unread(losses, entry, &reason);
-                None
-            }
-        };
         let mut native_options = NativeOptions::new();
+        if let Some(key) = option_key("profile") {
+            native_options.insert(key, NativeOption::OrderedSelection(profile));
+        }
+        match double_slot(cluster, types, &object, end, RADIUS_AFTER_NAME, "radius") {
+            Ok(metres) => match millimetres(metres).filter(|_| metres > 0.0) {
+                Some(radius) => {
+                    if let Some(key) = option_key("inside_bend_radius") {
+                        native_options
+                            .insert(key, NativeOption::Length(Dimension::Literal(radius)));
+                    }
+                }
+                None => unread(
+                    losses,
+                    entry,
+                    &format!("the bend radius {metres} is not positive"),
+                ),
+            },
+            Err(reason) => unread(losses, entry, &reason),
+        }
         match double_slot(cluster, types, &object, end, KIND_AFTER_NAME, "extent kind") {
             Ok(kind) if is(kind, KIND_FINITE) => {
                 match measure_slot(cluster, types, &object, end, WIDTH_AFTER_NAME, "extent")
@@ -111,34 +112,19 @@ pub(crate) fn project(
         }
         losses.push(
             SolidEdgeLossCode::SheetMetalContourFlangeUnread.note(format!(
-                "the contour flange of feature object {entry:#x} states its extent natively; its \
-             direction, thickness side, reliefs and width are not stated"
+                "the contour flange of feature object {entry:#x} states its profile, bend radius \
+                 and extent distance natively; its extent side, thickness side, reliefs and \
+                 width are not stated"
             )),
         );
-        let operation = FeatureOperation::SheetMetal(Box::new(SheetMetal {
-            kind: SheetMetalKind::ContourFlange {
-                profile,
-                edges: None,
-                width: None,
-                extent: None,
-                thickness: None,
-                bend: BendSpec {
-                    radius,
-                    radius_side: None,
-                    relief: None,
-                },
-                vertex_bends: Vec::new(),
-                rule: ir
-                    .design
-                    .sheet_metal_rules
-                    .first()
-                    .map(|rule| rule.id.clone()),
-            },
-            native_options,
-            source_settings: NativeOptions::new(),
-        }));
         if let Some(feature) = ir.design.features.iter_mut().find(|f| f.id == id) {
-            feature.definition.operation = operation;
+            if let Some(kind) = option_key(FUNCTION) {
+                feature.definition.operation = FeatureOperation::Native {
+                    kind,
+                    native_options,
+                    source_settings: NativeOptions::new(),
+                };
+            }
         }
     }
 }
