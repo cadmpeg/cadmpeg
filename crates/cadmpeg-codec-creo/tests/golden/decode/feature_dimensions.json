@@ -300,189 +300,13 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "native",
-              "value": {
-                "kind": "CurveFromEquation",
-                "parameters": {
-                  "assignment_count": "1",
-                  "entity_id": "7"
-                }
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "creo:depdb:curve_expression_feature#7-269",
-          "name": "Curve Equation 7",
-          "native_ref": "creo:depdb:curve_expression#active-7-269",
-          "ordinal": 2,
-          "outputs": [],
-          "source_content": [
-            {
-              "kind": "parameter",
-              "value": "creo:depdb:curve_expression_parameter#7-269-0"
-            }
-          ],
-          "source_properties": {},
-          "source_tag": "crv_fr_eqn",
-          "source_text": "result=d42+1[deg]",
-          "suppressed": false
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "extrude",
-              "value": {
-                "direction": {
-                  "kind": "profile_normal"
-                },
-                "extent": {
-                  "kind": "one_sided",
-                  "side": {
-                    "termination": {
-                      "kind": "unresolved"
-                    }
-                  }
-                },
-                "op": "unresolved",
-                "profile": {
-                  "kind": "planar",
-                  "value": {
-                    "kind": "native",
-                    "value": "creo:featdefs:sketch#917"
-                  }
-                },
-                "start": {
-                  "kind": "profile_plane"
-                }
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "creo:model:feature#40",
-          "name": "Extrude id 40",
-          "native_ref": "creo:featdefs:feature_definition#917",
-          "ordinal": 1,
-          "outputs": [],
-          "source_content": [],
-          "source_properties": {
-            "native_parameter.dimension_count": "2",
-            "native_parameter.sketch_segment_count": "0"
-          },
-          "suppressed": false
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "sketch",
-              "value": {
-                "sketch": {
-                  "kind": "planar",
-                  "sketch": "creo:model:sketch#917"
-                }
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "creo:model:sketch_feature#917",
-          "native_ref": "creo:featdefs:sketch#917",
-          "ordinal": 0,
-          "outputs": [],
-          "source_content": [
-            {
-              "kind": "parameter",
-              "value": "creo:featdefs:parameter#917:42:1"
-            },
-            {
-              "kind": "parameter",
-              "value": "creo:featdefs:parameter#917:42:2"
-            }
-          ],
-          "source_properties": {},
-          "source_tag": "section",
-          "suppressed": false
-        }
-      ],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [
-        {
-          "dependencies": [],
-          "expression": "d42+1[deg]",
-          "id": "creo:depdb:curve_expression_parameter#7-269-0",
-          "name": "result",
-          "native_ref": "creo:depdb:curve_expression#active-7-269",
-          "ordinal": 0,
-          "owner": "creo:depdb:curve_expression_feature#7-269",
-          "properties": {
-            "activation": "active",
-            "external_dependencies": "d42",
-            "source_assignment_ordinal": "0"
-          },
-          "value": {
-            "kind": "angle",
-            "value": 1.0174532925199433
-          }
-        },
-        {
-          "dependencies": [],
-          "expression": "1",
-          "id": "creo:featdefs:parameter#917:42:1",
-          "name": "d917_42_1",
-          "native_ref": "creo:featdefs:sketch#917",
-          "ordinal": 0,
-          "owner": "creo:model:sketch_feature#917",
-          "properties": {
-            "auxiliary_value": "0",
-            "definition_id": "917",
-            "dimension_type": "10",
-            "direction_byte": "1",
-            "external_id": "42",
-            "source_ordinal": "0"
-          },
-          "value": {
-            "kind": "angle",
-            "value": 1.0
-          }
-        },
-        {
-          "dependencies": [],
-          "expression": "1",
-          "id": "creo:featdefs:parameter#917:42:2",
-          "name": "d917_42_2",
-          "native_ref": "creo:featdefs:sketch#917",
-          "ordinal": 1,
-          "owner": "creo:model:sketch_feature#917",
-          "properties": {
-            "auxiliary_value": "0",
-            "definition_id": "917",
-            "dimension_type": "10",
-            "direction_byte": "1",
-            "external_id": "42",
-            "source_ordinal": "1"
-          },
-          "value": {
-            "kind": "angle",
-            "value": 1.0
-          }
-        }
-      ],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -498,7 +322,6 @@
           "kind": "part",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
@@ -507,23 +330,7 @@
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [
-        {
-          "id": "creo:model:sketch#917",
-          "native_ref": "creo:featdefs:sketch#917",
-          "placement": {
-            "kind": "unresolved"
-          },
-          "profiles": []
-        }
-      ],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },

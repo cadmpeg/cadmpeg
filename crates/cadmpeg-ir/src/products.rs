@@ -117,7 +117,9 @@ pub struct ProductDefinition {
     /// Named contents an occurrence can show in place of the full content.
     pub representations: Vec<Representation>,
     /// The sketches of the model's sketch arena that the definition owns.
-    /// The list names records of that arena and goes with it.
+    /// The list names records of that arena and, like it, stays out of the
+    /// CADIR wire.
+    #[serde(skip)]
     pub sketches: Vec<SketchId>,
     /// The unit system the definition's source document is authored and
     /// displayed in.

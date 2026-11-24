@@ -45,9 +45,9 @@ pub(crate) fn diff(stated: &CadIr, written: &CadIr) -> Vec<Entry> {
             renames.insert(id.to_owned(), format!("{id}:written"));
         }
     }
-    let mut value = serde_json::to_value(written).expect("the written document serializes");
-    rename(&mut value, &renames);
-    let renamed: CadIr = serde_json::from_value(value).expect("the renamed document reads");
+    let renamed = edited_json(written, &mut |value| rename(value, &renames), &|id| {
+        renames.get(id).cloned().unwrap_or_else(|| id.to_owned())
+    });
     let renamed_records = Document::of(&renamed).expect("the renamed document serializes");
     let diff = cadmpeg_ir::diff::diff(stated, &renamed);
     let mut entries = Vec::new();
@@ -307,7 +307,55 @@ pub(crate) fn renamed(ir: &CadIr, renames: &[(String, String, String)]) -> CadIr
             _ => {}
         }
     }
+    edited_json(ir, &mut |value| walk(value, renames), &str::to_owned)
+}
+
+/// `ir` with `edit` applied to its JSON form and to the JSON form of each
+/// arena the CADIR wire omits, which a document read from JSON does not hold.
+/// `id` maps a feature id as `edit` changes it, so each feature-parent
+/// relation is kept.
+pub(crate) fn edited_json(
+    ir: &CadIr,
+    edit: &mut dyn FnMut(&mut Value),
+    id: &dyn Fn(&str) -> String,
+) -> CadIr {
     let mut value = serde_json::to_value(ir).expect("the document serializes");
-    walk(&mut value, renames);
-    serde_json::from_value(value).expect("the renamed document reads")
+    edit(&mut value);
+    let mut edited: CadIr = serde_json::from_value(value).expect("the edited document reads");
+    macro_rules! arenas {
+        ($($arena:ident),*) => {$(
+            let mut value = serde_json::to_value(&ir.model.$arena).expect("the arena serializes");
+            edit(&mut value);
+            edited.model.$arena = serde_json::from_value(value).expect("the edited arena reads");
+        )*};
+    }
+    arenas!(
+        features,
+        feature_input_topologies,
+        feature_result_topologies,
+        configurations,
+        parameters,
+        sketches,
+        sketch_entities,
+        sketch_constraints,
+        spatial_sketches,
+        spatial_sketch_entities,
+        spatial_sketch_constraints,
+        spreadsheets,
+        assembly_joints,
+        history_bodies
+    );
+    for feature in &ir.model.features {
+        if let Some(parent) = ir.model.feature_regeneration_parent(&feature.id) {
+            let child = cadmpeg_ir::features::FeatureId::mint(id(feature.id.as_str()))
+                .expect("an edited feature id");
+            let parent = cadmpeg_ir::features::FeatureId::mint(id(parent.as_str()))
+                .expect("an edited feature id");
+            edited
+                .model
+                .set_feature_regeneration_parent(&child, &parent)
+                .expect("the feature-parent relation is kept");
+        }
+    }
+    edited
 }
