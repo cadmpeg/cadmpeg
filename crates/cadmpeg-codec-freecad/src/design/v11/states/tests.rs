@@ -163,3 +163,32 @@ fn every_stored_body_state_but_the_tip_is_an_evaluation_on_its_nearest_earlier_s
         }
     }
 }
+
+#[test]
+fn the_appearance_of_a_shape_outside_the_current_geometry_is_a_loss() {
+    let bytes = std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../corpus/freecad_fcstd/fixtures/named_constraint_0.21.2_P12a.FCStd"),
+    )
+    .unwrap();
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let code = crate::loss::FreecadLossCode::AppearanceStateNotTransferred
+        .note("")
+        .code;
+    assert!(decoded.report().losses.iter().any(|loss| loss.code == code));
+    // No binding the decode keeps names a record outside the geometry.
+    let ir = decoded.ir();
+    let records = super::record_ids(&ir.geometry)
+        .into_iter()
+        .collect::<std::collections::HashSet<_>>();
+    for binding in &ir.model.appearance_bindings {
+        let value = serde_json::to_value(&binding.target.entity).unwrap();
+        if let Some(id) = value["value"].as_str() {
+            if id.starts_with("fcstd:model:") && !id.contains(":product_definition#") {
+                assert!(records.contains(id), "{id}");
+            }
+        }
+    }
+}
