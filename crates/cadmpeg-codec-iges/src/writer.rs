@@ -12,7 +12,8 @@ use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    ArenaCoverage, ArenaDisposition, ArenaDispositions, ExportBody, WritePath,
+    native_records_omitted, ArenaCoverage, ArenaDisposition, ArenaDispositions, ExportBody,
+    WritePath,
 };
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::eval::model_surface_point;
@@ -5029,25 +5030,26 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
             )));
         }
     }
-    if let Some((arena, _)) = namespace.arenas().iter().find(|(arena, records)| {
-        if records.is_empty()
-            || ALLOWED_NATIVE_ARENAS.contains(&arena.as_str())
+    // W1: a native record the semantic writer does not encode is dropped and
+    // named, never refused for.
+    for (arena, records) in namespace.arenas() {
+        if ALLOWED_NATIVE_ARENAS.contains(&arena.as_str())
             || matches!(arena.as_str(), "product_properties" | "properties")
         {
-            return false;
+            continue;
         }
-        true
-    }) {
-        return Err(CodecError::NotImplemented(format!(
-            "IGES semantic writer cannot preserve native arena {arena}"
-        )));
+        losses.extend(native_records_omitted(
+            "IGES",
+            &format!("of native arena `{arena}`, which the semantic writer does not encode"),
+            records.iter().map(|record| record.id().to_owned()),
+        ));
     }
-    if let Some(record) = namespace
+    let unencoded_entities = namespace
         .arenas()
         .get("entities")
         .into_iter()
         .flatten()
-        .find(|record| {
+        .filter(|record| {
             let entity_type = record.field("entity_type").and_then(|value| value.as_i64());
             let name_property_represented = represented_name_properties
                 .as_ref()
@@ -5094,15 +5096,12 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
                     )
                 )
         })
-    {
-        let entity_type = record
-            .field("entity_type")
-            .and_then(|value| value.as_i64())
-            .unwrap_or_default();
-        return Err(CodecError::NotImplemented(format!(
-            "IGES semantic writer does not encode native entity type {entity_type}"
-        )));
-    }
+        .map(|record| record.id().to_owned());
+    losses.extend(native_records_omitted(
+        "IGES",
+        "whose entity the semantic writer does not encode",
+        unencoded_entities,
+    ));
     let mut native_entities = namespace.arenas().get("entities").into_iter().flatten();
     for record in native_entities.clone().filter(|record| {
         let entity_type = record.field("entity_type").and_then(|value| value.as_i64());
