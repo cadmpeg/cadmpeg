@@ -57,13 +57,23 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     let brep = decode_kernel_stream(ctx, bytes, &kernel)?;
     losses.extend(container.undecoded_streams_loss());
     let step = container.stream(ctx, STEP_STREAM)?;
-    let history = crate::history::read(&crate::part21::parse(ctx, step.window())?)?;
-    if history.is_none() {
-        losses.push(
-            AlibreLossCode::HistoryStreamUnread
-                .note("the STEP_DATA stream names another schema or holds no part state context"),
-        );
-    }
+    let history =
+        match read_history(ctx, step.window()) {
+            Ok(Some(history)) => Some(history),
+            Ok(None) => {
+                losses.push(AlibreLossCode::HistoryStreamUnread.note(
+                    "the STEP_DATA stream names another schema or holds no part state context",
+                ));
+                None
+            }
+            Err(CodecError::Malformed(reason)) => {
+                losses.push(AlibreLossCode::HistoryStreamUnread.note(format!(
+                    "the STEP_DATA stream is not read as a feature history: {reason}"
+                )));
+                None
+            }
+            Err(error) => return Err(error),
+        };
     from_kernel(
         ctx,
         classification,
@@ -73,6 +83,10 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
         digest,
         history.as_ref(),
     )
+}
+
+fn read_history(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Option<History>, CodecError> {
+    crate::history::read(&crate::part21::parse(ctx, bytes)?)
 }
 
 fn decode_kernel_stream(
@@ -276,7 +290,16 @@ fn from_kernel(
         cadmpeg_ir::products::ExternalDocument::default(),
     )?;
     if let Some(history) = history {
-        crate::design::project(ctx, &mut ir, history, &root, &mut body.losses)?;
+        match crate::design::project(ctx, &mut ir, history, &root, &mut body.losses) {
+            Ok(()) => {}
+            Err(CodecError::Malformed(reason)) => {
+                let message =
+                    format!("the feature history is not projected into the design layer: {reason}");
+                body.losses
+                    .push(AlibreLossCode::HistoryStreamUnread.note(message));
+            }
+            Err(error) => return Err(error),
+        }
     }
     Ok(Decoded {
         ir,
