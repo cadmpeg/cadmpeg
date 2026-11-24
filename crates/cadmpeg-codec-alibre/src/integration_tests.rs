@@ -35,18 +35,12 @@ const CONE_HEIGHT: f64 = 10.0;
 const LOFT_HALF_WIDTH: f64 = 10.0;
 const LOFT_HEIGHT: f64 = 20.0;
 
-macro_rules! specimen {
-    ($name:literal) => {
-        include_bytes!(concat!("../../../corpus/alibre/", $name, ".AD_PRT")).as_slice()
-    };
-}
-
-const BOX: &[u8] = specimen!("box");
-const BOX_HOLE: &[u8] = specimen!("box_hole");
-const CONE: &[u8] = specimen!("cone");
-const CYLINDER: &[u8] = specimen!("cylinder");
-const CYLINDER_FILLET: &[u8] = specimen!("cylinder_fillet");
-const LOFT: &[u8] = specimen!("loft");
+const BOX: &[u8] = include_bytes!("../../../corpus/alibre/box.AD_PRT");
+const BOX_HOLE: &[u8] = include_bytes!("../../../corpus/alibre/box_hole.AD_PRT");
+const CONE: &[u8] = include_bytes!("../../../corpus/alibre/cone.AD_PRT");
+const CYLINDER: &[u8] = include_bytes!("../../../corpus/alibre/cylinder.AD_PRT");
+const CYLINDER_FILLET: &[u8] = include_bytes!("../../../corpus/alibre/cylinder_fillet.AD_PRT");
+const LOFT: &[u8] = include_bytes!("../../../corpus/alibre/loft.AD_PRT");
 const LOFT_TWIN: &[u8] = include_bytes!("../../../corpus/alibre/loft.stp");
 
 pub(crate) fn specimens() -> [(&'static str, &'static [u8]); 6] {
