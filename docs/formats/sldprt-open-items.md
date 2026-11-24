@@ -1418,7 +1418,7 @@ The other axis-parallel support frames include the frames of those families whos
 
 **Need.** A part with a boss extrusion and a boss revolution that overlaps it, saved once with the revolution's merge-result option set and once with it clear, and the bytes of the two `moRevolution_c` objects compared.
 
-### DI-93. Operands and measured direction of a point-point distance relation
+### DI-95. Operands and measured direction of a point-point distance relation
 
 **Question.** Which marker roster do the two operand addresses of an `sgPntPntDist` relation index when their tag is a lane-local class token, and which field states whether the dimension measures the Euclidean, the horizontal, or the vertical separation of its two points?
 
