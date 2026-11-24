@@ -1114,16 +1114,19 @@ impl Native {
     }
 
     /// States one record of each id in each sorted namespace arena whose
-    /// copies hold one value and none of an id whose copies differ,
-    /// returning each such id.
-    pub(crate) fn drop_repeated_ids(&mut self) -> Vec<crate::document::RepeatedId> {
+    /// copies hold one value, and returns each id whose copies differ, all of
+    /// whose copies it keeps.
+    pub(crate) fn repeated_ids(&mut self) -> Vec<crate::document::RepeatedId> {
         let mut repeated = Vec::new();
         for (format, namespace) in &mut self.0 {
             for (arena, records) in &mut namespace.arenas {
                 crate::document::drop_repeated_copies(
                     records,
                     NativeRecord::id,
-                    &format!("native.{format}.{arena}"),
+                    &crate::give_up::Arena::Native {
+                        codec: format.as_str().to_owned(),
+                        arena: arena.as_str().to_owned(),
+                    },
                     &mut repeated,
                 );
             }
@@ -1131,16 +1134,38 @@ impl Native {
         repeated
     }
 
-    /// Removes the record at `index` of `codec`'s arena `arena`, returning
-    /// its id.
-    pub(crate) fn remove_record(
+    /// The id of the record at `index` of `codec`'s arena `arena`.
+    pub(crate) fn id_at(&self, codec: &str, arena: &str, index: usize) -> Option<String> {
+        let records = self.0.get(codec)?.arenas.get(arena)?;
+        records.get(index).map(|record| record.id().to_owned())
+    }
+
+    /// Removes every record of `id` from `codec`'s arena `arena`, returning
+    /// the number of copies and their canonical JSON text, or `None` where
+    /// the arena holds none.
+    pub(crate) fn take_records(
         &mut self,
         codec: &str,
         arena: &str,
-        index: usize,
-    ) -> Option<String> {
+        id: &str,
+    ) -> Option<(usize, String)> {
         let records = self.0.get_mut(codec)?.arenas.get_mut(arena)?;
-        (index < records.len()).then(|| records.remove(index).id().to_owned())
+        let (taken, kept): (Vec<NativeRecord>, Vec<NativeRecord>) = std::mem::take(records)
+            .into_iter()
+            .partition(|record| record.id() == id);
+        *records = kept;
+        (!taken.is_empty()).then(|| (taken.len(), crate::give_up::record_text(&taken)))
+    }
+
+    /// Whether a record of any namespace arena has the id `id`.
+    pub(crate) fn holds_id(&self, id: &str) -> bool {
+        self.0.values().any(|namespace| {
+            namespace
+                .arenas
+                .values()
+                .flatten()
+                .any(|record| record.id() == id)
+        })
     }
 
     /// Sort every arena into canonical identity order.

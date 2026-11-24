@@ -682,27 +682,27 @@ macro_rules! declare_home_arenas {
             }
 
             /// States one record of each id in each sorted arena whose copies
-            /// hold one value and none of an id whose copies differ,
-            /// returning each such id.
-            pub(crate) fn drop_repeated_ids(&mut self, home: &str) -> Vec<RepeatedId> {
+            /// hold one value, and returns each id whose copies differ, all of
+            /// whose copies it keeps.
+            pub(crate) fn repeated_ids(&mut self, home: &'static str) -> Vec<RepeatedId> {
                 let mut repeated = Vec::new();
                 $(drop_repeated_copies(
                     &mut self.$field,
                     crate::schema::ArenaRecord::record_identity,
-                    &format!("{home}.{}", stringify!($field)),
+                    &crate::give_up::Arena::Home { home, field: stringify!($field) },
                     &mut repeated,
                 );)*
                 repeated
             }
 
-            /// Removes the record at `index` of the arena whose wire key is
-            /// `arena`, returning its id.
-            pub(crate) fn remove_record(&mut self, arena: &str, index: usize) -> Option<String> {
+            /// The id of the record at `index` of the arena whose wire key is
+            /// `arena`.
+            pub(crate) fn id_at(&self, arena: &str, index: usize) -> Option<String> {
                 $(if arena == stringify!($field) {
-                    return (index < self.$field.len()).then(|| {
-                        crate::schema::ArenaRecord::record_identity(&self.$field.remove(index))
-                            .to_owned()
-                    });
+                    return self
+                        .$field
+                        .get(index)
+                        .map(|record| crate::schema::ArenaRecord::record_identity(record).to_owned());
                 })*
                 None
             }
@@ -1121,6 +1121,17 @@ macro_rules! declare_document_arenas {
                     + self.process.entity_count()
             }
 
+            /// Each record that names an id of `gone` other than by its own
+            /// id, with the paths at which it names one (§3.3).
+            pub(crate) fn holders(self, gone: &std::collections::BTreeSet<String>) -> Vec<crate::give_up::Holder> {
+                use crate::schema::ArenaRecord;
+                let mut found = Vec::new();
+                $(found.extend(self.$home.$field.iter().filter_map(|entity| {
+                    crate::give_up::Holder::of(stringify!($home), stringify!($field), entity.record_identity(), entity, gone)
+                }));)*
+                found
+            }
+
             pub(crate) fn repro_graph(self, finding: &crate::report::check::Finding) -> Result<crate::repro::selection::Graph<'a>, CodecError> {
                 use crate::schema::ArenaRecord;
                 let roots: std::collections::BTreeSet<&str> = finding.entity.iter().chain(&finding.related).map(String::as_str).collect();
@@ -1142,6 +1153,32 @@ macro_rules! declare_document_arenas {
                     graph.child(face.shell.as_str(), face.id.as_str());
                 }
                 Ok(graph)
+            }
+        }
+
+        impl CadIr {
+            /// Removes every record of `id` from the arena `field` of `home`,
+            /// returning the number of copies and their canonical JSON text,
+            /// or `None` where the arena holds none.
+            pub(crate) fn take_records(&mut self, home: &str, field: &str, id: &str) -> Option<(usize, String)> {
+                use crate::schema::ArenaRecord;
+                $(if home == stringify!($home) && field == stringify!($field) {
+                    let (taken, kept): (Vec<$ty>, Vec<$ty>) = std::mem::take(&mut self.$home.$field)
+                        .into_iter()
+                        .partition(|entity| entity.record_identity() == id);
+                    self.$home.$field = kept;
+                    return (!taken.is_empty())
+                        .then(|| (taken.len(), crate::give_up::record_text(&taken)));
+                })*
+                None
+            }
+
+            /// Whether a record of any arena, neutral or native, has the id
+            /// `id`.
+            pub(crate) fn holds_id(&self, id: &str) -> bool {
+                use crate::schema::ArenaRecord;
+                $(self.$home.$field.iter().any(|entity| entity.record_identity() == id) ||)*
+                    self.native.holds_id(id)
             }
         }
     };
@@ -1208,24 +1245,23 @@ fn arena_is_ordered<T: crate::schema::ArenaRecord>(values: &[T]) -> bool {
 /// An id a sorted arena held more than once, in copies that differ.
 #[derive(Debug)]
 pub(crate) struct RepeatedId {
-    /// The arena, as `<home>.<field>` or `native.<codec>.<arena>`.
-    pub(crate) arena: String,
+    /// The arena.
+    pub(crate) arena: crate::give_up::Arena,
     /// The repeated id.
     pub(crate) id: String,
-    /// The number of copies, all of them dropped.
+    /// The number of copies the decoder emitted.
     pub(crate) copies: usize,
 }
 
 /// States one record for each id of a sorted arena whose copies hold one
-/// value, and none for an id whose copies differ, which it records in
-/// `repeated` (§2.8).
+/// value, and records in `repeated` each id whose copies differ, keeping
+/// every copy of it for the give-up (§2.8).
 pub(crate) fn drop_repeated_copies<T: PartialEq>(
     records: &mut Vec<T>,
     id: impl Fn(&T) -> &str,
-    arena: &str,
+    arena: &crate::give_up::Arena,
     repeated: &mut Vec<RepeatedId>,
 ) {
-    let first_new = repeated.len();
     let mut run: Option<(RepeatedId, bool)> = None;
     records.dedup_by(|later, earlier| {
         if id(later) != id(earlier) {
@@ -1244,7 +1280,7 @@ pub(crate) fn drop_repeated_copies<T: PartialEq>(
                 );
                 run = Some((
                     RepeatedId {
-                        arena: arena.to_owned(),
+                        arena: arena.clone(),
                         id: id(later).to_owned(),
                         copies: 2,
                     },
@@ -1252,19 +1288,12 @@ pub(crate) fn drop_repeated_copies<T: PartialEq>(
                 ));
             }
         }
-        true
+        later == earlier
     });
     repeated.extend(
         run.filter(|(_, differs)| *differs)
             .map(|(repeated_id, _)| repeated_id),
     );
-    if repeated.len() > first_new {
-        let differing: std::collections::HashSet<&str> = repeated[first_new..]
-            .iter()
-            .map(|repeated| repeated.id.as_str())
-            .collect();
-        records.retain(|record| !differing.contains(id(record)));
-    }
 }
 
 fn sorted_rows<'a, T: crate::schema::ArenaRecord, U>(
@@ -2843,36 +2872,78 @@ impl CadIr {
     }
 
     /// Sorts every arena of the document's homes and native namespaces by
-    /// id, then states one record of each id whose copies hold one value and
-    /// none of an id whose copies differ. Returns each id whose copies
-    /// differ. The arenas of a state's delta are left as they are.
-    pub(crate) fn drop_repeated_ids(&mut self) -> Vec<RepeatedId> {
+    /// id, then states one record of each id whose copies hold one value.
+    /// Returns each id whose copies differ, all of whose copies stay for the
+    /// give-up (§2.8). The arenas of a state's delta are left as they are.
+    pub(crate) fn repeated_ids(&mut self) -> Vec<RepeatedId> {
         self.finalize();
-        let mut repeated = self.geometry.drop_repeated_ids("topology");
-        repeated.extend(self.model.drop_repeated_ids("model"));
-        repeated.extend(self.design.drop_repeated_ids("design"));
-        repeated.extend(self.process.drop_repeated_ids("process"));
-        repeated.extend(self.native.drop_repeated_ids());
+        let mut repeated = self.geometry.repeated_ids("geometry");
+        repeated.extend(self.model.repeated_ids("model"));
+        repeated.extend(self.design.repeated_ids("design"));
+        repeated.extend(self.process.repeated_ids("process"));
+        repeated.extend(self.native.repeated_ids());
         repeated
     }
 
-    /// Removes the record at `place`, returning its id.
-    pub(crate) fn remove_record(&mut self, place: &crate::bounds::Place) -> Option<String> {
+    /// The record at `place`, as the give-up names it.
+    pub(crate) fn record_at(&self, place: &crate::bounds::Place) -> Option<crate::give_up::Seed> {
         use crate::bounds::Place;
+        use crate::give_up::{Arena, Seed};
         match place {
-            Place::Home { home, arena, index } => match home.as_str() {
-                "geometry" => self.geometry.remove_record(arena, *index),
-                "model" => self.model.remove_record(arena, *index),
-                "design" => self.design.remove_record(arena, *index),
-                "process" => self.process.remove_record(arena, *index),
-                _ => None,
-            },
+            Place::Home { home, arena, index } => {
+                let id = match home.as_str() {
+                    "geometry" => self.geometry.id_at(arena, *index),
+                    "model" => self.model.id_at(arena, *index),
+                    "design" => self.design.id_at(arena, *index),
+                    "process" => self.process.id_at(arena, *index),
+                    _ => None,
+                }?;
+                Some(Seed {
+                    arena: Arena::home(home, arena)?,
+                    id,
+                })
+            }
             Place::Native {
                 codec,
                 arena,
                 index,
-            } => self.native.remove_record(codec, arena, *index),
+            } => Some(Seed {
+                id: self.native.id_at(codec, arena, *index)?,
+                arena: Arena::Native {
+                    codec: codec.clone(),
+                    arena: arena.clone(),
+                },
+            }),
         }
+    }
+
+    /// Removes each id of `gone`, which no record of the document holds, from
+    /// the collections keyed by their members' own ids: the current name
+    /// table and the regeneration parents of features (§3.3).
+    pub(crate) fn release_keyed(&mut self, gone: &std::collections::BTreeSet<String>) {
+        if self
+            .design
+            .names
+            .entries()
+            .keys()
+            .any(|entity| gone.contains(entity.id()))
+        {
+            self.design.names = self
+                .design
+                .names
+                .entries()
+                .iter()
+                .filter(|(entity, _)| !gone.contains(entity.id()))
+                .map(|(entity, entry)| (entity.clone(), entry.clone()))
+                .collect::<BTreeMap<_, _>>()
+                .into();
+        }
+        self.model
+            .feature_regeneration_parents
+            .0
+            .retain(|child, parent| {
+                !gone.contains(child.as_str()) && !gone.contains(parent.as_str())
+            });
     }
 
     /// Sort geometry, model, design, process, native, and unknown-record

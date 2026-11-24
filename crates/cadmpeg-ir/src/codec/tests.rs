@@ -772,6 +772,30 @@ fn the_sealed_wrapper_states_no_copy_of_a_repeated_id_whose_copies_differ_and_ch
         "{}",
         loss.message
     );
+    let [stub]: [_; 1] = result
+        .ir()
+        .native_unknowns("test")
+        .expect("the test stubs")
+        .try_into()
+        .expect("one stub for the one repeated id");
+    assert!(stub.links.is_empty());
+    assert!(
+        loss.message
+            .contains(&format!("record={}", stub.id.as_str()))
+            && loss.message.contains(cube.geometry.vertices[0].id.as_str()),
+        "{}",
+        loss.message
+    );
+    assert!(result
+        .source_fidelity()
+        .retained_record(stub.id.as_str())
+        .is_some());
+    assert!(!result
+        .ir()
+        .geometry
+        .vertices
+        .iter()
+        .any(|vertex| vertex.point == cube.geometry.points[0].id));
 }
 
 #[test]
@@ -995,6 +1019,26 @@ fn the_sealed_wrapper_gives_up_a_record_past_the_document_bound() {
                 && loss.message.contains("native.test.deep"),
             "{}",
             loss.message
+        );
+        let [stub]: [_; 1] = result
+            .ir()
+            .native_unknowns("test")
+            .expect("the test stubs")
+            .try_into()
+            .expect("one stub for the one record");
+        assert!(
+            loss.message
+                .contains(&format!("record={}", stub.id.as_str())),
+            "{}",
+            loss.message
+        );
+        let retained = result
+            .source_fidelity()
+            .retained_record(stub.id.as_str())
+            .expect("the record's retained text");
+        assert_eq!(
+            retained.stream(),
+            format!("native.test.deep/{}", PastTheBoundCodec::PAST)
         );
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) =
