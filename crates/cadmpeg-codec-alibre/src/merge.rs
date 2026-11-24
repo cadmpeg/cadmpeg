@@ -27,6 +27,13 @@ fn rescope(text: &str, scope: &str) -> Option<String> {
         .map(|rest| format!("{FORMAT}:xref/{scope}/{rest}"))
 }
 
+/// A stream name without its codec prefix.
+fn unprefixed(name: &str) -> &str {
+    name.strip_prefix(FORMAT)
+        .and_then(|rest| rest.strip_prefix(':'))
+        .unwrap_or(name)
+}
+
 /// Moves every Alibre identity of an entity into one scope.
 struct Scope<'r, 'a> {
     ctx: &'r DecodeContext<'a>,
@@ -81,13 +88,15 @@ fn rescope_fidelity(
     annotations
         .map_ids(|id| Ok(rescope(id, scope).unwrap_or_else(|| id.to_owned())))?
         .map_err(CodecError::from)?;
-    // The scope is one stream component, so a stream name keeps the file it
-    // belongs to.
-    let owner = format!("{FORMAT}:xref/{scope}/");
+    // A stream name keeps the file it belongs to: the scope goes in after the
+    // codec prefix, once for each level, so `alibre:SAB_DATA` of a component
+    // reads `alibre:xref/m0/SAB_DATA`, and one level further in
+    // `alibre:xref/m1/xref/m0/SAB_DATA`.
+    let scoped_stream = |name: &str| format!("{FORMAT}:xref/{scope}/{}", unprefixed(name));
     let provenance = std::mem::take(&mut annotations.provenance);
     let mut builder = AnnotationBuilder::resume(annotations);
     for (id, provenance) in provenance {
-        let stream = cadmpeg_ir::StreamName::try_from(format!("{owner}{}", provenance.stream()))
+        let stream = cadmpeg_ir::StreamName::try_from(scoped_stream(provenance.stream()))
             .map_err(CodecError::malformed)?;
         builder.note(
             &id,
@@ -102,7 +111,7 @@ fn rescope_fidelity(
         let id = UnknownId::mint(scoped).map_err(|error| {
             CodecError::malformed(format_args!("Alibre retained record {id}: {error}"))
         })?;
-        let stream = cadmpeg_ir::StreamName::try_from(format!("{owner}{}", record.stream()))
+        let stream = cadmpeg_ir::StreamName::try_from(scoped_stream(record.stream()))
             .map_err(CodecError::malformed)?;
         rescoped.insert_retained_record(id, record.with_owner(stream))?;
     }
@@ -188,7 +197,14 @@ pub(crate) fn merge_component(
 
 #[cfg(test)]
 mod tests {
-    use super::rescope;
+    use super::{rescope, unprefixed};
+
+    #[test]
+    fn a_stream_name_takes_each_scope_after_the_codec_prefix_once() {
+        assert_eq!(unprefixed("alibre:SAB_DATA"), "SAB_DATA");
+        assert_eq!(unprefixed("alibre:xref/m0/SAB_DATA"), "xref/m0/SAB_DATA");
+        assert_eq!(unprefixed("SAB_DATA"), "SAB_DATA");
+    }
 
     #[test]
     fn only_alibre_identities_move_into_a_scope() {
