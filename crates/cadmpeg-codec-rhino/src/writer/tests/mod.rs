@@ -18,6 +18,7 @@ mod encoding;
 mod free_geometry;
 mod model;
 mod nurbs;
+mod partial;
 mod planar;
 mod targets;
 
