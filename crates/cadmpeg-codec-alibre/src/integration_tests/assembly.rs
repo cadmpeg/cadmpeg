@@ -29,16 +29,20 @@ pub(crate) const ASM_CYLINDER: &[u8] =
 pub(crate) const ASM_TWO: &[u8] = include_bytes!("../../../../corpus/alibre/asm_two.AD_ASM");
 pub(crate) const ASM_REPEAT: &[u8] = include_bytes!("../../../../corpus/alibre/asm_repeat.AD_ASM");
 pub(crate) const ASM_NESTED: &[u8] = include_bytes!("../../../../corpus/alibre/asm_nested.AD_ASM");
+pub(crate) const ASM_ROTATED: &[u8] =
+    include_bytes!("../../../../corpus/alibre/asm_rotated.AD_ASM");
 const TWO_TWIN: &[u8] = include_bytes!("../../../../corpus/alibre/asm_two.stp");
 const REPEAT_TWIN: &[u8] = include_bytes!("../../../../corpus/alibre/asm_repeat.stp");
 const NESTED_TWIN: &[u8] = include_bytes!("../../../../corpus/alibre/asm_nested.stp");
+const ROTATED_TWIN: &[u8] = include_bytes!("../../../../corpus/alibre/asm_rotated.stp");
 
 /// The assemblies, by name.
-pub(crate) fn assembly_specimens() -> [(&'static str, &'static [u8]); 3] {
+pub(crate) fn assembly_specimens() -> [(&'static str, &'static [u8]); 4] {
     [
         ("asm_two", ASM_TWO),
         ("asm_repeat", ASM_REPEAT),
         ("asm_nested", ASM_NESTED),
+        ("asm_rotated", ASM_ROTATED),
     ]
 }
 
@@ -647,5 +651,89 @@ fn a_loss_of_a_subassembly_names_its_path_once() {
             .iter()
             .any(|message| message.contains("component asm_two: component ")),
         "{messages:#?}"
+    );
+}
+
+/// `WorldTransform.Array()` of each occurrence of `asm_rotated`, from the
+/// Alibre API: row-major 4 x 4 with the translation in the last row, so row
+/// `i` is the image of local axis `i` and `point' = point * M`, in mm.
+const ROTATED_BOX_1: [[f64; 4]; 4] = [
+    [0.0, 1.0, 0.0, 0.0],
+    [-1.0, 0.0, 0.0, 0.0],
+    [0.0, 0.0, 1.0, 0.0],
+    [40.0, 0.0, 0.0, 1.0],
+];
+const ROTATED_CYLINDER_1: [[f64; 4]; 4] = [
+    [0.0, 0.0, -1.0, 0.0],
+    [0.0, 1.0, 0.0, 0.0],
+    [1.0, 0.0, 0.0, 0.0],
+    [0.0, 40.0, 0.0, 1.0],
+];
+const ROTATED_BOX_2: [[f64; 4]; 4] = [
+    [1.0, 0.0, 0.0, 0.0],
+    [0.0, 0.866_025, 0.5, 0.0],
+    [0.0, -0.5, 0.866_025, 0.0],
+    [0.0, 0.0, 40.0, 1.0],
+];
+
+/// Asserts the rotation to 1e-6 and the translation to 1e-6 mm. The IR
+/// transform maps a column vector, so its column `c` is the image of local
+/// axis `c`, which is row `c` of the API array.
+fn assert_world(ir: &CadIr, name: &str, array: [[f64; 4]; 4]) {
+    let rows = named(ir, name).transform.unwrap().affine_rows();
+    for (r, row) in rows.iter().enumerate() {
+        for c in 0..3 {
+            assert!(
+                (row[c] - array[c][r]).abs() < 1e-6,
+                "{name}: rotation [{r}][{c}] is {}, the API states {}",
+                row[c],
+                array[c][r]
+            );
+        }
+        assert!(
+            (row[3] - array[3][r]).abs() < 1e-6,
+            "{name}: translation {r} is {}, the API states {}",
+            row[3],
+            array[3][r]
+        );
+    }
+}
+
+#[test]
+fn rotated_occurrences_carry_the_world_transform_of_the_api() {
+    let result = decode_assembly(ASM_ROTATED);
+    assert_valid(&result, "asm_rotated");
+    let ir = result.ir();
+    assert_eq!(ir.model.occurrences.len(), 3);
+    assert_world(ir, "asm_box<1>", ROTATED_BOX_1);
+    assert_world(ir, "asm_cylinder<1>", ROTATED_CYLINDER_1);
+    assert_world(ir, "asm_box<2>", ROTATED_BOX_2);
+    // The anchored box carries its rotated frame on its grounded joint.
+    let [joint] = ir.model.assembly_joints.as_slice() else {
+        panic!("one grounded joint, found {:?}", ir.model.assembly_joints);
+    };
+    let JointOperands::Grounded { connector, .. } = joint.operands() else {
+        panic!("a grounded joint");
+    };
+    assert_eq!(Some(connector.frame), named(ir, "asm_box<1>").transform);
+    assert_eq!(
+        count_loss(&result, AlibreLossCode::AssemblyPlacementUnreadable),
+        0
+    );
+}
+
+#[test]
+fn the_rotated_assembly_matches_the_step_export() {
+    let result = decode_assembly(ASM_ROTATED);
+    let actual = assembled_extent(result.ir(), |_| true);
+    let twin = twin_extent(ROTATED_TWIN, |_| true);
+    assert_extent(actual, twin, "asm_rotated against its twin");
+    // The first box alone: x 25..55, y -10..10, z 0..10.
+    let first = named(result.ir(), "asm_box<1>").id.clone();
+    let alone = occurrence_extent(result.ir(), &first).expect("the box has geometry");
+    assert_extent(
+        alone,
+        ([25.0, -10.0, 0.0], [55.0, 10.0, 10.0]),
+        "asm_box<1>",
     );
 }
