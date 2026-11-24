@@ -73,6 +73,6 @@ fn a_composite_scale_stage_divides_the_instances_before_it() {
             PatternLayout::Composite(vec![linear_stage(4), scale(1)]),
             Vec::new(),
         )),
-        "a Scale layout's literal count is below 2",
+        "a Scale layout's count is below 2",
     );
 }

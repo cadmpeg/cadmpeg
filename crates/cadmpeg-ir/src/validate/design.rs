@@ -50,7 +50,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use crate::design::feature::Feature;
-use crate::document::{CadIr, Topology};
+use crate::document::CadIr;
 use crate::ids::ProductDefinitionId;
 use crate::index::ModelIndex;
 use crate::report::{
@@ -62,29 +62,6 @@ use super::record_finding;
 use index::DesignIndex;
 use records::MemberKey;
 use walk::{BoundDimension, Collect, ConstructionView, SelectionView, Walk};
-
-/// Checks that a `Topology` is closed over its own references: every
-/// reference of its records names a record of it.
-fn check_closed_topology(
-    ctx: &DecodeContext<'_>,
-    topology: &Topology,
-    at: &str,
-    what: &str,
-    findings: &mut Vec<Finding>,
-) -> Result<(), CodecError> {
-    let mut alone = CadIr::empty();
-    alone.geometry = topology.clone();
-    let index = crate::index::ModelIndex::build(&alone);
-    let mut nested = Vec::new();
-    super::topology::check_references(ctx, &alone, &index, &mut nested)?;
-    for mut finding in nested {
-        finding.check = Check::Design;
-        finding.message = format!("{what}: {}", finding.message);
-        finding.related.insert(0, at.to_owned());
-        findings.push(finding);
-    }
-    Ok(())
-}
 
 /// The record that holds a walked selection or construction.
 #[derive(Debug, Clone, Copy)]
@@ -172,7 +149,7 @@ pub(super) fn check_design(
     let states = states::States::new(ir);
     let matchers = matching::Matchers::new(&states);
     names::check(ctx, &index, &states, &held, findings)?;
-    selections::check(ctx, &index, &matchers, &held, findings)?;
+    selections::check(ctx, &index, &matchers, &held, ids.native_view(), findings)?;
     constructions::check(&index, &held, findings);
     folds::check(&index, &matchers, &held, findings);
     materials::check(&index, &matchers, findings);

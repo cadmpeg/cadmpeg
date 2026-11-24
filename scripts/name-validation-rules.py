@@ -401,7 +401,7 @@ def scan_source(path: str, src: str) -> FileScan:
             name = string_value(toks[i + 3].text)
             template, check = "", None
             if t.text == "rule" and i + 5 < len(toks) and toks[i + 5].kind == "str":
-                template = format_template(toks, i + 2)
+                template = format_template(toks, i + 2, skip=1)
                 check = enclosing_check(path, src, toks, stack, i)
             elif t.text == "rule_name":
                 if not finding_rule_position(toks, i):
@@ -616,13 +616,13 @@ def resolve_helper(path: str, src: str, toks: list[Tok], i: int) -> tuple[int, s
     return helpers_of(target).get(name) if target else None
 
 
-def format_template(toks: list[Tok], open_index: int) -> str:
-    """The template of the format call whose `(` is at `open_index`; where it
-    has no words of its own (`"{}"`), the first string literal argument that
-    has."""
+def format_template(toks: list[Tok], open_index: int, skip: int = 0) -> str:
+    """The template of the format call whose `(` is at `open_index`, after
+    `skip` leading literals (a rule name); where it has no words of its own
+    (`"{}"`), the first string literal argument that has."""
     close = matching(toks, open_index)
     literals = [string_value(toks[k].text) for k in range(open_index + 1, close)
-                if toks[k].kind == "str"]
+                if toks[k].kind == "str"][skip:]
     for literal in literals:
         if slug_words(literal):
             return literal

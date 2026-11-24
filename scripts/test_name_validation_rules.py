@@ -65,6 +65,24 @@ class NamerTests(unittest.TestCase):
         )
         self.assertEqual(rewrite(VALIDATOR_FILE, src), src)
 
+    def test_a_named_site_is_known_by_its_template(self) -> None:
+        src = (
+            "fn f(findings: &mut Vec<Finding>) {\n"
+            '    record_finding(findings, Check::WireTopology, Severity::Error, None,\n'
+            '        crate::rule!("topology.kept", "free vertex {id} in shells", id));\n'
+            "}\n"
+        )
+        [site] = namer.scan_source(VALIDATOR_FILE, src).sites
+        self.assertEqual(site.template, "free vertex {id} in shells")
+        names = namer.Names()
+        names.remember(site.area, site.template, site.name, site.function)
+        self.assertEqual(
+            names.name("topology", "free vertex {id} in shells", "g"), "topology.kept"
+        )
+        self.assertEqual(
+            names.name("topology", "kept vertex", "g"), "topology.kept-vertex"
+        )
+
     def test_a_message_parameter_takes_ruled(self) -> None:
         src = "fn error(findings: &mut Vec<Finding>, message: std::fmt::Arguments<'_>) {}\n"
         self.assertIn("message: Ruled<'_>", rewrite(VALIDATOR_FILE, src))

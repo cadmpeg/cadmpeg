@@ -22,6 +22,7 @@ use crate::design::selection::{
 };
 use crate::document::CadIr;
 use crate::ids::ProductDefinitionId;
+use crate::native::view::NativeView;
 use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 
@@ -66,6 +67,7 @@ pub(super) fn check<'a>(
     index: &DesignIndex<'a>,
     matchers: &Matchers<'a>,
     held: &'a [Held<'a>],
+    document: NativeView<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let moved = moved_occurrences(index.records.ir);
@@ -75,7 +77,8 @@ pub(super) fn check<'a>(
             check_anchor(index, site, selection, findings);
             check_rules(selection, site, findings);
             for pick in selection.picks() {
-                check_pick(ctx, index, matchers, site, pick, &moved, findings)?;
+                check_pick(index, matchers, site, pick, &moved, findings);
+                check_witness_body(ctx, document, site.holder.record(), pick, findings)?;
             }
         }
     }
@@ -88,13 +91,12 @@ pub(super) fn check<'a>(
             anchor: &Anchor::Current,
             owner: Some(&publication.scope),
         };
-        check_pick(
+        check_pick(index, matchers, site, &publication.target, &moved, findings);
+        check_witness_body(
             ctx,
-            index,
-            matchers,
-            site,
+            document,
+            publication.id.as_str(),
             &publication.target,
-            &moved,
             findings,
         )?;
     }
@@ -329,16 +331,44 @@ fn picks_curve(pick: &Picked) -> bool {
     }
 }
 
+/// A pick's witness body is closed over its own references, and the rules of
+/// one topology hold on it (part 10, Coincidence).
+fn check_witness_body(
+    ctx: &DecodeContext<'_>,
+    document: NativeView<'_>,
+    at: &str,
+    pick: &Picked,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
+    let Some(body) = pick
+        .witness
+        .as_ref()
+        .and_then(|witness| witness.body.as_deref())
+    else {
+        return Ok(());
+    };
+    let nested =
+        crate::validate::nested_topology_findings(ctx, document, body.clone(), true, true)?;
+    for finding in nested {
+        findings.push(crate::validate::nested_finding(
+            finding,
+            Check::Design,
+            at,
+            "witness body",
+        ));
+    }
+    Ok(())
+}
+
 /// The rules on one pick: its target, its context, and its caches.
 fn check_pick<'a>(
-    ctx: &DecodeContext<'_>,
     index: &DesignIndex<'a>,
     matchers: &Matchers<'a>,
     site: Site<'a>,
     pick: &'a Picked,
     moved: &BTreeSet<&str>,
     findings: &mut Vec<Finding>,
-) -> Result<(), CodecError> {
+) {
     let states = matchers.states();
     let at = site.holder.record();
     if !target_exists(index, &pick.target) {
@@ -418,19 +448,11 @@ fn check_pick<'a>(
             );
         }
     }
-    if let Some(body) = pick
-        .witness
-        .as_ref()
-        .and_then(|witness| witness.body.as_deref())
-    {
-        super::check_closed_topology(ctx, body, at, "witness body", findings)?;
-    }
     if pick.context.is_none() {
         for state in anchored_states(index, states, site) {
             check_in_state(states, matchers, &state, pick, at, findings);
         }
     }
-    Ok(())
 }
 
 /// A stored state a pick resolves in.

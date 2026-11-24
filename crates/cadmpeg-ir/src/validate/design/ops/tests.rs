@@ -392,7 +392,7 @@ fn primitives_have_their_own_placement_and_admitted_literals() {
         height: Dimension::Literal(positive(1.0)),
     };
     assert_no_design_finding(&with(primitive(prism(3))));
-    assert_finding(&with(primitive(prism(2))), "a literal count is at least 3");
+    assert_finding(&with(primitive(prism(2))), "a count is at least 3");
     let mut placed = with(primitive(prism(4)));
     placed.design.features[0].placement = Some(Box::new(empty_construction()));
     assert_finding(&placed, "states a Feature.placement");
@@ -1629,6 +1629,8 @@ fn an_index_has_the_followed_and_composite_coordinates() {
 }
 
 mod assembly_rules;
+mod bounds;
+mod forms;
 mod pattern_coordinates;
 
 #[test]

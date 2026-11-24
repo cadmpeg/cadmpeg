@@ -53,6 +53,13 @@ pub(super) fn check<'a>(index: &DesignIndex<'a>, held: &[Held<'a>], findings: &m
         };
         for &construction in &record.constructions {
             check_construction(index, construction, scope, geometry, at, findings);
+            super::caches::constructions::check_construction(
+                &index.records,
+                construction,
+                scope,
+                at,
+                findings,
+            );
         }
     }
     for feature in &index.records.ir.design.features {
