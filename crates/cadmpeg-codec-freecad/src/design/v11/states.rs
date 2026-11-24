@@ -519,6 +519,24 @@ const CARRIERS: [&str; 9] = [
 ];
 /// The arenas whose records refer to one another and match together.
 const COUPLED: [&str; 3] = ["loops", "coedges", "faces"];
+/// The carrier arenas whose records name one another: a procedural carrier
+/// its construction, and a construction the carriers it is built from.
+const CARRIER_LINKS: [&str; 4] = [
+    "surfaces",
+    "curves",
+    "procedural_surfaces",
+    "procedural_curves",
+];
+
+/// Every string `value` holds.
+fn strings(value: &Value, out: &mut Vec<String>) {
+    match value {
+        Value::String(text) => out.push(text.clone()),
+        Value::Array(items) => items.iter().for_each(|item| strings(item, out)),
+        Value::Object(fields) => fields.values().for_each(|field| strings(field, out)),
+        _ => {}
+    }
+}
 
 /// A state's records by arena and id, each without its `id` field, and the
 /// order of its bodies.
@@ -893,10 +911,10 @@ fn snapshot(topology: &Topology, base: Option<&Base>) -> Result<Snapshot, CodecE
     // the base's record of that id but for `source_object` is shared and
     // keeps the base's, every other is in the delta.
     let mut resolved = Resolved::default();
-    let mut delta = Map::new();
+    let mut stated = BTreeMap::<&'static str, BTreeMap<String, Value>>::new();
     let mut renamed = Vec::new();
     for (arena, _) in ARENAS {
-        let mut stated = Vec::new();
+        let stated = stated.entry(arena).or_default();
         let mut state = BTreeMap::new();
         for (id, value) in rows(arena) {
             let id_in_state = map.get(id).cloned().unwrap_or_else(|| id.clone());
@@ -907,11 +925,7 @@ fn snapshot(topology: &Topology, base: Option<&Base>) -> Result<Snapshot, CodecE
             if let Some(base_value) = shared {
                 value = base_value.clone();
             } else {
-                let mut record = value.clone();
-                if let Value::Object(fields) = &mut record {
-                    fields.insert("id".to_owned(), Value::String(id_in_state.clone()));
-                }
-                stated.push((id_in_state.clone(), record));
+                stated.insert(id_in_state.clone(), value.clone());
             }
             renamed.push((id.clone(), id_in_state.clone()));
             state.insert(id_in_state, value);
@@ -922,12 +936,48 @@ fn snapshot(topology: &Topology, base: Option<&Base>) -> Result<Snapshot, CodecE
                 .map(|(id, _)| map.get(id).cloned().unwrap_or_else(|| id.clone()))
                 .collect();
         }
-        stated.sort_by(|a, b| a.0.cmp(&b.0));
-        delta.insert(
-            arena.to_owned(),
-            Value::Array(stated.into_iter().map(|(_, record)| record).collect()),
-        );
         resolved.arenas.insert(arena, state);
+    }
+    // A topology holds every carrier a carrier of it names: a procedural
+    // construction's basis and a procedural carrier's construction. A
+    // shared carrier that a stated one names is restated as the base
+    // holds it.
+    let mut pending = CARRIER_LINKS
+        .iter()
+        .flat_map(|arena| stated[arena].keys().map(move |id| (*arena, id.clone())))
+        .collect::<Vec<_>>();
+    while let Some((arena, id)) = pending.pop() {
+        let mut named = Vec::new();
+        strings(&stated[arena][&id], &mut named);
+        for target in named {
+            for linked in CARRIER_LINKS {
+                if stated[linked].contains_key(&target) {
+                    continue;
+                }
+                if let Some(value) = resolved.arenas[linked].get(&target) {
+                    stated
+                        .entry(linked)
+                        .or_default()
+                        .insert(target.clone(), value.clone());
+                    pending.push((linked, target.clone()));
+                }
+            }
+        }
+    }
+    let mut delta = Map::new();
+    for (arena, _) in ARENAS {
+        let records = stated
+            .remove(arena)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(id, mut record)| {
+                if let Value::Object(fields) = &mut record {
+                    fields.insert("id".to_owned(), Value::String(id));
+                }
+                record
+            })
+            .collect();
+        delta.insert(arena.to_owned(), Value::Array(records));
     }
     let mut removed = Vec::new();
     for (arena, kind) in ARENAS {
