@@ -5,6 +5,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     carried_source_losses, target::ResolvedWrite, EncodeInput, ExportBody, WritePath,
 };
+use cadmpeg_ir::source_fidelity::CodecDigests;
 use cadmpeg_ir::Annotations;
 
 use crate::loss::SldprtLossCode;
@@ -67,15 +68,16 @@ fn write(
             let records = source_records(input.ir, value)?;
             SldprtCodec::write_preserved_with_annotations(
                 input.ir,
-                &value.annotations,
+                value,
                 &records,
                 resolved.target_id(),
                 &mut bytes,
             )?
         }
-        Some(_) => SldprtCodec::write_semantic(
+        Some(value) => SldprtCodec::write_semantic(
             input.ir,
             &Annotations::default(),
+            &value.codec_digests,
             &[],
             SemanticFidelity::NotConsumed,
             &mut bytes,
@@ -83,6 +85,7 @@ fn write(
         None => SldprtCodec::write_semantic(
             input.ir,
             &Annotations::default(),
+            &CodecDigests::new(),
             &[],
             if replay_eligible {
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing)
@@ -149,7 +152,15 @@ fn finish(
         let regenerated_brep = coverage.pcurves
             != cadmpeg_ir::codec::write::ArenaDisposition::Written
             && !super::requires_native_partition(input.ir);
-        losses.extend(super::accounting::losses(input.ir, regenerated_brep));
+        let none = CodecDigests::new();
+        let digests = input
+            .fidelity
+            .map_or(&none, |fidelity| &fidelity.codec_digests);
+        losses.extend(super::accounting::losses(
+            input.ir,
+            digests,
+            regenerated_brep,
+        ));
         losses.extend(unwritten.notes());
     }
     if let Written::StoredCompoundFile { loss } = written {

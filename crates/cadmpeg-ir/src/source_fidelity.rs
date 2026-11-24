@@ -16,6 +16,7 @@ use crate::provenance::SourceOwner;
 use crate::report::decode::DecodeReport;
 use crate::unknown::UnknownRecord;
 use cadmpeg_core::decode::{u64_from_index, ArenaClass, DecodeContext, View};
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 
 /// Retained-byte operation for one appended native unknown record.
@@ -354,6 +355,10 @@ impl RetainedSourceRecord {
     }
 }
 
+/// The narrower digests a codec's patch path compares to find what changed,
+/// under the keys its format specification lists (§3.1, Rule B).
+pub type CodecDigests = BTreeMap<NonBlankString, Sha256Digest>;
+
 /// Decode-time source digests, annotations, and retained native records.
 ///
 /// Retained identities are admitted only through checked insertion.
@@ -374,6 +379,12 @@ pub struct SourceFidelity {
     /// product definition. The root definition, whose file `decode_digest`
     /// covers, has no entry.
     pub file_digests: BTreeMap<ProductDefinitionId, Sha256Digest>,
+    /// SHA-256 of the canonical JSON of the document the decode returned,
+    /// which the decode wrapper takes after it sets `scope` and normalizes.
+    pub content_digest: Sha256Digest,
+    /// The digests by which the decoding codec's patch path finds what
+    /// changed; only that codec reads them.
+    pub codec_digests: CodecDigests,
     /// Sparse source locations and conversion exactness.
     pub annotations: Annotations,
     /// Native records retained for recovery or replay, keyed by record id.
@@ -389,6 +400,12 @@ struct SourceFidelityWire {
     /// SHA-256 of each component file, keyed by its `File` definition.
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     file_digests: BTreeMap<ProductDefinitionId, Sha256Digest>,
+    /// SHA-256 of the canonical JSON of the document the decode returned.
+    content_digest: Sha256Digest,
+    /// The decoding codec's narrower digests, keyed as its format
+    /// specification lists.
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    codec_digests: CodecDigests,
     /// Union of the retained records' untyped classes.
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::set::deserialize")]
     #[cfg_attr(feature = "schema", schemars(with = "Vec<String>"))]
@@ -407,6 +424,8 @@ impl TryFrom<SourceFidelityWire> for SourceFidelity {
         let fidelity = Self {
             decode_digest: wire.decode_digest,
             file_digests: wire.file_digests,
+            content_digest: wire.content_digest,
+            codec_digests: wire.codec_digests,
             annotations: wire.annotations,
             retained_records: wire.retained_records,
         };
@@ -447,6 +466,8 @@ pub(crate) fn class_list(classes: &BTreeSet<ArenaClass>) -> String {
 struct SourceFidelityWriteWire<'a> {
     decode_digest: &'a Sha256Digest,
     file_digests: &'a BTreeMap<ProductDefinitionId, Sha256Digest>,
+    content_digest: &'a Sha256Digest,
+    codec_digests: &'a CodecDigests,
     #[serde(serialize_with = "cadmpeg_core::distinct_keys::set::serialize")]
     unrepresented: BTreeSet<ArenaClass>,
     annotations: &'a Annotations,
@@ -458,6 +479,8 @@ impl Serialize for SourceFidelity {
         SourceFidelityWriteWire {
             decode_digest: &self.decode_digest,
             file_digests: &self.file_digests,
+            content_digest: &self.content_digest,
+            codec_digests: &self.codec_digests,
             unrepresented: self.unrepresented(),
             annotations: &self.annotations,
             retained_records: &self.retained_records,
@@ -483,11 +506,17 @@ impl SourceFidelity {
 
     /// Fidelity carrying the given annotations, for a decode whose root file
     /// has the given digest.
+    ///
+    /// The decode wrapper sets `content_digest`; until then it holds the
+    /// SHA-256 of no bytes, which no canonical JSON of a document has, so a
+    /// document compared with it reads as edited.
     #[must_use]
     pub fn with_annotations(annotations: Annotations, decode_digest: Sha256Digest) -> Self {
         Self {
             decode_digest,
             file_digests: BTreeMap::new(),
+            content_digest: Sha256Digest::digest(&[]),
+            codec_digests: CodecDigests::new(),
             annotations,
             retained_records: BTreeMap::new(),
         }
@@ -522,10 +551,28 @@ impl SourceFidelity {
         Ok(())
     }
 
+    /// Whether `ir` is edited: whether the SHA-256 of its canonical JSON
+    /// differs from `content_digest` (§3.1, Rule B). A document that has no
+    /// canonical JSON, because it holds a non-finite number or nests past the
+    /// depth a default session admits, is edited.
+    ///
+    /// # Errors
+    ///
+    /// The digest's session could not be opened or closed.
+    pub fn edited(&self, ir: &CadIr) -> Result<bool, CodecError> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+        let edited = !crate::hash::content_digest(&ctx, ir)
+            .is_ok_and(|digest| digest == self.content_digest);
+        ctx.finish_session()?;
+        Ok(edited)
+    }
+
     /// Append source metadata after checking every table for collisions.
     /// Both sides must describe the same root file, and a component file
-    /// stated on both sides must have one digest. Failure leaves this source
-    /// metadata unchanged.
+    /// stated on both sides, or a codec digest stated on both sides, must
+    /// have one digest. Failure leaves this source metadata unchanged.
     pub fn append(&mut self, mut other: Self) -> Result<(), cadmpeg_core::CodecError> {
         if self.decode_digest != other.decode_digest {
             return Err(cadmpeg_core::CodecError::malformed(format_args!(
@@ -544,6 +591,17 @@ impl SourceFidelity {
                 )));
             }
         }
+        for (key, digest) in &other.codec_digests {
+            if self
+                .codec_digests
+                .get(key)
+                .is_some_and(|existing| existing != digest)
+            {
+                return Err(cadmpeg_core::CodecError::malformed(format_args!(
+                    "codec digest {key} has two values"
+                )));
+            }
+        }
         for id in other.retained_records.keys() {
             if self.retained_records.contains_key(id) {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
@@ -553,6 +611,7 @@ impl SourceFidelity {
         }
         self.annotations.append(other.annotations)?;
         self.file_digests.append(&mut other.file_digests);
+        self.codec_digests.append(&mut other.codec_digests);
         self.retained_records.append(&mut other.retained_records);
         Ok(())
     }
@@ -752,7 +811,8 @@ mod tests {
     /// its `retained_records` object, none of them untyped.
     fn fidelity_text(records: &str) -> String {
         format!(
-            r#"{{"decode_digest":"{}","file_digests":{{}},"unrepresented":[],
+            r#"{{"decode_digest":"{}","file_digests":{{}},
+                "content_digest":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","codec_digests":{{}},"unrepresented":[],
                 "annotations":{{"provenance":{{}},"exactness":{{}}}},"retained_records":{records}}}"#,
             root_digest()
         )

@@ -4330,17 +4330,6 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 |ir, losses| crate::design_v11::project(ctx, ir, depth, losses),
             )?;
             decoded.ir.finalize();
-            let hash = cadmpeg_ir::hash::document_local_sha256(
-                ctx,
-                &decoded.ir,
-                Some(&decoded.source),
-                "f3d",
-                crate::ids::FILE_SOURCE_IMAGE_ID,
-            )?;
-            decoded.source.attributes.insert(
-                cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-                hash,
-            );
             Ok(decoded.into_decoded())
         }
     }
@@ -5586,30 +5575,13 @@ fn decode_result(
             .losses
             .extend(crate::tree::state_root_definition(ctx, &mut ir)?);
     }
-    let mut source = crate::report::classify_document(
+    let source = crate::report::classify_document(
         scan,
         report_scope,
         retained.source_attributes,
         &mut report,
     )?;
-    // Stamped on the finalized, classified document, so the write path
-    // compares against the exact document the sealed wrapper returns.
-    // Standalone decodes apply post-passes and stamp `document_local_sha256`
-    // in `decode`, so skip the discarded intermediate digest here.
     ir.finalize();
-    if archive_member {
-        let hash = cadmpeg_ir::hash::document_local_sha256(
-            ctx,
-            &ir,
-            Some(&source),
-            "f3d",
-            crate::ids::FILE_SOURCE_IMAGE_ID,
-        )?;
-        source.attributes.insert(
-            cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-            hash,
-        );
-    }
     Ok(AuthoredDecoded {
         scene_sources: crate::scene::Sources::new(),
         operation_poses: std::collections::BTreeMap::new(),
@@ -5712,9 +5684,8 @@ pub(crate) fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {
     )
 }
 
-/// Machine-local `document_local_sha256` for the F3D write-path edit oracle.
-///
-/// See [`cadmpeg_ir::hash::document_local_sha256`].
+/// The machine-local digest by which the F3D patch path compares two documents
+/// it holds; see [`cadmpeg_ir::hash::document_local_sha256`].
 pub(crate) fn document_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();

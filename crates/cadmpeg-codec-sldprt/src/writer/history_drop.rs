@@ -12,6 +12,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{parameters::ParameterValue, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::source_fidelity::CodecDigests;
 use serde::Serialize;
 use serde_json::Value;
 
@@ -20,9 +21,10 @@ use crate::history::parameters::equivalent_parameter_values;
 use crate::loss::SldprtLossCode;
 use crate::native::SldprtNative;
 
-/// Source attributes that state a `SolidWorks` feature-history baseline. A
-/// document with either is a `SolidWorks` source, whose history edits take the
-/// patch path; only a document with neither is reduced here.
+/// Codec digests that state a `SolidWorks` feature-history baseline. A
+/// document whose sidecar records either is a `SolidWorks` source, whose
+/// history edits take the patch path; only a document with neither is reduced
+/// here.
 const HISTORY_BASELINES: [&str; 2] = [
     "sldprt_neutral_feature_local_sha256",
     "sldprt_native_history_sha256",
@@ -57,13 +59,12 @@ struct Removed {
 }
 
 impl HistoryDrop {
-    /// Whether `ir` is a document whose history this pass may reduce.
-    pub(super) fn applies(ir: &CadIr) -> bool {
-        ir.source.as_ref().is_none_or(|source| {
-            HISTORY_BASELINES
-                .iter()
-                .all(|name| !source.attributes.contains_key(*name))
-        })
+    /// Whether a document whose sidecar records `digests` is one whose history
+    /// this pass may reduce.
+    pub(super) fn applies(digests: &CodecDigests) -> bool {
+        HISTORY_BASELINES
+            .iter()
+            .all(|name| !digests.contains_key(*name))
     }
 
     /// Remove the records `error` names and those that need them from `ir`,

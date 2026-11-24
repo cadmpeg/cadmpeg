@@ -212,6 +212,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         }
     }
     stamp_local_digests(ctx, &mut decoded.ir)?;
+    crate::codec_digests::move_to_sidecar(&mut decoded)?;
     Ok(decoded)
 }
 
@@ -6483,11 +6484,8 @@ fn stamp_sketch_baseline(
     Ok(())
 }
 
-/// Record the document and B-rep partition baselines the write path compares
-/// against.
-///
-/// Both are machine-local content digests and carry the `_local_sha256` suffix
-/// that says so; see [`document_local_sha256`] and [`brep_local_sha256`].
+/// Record the B-rep partition, metadata object and PMI baselines the write
+/// path compares against; see [`brep_local_sha256`].
 fn stamp_local_digests(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
     ir.finalize();
     let brep_hash = brep_local_sha256_in_place(ctx, ir)?;
@@ -6549,31 +6547,18 @@ fn stamp_local_digests(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Co
             }
         }
     }
-    let hash = cadmpeg_ir::hash::document_local_sha256(
-        ctx,
-        ir,
-        ir.source.as_ref(),
-        "sldprt",
-        "sldprt:file:source-image#0",
-    )?;
-    if let Some(source) = &mut ir.source {
-        source.attributes.insert(
-            cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-            hash,
-        );
-    }
     Ok(())
 }
 
 /// The machine-local content digest recorded as the SLDPRT `brep_local_sha256`
-/// attribute.
+/// codec digest.
 ///
 /// A bitwise digest over the decoded B-rep alone: geometry, topology, and face
 /// appearances, with names, colors, tessellations, history, and every native
 /// record excluded. [`crate::writer::retained_partition`] compares it to decide
 /// whether the retained Parasolid partition may be replayed verbatim while the
 /// rest of the document is written. It carries every limitation
-/// [`document_local_sha256`] states, and the `_local_sha256` suffix says so.
+/// [`cadmpeg_ir::hash::document_local_sha256`] states.
 pub(crate) fn brep_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
     // Admit only B-rep arenas so a new design, presentation, or product arena
     // cannot silently change retained-partition eligibility.
@@ -6852,24 +6837,6 @@ fn brep_partition_sha256(
         normalized.geometry,
         normalized.model,
     )
-}
-
-/// Machine-local `document_local_sha256` for the SLDPRT write-path edit oracle.
-///
-/// See [`cadmpeg_ir::hash::document_local_sha256`].
-pub(crate) fn document_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    let digest = cadmpeg_ir::hash::document_local_sha256(
-        &ctx,
-        ir,
-        ir.source.as_ref(),
-        "sldprt",
-        "sldprt:file:source-image#0",
-    )?;
-    ctx.finish_session()?;
-    Ok(digest)
 }
 
 fn preserve_source_image(

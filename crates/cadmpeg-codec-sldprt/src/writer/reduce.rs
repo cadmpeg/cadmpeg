@@ -21,6 +21,7 @@ use cadmpeg_ir::report::check::ValidationReport;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::schema::EntityKind;
+use cadmpeg_ir::source_fidelity::CodecDigests;
 use cadmpeg_ir::topology::Edge;
 use cadmpeg_ir::{Annotations, Exactness};
 
@@ -213,10 +214,12 @@ fn range_stated_by_vertices(
 
 /// Remove the content the `SolidWorks` form has no field for from the document
 /// the writer writes, and name each record. `retained` states that retained
-/// source records feed the write.
+/// source records feed the write, and `digests` are the codec digests the
+/// decode recorded.
 pub(super) fn unwritable_content(
     ir: &mut CadIr,
     retained: bool,
+    digests: &CodecDigests,
 ) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = Vec::new();
     let mut named = Vec::new();
@@ -281,7 +284,7 @@ pub(super) fn unwritable_content(
             .map(|subd| subd.id.as_str().to_owned())
             .collect::<Vec<_>>(),
     ));
-    losses.extend(pmi(ir, retained)?);
+    losses.extend(pmi(ir, retained, digests)?);
     losses.extend(active_configuration(ir));
     Ok(losses)
 }
@@ -290,12 +293,12 @@ pub(super) fn unwritable_content(
 /// and it holds the PMI its baseline digests. PMI with no retained block or no
 /// baseline is not written; PMI that differs from its baseline is an edit the
 /// retained SWIFT records do not hold.
-fn pmi(ir: &mut CadIr, retained: bool) -> Result<Option<LossNote>, CodecError> {
-    let baseline = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get(super::PMI_LOCAL_DIGEST_ATTRIBUTE))
-        .cloned()
+fn pmi(
+    ir: &mut CadIr,
+    retained: bool,
+    digests: &CodecDigests,
+) -> Result<Option<LossNote>, CodecError> {
+    let baseline = crate::codec_digests::baseline(digests, super::PMI_LOCAL_DIGEST_ATTRIBUTE)
         .filter(|_| retained);
     let Some(baseline) = baseline else {
         let ids = std::mem::take(&mut ir.model.pmi)
