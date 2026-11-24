@@ -173,3 +173,23 @@ fn a_design_edit_the_history_cannot_state_refuses_and_names_it() {
         "{error}"
     );
 }
+
+#[test]
+fn a_saved_part_synthesizes_as_its_decode_does() {
+    let decoded = decode(part());
+    let synthesized = |ir: &CadIr| {
+        let plan = SldprtCodec
+            .plan(
+                EncodeInput::new(ir, Some(decoded.source_fidelity())),
+                TargetRequest::Explicit("sldprt:unknown"),
+            )
+            .expect("plan");
+        let mut bytes = Vec::new();
+        let report = plan.write_to(&mut bytes).expect("write");
+        (bytes, report.losses, report.notes)
+    };
+    assert_eq!(
+        synthesized(&saved(decoded.ir())),
+        synthesized(&held(&decoded))
+    );
+}

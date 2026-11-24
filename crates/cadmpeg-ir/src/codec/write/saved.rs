@@ -24,6 +24,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use cadmpeg_core::CodecError;
 use serde_json::Value;
 
+use crate::codec::write::EncodeInput;
 use crate::design::dimension::{Dimension, ParameterRef, RefTarget};
 use crate::design::expr::{Expression, ExpressionDialect, ExpressionToken, Neutral, Node, UnaryOp};
 use crate::design::parameter::{DesignParameter, ParameterDefinition, ParameterValue};
@@ -49,6 +50,37 @@ pub trait HistoryText {
     /// The text of a reference to `target` that no stored expression
     /// spells; `None` where the codec has none.
     fn reference(&self, target: &HistoryParameter, model: &Model) -> Option<String>;
+}
+
+/// The retained source image `id` of `input`'s document where it was read
+/// from CADIR JSON and its write reads the arenas the wire omits: the
+/// document is edited, or the write does not replay the source. `replays`
+/// states whether the write replays an unedited document.
+///
+/// # Errors
+///
+/// The error of the sidecar's edit comparison.
+pub fn saved_source<'a>(
+    input: EncodeInput<'a>,
+    id: &str,
+    replays: bool,
+) -> Result<Option<&'a [u8]>, CodecError> {
+    if input.ir.model.omitted_arenas_held() {
+        return Ok(None);
+    }
+    let Some(fidelity) = input.fidelity else {
+        return Ok(None);
+    };
+    let Some(image) = fidelity
+        .retained_record(id)
+        .and_then(|record| record.data())
+    else {
+        return Ok(None);
+    };
+    if replays && !fidelity.edited(input.ir)? {
+        return Ok(None);
+    }
+    Ok(Some(image))
 }
 
 /// `read`, a document read from CADIR JSON, with the arenas the wire omits

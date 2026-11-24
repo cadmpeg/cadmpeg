@@ -78,6 +78,23 @@ pub trait EncoderBackend {
         input: EncodeInput<'_>,
         target: <Self::Target as TargetDomain>::Resolved<'_>,
     ) -> Result<ExportBody, CodecError>;
+
+    /// The document [`Encoder::plan`] writes in place of `input`'s: one read
+    /// from CADIR JSON with the arenas the wire omits restored, for a writer
+    /// that reads them ([`saved::restore_history`]). `None` writes `input`'s
+    /// document; `notes` takes why a restore that was attempted left it.
+    ///
+    /// # Errors
+    ///
+    /// The refusal of the write.
+    fn restore(
+        &self,
+        _input: EncodeInput<'_>,
+        _target: &<Self::Target as TargetDomain>::Resolved<'_>,
+        _notes: &mut Vec<String>,
+    ) -> Result<Option<CadIr>, CodecError> {
+        Ok(None)
+    }
 }
 
 mod encoder_sealed {
@@ -136,6 +153,12 @@ impl<E: EncoderBackend> Encoder for E {
         let target = E::TARGET.resolve(input.ir, request, E::FORMAT)?;
         let identity = target.export_target().cloned();
         let synthesized_identity = target.synthesized_target().cloned();
+        let mut restore_notes = Vec::new();
+        let restored = self.restore(input, &target, &mut restore_notes)?;
+        let input = match &restored {
+            Some(ir) => EncodeInput { ir, ..input },
+            None => input,
+        };
         let body = self.plan_resolved(input, target)?;
         let ExportBody {
             bytes,
@@ -145,6 +168,7 @@ impl<E: EncoderBackend> Encoder for E {
             mut losses,
             mut notes,
         } = body;
+        notes.extend(restore_notes);
         losses.extend(coverage.omission_losses(input.ir, E::FORMAT.as_str()));
         if !input.ir.model.omitted_arenas_held() && coverage.reads_wire_omitted() {
             notes.push(format!(
