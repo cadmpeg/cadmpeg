@@ -491,89 +491,6 @@
           }
         },
         {
-          "id": "usd:stage:solver-settings#/Arm/Grip.PhysxJointAPI",
-          "native_ref": "/Arm/Grip",
-          "schema": "PhysxJointAPI",
-          "solver": "physx",
-          "target": {
-            "entity": {
-              "joint": "usd:stage:joint#/Arm/Grip",
-              "kind": "joint"
-            }
-          },
-          "values": {
-            "physxJoint:armature": {
-              "dimension": {
-                "angle": 0,
-                "length": 0,
-                "mass": 1,
-                "time": 0
-              },
-              "kind": "real",
-              "value": 0.5
-            },
-            "physxJoint:maxJointVelocity": {
-              "dimension": {
-                "angle": 0,
-                "length": 1,
-                "mass": 0,
-                "time": -1
-              },
-              "kind": "real",
-              "value": 100.0
-            }
-          }
-        },
-        {
-          "id": "usd:stage:solver-settings#/Arm/Grip.PhysxMimicJointAPI%3AtransX",
-          "native_ref": "/Arm/Grip",
-          "schema": "PhysxMimicJointAPI:transX",
-          "solver": "physx",
-          "target": {
-            "entity": {
-              "joint": "usd:stage:joint#/Arm/Grip",
-              "kind": "joint"
-            }
-          },
-          "values": {
-            "physxMimicJoint:transX:gearing": {
-              "dimension": {
-                "angle": -1,
-                "length": 1,
-                "mass": 0,
-                "time": 0
-              },
-              "kind": "real",
-              "value": 11.459155646484371
-            },
-            "physxMimicJoint:transX:offset": {
-              "dimension": {
-                "angle": 0,
-                "length": 1,
-                "mass": 0,
-                "time": 0
-              },
-              "kind": "real",
-              "value": 10.0
-            },
-            "physxMimicJoint:transX:referenceJoint": {
-              "kind": "targets",
-              "targets": [
-                {
-                  "entity": {
-                    "joint": "usd:stage:joint#/Arm/Shoulder",
-                    "kind": "joint"
-                  }
-                }
-              ]
-            },
-            "physxMimicJoint:transX:referenceJointAxis": {
-              "kind": "token",
-              "value": "rotX"
-            }
-          }
-        },
-        {
           "id": "usd:stage:solver-settings#/Arm/Rubber.PhysxMaterialAPI",
           "native_ref": "/Arm/Rubber",
           "schema": "PhysxMaterialAPI",
@@ -620,108 +537,6 @@
             "physxScene:timeStepsPerSecond": {
               "kind": "integer",
               "value": 120
-            }
-          }
-        },
-        {
-          "id": "usd:stage:solver-settings#/Arm/Shoulder.PhysicsJointStateAPI%3Aangular",
-          "native_ref": "/Arm/Shoulder",
-          "schema": "PhysicsJointStateAPI:angular",
-          "solver": "physx",
-          "target": {
-            "entity": {
-              "joint": "usd:stage:joint#/Arm/Shoulder",
-              "kind": "joint"
-            }
-          },
-          "values": {
-            "state:angular:physics:position": {
-              "dimension": {
-                "angle": 1,
-                "length": 0,
-                "mass": 0,
-                "time": 0
-              },
-              "kind": "real",
-              "value": 0.5235987755982988
-            }
-          }
-        },
-        {
-          "id": "usd:stage:solver-settings#/Arm/Shoulder.PhysxJointAPI",
-          "native_ref": "/Arm/Shoulder",
-          "schema": "PhysxJointAPI",
-          "solver": "physx",
-          "target": {
-            "entity": {
-              "joint": "usd:stage:joint#/Arm/Shoulder",
-              "kind": "joint"
-            }
-          },
-          "values": {
-            "physxJoint:armature": {
-              "dimension": {
-                "angle": 0,
-                "length": 2,
-                "mass": 1,
-                "time": 0
-              },
-              "kind": "real",
-              "value": 0.9999999776482582
-            },
-            "physxJoint:jointFriction": {
-              "dimension": {
-                "angle": 0,
-                "length": 0,
-                "mass": 0,
-                "time": 0
-              },
-              "kind": "real",
-              "value": 0.05000000074505806
-            },
-            "physxJoint:maxJointVelocity": {
-              "dimension": {
-                "angle": 1,
-                "length": 0,
-                "mass": 0,
-                "time": -1
-              },
-              "kind": "real",
-              "value": 3.141592653589793
-            }
-          }
-        },
-        {
-          "id": "usd:stage:solver-settings#/Arm/Shoulder.PhysxLimitAPI%3Aangular",
-          "native_ref": "/Arm/Shoulder",
-          "schema": "PhysxLimitAPI:angular",
-          "solver": "physx",
-          "target": {
-            "entity": {
-              "joint": "usd:stage:joint#/Arm/Shoulder",
-              "kind": "joint"
-            }
-          },
-          "values": {
-            "physxLimit:angular:damping": {
-              "dimension": {
-                "angle": -1,
-                "length": 2,
-                "mass": 1,
-                "time": -1
-              },
-              "kind": "real",
-              "value": 11459.155902616465
-            },
-            "physxLimit:angular:stiffness": {
-              "dimension": {
-                "angle": -1,
-                "length": 2,
-                "mass": 1,
-                "time": -2
-              },
-              "kind": "real",
-              "value": 572957.7951308233
             }
           }
         }
@@ -858,7 +673,20 @@
       },
       "kind": "classified"
     },
-    "losses": [],
+    "losses": [
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "physics.solver-property-not-transferred",
+            "kind": "physics_not_transferred",
+            "namespace": "usd"
+          }
+        },
+        "message": "12 PhysX properties were not transferred: /Arm/Shoulder.state:angular:physics:position, /Arm/Shoulder.physxJoint:armature, /Arm/Shoulder.physxJoint:jointFriction, /Arm/Shoulder.physxJoint:maxJointVelocity, /Arm/Shoulder.physxLimit:angular:damping, /Arm/Shoulder.physxLimit:angular:stiffness, /Arm/Grip.physxJoint:armature, /Arm/Grip.physxJoint:maxJointVelocity, /Arm/Grip.physxMimicJoint:transX:gearing, /Arm/Grip.physxMimicJoint:transX:offset, /Arm/Grip.physxMimicJoint:transX:referenceJoint, /Arm/Grip.physxMimicJoint:transX:referenceJointAxis",
+        "severity": "info"
+      }
+    ],
     "notes": [],
     "transfer": {
       "geometry_transferred": true,

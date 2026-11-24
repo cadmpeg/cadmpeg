@@ -99,7 +99,6 @@ fn check_construction(
     findings: &mut Vec<Finding>,
 ) {
     let kind = construction.kind();
-    let mut built_centroid = false;
     let mut error = |message: Ruled<'_>| super::error(findings, at, message);
     let inputs = construction.inputs();
     let after = construction.after();
@@ -294,7 +293,6 @@ fn check_construction(
                         "a nested construction is the reference of a {relation:?} input"
                     ));
                 }
-                built_centroid |= matches!(relation, Relation::Centroid);
                 if subject == Subject::Whole
                     && matches!(relation, Relation::Coincident)
                     && kind != Kind::Frame
@@ -313,16 +311,6 @@ fn check_construction(
     }
     if matches!(kind, Kind::Plane | Kind::Frame) && leading_offset(index, construction) {
         error(crate::rule!("design.plane-frame-coincident-one-planar-reference", "a plane or frame Coincident with one planar reference begins its steps with a Z translation; it is an Offset input"),
-        );
-    }
-    if built_centroid {
-        super::warning(
-            findings,
-            at,
-            crate::rule!(
-                "design.nested-construction-reference-centroid-input",
-                "a nested construction is the reference of a Centroid input"
-            ),
         );
     }
     check_values(construction, geometry, at, findings);

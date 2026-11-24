@@ -14,8 +14,8 @@ use cadmpeg_ir::ids::{BodyId, OccurrenceId, PhysicalMaterialId, PhysicsSceneId};
 use cadmpeg_ir::physics::solver::SolverTarget;
 use cadmpeg_ir::physics::{ColliderShape, MassProperties, PhysicsTarget};
 use cadmpeg_ir::products::{
-    AssemblyJoint, DriveAxis, DriveMode, FrameAxis, JointConnector, JointId, JointLimits,
-    JointOperands, OperandContainer, PairedJointKind,
+    AssemblyJoint, DriveAxis, DriveMode, FrameAxis, JointConnector, JointLimits, JointOperands,
+    OperandContainer, PairedJointKind,
 };
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
@@ -76,8 +76,7 @@ pub(super) struct Plan {
     colliders: BTreeMap<BodyId, PrimPhysics>,
     /// Material names in the `Physics` scope.
     materials: BTreeMap<PhysicalMaterialId, String>,
-    /// The solver settings of each joint, physical material, and scene.
-    joint_settings: BTreeMap<JointId, PrimPhysics>,
+    /// The solver settings of each physical material and scene.
     material_settings: BTreeMap<PhysicalMaterialId, PrimPhysics>,
     scene_settings: BTreeMap<PhysicsSceneId, PrimPhysics>,
     /// Solver properties with no prim or attribute to write.
@@ -372,12 +371,15 @@ impl Plan {
                 );
             }
         }
-        let mut joint_settings: BTreeMap<JointId, PrimPhysics> = BTreeMap::new();
         let mut material_settings: BTreeMap<PhysicalMaterialId, PrimPhysics> = BTreeMap::new();
         let mut scene_settings: BTreeMap<PhysicsSceneId, PrimPhysics> = BTreeMap::new();
         let mut unwritten_settings = 0;
         for settings in &model.solver_settings {
-            if super::physx::settings_holder(settings).is_none() {
+            // A joint target is a design joint feature, not one of the
+            // model's assembly joints, which are the joints the writer writes.
+            if super::physx::settings_holder(settings).is_none()
+                || matches!(settings.target.entity, SolverTarget::Joint { .. })
+            {
                 unwritten_settings += settings.values.len().max(1);
                 continue;
             }
@@ -405,10 +407,7 @@ impl Plan {
                     .iter()
                     .find(|record| &record.id == articulation)
                     .map(|record| record.root.entity.clone()),
-                SolverTarget::Joint { joint } => {
-                    onto(joint_settings.entry(joint.clone()).or_default());
-                    None
-                }
+                SolverTarget::Joint { .. } => None,
                 SolverTarget::PhysicalMaterial { material } => {
                     onto(material_settings.entry(material.clone()).or_default());
                     None
@@ -429,7 +428,6 @@ impl Plan {
             body_velocities,
             colliders,
             materials,
-            joint_settings,
             material_settings,
             scene_settings,
             unwritten_settings,
@@ -447,7 +445,6 @@ impl Plan {
             .values_mut()
             .chain(self.bodies.values_mut())
             .chain(self.colliders.values_mut())
-            .chain(self.joint_settings.values_mut())
             .chain(self.material_settings.values_mut())
             .chain(self.scene_settings.values_mut())
         {
@@ -715,13 +712,7 @@ impl Writer<'_> {
         {
             applied.push(format!("PhysicsLimitAPI:{axis}"));
         }
-        let (settings_schemas, settings_lines) = self
-            .physics
-            .joint_settings
-            .get(&joint.id)
-            .cloned()
-            .unwrap_or_default();
-        let mut metadata = if applied.is_empty() {
+        let metadata = if applied.is_empty() {
             Vec::new()
         } else {
             vec![format!(
@@ -733,17 +724,10 @@ impl Writer<'_> {
                     .join(", ")
             )]
         };
-        metadata.extend(settings_schemas);
         self.prim_head(&format!("def {joint_type}"), &name, &metadata);
         self.out.open();
-        if let Some(key) = super::physx::placeholder(&SolverTarget::Joint {
-            joint: joint.id.clone(),
-        }) {
-            self.target_paths.insert(key, self.out.path());
-        }
-        for line in &settings_lines {
-            self.out.line(line);
-        }
+        self.target_paths
+            .insert(super::physx::joint_placeholder(&joint.id), self.out.path());
         for (side, (body, frame)) in sides.iter().enumerate() {
             if let Some(body) = body {
                 self.out.line(&format!("rel physics:body{side} = <{body}>"));
@@ -913,11 +897,8 @@ impl Writer<'_> {
             None => self.unwritten.joint_properties += 1,
         }
         for (name, coupled) in names[1..].iter().zip(coupled) {
-            if let Some(key) = super::physx::placeholder(&SolverTarget::Joint {
-                joint: coupled.clone(),
-            }) {
-                self.out.line(&format!("rel {name} = <{key}>"));
-            }
+            let key = super::physx::joint_placeholder(coupled);
+            self.out.line(&format!("rel {name} = <{key}>"));
         }
     }
 

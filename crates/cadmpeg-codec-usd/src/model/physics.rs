@@ -207,7 +207,7 @@ impl super::Builder<'_, '_, '_, '_> {
                     occurrence: crate::ids::occurrence(&prim.path),
                 },
             };
-            self.physx(prim, &[Holder::Collision], &target, None);
+            self.physx(prim, &[Holder::Collision], Some(&target), None);
         }
         let articulation = if schemas.contains("PhysicsArticulationRootAPI") {
             SolverTarget::Articulation {
@@ -218,13 +218,13 @@ impl super::Builder<'_, '_, '_, '_> {
                 occurrence: crate::ids::occurrence(&prim.path),
             }
         };
-        self.physx(prim, &[Holder::Articulation], &articulation, None);
+        self.physx(prim, &[Holder::Articulation], Some(&articulation), None);
         self.physx(
             prim,
             &[Holder::Body],
-            &SolverTarget::Occurrence {
+            Some(&SolverTarget::Occurrence {
                 occurrence: crate::ids::occurrence(&prim.path),
-            },
+            }),
             None,
         );
         Ok(())
@@ -289,7 +289,7 @@ impl super::Builder<'_, '_, '_, '_> {
             self.physx(
                 prim,
                 &[Holder::Collision],
-                &SolverTarget::Collider { collider: id },
+                Some(&SolverTarget::Collider { collider: id }),
                 None,
             );
         }
@@ -361,9 +361,9 @@ impl super::Builder<'_, '_, '_, '_> {
             self.physx(
                 material,
                 &[Holder::Material],
-                &SolverTarget::PhysicalMaterial {
+                Some(&SolverTarget::PhysicalMaterial {
                     material: id.clone(),
-                },
+                }),
                 None,
             );
         }
@@ -600,14 +600,13 @@ impl super::Builder<'_, '_, '_, '_> {
                     .joint_properties
                     .push(format!("{path}: {property}"));
             }
-            let id = joint.id.clone();
             self.ir.model.assembly_joints.push(joint);
             self.admit("usd_joint")?;
             if let Some(prim) = self.stage.find(&path) {
                 self.physx(
                     prim,
                     &[Holder::Joint],
-                    &SolverTarget::Joint { joint: id },
+                    None,
                     Some(super::physx::joint_freedom(data.kind)),
                 );
             }

@@ -189,32 +189,50 @@ fn physx_settings_decode_in_ir_units() {
         )),
         2.0 * std::f64::consts::PI
     ));
-    // A revolute armature is a moment of inertia; a prismatic one a mass.
-    let armatures: Vec<f64> = ir
-        .model
-        .solver_settings
-        .iter()
-        .filter(|settings| settings.schema == "PhysxJointAPI")
-        .filter_map(|settings| settings.values.get("physxJoint:armature"))
-        .map(|value| real(Some(value.clone())))
-        .collect();
-    assert!(
-        armatures.iter().any(|value| close(*value, 1.0)),
-        "{armatures:?}"
-    );
-    assert!(
-        armatures.iter().any(|value| close(*value, 0.5)),
-        "{armatures:?}"
-    );
     assert!(matches!(
         solver_value(ir, "PhysxRigidBodyAPI", "physxRigidBody:maxLinearVelocity"),
         Some(cadmpeg_ir::physics::solver::SolverValue::Unbounded { negative: false })
     ));
-    assert!(matches!(
-        solver_value(ir, "PhysxMimicJointAPI:transX", "physxMimicJoint:transX:referenceJoint"),
-        Some(cadmpeg_ir::physics::solver::SolverValue::Targets { targets })
-            if matches!(targets.as_slice(), [target] if matches!(target.entity, cadmpeg_ir::physics::solver::SolverTarget::Joint { .. }))
-    ));
+    // A solver target names a joint as a design joint feature, which the
+    // decoder does not state: the joints' settings and the relationships
+    // that name a joint are reported, not stated.
+    let names_joint = |target: &cadmpeg_ir::physics::solver::SolverTarget| {
+        matches!(
+            target,
+            cadmpeg_ir::physics::solver::SolverTarget::Joint { .. }
+        )
+    };
+    assert!(ir.model.solver_settings.iter().all(|settings| {
+        !names_joint(&settings.target.entity)
+            && settings.values.values().all(|value| match value {
+                cadmpeg_ir::physics::solver::SolverValue::Targets { targets } => {
+                    targets.iter().all(|target| !names_joint(&target.entity))
+                }
+                _ => true,
+            })
+    }));
+    assert!(solver_value(ir, "PhysxJointAPI", "physxJoint:armature").is_none());
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.message
+                .contains("PhysX properties were not transferred")
+        })
+        .unwrap_or_else(|| panic!("{:#?}", result.report().losses));
+    for property in [
+        "/Arm/Shoulder.physxJoint:armature",
+        "/Arm/Shoulder.physxLimit:angular:stiffness",
+        "/Arm/Grip.physxJoint:armature",
+        "/Arm/Grip.physxMimicJoint:transX:referenceJoint",
+    ] {
+        assert!(
+            loss.message.contains(property),
+            "{property}: {}",
+            loss.message
+        );
+    }
     let scene = &ir.model.physics_scenes[0];
     assert!(close(scene.gravity_magnitude.unwrap().get(), 9810.0));
 }

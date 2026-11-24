@@ -8,6 +8,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::physics::solver::{SolverSettings, SolverTarget, SolverValue};
+use cadmpeg_ir::products::JointId;
 
 use super::text::{quoted, real, real32};
 use crate::schema::physx::{find, holder, split, Attribute, Holder, Value};
@@ -19,12 +20,17 @@ const MARK: char = '\u{1}';
 
 /// The placeholder of the prim of a target record.
 pub(super) fn placeholder(target: &SolverTarget) -> Option<String> {
-    let key = match target {
-        SolverTarget::Occurrence { occurrence } => format!("occurrence:{occurrence}"),
-        SolverTarget::Joint { joint } => format!("joint:{joint}"),
-        _ => return None,
-    };
-    Some(format!("{MARK}{key}{MARK}"))
+    match target {
+        SolverTarget::Occurrence { occurrence } => {
+            Some(format!("{MARK}occurrence:{occurrence}{MARK}"))
+        }
+        _ => None,
+    }
+}
+
+/// The placeholder of the prim of an assembly joint.
+pub(super) fn joint_placeholder(joint: &JointId) -> String {
+    format!("{MARK}joint:{joint}{MARK}")
 }
 
 /// Replaces the placeholders in `text` by the paths of `paths`, keyed by
