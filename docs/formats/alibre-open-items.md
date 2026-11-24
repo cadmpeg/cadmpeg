@@ -50,7 +50,7 @@ This document uses ASD-STE100 Simplified Technical English.
 
 **Question.** How do sheet-metal parts store their geometry and their flat pattern?
 
-**Known.** `alibre.md` §2 and §4 describe a solid part. The decoder reads a sheet-metal part as it reads a solid part, and it has no specimen of one.
+**Known.** `alibre.md` §2 and §4 describe a solid part. The decoder reads a sheet-metal part as it reads a solid part.
 
 **Need.** A part with one flange, with its `SAB_DATA` records and its `STEP_DATA` entities compared against a plain extrusion.
 
@@ -66,7 +66,7 @@ This document uses ASD-STE100 Simplified Technical English.
 
 **Question.** How does an assembly store its constraints (mates)?
 
-**Known.** `alibre.md` §5.2 lists the assembly entities. The `DESIGNASSEMBLY` entity has three lists, at attributes 21 to 23, that are empty in every specimen. The specimens hold no constraint, and the anchor of an occurrence is the logical at attribute 7 of its `DESIGNINCLUSION`. The decoder reports a non-empty list and every entity name that it does not know as `alibre/assembly.entities-unread`.
+**Known.** `alibre.md` §5.2 lists the assembly entities. The `DESIGNASSEMBLY` entity has three lists, at attributes 21 to 23, that hold the empty list when the assembly has no constraint. The anchor of an occurrence is the logical at attribute 7 of its `DESIGNINCLUSION`. The decoder reports a non-empty list and every entity name that it does not know as `alibre/assembly.entities-unread`.
 
 **Need.** Assemblies with one constraint of each kind (coincident, parallel, distance, angle, concentric), with the new entities and the three lists compared.
 
@@ -82,7 +82,7 @@ This document uses ASD-STE100 Simplified Technical English.
 
 **Question.** How do the configurations of an assembly differ in the state they give to each occurrence, and what does the configuration name of an inclusion select?
 
-**Known.** `alibre.md` §5.2 gives the suppressed and hidden lists of the `DESIGNASSEMBLYCONFIGURATION`. Every specimen holds one configuration, `Config<1>`, and every inclusion names `Config<1>`. The decoder states the state of the active configuration on the occurrences and reports `alibre/assembly.configuration-unmapped` only when an inclusion names a configuration other than `Config<1>` or the assembly holds a configuration besides the active one.
+**Known.** `alibre.md` §5.2 gives the suppressed and hidden lists of the `DESIGNASSEMBLYCONFIGURATION`. A new assembly holds one configuration, `Config<1>`, and an inclusion names the component configuration `Config<1>`. The decoder states the state of the active configuration on the occurrences and reports `alibre/assembly.configuration-unmapped` only when an inclusion names a configuration other than `Config<1>` or the assembly holds a configuration besides the active one.
 
 **Need.** An assembly with a second configuration that suppresses and moves one occurrence, and a component with a second configuration that an inclusion selects, with the entities compared.
 
@@ -90,6 +90,6 @@ This document uses ASD-STE100 Simplified Technical English.
 
 **Question.** How does an inclusion of a subassembly state the hidden, suppressed, and placed state of the components below it, and which attribute makes a subassembly flexible?
 
-**Known.** An inclusion of a subassembly lists `DESIGNMEMBER` entities whose attribute 6 names a member of the subassembly. A specimen holds two such members, both visible. The decoder reports a hidden nested member as `alibre/assembly.nested-member-state-unread`. A subassembly occurrence has no own member in the specimen, so its own hidden state is not read. Attribute 10 of the inclusion is false in every specimen and may state flexibility.
+**Known.** An inclusion of a subassembly lists `DESIGNMEMBER` entities whose attribute 6 names a member of the subassembly. A visible nested member stores false at attribute 3. The decoder reports a hidden nested member as `alibre/assembly.nested-member-state-unread`. An inclusion of a subassembly lists no member of its own, so the decoder reads no hidden state for the occurrence itself. Attribute 10 of the inclusion holds false and may state flexibility.
 
 **Need.** A subassembly with one hidden component and one suppressed component, and a flexible subassembly with a moved component, with the members and the attribute 10 compared.
