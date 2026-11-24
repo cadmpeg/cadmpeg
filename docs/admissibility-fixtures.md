@@ -8,11 +8,12 @@ driven by rejections, not only by accepts.
 
 `crates/cadmpeg-test-support/src/admissibility.rs`:
 
-| fixture                   | outcome | driving check          |
-| ------------------------- | ------- | ---------------------- |
-| `accepted_empty`          | accept  | —                      |
-| `rejected_missing_point`  | reject  | `ReferentialIntegrity` |
-| `rejected_missing_region` | reject  | `ReferentialIntegrity` |
+| fixture                      | outcome                                              | driving check          |
+| ---------------------------- | ---------------------------------------------------- | ---------------------- |
+| `accepted_empty`             | accept                                               | —                      |
+| `rejected_missing_point`     | reject                                               | `ReferentialIntegrity` |
+| `rejected_missing_region`    | reject                                               | `ReferentialIntegrity` |
+| `rejected_outside_admission` | full validation rejects; every admission set accepts | `Counts`               |
 
 ## Per-route pins (current gates, full validator)
 

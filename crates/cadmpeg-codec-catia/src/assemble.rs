@@ -1209,6 +1209,20 @@ mod route_tests {
         .expect("check that the neutral model is admissible"));
     }
 
+    /// A finding of a check outside the admission set does not drop a
+    /// candidate.
+    #[test]
+    fn neutral_model_admissibility_ignores_findings_outside_its_checks() {
+        let mut ir = cadmpeg_test_support::admissibility::rejected_outside_admission("catia:test")
+            .expect("fixture identities are valid");
+        assert!(neutral_model_is_admissible(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &mut ir,
+            &[]
+        )
+        .expect("check that the neutral model is admissible"));
+    }
+
     /// Phase 5 freeze: shared builders must match the CATIA admission gate.
     #[test]
     fn phase5_freeze_shared_admissibility_fixtures() {
