@@ -1671,3 +1671,55 @@ fn scope_placement_accepts_typed_container_and_frame_references() {
     assert_eq!(u_axis.get(), Vector3::new(0.0, 1.0, 0.0));
     assert!(parse(&bytes[..scope_end - 1]).is_none());
 }
+
+#[test]
+fn a_sketch_on_a_foot_origin_plane_measures_from_the_foot_of_the_design_origin() {
+    use crate::records::sketch_placement::{
+        DesignSketchFrame, DesignSketchFrameForm, SketchPlacementMatrix,
+    };
+    let rows = [
+        [1.0, 0.0, 0.0, 0.5],
+        [0.0, 0.0, 1.0, 1.0],
+        [0.0, -1.0, 0.0, 0.25],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let placement = DesignSketchPlacement {
+        frame: DesignSketchFrame::new(
+            0,
+            DesignSketchFrameForm::ScopeExplicit(SketchPlacementMatrix::try_from(rows).unwrap()),
+        )
+        .unwrap(),
+        id: "f3d:native:design-sketch-placement#0".into(),
+        scope_record_index: Some(10),
+        entity_id: crate::records::identity::DesignEntityId::try_from("0_100".to_owned())
+            .expect("valid entity ID"),
+        visibility: None,
+        display_name: None,
+        class_tag: crate::records::references::DesignClassTag::try_from("293".to_owned()).unwrap(),
+        record_index: 11,
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("261".to_owned())
+            .unwrap(),
+    };
+    let origin_of = |frames: &[[[f64; 4]; 4]]| {
+        let (sketches, _) = crate::test_support::with_decode_context(|decode_ctx| {
+            project_sketch_design(
+                decode_ctx,
+                &SketchProjectInputs::new(std::slice::from_ref(&placement), &[], &[], &[], &[])
+                    .with_foot_origin_frames(frames),
+                1.0e-6,
+            )
+        })
+        .expect("placement projects")
+        .into_tuple();
+        sketches[0]
+            .resolved_placement()
+            .map(|(origin, _, _)| origin.get())
+    };
+    // The plane entity's origin stays the frame origin unless the plane's
+    // construction measures sketch coordinates from the foot.
+    assert_eq!(origin_of(&[]), Some(Point3::new(5.0, 10.0, 2.5)));
+    assert_eq!(origin_of(&[rows]), Some(Point3::new(0.0, 10.0, 0.0)));
+    let mut other = rows;
+    other[1][3] = 2.0;
+    assert_eq!(origin_of(&[other]), Some(Point3::new(5.0, 10.0, 2.5)));
+}

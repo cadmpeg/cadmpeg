@@ -40,6 +40,28 @@ fn unique_placement<'a>(
     candidates.next().is_none().then_some(placement)
 }
 
+/// Placement `refType` of a `WorkPlane` whose sketches measure their
+/// coordinates from the foot of the perpendicular from the design origin to the
+/// plane instead of from the plane entity's origin.
+const FOOT_ORIGIN_REF_TYPE: u32 = 5;
+
+/// Solved matrices of the `WorkPlane` placements whose sketches take the foot
+/// of the perpendicular from the design origin as their frame origin.
+pub(crate) fn foot_origin_frames(
+    scopes: &[DesignParameterScope],
+    placements: &[DesignPlacementConstruction],
+) -> Vec<[[f64; 4]; 4]> {
+    scopes
+        .iter()
+        .filter_map(|scope| {
+            let placement = unique_placement(scope, placements)
+                .filter(|placement| placement.fields.ref_type.value == FOOT_ORIGIN_REF_TYPE)?;
+            let frame = super::checked_solved_frame(placement)?;
+            Some(frame.value.rows())
+        })
+        .collect()
+}
+
 pub(crate) fn solved_frame(
     scope: &DesignParameterScope,
     placements: &[DesignPlacementConstruction],
