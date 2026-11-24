@@ -6748,7 +6748,7 @@ impl<'a> Builder<'a> {
                 surface
                     .source_object
                     .as_ref()
-                    .is_some_and(|source| source.format != cadmpeg_ir::CodecFormat::Step)
+                    .is_some_and(|source| source.format != cadmpeg_ir::codec_id!("step"))
             })
             .count()
             + self
@@ -6760,7 +6760,7 @@ impl<'a> Builder<'a> {
                     curve
                         .source_object
                         .as_ref()
-                        .is_some_and(|source| source.format != cadmpeg_ir::CodecFormat::Step)
+                        .is_some_and(|source| source.format != cadmpeg_ir::codec_id!("step"))
                 })
                 .count()
             + self
@@ -6771,7 +6771,7 @@ impl<'a> Builder<'a> {
                 .filter(|subd| {
                     subd.source_object
                         .as_ref()
-                        .is_some_and(|source| source.format != cadmpeg_ir::CodecFormat::Step)
+                        .is_some_and(|source| source.format != cadmpeg_ir::codec_id!("step"))
                 })
                 .count()
             + self
@@ -6783,7 +6783,7 @@ impl<'a> Builder<'a> {
                     tessellation
                         .source_object
                         .as_ref()
-                        .is_some_and(|source| source.format != cadmpeg_ir::CodecFormat::Step)
+                        .is_some_and(|source| source.format != cadmpeg_ir::codec_id!("step"))
                 })
                 .count();
         let source_object_count = source_object_count
@@ -6796,7 +6796,7 @@ impl<'a> Builder<'a> {
                     point
                         .source_object
                         .as_ref()
-                        .is_some_and(|source| source.format != cadmpeg_ir::CodecFormat::Step)
+                        .is_some_and(|source| source.format != cadmpeg_ir::codec_id!("step"))
                 })
                 .count();
         if source_object_count > 0 {

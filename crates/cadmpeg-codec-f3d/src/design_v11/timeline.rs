@@ -20,12 +20,12 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, StoredOrigin};
 use cadmpeg_ir::design::ids::ContainerId;
+use cadmpeg_ir::design::names::CodecName;
 use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::features::selections::BodySelection;
 use cadmpeg_ir::features::{
@@ -339,8 +339,11 @@ fn unprojected_item(
 
 /// A native operation of source kind `kind`, written `f3d:<kind>`.
 fn native(kind: &str) -> FeatureOperation {
-    let kind = NonBlankString::new(format!("f3d:{}", kind.strip_prefix("f3d:").unwrap_or(kind)))
-        .unwrap_or_else(|| cadmpeg_core::nonblank_literal!("f3d:timeline-item"));
+    let kind = CodecName::new(
+        &cadmpeg_ir::codec_id!("f3d"),
+        kind.strip_prefix("f3d:").unwrap_or(kind),
+    )
+    .unwrap_or_else(|| cadmpeg_ir::codec_name!("f3d:timeline-item"));
     FeatureOperation::Native {
         kind,
         native_options: BTreeMap::new(),

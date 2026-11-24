@@ -10,12 +10,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ids::ContainerId;
+use cadmpeg_ir::design::names::CodecName;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::document::CadIr;
@@ -221,7 +221,7 @@ fn project_feature(
 
 fn native(kind: &str) -> Result<FeatureOperation, CodecError> {
     Ok(FeatureOperation::Native {
-        kind: NonBlankString::new(format!("creo:{kind}"))
+        kind: CodecName::new(&cadmpeg_ir::codec_id!("creo"), kind)
             .ok_or_else(|| CodecError::malformed("Creo v11 operation kind is blank"))?,
         native_options: BTreeMap::new(),
         source_settings: BTreeMap::new(),

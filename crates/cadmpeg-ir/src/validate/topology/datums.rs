@@ -99,21 +99,8 @@ impl Kind {
     }
 }
 impl Walk<'_, '_, '_> {
-    fn native_name(&mut self, value: &str) {
-        if !value
-            .split_once(':')
-            .is_some_and(|(codec, name)| !codec.is_empty() && !name.is_empty())
-        {
-            error(
-                self.findings,
-                self.owner,
-                "native construction names must have codec:name form",
-            );
-        }
-    }
     fn role(&mut self, input: &ConstructionInput, role: &InputRole, kind: Kind) {
-        if let Relation::Native(name) = &role.relation {
-            self.native_name(name.as_str());
+        if matches!(role.relation, Relation::Native(_)) {
             return;
         }
         if role.subject == Subject::ZAxis
@@ -353,8 +340,7 @@ impl Walk<'_, '_, '_> {
         }
     }
     fn options(&mut self, options: &NativeOptions) -> Result<(), CodecError> {
-        for (key, value) in options {
-            self.native_name(key.as_str());
+        for value in options.values() {
             match value {
                 NativeOption::Bool(v) => self.dimension(v, "boolean"),
                 NativeOption::Integer(v) => self.dimension(v, "integer"),
@@ -580,12 +566,6 @@ impl Walk<'_, '_, '_> {
                             self.owner,
                             "selection rule has an incompatible seed count",
                         );
-                    }
-                    if let SelectionRule::Native(name) = &term.rule {
-                        self.native_name(name.as_str());
-                    }
-                    if let Some(Propagation::Native(name)) = &term.propagation {
-                        self.native_name(name.as_str());
                     }
                     self.members(&term.seeds)?;
                     match &term.rule {

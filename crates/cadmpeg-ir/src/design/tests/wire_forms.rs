@@ -7,12 +7,12 @@ use std::num::NonZeroI8;
 
 use serde_json::json;
 
-use super::fixtures::{self, feature, id, length, parameter_ref, picked, text};
+use super::fixtures::{self, feature, id, length, parameter_ref, picked};
 use super::{read_desktop, refuses, to_value};
 use crate::design::construction::SourceMode;
 use crate::design::dimension::Dimension;
 use crate::design::expr::{self, BinaryOp, Expression, ExpressionDialect, Neutral, Node};
-use crate::design::names::{CodecId, NameTable, TopoName};
+use crate::design::names::{NameTable, TopoName};
 use crate::design::options::{Boolean, BooleanOp, Hand};
 use crate::design::refs::{Evaluated, StateRef};
 use crate::design::selection::{
@@ -303,5 +303,64 @@ fn a_dimension_binds_a_parameter_or_its_negation() {
         to_value(&ExpressionDialect::SolidWorks),
         json!({"kind": "solid_works"})
     );
-    assert_eq!(to_value(&CodecId::from(text("sldprt"))), json!("sldprt"));
+    assert_eq!(to_value(&crate::codec_id!("sldprt")), json!("sldprt"));
+}
+
+#[test]
+fn a_codec_id_is_lower_case_letters_and_digits() {
+    use crate::design::names::CodecId;
+    for id in ["3dm", "fcstd", "sldprt"] {
+        let read: CodecId = read_desktop(&format!("{id:?}")).unwrap();
+        assert_eq!(read.as_str(), id);
+    }
+    for id in [r#""""#, r#""Step""#, r#""st-ep""#, r#""f3d ""#] {
+        refuses::<CodecId>(id);
+    }
+}
+
+#[test]
+fn a_codec_name_is_a_codec_id_a_colon_and_a_name() {
+    use crate::design::names::CodecName;
+    for text in [
+        "fcstd:Transition",
+        "sldprt:auto_select",
+        "rhino:loft:3",
+        "f3d: a",
+    ] {
+        let read: CodecName = read_desktop(&format!("{text:?}")).unwrap();
+        assert_eq!(to_value(&read), json!(text));
+    }
+    for text in [
+        r#""thickness""#,
+        r#"":thickness""#,
+        r#""Sldprt:flag""#,
+        r#""sldprt:""#,
+        r#""sldprt: \u00a0""#,
+        r#""sld prt:flag""#,
+    ] {
+        refuses::<CodecName>(text);
+    }
+    assert_eq!(
+        CodecName::new(&crate::codec_id!("f3d"), "distance"),
+        Some(crate::codec_name!("f3d:distance"))
+    );
+    assert_eq!(CodecName::new(&crate::codec_id!("f3d"), " "), None);
+}
+
+#[test]
+fn a_native_arm_that_holds_a_codec_name_refuses_other_text() {
+    use crate::design::names::GenerationRole;
+    use crate::design::options::NativeOptions;
+    use crate::design::selection::SelectionRule;
+    refuses::<SelectionRule>(r#"{"kind": "native", "value": "tangent_curves"}"#);
+    refuses::<GenerationRole>(r#"{"kind": "other", "value": "lip"}"#);
+    refuses::<NativeOptions>(
+        r#"{"thickness": {"kind": "bool", "value": {"kind": "literal", "value": true}}}"#,
+    );
+    let rule: SelectionRule =
+        read_desktop(r#"{"kind": "native", "value": "nx:tangent_curves"}"#).unwrap();
+    assert_eq!(
+        rule,
+        SelectionRule::Native(crate::codec_name!("nx:tangent_curves"))
+    );
 }

@@ -2792,6 +2792,11 @@ exactly one neutral, named opaque, or source-native identity. A terminal
 source-typed target with no neutral identity owns
 an identity-only `NativeRecord` in the STEP `drawing_targets` arena; its
 source id and complete source type remain available for the relationship.
+A target whose identity is a drawing record, a PMI annotation, or a semantic
+annotation is a reference to that record; a target kept only as a native record
+keeps its instance name. The drawing records in a sheet revision's `items` set
+are `Drawing.views` in identity order, since the set has no order; its other
+items stay in the relationship.
 `INVISIBILITY` targeting a transferred drawing entity sets its `visible=false`;
 it does not change the visibility of that entity's relationships or contents.
 A representation-context relationship without a neutral context target uses an

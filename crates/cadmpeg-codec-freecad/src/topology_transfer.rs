@@ -464,7 +464,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
     fn source_association(&self) -> Result<SourceObjectAssociation, CodecError> {
         Ok(SourceObjectAssociation {
             geometry_role: None,
-            format: cadmpeg_ir::CodecFormat::Fcstd,
+            format: cadmpeg_ir::codec_id!("fcstd"),
             object_id: cadmpeg_core::text::NonBlankString::new(
                 self.source_object.as_str().to_owned(),
             )

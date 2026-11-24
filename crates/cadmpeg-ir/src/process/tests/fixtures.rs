@@ -18,8 +18,9 @@ use crate::design::ids::{
     MachineId, MachiningFeatureId, OperationId, PresetId, ProcessGroupId, ProcessParameterId,
     ProgramId, SetupId, ToolId,
 };
-use crate::design::names::{CodecId, NameKind, NativeName, NativeNameValue, TopoName};
+use crate::design::names::{NameKind, NativeName, NativeNameValue, TopoName};
 use crate::design::ops::shared::RadialDimension;
+use crate::design::ops::sketch::BoundedCurve;
 use crate::design::options::Hand;
 use crate::design::selection::{
     Anchor, MemberOrder, Members, PickTarget, Picked, Picks, Selection,
@@ -65,6 +66,7 @@ use crate::process::tool::{
 use crate::process::toolpath::{Heater, Motion, MotionClass, MotionValue, MovementClass};
 use crate::process::{Choice, ProcessConstruction, ProcessDimension, WorkpieceSelection};
 use crate::scalar::{Angle, FiniteReal, Fraction, Length};
+use crate::topology::IncreasingParameterInterval;
 use crate::transform::Transform;
 use crate::units::UnitVector3;
 
@@ -165,7 +167,7 @@ pub(super) fn design_ref(key: u32) -> ParamRef {
 
 pub(super) fn native_name(value: &str) -> NativeName {
     NativeName {
-        codec: CodecId::from(text("f3d")),
+        codec: crate::codec_id!("f3d"),
         value: NativeNameValue::Text(text(value)),
     }
 }
@@ -633,12 +635,22 @@ pub(super) fn profile_curves() -> Vec<ProfileCurve> {
     );
     vec![
         ProfileCurve {
-            geometry: line.clone(),
+            geometry: Some(BoundedCurve {
+                carrier: line.clone(),
+                range: IncreasingParameterInterval::new([0.0, 2.5]),
+            }),
             source: Some(selection()),
         },
         ProfileCurve {
-            geometry: line,
+            geometry: Some(BoundedCurve {
+                carrier: line,
+                range: IncreasingParameterInterval::new([-1.0, 1.0]),
+            }),
             source: None,
+        },
+        ProfileCurve {
+            geometry: None,
+            source: Some(selection()),
         },
     ]
 }

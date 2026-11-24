@@ -469,7 +469,7 @@ fn unsupported_operands_keep_the_full_native_operation_and_pin_loss() {
             panic!("native");
         };
         let NativeOption::Text(Dimension::Literal(text)) =
-            &native_options[&cadmpeg_core::nonblank_literal!("inventor:legacy_operation")]
+            &native_options["inventor:legacy_operation"]
         else {
             panic!("retained");
         };

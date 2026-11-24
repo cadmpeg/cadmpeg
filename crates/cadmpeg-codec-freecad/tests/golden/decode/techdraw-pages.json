@@ -60,39 +60,13 @@
             "Scale": "<Float value=\"1.0000000000000000\"/>"
           },
           "projection": "first",
-          "relationships": {
-            "Template": [
-              {
-                "native": {
-                  "codec": "fcstd",
-                  "value": {
-                    "kind": "text",
-                    "value": "FirstTemplate"
-                  }
-                },
-                "target": {
-                  "kind": "unresolved"
-                }
-              }
-            ],
-            "Views": [
-              {
-                "native": {
-                  "codec": "fcstd",
-                  "value": {
-                    "kind": "text",
-                    "value": "FirstNote"
-                  }
-                },
-                "target": {
-                  "kind": "unresolved"
-                }
-              }
-            ]
-          },
+          "relationships": {},
           "runtime_type": "TechDraw::DrawPage",
           "scale": 1.0,
-          "template": "fcstd:model:drawing#FirstTemplate:entity"
+          "template": "fcstd:model:drawing#FirstTemplate:entity",
+          "views": [
+            "fcstd:model:drawing#FirstNote:entity"
+          ]
         },
         {
           "assets": [],
@@ -126,7 +100,8 @@
           "rotation": 0.0,
           "runtime_type": "TechDraw::DrawViewAnnotation",
           "scale": 1.0,
-          "scale_from": "sheet"
+          "scale_from": "sheet",
+          "views": []
         },
         {
           "assets": [
@@ -230,7 +205,8 @@
                 "text": "Synthetic box"
               }
             ]
-          }
+          },
+          "views": []
         },
         {
           "assets": [],
@@ -244,39 +220,13 @@
             "Scale": "<Float value=\"1.0000000000000000\"/>"
           },
           "projection": "first",
-          "relationships": {
-            "Template": [
-              {
-                "native": {
-                  "codec": "fcstd",
-                  "value": {
-                    "kind": "text",
-                    "value": "SecondTemplate"
-                  }
-                },
-                "target": {
-                  "kind": "unresolved"
-                }
-              }
-            ],
-            "Views": [
-              {
-                "native": {
-                  "codec": "fcstd",
-                  "value": {
-                    "kind": "text",
-                    "value": "SecondNote"
-                  }
-                },
-                "target": {
-                  "kind": "unresolved"
-                }
-              }
-            ]
-          },
+          "relationships": {},
           "runtime_type": "TechDraw::DrawPage",
           "scale": 1.0,
-          "template": "fcstd:model:drawing#SecondTemplate:entity"
+          "template": "fcstd:model:drawing#SecondTemplate:entity",
+          "views": [
+            "fcstd:model:drawing#SecondNote:entity"
+          ]
         },
         {
           "assets": [],
@@ -310,7 +260,8 @@
           "rotation": 0.0,
           "runtime_type": "TechDraw::DrawViewAnnotation",
           "scale": 1.0,
-          "scale_from": "sheet"
+          "scale_from": "sheet",
+          "views": []
         },
         {
           "assets": [
@@ -414,7 +365,8 @@
                 "text": "Synthetic box"
               }
             ]
-          }
+          },
+          "views": []
         }
       ],
       "mass_properties": [],

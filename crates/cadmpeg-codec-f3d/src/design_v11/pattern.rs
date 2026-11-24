@@ -125,7 +125,7 @@ pub(super) fn project(
         Some(2) => Some(PatternMethod::Adjust { against: None }),
         Some(value) => {
             native_options.insert(
-                cadmpeg_core::nonblank_literal!("f3d:compute_option"),
+                cadmpeg_ir::codec_name!("f3d:compute_option"),
                 NativeOption::Integer(Dimension::Literal(i64::from(value))),
             );
             None
@@ -137,7 +137,7 @@ pub(super) fn project(
     if native_seed {
         if let Some(distribution) = distribution {
             native_options.insert(
-                cadmpeg_core::nonblank_literal!("f3d:compute_option"),
+                cadmpeg_ir::codec_name!("f3d:compute_option"),
                 NativeOption::Integer(Dimension::Literal(i64::from(
                     distribution.compute_option.value,
                 ))),
@@ -247,7 +247,7 @@ fn native_seeds(source: &str) -> Option<cadmpeg_ir::design::selection::SetSelect
                 target: PickTarget::Native { within: None },
                 context: None,
                 native: Some(NativeName {
-                    codec: cadmpeg_core::nonblank_literal!("f3d").into(),
+                    codec: cadmpeg_ir::codec_id!("f3d"),
                     value: NativeNameValue::Text(cadmpeg_core::text::NonBlankString::new(source)?),
                 }),
                 domain: None,
@@ -307,7 +307,7 @@ fn run(
                             target: PickTarget::Native { within: None },
                             context: None,
                             native: Some(NativeName {
-                                codec: cadmpeg_core::nonblank_literal!("f3d").into(),
+                                codec: cadmpeg_ir::codec_id!("f3d"),
                                 value,
                             }),
                             domain: None,
