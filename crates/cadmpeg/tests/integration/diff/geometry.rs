@@ -211,9 +211,9 @@ fn geometry_diff_detects_a_moved_signature_body() {
 /// Each `FreeCAD` corpus file against itself. Identical documents give
 /// identical rows, so nothing disagrees and no body is unmatched. A body
 /// whose faces lie on procedural carriers without an admitted cache
-/// (`Sweep`) has no comparable quantity, datum bodies with no vertex
-/// (`DatumPlane`, `DatumCoordinateSystem`) compare by a signature that does
-/// not depend on position. A document whose occurrences place bodies
+/// (`Sweep`) has no comparable quantity, so the document's union box is
+/// not compared either; a datum has no body (§6.2). A document whose
+/// occurrences place bodies
 /// (`core_design_product`) compares its instances and agrees with itself, as
 /// does a document with none of these (`geometry_topology`).
 #[cfg(feature = "fcstd")]
@@ -225,7 +225,7 @@ fn geometry_diff_self_comparison() {
             "core_operations.FCStd",
             "inconclusive",
             &["#Sweep:"][..],
-            &["compare.unmeasured-body", "compare.signature-unplaced"][..],
+            &["compare.unavailable", "compare.unmeasured-body"][..],
         ),
         ("geometry_topology.FCStd", "agree", &[][..], &[][..]),
         ("core_design_product.FCStd", "agree", &[][..], &[][..]),

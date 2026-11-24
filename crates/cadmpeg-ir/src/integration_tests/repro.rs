@@ -152,6 +152,7 @@ fn repro_native_feature_closure_keeps_numeric_joins_and_type_rows() {
         native_ref: Some("synthetic:scope:scope#1".into()),
     });
     let finding = crate::report::check::Finding {
+        rule: crate::rule_name!("test.native-feature-inconsistent"),
         check: Check::NativeLinks,
         severity: crate::report::Severity::Error,
         entity: Some("synthetic:scope:scope#1".into()),
@@ -293,6 +294,7 @@ fn repro_edge_closure_keeps_pcurves_and_use_curve_carriers() {
 fn repro_face_closure_keeps_the_complete_shell() {
     let document = crate::examples::unit_cube().unwrap();
     let finding = crate::report::check::Finding {
+        rule: crate::rule_name!("test.face-winding-inconsistent"),
         check: Check::Orientation,
         severity: crate::report::Severity::Warning,
         entity: Some(document.geometry.faces[0].id.as_str().into()),
@@ -429,6 +431,7 @@ fn repro_document_size_does_not_consume_the_closure_limit() {
 #[test]
 fn repro_global_finding_returns_an_explicit_incomplete_bundle() {
     let finding = crate::report::check::Finding {
+        rule: crate::rule_name!("test.measurement-checks-require-complete-document-context"),
         check: Check::MeasurementIncomplete,
         severity: crate::report::Severity::Info,
         entity: None,

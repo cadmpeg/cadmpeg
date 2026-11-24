@@ -475,6 +475,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             native_ref: None,
         });
     ir.finalize();
+    crate::examples::add_document_root(&mut ir);
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .findings
