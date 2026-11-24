@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The geometry-true form of a design scope (cadir-v11.md §3.4, Features
-//! without their state): the scope's parameters, and one stored-geometry
-//! feature of the current bodies.
+//! The forms of a design scope (cadir-v11.md §3.4, Features without their
+//! state). The geometry-true form writes the scope's parameters, and one
+//! stored-geometry feature of the current bodies where the writer cannot
+//! write every feature with its state. The history-true form writes the run
+//! of features before the first feature it cannot write with its state,
+//! then the timeline marker, then the later features rolled back without
+//! their states; where the run holds no feature the writer writes with its
+//! state, it writes the geometry-true form.
 //!
 //! It runs where no native Design record is written and the document holds a
 //! design scope for its root definition. It charges a loss for every design
@@ -35,6 +40,7 @@ use cadmpeg_core::CodecError;
 
 use cadmpeg_ir::codec::write::{
     evaluation_missing, evaluation_stale, ArenaDisposition, DesignArenaDispositions,
+    MissingStateForm,
 };
 use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::evaluation::EvaluationStatus;
@@ -53,7 +59,7 @@ use crate::loss::F3dLossCode;
 use crate::native::F3dNative;
 use base_feature::BaseFeaturePlan;
 use frames::DesignRecords;
-use item::{Decision, Item};
+use item::{Decision, Item, Run};
 use parameters::ParameterPlan;
 use sketch::SketchPlan;
 
@@ -189,14 +195,20 @@ impl Fallback {
     }
 
     /// Drop the first part after the parts already dropped that the design
-    /// of `target` writes, for `reason`. Returns whether a part was dropped.
-    pub(super) fn drop_next(&mut self, target: &CadIr, reason: &str) -> bool {
+    /// of `target` in the form `missing_states` writes, for `reason`. Returns
+    /// whether a part was dropped.
+    pub(super) fn drop_next(
+        &mut self,
+        target: &CadIr,
+        missing_states: MissingStateForm,
+        reason: &str,
+    ) -> bool {
         let after = self.dropped.last().map(|(part, _)| *part);
         for part in Part::ORDER
             .into_iter()
             .filter(|part| after.is_none_or(|after| *part > after))
         {
-            let writes = plan(target, self)
+            let writes = plan(target, missing_states, self)
                 .ok()
                 .flatten()
                 .is_some_and(|design| match part {
@@ -221,15 +233,21 @@ pub(super) struct NeutralDesign<'a> {
     /// The scope's geometry feature, written as a timeline item in place of
     /// the Base Feature where the rows of [`item::plan`] allow it.
     item: Decision<'a>,
+    /// The position in `sketches.items` of the first `Sketch` item after the
+    /// timeline marker; `sketches.items.len()` where the marker stands after
+    /// the last item.
+    marker: usize,
     base_feature: BaseFeaturePlan<'a>,
     losses: Vec<LossNote>,
 }
 
-/// The plan for the root definition's design scope; `None` when the
-/// document holds none. Each part `fallback` drops is written in its
-/// fallback form and charged with the failure that dropped it.
+/// The plan for the root definition's design scope in the form
+/// `missing_states`; `None` when the document holds none. Each part
+/// `fallback` drops is written in its fallback form and charged with the
+/// failure that dropped it.
 pub(super) fn plan<'a>(
     target: &'a CadIr,
+    missing_states: MissingStateForm,
     fallback: &Fallback,
 ) -> Result<Option<NeutralDesign<'a>>, CodecError> {
     let Some(scope) = root_scope(target) else {
@@ -253,19 +271,59 @@ pub(super) fn plan<'a>(
             },
         );
     }
+    let mut refused = None;
+    let mut rolled = features.len();
     let item = if target.geometry.bodies.is_empty() {
         Decision::None
     } else {
-        item::plan(
-            target,
-            scope,
-            &features,
-            &sketches,
-            &mut parameters,
-            fallback.reason(Part::Item),
-            ordinal,
-        )
+        let marker = match missing_states {
+            MissingStateForm::GeometryTrue => None,
+            MissingStateForm::HistoryTrue => run_end(target, scope, &features),
+        };
+        let mut decide = |run: Run<'a, '_>| {
+            item::plan(
+                target,
+                scope,
+                run,
+                &sketches,
+                &mut parameters,
+                fallback.reason(Part::Item),
+                ordinal,
+            )
+        };
+        let whole = Run {
+            features: &features,
+            ends: false,
+        };
+        match marker {
+            Some(end) => {
+                let run = decide(Run {
+                    features: &features[..end],
+                    ends: true,
+                });
+                if run.item().is_some() {
+                    rolled = end;
+                    run
+                } else {
+                    refused = Some(history_refusal(&run, features[end]));
+                    decide(whole)
+                }
+            }
+            None => decide(whole),
+        }
     };
+    let rolled_back = features[rolled..].iter().copied().collect::<BTreeSet<_>>();
+    let marker = sketches
+        .items
+        .iter()
+        .position(|planned| rolled_back.contains(planned.feature))
+        .unwrap_or(sketches.items.len());
+    let written_marker = features.get(rolled).copied().map(|before| Marker {
+        before,
+        first_item: sketches.items.get(marker).is_some_and(|planned| {
+            planned.feature == before && !sketches.planes.iter().any(|plane| plane.first == marker)
+        }),
+    });
     let written = parameters.written().collect::<BTreeSet<_>>();
     let mut owned = BTreeMap::<&FeatureId, Vec<String>>::new();
     for parameter in &target.design.parameters {
@@ -283,6 +341,9 @@ pub(super) fn plan<'a>(
         .filter(|feature| !sketches.writes(feature) && !item.writes(feature))
         .map(|feature| {
             let mut notes = Vec::new();
+            if rolled_back.contains(*feature) {
+                notes.push("it follows the timeline marker".to_owned());
+            }
             if let Some(reason) = sketches.unwritten.get(*feature) {
                 notes.push(format!("its sketch {reason}"));
             }
@@ -301,24 +362,85 @@ pub(super) fn plan<'a>(
                 format!("{feature} ({})", notes.join("; "))
             }
         });
-    let reason = if item.item().is_some() {
+    let mut reason = if item.item().is_some() {
         "stores no timeline item for these features of the design"
     } else {
         "stores the current bodies as one Base Feature and no timeline item for these features of the design"
-    };
-    let mut losses = evaluation_missing("F3D", reason, unwritten)
+    }
+    .to_owned();
+    if let Some(refused) = &refused {
+        reason.push_str("; it writes the geometry-true form, because the history-true run ");
+        reason.push_str(refused);
+    }
+    let mut losses = evaluation_missing("F3D", &reason, unwritten)
         .into_iter()
         .collect::<Vec<_>>();
-    losses.extend(unwritten_records(target, scope));
+    losses.extend(evaluation_missing(
+        "F3D",
+        "writes these features after the timeline marker, rolled back with their definitions and without their states",
+        features[rolled..]
+            .iter()
+            .filter(|feature| sketches.writes(feature))
+            .map(ToString::to_string),
+    ));
+    losses.extend(unwritten_records(target, scope, written_marker));
     losses.extend(states(target));
     let base_feature = base_feature::plan(target, sketches.items.len() + sketches.planes.len())?;
     Ok(Some(NeutralDesign {
         parameters,
         sketches,
         item,
+        marker,
         base_feature,
         losses,
     }))
+}
+
+/// The timeline marker the history-true form writes.
+#[derive(Clone, Copy)]
+struct Marker<'a> {
+    /// The first feature it rolls back.
+    before: &'a FeatureId,
+    /// Whether the item of `before` is the first item after the marker.
+    first_item: bool,
+}
+
+/// The position in `features` of the first feature the history-true form
+/// rolls back: the second feature that can change a state, which the one
+/// geometry item the writer writes leaves without its state (cadir-v11.md
+/// §3.4, Features without their state), or the feature the timeline's
+/// stated rollback stands before (§5.2), whichever comes first. `None`
+/// where the run is the whole timeline.
+fn run_end(target: &CadIr, root: &DesignScope, features: &[&FeatureId]) -> Option<usize> {
+    let second = features
+        .iter()
+        .enumerate()
+        .filter(|(_, feature)| !target.is_stateless(feature, None).unwrap_or(false))
+        .nth(1)
+        .map(|(at, _)| at);
+    let rollback = match written_timeline(target, root) {
+        Some(Container::Ordered {
+            rollback: Some(Rollback::Before(Member::Feature(before))),
+            ..
+        }) => features.iter().position(|feature| *feature == before),
+        _ => None,
+    };
+    second.into_iter().chain(rollback).min()
+}
+
+/// Why the history-true run before `rolled`, the first rolled-back feature,
+/// is not written: the run's `decision` writes none of its features with
+/// its state.
+fn history_refusal(decision: &Decision<'_>, rolled: &FeatureId) -> String {
+    match decision {
+        Decision::BaseFeature { feature, reason } => {
+            format!("before {rolled} writes {feature} without its state: {reason}")
+        }
+        Decision::None | Decision::Item(_) => format!(
+            "before {rolled} holds no feature the writer writes with its state, and the writer \
+             writes no timeline whose state at the marker holds no body"
+        ),
+    }
 }
 
 impl NeutralDesign<'_> {
@@ -381,6 +503,7 @@ impl NeutralDesign<'_> {
             item,
         );
         let ctx = roster::Context {
+            marker: self.marker,
             table: roster::type_table(&roster, bodies.iter().any(|body| body.sheet))?,
             roster,
             values: roster::values::Values::new(target, &scope.definition, smbh),
@@ -594,8 +717,13 @@ fn position(at: &Position) -> String {
 /// the root scope's configuration, arrangements and occurrence states, the
 /// other scopes with their features and parameters, every container but the
 /// one the written timeline stands for, and that container's folders,
-/// rollback and placement.
-fn unwritten_records(target: &CadIr, root: &DesignScope) -> Vec<LossNote> {
+/// placement and rollback, unless the written timeline `marker` stands
+/// where the rollback does.
+fn unwritten_records(
+    target: &CadIr,
+    root: &DesignScope,
+    marker: Option<Marker<'_>>,
+) -> Vec<LossNote> {
     let others = move || {
         target
             .design
@@ -704,14 +832,29 @@ fn unwritten_records(target: &CadIr, root: &DesignScope) -> Vec<LossNote> {
                 None => format!("{id} folder (members {}..={})", folder.first, folder.last),
             })
             .collect::<Vec<_>>();
-        if let Some(Rollback::Before(member)) = rollback {
-            values.push(format!("{id} rollback (before {})", member_id(member)));
-        }
-        if rollback.is_none() {
-            losses.push(F3dLossCode::WriterRollbackAssumed.note(format!(
+        match (rollback, marker) {
+            (
+                Some(Rollback::Before(Member::Feature(before))),
+                Some(Marker {
+                    before: marker,
+                    first_item: true,
+                }),
+            ) if before == marker => {}
+            (Some(Rollback::Before(member)), _) => {
+                values.push(format!("{id} rollback (before {})", member_id(member)));
+            }
+            (None, None) => losses.push(F3dLossCode::WriterRollbackAssumed.note(format!(
                 "{id}: the document does not state the timeline's rollback; it is written built \
                  through its end, with the current geometry as the state after its last feature"
-            )));
+            ))),
+            (None, Some(Marker { before, .. })) => {
+                losses.push(F3dLossCode::WriterRollbackAssumed.note(format!(
+                    "{id}: the document does not state the timeline's rollback; the timeline \
+                     marker is written after the features before {before}, the first feature \
+                     the history-true form rolls back"
+                )));
+            }
+            (Some(Rollback::End), _) => {}
         }
         if placement.is_some() {
             values.push(format!("{id} placement"));

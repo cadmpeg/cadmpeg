@@ -22,6 +22,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     native_records_omitted, output_empty, partial_topology_omitted, record_invalid,
+    MissingStateForm,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
@@ -138,6 +139,8 @@ pub(super) struct Reduction<'a> {
     losses: Vec<LossNote>,
     design_dropped: bool,
     neutral_dropped: bool,
+    /// The form of the features whose states the writer cannot write.
+    missing_states: MissingStateForm,
     /// The parts of the design scope's form dropped after a failure.
     fallback: super::design::Fallback,
     /// The faces omitted from each opened body, charged at [`Self::finish`]
@@ -149,8 +152,9 @@ pub(super) struct Reduction<'a> {
 }
 
 impl<'a> Reduction<'a> {
-    pub(super) fn new(ir: &'a CadIr) -> Self {
+    pub(super) fn new(ir: &'a CadIr, missing_states: MissingStateForm) -> Self {
         Self {
+            missing_states,
             ir: Cow::Borrowed(ir),
             losses: Vec::new(),
             design_dropped: false,
@@ -1565,7 +1569,10 @@ impl<'a> Reduction<'a> {
     /// dimensions, its `Extrude` item, its `Sketch` items, in that order):
     /// the design plan charges what the part held.
     fn drop_design_part(&mut self, reason: &str) -> bool {
-        self.writes_neutral_design() && self.fallback.drop_next(&self.ir, reason)
+        self.writes_neutral_design()
+            && self
+                .fallback
+                .drop_next(&self.ir, self.missing_states, reason)
     }
 
     /// Write no design scope: every design scope, container, feature and

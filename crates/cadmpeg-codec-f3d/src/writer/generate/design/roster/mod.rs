@@ -423,6 +423,10 @@ pub(super) struct Context<'a> {
     /// The construction planes, in the order of [`Roster::planes`].
     pub(super) planes: &'a [super::sketch::PlannedPlane<'a>],
     pub(super) timeline_value: ContextValue,
+    /// The position in [`Self::sketches`] of the first `Sketch` item after
+    /// the timeline marker; a `WorkPlane` item before it is after the marker
+    /// too. `sketches.len()` where the marker stands after the last item.
+    pub(super) marker: usize,
 }
 
 /// The timeline context value.
@@ -683,6 +687,25 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
         Some(item) => notes.extend(item.losses(ctx)),
     }
     notes.extend(sketches::dimensions::losses(ctx));
+    let planes = ctx
+        .roster
+        .planes
+        .iter()
+        .zip(ctx.planes)
+        .filter(|(_, planned)| planned.first >= ctx.marker)
+        .map(|(records, _)| format!("record {} (WorkPlane scope: its item tail)", records.scope));
+    let sketches = ctx
+        .roster
+        .sketches
+        .items
+        .iter()
+        .skip(ctx.marker)
+        .map(|records| format!("record {} (Sketch scope: its item tail)", records.scope));
+    notes.extend(record_residual_unavailable(
+        "F3D",
+        "writes the item tail of these items after the timeline marker as the tail of a built item with the rolled-back flag s1 = 1: no-result flag s0 = 0, state bytes 00 00 00 and null history-state identities; f3d-open-items.md DR-1032 leaves open the tail of a rolled-back feature that was never computed",
+        planes.chain(sketches),
+    ));
     if let ContextValue::Chosen { value, outside } = &ctx.timeline_value {
         notes.extend(record_residual_unavailable(
             "F3D",

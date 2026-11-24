@@ -6,6 +6,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::f64::consts::TAU;
 
+use cadmpeg_ir::codec::write::MissingStateForm;
 use cadmpeg_ir::design::construction::{
     AxisValue, Construction, ConstructionInput, InputReference, InputRole, Relation, Subject,
 };
@@ -277,7 +278,7 @@ fn tube_design() -> CadIr {
 /// The item the design writes for `ir`'s revolve, or the reason the Base
 /// Feature holds it.
 fn decided(ir: &CadIr) -> Result<usize, String> {
-    let design = plan(ir, &Fallback::default())
+    let design = plan(ir, MissingStateForm::GeometryTrue, &Fallback::default())
         .expect("a plan")
         .expect("a design scope");
     match design.item {
@@ -793,7 +794,7 @@ fn bound_to(parameters: Vec<DesignParameter>) -> CadIr {
 /// The `AlongAngle` parameter of the Revolve the design writes for `ir`, or
 /// the reason the Base Feature holds it.
 fn planned_angle(ir: &CadIr) -> Result<OwnedParameter, String> {
-    let design = plan(ir, &Fallback::default())
+    let design = plan(ir, MissingStateForm::GeometryTrue, &Fallback::default())
         .expect("a plan")
         .expect("a design scope");
     match design.item {

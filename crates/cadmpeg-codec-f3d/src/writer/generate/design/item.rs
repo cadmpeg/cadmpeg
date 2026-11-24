@@ -119,7 +119,17 @@ fn typed<'a>(target: &'a CadIr, feature: &FeatureId) -> Option<Typed<'a>> {
     }
 }
 
-/// The decision for the scope's features in timeline order: the first
+/// The features the geometry item is chosen from: the scope's features in
+/// timeline order, or the run before the timeline marker of the
+/// history-true form (cadir-v11.md §3.4).
+#[derive(Clone, Copy)]
+pub(super) struct Run<'a, 'p> {
+    pub(super) features: &'p [&'a FeatureId],
+    /// Whether features follow the run in the timeline, rolled back.
+    pub(super) ends: bool,
+}
+
+/// The decision for the run's features in timeline order: the first
 /// stateful feature of a family the writer writes as an item. `failure` is
 /// the error of an earlier attempt to write the item. A written item whose
 /// parameter binds a user parameter takes that parameter out of
@@ -127,12 +137,13 @@ fn typed<'a>(target: &'a CadIr, feature: &FeatureId) -> Option<Typed<'a>> {
 pub(super) fn plan<'a>(
     target: &'a CadIr,
     scope: &'a DesignScope,
-    features: &[&'a FeatureId],
+    run: Run<'a, '_>,
     sketches: &SketchPlan<'a>,
     parameters: &mut ParameterPlan,
     failure: Option<&str>,
     ordinal: u32,
 ) -> Decision<'a> {
+    let features = run.features;
     let stateful = features
         .iter()
         .enumerate()
@@ -157,6 +168,7 @@ pub(super) fn plan<'a>(
         sketches,
         feature,
         position,
+        ends: run.ends,
     };
     let planned = match operation {
         Typed::Extrude(operation) => extrude::plan(&rows, operation, parameters, ordinal)
@@ -179,6 +191,8 @@ pub(super) struct Rows<'a, 'p> {
     pub(super) feature: &'a FeatureId,
     /// The feature's position in `features`.
     position: usize,
+    /// Whether rolled-back features follow `features` in the timeline.
+    ends: bool,
 }
 
 /// What the shared rows establish of a sketch-driven feature.
@@ -241,9 +255,10 @@ impl<'a, 'p> Rows<'a, 'p> {
         })
     }
 
-    /// The feature's timeline is rolled to its end. An unstated rollback is
-    /// read as the end (cadir-v11.md §5.2), which the design's report names
-    /// as an assumption.
+    /// The feature's timeline is rolled to its end, or, where rolled-back
+    /// features follow the run, to a feature after the run. An unstated
+    /// rollback is read as the end (cadir-v11.md §5.2), which the design's
+    /// report names as an assumption.
     fn rollback(&self) -> Result<(), &'static str> {
         let member = Member::Feature(self.feature.clone());
         let container = self
@@ -261,14 +276,18 @@ impl<'a, 'p> Rows<'a, 'p> {
                 rollback: None | Some(Rollback::End),
                 ..
             } => Ok(()),
+            Container::Ordered {
+                rollback: Some(Rollback::Before(Member::Feature(before))),
+                ..
+            } if self.ends && !self.features.contains(&before) => Ok(()),
             Container::Ordered { .. } | Container::Unordered { .. } => {
                 Err("its timeline's rollback is not at the end")
             }
         }
     }
 
-    /// The current state is the state after the feature or a later member,
-    /// and holds the one body.
+    /// The current state is the state after the feature or a later member
+    /// of the run, and holds the one body.
     fn current(&self, body: &BodyId) -> Result<(), &'static str> {
         const NOT_ITS_RESULT: &str = "the current state is not its result";
         let [state] = self.scope.current.as_slice() else {
@@ -281,8 +300,9 @@ impl<'a, 'p> Rows<'a, 'p> {
                 .position(|feature| *feature == at)
                 .is_some_and(|at| at >= self.position),
             // The state at an unstated rollback, read as built through the
-            // end of the timeline that holds the feature.
-            Position::After(Member::Container(timeline)) => {
+            // end of the timeline that holds the feature, where no feature
+            // follows the run: §3.4 makes it no member's state.
+            Position::After(Member::Container(timeline)) if !self.ends => {
                 self.target.design.containers.iter().any(|container| {
                     matches!(
                         container,
@@ -292,7 +312,7 @@ impl<'a, 'p> Rows<'a, 'p> {
                     )
                 })
             }
-            Position::Start(_) => false,
+            Position::After(Member::Container(_)) | Position::Start(_) => false,
         };
         if !later || !matches!(state.bodies.as_slice(), [only] if only == body) {
             return Err(NOT_ITS_RESULT);

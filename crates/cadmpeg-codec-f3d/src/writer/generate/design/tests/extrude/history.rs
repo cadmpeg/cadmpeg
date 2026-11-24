@@ -1,0 +1,150 @@
+// SPDX-License-Identifier: Apache-2.0
+//! The history-true form of a sketch-and-extrude design (cadir-v11.md §3.4,
+//! Features without their state): the run of features written with their
+//! states, the timeline marker after it, and the later features rolled back
+//! (f3d.md §3.1, "Feature item tail").
+
+use cadmpeg_ir::codec::write::MissingStateForm;
+use cadmpeg_ir::design::container::{Container, Rollback};
+use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
+use cadmpeg_ir::design::refs::{Member, Position};
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::FeatureId;
+
+use crate::loss::F3dLossCode;
+
+use super::super::sketch::{feature, feature_id};
+use super::super::write_bytes_as;
+use super::{blind, kinds, loss, sketch_and_extrude, EVALUATION_MISSING, EXTRUDE};
+
+/// The decoded rollback of the one decoded timeline, and its members.
+fn decoded_rollback(decoded: &CadIr) -> (Option<Rollback>, Vec<Member>) {
+    let [Container::Ordered {
+        members, rollback, ..
+    }] = decoded.design.containers.as_slice()
+    else {
+        panic!("one decoded timeline: {:#?}", decoded.design.containers);
+    };
+    (rollback.clone(), members.clone())
+}
+
+/// `ir` with an unresolved fillet inserted in its timeline before the datum
+/// `after`, its last member. Returns the fillet's id.
+fn with_fillet(ir: &mut CadIr) -> FeatureId {
+    let fillet = feature(
+        "fillet",
+        FeatureOperation::Unresolved {
+            family: OperationFamily::Fillet,
+        },
+    );
+    let id = fillet.id.clone();
+    ir.design.features.push(fillet);
+    let Some(Container::Ordered { members, .. }) = ir.design.containers.first_mut() else {
+        panic!("the cube's timeline");
+    };
+    let at = members.len() - 1;
+    members.insert(at, Member::Feature(id.clone()));
+    id
+}
+
+/// The unit cube as `Sketch`, `Extrude`, a later `Sketch` of one line, an
+/// unresolved fillet and a datum, rolled back before the later sketch, with
+/// the current state after the extrude. Returns the design, the later
+/// sketch and the fillet.
+fn rolled_back_after_the_extrude() -> (CadIr, FeatureId, FeatureId) {
+    let mut ir = sketch_and_extrude(blind(), true);
+    let fillet = with_fillet(&mut ir);
+    let later = feature_id("later");
+    let Some(Container::Ordered { rollback, .. }) = ir.design.containers.first_mut() else {
+        panic!("the cube's timeline");
+    };
+    *rollback = Some(Rollback::Before(Member::Feature(later.clone())));
+    ir.design.scopes[0].current[0].at = Position::After(Member::Feature(
+        FeatureId::mint(EXTRUDE).expect("identity grammar"),
+    ));
+    (ir, later, fillet)
+}
+
+#[test]
+fn the_run_is_written_with_its_state_and_the_later_features_follow_the_marker() {
+    let (ir, later, fillet) = rolled_back_after_the_extrude();
+    let (geometry_true, decoded, _) = write_bytes_as(&ir, MissingStateForm::GeometryTrue);
+    assert!(
+        kinds(&decoded).contains(&"base"),
+        "{:#?}",
+        geometry_true.losses
+    );
+
+    let (report, decoded, _) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
+    assert_eq!(
+        kinds(&decoded),
+        ["sketch", "extrude", "sketch"],
+        "{:#?}",
+        report.losses
+    );
+    let (rollback, members) = decoded_rollback(&decoded);
+    assert_eq!(members.len(), 3);
+    assert_eq!(rollback, Some(Rollback::Before(members[2].clone())));
+    assert_eq!(decoded.geometry.bodies.len(), 1);
+
+    let missing = loss(&report, EVALUATION_MISSING);
+    let rolled = missing
+        .iter()
+        .find(|message| message.contains("after the timeline marker, rolled back"))
+        .unwrap_or_else(|| panic!("{missing:#?}"));
+    assert!(rolled.contains(later.as_str()), "{rolled}");
+    let unwritten = missing
+        .iter()
+        .find(|message| message.contains(fillet.as_str()))
+        .unwrap_or_else(|| panic!("{missing:#?}"));
+    assert!(
+        unwritten.contains(&format!("{fillet} (it follows the timeline marker")),
+        "{unwritten}"
+    );
+    assert!(
+        missing.iter().all(|message| !message.contains(EXTRUDE)),
+        "{missing:#?}"
+    );
+    let omitted = loss(
+        &report,
+        &F3dLossCode::WriterDesignRecordOmitted.kind().to_string(),
+    )
+    .join("\n");
+    assert!(!omitted.contains("rollback (before"), "{omitted}");
+    let residual = loss(&report, "export/record.residual-unavailable").join("\n");
+    assert!(
+        residual.contains("(Sketch scope: its item tail)") && residual.contains("DR-1032"),
+        "{residual}"
+    );
+}
+
+#[test]
+fn a_timeline_whose_every_feature_has_its_state_writes_one_form() {
+    let ir = sketch_and_extrude(blind(), true);
+    let (geometry_true, _, geometry_bytes) = write_bytes_as(&ir, MissingStateForm::GeometryTrue);
+    let (history_true, decoded, history_bytes) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
+    assert_eq!(kinds(&decoded), ["sketch", "extrude", "sketch"]);
+    assert_eq!(decoded_rollback(&decoded).0, Some(Rollback::End));
+    assert!(geometry_bytes == history_bytes, "the two forms differ");
+    assert_eq!(
+        format!("{:?}", geometry_true.losses),
+        format!("{:?}", history_true.losses)
+    );
+}
+
+#[test]
+fn a_run_whose_feature_has_no_state_writes_the_geometry_true_form() {
+    let mut ir = sketch_and_extrude(blind(), false);
+    let fillet = with_fillet(&mut ir);
+    let (_, _, geometry_bytes) = write_bytes_as(&ir, MissingStateForm::GeometryTrue);
+    let (report, decoded, history_bytes) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
+    assert!(geometry_bytes == history_bytes, "the two forms differ");
+    assert!(kinds(&decoded).contains(&"base"));
+    let missing = loss(&report, EVALUATION_MISSING).join("\n");
+    assert!(
+        missing.contains(&format!(
+            "the history-true run before {fillet} writes {EXTRUDE} without its state: the current state is not its result"
+        )),
+        "{missing}"
+    );
+}
