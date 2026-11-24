@@ -149,6 +149,27 @@ impl<'a> Inputs<'a> {
         }
     }
 
+    pub(crate) fn sketch_plane(&self, native: &str) -> Mapping<Option<Value>> {
+        let path = format!("{}/sketches.json", self.prefix);
+        if !self.bundle.contains(&path) {
+            return Ok(None);
+        }
+        let response = self
+            .bundle
+            .json(&path)
+            .map_err(|_| "the sketch attachment response is unreadable")?;
+        let mut matches = rows(response, "sketches")?
+            .iter()
+            .filter(|row| row.get("featureId").and_then(Value::as_str) == Some(native));
+        let Some(row) = matches.next() else {
+            return Ok(None);
+        };
+        if matches.next().is_some() {
+            return Err("the sketch attachment identity repeats".into());
+        }
+        super::planes::sketch_plane(row).map(Some)
+    }
+
     pub(crate) fn sketch_entities(&self, sketch: &str) -> Mapping<&[Value]> {
         let sketch = self
             .features
@@ -812,6 +833,24 @@ impl State {
             json!({"origin":point(vector(surface.get("origin").ok_or("the sketch attachment support origin is missing")?,1000.0)?),
             "normal":point(unit(vector(surface.get("normal").ok_or("the sketch attachment support normal is missing")?,1.0)?)?)}),
         )
+    }
+
+    pub(crate) fn oriented_face_frame(&self, face_id: &str) -> Mapping<Value> {
+        let mut frame = self.face_frame(face_id)?;
+        let orientation = self
+            .faces
+            .get(face_id)
+            .and_then(|face| face.get("orientation"))
+            .and_then(Value::as_bool)
+            .ok_or("the datum support face orientation is missing")?;
+        if !orientation {
+            let normal = vector(
+                frame.get("normal").ok_or("the support normal is missing")?,
+                1.0,
+            )?;
+            frame["normal"] = point(normal.map(|value| -value));
+        }
+        Ok(frame)
     }
 
     pub(crate) fn axis(&self, feature: &Value, key: &str) -> Mapping<Value> {

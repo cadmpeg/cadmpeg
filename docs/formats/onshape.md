@@ -111,6 +111,24 @@ metres; `normal` and `x` store its normal and x axis. The axes are orthogonal.
 A referenced planar face and the stored attachment frame are coplanar. The
 stored origin retains tangential translation. The stored x axis retains
 in-plane rotation. The normal carries the attachment sense.
+A `sketches.json` row identifies its sketch through `featureId`.
+Its `sketchMatrix` stores a row-major homogeneous 4 by 4 transform.
+The first three columns are the sketch x axis, y axis and normal.
+The fourth column stores the origin in metres; the last row is `[0, 0, 0, 1]`.
+The rotation is orthonormal.
+
+A `cPlane` feature with `cplaneType` equal to `OFFSET` selects its support
+through `entities`. A single default plane, created datum plane or planar
+face defines the support. `offset` is a length quantity. With
+`oppositeDirection` equal to `false`, for support origin `o`, unit normal `n`
+and offset `d`, the constructed plane contains `o + d * n` and retains
+normal `n`.
+For a planar face, `orientation` selects the outward normal: `true`
+retains the surface normal and `false` reverses it. The support frame and
+signed distance define the datum offset plane.
+A sketch-plane creation query with operation suffix `.planeOp` selects the
+created datum plane. The sketch's stored attachment frame remains coplanar
+with that datum plane.
 
 A `sweep` feature stores solid cross-section selections in `profiles` and
 trajectory selections in `path`. `bodyType: "SOLID"` selects a solid result.

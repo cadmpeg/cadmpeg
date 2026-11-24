@@ -362,7 +362,11 @@ fn schema_response(name: &str, prefix: &str) -> bool {
     };
     if matches!(
         member,
-        "features.json" | "configuration.json" | "variables.json" | "bodydetails/index.json"
+        "features.json"
+            | "sketches.json"
+            | "configuration.json"
+            | "variables.json"
+            | "bodydetails/index.json"
     ) {
         return true;
     }

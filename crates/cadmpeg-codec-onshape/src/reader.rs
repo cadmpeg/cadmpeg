@@ -4,6 +4,7 @@
 use crate::archive;
 pub(super) mod expression;
 mod features;
+mod planes;
 pub(super) mod query;
 mod regions;
 mod sketch;
@@ -116,6 +117,8 @@ fn mapping_loss_code(
         && !reason.starts_with(sweep::PATH_BUDGET_EXHAUSTED)
     {
         OnshapeLossCode::SweepNotSupported
+    } else if feature.get("featureType").and_then(Value::as_str) == Some("cPlane") {
+        OnshapeLossCode::PlaneNotSupported
     } else {
         OnshapeLossCode::HistoryNotSupported
     }

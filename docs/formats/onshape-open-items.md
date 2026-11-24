@@ -83,3 +83,13 @@ Need: Build an asymmetric profile and a path with bends in two planes. Save each
 Conflict: Different frame rules can rotate an asymmetric section about the path tangent.
 
 Note: The decoder maps the plain form to a sweep operation.
+
+## ONSHAPE-008 — Offset plane with `oppositeDirection`
+
+Question: How does `oppositeDirection: true` on an `OFFSET` `cPlane` place the constructed plane and orient its normal?
+
+Known: With `oppositeDirection` equal to `false`, the plane contains `o + d * n` and retains the support normal `n`.
+
+Need: A bundle with `oppositeDirection` equal to `true` whose final geometry fixes the offset side and the constructed normal.
+
+Note: A flipped offset plane retains its feature as Native with `plane.not-supported`.

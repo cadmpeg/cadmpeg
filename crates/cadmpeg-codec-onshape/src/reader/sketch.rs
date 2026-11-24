@@ -14,7 +14,11 @@ use super::{
     id, number, optional_rows, push, query as compressed, rows, text, topology, Mapping,
 };
 const ORIGIN_ID: &str = "IB";
-fn frame(feature: &Value, face: &dyn Fn(&str) -> Mapping<Value>) -> Mapping<Value> {
+pub(super) fn frame(
+    feature: &Value,
+    face: &dyn Fn(&str) -> Mapping<Value>,
+    datum: &dyn Fn(&str) -> Mapping<Value>,
+) -> Mapping<Value> {
     let [query] = queries(feature, "sketchPlane")? else {
         return Err("multiple sketch planes are not supported yet".into());
     };
@@ -34,7 +38,11 @@ fn frame(feature: &Value, face: &dyn Fn(&str) -> Mapping<Value>) -> Mapping<Valu
             return Err("a sketch on more than one face is not supported yet".into());
         };
         let support = face(native.as_str().ok_or("a sketch face id is not a string")?)?;
-        attachment_frame(feature, &support)
+        if feature.get("plane").is_none() && support.get("u_axis").is_some() {
+            Ok(support)
+        } else {
+            attachment_frame(feature, &support)
+        }
     };
     let plane = if query
         .get("queryString")
@@ -76,10 +84,19 @@ fn frame(feature: &Value, face: &dyn Fn(&str) -> Mapping<Value>) -> Mapping<Valu
             .and_then(|s| s.strip_suffix(".planeOp"))
             .ok_or("this sketch plane has no resolved in-plane frame")?
             .to_owned()
+    } else if let Some(feature_id) =
+        query
+            .get("featureId")
+            .and_then(Value::as_str)
+            .filter(|native| {
+                deterministic.is_none()
+                    || matches!(*native, "Top" | "Front" | "Right")
+                    || datum(native).is_ok()
+            })
+    {
+        feature_id.to_owned()
     } else if deterministic.is_some() {
         return face_frame();
-    } else if let Some(feature_id) = query.get("featureId").and_then(Value::as_str) {
-        feature_id.to_owned()
     } else {
         let source_query = text(query, "queryString")?;
         let query_string = source_query
@@ -100,7 +117,14 @@ fn frame(feature: &Value, face: &dyn Fn(&str) -> Mapping<Value>) -> Mapping<Valu
         "Top" => ([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         "Front" => ([0.0, -1.0, 0.0], [1.0, 0.0, 0.0]),
         "Right" => ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-        _ => return Err("this sketch plane has no resolved in-plane frame".into()),
+        _ => {
+            let support = datum(&plane)?;
+            return if feature.get("plane").is_some() {
+                attachment_frame(feature, &support)
+            } else {
+                Ok(support)
+            };
+        }
     };
     let support = json!({"origin": topology::point([0.0; 3]), "normal": topology::point(normal), "u_axis": topology::point(u_axis)});
     if feature.get("plane").is_some() {
@@ -123,7 +147,10 @@ pub(super) fn built_in_frame(feature: &Value) -> bool {
     {
         return false;
     }
-    frame(feature, &|_| Err("historical face".into())).is_ok()
+    frame(feature, &|_| Err("historical face".into()), &|_| {
+        Err("created plane".into())
+    })
+    .is_ok()
 }
 
 fn stored_frame(feature: &Value) -> Mapping<Value> {
@@ -332,9 +359,31 @@ pub(super) fn map(
     }
     let native = text(feature, "featureId")?;
     let sketch_id = id("sketch", native);
-    let plane = frame(feature, &|face| {
-        inputs.load(ordinal, feature)?.face_frame(face)
-    })?;
+    let created_plane = std::cell::Cell::new(false);
+    let mut plane = frame(
+        feature,
+        &|face| inputs.load(ordinal, feature)?.face_frame(face),
+        &|native| {
+            let frame = super::planes::created(model, native)?;
+            created_plane.set(true);
+            Ok(frame)
+        },
+    )?;
+    if feature.get("plane").is_none() {
+        match inputs.sketch_plane(native) {
+            Ok(Some(stored)) => plane = attachment_frame(&json!({"plane":stored}), &plane)?,
+            Ok(None) if created_plane.get() => report.push_coded(
+                native, crate::loss::OnshapeLossCode::SketchPlaneAssumed,
+                "the sketch attachment matrix is missing; assumed the support plane's in-plane frame",
+            ),
+            Ok(None) => {}
+            Err(reason) => report.push_coded(
+                native,
+                crate::loss::OnshapeLossCode::SketchPlaneAssumed,
+                format!("{reason}; assumed the support plane's in-plane frame"),
+            ),
+        }
+    }
     let mut loci = BTreeMap::new();
     for entity in rows(feature, "entities")? {
         let native_entity = text(entity, "entityId")?;
