@@ -35,7 +35,7 @@ pub(super) struct RunKind {
     pub(super) up_to: bool,
 }
 
-/// A spacing's literal counts are at least 1, a `List` is nonempty, and
+/// A spacing's counts are at least 1, a `List` is nonempty, and
 /// `Fit` and `UpTo` occur only where the run admits them.
 pub(super) fn check_spacing<Q>(
     site: Site<'_>,
@@ -44,12 +44,11 @@ pub(super) fn check_spacing<Q>(
     kind: RunKind,
     findings: &mut Vec<Finding>,
 ) {
-    if let Some(0) = literal_count(spacing) {
-        error(
-            findings,
-            site.entity,
-            format_args!("{field} has a literal count of 0; a count is at least 1"),
-        );
+    if let Some(count) = spacing_count(spacing) {
+        site.bound(findings, |values| {
+            (values.get(count)? == 0)
+                .then(|| format!("{field} has a count of 0; a count is at least 1"))
+        });
     }
     match spacing {
         Spacing::List(values) if values.is_empty() => error(
@@ -71,19 +70,23 @@ pub(super) fn check_spacing<Q>(
     }
 }
 
-/// The literal count a spacing states.
-fn literal_count<Q>(spacing: &Spacing<Q>) -> Option<u32> {
-    let count = match spacing {
+/// The count a spacing states.
+fn spacing_count<Q>(spacing: &Spacing<Q>) -> Option<&Dimension<u32>> {
+    match spacing {
         Spacing::Pitch { count, .. } | Spacing::Span { count, .. } | Spacing::Fit { count } => {
-            count
+            Some(count)
         }
         Spacing::UpTo {
             fill: UpToFill::Count(count),
             ..
-        } => count,
-        _ => return None,
-    };
-    match count {
+        } => Some(count),
+        _ => None,
+    }
+}
+
+/// The literal count a spacing states.
+fn literal_count<Q>(spacing: &Spacing<Q>) -> Option<u32> {
+    match spacing_count(spacing)? {
         Dimension::Literal(count) => Some(*count),
         _ => None,
     }
@@ -328,7 +331,8 @@ fn coordinates(index: &DesignRecords<'_>, layout: &PatternLayout, follow: bool) 
         | PatternLayout::Chain(_)
         | PatternLayout::Points { .. }
         | PatternLayout::Table(_)
-        | PatternLayout::Mirror(_) => Some(1),
+        | PatternLayout::Mirror(_)
+        | PatternLayout::Scale(_) => Some(1),
         PatternLayout::Dimensions(runs) => Some(runs.len()),
         PatternLayout::Composite(stages) => stages
             .iter()
@@ -337,14 +341,14 @@ fn coordinates(index: &DesignRecords<'_>, layout: &PatternLayout, follow: bool) 
                 CompositeStage::Circular(circular) => {
                     Some(1 + usize::from(circular.radial.is_some()))
                 }
-                CompositeStage::Mirror(_) => Some(1),
-                CompositeStage::Scale(_) | CompositeStage::Native(_) => None,
+                CompositeStage::Mirror(_) | CompositeStage::Scale(_) => Some(1),
+                CompositeStage::Native(_) => None,
             })
             .sum(),
         PatternLayout::Follow(followed) if follow => {
             coordinates(index, followed_layout(index, followed)?, false)
         }
-        PatternLayout::Follow(_) | PatternLayout::Scale(_) | PatternLayout::Native(_) => None,
+        PatternLayout::Follow(_) | PatternLayout::Native(_) => None,
     }
 }
 
@@ -459,13 +463,10 @@ pub(super) fn check_layout(
                         format_args!("a Dimensions run has no increment"),
                     );
                 }
-                if matches!(run.count, Dimension::Literal(0)) {
-                    error(
-                        findings,
-                        site.entity,
-                        format_args!("a Dimensions run has a literal count of 0"),
-                    );
-                }
+                site.bound(findings, |values| {
+                    (values.get(&run.count)? == 0)
+                        .then(|| "a Dimensions run has a count of 0".to_owned())
+                });
                 check_increments(site, &run.increments, bound, findings);
             }
         }
@@ -635,13 +636,9 @@ fn check_circular(
 }
 
 fn check_scale(site: Site<'_>, layout: &ScaleLayout, findings: &mut Vec<Finding>) {
-    if matches!(layout.count, Dimension::Literal(count) if count < 2) {
-        error(
-            findings,
-            site.entity,
-            format_args!("a Scale layout's literal count is below 2"),
-        );
-    }
+    site.bound(findings, |values| {
+        (values.get(&layout.count)? < 2).then(|| "a Scale layout's count is below 2".to_owned())
+    });
 }
 
 /// The instances a stage makes, where its counts are literal.
@@ -694,15 +691,11 @@ fn check_run<Q>(
     if let Some(RunSides::Reverse(spacing)) = &run.sides {
         check_spacing(site, field, spacing, kind, findings);
     }
-    if let (Some(Dimension::Literal(seed)), Some(count)) = (&run.seed, literal_count(&run.spacing))
-    {
-        if *seed >= count {
-            error(
-                findings,
-                site.entity,
-                format_args!("{field}'s seed {seed} is not below its count {count}"),
-            );
-        }
+    if let (Some(seed), Some(count)) = (&run.seed, spacing_count(&run.spacing)) {
+        site.bound(findings, |values| {
+            let (seed, count) = (values.get(seed)?, values.get(count)?);
+            (seed >= count).then(|| format!("{field}'s seed {seed} is not below its count {count}"))
+        });
     }
     check_increments(site, &run.increments, bound, findings);
 }
@@ -1005,13 +998,14 @@ pub(super) fn check_split(site: Site<'_>, split: &Split, findings: &mut Vec<Find
                 SplitTool::Geometry {
                     tools: geometry, ..
                 } => {
-                    let datum = |class| matches!(class, Class::Datum | Class::Principal(_));
-                    if picks::classes(geometry).into_iter().any(datum) {
-                        error(
-                            findings,
-                            site.entity,
-                            format_args!("SplitTool::Geometry picks a datum or principal entity, which is SplitTool::Plane"),
-                        );
+                    if let Some([alone]) = picks::named(geometry) {
+                        if matches!(picks::class(alone), Class::Datum | Class::Principal(_)) {
+                            error(
+                                findings,
+                                site.entity,
+                                format_args!("SplitTool::Geometry picks one datum or principal entity alone, which is SplitTool::Plane"),
+                            );
+                        }
                     }
                     picks::classes(geometry)
                 }
@@ -1151,14 +1145,14 @@ pub(super) fn check_transform_bodies(
     }
     check_transformation(site, &transform.transformation, findings);
     if let Some(TransformMode::Copy { count, divisions }) = &transform.mode {
-        if matches!(count, Dimension::Literal(0))
-            || matches!(divisions, Some(Dimension::Literal(0)))
-        {
-            error(
-                findings,
-                site.entity,
-                format_args!("a literal Copy.count or divisions is 0; it is at least 1"),
-            );
+        site.bound(findings, |values| {
+            (values.get(count)? == 0).then(|| "Copy.count is 0; it is at least 1".to_owned())
+        });
+        if let Some(divisions) = divisions {
+            site.bound(findings, |values| {
+                (values.get(divisions)? == 0)
+                    .then(|| "Copy.divisions is 0; it is at least 1".to_owned())
+            });
         }
         let divided = match divisions {
             Some(Dimension::Literal(divisions)) => *divisions > 1,

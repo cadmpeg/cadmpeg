@@ -236,8 +236,8 @@ fn authored_with_retained_native_envelope_cube_reaches_encode_decode_fixpoint() 
         .into_parts()
         .0;
 
-    let first_hash = crate::decode::document_local_sha256(first.ir()).unwrap();
-    let second_hash = crate::decode::document_local_sha256(&second).unwrap();
+    let first_hash = crate::test_support::document_local_sha256(first.ir()).unwrap();
+    let second_hash = crate::test_support::document_local_sha256(&second).unwrap();
     assert_eq!(first_hash, second_hash, "round trip is not a fixed point");
 
     // Value golden: the cube's record families and counts, asserted directly.
@@ -295,13 +295,13 @@ fn sketch_baselines_cover_final_relation_binding_and_arena_order() {
             .unwrap();
         assert!(!decoded.ir().model.sketch_constraints.is_empty());
         let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-        let baselines = &decoded.ir().source.as_ref().unwrap().attributes;
+        let baselines = &decoded.source_fidelity().codec_digests;
         assert_eq!(
-            baselines["sldprt_neutral_sketch_local_sha256"],
+            baselines["sldprt_neutral_sketch_local_sha256"].as_str(),
             crate::resolved_features::hashes::sketch_hash(&ctx, decoded.ir()).unwrap()
         );
         assert_eq!(
-            baselines["sldprt_neutral_sketch_constraint_local_sha256"],
+            baselines["sldprt_neutral_sketch_constraint_local_sha256"].as_str(),
             crate::resolved_features::hashes::constraint_hash(&ctx, decoded.ir()).unwrap()
         );
     }

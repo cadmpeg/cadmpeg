@@ -136,7 +136,7 @@ wire_case!(
 wire_case!(
     borrowed_tessellation_wire,
     crate::tessellation::Tessellation,
-    json!({"id":"test:model:tessellation#t","body":"test:model:body#b","faces":["test:model:face#f"],"mesh":{"kind":"list","vertices":[{"x":0.0,"y":0.0,"z":0.0},{"x":1.0,"y":0.0,"z":0.0},{"x":0.0,"y":1.0,"z":0.0}],"triangles":[[0,1,2]]},"feature_edges":[],"triangle_groups":[],"texture_assignments":[],"texture_coordinates":[],"channels":[]})
+    json!({"id":"test:model:tessellation#t","of":{"kind":"body","body":"test:model:body#b","faces":["test:model:face#f"]},"mesh":{"kind":"list","vertices":[{"x":0.0,"y":0.0,"z":0.0},{"x":1.0,"y":0.0,"z":0.0},{"x":0.0,"y":1.0,"z":0.0}],"triangles":[[0,1,2]]},"feature_edges":[],"triangle_groups":[],"texture_assignments":[],"texture_coordinates":[],"channels":[]})
 );
 wire_case!(
     borrowed_exactness_field_wire,

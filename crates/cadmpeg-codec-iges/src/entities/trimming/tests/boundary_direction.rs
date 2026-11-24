@@ -139,7 +139,7 @@ fn face_loops(ir: &CadIr) -> Vec<(String, LoopBoundaryRole)> {
     };
     assert_eq!(face.sense, Sense::Forward);
     face.loops
-        .iter()
+        .stated()
         .map(|id| (id.as_str().to_owned(), face.loop_role(id)))
         .collect()
 }

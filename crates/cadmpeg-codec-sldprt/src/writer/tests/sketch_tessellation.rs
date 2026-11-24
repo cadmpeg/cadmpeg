@@ -70,10 +70,7 @@ fn semantic_writer_rejects_retained_sketch_constraint_edits() {
             metadata: None,
             native_ref: None,
         });
-    assert_ne!(
-        decoded.ir().source.as_ref().unwrap().attributes["document_local_sha256"],
-        crate::decode::document_local_sha256(decoded.ir()).unwrap()
-    );
+    assert!(decoded.source_fidelity().edited(decoded.ir()).unwrap());
 
     let error = SldprtCodec
         .plan(
@@ -945,8 +942,7 @@ fn semantic_writer_writes_default_channels_for_more_auxiliary_channels_than_the_
     )
     .unwrap();
     extended.id = original.id.clone();
-    extended.body = original.body.clone();
-    extended.faces = original.faces.clone();
+    extended.of = original.of.clone();
     decoded.ir_mut().model.tessellations[0] = extended;
 
     let report = SldprtCodec

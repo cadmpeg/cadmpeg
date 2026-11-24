@@ -724,7 +724,7 @@ resolve a seed feature?
 
 **Question.** Which field identifies a point record whose u32 at marker +17 is `2` or a relation code?
 
-**Known.** Such a record stores the coordinate tag `1e 00` at marker +64 and holds a slot in the point array of its block. Its u32 at marker +17 is `2` or a relation code.
+**Known.** Such a record stores the coordinate tag `1e 00` at marker +64 and holds a slot in the point array of its block. Its u32 at marker +17 is `2` or a relation code. The decoder types the relation that such a code names only where the entities that the record's links resolve to satisfy that relation, and keeps the relation native otherwise.
 
 **Need.** We must draw these points to type the relations that name them.
 
@@ -1417,3 +1417,11 @@ The other axis-parallel support frames include the frames of those families whos
 **Known.** The u32 before the object's class marker or object-name token (`sldprt.md` §2) is `6` on a revolution that makes the first body of the part. It is also `6` on a revolution that follows a body-making feature in a part that holds one body after it, where no later feature combines bodies. It is `8` on a revolution that follows a body-making feature. Where the bytes before that u32 are `ff ff ff ff`, a zero u32 and a nonzero u32, the u32 is `6` or `8`; other byte forms before the class marker give other values in the same position. The named-object header after the revolution's name string (`sldprt.md` §2.3) holds the same family word, operation byte and schema byte on every revolution. The decoder states form `8` as a join and leaves the operation of the other forms unread. The design states a revolution that adds material as a new body where no member before it can hold a body, and states no boolean, under `design.revolve-boolean-unstated`, after such a member.
 
 **Need.** A part with a boss extrusion and a boss revolution that overlaps it, saved once with the revolution's merge-result option set and once with it clear, and the bytes of the two `moRevolution_c` objects compared.
+
+### DI-95. Operands and measured direction of a point-point distance relation
+
+**Question.** Which marker roster do the two operand addresses of an `sgPntPntDist` relation index when their tag is a lane-local class token, and which field states whether the dimension measures the Euclidean, the horizontal, or the vertical separation of its two points?
+
+**Known.** The relation object writes its relation class, a zero u32 and its parameter class, then a display-role scalar and a driving-role scalar of the same name (`sldprt.md` §2). Each scalar ends with two operand cells, compact 8-byte cells or 12-byte cells, each a class token and a u16 address, and then u16 `1`, u16 `1`, u16 `1` and four zero bytes. Read as feature-local object indices, the addresses of a relation can select two coordinate-bearing points whose horizontal or vertical separation equals the driving scalar and whose Euclidean separation differs from it. Read as zero-based ordinals over all coordinate-bearing markers of the owning feature in byte order, with the point records of DI-46 included, the same addresses select two points whose Euclidean separation equals the driving scalar. In such a sketch, the other relations of the class that use the same token also fit the ordinal reading, and their object-index reading selects no pair at the driving distance. The u16 triple after the operand cells is `1`, `1`, `1` in relations whose points are separated on one axis only and in relations whose points are separated on both. The decoder keeps a relation native when its resolved operands measure another value than its driving scalar.
+
+**Need.** A sketch with two points on no common axis, dimensioned three times with point-to-point dimensions placed aligned, horizontal and vertical, saved, and the three relation objects and their `moDisplayDistanceDim_c` display objects compared, together with a second save in which a point marker is added before the dimensioned points.

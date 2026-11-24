@@ -747,7 +747,7 @@ pub(crate) fn project_in_members(
             o.transform = Some(transform);
         }
     }
-    let ns = ir.native.namespace_mut("f3d");
+    let ns = ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d"));
     for name in ["xref_references", "design_component_occurrences"] {
         if let Some(records) = ns.arenas_mut().get_mut(name) {
             for r in records {

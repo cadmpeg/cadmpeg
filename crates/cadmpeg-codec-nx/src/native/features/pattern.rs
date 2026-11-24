@@ -467,7 +467,7 @@ impl PatternScalarWire {
         let encoding = scalar.encoding();
         if self.encoding != encoding
             || self.raw.len() != scalar.raw().len()
-            || self.value.to_bits() != scalar.value().get().to_bits()
+            || self.value != scalar.value().get()
         {
             return Err("encodings and values must match each exact raw_values atom".into());
         }
@@ -485,7 +485,7 @@ impl PatternScalarWire {
         }
         let scalar = PatternWide::read(&self.raw)
             .ok_or("raw_values wide-row scalars must contain eight-byte pattern atoms")?;
-        if self.value.to_bits() != scalar.value().get().to_bits() {
+        if self.value != scalar.value().get() {
             return Err("values/raw_values: scalars must match raw_scalars".into());
         }
         Ok(PatternValue {
@@ -500,7 +500,7 @@ impl PatternScalarWire {
         )?;
         if self.encoding != scalar.encoding()
             || self.raw.len() != scalar.raw().len()
-            || self.value.to_bits() != scalar.value().get().to_bits()
+            || self.value != scalar.value().get()
         {
             return Err(
                 "encodings and values must match the exact raw_values terminal atom".into(),

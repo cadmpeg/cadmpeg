@@ -493,7 +493,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         &self,
         boundary: &SurfaceBoundary,
         support_faces: &FaceSelection,
-        continuity: &cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuityState,
+        continuity: Option<&cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuity>,
         merge_result: Option<bool>,
         constrained_or_reversed: bool,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
@@ -525,7 +525,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 ))
             })?;
-            let continuity = continuity.resolved().ok_or_else(|| {
+            let continuity = continuity.ok_or_else(|| {
                 CodecError::NotImplemented(format!(
                     "SLDPRT feature {} has unresolved filled-surface continuity",
                     feature.id

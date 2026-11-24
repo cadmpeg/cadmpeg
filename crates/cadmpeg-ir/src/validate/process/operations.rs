@@ -9,8 +9,9 @@ use cadmpeg_core::text::NonBlankString;
 
 use super::records::ProcessRecords;
 use crate::design::dimension::{Dimension, ParamRef, ParameterRef, RefTarget};
+use crate::design::names::NameKind;
 use crate::design::parameter::ParameterValue;
-use crate::design::selection::{Ordered, Picks, Selection};
+use crate::design::selection::{Ordered, Picks, PrincipalEntity, Selection};
 use crate::geometry::InlineCurve;
 use crate::process::cycle::{Cycle, CycleKind, ProbeTarget};
 use crate::process::limits::{HeightFrom, HeightRole, RadialLimit, RadiusFrom, RadiusRole};
@@ -27,6 +28,7 @@ use crate::process::Choice;
 use crate::process::ProcessDimension;
 use crate::report::check::Finding;
 use crate::scalar::Length;
+use crate::validate::design::ops::picks::{self, Class};
 
 pub(super) fn check_operations(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
     let process = &records.ir.process;
@@ -580,21 +582,39 @@ fn named_picks(selection: &Selection<Ordered>) -> Option<usize> {
     }
 }
 
-/// `InPlane.plane` and `ThroughLine.line` pick one entity, and
-/// `NormalToSurface.surfaces` and `AlongRuling.surfaces` at least one.
+/// `InPlane.plane` picks one plane, `ThroughLine.line` one line, and
+/// `NormalToSurface.surfaces` and `AlongRuling.surfaces` at least one face.
+/// A pick whose target states no kind is not refused, and a body or a
+/// feature's result is taken to hold faces.
 fn check_tool_axis(operation: &Operation, findings: &mut Vec<Finding>) {
     let id = operation.id.as_str();
-    let (selection, one, what) = match &operation.tool_axis {
-        Some(ToolAxisControl::InPlane { plane }) => (plane, true, "`in_plane.plane`"),
-        Some(ToolAxisControl::ThroughLine { line }) => (line, true, "`through_line.line`"),
+    let admits: fn(Class) -> bool;
+    let (selection, one, what, wanted) = match &operation.tool_axis {
+        Some(ToolAxisControl::InPlane { plane }) => {
+            admits = picks::is_plane;
+            (plane, true, "`in_plane.plane`", "a plane")
+        }
+        Some(ToolAxisControl::ThroughLine { line }) => {
+            admits = is_line;
+            (line, true, "`through_line.line`", "a line")
+        }
         Some(ToolAxisControl::NormalToSurface { surfaces }) => {
-            (surfaces, false, "`normal_to_surface.surfaces`")
+            admits = holds_faces;
+            (surfaces, false, "`normal_to_surface.surfaces`", "a face")
         }
         Some(ToolAxisControl::AlongRuling { surfaces }) => {
-            (surfaces, false, "`along_ruling.surfaces`")
+            admits = holds_faces;
+            (surfaces, false, "`along_ruling.surfaces`", "a face")
         }
         Some(ToolAxisControl::Native(_)) | None => return,
     };
+    if let Some(class) = picks::refused(&selection.selection, admits) {
+        super::error(
+            findings,
+            id,
+            format_args!("{what} picks {class}; it picks {wanted}"),
+        );
+    }
     let Some(count) = named_picks(&selection.selection) else {
         return;
     };
@@ -611,6 +631,32 @@ fn check_tool_axis(operation: &Operation, findings: &mut Vec<Finding>) {
             format_args!("{what} picks nothing; it picks at least one face"),
         );
     }
+}
+
+/// A line: an edge or a curve, a datum, a principal axis, a sketch's axis,
+/// or a sketch entity.
+const fn is_line(class: Class) -> bool {
+    matches!(
+        class,
+        Class::Name(NameKind::Edge | NameKind::Curve)
+            | Class::Datum
+            | Class::SketchFrame
+            | Class::SketchEntity
+            | Class::SpatialSketchEntity
+            | Class::Principal(
+                PrincipalEntity::XAxis | PrincipalEntity::YAxis | PrincipalEntity::ZAxis
+            )
+    )
+}
+
+/// What holds a face: a face or a surface, a datum or principal plane, a
+/// sketch region, a body, or a feature's result.
+const fn holds_faces(class: Class) -> bool {
+    picks::is_plane(class)
+        || matches!(
+            class,
+            Class::Name(NameKind::Body) | Class::FeatureResult | Class::SketchRegion
+        )
 }
 
 /// `WcsOrigin::FrameOrigin` occurs only with `WcsOrientation::Frame`.
@@ -723,24 +769,12 @@ fn check_technology(
     }
 }
 
-/// A `Cycle.expansion` holds no `Cycle`; probe values occur only in a probe
-/// cycle, and a probe target's widths, diameters, and spacing are positive.
+/// Probe values occur only in a probe cycle, and a probe target's widths,
+/// diameters, and spacing are positive.
 fn check_motions(holder: &str, motions: &[Motion], findings: &mut Vec<Finding>) {
-    let mut pending: Vec<(&Motion, bool)> = motions.iter().map(|motion| (motion, false)).collect();
-    while let Some((motion, expanded)) = pending.pop() {
-        let Motion::Cycle(cycle) = motion else {
-            continue;
-        };
-        if expanded {
-            super::error(
-                findings,
-                holder,
-                format_args!("a cycle's `expansion` holds a cycle"),
-            );
-        }
-        check_motion_cycle(holder, cycle, findings);
-        for inner in cycle.expansion.iter().flatten() {
-            pending.push((inner, true));
+    for motion in motions {
+        if let Motion::Cycle(cycle) = motion {
+            check_motion_cycle(holder, cycle, findings);
         }
     }
 }

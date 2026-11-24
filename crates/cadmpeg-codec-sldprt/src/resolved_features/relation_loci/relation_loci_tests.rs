@@ -1,7 +1,7 @@
 //! Tests for the `relation_loci` module.
 
 use super::{
-    marker_center_dimensioned_entity, relation_constraint_is_inactive, typed_relation_definition,
+    marker_center_dimensioned_entity, relation_contradicts_geometry, typed_relation_definition,
     typed_relation_definition_with_profile_axis, unique_locus,
 };
 use crate::records::operand_tag::NativeOperandTag;
@@ -761,13 +761,13 @@ fn dynamic_point_relation_accepts_model_coordinate_quantization() {
         ),
         parameter: parameter.id.clone(),
     };
-    assert!(!relation_constraint_is_inactive(
+    assert!(!relation_contradicts_geometry(
         Some(&parameter),
         &definition,
         &[first.clone(), second.clone()],
     )
     .unwrap());
-    assert!(relation_constraint_is_inactive(
+    assert!(relation_contradicts_geometry(
         Some(&rejected_parameter),
         &definition,
         &[first, second],
@@ -1680,5 +1680,39 @@ fn authoritative_line_distance_requires_defined_parallel_supports() {
         } else {
             assert_eq!(result, None);
         }
+    }
+}
+
+#[test]
+fn an_angle_between_two_lines_holds_for_either_supplement() {
+    let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
+    let vertical = line_entity(
+        "synthetic:test:id#vertical",
+        &sketch,
+        Point2::new(0.0, -1.0),
+        Point2::new(0.0, 1.0),
+    );
+    let diagonal = line_entity(
+        "synthetic:test:id#diagonal",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(-1.0, -1.0),
+    );
+    let entities = [vertical.clone(), diagonal.clone()];
+    let mut parameter = length_parameter(1.0);
+    let definition = SketchConstraintDefinitionInput::Angle {
+        first: vertical.id().clone(),
+        second: diagonal.id().clone(),
+        parameter: parameter.id.clone(),
+    };
+    for (degrees, contradicted) in [(45.0_f64, false), (135.0, false), (30.0, true)] {
+        parameter.value = Some(ParameterValue::Angle(
+            Angle::new(degrees.to_radians()).unwrap(),
+        ));
+        assert_eq!(
+            relation_contradicts_geometry(Some(&parameter), &definition, &entities).unwrap(),
+            contradicted,
+            "{degrees} degrees"
+        );
     }
 }

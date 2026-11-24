@@ -338,6 +338,12 @@ impl<'a, 'd> Ctx<'a, 'd> {
     fn holds_design_intent(&self) -> bool {
         self.ir.scope().design && self.native.design_intent_failures.is_empty()
     }
+
+    /// Whether the neutral features that design-intent records project to
+    /// are held: a document read from CADIR JSON does not hold them.
+    fn holds_neutral_design(&self) -> bool {
+        self.holds_design_intent() && self.ir.model.omitted_arenas_held()
+    }
 }
 
 /// Validate the `f3d` native namespace of `ir` against its decoded IR.

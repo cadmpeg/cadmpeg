@@ -5482,7 +5482,7 @@ pub(super) fn display_jt_tessellations(
     ctx: &DecodeContext<'_>,
     inputs: &DisplayJtTessellationInputs<'_>,
     losses: &mut Vec<LossNote>,
-) -> Result<Vec<(Tessellation, u64)>, CodecError> {
+) -> Result<Vec<(Tessellation, u64, Option<Color>)>, CodecError> {
     let DisplayJtTessellationInputs {
         meshes,
         coordinates,
@@ -5802,13 +5802,10 @@ pub(super) fn display_jt_tessellations(
                     object_id: required!(cadmpeg_core::text::NonBlankString::new(
                         shape_node.id.clone(),
                     )),
-                    name: None,
-                    color,
-                    visible: None,
-                    layer: None,
                     instance_path,
                 })),
                 shape_node.source_offset,
+                color,
             ));
         }
         tessellations.append(&mut mesh_tessellations);

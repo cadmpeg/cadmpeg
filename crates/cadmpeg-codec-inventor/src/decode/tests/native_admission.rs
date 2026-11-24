@@ -1022,7 +1022,7 @@ fn malformed_optional_ufrx_is_a_warning_without_weakening_required_links() {
     let mut broken = decoded.ir().clone();
     broken
         .native
-        .namespace_mut("inventor")
+        .namespace_mut(cadmpeg_ir::codec_id!("inventor"))
         .arenas_mut()
         .remove("segment_pairs");
     let findings = InventorCodec

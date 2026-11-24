@@ -382,7 +382,7 @@ fn project_one(
             F3dLossCode::FeatureSweepSelectionUnresolved,
             "the section has no unique source carrier; all candidates are retained",
         );
-        SweepSection::Unresolved(None)
+        SweepSection::Unresolved
     };
     let mut paths = owned
         .iter()

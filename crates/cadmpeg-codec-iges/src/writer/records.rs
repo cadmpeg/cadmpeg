@@ -67,7 +67,7 @@ impl<'ir> TopologyIndex<'ir> {
         for face in &geometry.faces {
             for loop_ in face
                 .loops
-                .iter()
+                .stated()
                 .filter_map(|loop_id| loops.get(loop_id.as_str()).copied())
             {
                 for coedge in loop_
