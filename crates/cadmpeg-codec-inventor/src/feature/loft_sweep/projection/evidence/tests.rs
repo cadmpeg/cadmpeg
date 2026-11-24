@@ -725,3 +725,61 @@ fn a_legacy_attribute_that_the_projector_refuses_refuses_the_screen() {
     // A record too short to hold the count.
     refused(&|model| model.model.attributes[2].values.truncate(6));
 }
+
+#[test]
+fn a_naming_tag_of_a_real_carrier_reaches_a_typed_loft_through_the_state_index() {
+    use crate::feature::history_states::{
+        frame_chain, index_chain, prepare, Closed, Framing, Prepared, Reading,
+    };
+    use crate::feature::history_views::StateViews;
+    use crate::kernel::parse_carrier;
+    use crate::test_support::history_carrier::{
+        framed_carrier, lofted_carrier_bytes, LATER_GENERATOR, LOFT_CURVES, LOFT_GENERATOR,
+        LOFT_SECTIONS,
+    };
+    use cadmpeg_asm::kernel_header::RefWidth;
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    let payload = framed_carrier(&lofted_carrier_bytes(RefWidth::Eight));
+    let arena = DecodeArena::new();
+    let (ctx, view) = DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::default())
+        .expect("carrier fits policy");
+    let carrier =
+        parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 1, 0, 18).expect("carrier parses");
+    let header = carrier.header.as_ref().expect("header parses");
+    let window = carrier.bytes.window();
+    let Framing::Framed(framed) = frame_chain(&ctx, window, header.width).expect("frame") else {
+        panic!("the chain frames");
+    };
+    let Prepared::Ready(chain) = prepare(&ctx, &framed, window, header.width).expect("prepare")
+    else {
+        panic!("the chain closes");
+    };
+    let Reading::Read(index) = index_chain(&chain, carrier.schema, 1 << 20) else {
+        panic!("the chain reads");
+    };
+    // The index comes from the tags of the stream: the older state holds the
+    // tags of the loft, and only the head state holds the later tag.
+    let loft_source = u32::try_from(LOFT_GENERATOR).expect("source");
+    let later_source = u32::try_from(LATER_GENERATOR).expect("source");
+    assert_eq!(index.first.get(&loft_source), Some(&0));
+    assert_eq!(index.first.get(&later_source), Some(&1));
+    let closed = Closed::new(*chain, index);
+    let views = StateViews::new(&carrier, &closed, 1 << 20);
+    let curves = |section: usize| vec![LOFT_CURVES[section]];
+    // The head state is the final model of the part; the loft is proved from
+    // the state after it alone.
+    assert!(loft_proof(&ctx, None, Some(&views), loft_source, LOFT_SECTIONS, curves).is_ok());
+    // The tag of the later feature names one cap only, and no state names a
+    // source that no tag lists.
+    for source in [later_source, 99] {
+        assert!(matches!(
+            loft_proof(&ctx, None, Some(&views), source, LOFT_SECTIONS, curves),
+            Err(Unproved::Result)
+        ));
+    }
+    // The sections must be the ones that the tags name.
+    assert!(matches!(
+        loft_proof(&ctx, None, Some(&views), loft_source, [23, 19], curves),
+        Err(Unproved::Result)
+    ));
+}

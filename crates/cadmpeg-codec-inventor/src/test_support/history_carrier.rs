@@ -210,6 +210,188 @@ pub(crate) fn carrier_bytes(width: RefWidth, dangling: bool) -> Vec<u8> {
     out
 }
 
+/// Source index of the loft that the naming tags of [`lofted_carrier_bytes`]
+/// name.
+pub(crate) const LOFT_GENERATOR: i64 = 17;
+/// Source index of a feature that only the head state of
+/// [`lofted_carrier_bytes`] lists.
+pub(crate) const LATER_GENERATOR: i64 = 31;
+/// Source indices of the two section sketches of the loft.
+pub(crate) const LOFT_SECTIONS: [u32; 2] = [19, 23];
+/// Associative curve names of the section boundaries.
+pub(crate) const LOFT_CURVES: [i64; 2] = [8, 3];
+
+const LEGACY_CAP_CLASS: &str =
+    "NMx_Generated_Brep_tag-NMx_Brep_Name_tag-NMx_Brep_tag-NamingMatching-attrib";
+const LEGACY_SIDE_CLASS: &str =
+    "NMx_Loft_Surface_Brep_tag-NMx_Brep_Name_tag-NMx_Brep_tag-NamingMatching-attrib";
+
+/// A legacy naming attribute of `owner` that lists `source` and carries `tail`.
+fn put_legacy_tag(
+    out: &mut Vec<u8>,
+    width: RefWidth,
+    class: &str,
+    owner: i64,
+    source: i64,
+    tail: &[i64],
+) {
+    let mut fields = vec![
+        (REF, -1),
+        (INT, -1),
+        (REF, -1),
+        (REF, -1),
+        (REF, owner),
+        (INT, 38),
+        (INT, 1),
+        (INT, source),
+        (INT, -1),
+    ];
+    fields.extend(tail.iter().map(|value| (INT, *value)));
+    put_plain(out, width, class, &fields);
+}
+
+/// A carrier whose current body is a solid of three planar faces with legacy
+/// loft naming tags: two caps and one side face of the loft `LOFT_GENERATOR`
+/// over `LOFT_SECTIONS`. The older state holds the faces and the tags under
+/// body key 9, so it is the oldest state that lists the loft. The head state
+/// replaces the body with key 7 and adds one more tag, which lists
+/// `LATER_GENERATOR`.
+///
+/// Slots: 0 asmheader, 1 body, 2 lump, 3 shell, 4 to 6 faces, 7 plane, 8 to
+/// 10 tags of the faces, 11 the tag that only the head state holds.
+pub(crate) fn lofted_carrier_bytes(width: RefWidth) -> Vec<u8> {
+    let mut out = Vec::new();
+    put_header(&mut out, width);
+    put_plain(&mut out, width, "asmheader", &[]);
+    let body = |key: i64| {
+        [
+            (REF, -1),
+            (INT, key),
+            (REF, -1),
+            (REF, 2),
+            (REF, -1),
+            (REF, -1),
+        ]
+    };
+    put_plain(&mut out, width, "body", &body(CURRENT_BODY_KEY));
+    put_plain(
+        &mut out,
+        width,
+        "lump",
+        &[
+            (REF, -1),
+            (INT, -1),
+            (REF, -1),
+            (REF, -1),
+            (REF, 3),
+            (REF, 1),
+        ],
+    );
+    put_plain(
+        &mut out,
+        width,
+        "shell",
+        &[
+            (REF, -1),
+            (INT, -1),
+            (REF, -1),
+            (REF, -1),
+            (REF, -1),
+            (REF, 4),
+            (REF, -1),
+            (REF, 2),
+        ],
+    );
+    for face in 0..3_i64 {
+        let next = if face < 2 { 5 + face } else { -1 };
+        put_fields(
+            &mut out,
+            width,
+            "face",
+            &[
+                (REF, 8 + face),
+                (INT, -1),
+                (REF, -1),
+                (REF, next),
+                (REF, -1),
+                (REF, 3),
+                (REF, -1),
+                (REF, 7),
+            ],
+        );
+        out.extend_from_slice(&[0x0b, 0x0b, 0x11]);
+    }
+    put_name(&mut out, "plane-surface");
+    put_ref(&mut out, width, REF, -1);
+    put_ref(&mut out, width, INT, -1);
+    put_ref(&mut out, width, REF, -1);
+    out.push(0x13);
+    for value in [0.0f64, 0.0, 0.0] {
+        out.extend_from_slice(&value.to_le_bytes());
+    }
+    for triple in [[0.0f64, 0.0, 1.0], [1.0, 0.0, 0.0]] {
+        out.push(0x14);
+        for value in triple {
+            out.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    out.extend_from_slice(&[0x0b; 5]);
+    out.push(0x11);
+    let [first, last] = LOFT_SECTIONS.map(i64::from);
+    let [first_curve, last_curve] = LOFT_CURVES;
+    put_legacy_tag(
+        &mut out,
+        width,
+        LEGACY_CAP_CLASS,
+        4,
+        LOFT_GENERATOR,
+        &[0, first, 260],
+    );
+    put_legacy_tag(
+        &mut out,
+        width,
+        LEGACY_CAP_CLASS,
+        5,
+        LOFT_GENERATOR,
+        &[0, last, 260],
+    );
+    put_legacy_tag(
+        &mut out,
+        width,
+        LEGACY_SIDE_CLASS,
+        6,
+        LOFT_GENERATOR,
+        &[
+            2,
+            first_curve,
+            first,
+            258,
+            0,
+            0,
+            last_curve,
+            last,
+            258,
+            0,
+            0,
+        ],
+    );
+    put_legacy_tag(
+        &mut out,
+        width,
+        LEGACY_CAP_CLASS,
+        4,
+        LATER_GENERATOR,
+        &[0, first, 260],
+    );
+    // The head state replaces the archived body, revision 12, with the
+    // current body and inserts the tag of slot 11.
+    put_state(&mut out, width, (13, -1, 1, 0), &[(12, 1), (-1, 11)]);
+    put_plain(&mut out, width, "body", &body(SPHERE_BODY_KEY));
+    let inserts = (1..=10).map(|slot| (-1, slot)).collect::<Vec<_>>();
+    put_state(&mut out, width, (12, 0, -1, 1), &inserts);
+    out
+}
+
 pub(crate) fn framed_carrier(bytes: &[u8]) -> Vec<u8> {
     let mut payload = Vec::new();
     payload.extend_from_slice(&1_u32.to_le_bytes());
