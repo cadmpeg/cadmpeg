@@ -84,15 +84,10 @@ pub(super) fn frame(
             .and_then(|s| s.strip_suffix(".planeOp"))
             .ok_or("this sketch plane has no resolved in-plane frame")?
             .to_owned()
-    } else if let Some(feature_id) =
-        query
-            .get("featureId")
-            .and_then(Value::as_str)
-            .filter(|native| {
-                deterministic.is_none()
-                    || matches!(*native, "Top" | "Front" | "Right")
-                    || datum(native).is_ok()
-            })
+    } else if let Some(feature_id) = query
+        .get("featureId")
+        .and_then(Value::as_str)
+        .filter(|native| deterministic.is_none() || datum(native).is_ok())
     {
         feature_id.to_owned()
     } else if deterministic.is_some() {
@@ -369,14 +364,13 @@ pub(super) fn map(
             Ok(frame)
         },
     )?;
-    if feature.get("plane").is_none() {
-        match inputs.sketch_plane(native) {
-            Ok(Some(stored)) => plane = attachment_frame(&json!({"plane":stored}), &plane)?,
-            Ok(None) if created_plane.get() => report.push_coded(
-                native, crate::loss::OnshapeLossCode::SketchPlaneAssumed,
-                "the sketch attachment matrix is missing; assumed the support plane's in-plane frame",
-            ),
-            Ok(None) => {}
+    if feature.get("plane").is_none() && created_plane.get() {
+        let attachment = inputs.sketch_plane(native).and_then(|stored| {
+            let stored = stored.ok_or("the sketch attachment matrix is missing")?;
+            attachment_frame(&json!({"plane":stored}), &plane)
+        });
+        match attachment {
+            Ok(stored) => plane = stored,
             Err(reason) => report.push_coded(
                 native,
                 crate::loss::OnshapeLossCode::SketchPlaneAssumed,
@@ -751,3 +745,6 @@ fn constraint_row(
     };
     Ok(json!({"id": cid, "sketch": sketch_id, "definition": definition}))
 }
+
+#[cfg(test)]
+mod tests;

@@ -162,11 +162,19 @@ impl<'a> Bundle<'a> {
                         json.insert(name.clone(), value);
                     }
                     Err(error) => {
+                        let retained = name.ends_with("/sketches.json");
+                        let action = if retained {
+                            "retained the member bytes"
+                        } else {
+                            "omitted the member"
+                        };
                         losses.push(
                             OnshapeLossCode::MemberUnreadable
-                                .note(format!("{name}: {error}; omitted the member")),
+                                .note(format!("{name}: {error}; {action}")),
                         );
-                        continue;
+                        if !retained {
+                            continue;
+                        }
                     }
                 }
             }
@@ -201,9 +209,14 @@ impl<'a> Bundle<'a> {
             }
             for key in ["sourceMicroversion", "microversionId"] {
                 if let Err(reason) = super::reader::microversion(value, key, expected) {
+                    let action = if path.ends_with("/sketches.json") {
+                        "retained the member bytes"
+                    } else {
+                        "omitted the member"
+                    };
                     self.losses.push(
                         OnshapeLossCode::MemberUnreadable
-                            .note(format!("{path}: {reason}; omitted the member")),
+                            .note(format!("{path}: {reason}; {action}")),
                     );
                     omitted.push(path.clone());
                     break;
@@ -212,7 +225,9 @@ impl<'a> Bundle<'a> {
         }
         for path in omitted {
             self.json.remove(&path);
-            self.members.remove(&path);
+            if !path.ends_with("/sketches.json") {
+                self.members.remove(&path);
+            }
         }
     }
     pub(super) fn admit_topology(&mut self, ctx: &DecodeContext<'_>) -> Result<(), Error> {

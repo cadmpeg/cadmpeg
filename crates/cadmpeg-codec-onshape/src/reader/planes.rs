@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 
 use super::{definition, features, id, sketch, topology, Mapping};
 
+const MATRIX_PERPENDICULAR_TOLERANCE: f64 = 64.0 * f64::EPSILON;
 const MATRIX_ROTATION_TOLERANCE: f64 = 64.0 * f64::EPSILON;
 
 pub(super) fn created(model: &Model, native: &str) -> Mapping<Value> {
@@ -44,8 +45,8 @@ pub(super) fn map(
     model: &Model,
     unresolved: &BTreeSet<String>,
 ) -> Mapping<Value> {
-    if features::value(feature, "cplaneType") != Some("OFFSET") {
-        return Err("this cplaneType is not supported yet".into());
+    if let Some(reason) = unsupported(feature)? {
+        return Err(reason.into());
     }
     let source = json!({"parameters":[{
         "parameterId":"sketchPlane", "queries":features::queries(feature,"entities")?
@@ -53,21 +54,8 @@ pub(super) fn map(
     let frame = sketch::frame(
         &source,
         &|face| {
-            let mut support = inputs.load(ordinal, feature)?.oriented_face_frame(face)?;
-            let normal = topology::vector(
-                support
-                    .get("normal")
-                    .ok_or("the support normal is missing")?,
-                1.0,
-            )?;
-            let [nx, ny, _] = normal;
-            let axis = if nx.abs() < ny.abs() {
-                [1.0, 0.0, 0.0]
-            } else {
-                [0.0, 1.0, 0.0]
-            };
-            support["u_axis"] = topology::point(topology::unit(topology::cross(axis, normal))?);
-            Ok(support)
+            inputs.load(ordinal, feature)?.face_frame(face)?;
+            Err(FACE_ORIENTATION_UNPROVEN.into())
         },
         &|native| created(model, native),
     )?;
@@ -77,9 +65,6 @@ pub(super) fn map(
         model,
         unresolved,
     )?;
-    if features::enabled(feature, "oppositeDirection")? {
-        return Err("a flipped offset plane is not supported yet".into());
-    }
     Ok(definition(
         "datum_offset_plane",
         json!({
@@ -87,6 +72,41 @@ pub(super) fn map(
             "distance":distance
         }),
     ))
+}
+
+const FACE_ORIENTATION_UNPROVEN: &str = "the offset support face orientation and in-plane axis need a stored attachment proof (ONSHAPE-009)";
+
+fn unsupported(feature: &Value) -> Mapping<Option<&'static str>> {
+    if features::value(feature, "cplaneType") != Some("OFFSET") {
+        return Ok(Some("this cplaneType is not supported yet"));
+    }
+    for (key, reason) in [
+        (
+            "oppositeDirection",
+            "a flipped offset plane is not supported yet",
+        ),
+        (
+            "flipNormal",
+            "flipNormal reverses the constructed normal (ONSHAPE-008)",
+        ),
+        (
+            "flipAlignment",
+            "flipAlignment changes the stored u_axis (ONSHAPE-008)",
+        ),
+    ] {
+        if features::enabled(feature, key)? {
+            return Ok(Some(reason));
+        }
+    }
+    Ok(None)
+}
+
+pub(super) fn loss_code(feature: &Value, reason: &str) -> crate::loss::OnshapeLossCode {
+    if unsupported(feature).ok().flatten().is_some() || reason == FACE_ORIENTATION_UNPROVEN {
+        crate::loss::OnshapeLossCode::PlaneNotSupported
+    } else {
+        crate::loss::OnshapeLossCode::HistoryNotSupported
+    }
 }
 
 fn offset(mut frame: Value, distance: f64) -> Mapping<Value> {
@@ -124,9 +144,15 @@ pub(super) fn sketch_plane(row: &Value) -> Mapping<Value> {
     let y = [scalar(yx)?, scalar(yy)?, scalar(yz)?];
     let normal = [scalar(nx)?, scalar(ny)?, scalar(nz)?];
     let expected_y = topology::cross(normal, x);
-    if y.into_iter()
-        .zip(expected_y)
-        .any(|(a, b)| (a - b).abs() > MATRIX_ROTATION_TOLERANCE)
+    if x.into_iter()
+        .zip(normal)
+        .map(|(a, b)| a * b)
+        .sum::<f64>()
+        .abs()
+        > MATRIX_PERPENDICULAR_TOLERANCE
+        || y.into_iter()
+            .zip(expected_y)
+            .any(|(a, b)| (a - b).abs() > MATRIX_ROTATION_TOLERANCE)
         || [x, y, normal].into_iter().any(|axis| {
             (axis.into_iter().map(|n| n * n).sum::<f64>() - 1.0).abs() > MATRIX_ROTATION_TOLERANCE
         })

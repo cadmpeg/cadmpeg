@@ -71,6 +71,7 @@ pub(crate) struct Inputs<'a> {
     bundle: &'a Bundle<'a>,
     prefix: &'a str,
     mid: &'a str,
+    sketch_planes: Mapping<BTreeMap<&'a str, Option<&'a Value>>>,
     indices: BTreeSet<usize>,
     features: &'a [Value],
     body_features: Vec<usize>,
@@ -107,6 +108,30 @@ fn rollback_indices(bundle: &Bundle<'_>, prefix: &str) -> Mapping<BTreeSet<usize
     Ok(indices)
 }
 
+fn sketch_planes<'a>(
+    bundle: &'a Bundle<'_>,
+    prefix: &str,
+) -> Mapping<BTreeMap<&'a str, Option<&'a Value>>> {
+    let path = format!("{prefix}/sketches.json");
+    if !bundle.contains(&path) {
+        return Ok(BTreeMap::new());
+    }
+    let response = bundle
+        .json(&path)
+        .map_err(|_| "the sketch attachment response is unreadable")?;
+    let mut index = BTreeMap::new();
+    for row in rows(response, "sketches")? {
+        let Some(native) = row.get("featureId").and_then(Value::as_str) else {
+            continue;
+        };
+        index
+            .entry(native)
+            .and_modify(|row| *row = None)
+            .or_insert(Some(row));
+    }
+    Ok(index)
+}
+
 impl<'a> Inputs<'a> {
     pub(crate) fn new(
         bundle: &'a Bundle<'a>,
@@ -130,6 +155,7 @@ impl<'a> Inputs<'a> {
             prefix,
             mid,
             indices,
+            sketch_planes: sketch_planes(bundle, prefix),
             features,
             body_features: features
                 .iter()
@@ -150,24 +176,12 @@ impl<'a> Inputs<'a> {
     }
 
     pub(crate) fn sketch_plane(&self, native: &str) -> Mapping<Option<Value>> {
-        let path = format!("{}/sketches.json", self.prefix);
-        if !self.bundle.contains(&path) {
-            return Ok(None);
+        let index = self.sketch_planes.as_ref().map_err(Clone::clone)?;
+        match index.get(native) {
+            None => Ok(None),
+            Some(None) => Err("the sketch attachment identity repeats".into()),
+            Some(Some(row)) => super::planes::sketch_plane(row).map(Some),
         }
-        let response = self
-            .bundle
-            .json(&path)
-            .map_err(|_| "the sketch attachment response is unreadable")?;
-        let mut matches = rows(response, "sketches")?
-            .iter()
-            .filter(|row| row.get("featureId").and_then(Value::as_str) == Some(native));
-        let Some(row) = matches.next() else {
-            return Ok(None);
-        };
-        if matches.next().is_some() {
-            return Err("the sketch attachment identity repeats".into());
-        }
-        super::planes::sketch_plane(row).map(Some)
     }
 
     pub(crate) fn sketch_entities(&self, sketch: &str) -> Mapping<&[Value]> {
@@ -833,24 +847,6 @@ impl State {
             json!({"origin":point(vector(surface.get("origin").ok_or("the sketch attachment support origin is missing")?,1000.0)?),
             "normal":point(unit(vector(surface.get("normal").ok_or("the sketch attachment support normal is missing")?,1.0)?)?)}),
         )
-    }
-
-    pub(crate) fn oriented_face_frame(&self, face_id: &str) -> Mapping<Value> {
-        let mut frame = self.face_frame(face_id)?;
-        let orientation = self
-            .faces
-            .get(face_id)
-            .and_then(|face| face.get("orientation"))
-            .and_then(Value::as_bool)
-            .ok_or("the datum support face orientation is missing")?;
-        if !orientation {
-            let normal = vector(
-                frame.get("normal").ok_or("the support normal is missing")?,
-                1.0,
-            )?;
-            frame["normal"] = point(normal.map(|value| -value));
-        }
-        Ok(frame)
     }
 
     pub(crate) fn axis(&self, feature: &Value, key: &str) -> Mapping<Value> {

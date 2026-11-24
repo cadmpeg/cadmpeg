@@ -118,7 +118,7 @@ fn mapping_loss_code(
     {
         OnshapeLossCode::SweepNotSupported
     } else if feature.get("featureType").and_then(Value::as_str) == Some("cPlane") {
-        OnshapeLossCode::PlaneNotSupported
+        planes::loss_code(feature, reason)
     } else {
         OnshapeLossCode::HistoryNotSupported
     }
@@ -706,6 +706,9 @@ pub(super) fn read(
                 definition
             }
             Err(reason) => {
+                let mut tail = report.notes.split_off(note_start);
+                tail.retain(|note| !OnshapeLossCode::SketchPlaneAssumed.matches(note));
+                report.notes.extend(tail);
                 model.ir.model.sketches.truncate(sizes.0);
                 model.ir.model.sketch_entities.truncate(sizes.1);
                 model.ir.model.sketch_constraints.truncate(sizes.2);
@@ -814,7 +817,8 @@ pub(super) fn read(
             model.ir.design.features.truncate(design_length);
             let mut tail = report.notes.split_off(note_start);
             tail.retain(|note| {
-                !OnshapeLossCode::ThinModelNotSupported.matches(note)
+                !OnshapeLossCode::SketchPlaneAssumed.matches(note)
+                    && !OnshapeLossCode::ThinModelNotSupported.matches(note)
                     && !OnshapeLossCode::ThinNotSupported.matches(note)
             });
             report.notes.extend(tail);
