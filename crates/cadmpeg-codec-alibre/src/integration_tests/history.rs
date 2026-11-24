@@ -391,3 +391,234 @@ fn loft_history_joins_a_square_and_a_circle_on_an_offset_plane() {
     };
     assert_eq!(sections, [first.as_str(), second.as_str()]);
 }
+
+fn has_loss(result: &cadmpeg_ir::codec::DecodeResult, code: AlibreLossCode) -> bool {
+    result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == code.kind() && loss.severity == Severity::Warning)
+}
+
+#[test]
+fn a_sketch_on_a_face_charges_the_unresolved_face_selection() {
+    let result = decode(BOX_HOLE);
+    assert!(has_loss(
+        &result,
+        AlibreLossCode::HistoryFaceSelectionUnresolved
+    ));
+    // The box has no sketch on a face.
+    assert!(!has_loss(
+        &decode(BOX),
+        AlibreLossCode::HistoryFaceSelectionUnresolved
+    ));
+}
+
+/// Overwrites the `DATA;` section keyword of the `STEP_DATA` stream, so the
+/// stream no longer reads as Part 21.
+fn without_step_data_section(bytes: &[u8]) -> Vec<u8> {
+    let keyword = b"\nDATA;";
+    let at = bytes
+        .windows(keyword.len())
+        .position(|window| window == keyword)
+        .unwrap();
+    let mut patched = bytes.to_vec();
+    patched[at + 4] = b'X';
+    patched
+}
+
+#[test]
+fn a_step_data_stream_that_does_not_read_keeps_the_body_and_charges_the_history() {
+    let result = decode(&without_step_data_section(BOX_HOLE));
+    assert!(result.report().geometry_transferred());
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert!(result.ir().design.features.is_empty());
+    assert!(result.ir().design.scopes.is_empty());
+    assert!(has_loss(&result, AlibreLossCode::HistoryStreamUnread));
+}
+
+mod synthetic {
+    use std::collections::BTreeMap;
+
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::design::ops::dressup::HolePositions;
+    use cadmpeg_ir::design::selection::Picks;
+    use cadmpeg_ir::ids::ProductDefinitionId;
+
+    use super::*;
+    use crate::history::{
+        Curve, End, Feature, Frame, History, Operation, Parameter, ParameterKind, Primitive,
+        Sketch, Support,
+    };
+
+    fn frame() -> Frame {
+        Frame {
+            origin: [0.0; 3],
+            x: [1.0, 0.0, 0.0],
+            y: [0.0, 1.0, 0.0],
+            z: [0.0, 0.0, 1.0],
+        }
+    }
+
+    fn parameter(record: u32, name: &str, guid: Option<&str>, value: f64) -> Parameter {
+        Parameter {
+            record,
+            name: name.to_owned(),
+            guid: guid.map(str::to_owned),
+            kind: ParameterKind::Length,
+            value,
+        }
+    }
+
+    fn feature(record: u32, name: &str, operation: Operation) -> Feature {
+        Feature {
+            record,
+            name: name.to_owned(),
+            operation,
+        }
+    }
+
+    fn history() -> History {
+        let points = [[1.0, 2.0], [-3.0, 4.0]]
+            .into_iter()
+            .zip([21, 22])
+            .map(|(at, record)| Primitive {
+                record,
+                curve: Curve::Point(at),
+            })
+            .collect();
+        History {
+            parameters: vec![
+                parameter(1, "D1", Some("{0F0E-GUID}"), 6.0),
+                parameter(2, "R1", None, 2.0),
+            ],
+            features: vec![
+                feature(10, "XY-Plane", Operation::Plane { frame: frame() }),
+                feature(
+                    11,
+                    "HS",
+                    Operation::Sketch(Box::new(Sketch {
+                        record: 20,
+                        name: "HS".to_owned(),
+                        frame: frame(),
+                        support: Support::Face("#0".to_owned()),
+                        primitives: points,
+                        points: Vec::new(),
+                        constraints: Vec::new(),
+                    })),
+                ),
+                feature(
+                    12,
+                    "H1",
+                    Operation::Hole {
+                        sketch: 1,
+                        diameter: 0,
+                        end: End::ThroughAll,
+                    },
+                ),
+                feature(
+                    13,
+                    "F1",
+                    Operation::Fillet {
+                        radius: 1,
+                        edge_signatures: vec!["#1".to_owned(), "#2".to_owned()],
+                    },
+                ),
+            ],
+            losses: Vec::new(),
+        }
+    }
+
+    fn project() -> (CadIr, Vec<cadmpeg_ir::report::loss::LossNote>) {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let ctx = DecodeContext::for_loaded_input(&arena, &policy, 0).unwrap();
+        let mut ir = CadIr::empty();
+        let mut losses = Vec::new();
+        let definition = ProductDefinitionId::compose(
+            &cadmpeg_ir::identity_namespace!("alibre", "model", "product-definition"),
+            cadmpeg_ir::identity_key!("root"),
+        );
+        crate::design::project(&ctx, &mut ir, &history(), &definition, &mut losses).unwrap();
+        (ir, losses)
+    }
+
+    #[test]
+    fn a_hole_picks_every_point_of_its_sketch() {
+        let (ir, _) = project();
+        let FeatureOperation::Hole(hole) = operation(&ir, "H1") else {
+            panic!("hole");
+        };
+        let HolePositions::Points { points, centers } = &hole.positions else {
+            panic!("point positions");
+        };
+        assert!(centers.is_none());
+        let Picks::Named(members) = &points.picks else {
+            panic!("named points");
+        };
+        let ids: Vec<_> = members
+            .as_slice()
+            .iter()
+            .map(|pick| match &pick.target {
+                PickTarget::SketchEntity(id) => id.as_str().to_owned(),
+                other => panic!("{other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            ids,
+            [
+                "alibre:step:sketch-entity#21",
+                "alibre:step:sketch-entity#22"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_fillet_keeps_every_signature() {
+        let (ir, _) = project();
+        let FeatureOperation::Fillet(fillet) = operation(&ir, "F1") else {
+            panic!("fillet");
+        };
+        let [FilletSet::Edges { edges, .. }] = fillet.sets.as_slice() else {
+            panic!("one edge set");
+        };
+        let native = edges.native.as_ref().unwrap();
+        assert_eq!(
+            native.as_slice(),
+            [
+                "alibre:topology-signature:#1".to_owned(),
+                "alibre:topology-signature:#2".to_owned()
+            ]
+        );
+    }
+
+    #[test]
+    fn a_parameter_guid_is_a_source_setting() {
+        let (ir, _) = project();
+        let key = cadmpeg_ir::codec_name!("alibre:guid");
+        let settings: BTreeMap<_, _> = ir
+            .design
+            .parameters
+            .iter()
+            .map(|parameter| {
+                (
+                    parameter.name.as_ref().unwrap().as_str().to_owned(),
+                    parameter.source_settings.contains_key(&key),
+                )
+            })
+            .collect();
+        assert!(settings["D1"]);
+        assert!(!settings["R1"]);
+    }
+
+    #[test]
+    fn the_projection_charges_the_face_the_sketch_lies_on() {
+        let (_, losses) = project();
+        let faces: Vec<_> = losses
+            .iter()
+            .filter(|loss| loss.code == AlibreLossCode::HistoryFaceSelectionUnresolved.kind())
+            .collect();
+        assert_eq!(faces.len(), 1);
+        assert_eq!(faces[0].severity, Severity::Warning);
+    }
+}
