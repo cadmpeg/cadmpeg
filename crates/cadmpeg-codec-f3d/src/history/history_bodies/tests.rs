@@ -522,7 +522,13 @@ fn an_invalid_history_body_nest_reports_the_undecoded_body() {
         )
         .unwrap();
         let mut scratch = CadIr::empty();
-        cadmpeg_asm::brep::transfer::transfer_into_ir(&ctx, &mut scratch, "f3d", brep).unwrap();
+        cadmpeg_asm::brep::transfer::transfer_into_ir(
+            &ctx,
+            &mut scratch,
+            cadmpeg_ir::codec_id!("f3d"),
+            brep,
+        )
+        .unwrap();
         let body = &scratch.geometry.bodies[0];
         let Extract::Nest(topology) = extract(&ctx, &scratch.geometry, body.id.as_str()).unwrap()
         else {
@@ -1157,6 +1163,33 @@ fn cube_candidate() -> HistoryBody {
 fn admission_preserves_a_valid_nest_and_its_producer() {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let candidate = cube_candidate();
+    let expected = candidate.clone();
+    assert_eq!(
+        admit(&ctx, candidate, &feature("base")).expect("admission"),
+        Some(expected)
+    );
+}
+
+/// A finding outside the topology checks does not drop a usable nest: its
+/// records out of identity order are an `ArenaOrder` Error of the document,
+/// and the nest is admitted.
+#[test]
+fn admission_ignores_findings_outside_the_topology_checks() {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let mut candidate = cube_candidate();
+    candidate.topology.faces.reverse();
+    let mut document = CadIr::empty();
+    document.model.features.push(feature("base"));
+    document.model.history_bodies.push(candidate.clone());
+    let report = cadmpeg_ir::validate_neutral(&document, Vec::new()).expect("validation runs");
+    assert!(
+        report.findings.iter().any(|finding| {
+            finding.check == cadmpeg_ir::report::check::Check::ArenaOrder
+                && finding.severity == cadmpeg_ir::report::Severity::Error
+        }),
+        "{:?}",
+        report.findings
+    );
     let expected = candidate.clone();
     assert_eq!(
         admit(&ctx, candidate, &feature("base")).expect("admission"),

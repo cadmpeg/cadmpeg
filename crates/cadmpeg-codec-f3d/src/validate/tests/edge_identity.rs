@@ -33,7 +33,7 @@ fn edge_identity_valid_slot_has_no_finding() {
         native
             .store(
                 &cadmpeg_core::decode::test_support::service_decode_context(),
-                ir.native.namespace_mut("f3d"),
+                ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")),
             )
             .unwrap();
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);

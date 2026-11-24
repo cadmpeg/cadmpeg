@@ -479,7 +479,10 @@ fn encoder_partitions_authored_with_retained_native_envelope_bodies_by_configura
                 Vec::new(),
             )
             .expect("valid tessellation")
-            .with_body(Some(body.clone()))
+            .with_of(cadmpeg_ir::tessellation::Meshed::Body {
+                body: body.clone(),
+                faces: Vec::new(),
+            })
         })
         .collect();
     ir.model.configurations = body_ids
@@ -1387,7 +1390,12 @@ fn semantic_writer_preserves_multiple_body_ownership() {
         .geometry
         .shells
         .iter()
-        .all(|shell| regenerated.ir().geometry.shell_faces(&shell.id).count() == 1));
+        .all(|shell| regenerated
+            .ir()
+            .geometry
+            .stated_shell_faces(&shell.id)
+            .count()
+            == 1));
     assert!(regenerated.ir().geometry.regions.iter().all(|region| {
         regenerated.source_fidelity().annotations.provenance[region.id.as_str()]
             .tag

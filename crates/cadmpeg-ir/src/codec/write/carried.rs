@@ -6,12 +6,12 @@ use std::collections::{HashMap, HashSet};
 use crate::document::CadIr;
 use crate::native::view::NativeView;
 use crate::report::check::Finding;
-use crate::schema::{EntityKind, EntitySchema};
+use crate::schema::{ArenaRecord, EntityKind};
 
 /// Where a document holds one identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EntityLocation<'ir> {
-    /// A neutral model arena of this kind.
+    /// A neutral arena of this kind, of any home.
     Model(EntityKind),
     /// A source-native namespace, keyed by its codec id.
     Native(&'ir str),
@@ -49,12 +49,12 @@ impl<'ir, 'r> FindingLocator<'ir, 'r> {
             ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
                 $(
                     for entity in &ir.$home.$field {
-                        record(entity.identity(), EntityLocation::Model(arena_kind(&ir.$home.$field)));
+                        record(entity.record_identity(), EntityLocation::Model(arena_kind(&ir.$home.$field)));
                     }
                 )*
             };
         }
-        crate::document::arena_registry!(walk_model);
+        crate::document::every_arena_registry!(walk_model);
 
         NativeView::new(ir, None).for_each(|format, _, arena| {
             for entity in arena.records() {
@@ -86,7 +86,7 @@ impl<'ir, 'r> FindingLocator<'ir, 'r> {
     }
 }
 
-fn arena_kind<T: EntitySchema>(_: &[T]) -> EntityKind {
+fn arena_kind<T: ArenaRecord>(_: &[T]) -> EntityKind {
     T::KIND
 }
 

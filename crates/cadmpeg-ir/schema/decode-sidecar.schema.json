@@ -107,10 +107,7 @@
           "$ref": "#/$defs/StreamName"
         },
         "tag": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": "string"
         }
       },
       "additionalProperties": false,
@@ -143,6 +140,11 @@
         "provenance",
         "exactness"
       ]
+    },
+    "CodecId": {
+      "description": "A codec id: one or more lower-case ASCII letters and digits.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+$"
     },
     "DecodeReport": {
       "type": "object",
@@ -316,10 +318,7 @@
         },
         "instance": {
           "description": "Instance of this format layer inside the containing document.\n\n`None` when the layer occurs once or has no report-local identity. This\nis not source-declared evidence and therefore does not belong in\n[`Self::declared`].",
-          "type": [
-            "string",
-            "null"
-          ]
+          "$ref": "#/$defs/NonBlankString"
         }
       },
       "additionalProperties": false,
@@ -436,7 +435,7 @@
           "properties": {
             "format": {
               "description": "Registry format namespace.",
-              "type": "string"
+              "$ref": "#/$defs/CodecId"
             },
             "kind": {
               "type": "string",
@@ -548,10 +547,7 @@
         },
         "count": {
           "description": "The number of source instances the note reports together.",
-          "type": [
-            "integer",
-            "null"
-          ],
+          "type": "integer",
           "format": "uint64",
           "minimum": 0
         },
@@ -561,14 +557,7 @@
         },
         "provenance": {
           "description": "Where in the source the loss occurred, when attributable.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/SourceProvenance"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/SourceProvenance"
         },
         "severity": {
           "description": "How serious the loss is.",
@@ -827,14 +816,7 @@
         },
         "strict_floor": {
           "description": "Strict-mode severity floor pinned by this code; absent when it has none.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Severity"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/Severity"
         }
       },
       "additionalProperties": false,
@@ -843,6 +825,10 @@
         "code",
         "kind"
       ]
+    },
+    "NonBlankString": {
+      "type": "string",
+      "pattern": "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]"
     },
     "NonEmptyMap": {
       "type": "object",
@@ -977,6 +963,20 @@
           "description": "Sparse source locations and conversion exactness.",
           "$ref": "#/$defs/Annotations"
         },
+        "codec_digests": {
+          "description": "The decoding codec's narrower digests, keyed as its format\nspecification lists.",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+              "$ref": "#/$defs/Sha256Digest"
+            }
+          }
+        },
+        "content_digest": {
+          "description": "SHA-256 of the canonical JSON of the document the decode returned.",
+          "$ref": "#/$defs/Sha256Digest"
+        },
         "decode_digest": {
           "description": "SHA-256 of the decode's root file.",
           "$ref": "#/$defs/Sha256Digest"
@@ -1013,6 +1013,8 @@
       "required": [
         "decode_digest",
         "file_digests",
+        "content_digest",
+        "codec_digests",
         "unrepresented",
         "annotations",
         "retained_records"
@@ -1030,20 +1032,10 @@
           "minimum": 0
         },
         "stream": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/StreamName"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/StreamName"
         },
         "tag": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": "string"
         }
       },
       "additionalProperties": false,
@@ -1105,10 +1097,7 @@
             },
             "note": {
               "description": "Informational note about retention or semantic projection.",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             },
             "target": {
               "description": "Resulting native retained-record identity.",
@@ -1131,10 +1120,7 @@
             },
             "note": {
               "description": "Concise reason for the approximation.",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             },
             "target": {
               "description": "Resulting neutral or native identity.",
@@ -1157,10 +1143,7 @@
             },
             "note": {
               "description": "Concise reason for the omission.",
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           "additionalProperties": false,

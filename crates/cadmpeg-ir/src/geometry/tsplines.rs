@@ -9,7 +9,19 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// A non-negative native subtype-table index.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "i64", into = "i64")]
 pub struct SubtypeTableIndex(i64);
@@ -45,7 +57,7 @@ impl From<SubtypeTableIndex> for i64 {
 }
 
 /// An inline T-spline program and its non-empty companion values.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -112,7 +124,7 @@ impl InlineTSplineSubtransform {
 }
 
 /// Native T-spline subtransform storage form.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "TSplineSubtransformWire")]
 pub enum TSplineSubtransform {
@@ -201,7 +213,7 @@ impl TSplineSubtransform {
 }
 
 /// Complete native `t_spl_sur` wrapper.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "TSplineSurfaceConstructionWire",

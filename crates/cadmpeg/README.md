@@ -370,12 +370,12 @@ cadmpeg query losses report.json       # severity  code   message
 cadmpeg query coverage report.json     # decode coverage counts
 cadmpeg query counts bracket.cadir.json  # per-arena entity counts; alias: arenas
 cadmpeg query item bracket.cadir.json geometry.faces FACE_ID  # one record; alias: record
-cadmpeg query schema types model.features    # the arena's IR record type (no FILE)
+cadmpeg query schema types design.features   # the arena's IR record type (no FILE)
 cadmpeg query schema file part.cadir.json native.nx.class_definitions  # inferred native fields
-cadmpeg query graph bracket.cadir.json model.features ID --hops 1
-cadmpeg query graph bracket.cadir.json model.features ID --follow native_ref --reverse
-cadmpeg query join bracket.cadir.json model.features native.rhino.unknowns \
-  --left-key native_ref --right-key id
+cadmpeg query graph bracket.cadir.json design.features ID --hops 1
+cadmpeg query graph bracket.cadir.json geometry.bodies ID --reverse --hops 3
+cadmpeg query join bracket.cadir.json model.occurrences model.product_definitions \
+  --left-key prototype --right-key id
 cadmpeg query summary report.json      # artifact kind and section counts
 cadmpeg query summary part.measure.json  # measure rows per level, unavailable per category, undefined
 cadmpeg query fidelity part.cadir.fidelity.json  # retained source records

@@ -219,7 +219,7 @@ mod tests {
 
         let mut ir = cadmpeg_ir::CadIr::empty();
         ir.native
-            .namespace_mut("fcstd")
+            .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
             .set_arena(
                 &cadmpeg_core::decode::test_support::service_decode_context(),
                 "string_tables",

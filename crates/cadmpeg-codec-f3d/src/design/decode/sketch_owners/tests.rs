@@ -69,7 +69,7 @@ fn collection_ownership_assigns_a_component_and_reports_an_unresolved_link() {
     let unresolved = SketchId::mint("test:model:sketch#unresolved").unwrap();
     let root = SketchId::mint("test:model:sketch#root").unwrap();
     let mut definitions = [serde_json::from_value(serde_json::json!({
-        "id": product, "kind": "part", "bom_properties": {}, "storage": {"kind": "embedded"}, "tessellations": [], "occurrences": [], "instance_bodies": [], "representations": [], "bodies": [], "sketches": []
+        "id": product, "kind": "part", "bom_properties": {}, "storage": {"kind": "embedded"}, "occurrences": [], "instance_bodies": [], "representations": [], "bodies": []
     }))
     .unwrap()];
     let owners = [(owned.clone(), Some(product)), (unresolved.clone(), None)]

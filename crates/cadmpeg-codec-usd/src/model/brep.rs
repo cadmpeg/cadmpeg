@@ -31,6 +31,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, FaceId, LoopId, PcurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::tessellation::Meshed;
 use cadmpeg_ir::topology::{
     AnchoredVertexUse, BodyKind, Coedge, Edge, EdgeCarrier, Face, FaceLoops, Loop, LoopBoundary,
     LoopRing, PcurveUse, Point, Region, Sense, Shell, Vertex,
@@ -873,12 +874,11 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
         out.shells.push(shell_record);
     }
     for (region, shells) in regions.iter().enumerate() {
-        out.regions.push(Region {
-            id: id::region(key, region),
-            body: crate::ids::body(key),
-            shells: shells.iter().map(|shell| id::shell(key, *shell)).collect(),
-            native_ref: None,
-        });
+        out.regions.push(Region::new(
+            id::region(key, region),
+            crate::ids::body(key),
+            shells.iter().map(|shell| id::shell(key, *shell)).collect(),
+        ));
     }
     Ok(out)
 }
@@ -997,7 +997,7 @@ impl super::Builder<'_, '_, '_, '_> {
                     self.fallback_mesh(fallback, key, ordinal, body)?;
                 }
                 if fallback.api_schemas().contains("PhysicsCollisionAPI") {
-                    self.collider(fallback, key, true)?;
+                    self.collider(fallback, key, super::physics::PhysicsOwner::Body)?;
                 }
             }
         }
@@ -1075,6 +1075,7 @@ impl super::Builder<'_, '_, '_, '_> {
                         id: crate::ids::subset_binding(key, &format!("{}#{ordinal}", child.path)),
                         target: target.into(),
                         appearance: appearance.clone(),
+                        precedence: None,
                         source_entity_id: Some(surface.material.clone()),
                         object_type: None,
                         visible: None,
@@ -1107,6 +1108,7 @@ impl super::Builder<'_, '_, '_, '_> {
                 id: crate::ids::appearance_binding(key),
                 target: cadmpeg_ir::appearance::AppearanceTarget::Body(body.clone()).into(),
                 appearance,
+                precedence: None,
                 source_entity_id: Some(surface.material),
                 object_type: None,
                 visible: None,
@@ -1153,7 +1155,10 @@ impl super::Builder<'_, '_, '_, '_> {
         self.ir
             .model
             .tessellations
-            .push(tessellation.with_body(Some(body.clone())));
+            .push(tessellation.with_of(Meshed::Body {
+                body: body.clone(),
+                faces: Vec::new(),
+            }));
         self.admit("usd_mesh")
     }
 

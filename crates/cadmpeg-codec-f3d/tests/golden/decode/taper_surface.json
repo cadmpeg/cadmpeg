@@ -39,7 +39,6 @@
       "attributes": {
         "active_brep": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
         "asset_folder": "FusionAssetName[Active]",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "product_family": "Autodesk Neutron",
         "product_version": "ASM 231.6.3.65535 OSX",
         "save_date": "Tue Mar 31 16:16:19 2026"
@@ -498,18 +497,6 @@
     },
     "model": {
       "assets": [],
-      "features": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "configurations": [],
-      "parameters": [],
-      "sketches": [],
-      "sketch_entities": [],
-      "sketch_constraints": [],
-      "spatial_sketches": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketch_constraints": [],
-      "spreadsheets": [],
       "product_definitions": [
         {
           "id": "f3d:model:product-definition#root",
@@ -521,15 +508,12 @@
           "bodies": [
             "f3d:brep:entity#1"
           ],
-          "tessellations": [],
           "occurrences": [],
           "instance_bodies": [],
-          "representations": [],
-          "sketches": []
+          "representations": []
         }
       ],
       "occurrences": [],
-      "assembly_joints": [],
       "drawings": [],
       "semantic_annotations": [],
       "presentation_documents": [],
@@ -548,8 +532,7 @@
       "physics_scenes": [],
       "solver_settings": [],
       "declared_measures": [],
-      "point_clouds": [],
-      "history_bodies": []
+      "point_clouds": []
     },
     "design": {
       "scopes": [],
@@ -871,187 +854,189 @@
     }
   },
   "source_fidelity": {
-    "decode_digest": "85344b2613db35a776015659cdce227bb376ed7bccb8599c84e6e9dc500fa86f",
-    "file_digests": {},
-    "unrepresented": [],
     "annotations": {
-      "provenance": {
-        "f3d:brep:entity#1": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 168,
-          "tag": "body"
-        },
-        "f3d:brep:entity#10": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 1452,
-          "tag": "coedge"
-        },
-        "f3d:brep:entity#11": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 1552,
-          "tag": "coedge"
-        },
-        "f3d:brep:entity#12": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 1652,
-          "tag": "coedge"
-        },
-        "f3d:brep:entity#13": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 1752,
-          "tag": "coedge"
-        },
-        "f3d:brep:entity#14": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 1852,
-          "tag": "coedge"
-        },
-        "f3d:brep:entity#15": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 1952,
-          "tag": "coedge"
-        },
-        "f3d:brep:entity#16": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 2052,
-          "tag": "edge"
-        },
-        "f3d:brep:entity#17": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 2150,
-          "tag": "edge"
-        },
-        "f3d:brep:entity#18": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 2248,
-          "tag": "edge"
-        },
-        "f3d:brep:entity#19": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 2346,
-          "tag": "edge"
-        },
-        "f3d:brep:entity#2": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 229,
-          "tag": "region"
-        },
-        "f3d:brep:entity#20": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 2444,
-          "tag": "edge"
-        },
-        "f3d:brep:entity#21": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 2542,
-          "tag": "vertex"
-        },
-        "f3d:brep:entity#22": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 2605,
-          "tag": "vertex"
-        },
-        "f3d:brep:entity#23": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 2668,
-          "tag": "vertex"
-        },
-        "f3d:brep:entity#24": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 2731,
-          "tag": "vertex"
-        },
-        "f3d:brep:entity#25": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 2794,
-          "tag": "point"
-        },
-        "f3d:brep:entity#26": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 2854,
-          "tag": "point"
-        },
-        "f3d:brep:entity#27": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 2914,
-          "tag": "point"
-        },
-        "f3d:brep:entity#28": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 2974,
-          "tag": "point"
-        },
-        "f3d:brep:entity#3": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 292,
-          "tag": "shell"
-        },
-        "f3d:brep:entity#4": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 372,
-          "tag": "face"
-        },
-        "f3d:brep:entity#5": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 453,
-          "tag": "face"
-        },
-        "f3d:brep:entity#6": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 534,
-          "tag": "loop"
-        },
-        "f3d:brep:entity#7": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 595,
-          "tag": "loop"
-        },
-        "f3d:brep:entity#8": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 656,
-          "tag": "plane-surface"
-        },
-        "f3d:brep:entity#9": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 776,
-          "tag": "spline-surface"
-        },
-        "f3d:brep:procedural_surface#9": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 776,
-          "tag": "procedural_surface"
-        },
-        "f3d:brep:procedural_surface#9:reference": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 776,
-          "tag": "procedural_curve_child"
-        },
-        "f3d:brep:procedural_surface#9:support": {
-          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-          "offset": 776,
-          "tag": "procedural_support"
-        }
-      },
       "exactness": {
         "f3d:brep:entity#8": {
-          "kind": "fields",
           "fields": {
             "geometry.normal": "derived",
             "geometry.u_axis": "derived"
-          }
+          },
+          "kind": "fields"
+        }
+      },
+      "provenance": {
+        "f3d:brep:entity#1": {
+          "offset": 168,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "body"
+        },
+        "f3d:brep:entity#10": {
+          "offset": 1452,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#11": {
+          "offset": 1552,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#12": {
+          "offset": 1652,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#13": {
+          "offset": 1752,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#14": {
+          "offset": 1852,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#15": {
+          "offset": 1952,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#16": {
+          "offset": 2052,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "edge"
+        },
+        "f3d:brep:entity#17": {
+          "offset": 2150,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "edge"
+        },
+        "f3d:brep:entity#18": {
+          "offset": 2248,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "edge"
+        },
+        "f3d:brep:entity#19": {
+          "offset": 2346,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "edge"
+        },
+        "f3d:brep:entity#2": {
+          "offset": 229,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "region"
+        },
+        "f3d:brep:entity#20": {
+          "offset": 2444,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "edge"
+        },
+        "f3d:brep:entity#21": {
+          "offset": 2542,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "vertex"
+        },
+        "f3d:brep:entity#22": {
+          "offset": 2605,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "vertex"
+        },
+        "f3d:brep:entity#23": {
+          "offset": 2668,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "vertex"
+        },
+        "f3d:brep:entity#24": {
+          "offset": 2731,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "vertex"
+        },
+        "f3d:brep:entity#25": {
+          "offset": 2794,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "point"
+        },
+        "f3d:brep:entity#26": {
+          "offset": 2854,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "point"
+        },
+        "f3d:brep:entity#27": {
+          "offset": 2914,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "point"
+        },
+        "f3d:brep:entity#28": {
+          "offset": 2974,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "point"
+        },
+        "f3d:brep:entity#3": {
+          "offset": 292,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "shell"
+        },
+        "f3d:brep:entity#4": {
+          "offset": 372,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "face"
+        },
+        "f3d:brep:entity#5": {
+          "offset": 453,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "face"
+        },
+        "f3d:brep:entity#6": {
+          "offset": 534,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "loop"
+        },
+        "f3d:brep:entity#7": {
+          "offset": 595,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "loop"
+        },
+        "f3d:brep:entity#8": {
+          "offset": 656,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "plane-surface"
+        },
+        "f3d:brep:entity#9": {
+          "offset": 776,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "spline-surface"
+        },
+        "f3d:brep:procedural_surface#9": {
+          "offset": 776,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "procedural_surface"
+        },
+        "f3d:brep:procedural_surface#9:reference": {
+          "offset": 776,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "procedural_curve_child"
+        },
+        "f3d:brep:procedural_surface#9:support": {
+          "offset": 776,
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+          "tag": "procedural_support"
         }
       }
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
+    "decode_digest": "85344b2613db35a776015659cdce227bb376ed7bccb8599c84e6e9dc500fa86f",
+    "file_digests": {},
     "retained_records": {
       "f3d:file:source-image#0": {
-        "stream": "f3d",
-        "offset": 0,
         "bytes": {
-          "kind": "inline",
-          "data": "UEsDBAoAAAAAAAAAIQCgv7HrOwIAADsCAAAMAAAATWFuaWZlc3QuZGF0BwAAADMtMi0wLTANAAAARnVzaW9uRG9jVHlwZQQAAAAuAGYAMwBkAA8AAABGAHUAcwBpAG8AbgAgAEQAbwBjAHUAbQBlAG4AdAARAAAAQQAgAEYAdQBzAGkAbwBuACAARABvAGMAdQBtAGUAbgB0ACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADIA0gQAABQAAAAkAAAAQABAKgcAAAALAAAAQXBwbGljYXRpb24BAAAAAwAAAENBTQQAAAAIAAAAUGFyYU1lc2gIAAAACQAAAFNpbUNvbW1vbjV1AAAPAAAAU2ltRkVBQ1NPYmplY3RzAgAAABAAAABTaW1GbHVpZER5bmFtaWNzAgAAABcAAABTaW1TdHJ1Y3R1cmFsQXR0cmlidXRlcxInAAAAAAAAACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMwABAAAADwAAAEYAdQBzAGkAbwBuAEEAcwBzAGUAdABOAGEAbQBlAAAAAAABCQAAAE4AQQBfAEUAWABQAE8AUgBUAFBLAwQKAAAAAAAAACEAfc3VPU0CAABNAgAAJAAAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL01hbmlmZXN0LmRhdA8AAABGAHUAcwBpAG8AbgBBAHMAcwBlAHQATgBhAG0AZQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADMAJAAAADAAMAAwADAAMAAwADAAMAAtADAAMAAwADAALQA0ADAAMAAwAC0AOAAwADAAMAAtADAAMAAwADAAMAAwADAAMAAwADAAMAA0AA8AAABGdXNpb25Bc3NldFR5cGUUAAAABAAAAAsAAABBcHBsaWNhdGlvbosAAAAIAAAAUGFyYU1lc2gNAAAABgAAAFNlcnZlciQAAAAIAAAAVm9sRmllbGQEAAAAEgAAAE5ldXRyb24zREFzc2V0VHlwZQAAAAAAAQAAABIAAABwaHlzaWNhbENoYW5nZUd1aWQkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADUAAAAAAAcAAAADAAAAAAAAABcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZRcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZQEAAAAUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUCAAAAGAAAAEZ1c2lvbkJyb3dzZXJTZWdtZW50VHlwZRgAAABGdXNpb25Ccm93c2VyU2VnbWVudFR5cGVQSwMECgAAAAAAAAAhAPK1zQ7nCwAA5wsAADIAAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9CcmVwcy5CbG9iUGFydHMvQm9keTEuc21iaEFTTSBCaW5hcnlGaWxlODxaAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAMAAAAAAAAABxBBdXRvZGVzayBOZXV0cm9uBxVBU00gMjMxLjYuMy42NTUzNSBPU1gHGFR1ZSBNYXIgMzEgMTY6MTY6MTkgMjAyNgYAAAAAAABOQAaN7bWg98awPga7vdfZ33zbPQ0JYXNtaGVhZGVyBw0yMzEuNi4zLjY1NTM1EQ0EYm9keQz//////////wT//////////wz//////////wwCAAAAAAAAAAz//////////wz//////////xENBnJlZ2lvbgz//////////wT//////////wz//////////wz//////////wwDAAAAAAAAAAwBAAAAAAAAABENBXNoZWxsDP//////////BP//////////DP//////////DP//////////DP//////////DAQAAAAAAAAADP//////////DAIAAAAAAAAAEQ0EZmFjZQz//////////wT//////////wz//////////wwFAAAAAAAAAAwGAAAAAAAAAAwDAAAAAAAAAAz//////////wwIAAAAAAAAAAsLEQ0EZmFjZQz//////////wT//////////wz//////////wz//////////wwHAAAAAAAAAAwDAAAAAAAAAAz//////////wwJAAAAAAAAAAsLEQ0EbG9vcAz//////////wT//////////wz//////////wz//////////wwKAAAAAAAAAAwEAAAAAAAAABENBGxvb3AM//////////8E//////////8M//////////8M//////////8MDQAAAAAAAAAMBQAAAAAAAAARDgVwbGFuZQ0Hc3VyZmFjZQz//////////wT//////////wz//////////xMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/FAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAsRDgZzcGxpbmUNB3N1cmZhY2UM//////////8E//////////8M//////////8PDQ10YXBlcl9zcGxfc3VyDQVwbGFuZRMAAAAAAADwPwAAAAAAAADAAAAAAAAACEAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/FAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAsNBG51YnMEAgAAAAAAAAAVAAAAAAAAAAAEAgAAAAAAAAAGAAAAAAAAAAAEAgAAAAAAAAAGAAAAAAAA8D8EAgAAAAAAAAAGAAAAAAAAAAAGAAAAAAAAAAAGAAAAAAAAAAAGAAAAAAAA8D8GAAAAAAAAAEAGAAAAAAAAAAAGAAAAAAAAAEAGAAAAAAAAAAAGAAAAAAAAAAANBG51YnMEAQAAAAAAAAAVAAAAAAAAAAAEAgAAAAAAAAAGAAAAAAAAAAAEAQAAAAAAAAAGAAAAAAAA8D8EAQAAAAAAAAAGAAAAAAAA0D8GAAAAAAAA4D8GAAAAAAAA6D8GAAAAAAAA+D8GZmZmZmZm1j8NBG51YnMEAQAAAAAAAAAEAQAAAAAAAAAVAAAAAAAAAAAVAAAAAAAAAAAVAAAAAAAAAAAVAAAAAAAAAAAEAgAAAAAAAAAEAgAAAAAAAAAGAAAAAAAAAAAEAQAAAAAAAAAGAAAAAAAA8D8EAQAAAAAAAAAGAAAAAAAAAAAEAQAAAAAAAAAGAAAAAAAA8D8EAQAAAAAAAAAGAAAAAAAAAAAGAAAAAAAAAAAGAAAAAAAAAAAGAAAAAAAA8D8GAAAAAAAAAAAGAAAAAAAAAAAGAAAAAAAAAAAGAAAAAAAA8D8GAAAAAAAAAAAGAAAAAAAA8D8GAAAAAAAA8D8GAAAAAAAAAAAGuB6F61G4fj8QEQ0GY29lZGdlDP//////////BP//////////DP//////////DAsAAAAAAAAADAwAAAAAAAAADA0AAAAAAAAADBAAAAAAAAAACwwGAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////wwMAAAAAAAAAAwKAAAAAAAAAAz//////////wwRAAAAAAAAAAsMBgAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MCgAAAAAAAAAMCwAAAAAAAAAM//////////8MEgAAAAAAAAALDAYAAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DA4AAAAAAAAADA8AAAAAAAAADAoAAAAAAAAADBAAAAAAAAAACgwHAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////wwPAAAAAAAAAAwNAAAAAAAAAAz//////////wwTAAAAAAAAAAsMBwAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MDQAAAAAAAAAMDgAAAAAAAAAM//////////8MFAAAAAAAAAALDAcAAAAAAAAABAAAAAAAAAAADP//////////EQ0EZWRnZQz//////////wT//////////wz//////////wwVAAAAAAAAAAYAAAAAAAAAAAwWAAAAAAAAAAYAAAAAAADwPwz//////////wz//////////wsHB3Vua25vd24RDQRlZGdlDP//////////BP//////////DP//////////DBYAAAAAAAAABgAAAAAAAAAADBcAAAAAAAAABgAAAAAAAPA/DP//////////DP//////////CwcHdW5rbm93bhENBGVkZ2UM//////////8E//////////8M//////////8MFwAAAAAAAAAGAAAAAAAAAAAMFQAAAAAAAAAGAAAAAAAA8D8M//////////8M//////////8LBwd1bmtub3duEQ0EZWRnZQz//////////wT//////////wz//////////wwVAAAAAAAAAAYAAAAAAAAAAAwYAAAAAAAAAAYAAAAAAADwPwz//////////wz//////////wsHB3Vua25vd24RDQRlZGdlDP//////////BP//////////DP//////////DBgAAAAAAAAABgAAAAAAAAAADBYAAAAAAAAABgAAAAAAAPA/DP//////////DP//////////CwcHdW5rbm93bhENBnZlcnRleAz//////////wT//////////wz//////////wwQAAAAAAAAAAQAAAAAAAAAAAwZAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////wwQAAAAAAAAAAQBAAAAAAAAAAwaAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////wwRAAAAAAAAAAQBAAAAAAAAAAwbAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////wwTAAAAAAAAAAQBAAAAAAAAAAwcAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAA8L8AAAAAAAAAABENC2RlbHRhX3N0YXRlUEsBAgoDCgAAAAAAAAAhAKC/ses7AgAAOwIAAAwAAAAAAAAAAAAAAKSBAAAAAE1hbmlmZXN0LmRhdFBLAQIKAwoAAAAAAAAAIQB9zdU9TQIAAE0CAAAkAAAAAAAAAAAAAACkgWUCAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9NYW5pZmVzdC5kYXRQSwECCgMKAAAAAAAAACEA8rXNDucLAADnCwAAMgAAAAAAAAAAAAAApIH0BAAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vQnJlcHMuQmxvYlBhcnRzL0JvZHkxLnNtYmhQSwUGAAAAAAMAAwDsAAAAKxEAAAAA"
+          "data": "UEsDBAoAAAAAAAAAIQCgv7HrOwIAADsCAAAMAAAATWFuaWZlc3QuZGF0BwAAADMtMi0wLTANAAAARnVzaW9uRG9jVHlwZQQAAAAuAGYAMwBkAA8AAABGAHUAcwBpAG8AbgAgAEQAbwBjAHUAbQBlAG4AdAARAAAAQQAgAEYAdQBzAGkAbwBuACAARABvAGMAdQBtAGUAbgB0ACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADIA0gQAABQAAAAkAAAAQABAKgcAAAALAAAAQXBwbGljYXRpb24BAAAAAwAAAENBTQQAAAAIAAAAUGFyYU1lc2gIAAAACQAAAFNpbUNvbW1vbjV1AAAPAAAAU2ltRkVBQ1NPYmplY3RzAgAAABAAAABTaW1GbHVpZER5bmFtaWNzAgAAABcAAABTaW1TdHJ1Y3R1cmFsQXR0cmlidXRlcxInAAAAAAAAACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMwABAAAADwAAAEYAdQBzAGkAbwBuAEEAcwBzAGUAdABOAGEAbQBlAAAAAAABCQAAAE4AQQBfAEUAWABQAE8AUgBUAFBLAwQKAAAAAAAAACEAfc3VPU0CAABNAgAAJAAAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL01hbmlmZXN0LmRhdA8AAABGAHUAcwBpAG8AbgBBAHMAcwBlAHQATgBhAG0AZQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADMAJAAAADAAMAAwADAAMAAwADAAMAAtADAAMAAwADAALQA0ADAAMAAwAC0AOAAwADAAMAAtADAAMAAwADAAMAAwADAAMAAwADAAMAA0AA8AAABGdXNpb25Bc3NldFR5cGUUAAAABAAAAAsAAABBcHBsaWNhdGlvbosAAAAIAAAAUGFyYU1lc2gNAAAABgAAAFNlcnZlciQAAAAIAAAAVm9sRmllbGQEAAAAEgAAAE5ldXRyb24zREFzc2V0VHlwZQAAAAAAAQAAABIAAABwaHlzaWNhbENoYW5nZUd1aWQkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADUAAAAAAAcAAAADAAAAAAAAABcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZRcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZQEAAAAUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUCAAAAGAAAAEZ1c2lvbkJyb3dzZXJTZWdtZW50VHlwZRgAAABGdXNpb25Ccm93c2VyU2VnbWVudFR5cGVQSwMECgAAAAAAAAAhAPK1zQ7nCwAA5wsAADIAAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9CcmVwcy5CbG9iUGFydHMvQm9keTEuc21iaEFTTSBCaW5hcnlGaWxlODxaAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAMAAAAAAAAABxBBdXRvZGVzayBOZXV0cm9uBxVBU00gMjMxLjYuMy42NTUzNSBPU1gHGFR1ZSBNYXIgMzEgMTY6MTY6MTkgMjAyNgYAAAAAAABOQAaN7bWg98awPga7vdfZ33zbPQ0JYXNtaGVhZGVyBw0yMzEuNi4zLjY1NTM1EQ0EYm9keQz//////////wT//////////wz//////////wwCAAAAAAAAAAz//////////wz//////////xENBnJlZ2lvbgz//////////wT//////////wz//////////wz//////////wwDAAAAAAAAAAwBAAAAAAAAABENBXNoZWxsDP//////////BP//////////DP//////////DP//////////DP//////////DAQAAAAAAAAADP//////////DAIAAAAAAAAAEQ0EZmFjZQz//////////wT//////////wz//////////wwFAAAAAAAAAAwGAAAAAAAAAAwDAAAAAAAAAAz//////////wwIAAAAAAAAAAsLEQ0EZmFjZQz//////////wT//////////wz//////////wz//////////wwHAAAAAAAAAAwDAAAAAAAAAAz//////////wwJAAAAAAAAAAsLEQ0EbG9vcAz//////////wT//////////wz//////////wz//////////wwKAAAAAAAAAAwEAAAAAAAAABENBGxvb3AM//////////8E//////////8M//////////8M//////////8MDQAAAAAAAAAMBQAAAAAAAAARDgVwbGFuZQ0Hc3VyZmFjZQz//////////wT//////////wz//////////xMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/FAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAsRDgZzcGxpbmUNB3N1cmZhY2UM//////////8E//////////8M//////////8PDQ10YXBlcl9zcGxfc3VyDQVwbGFuZRMAAAAAAADwPwAAAAAAAADAAAAAAAAACEAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/FAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAsNBG51YnMEAgAAAAAAAAAVAAAAAAAAAAAEAgAAAAAAAAAGAAAAAAAAAAAEAgAAAAAAAAAGAAAAAAAA8D8EAgAAAAAAAAAGAAAAAAAAAAAGAAAAAAAAAAAGAAAAAAAAAAAGAAAAAAAA8D8GAAAAAAAAAEAGAAAAAAAAAAAGAAAAAAAAAEAGAAAAAAAAAAAGAAAAAAAAAAANBG51YnMEAQAAAAAAAAAVAAAAAAAAAAAEAgAAAAAAAAAGAAAAAAAAAAAEAQAAAAAAAAAGAAAAAAAA8D8EAQAAAAAAAAAGAAAAAAAA0D8GAAAAAAAA4D8GAAAAAAAA6D8GAAAAAAAA+D8GZmZmZmZm1j8NBG51YnMEAQAAAAAAAAAEAQAAAAAAAAAVAAAAAAAAAAAVAAAAAAAAAAAVAAAAAAAAAAAVAAAAAAAAAAAEAgAAAAAAAAAEAgAAAAAAAAAGAAAAAAAAAAAEAQAAAAAAAAAGAAAAAAAA8D8EAQAAAAAAAAAGAAAAAAAAAAAEAQAAAAAAAAAGAAAAAAAA8D8EAQAAAAAAAAAGAAAAAAAAAAAGAAAAAAAAAAAGAAAAAAAAAAAGAAAAAAAA8D8GAAAAAAAAAAAGAAAAAAAAAAAGAAAAAAAAAAAGAAAAAAAA8D8GAAAAAAAAAAAGAAAAAAAA8D8GAAAAAAAA8D8GAAAAAAAAAAAGuB6F61G4fj8QEQ0GY29lZGdlDP//////////BP//////////DP//////////DAsAAAAAAAAADAwAAAAAAAAADA0AAAAAAAAADBAAAAAAAAAACwwGAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////wwMAAAAAAAAAAwKAAAAAAAAAAz//////////wwRAAAAAAAAAAsMBgAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MCgAAAAAAAAAMCwAAAAAAAAAM//////////8MEgAAAAAAAAALDAYAAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DA4AAAAAAAAADA8AAAAAAAAADAoAAAAAAAAADBAAAAAAAAAACgwHAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////wwPAAAAAAAAAAwNAAAAAAAAAAz//////////wwTAAAAAAAAAAsMBwAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MDQAAAAAAAAAMDgAAAAAAAAAM//////////8MFAAAAAAAAAALDAcAAAAAAAAABAAAAAAAAAAADP//////////EQ0EZWRnZQz//////////wT//////////wz//////////wwVAAAAAAAAAAYAAAAAAAAAAAwWAAAAAAAAAAYAAAAAAADwPwz//////////wz//////////wsHB3Vua25vd24RDQRlZGdlDP//////////BP//////////DP//////////DBYAAAAAAAAABgAAAAAAAAAADBcAAAAAAAAABgAAAAAAAPA/DP//////////DP//////////CwcHdW5rbm93bhENBGVkZ2UM//////////8E//////////8M//////////8MFwAAAAAAAAAGAAAAAAAAAAAMFQAAAAAAAAAGAAAAAAAA8D8M//////////8M//////////8LBwd1bmtub3duEQ0EZWRnZQz//////////wT//////////wz//////////wwVAAAAAAAAAAYAAAAAAAAAAAwYAAAAAAAAAAYAAAAAAADwPwz//////////wz//////////wsHB3Vua25vd24RDQRlZGdlDP//////////BP//////////DP//////////DBgAAAAAAAAABgAAAAAAAAAADBYAAAAAAAAABgAAAAAAAPA/DP//////////DP//////////CwcHdW5rbm93bhENBnZlcnRleAz//////////wT//////////wz//////////wwQAAAAAAAAAAQAAAAAAAAAAAwZAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////wwQAAAAAAAAAAQBAAAAAAAAAAwaAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////wwRAAAAAAAAAAQBAAAAAAAAAAwbAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////wwTAAAAAAAAAAQBAAAAAAAAAAwcAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAA8L8AAAAAAAAAABENC2RlbHRhX3N0YXRlUEsBAgoDCgAAAAAAAAAhAKC/ses7AgAAOwIAAAwAAAAAAAAAAAAAAKSBAAAAAE1hbmlmZXN0LmRhdFBLAQIKAwoAAAAAAAAAIQB9zdU9TQIAAE0CAAAkAAAAAAAAAAAAAACkgWUCAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9NYW5pZmVzdC5kYXRQSwECCgMKAAAAAAAAACEA8rXNDucLAADnCwAAMgAAAAAAAAAAAAAApIH0BAAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vQnJlcHMuQmxvYlBhcnRzL0JvZHkxLnNtYmhQSwUGAAAAAAMAAwDsAAAAKxEAAAAA",
+          "kind": "inline"
         },
+        "offset": 0,
+        "stream": "f3d",
         "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

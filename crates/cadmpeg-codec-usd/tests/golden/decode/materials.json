@@ -22,18 +22,7 @@
     },
     "fragment": false,
     "geometry": {
-      "bodies": [
-        {
-          "id": "usd:stage:body#/Root/Cage",
-          "kind": "general",
-          "name": "Cage"
-        },
-        {
-          "id": "usd:stage:body#/Root/Panel",
-          "kind": "general",
-          "name": "Panel"
-        }
-      ],
+      "bodies": [],
       "coedges": [],
       "curves": [],
       "edges": [],
@@ -141,7 +130,6 @@
         }
       ],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [
         {
           "content": {
@@ -156,13 +144,8 @@
       ],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [
         {
@@ -248,7 +231,6 @@
           ]
         }
       ],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -268,17 +250,13 @@
             "usd:stage:occurrence#/Root/Cage"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "Root",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
-          "bodies": [
-            "usd:stage:body#/Root/Cage"
-          ],
+          "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Root/Cage",
           "instance_bodies": [],
@@ -286,17 +264,13 @@
           "native_ref": "/Root/Cage",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Cage",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
-          "bodies": [
-            "usd:stage:body#/Root/Panel"
-          ],
+          "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Root/Panel",
           "instance_bodies": [],
@@ -304,12 +278,10 @@
           "native_ref": "/Root/Panel",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Panel",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -320,29 +292,18 @@
             "usd:stage:occurrence#/Root"
           ],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [
         {
-          "body": "usd:stage:body#/Root/Cage",
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "usd:stage:tessellation#/Root/Cage",
           "mesh": {
@@ -382,14 +343,16 @@
               }
             ]
           },
+          "of": {
+            "definition": "usd:stage:definition#/Root/Cage",
+            "kind": "definition"
+          },
           "texture_assignments": [],
           "texture_coordinates": [],
           "triangle_groups": []
         },
         {
-          "body": "usd:stage:body#/Root/Panel",
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "usd:stage:tessellation#/Root/Panel",
           "mesh": {
@@ -478,6 +441,10 @@
                 }
               }
             ]
+          },
+          "of": {
+            "definition": "usd:stage:definition#/Root/Panel",
+            "kind": "definition"
           },
           "texture_assignments": [],
           "texture_coordinates": [],
@@ -612,6 +579,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "3ec1b069b0036eaa0e84b2a4edb7c4ba01b3baae79cad391a99df09891c28b6d",
     "file_digests": {},
     "retained_records": {},

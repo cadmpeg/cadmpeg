@@ -1127,8 +1127,7 @@ accessors.
 
 A DATA statement ends at a semicolon outside a quoted literal, resource token,
 or comment. DATA instance names are nonzero and unique across all DATA
-sections. A reference denotes a DATA instance or a REFERENCE binding. A
-duplicate name does not determine a unique reference target.
+sections. A reference denotes a DATA instance or a REFERENCE binding.
 An open literal or comment provides no continuation boundary.
 
 CADIR decision: the first statement of a repeated instance name, in file

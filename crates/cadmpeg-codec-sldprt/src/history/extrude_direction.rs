@@ -1175,8 +1175,11 @@ fn evidence(ir: &CadIr, work: &WorkBudget, with_solid: bool) -> Option<Witness> 
             solid.unknown = true;
             continue;
         };
-        for coedge in face
-            .loops
+        let Some(face_loops) = face.loops.boundary() else {
+            solid.unknown = true;
+            continue;
+        };
+        for coedge in face_loops
             .iter()
             .filter_map(|lid| loops.get(lid))
             .flat_map(|loop_| loop_.coedges())
@@ -1261,7 +1264,7 @@ fn evidence(ir: &CadIr, work: &WorkBudget, with_solid: bool) -> Option<Witness> 
             polygons: Some(Vec::new()),
             transform,
         };
-        for lid in &face.loops {
+        for lid in face_loops {
             let polygon = (|| {
                 let loop_ = loops.get(lid)?;
                 let mut polygon = Vec::new();
@@ -1307,7 +1310,8 @@ fn evidence(ir: &CadIr, work: &WorkBudget, with_solid: bool) -> Option<Witness> 
     }
     for mesh in &ir.model.tessellations {
         let face_count = mesh
-            .faces
+            .of
+            .faces()
             .iter()
             .filter(|face| indices.contains_key(*face))
             .count();
@@ -1324,7 +1328,7 @@ fn evidence(ir: &CadIr, work: &WorkBudget, with_solid: bool) -> Option<Witness> 
         }
         let vertices = mesh.vertices();
         let triangles = mesh.triangles();
-        for face in &mesh.faces {
+        for face in mesh.of.faces() {
             let Some(index) = indices.get(face) else {
                 continue;
             };

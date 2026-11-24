@@ -42,17 +42,22 @@ fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
         )
         .unwrap();
     let source_region = &decoded.ir().geometry.regions[0];
-    assert_eq!(source_region.shells.len(), 2);
+    assert_eq!(source_region.stated_shells().count(), 2);
     assert!(decoded
         .ir()
         .geometry
         .shells
         .iter()
-        .find(|shell| Some(&shell.id) == source_region.shells.get(1))
+        .find(|shell| Some(&shell.id)
+            == source_region
+                .stated_shells()
+                .cloned()
+                .collect::<Vec<_>>()
+                .get(1))
         .is_some_and(|shell| decoded
             .ir()
             .geometry
-            .shell_faces(&shell.id)
+            .stated_shell_faces(&shell.id)
             .all(|face| face.sense == Sense::Reversed)));
     let plan = IgesCodec
         .plan(
@@ -80,18 +85,18 @@ fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
         .iter()
         .find(|region| region.body == body.id)
         .unwrap();
-    assert_eq!(region.shells.len(), 2);
+    assert_eq!(region.stated_shells().count(), 2);
     let void_shell = round_trip
         .ir()
         .geometry
         .shells
         .iter()
-        .find(|shell| shell.id == region.shells[1])
+        .find(|shell| shell.id == region.stated_shells().cloned().collect::<Vec<_>>()[1])
         .unwrap();
     assert!(round_trip
         .ir()
         .geometry
-        .shell_faces(&void_shell.id)
+        .stated_shell_faces(&void_shell.id)
         .all(|face| face.sense == Sense::Reversed));
     assert!(
         round_trip.report().losses.is_empty(),
@@ -479,11 +484,12 @@ fn encode_type_186_uses_ordered_region_shell_roles() {
         .unwrap();
     let mut ir = decoded.ir().clone();
     let region = &mut ir.geometry.regions[0];
-    let source_outer = region.shells[0].clone();
-    let source_void = region.shells[1].clone();
-    region.shells.reverse();
+    let source_outer = region.stated_shells().cloned().collect::<Vec<_>>()[0].clone();
+    let source_void = region.stated_shells().cloned().collect::<Vec<_>>()[1].clone();
+    let reversed = vec![source_void.clone(), source_outer.clone()];
+    region.set_shells(reversed.clone());
 
-    let (exterior, voids) = crate::writer::solid_shell_roles(region).unwrap();
+    let (exterior, voids) = crate::writer::solid_shell_roles(region, &reversed).unwrap();
     assert_eq!(exterior, &source_void);
     assert_eq!(voids, std::slice::from_ref(&source_outer));
 

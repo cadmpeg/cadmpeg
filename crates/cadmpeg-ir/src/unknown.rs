@@ -250,7 +250,7 @@ mod tests {
         );
         let mut ir = crate::CadIr::empty();
         ir.native
-            .namespace_mut("synthetic")
+            .namespace_mut(crate::codec_id!("synthetic"))
             .set_arena(
                 &crate::native::test_ctx(),
                 "unknowns",

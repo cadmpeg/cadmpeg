@@ -13,16 +13,6 @@
 //! and its attributes, where a codec records the program version, the object
 //! count, and the rest of what it read out of the container.
 //!
-//! One class of attribute is carved out. A machine-local digest, named by the
-//! [`crate::compare::LOCAL_DIGEST_SUFFIX`] convention, is a bitwise
-//! fingerprint of the very values this module compares tolerantly: two decodes
-//! that agree to fourteen significant digits hash differently, and no tolerance
-//! can reconcile them. Reporting such a difference as a difference would make
-//! every cross-platform comparison of one file report that file as changed.
-//! [`SourceDiff::local_digests`] therefore reports them for information, outside
-//! [`IrDiff::is_empty`] and outside the exit code derived from it, while every
-//! other source attribute counts.
-//!
 //! A document with no `source` compares with an absent format, dialect set, and
 //! attribute map. Two documents that both lack source metadata therefore agree,
 //! and a document that gained populated source metadata differs.
@@ -31,7 +21,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::ops::Deref;
 
-use crate::compare::{floats_agree, is_local_digest_attribute, values_agree};
+use crate::compare::{floats_agree, values_agree};
 use crate::document::ArenaName;
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::text::NonBlankString;
@@ -77,12 +67,6 @@ pub struct SourceDiff {
     pub dialects_change: Option<DialectsChange>,
     /// Differing attributes, each a difference.
     pub attributes: Vec<AttributeChange>,
-    /// Differing machine-local digest attributes, reported for information and
-    /// never counted as a difference.
-    ///
-    /// See the module documentation: such a digest cannot agree across platforms,
-    /// so a verdict that turned on one would call the same file changed.
-    pub local_digests: Vec<AttributeChange>,
 }
 
 /// A change between two source formats, with absence represented explicitly.
@@ -161,8 +145,6 @@ impl Serialize for DialectsChange {
 
 impl SourceDiff {
     /// Returns `true` when nothing that counts as a difference changed.
-    ///
-    /// [`Self::local_digests`] is not consulted.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.format_change.is_none() && self.dialects_change.is_none() && self.attributes.is_empty()
@@ -327,8 +309,6 @@ pub struct IrDiff {
 impl IrDiff {
     /// Returns `true` when neither tolerances, source metadata, nor any
     /// arena differ.
-    ///
-    /// A difference confined to [`SourceDiff::local_digests`] leaves this `true`.
     pub fn is_empty(&self) -> bool {
         self.tolerance_change.is_none()
             && self.source.is_empty()
@@ -505,8 +485,8 @@ fn diff_native_namespaces(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
     namespaces
         .into_iter()
         .flat_map(|namespace| {
-            let left_ns = left.native.namespace(namespace);
-            let right_ns = right.native.namespace(namespace);
+            let left_ns = left.native.namespace(namespace.as_str());
+            let right_ns = right.native.namespace(namespace.as_str());
             let arenas = left_ns
                 .into_iter()
                 .flat_map(|value| value.arenas().keys())
@@ -564,13 +544,7 @@ fn diff_source(left: &CadIr, right: &CadIr) -> SourceDiff {
         dialects_change: DialectsChange::between(left_dialects, right_dialects),
         ..SourceDiff::default()
     };
-    for change in attribute_changes(left_attributes, right_attributes) {
-        if is_local_digest_attribute(change.key.as_str()) {
-            result.local_digests.push(change);
-        } else {
-            result.attributes.push(change);
-        }
-    }
+    result.attributes = attribute_changes(left_attributes, right_attributes);
     result
 }
 
@@ -621,7 +595,6 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::diff;
-    use crate::compare;
     use crate::examples::unit_cube;
 
     #[test]
@@ -896,7 +869,6 @@ mod tests {
                 right: Some("1.1".to_owned()),
             }]
         );
-        assert!(result.source.local_digests.is_empty());
     }
 
     /// An attribute present on one side only is a difference in either direction.
@@ -914,47 +886,6 @@ mod tests {
         assert!(!backward.is_empty());
         assert_eq!(backward.source.attributes[0].left, None);
         assert_eq!(backward.source.attributes[0].right.as_deref(), Some("3"));
-    }
-
-    /// A machine-local digest is a bitwise fingerprint of tolerantly compared
-    /// values, so two platforms' decodes of one file disagree on it while
-    /// agreeing on the model. Such a difference is reported and does not make the
-    /// documents different.
-    #[test]
-    fn a_machine_local_digest_difference_is_reported_but_is_not_a_difference() {
-        let left = with_source(&[("document_local_sha256", &"0".repeat(64))]);
-        let right = with_source(&[("document_local_sha256", &"1".repeat(64))]);
-
-        let result = diff(&left, &right);
-        assert_ne!(left.source, right.source);
-        assert!(result.is_empty(), "{result:?}");
-        assert!(result.source.attributes.is_empty());
-        assert_eq!(
-            result
-                .source
-                .local_digests
-                .iter()
-                .map(|change| change.key.as_str())
-                .collect::<Vec<_>>(),
-            ["document_local_sha256"]
-        );
-    }
-
-    /// Carve-out keys by `_local_sha256` suffix, not a fixed key list.
-    #[test]
-    fn the_carve_out_follows_the_suffix_convention() {
-        let key = format!("future_codec_thing{}", compare::LOCAL_DIGEST_SUFFIX);
-        let left = with_source(&[(&key, "a"), ("footer_fingerprint", "f")]);
-        let right = with_source(&[(&key, "b"), ("footer_fingerprint", "f")]);
-        let result = diff(&left, &right);
-        assert!(result.is_empty(), "{result:?}");
-        assert_eq!(result.source.local_digests[0].key.as_str(), key);
-
-        // Digests over retained source bytes have no suffix; a change stays a difference.
-        let right = with_source(&[(&key, "b"), ("footer_fingerprint", "g")]);
-        let result = diff(&left, &right);
-        assert!(!result.is_empty());
-        assert_eq!(result.source.attributes[0].key, "footer_fingerprint");
     }
 
     /// A document with no source metadata compares against one that has some

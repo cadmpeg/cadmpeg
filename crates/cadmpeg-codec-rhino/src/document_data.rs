@@ -770,7 +770,7 @@ pub(crate) fn install(
             }
         }
     }
-    let namespace = ir.native.namespace_mut("rhino");
+    let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("rhino"));
     namespace.set_arena(ctx, "revisions", &revisions)?;
     namespace.set_arena(ctx, "document_notes", &notes)?;
     namespace.set_arena(ctx, "applications", &applications)?;

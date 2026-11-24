@@ -872,17 +872,11 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [
         {
@@ -967,7 +961,6 @@
           ]
         }
       ],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -987,12 +980,10 @@
             "usd:stage:occurrence#/Surfaces/Trimmed"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "Surfaces",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -1005,12 +996,10 @@
           "native_ref": "/Surfaces/Bilinear",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Bilinear",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -1023,12 +1012,10 @@
           "native_ref": "/Surfaces/Trimmed",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Trimmed",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -1039,24 +1026,15 @@
             "usd:stage:occurrence#/Surfaces"
           ],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -1157,6 +1135,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "ce9cac2678daa54716885214e3e7909ed3bb11cad1dd6587b6f82c0829992089",
     "file_digests": {},
     "retained_records": {},

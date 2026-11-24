@@ -115,7 +115,7 @@ pub(super) fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Findin
         let group = ctx
             .operand_groups_by_index
             .get(&(native_stream, image.target_group_record_index));
-        let neutral_is_valid = !ctx.holds_design_intent() || scope.is_some_and(|scope| {
+        let neutral_is_valid = !ctx.holds_neutral_design() || scope.is_some_and(|scope| {
             if image.placement.is_some() {
                 return ctx.ir.model.assets.iter().any(|candidate| {
                     candidate

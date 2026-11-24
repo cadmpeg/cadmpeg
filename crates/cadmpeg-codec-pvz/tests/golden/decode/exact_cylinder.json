@@ -25,8 +25,7 @@
       "bodies": [
         {
           "id": "pvz:model:body#part.ol",
-          "kind": "solid",
-          "name": "part.ol"
+          "kind": "solid"
         }
       ],
       "coedges": [
@@ -563,17 +562,11 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [
         {
@@ -604,7 +597,6 @@
           ]
         }
       ],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -623,13 +615,11 @@
             "pvz:model:occurrence#0"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "TOP.ASM",
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -642,24 +632,15 @@
           "native_ref": "definition 1",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "PART.PRT",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -1081,6 +1062,8 @@
         }
       }
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "b17bb476f37a158fe47d2851e2b03a9e2df39eed87718ff46f965f028136cb02",
     "file_digests": {},
     "retained_records": {},
