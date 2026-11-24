@@ -1645,7 +1645,10 @@ fn thin_operation_ambiguity_has_a_stable_loss() {
             feature_input_lanes: native_lanes,
             ..crate::native::SldprtNative::default()
         }
-        .store(&ctx, ir.native.namespace_mut("sldprt"))
+        .store(
+            &ctx,
+            ir.native.namespace_mut(cadmpeg_ir::codec_id!("sldprt")),
+        )
         .unwrap();
         let mut report = super::empty_report(true);
         append_design_losses(&ctx, &ir, &mut report).unwrap();

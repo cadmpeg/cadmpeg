@@ -588,10 +588,7 @@ fn complex_geometric_set_representation_uses_its_named_items() {
         .find(|curve| curve.id.as_str() == "step:data:curve#14")
         .expect("free complex representation member");
     assert_eq!(
-        free_circle
-            .source_object
-            .as_ref()
-            .and_then(|source| source.name.as_deref()),
+        crate::test_support::carrier_name(result.ir(), free_circle.id.as_str()),
         Some("free circle")
     );
     assert!(result.report().losses.iter().any(|loss| {

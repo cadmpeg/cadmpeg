@@ -262,7 +262,6 @@
           "source_object": {
             "format": "step",
             "instance_path": [],
-            "name": "two segments",
             "object_id": "#49"
           }
         },
@@ -851,7 +850,24 @@
       "articulations": [],
       "assembly_joints": [],
       "assets": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "step:data:attribute#curve.48",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "step:data:curve#48"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "two segments"
+            }
+          ]
+        }
+      ],
       "colliders": [],
       "configurations": [],
       "declared_measures": [],
@@ -1088,6 +1104,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "d00e6c96b2f9b1819d8cd432746ac3b96bdebbc3f19d491e2604aa4439ffbc0a",
     "file_digests": {},
     "retained_records": {

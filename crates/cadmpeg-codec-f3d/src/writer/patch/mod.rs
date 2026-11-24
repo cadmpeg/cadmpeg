@@ -448,7 +448,12 @@ pub(crate) fn write_semantic(
         supported
             .wire_topologies
             .clone_from(&target_native.wire_topologies);
-        supported.store(&encode_ctx, supported_target.native.namespace_mut("f3d"))?;
+        supported.store(
+            &encode_ctx,
+            supported_target
+                .native
+                .namespace_mut(cadmpeg_ir::codec_id!("f3d")),
+        )?;
     }
     if decode::document_local_sha256(&supported_target)? != decode::document_local_sha256(target)? {
         return Err(CodecError::NotImplemented(

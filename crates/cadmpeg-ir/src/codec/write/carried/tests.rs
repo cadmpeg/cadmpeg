@@ -21,18 +21,21 @@ fn finding(entity: Option<&str>, related: &[&str], message: &str) -> Finding {
 }
 
 fn insert_native(ir: &mut CadIr, format: &str, ids: &[&str]) {
-    ir.native.namespace_mut(format).arenas_mut().insert(
-        "asm_histories".into(),
-        ids.iter()
-            .map(|id| {
-                NativeRecord::new(
-                    Identity::new(*id).expect("valid identity"),
-                    serde_json::Map::default(),
-                )
-                .expect("valid native identity")
-            })
-            .collect(),
-    );
+    ir.native
+        .namespace_mut(crate::design::names::CodecId::new(format).expect("a codec id"))
+        .arenas_mut()
+        .insert(
+            "asm_histories".into(),
+            ids.iter()
+                .map(|id| {
+                    NativeRecord::new(
+                        Identity::new(*id).expect("valid identity"),
+                        serde_json::Map::default(),
+                    )
+                    .expect("valid native identity")
+                })
+                .collect(),
+        );
     ir.finalize();
 }
 

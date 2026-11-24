@@ -1707,7 +1707,7 @@ pub(crate) fn install(
             }
         }
     }
-    let namespace = ir.native.namespace_mut("rhino");
+    let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("rhino"));
     namespace.set_arena(ctx, "views", &views)?;
     namespace.set_arena(ctx, "construction_planes", &cplanes)?;
     Ok(NativeInstall {

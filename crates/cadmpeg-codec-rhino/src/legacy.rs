@@ -2982,7 +2982,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
         offset = chunk.next_offset();
     }
     if !direct_records.is_empty() {
-        let namespace = ir.native.namespace_mut("rhino");
+        let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("rhino"));
         namespace
             .set_arena(ctx, "legacy_v1_records", &direct_records)
             .map_err(CodecError::malformed)?;

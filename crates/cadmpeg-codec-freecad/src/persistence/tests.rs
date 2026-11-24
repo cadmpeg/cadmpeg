@@ -569,7 +569,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .collect::<Vec<_>>();
     corrupted
         .native
-        .namespace_mut("fcstd")
+        .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
         .set_arena(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             "logical_ledger",
@@ -693,7 +693,7 @@ fn native_validation_rejects_duplicate_extension_identity() {
     extensions.push(extensions[0].clone());
     corrupted
         .native
-        .namespace_mut("fcstd")
+        .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
         .set_arena(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             "extensions",

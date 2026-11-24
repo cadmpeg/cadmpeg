@@ -1214,6 +1214,7 @@ fn ap203e1_reports_hidden_presentation_layer_visibility_loss() {
         description: None,
         visible: Some(false),
         items: vec![PresentationItem::Body { body }.into()],
+        native_ref: None,
     });
     let mut output = Vec::new();
     let report = write_step(
@@ -1387,10 +1388,6 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
         format: cadmpeg_ir::codec_id!("rhino"),
         object_id: cadmpeg_core::text::NonBlankString::new("object-0")
             .expect("nonempty source identity"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     };
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
@@ -1949,14 +1946,17 @@ fn procedural_construction_reduction_is_reported() {
 #[test]
 fn source_native_record_reduction_is_reported() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.native.namespace_mut("f3d").arenas_mut().insert(
-        "asm_histories".into(),
-        vec![cadmpeg_ir::NativeRecord::new(
-            cadmpeg_ir::ids::Identity::new("f3d:test:asm-history#0").expect("valid identity"),
-            Default::default(),
-        )
-        .expect("valid native identity")],
-    );
+    ir.native
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
+        .arenas_mut()
+        .insert(
+            "asm_histories".into(),
+            vec![cadmpeg_ir::NativeRecord::new(
+                cadmpeg_ir::ids::Identity::new("f3d:test:asm-history#0").expect("valid identity"),
+                Default::default(),
+            )
+            .expect("valid native identity")],
+        );
     ir.finalize();
 
     let mut buf = Vec::new();

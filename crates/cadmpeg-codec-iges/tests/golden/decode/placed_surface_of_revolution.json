@@ -51,10 +51,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "AXIS",
-            "object_id": "D1",
-            "visible": true
+            "object_id": "D1"
           }
         },
         {
@@ -83,10 +80,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "PROFILE",
-            "object_id": "D3",
-            "visible": true
+            "object_id": "D3"
           }
         },
         {
@@ -124,10 +118,7 @@
             "format": "iges",
             "geometry_role": "independent",
             "instance_path": [],
-            "layer": "0",
-            "name": "REVOLVE",
-            "object_id": "D7",
-            "visible": true
+            "object_id": "D7"
           }
         }
       ],
@@ -267,10 +258,7 @@
             "format": "iges",
             "geometry_role": "independent",
             "instance_path": [],
-            "layer": "0",
-            "name": "REVOLVE",
-            "object_id": "D7",
-            "visible": true
+            "object_id": "D7"
           }
         }
       ],
@@ -1025,7 +1013,6 @@
     "source": {
       "attributes": {
         "author": "author",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "drafting_standard": "0",
         "iges_version_flag": "11",
         "model_scale": "1",
@@ -1145,6 +1132,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "ef4bb855c43fed2fa5c8ca927165c9718dab41672692c5186111434180532dab",
     "file_digests": {},
     "retained_records": {

@@ -5855,7 +5855,6 @@
       "attributes": {
         "application_domains": "App,PartDesign,Sketcher",
         "document_kind": "part-design",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
         "program_version": "1.1R20260928 (Git shallow)"
       },
@@ -5930,6 +5929,10 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {
+      "fcstd_uncarried_local_sha256": "<elided: digest over tolerantly compared geometry>"
+    },
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "215d76c07e95dd13f791b404eeacd6f625a0bbefa603e3653b007a73a853184c",
     "file_digests": {},
     "retained_records": {},

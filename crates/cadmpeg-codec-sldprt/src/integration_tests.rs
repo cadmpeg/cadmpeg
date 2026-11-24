@@ -304,8 +304,8 @@ fn authored_with_retained_native_envelope_writer_pipeline_round_trips_a_cube_and
         .unwrap();
     let second = decode(bytes);
     assert_eq!(
-        crate::decode::document_local_sha256(first.ir()).unwrap(),
-        crate::decode::document_local_sha256(second.ir()).unwrap()
+        crate::test_support::document_local_sha256(first.ir()).unwrap(),
+        crate::test_support::document_local_sha256(second.ir()).unwrap()
     );
     semantic_writer_omits_subds_and_names_them();
 }

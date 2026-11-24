@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::text::CodecId;
 use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::{JsonSchema, Schema, SchemaGenerator};
@@ -197,6 +198,14 @@ pub enum NativeConvertError {
     /// A source-independent unknown record has no retained source counterpart.
     #[error("native unknown record has no retained source record: {0}")]
     MissingRetainedSourceRecord(String),
+    /// A native namespace is named by text that is not a codec id (§2.2).
+    #[error("native namespace {0:?} is not a codec id")]
+    NamespaceNotCodecId(String),
+}
+
+/// The codec id that names the native namespace `format`.
+pub(crate) fn namespace_codec(format: &str) -> Result<CodecId, NativeConvertError> {
+    CodecId::new(format).ok_or_else(|| NativeConvertError::NamespaceNotCodecId(format.to_owned()))
 }
 
 impl From<NativeConvertError> for cadmpeg_core::CodecError {
@@ -1058,13 +1067,13 @@ impl NativeNamespace {
     }
 }
 
-/// Native records grouped by source-format namespace id.
+/// Native records grouped by the codec id of their namespace.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct Native(
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    pub  BTreeMap<String, NativeNamespace>,
+    pub  BTreeMap<CodecId, NativeNamespace>,
 );
 
 impl Native {
@@ -1074,8 +1083,8 @@ impl Native {
     }
 
     /// Return or create a source-format namespace.
-    pub fn namespace_mut(&mut self, format: impl Into<String>) -> &mut NativeNamespace {
-        self.0.entry(format.into()).or_default()
+    pub fn namespace_mut(&mut self, format: CodecId) -> &mut NativeNamespace {
+        self.0.entry(format).or_default()
     }
 
     /// Whether every namespace arena is in increasing order of id.
@@ -1122,7 +1131,7 @@ impl Native {
                 namespace.arenas.iter().filter_map(move |(kind, records)| {
                     let count = NonZeroUsize::new(records.len())?;
                     Some(LossCount {
-                        format: format.clone(),
+                        format: format.to_string(),
                         kind: kind.clone(),
                         count,
                     })

@@ -15,10 +15,11 @@ use std::io::Cursor;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::parameters::{DesignConfiguration, DesignParameter};
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::source_fidelity::CodecDigests;
 
 use super::edits::{UnwrittenEdits, UnwrittenPart};
 use crate::history::hash::{configuration_hash, feature_hash, history_hash, parameter_hash};
@@ -37,33 +38,35 @@ use crate::native::SldprtNative;
 /// tree place (`ordinal`) or output bodies (`outputs`) the written part reads
 /// back other than the document states; the read-back names them, and no
 /// stale-solid loss calls them written. Without the retained source image,
-/// [`imageless_losses`] names what it can tell.
+/// [`imageless_losses`] names what it can tell. `digests` are the codec
+/// digests the decode recorded.
 pub(crate) fn stale_solid_losses(
     ir: &CadIr,
+    digests: &CodecDigests,
     native: Option<&SldprtNative>,
     source_image: Option<&[u8]>,
     unwritten: &UnwrittenEdits,
     misread: &HashSet<(FeatureId, String)>,
 ) -> Result<Vec<LossNote>, CodecError> {
     let kept_definitions = &unwritten.kept_definitions;
-    let (Some(source), Some(native)) = (ir.source.as_ref(), native) else {
+    let Some(native) = native else {
         return Ok(Vec::new());
     };
     let hash_arena = DecodeArena::new();
     let (hash_ctx, _) = DecodeContext::from_root_bytes(&[], &hash_arena, &DecodePolicy::service())?;
-    let features_changed = differs(source, "sldprt_neutral_feature_local_sha256", || {
+    let features_changed = differs(digests, "sldprt_neutral_feature_local_sha256", || {
         feature_hash(&hash_ctx, &ir.model)
     })?;
-    let parameters_changed = differs(source, "sldprt_neutral_parameter_local_sha256", || {
+    let parameters_changed = differs(digests, "sldprt_neutral_parameter_local_sha256", || {
         parameter_hash(&hash_ctx, &ir.model.parameters)
     })?;
-    let native_changed = differs(source, "sldprt_native_history_sha256", || {
+    let native_changed = differs(digests, "sldprt_native_history_sha256", || {
         history_hash(&hash_ctx, &native.feature_histories)
     })?;
     let Some(source_image) = source_image else {
         return imageless_losses(
             ir,
-            source,
+            digests,
             &hash_ctx,
             [
                 (features_changed, "features"),
@@ -73,7 +76,7 @@ pub(crate) fn stale_solid_losses(
         );
     };
     let configurations_changed =
-        differs(source, "sldprt_neutral_configuration_local_sha256", || {
+        differs(digests, "sldprt_neutral_configuration_local_sha256", || {
             configuration_hash(&hash_ctx, &ir.model.configurations)
         })?;
     if !(features_changed || parameters_changed || native_changed || configurations_changed) {
@@ -96,6 +99,7 @@ pub(crate) fn stale_solid_losses(
     if features_changed {
         feature_edits(
             ir,
+            digests,
             baseline,
             &hash_ctx,
             (kept_definitions, misread),
@@ -122,14 +126,14 @@ pub(crate) fn stale_solid_losses(
 /// history digests.
 fn imageless_losses(
     ir: &CadIr,
-    source: &SourceMeta,
+    digests: &CodecDigests,
     hash_ctx: &DecodeContext<'_>,
     changed: [(bool, &'static str); 3],
 ) -> Result<Vec<LossNote>, CodecError> {
     // The decoder stamps the configuration digest before it synthesizes the
     // active snapshot.
     let configurations_changed =
-        differs(source, "sldprt_neutral_configuration_local_sha256", || {
+        differs(digests, "sldprt_neutral_configuration_local_sha256", || {
             configuration_hash(
                 hash_ctx,
                 &crate::writer::configurations_without_synthesized_snapshot(ir),
@@ -213,21 +217,22 @@ fn imageless_snapshot_edits(ir: &CadIr) -> Vec<LossNote> {
     losses
 }
 
-/// Whether the digest `current` computes differs from the baseline digest the
-/// decoder stamped as `attribute`; `false` without a stamped baseline.
+/// Whether the digest `current` computes differs from the codec digest the
+/// decoder recorded under `key`; `false` without a recorded digest.
 fn differs(
-    source: &SourceMeta,
-    attribute: &str,
+    digests: &CodecDigests,
+    key: &str,
     current: impl FnOnce() -> Result<String, CodecError>,
 ) -> Result<bool, CodecError> {
-    match source.attributes.get(attribute) {
-        Some(expected) => Ok(expected != &current()?),
+    match crate::codec_digests::baseline(digests, key) {
+        Some(expected) => Ok(expected != current()?),
         None => Ok(false),
     }
 }
 
 fn feature_edits(
     ir: &CadIr,
+    digests: &CodecDigests,
     source: &CadIr,
     hash_ctx: &DecodeContext<'_>,
     (kept_definitions, misread): (&HashSet<FeatureId>, &HashSet<(FeatureId, String)>),
@@ -319,14 +324,11 @@ fn feature_edits(
             feature.name.clone_from(&original.name);
         }
     }
-    let residual_change = match ir
-        .source
-        .as_ref()
-        .and_then(|meta| meta.attributes.get("sldprt_neutral_feature_local_sha256"))
-    {
-        Some(expected) => expected != &feature_hash(hash_ctx, &naming_only)?,
-        None => false,
-    };
+    let residual_change =
+        match crate::codec_digests::baseline(digests, "sldprt_neutral_feature_local_sha256") {
+            Some(expected) => expected != feature_hash(hash_ctx, &naming_only)?,
+            None => false,
+        };
     let shaping = ir
         .model
         .features

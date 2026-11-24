@@ -446,10 +446,6 @@ pub(crate) fn display_geometry(
             format: cadmpeg_ir::codec_id!("pvz"),
             geometry_role: None,
             object_id,
-            name: None,
-            color: None,
-            visible: None,
-            layer: None,
             instance_path: Vec::new(),
         }
     });

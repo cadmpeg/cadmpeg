@@ -14,7 +14,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::technology::FeedRole;
-use super::toolpath::{Motion, MotionValue};
+use super::toolpath::{Motion, MotionValue, NoCycle};
 use crate::design::construction::FrameAxis;
 use crate::design::units::{Duration, Feed};
 use crate::features::geometry::FinitePoint3;
@@ -149,7 +149,7 @@ pub struct Cycle {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_expansion"
     )]
-    pub expansion: Option<Vec<Motion>>,
+    pub expansion: Option<Vec<Motion<NoCycle>>>,
 }
 
 /// The kind of a cycle.
@@ -329,7 +329,7 @@ cadmpeg_core::named_optional_field!(deserialize_chip_break_retract, Length, "chi
 cadmpeg_core::named_optional_field!(deserialize_clearance, Length, "clearance");
 cadmpeg_core::named_optional_field!(deserialize_depth, Length, "depth");
 cadmpeg_core::named_optional_field!(deserialize_dwell, Duration, "dwell");
-cadmpeg_core::named_optional_field!(deserialize_expansion, Vec<Motion>, "expansion");
+cadmpeg_core::named_optional_field!(deserialize_expansion, Vec<Motion<NoCycle>>, "expansion");
 cadmpeg_core::named_optional_field!(deserialize_full_retract_after, Length, "full_retract_after");
 cadmpeg_core::named_optional_field!(deserialize_increment, Length, "increment");
 cadmpeg_core::named_optional_field!(

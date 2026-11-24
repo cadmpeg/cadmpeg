@@ -228,6 +228,7 @@ pub(super) fn decode(
             description,
             visible: hidden_layer_ids.contains(&layer_id).then_some(false),
             items: items.into_iter().map(InstanceTarget::new).collect(),
+            native_ref: None,
         });
         typed.insert(layer_id);
     }

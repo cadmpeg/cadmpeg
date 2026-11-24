@@ -63,10 +63,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "ARC",
-            "object_id": "D1",
-            "visible": true
+            "object_id": "D1"
           }
         },
         {
@@ -101,10 +98,7 @@
             "format": "iges",
             "geometry_role": "independent",
             "instance_path": [],
-            "layer": "0",
-            "name": "OFFSET",
-            "object_id": "D3",
-            "visible": true
+            "object_id": "D3"
           }
         }
       ],
@@ -706,7 +700,6 @@
     "source": {
       "attributes": {
         "author": "author",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "drafting_standard": "0",
         "iges_version_flag": "11",
         "model_scale": "1",
@@ -808,6 +801,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "892a02a3d57ff7e38d8a5ecdf5df2325db9e3cd25da89a4a1935b1b990a54061",
     "file_digests": {},
     "retained_records": {

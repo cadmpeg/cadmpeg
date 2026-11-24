@@ -4955,7 +4955,6 @@
       "attributes": {
         "application_domains": "Part,TechDraw",
         "document_kind": "drawing",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
         "program_version": "1.1R45039 (Git)"
       },
@@ -5223,6 +5222,10 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {
+      "fcstd_uncarried_local_sha256": "<elided: digest over tolerantly compared geometry>"
+    },
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "a1ec94417092ac8de667b13a164922e01adb23cc427a9a535ca2f51e12a61f75",
     "file_digests": {},
     "retained_records": {},

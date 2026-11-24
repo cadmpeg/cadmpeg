@@ -332,10 +332,13 @@ fn occurrence_merge_rewrites_only_member_native_record_text() {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let id = "f3d:Design1/BulkStream.dat:design-construction-operand-group#7";
     let mut native = Native::default();
-    native.namespace_mut("f3d").arenas_mut().insert(
-        "operands".into(),
-        vec![NativeRecord::new(id.try_into().unwrap(), serde_json::Map::new()).unwrap()],
-    );
+    native
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
+        .arenas_mut()
+        .insert(
+            "operands".into(),
+            vec![NativeRecord::new(id.try_into().unwrap(), serde_json::Map::new()).unwrap()],
+        );
     let targets = super::super::native_record_targets(&native, "member");
     let native_text = TextReplacements::build(targets.iter()).unwrap();
     let mut scope = OccurrenceScope {
@@ -466,7 +469,7 @@ fn occurrence_merge_remaps_and_retains_native_records() {
     };
     let mut component = Native::default();
     component
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             "design_sketch_placements",
@@ -504,7 +507,7 @@ fn occurrence_configuration_survives_document_and_typed_native_admission() {
     .unwrap();
     let mut component = Native::default();
     component
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             "design_configurations",
@@ -571,7 +574,7 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
     .unwrap();
     let mut component = Native::default();
     component
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             "design_configurations",
@@ -579,7 +582,7 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
         )
         .expect("store configuration");
     component
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             "body_visibilities",
@@ -852,7 +855,7 @@ fn parameter_document(
     model.features = projected.features;
     let mut records = Native::default();
     records
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(ctx, "design_parameters", &native)
         .unwrap();
     (model, records)
@@ -1307,12 +1310,12 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
         };
         let mut native = Native::default();
         native
-            .namespace_mut("f3d")
+            .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
             .set_arena(&ctx, "design_component_occurrences", &carriers)
             .unwrap();
         extend_native(&ctx, &mut ir.native, native, &member_scope).unwrap();
         ir.native
-            .namespace_mut("f3d")
+            .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
             .set_arena(&ctx, "xref_references", &table.references)
             .unwrap();
         let placing = crate::ids::neutral_xref_occurrence_id(0, 0);
