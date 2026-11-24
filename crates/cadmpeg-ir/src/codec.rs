@@ -239,7 +239,7 @@ impl DecodeResult {
         format: FormatId,
     ) -> Result<Self, DecodeFailure> {
         let mut result = DecodeResult::new(decoded, format, ctx.depth(), ctx.policy())?;
-        result.keep_first_of_repeated_ids();
+        result.give_up_repeated_ids();
         result.record_content_digest(ctx.policy())?;
         result.record_omitted_arenas_baseline(ctx.policy());
         if result.report().format() != format.as_str() {
@@ -359,23 +359,19 @@ impl DecodeResult {
         }
     }
 
-    /// Keeps one copy of each id a decoder emitted more than once in one
-    /// arena. Copies that hold one value are one record, and the wrapper
-    /// states it (§2.8). Where the copies differ, §2.8 states none and gives
-    /// the id up with the records that need it; that give-up pass does not
-    /// exist yet, so meanwhile the first copy in the decoder's emission order
-    /// is kept, the others are dropped, and one `decode/id.repeated` loss per
-    /// id names it, the arena, and the copies.
-    fn keep_first_of_repeated_ids(&mut self) {
+    /// States one copy of each id a decoder emitted more than once in one
+    /// arena where the copies hold one value, and none where they differ
+    /// (§2.8), charging one `decode/id.repeated` loss per such id that names
+    /// it, the arena, and the number of copies.
+    fn give_up_repeated_ids(&mut self) {
         for repeated in self.ir.drop_repeated_ids() {
-            self.report.losses.push(DecodeLossCode::IdRepeated.note(format!(
-                "the decoder emitted {} {} times in arena {}, and the copies differ; the first \
-                 copy is kept and {} dropped, so a reference meant for a dropped copy names the first",
-                repeated.id,
-                repeated.dropped + 1,
-                repeated.arena,
-                repeated.dropped
-            )));
+            self.report
+                .losses
+                .push(DecodeLossCode::IdRepeated.note(format!(
+                    "the decoder emitted {} {} times in arena {}, and the copies differ, so the \
+                 document states none of them; dropped=[{}]",
+                    repeated.id, repeated.copies, repeated.arena, repeated.id
+                )));
         }
     }
 

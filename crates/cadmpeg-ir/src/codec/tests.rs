@@ -750,12 +750,12 @@ impl CodecBackend for RepeatedIdentityCodec {
 }
 
 #[test]
-fn the_sealed_wrapper_keeps_the_first_emitted_copy_of_a_repeated_id_and_charges_one_loss() {
+fn the_sealed_wrapper_states_no_copy_of_a_repeated_id_whose_copies_differ_and_charges_one_loss() {
     let result = RepeatedIdentityCodec { differ: true }
         .decode(&mut Cursor::new(Vec::new()), &DecodeOptions::default())
         .expect("a decoder's repeated id does not refuse the file");
     let cube = unit_cube().expect("valid unit cube fixture");
-    assert_eq!(result.ir().geometry.points, cube.geometry.points);
+    assert_eq!(result.ir().geometry.points, cube.geometry.points[1..]);
     let repeated = result
         .report()
         .losses
@@ -768,7 +768,7 @@ fn the_sealed_wrapper_keeps_the_first_emitted_copy_of_a_repeated_id_and_charges_
     assert_eq!(loss.severity, crate::report::Severity::Error);
     assert!(
         loss.message.contains(cube.geometry.points[0].id.as_str())
-            && loss.message.contains("2 dropped"),
+            && loss.message.contains("3 times"),
         "{}",
         loss.message
     );
