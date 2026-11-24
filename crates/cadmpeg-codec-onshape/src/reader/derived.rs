@@ -375,8 +375,9 @@ pub(super) fn map(
         );
     }
     // A STEP export can omit its sole solid's name. The name of the sole solid in the
-    // final rollback state then names the body. It is stated in `bodies` only; the
-    // captured neutral design and the STEP text keep what the export states.
+    // final rollback state then names the body in `bodies` and in the captured neutral
+    // design, which is authoritative for body names; the STEP text keeps what the export
+    // states.
     let sole_name = match source.ir.geometry.bodies.as_slice() {
         [body] if body.name.as_ref().is_none_or(|name| name.trim().is_empty()) => {
             let parts = source_parts.as_ref().map_err(Clone::clone)?;
@@ -409,9 +410,21 @@ pub(super) fn map(
         }
         bodies.push(json!({"id": id("body", native), "name": name}));
     }
+    let named;
+    let ir = match (sole_name, source.ir.geometry.bodies.as_slice()) {
+        (Some(name), [_]) => {
+            let mut ir = source.ir.clone();
+            if let Some(body) = ir.geometry.bodies.first_mut() {
+                body.name = Some(name.to_owned());
+            }
+            named = ir;
+            &named
+        }
+        _ => &source.ir,
+    };
     let payload = serde_json::to_string(&DesignReference {
         bodies,
-        ir: &source.ir,
+        ir,
         name: element_name,
         schema: REFERENCE_SCHEMA,
         step,

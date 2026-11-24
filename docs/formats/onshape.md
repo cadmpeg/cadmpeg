@@ -133,7 +133,8 @@ state after the feature and absent from the state before it. Bodies of the
 state before the feature are unchanged. These bodies match the bodies of the
 captured studio one to one by name. The name of a captured final body is the
 STEP product name or, for a sole unnamed solid, the name of the single solid
-in the final rollback state of the captured studio. The `partQuery` of the
+in the final rollback state of the captured studio; the captured neutral design
+then carries that name. The `partQuery` of the
 `partStudio` parameter lists deterministic body IDs. It selects the whole
 captured studio when it lists every solid of the final rollback state, or
 when it lists none.

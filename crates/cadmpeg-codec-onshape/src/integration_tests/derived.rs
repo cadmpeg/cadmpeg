@@ -40,6 +40,8 @@ fn derived_studio_keeps_neutral_reference_and_generated_boolean_operands() {
     let reference = design_reference(&wire);
     assert_eq!(reference["schema"], "dutchman.design-reference/1");
     assert_eq!(reference["bodies"][0]["name"], "Tool");
+    // The fixture's STEP export leaves the sole solid unnamed; the captured design names it.
+    assert_eq!(reference["ir"]["geometry"]["bodies"][0]["name"], "Tool");
     assert_eq!(
         reference["ir"]["model"]["features"]
             .as_array()
