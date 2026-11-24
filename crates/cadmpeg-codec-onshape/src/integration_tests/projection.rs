@@ -17,8 +17,7 @@ fn read(bytes: &[u8]) -> (Value, Report) {
         &mut report,
     )
     .unwrap();
-    let mut document = cadmpeg_test_support::wire::in_memory_json(&model.ir);
-    let mut wire = document["model"].take();
+    let mut wire = cadmpeg_test_support::wire::in_memory_json(&model.ir)["model"].take();
     wire["features"]
         .as_array_mut()
         .unwrap()
