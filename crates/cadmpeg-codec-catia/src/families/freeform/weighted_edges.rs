@@ -1028,11 +1028,11 @@ pub(in crate::families) fn attach(
         let vertex = &mut ir.geometry.vertices[index];
         let previous = vertex
             .tolerance
-            .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get);
+            .map_or(0.0, cadmpeg_ir::scalar::PositiveLength::get);
         if miss <= previous.max(ir.tolerances.linear.get()) {
             continue;
         }
-        let Some(tolerance) = cadmpeg_ir::scalar::PositiveReal::new(miss.next_up()) else {
+        let Some(tolerance) = cadmpeg_ir::scalar::PositiveLength::new(miss.next_up()) else {
             continue;
         };
         vertex.tolerance = Some(tolerance);

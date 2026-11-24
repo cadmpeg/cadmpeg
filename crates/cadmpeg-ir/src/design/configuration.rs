@@ -134,6 +134,7 @@ pub(crate) fn own_value_holds<'a>(
         let mut nodes = Vec::new();
         match &record.definition {
             ParameterDefinition::Driven
+            | ParameterDefinition::Unset
             | ParameterDefinition::Expression(Expression::Source { .. }) => return false,
             ParameterDefinition::Expression(Expression::Neutral(Neutral(node))) => {
                 nodes.push(node);

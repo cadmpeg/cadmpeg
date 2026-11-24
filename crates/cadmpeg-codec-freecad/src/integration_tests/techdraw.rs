@@ -274,10 +274,7 @@ fn assert_authored_dimension(
     let dimension_drawing = drawing(name);
     assert_eq!(dimension_drawing.kind, DrawingKind::Dimension, "{name}");
     assert!(
-        page.relationships["Views"]
-            .iter()
-            .any(|reference| reference.native_text()
-                == Some(crate::native::id_key(&dimension_drawing.object))),
+        page.views.contains(&dimension_drawing.id),
         "Page.Views owns {name}"
     );
 
@@ -373,6 +370,13 @@ fn physical_page_template_and_saved_dimension_are_exact() {
     };
     assert_eq!(reference.native_text(), Some("Front.Edge3"));
     assert_eq!(
+        reference.target,
+        cadmpeg_ir::ReferenceTarget::Drawing {
+            drawing: drawing("Front").id.clone(),
+            part: Some(cadmpeg_ir::references::DrawingPart::Unread),
+        }
+    );
+    assert_eq!(
         dimension
             .reference_anchors
             .iter()
@@ -380,14 +384,11 @@ fn physical_page_template_and_saved_dimension_are_exact() {
             .collect::<Vec<_>>(),
         [[35.0, 190.0], [95.0, 190.0]]
     );
-    let page_views = &page.relationships["Views"];
-    assert_eq!(page_views.len(), 4);
-    for (reference, name) in page_views.iter().zip(["Front", "Top", "Length", "Note"]) {
-        assert_eq!(
-            reference.native_text(),
-            Some(crate::native::id_key(&drawing(name).object))
-        );
-    }
+    assert_eq!(
+        page.views,
+        ["Front", "Top", "Length", "Note"].map(|name| drawing(name).id.clone())
+    );
+    assert!(!page.relationships.contains_key("Views"));
     for (name, position, scale, direction) in [
         ("Front", [65.0, 180.0], 2.0, [0.0, -1.0, 0.0]),
         ("Top", [65.0, 230.0], 1.0, [0.0, 0.0, 1.0]),
@@ -437,7 +438,6 @@ fn authored_techdraw_views_keep_page_ownership_and_saved_parameters() {
             .unwrap()
     };
     let page = drawing("Page");
-    let page_views = &page.relationships["Views"];
     for name in [
         "Front",
         "Top",
@@ -451,8 +451,7 @@ fn authored_techdraw_views_keep_page_ownership_and_saved_parameters() {
         "TriangleView",
     ] {
         assert!(
-            page_views.iter().any(|reference| reference.native_text()
-                == Some(crate::native::id_key(&drawing(name).object))),
+            page.views.contains(&drawing(name).id),
             "Page.Views owns {name}"
         );
     }
@@ -516,15 +515,11 @@ fn authored_techdraw_views_keep_page_ownership_and_saved_parameters() {
         section.relationships["Source"][0].native_text(),
         Some("Box")
     );
-    assert_eq!(
-        section.relationships["BaseView"][0].native_text(),
-        Some(crate::native::id_key(&front.object))
-    );
+    assert_eq!(section.base_view.as_ref(), Some(&front.id));
+    assert!(!section.relationships.contains_key("BaseView"));
     let detail = drawing("Detail");
-    assert_eq!(
-        detail.relationships["BaseView"][0].native_text(),
-        Some(crate::native::id_key(&front.object))
-    );
+    assert_eq!(detail.base_view.as_ref(), Some(&front.id));
+    assert!(!detail.relationships.contains_key("BaseView"));
     let properties = ir
         .native
         .namespace("fcstd")
@@ -631,12 +626,10 @@ fn drawing_only_pages_keep_independent_physical_sheets() {
             .find(|drawing| drawing.object.ends_with(&format!("#{note_name}")))
             .unwrap();
         assert_eq!(view.kind, DrawingKind::Annotation);
-        let [reference] = page.relationships["Views"].as_slice() else {
-            panic!("{name} page must own exactly one view")
-        };
         assert_eq!(
-            reference.native_text(),
-            Some(crate::native::id_key(&view.object))
+            page.views,
+            std::slice::from_ref(&view.id),
+            "{name} page owns one view"
         );
     }
 }

@@ -89,8 +89,8 @@ fn admit(
             });
             if deviations.is_none() {
                 for (name, limit) in [
-                    (cadmpeg_core::nonblank_literal!("creo:lower_limit"), lower),
-                    (cadmpeg_core::nonblank_literal!("creo:upper_limit"), upper),
+                    (cadmpeg_ir::codec_name!("creo:lower_limit"), lower),
+                    (cadmpeg_ir::codec_name!("creo:upper_limit"), upper),
                 ] {
                     native_options.insert(name, measure_option(limit));
                 }
@@ -104,7 +104,7 @@ fn admit(
             .and_then(NonBlankString::new)
         {
             source_settings.insert(
-                cadmpeg_core::nonblank_literal!("creo:tol_type"),
+                cadmpeg_ir::codec_name!("creo:tol_type"),
                 NativeOption::Text(Dimension::Literal(mode)),
             );
         }

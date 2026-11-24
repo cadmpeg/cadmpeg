@@ -560,7 +560,7 @@ fn dimension(
     annotation.name = name.map(str::to_owned);
     if displayed_form {
         annotation.source_settings.insert(
-            cadmpeg_core::nonblank_literal!("inventor:tol_type"),
+            cadmpeg_ir::codec_name!("inventor:tol_type"),
             NativeOption::Integer(Dimension::Literal(i64::from(value.tolerance))),
         );
     }

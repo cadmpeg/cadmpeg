@@ -38,7 +38,7 @@ fn name(text: &str) -> NameEntry {
     NameEntry {
         name: None,
         native: Some(NativeName {
-            codec: NonBlankString::new("test").unwrap().into(),
+            codec: crate::codec_id!("test"),
             value: NativeNameValue::Text(NonBlankString::new(text).unwrap()),
         }),
     }

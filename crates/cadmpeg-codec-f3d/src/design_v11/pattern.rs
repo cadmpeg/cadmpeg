@@ -8,7 +8,9 @@ use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::names::{NativeName, NativeNameValue};
 use cadmpeg_ir::design::ops::body::{Pattern, PatternInstances, PatternMethod, PatternSeeds};
-use cadmpeg_ir::design::ops::shared::{LinearRun, PatternLayout, PatternRun, RunSides, Spacing};
+use cadmpeg_ir::design::ops::shared::{
+    LinearLayout, LinearRun, PatternLayout, PatternRun, RunSides, Spacing,
+};
 use cadmpeg_ir::design::options::{NativeOption, SymmetricMeasure};
 use cadmpeg_ir::design::selection::{Anchor, Members, PickTarget, Picked, Picks, Selection};
 use cadmpeg_ir::features::patterns::{PatternSeed, PatternTransform};
@@ -125,7 +127,7 @@ pub(super) fn project(
         Some(2) => Some(PatternMethod::Adjust { against: None }),
         Some(value) => {
             native_options.insert(
-                cadmpeg_core::nonblank_literal!("f3d:compute_option"),
+                cadmpeg_ir::codec_name!("f3d:compute_option"),
                 NativeOption::Integer(Dimension::Literal(i64::from(value))),
             );
             None
@@ -137,7 +139,7 @@ pub(super) fn project(
     if native_seed {
         if let Some(distribution) = distribution {
             native_options.insert(
-                cadmpeg_core::nonblank_literal!("f3d:compute_option"),
+                cadmpeg_ir::codec_name!("f3d:compute_option"),
                 NativeOption::Integer(Dimension::Literal(i64::from(
                     distribution.compute_option.value,
                 ))),
@@ -162,11 +164,11 @@ pub(super) fn project(
     }
     Some(FeatureOperation::Pattern(Box::new(Pattern {
         seeds,
-        layout: PatternLayout::Linear {
+        layout: PatternLayout::Linear(LinearLayout {
             first,
             seed_only: Some(Dimension::Literal(false)),
             second: Some(second),
-        },
+        }),
         instances: PatternInstances::Implicit(Vec::new()),
         native_options,
         source_settings: BTreeMap::new(),
@@ -247,7 +249,7 @@ fn native_seeds(source: &str) -> Option<cadmpeg_ir::design::selection::SetSelect
                 target: PickTarget::Native { within: None },
                 context: None,
                 native: Some(NativeName {
-                    codec: cadmpeg_core::nonblank_literal!("f3d").into(),
+                    codec: cadmpeg_ir::codec_id!("f3d"),
                     value: NativeNameValue::Text(cadmpeg_core::text::NonBlankString::new(source)?),
                 }),
                 domain: None,
@@ -307,7 +309,7 @@ fn run(
                             target: PickTarget::Native { within: None },
                             context: None,
                             native: Some(NativeName {
-                                codec: cadmpeg_core::nonblank_literal!("f3d").into(),
+                                codec: cadmpeg_ir::codec_id!("f3d"),
                                 value,
                             }),
                             domain: None,
