@@ -726,8 +726,9 @@ coedges, edges, and vertices with orientation and trimming, analytic carriers,
 and NURBS. Void regions that own faces transfer as regions. Unreadable
 partitions, untransferred faces, and unresolved carriers produce losses, and a
 shell that does not state every member is marked. The primary-state selection
-carries an assumption loss. The headline is L3: bodies stay in partition
-coordinates and carry no names or colours.
+carries an assumption loss. The headline is L2: placed analytic and NURBS
+carriers transfer, and structural validation still reports the undecoded
+product root on every document.
 The codec is read-only. Feature history, display attributes, and assembly placements are pending.
 
 See [`formats/solidedge.md`](formats/solidedge.md) and
