@@ -713,7 +713,7 @@ fn decode_container<'a>(
         )?);
     }
     let mut stored_body_losses = Vec::new();
-    if !body_keys.is_empty() {
+    if !body_keys.is_empty() || result_states.is_some() {
         let projection = crate::feature::base::project(
             ctx,
             &crate::feature::base::Inputs {

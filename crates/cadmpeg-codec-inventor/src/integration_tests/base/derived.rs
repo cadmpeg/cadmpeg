@@ -89,7 +89,10 @@ fn derived(mirror: bool) -> (SyntheticRecords, BaseEnvelopeRecords) {
     (design, base)
 }
 
-fn derived_at_version(mirror: bool, version: u8) -> (SyntheticRecords, BaseEnvelopeRecords) {
+pub(super) fn derived_at_version(
+    mirror: bool,
+    version: u8,
+) -> (SyntheticRecords, BaseEnvelopeRecords) {
     let (mut design, mut base) = derived(mirror);
     base.design_version = version;
     if version >= 23 {
@@ -111,7 +114,7 @@ fn derived_at_version(mirror: bool, version: u8) -> (SyntheticRecords, BaseEnvel
     (design, base)
 }
 
-fn decoded(
+pub(super) fn decoded(
     design: &SyntheticRecords,
     base: &BaseEnvelopeRecords,
 ) -> cadmpeg_ir::codec::DecodeResult {

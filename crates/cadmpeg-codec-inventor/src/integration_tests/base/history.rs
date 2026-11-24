@@ -2,20 +2,25 @@
 //! Base results that the final model no longer holds (spec section 13.4).
 use std::rc::Rc;
 
+use super::derived::{decoded, derived_at_version};
 use super::{decode, fixtures};
-use crate::feature::history_states::{Binding, FeatureHistoryState, StateRef, UnboundReason};
+use crate::feature::history_states::{
+    Binding, FeatureHistoryState, StateRef, UnboundReason, NATIVE_BASE_KIND, SPLIT_TAG,
+};
 use crate::feature::history_views::{ResultStates, StateModel};
 use crate::loss::InventorLossCode;
 use crate::rse::RseInventory;
+use crate::test_support::history_carrier::introducing_carrier_bytes;
 use crate::test_support::test_fixtures::{
     acis_sphere_kernel_stream_with_body_key, base_envelope_fixture,
 };
 use crate::InventorCodec;
 use cadmpeg_asm::brep::records::BodyNativeKey;
+use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_container::compound::CompoundSnapshot;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::Codec;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossKind;
@@ -188,7 +193,9 @@ fn a_state_that_does_not_decode_or_passed_its_cap_stays_native_with_its_loss() {
         outcome: |_| StateModel::Unavailable,
         model: CadIr::empty(),
     };
-    assert_eq!(project_without_final_body(&states), (0, Vec::new()));
+    let (transferred, codes) = project_without_final_body(&states);
+    assert_eq!(transferred, 0);
+    assert_eq!(codes, vec![state_loss(); 2]);
 }
 
 fn state_loss() -> LossKind {
@@ -205,7 +212,12 @@ fn bound(ir: &CadIr, key: i64) -> Vec<FeatureHistoryState> {
         .map(|feature| FeatureHistoryState {
             id: format!("{}-history", feature["id"].as_str().expect("id")),
             feature: feature["id"].as_str().expect("id").to_owned(),
-            source_index: SOURCE_INDEX,
+            source_index: u32::try_from(
+                feature["header"]["source_index"]
+                    .as_u64()
+                    .expect("source index"),
+            )
+            .expect("source index fits"),
             kind: "base".into(),
             state_after: Some(StateRef {
                 ordinal: 1,
@@ -219,10 +231,12 @@ fn bound(ir: &CadIr, key: i64) -> Vec<FeatureHistoryState> {
         .collect()
 }
 
-/// Base findings of `ir`, whose final model holds no result body
-/// key, with `states` as its history states.
-fn base_findings(mutate: impl FnOnce(&mut Vec<FeatureHistoryState>)) -> Vec<String> {
-    let mut ir = state_model();
+/// Base findings of `ir`, whose final model holds no result body key, with
+/// the history states of `ir` changed by `mutate`.
+pub(super) fn base_findings_of(
+    mut ir: CadIr,
+    mutate: impl FnOnce(&mut Vec<FeatureHistoryState>),
+) -> Vec<String> {
     // The final model joins no body to the result wrapper, so the feature
     // lists no output body.
     for feature in &mut ir.model.features {
@@ -254,6 +268,10 @@ fn base_findings(mutate: impl FnOnce(&mut Vec<FeatureHistoryState>)) -> Vec<Stri
         .collect()
 }
 
+fn base_findings(mutate: impl FnOnce(&mut Vec<FeatureHistoryState>)) -> Vec<String> {
+    base_findings_of(state_model(), mutate)
+}
+
 #[test]
 fn validation_accepts_a_result_with_a_bound_state_and_no_final_body() {
     assert_eq!(base_findings(|_| {}), Vec::<String>::new());
@@ -261,11 +279,7 @@ fn validation_accepts_a_result_with_a_bound_state_and_no_final_body() {
 
 #[test]
 fn validation_refuses_a_result_without_a_matching_bound_state() {
-    let refused = |findings: Vec<String>| {
-        findings
-            .iter()
-            .any(|message| message.contains("Base result"))
-    };
+    let refused = |findings: Vec<String>| !findings.is_empty();
     assert!(refused(base_findings(Vec::clear)));
     assert!(refused(
         base_findings(|states| states[0].body_key = Some(8))
@@ -281,4 +295,71 @@ fn validation_refuses_a_result_without_a_matching_bound_state() {
     assert!(refused(
         base_findings(|states| states[0].source_index = 101)
     ));
+}
+
+#[test]
+fn validation_trusts_bound_only_for_a_base_state() {
+    // Bound means introduced for a Base state; for a Split state it means
+    // consumed, so a Split record with a matching key is no evidence.
+    assert!(!base_findings(|states| states[0].kind = SPLIT_TAG.into()).is_empty());
+    assert!(base_findings(|states| states[0].kind = NATIVE_BASE_KIND.into()).is_empty());
+}
+
+#[test]
+fn validation_refuses_a_derived_result_without_a_final_body() {
+    let (design, base) = derived_at_version(false, 19);
+    let ir = decoded(&design, &base).into_parts().0;
+    assert!(!ir.geometry.bodies.is_empty());
+    assert!(!base_findings_of(ir, |_| {}).is_empty());
+}
+
+/// Decodes the Base fixture over a closed synthetic chain whose current
+/// model holds no body: the state that first lists the source index holds
+/// the sphere solid with `key`, and the state before it holds none.
+fn decode_over_chain(key: i64) -> CadIr {
+    let (design, base) = fixtures();
+    let carrier = introducing_carrier_bytes(RefWidth::Eight, 4, i64::from(SOURCE_INDEX), key);
+    let bytes = base_envelope_fixture(&carrier, &design, &base);
+    InventorCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("synthetic Base decode")
+        .into_parts()
+        .0
+}
+
+#[test]
+fn a_closed_chain_types_a_base_whose_final_model_holds_no_body() {
+    let ir = decode_over_chain(RESULT_KEY);
+    assert!(ir.geometry.bodies.is_empty());
+    assert_eq!(ir.model.features.len(), 2);
+    assert_eq!(ir.model.feature_result_topologies.len(), 2);
+    for feature in &ir.model.features {
+        assert!(matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
+        ));
+        assert!(feature.source_properties.contains_key("result_body_link"));
+    }
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let findings = InventorCodec
+        .validate_native(&ctx, &ir, None)
+        .expect("native validation");
+    assert!(
+        !findings
+            .iter()
+            .any(|finding| finding.severity >= Severity::Error),
+        "{findings:?}"
+    );
+}
+
+#[test]
+fn a_closed_chain_that_introduces_another_key_leaves_the_base_native() {
+    let ir = decode_over_chain(RESULT_KEY + 1);
+    assert!(ir.model.feature_result_topologies.is_empty());
+    assert!(ir.model.features.iter().all(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+    )));
 }

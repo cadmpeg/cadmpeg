@@ -275,8 +275,7 @@ fn state_body(
     let state = states.after(ctx, source_index)?;
     let model = match &*state {
         StateModel::Model(model) => model,
-        StateModel::Unavailable => return Ok(StateBody::Absent),
-        StateModel::Failed => return Ok(StateBody::Failed),
+        StateModel::Unavailable | StateModel::Failed => return Ok(StateBody::Failed),
         StateModel::Bounded => return Ok(StateBody::Bounded),
     };
     let keys: Vec<BodyNativeKey> = model
