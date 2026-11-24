@@ -43,6 +43,7 @@ jobs:
             cadmpeg-ir
             cadmpeg-asm
             cadmpeg-tessellate
+            cadmpeg-codec-alibre
             cadmpeg-codec-catia
             cadmpeg-codec-creo
             cadmpeg-codec-edrawings
