@@ -1401,7 +1401,7 @@ fn assign_unique_surface_owners_within(
                 surface: *surfaces.get(&face.surface)?,
                 tolerance: face
                     .tolerance
-                    .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get),
+                    .map_or(0.0, cadmpeg_ir::scalar::PositiveLength::get),
                 inverse,
                 identity_inverse: inverse == cadmpeg_ir::transform::Transform::identity(),
                 trim: None,

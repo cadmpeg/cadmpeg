@@ -269,7 +269,7 @@ impl<'ir> Owners<'ir> {
             .into_iter()
             .flatten()
             .filter_map(|vertex| self.vertex(vertex)?.tolerance)
-            .map(cadmpeg_ir::scalar::PositiveReal::get)
+            .map(cadmpeg_ir::scalar::PositiveLength::get)
             .reduce(f64::max)
     }
 

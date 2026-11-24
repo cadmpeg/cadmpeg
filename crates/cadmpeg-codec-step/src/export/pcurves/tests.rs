@@ -454,19 +454,17 @@ fn a_use_interval_is_directed_by_the_vertex_its_surface_image_reaches() {
 
 #[test]
 fn spline_pcurve_uses_the_active_edge_interval_at_a_tolerant_vertex() {
-    use cadmpeg_ir::scalar::PositiveReal;
-
     for vertex_tolerance in [0.001, 0.005] {
         let (mut ir, geometry, _, mut edge) = cube_edge_with_pcurve(1.5, -0.5);
         edge.set_param_range(Some(ParameterInterval::new([0.0, 1.0]).unwrap()));
-        edge.tolerance = PositiveReal::new(0.001);
+        edge.tolerance = cadmpeg_ir::scalar::PositiveLength::new(0.001);
         ir.geometry.edges[0] = edge.clone();
         ir.geometry
             .vertices
             .iter_mut()
             .find(|vertex| vertex.id == edge.ends.as_ref().unwrap().start)
             .unwrap()
-            .tolerance = PositiveReal::new(vertex_tolerance);
+            .tolerance = cadmpeg_ir::scalar::PositiveLength::new(vertex_tolerance);
 
         let pcurve = cadmpeg_ir::ids::PcurveId::mint("test:model:pcurve#active-interval").unwrap();
         ir.geometry

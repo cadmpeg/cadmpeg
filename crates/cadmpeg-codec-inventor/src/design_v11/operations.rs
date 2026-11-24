@@ -155,9 +155,9 @@ fn retained(operation: &LegacyOperation) -> Result<FeatureOperation, CodecError>
     let value = cadmpeg_ir::hash::finite_json::to_canonical_json_string(operation)
         .map_err(|error| CodecError::malformed(error.to_string()))?;
     Ok(FeatureOperation::Native {
-        kind: cadmpeg_core::nonblank_literal!("inventor:operation"),
+        kind: cadmpeg_ir::codec_name!("inventor:operation"),
         native_options: BTreeMap::from([(
-            cadmpeg_core::nonblank_literal!("inventor:legacy_operation"),
+            cadmpeg_ir::codec_name!("inventor:legacy_operation"),
             NativeOption::Text(Dimension::Literal(
                 NonBlankString::new(value)
                     .ok_or_else(|| CodecError::malformed("Inventor operation is blank"))?,

@@ -216,7 +216,9 @@ fn project_brep(
         .map(|vertex| {
             (
                 &vertex.id,
-                vertex.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get),
+                vertex
+                    .tolerance
+                    .map(cadmpeg_ir::scalar::PositiveLength::get),
             )
         })
         .collect::<HashMap<_, _>>();

@@ -3,7 +3,7 @@ use crate::design::construction::{
     SourceMode,
 };
 use crate::design::dimension::Dimension;
-use crate::design::names::{CodecId, NativeNameValue};
+use crate::design::names::NativeNameValue;
 use crate::design::options::{NativeOption, NativeOptions};
 use crate::design::refs::StateRef;
 use crate::design::selection::OrderedSelection;
@@ -88,12 +88,12 @@ fn construction_graph_walks_nested_selections_bindings_and_configuration_keys() 
             distance: Dimension::Parameter(ParameterId::mint(literal).unwrap()),
         }],
         mode: Some(SourceMode {
-            codec: CodecId::from(cadmpeg_core::nonblank_literal!("f3d")),
+            codec: crate::codec_id!("f3d"),
             method: NativeNameValue::Text(
                 cadmpeg_core::text::NonBlankString::new(literal).unwrap(),
             ),
             native_options: std::collections::BTreeMap::from([(
-                cadmpeg_core::text::NonBlankString::new(literal).unwrap(),
+                crate::design::names::CodecName::try_from(literal.to_owned()).unwrap(),
                 NativeOption::Text(Dimension::Literal(
                     cadmpeg_core::text::NonBlankString::new(literal).unwrap(),
                 )),
