@@ -33,7 +33,7 @@ fn admit_base_endpoint(value: Option<f64>) -> Result<Option<FiniteReal>, Procedu
 const EPS_OFFSET_PLANE_NORMAL: f64 = 1.0e-10;
 
 /// Admitted surface offset curve parameters.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
@@ -210,7 +210,7 @@ impl TryFrom<SurfaceOffsetCurveConstructionWire> for SurfaceOffsetCurveConstruct
 }
 
 /// Admitted deformable curve parameters.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "DeformableCurveConstructionWire"))]
 #[serde(try_from = "DeformableCurveConstructionWire")]
@@ -324,7 +324,7 @@ impl TryFrom<DeformableCurveConstructionWire> for DeformableCurveConstruction {
 }
 
 /// Admitted offset curve parameters.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "OffsetCurveConstructionWire"))]
 #[serde(try_from = "OffsetCurveConstructionWire")]
@@ -503,7 +503,7 @@ impl TryFrom<OffsetCurveConstructionWire> for OffsetCurveConstruction {
 }
 
 /// Admitted spatial offset curve parameters.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
@@ -598,7 +598,7 @@ impl TryFrom<SpatialOffsetCurveConstructionWire> for SpatialOffsetCurveConstruct
 }
 
 /// Admitted two sided offset curve parameters.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
@@ -676,7 +676,7 @@ impl TryFrom<TwoSidedOffsetCurveConstructionWire> for TwoSidedOffsetCurveConstru
 }
 
 /// Admitted vector offset curve parameters.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
@@ -766,7 +766,7 @@ impl TryFrom<VectorOffsetCurveConstructionWire> for VectorOffsetCurveConstructio
 }
 
 /// Admitted subset curve parameters.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "SubsetCurveConstructionWire"))]
 #[serde(try_from = "SubsetCurveConstructionWire")]
@@ -854,7 +854,7 @@ impl TryFrom<SubsetCurveConstructionWire> for SubsetCurveConstruction {
     }
 }
 /// Admitted silhouette curve parameters.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "SilhouetteCurveConstructionWire"))]
 #[serde(try_from = "SilhouetteCurveConstructionWire")]
@@ -984,7 +984,7 @@ fn spring_context_sides<R>(
 }
 
 /// Admitted spring curve construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "SpringCurvePayloadWire"))]
 #[serde(try_from = "SpringCurvePayloadWire")]
@@ -1078,7 +1078,7 @@ impl TryFrom<SpringCurvePayloadWire> for SpringCurvePayload {
 }
 
 /// Admitted three surface intersection curve construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
@@ -1149,7 +1149,7 @@ impl TryFrom<ThreeSurfaceIntersectionCurvePayloadWire> for ThreeSurfaceIntersect
 }
 
 /// Admitted projection curve construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "ProjectionCurvePayloadWire"))]
 #[serde(try_from = "ProjectionCurvePayloadWire")]

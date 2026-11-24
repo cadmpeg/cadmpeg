@@ -175,6 +175,13 @@ fn wire_and_free_topology_negative_cases_are_reported() {
             "missing `{message}` in {findings:?}"
         );
     }
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.message == "wire body contains faces"
+                && finding.severity == crate::report::Severity::Warning),
+        "{findings:?}"
+    );
 }
 
 #[test]

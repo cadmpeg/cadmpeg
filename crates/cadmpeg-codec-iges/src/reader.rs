@@ -727,7 +727,7 @@ fn decode_with_occurrence_limits(
                 table,
             );
         }
-        reject_invalid_semantic_ir(ctx, &ir)?;
+        losses.extend(invalid_semantic_ir(ctx, &ir)?);
     }
     let attributed = if ctx.container_only() {
         BTreeSet::new()
@@ -810,28 +810,26 @@ fn decode_with_occurrence_limits(
     })
 }
 
-/// Fail the decode when the projected IR has any error-severity finding.
-///
-/// Keeps full [`cadmpeg_ir::validate_neutral`]: `DRAFT_CORE_CHECKS` error
-/// outcomes match full validation on every IGES golden fixture, so the route
-/// stays on the full validator.
-fn reject_invalid_semantic_ir(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecError> {
+/// One `projection.invalid` loss for each error-severity finding of the
+/// projected IR. The decode keeps the document; each loss names the record
+/// the finding is about.
+fn invalid_semantic_ir(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
     let validation = cadmpeg_ir::validate::validate_neutral_for_decode(ctx, ir, Vec::new())?;
-    let Some(finding) = validation
+    Ok(validation
         .findings
         .iter()
-        .find(|finding| finding.severity >= Severity::Error)
-    else {
-        return Ok(());
-    };
-    let entity = finding
-        .entity
-        .as_deref()
-        .map_or(String::new(), |entity| format!(" for {entity}"));
-    Err(CodecError::malformed(format_args!(
-        "IGES semantic projection produced invalid CADIR: {}{entity}: {}",
-        finding.check, finding.message
-    )))
+        .filter(|finding| finding.severity >= Severity::Error)
+        .map(|finding| {
+            let entity = finding
+                .entity
+                .as_deref()
+                .map_or(String::new(), |entity| format!(" for {entity}"));
+            IgesLossCode::ProjectionInvalid.note(format!(
+                "IGES semantic projection holds an error-severity finding: {}{entity}: {}",
+                finding.check, finding.message
+            ))
+        })
+        .collect())
 }
 
 #[cfg(test)]
