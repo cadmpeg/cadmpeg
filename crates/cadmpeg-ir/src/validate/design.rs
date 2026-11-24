@@ -24,6 +24,7 @@ mod fit;
 pub(super) mod fixture;
 mod folds;
 mod index;
+mod joins;
 mod linkage;
 mod matching;
 mod materials;
@@ -166,6 +167,7 @@ pub(super) fn check_design(
     let held = collect(ctx, ir, &index)?;
     index.add_dependencies(&held);
     let states = states::States::new(ir);
+    joins::check(&index, &states, findings);
     let matchers = matching::Matchers::new(&states);
     names::check(ctx, &index, &states, &held, findings)?;
     selections::check(ctx, &index, &matchers, &held, findings)?;
