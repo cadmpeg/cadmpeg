@@ -122,17 +122,13 @@ fn decode_classifies_and_bounds_all_standard_conic_arc_families() {
         assert_eq!(
             result.ir().geometry.edges[0]
                 .tolerance
-                .map(cadmpeg_ir::scalar::PositiveReal::get),
+                .map(cadmpeg_ir::scalar::PositiveLength::get),
             Some(0.001)
         );
-        assert!(result
-            .ir()
-            .geometry
-            .vertices
-            .iter()
-            .all(
-                |vertex| vertex.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get) == Some(0.001)
-            ));
+        assert!(result.ir().geometry.vertices.iter().all(|vertex| vertex
+            .tolerance
+            .map(cadmpeg_ir::scalar::PositiveLength::get)
+            == Some(0.001)));
         match (&result.ir().geometry.curves[0].geometry, form) {
             (
                 cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_)),

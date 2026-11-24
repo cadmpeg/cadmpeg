@@ -3,7 +3,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::design::configuration::ParameterOverride;
+use crate::design::construction::Construction;
 use crate::design::dimension::{Dimension, ParamRef};
+use crate::design::ops::sketch::BoundedCurve;
 use crate::design::parameter::ParameterValue;
 use crate::design::refs::ConfigurationRef;
 use crate::design::scope::OccurrenceDesign;
@@ -11,15 +13,18 @@ use crate::design::selection::{Members, Picks};
 use crate::document::CadIr;
 use crate::features::geometry::FinitePoint3;
 use crate::features::ParameterId;
+use crate::geometry::analytic::{CircleCurve, LineCurve};
+use crate::geometry::InlineCurve;
 use crate::ids::OccurrenceId;
-use crate::math::Point3;
+use crate::math::{Point3, Vector3};
 use crate::process::cycle::{Cycle, CycleKind, ProbeTarget};
 use crate::process::limits::{
     AxialFrom, AxialLimit, AxialRole, Height, HeightFrom, HeightRole, RadialLimit, RadiusFrom,
     RadiusRole,
 };
 use crate::process::operation::{
-    GeometryRole, GeometrySource, OperationClass, ProcessGeometry, ToolAxisControl, TurningClass,
+    GeometryRole, GeometrySource, OperationClass, ProcessGeometry, ProfileCurve, ToolAxisControl,
+    TurningClass,
 };
 use crate::process::settings::{
     Lead, LeadAngleFrom, Leads, LineTurn, Linking, PassClearance, PlungeKind, PlungeStrategy,
@@ -30,8 +35,10 @@ use crate::process::technology::{JetCut, StepRule, TabPlacement, TabShape, Tabs}
 use crate::process::toolpath::{Motion, ToolpathContent};
 use crate::process::{Choice, ProcessDimension};
 use crate::scalar::{Angle, FiniteReal, Length};
+use crate::topology::IncreasingParameterInterval;
 use crate::transform::Transform;
 use crate::validate::design::fixture as design;
+use crate::validate::process::fixture::process_findings;
 use crate::validate::process::fixture::{
     assert_error, assert_no_process_finding, constant, document, id, lit, place_pin, text,
     width_through, workpiece_selection,
@@ -554,4 +561,70 @@ fn motion_cycles() {
         &ir,
         "a probe target's width, diameter, or spacing is not positive",
     );
+}
+
+fn profile(carrier: InlineCurve, range: Option<[f64; 2]>) -> ProcessGeometry {
+    ProcessGeometry {
+        role: GeometryRole::Machine,
+        source: GeometrySource::Profile {
+            plane: Construction {
+                inputs: Vec::new(),
+                after: Vec::new(),
+                solution: None,
+                mode: None,
+                resolved: None,
+                resolved_in: BTreeMap::new(),
+            },
+            curves: vec![ProfileCurve {
+                geometry: Some(BoundedCurve {
+                    carrier,
+                    range: range.and_then(IncreasingParameterInterval::new),
+                }),
+                source: None,
+            }],
+        },
+        slot: None,
+        combine: None,
+    }
+}
+
+fn line() -> InlineCurve {
+    InlineCurve::Line(
+        LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)).unwrap(),
+    )
+}
+
+const UNBOUNDED: &str = "a profile curve on an unbounded carrier states no `range`";
+
+fn ranged(carrier: InlineCurve, range: Option<[f64; 2]>) -> bool {
+    let mut ir = document();
+    ir.process.operations[2]
+        .geometry
+        .push(profile(carrier, range));
+    process_findings(&ir)
+        .iter()
+        .all(|finding| !finding.message.contains(UNBOUNDED))
+}
+
+/// Part 10: a profile curve on a line, a parabola, or a hyperbola states its
+/// range; a circle's `None` is one full turn.
+#[test]
+fn a_profile_curve_on_an_unbounded_carrier_states_its_range() {
+    assert!(!ranged(line(), None));
+    assert!(ranged(line(), Some([0.0, 3.0])));
+    let circle = InlineCurve::Circle(
+        CircleCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .unwrap(),
+    );
+    assert!(ranged(circle, None));
+    let placed = InlineCurve::Transformed {
+        basis: Box::new(line()),
+        transform: Transform::default(),
+    };
+    assert!(!ranged(placed, None));
 }

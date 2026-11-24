@@ -36,7 +36,9 @@ pub(in crate::decode) fn orient_edge_range(
             .find(|candidate| candidate.id == vertex.point)?;
         Some((
             point.position().get(),
-            vertex.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get),
+            vertex
+                .tolerance
+                .map(cadmpeg_ir::scalar::PositiveLength::get),
         ))
     };
     let (start_position, start_tolerance) = vertex_position(start)?;

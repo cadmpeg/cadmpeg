@@ -972,7 +972,7 @@ fn assert_completed_intersection_support_lane(present_fin: bool) {
             completed
                 .fit_tolerance()
                 .map(cadmpeg_ir::geometry::legacy_cache::FitTolerance::get),
-            edge_tolerance.map(cadmpeg_ir::scalar::PositiveReal::get)
+            edge_tolerance.map(cadmpeg_ir::scalar::PositiveLength::get)
         );
         assert!(ir.geometry.coedges.iter().any(|coedge| coedge
             .pcurves

@@ -144,7 +144,7 @@ fn loft_and_sweep_defaults_do_not_state_source_controls() {
     assert_eq!(loft.shape.closed, None);
     assert!(!loft
         .source_settings
-        .contains_key(&cadmpeg_core::nonblank_literal!("inventor:linearize")));
+        .contains_key(&cadmpeg_ir::codec_name!("inventor:linearize")));
     let FeatureOperation::Sweep(sweep) = project_value(
         "sweep",
         json!({"shape":{"kind":"solid","op":"new_body","section":{"kind":"profile","value":profile()},"sections":[]},"path":{"kind":"native","value":"inventor:pmdc:path#synthetic"},"path_tangent":false,"linearize":false}),
@@ -153,7 +153,7 @@ fn loft_and_sweep_defaults_do_not_state_source_controls() {
     };
     assert!(!sweep
         .source_settings
-        .contains_key(&cadmpeg_core::nonblank_literal!("inventor:linearize")));
+        .contains_key(&cadmpeg_ir::codec_name!("inventor:linearize")));
     for (closed, ruled, linearize) in [
         (true, false, false),
         (false, true, false),
@@ -282,8 +282,7 @@ fn assert_canonical_native_round_trip(operation: &LegacyOperation) {
     else {
         panic!("native")
     };
-    let NativeOption::Text(Dimension::Literal(text)) =
-        &native_options[&cadmpeg_core::nonblank_literal!("inventor:legacy_operation")]
+    let NativeOption::Text(Dimension::Literal(text)) = &native_options["inventor:legacy_operation"]
     else {
         panic!("retained")
     };
