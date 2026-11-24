@@ -360,6 +360,7 @@ pub enum VariableBlendCrossSection<R = f64, V = Vector3, P = Point3> {
 )]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[repr(i64)]
+#[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum VariableBlendBareCrossSection {
     /// Native selector `2`.
