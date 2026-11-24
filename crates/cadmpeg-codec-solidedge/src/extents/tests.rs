@@ -177,10 +177,19 @@ fn finite_cutout_against_the_normal() {
 }
 
 fn revolution(side: f64, angle: Slot, axis_point: [f64; 3]) -> DecodeResult {
+    revolution_of(&bar(), side, angle, axis_point)
+}
+
+fn revolution_of(
+    members: &[Member2d],
+    side: f64,
+    angle: Slot,
+    axis_point: [f64; 3],
+) -> DecodeResult {
     decode(extent_document(
         REVOLVE,
         &XZ,
-        &bar(),
+        members,
         Slots {
             kind: Slot::Double(13.0),
             side: Slot::Double(side),
@@ -299,5 +308,47 @@ fn unresolved_depth_slot_stays_unresolved() {
         FeatureOperation::Native { native_options, .. }
             if native_options.keys().any(|key| key.as_str() == "solidedge:profile")
     ));
+    assert!(codes(&result).contains(&"feature.extent-unread".to_owned()));
+}
+
+#[test]
+fn arc_crossing_the_axis_between_its_ends_stays_unresolved() {
+    // The arc is centred 10 mm right of the axis with radius 15 mm and runs
+    // from 30 to 330 degrees. Both ends lie right of the axis; the arc
+    // passes 5 mm left of it at 180 degrees.
+    let arc = [Member2d::Arc([
+        0.01,
+        0.0,
+        0.015,
+        30_f64.to_radians(),
+        330_f64.to_radians(),
+    ])];
+    let result = revolution_of(&arc, 2.0, Slot::Dim(FRAC_PI_2), [0.0; 3]);
+    assert!(!matches!(
+        &result.ir().design.features[0].definition.operation,
+        FeatureOperation::Revolve(_)
+    ));
+    assert!(codes(&result).contains(&"feature.extent-unread".to_owned()));
+}
+
+#[test]
+fn arc_clear_of_the_axis_keeps_its_sense() {
+    // The same arc 30 mm right of the axis stays right of it.
+    let arc = [Member2d::Arc([
+        0.03,
+        0.0,
+        0.015,
+        30_f64.to_radians(),
+        330_f64.to_radians(),
+    ])];
+    let result = revolution_of(&arc, 2.0, Slot::Dim(FRAC_PI_2), [0.0; 3]);
+    assert!((sweep(revolve_of(&result)) + FRAC_PI_2).abs() <= EPS_VALUE);
+}
+
+#[test]
+fn circle_crossing_the_axis_stays_unresolved() {
+    // A 10 mm circle centred 9 mm right of the axis passes 1 mm left of it.
+    let circle = [Member2d::Circle([0.009, 0.0, 0.01])];
+    let result = revolution_of(&circle, 2.0, Slot::Dim(FRAC_PI_2), [0.0; 3]);
     assert!(codes(&result).contains(&"feature.extent-unread".to_owned()));
 }
