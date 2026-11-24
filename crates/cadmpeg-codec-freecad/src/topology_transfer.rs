@@ -29,8 +29,8 @@ use cadmpeg_ir::ids::{
     ProceduralSurfaceId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::Vector3;
-use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal};
+use cadmpeg_ir::scalar::{PositiveLength, PositiveReal};
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -464,7 +464,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
     fn source_association(&self) -> Result<SourceObjectAssociation, CodecError> {
         Ok(SourceObjectAssociation {
             geometry_role: None,
-            format: cadmpeg_ir::CodecFormat::Fcstd,
+            format: cadmpeg_ir::codec_id!("fcstd"),
             object_id: cadmpeg_core::text::NonBlankString::new(
                 self.source_object.as_str().to_owned(),
             )
@@ -724,6 +724,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
         if matches!(
             root_kind,
@@ -787,12 +788,9 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             shells.extend(added);
         }
         if !shells.is_empty() {
-            ir.geometry.regions.push(Region {
-                id: region_id.clone(),
-                body: body.clone(),
-                shells,
-                native_ref: None,
-            });
+            ir.geometry
+                .regions
+                .push(Region::new(region_id.clone(), body.clone(), shells));
             if shape.kind() == TextShapeKind::Solid {
                 self.bind_topology(
                     TextShapeKind::Solid,
@@ -1289,7 +1287,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
             name: None,
             color: None,
-            tolerance: PositiveReal::from_finite(tolerance),
+            tolerance: PositiveLength::from_assigned_real(tolerance),
             native_ref: None,
         });
         if first_use {
@@ -1434,7 +1432,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             carrier: cadmpeg_ir::topology::EdgeCarrier::from_finite_parts(curve, param_range)
                 .map_err(CodecError::malformed)?,
             ends: Some(cadmpeg_ir::topology::EdgeEnds::new(start, end)),
-            tolerance: PositiveReal::from_finite(tolerance),
+            tolerance: PositiveLength::from_assigned_real(tolerance),
             native_ref: None,
         });
         self.bind_topology(TextShapeKind::Edge, edge_use.shape, transform, id.as_str())?;
@@ -2118,8 +2116,8 @@ fn transformed_pcurve_geometry(
     ))
 }
 
-fn positive_tolerance(value: f64) -> Option<cadmpeg_ir::scalar::PositiveReal> {
-    cadmpeg_ir::scalar::PositiveReal::new(value)
+fn positive_tolerance(value: f64) -> Option<cadmpeg_ir::scalar::PositiveLength> {
+    cadmpeg_ir::scalar::PositiveLength::new(value)
 }
 
 #[derive(Debug)]

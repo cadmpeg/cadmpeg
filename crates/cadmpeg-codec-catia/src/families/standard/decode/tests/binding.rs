@@ -1410,6 +1410,7 @@ fn standard_planar_solid_emission_preserves_native_face_sense() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     ir.geometry.faces.push(Face {
         id: FaceId::mint("catia:standard:face#0").expect("fixture face id"),

@@ -1405,7 +1405,7 @@ pub(super) fn source_object(
         } else {
             cadmpeg_ir::SourceGeometryRole::Independent
         }),
-        format: cadmpeg_ir::CodecFormat::Iges,
+        format: cadmpeg_ir::codec_id!("iges"),
         object_id: cadmpeg_core::text::NonBlankString::new(object_id).ok_or_else(|| {
             cadmpeg_core::CodecError::malformed("source object_id must not be empty")
         })?,
@@ -2625,16 +2625,14 @@ pub(crate) fn project_geometry(
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
         let region_shells = vec![shell.clone()];
 
         ctx.charge_entities(1, "iges_geometry_wire_topology")?;
-        ir.geometry.regions.push(Region {
-            id: region.clone(),
-            body,
-            shells: region_shells,
-            native_ref: None,
-        });
+        ir.geometry
+            .regions
+            .push(Region::new(region.clone(), body, region_shells));
 
         ctx.charge_entities(1, "iges_geometry_wire_topology")?;
         if wire_edges.is_empty() && free_vertices.is_empty() {

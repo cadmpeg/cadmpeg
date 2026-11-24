@@ -71,7 +71,7 @@ fn a_solid_with_a_collapsed_edge_loop_round_trips_as_a_solid() {
     let coedge = CoedgeId::mint("test:model:coedge#apex").unwrap();
     let apex_loop = LoopId::mint("test:model:loop#apex").unwrap();
     let top = &mut ir.geometry.faces[1];
-    let outer = top.loops.iter().next().unwrap().clone();
+    let outer = top.loops.stated().next().unwrap().clone();
     top.loops = FaceLoops::unspecified(vec![outer, apex_loop.clone()]);
     let top = top.id.clone();
     ir.geometry.points.push(Point::new(

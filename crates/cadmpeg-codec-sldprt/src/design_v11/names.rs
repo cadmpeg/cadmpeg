@@ -28,9 +28,9 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::names::{
-    CodecId, GenerationRole, Generator, NameEntry, NameKind, NativeName, NativeNameValue, TopoName,
+    CodecName, GenerationRole, Generator, NameEntry, NameKind, NativeName, NativeNameValue,
+    TopoName,
 };
 use cadmpeg_ir::design::refs::EntityRef;
 use cadmpeg_ir::document::Topology;
@@ -243,7 +243,8 @@ fn face_name(
         },
         (class::SURFACE, []) => generated(None, None),
         _ => generated(
-            NonBlankString::new(format!("sldprt:{code}")).map(GenerationRole::Other),
+            CodecName::new(&cadmpeg_ir::codec_id!("sldprt"), &code.to_string())
+                .map(GenerationRole::Other),
             None,
         ),
     }
@@ -251,7 +252,7 @@ fn face_name(
 
 fn native(values: &[u32]) -> NativeName {
     NativeName {
-        codec: CodecId::from(cadmpeg_core::nonblank_literal!("sldprt")),
+        codec: cadmpeg_ir::codec_id!("sldprt"),
         value: NativeNameValue::Integers(values.iter().copied().map(i64::from).collect()),
     }
 }

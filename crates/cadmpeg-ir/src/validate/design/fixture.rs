@@ -49,6 +49,7 @@ pub(in crate::validate) fn unresolved(key: &str, family: OperationFamily) -> Fea
         suppressed: None,
         definition: FeatureDefinition {
             operation: FeatureOperation::Unresolved { family },
+            assembly: None,
             refine: None,
             fuzzy_tolerance: None,
         },

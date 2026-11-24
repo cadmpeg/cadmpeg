@@ -103,7 +103,7 @@ fn authored_geometry_topology_keeps_source_objects_body_topology_and_curves() {
             .unwrap_or_else(|| panic!("{name}: output body resolves"));
         assert_eq!(body.kind, expected_kind, "{name}: body kind");
         assert_eq!(
-            geometry.body_regions(&body.id).count(),
+            geometry.stated_body_regions(&body.id).count(),
             expected_regions,
             "{name}: regions"
         );
@@ -117,10 +117,17 @@ fn authored_geometry_topology_keeps_source_objects_body_topology_and_curves() {
             name,
         );
 
-        for region in geometry.body_regions(&body.id) {
+        for region in geometry.stated_body_regions(&body.id) {
             assert_eq!(region.body, body.id, "{name}: region owner");
-            assert!(!region.shells.is_empty(), "{name}: region shells");
-            for shell_id in &region.shells {
+            assert!(
+                !region
+                    .stated_shells()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .is_empty(),
+                "{name}: region shells"
+            );
+            for shell_id in region.stated_shells() {
                 let shell = geometry
                     .shells
                     .iter()
@@ -148,8 +155,8 @@ fn authored_geometry_topology_keeps_source_objects_body_topology_and_curves() {
         .find(|body| &body.id == carrier_body_id)
         .unwrap();
     let mut carrier_curves = Vec::new();
-    for region in geometry.body_regions(&carrier_body.id) {
-        for shell_id in &region.shells {
+    for region in geometry.stated_body_regions(&carrier_body.id) {
+        for shell_id in region.stated_shells() {
             let shell = geometry
                 .shells
                 .iter()
@@ -277,10 +284,13 @@ fn authored_geometry_topology_keeps_source_objects_body_topology_and_curves() {
         .iter()
         .find(|body| &body.id == surface_body_id)
         .unwrap();
-    let [region] = geometry.body_regions(&surface_body.id).collect::<Vec<_>>()[..] else {
+    let [region] = geometry
+        .stated_body_regions(&surface_body.id)
+        .collect::<Vec<_>>()[..]
+    else {
         panic!("FreeformSurface: expected one region")
     };
-    let [shell_id] = region.shells.as_slice() else {
+    let [shell_id] = region.stated_shells().collect::<Vec<_>>()[..] else {
         panic!("FreeformSurface: expected one shell")
     };
     let shell = geometry
@@ -288,7 +298,7 @@ fn authored_geometry_topology_keeps_source_objects_body_topology_and_curves() {
         .iter()
         .find(|shell| &shell.id == shell_id)
         .unwrap();
-    let [face] = geometry.shell_faces(&shell.id).collect::<Vec<_>>()[..] else {
+    let [face] = geometry.stated_shell_faces(&shell.id).collect::<Vec<_>>()[..] else {
         panic!("FreeformSurface: expected one face")
     };
     let surface = geometry
@@ -318,10 +328,14 @@ fn authored_closed_shapes_keep_void_shells_cylinder_seam_and_disconnected_shells
     let geometry = &decoded.ir().geometry;
 
     let void_body = body_for_feature(decoded.ir(), "Void");
-    let [void_region] = geometry.body_regions(&void_body.id).collect::<Vec<_>>()[..] else {
+    let [void_region] = geometry
+        .stated_body_regions(&void_body.id)
+        .collect::<Vec<_>>()[..]
+    else {
         panic!("Void: one connected solid region")
     };
-    let [outer_shell_id, cavity_shell_id] = void_region.shells.as_slice() else {
+    let [outer_shell_id, cavity_shell_id] = void_region.stated_shells().collect::<Vec<_>>()[..]
+    else {
         panic!("Void: one exterior shell and one cavity shell")
     };
     for shell_id in [outer_shell_id, cavity_shell_id] {
@@ -331,17 +345,20 @@ fn authored_closed_shapes_keep_void_shells_cylinder_seam_and_disconnected_shells
     }
 
     let seam_body = body_for_feature(decoded.ir(), "Seam");
-    let [seam_region] = geometry.body_regions(&seam_body.id).collect::<Vec<_>>()[..] else {
+    let [seam_region] = geometry
+        .stated_body_regions(&seam_body.id)
+        .collect::<Vec<_>>()[..]
+    else {
         panic!("Seam: one connected solid region")
     };
-    let [seam_shell_id] = seam_region.shells.as_slice() else {
+    let [seam_shell_id] = seam_region.stated_shells().collect::<Vec<_>>()[..] else {
         panic!("Seam: one closed shell")
     };
     let seam_shell = shell_for_id(geometry, seam_shell_id.as_str());
     assert_closed_shell(geometry, seam_shell, 3);
 
     let cylindrical_faces = geometry
-        .shell_faces(&seam_shell.id)
+        .stated_shell_faces(&seam_shell.id)
         .filter(|face| {
             geometry
                 .surfaces
@@ -358,7 +375,7 @@ fn authored_closed_shapes_keep_void_shells_cylinder_seam_and_disconnected_shells
     let [cylindrical_face] = cylindrical_faces.as_slice() else {
         panic!("Seam: one cylindrical side face")
     };
-    let cylindrical_loop_ids = cylindrical_face.loops.iter().collect::<Vec<_>>();
+    let cylindrical_loop_ids = cylindrical_face.loops.stated().collect::<Vec<_>>();
     let [cylindrical_loop_id] = cylindrical_loop_ids.as_slice() else {
         panic!("Seam: one lateral boundary loop")
     };
@@ -418,8 +435,8 @@ fn authored_closed_shapes_keep_void_shells_cylinder_seam_and_disconnected_shells
 
     let multi_shell_body = body_for_feature(decoded.ir(), "MultiShell");
     let mut multi_shell_ids = Vec::new();
-    for region in geometry.body_regions(&multi_shell_body.id) {
-        let [shell_id] = region.shells.as_slice() else {
+    for region in geometry.stated_body_regions(&multi_shell_body.id) {
+        let [shell_id] = region.stated_shells().collect::<Vec<_>>()[..] else {
             panic!("MultiShell: one shell per disconnected box")
         };
         let shell = shell_for_id(geometry, shell_id.as_str());
@@ -461,15 +478,15 @@ fn assert_body_topology(
     expected_vertices: usize,
     name: &str,
 ) {
-    let regions = geometry.body_regions(&body.id).collect::<Vec<_>>();
+    let regions = geometry.stated_body_regions(&body.id).collect::<Vec<_>>();
     let shells = regions
         .iter()
-        .flat_map(|region| region.shells.iter())
+        .flat_map(|region| region.stated_shells())
         .map(|shell_id| shell_for_id(geometry, shell_id.as_str()))
         .collect::<Vec<_>>();
     let faces = shells
         .iter()
-        .flat_map(|shell| geometry.shell_faces(&shell.id).map(|face| &face.id))
+        .flat_map(|shell| geometry.stated_shell_faces(&shell.id).map(|face| &face.id))
         .map(|face_id| {
             geometry
                 .faces
@@ -488,7 +505,7 @@ fn assert_body_topology(
         .collect::<BTreeSet<_>>();
 
     for face in &faces {
-        for loop_id in &face.loops {
+        for loop_id in face.loops.stated() {
             let loop_ = geometry
                 .loops
                 .iter()
@@ -537,14 +554,14 @@ fn shell_for_id<'a>(geometry: &'a Topology, shell_id: &str) -> &'a Shell {
 
 fn assert_closed_shell(geometry: &Topology, shell: &Shell, expected_faces: usize) {
     assert_eq!(
-        geometry.shell_faces(&shell.id).count(),
+        geometry.stated_shell_faces(&shell.id).count(),
         expected_faces,
         "shell face count"
     );
     let mut uses = Vec::new();
-    for face in geometry.shell_faces(&shell.id) {
+    for face in geometry.stated_shell_faces(&shell.id) {
         assert_eq!(face.shell, shell.id, "face shell owner");
-        for loop_id in &face.loops {
+        for loop_id in face.loops.stated() {
             let loop_ = geometry
                 .loops
                 .iter()

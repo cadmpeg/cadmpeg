@@ -651,7 +651,7 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
     });
     let face_loops = source_less.geometry.faces[0]
         .loops
-        .iter()
+        .stated()
         .cloned()
         .chain(std::iter::once(loop_id))
         .collect();
@@ -667,7 +667,7 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
         .expect("source-less multiple-loop round trip");
     assert_eq!(round_trip.ir().geometry.faces.len(), 1);
     assert_eq!(round_trip.ir().geometry.loops.len(), 2);
-    assert_eq!(round_trip.ir().geometry.faces[0].loops.len(), 2);
+    assert_eq!(round_trip.ir().geometry.faces[0].loops.stated().count(), 2);
     assert_eq!(round_trip.ir().geometry.coedges.len(), 6);
     assert_eq!(round_trip.ir().geometry.edges.len(), 6);
 }

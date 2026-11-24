@@ -1678,12 +1678,11 @@ pub(super) fn project(
         );
 
         ctx.charge_entities(1, "iges_geometry_brep")?;
-        candidate.geometry_mut().regions.push(Region {
-            id: region_id.clone(),
-            body: body_id.clone(),
-            shells: region_shells,
-            native_ref: None,
-        });
+        candidate.geometry_mut().regions.push(Region::new(
+            region_id.clone(),
+            body_id.clone(),
+            region_shells,
+        ));
 
         ctx.charge_entities(1, "iges_geometry_brep")?;
         candidate.geometry_mut().bodies.push(Body {
@@ -1694,6 +1693,7 @@ pub(super) fn project(
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
         candidate.model_mut().finalize();
         drop(pcurve_indexes);

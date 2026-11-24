@@ -315,13 +315,13 @@ fn decode_builds_a_solid_with_an_oriented_void_shell() {
         .iter()
         .find(|region| region.body == body.id)
         .unwrap();
-    assert_eq!(region.shells.len(), 2);
+    assert_eq!(region.stated_shells().count(), 2);
     assert_eq!(
-        region.shells[0].as_str(),
+        region.stated_shells().cloned().collect::<Vec<_>>()[0].as_str(),
         format!("iges:model:shell#D{solid_sequence}:D{outer_sequence}")
     );
     assert_eq!(
-        region.shells[1].as_str(),
+        region.stated_shells().cloned().collect::<Vec<_>>()[1].as_str(),
         format!("iges:model:shell#D{solid_sequence}:D{void_sequence}")
     );
     let void_shell = result
@@ -329,9 +329,9 @@ fn decode_builds_a_solid_with_an_oriented_void_shell() {
         .geometry
         .shells
         .iter()
-        .find(|shell| shell.id == region.shells[1])
+        .find(|shell| shell.id == region.stated_shells().cloned().collect::<Vec<_>>()[1])
         .unwrap();
-    for face in result.ir().geometry.shell_faces(&void_shell.id) {
+    for face in result.ir().geometry.stated_shell_faces(&void_shell.id) {
         assert_eq!(face.sense, cadmpeg_ir::topology::Sense::Reversed);
     }
     assert!(
@@ -435,15 +435,18 @@ fn decode_builds_a_connected_manifold_tetrahedron() {
         .iter()
         .find(|region| region.body == body.id)
         .unwrap();
-    assert_eq!(region.shells.len(), 1);
+    assert_eq!(region.stated_shells().count(), 1);
     let shell = result
         .ir()
         .geometry
         .shells
         .iter()
-        .find(|shell| shell.id == region.shells[0])
+        .find(|shell| shell.id == region.stated_shells().cloned().collect::<Vec<_>>()[0])
         .unwrap();
-    assert_eq!(result.ir().geometry.shell_faces(&shell.id).count(), 4);
+    assert_eq!(
+        result.ir().geometry.stated_shell_faces(&shell.id).count(),
+        4
+    );
     let solid_edges = result
         .ir()
         .geometry
@@ -502,7 +505,7 @@ fn decode_builds_shared_explicit_open_shell_topology() {
     let shell_faces = result
         .ir()
         .geometry
-        .shell_faces(&shell.id)
+        .stated_shell_faces(&shell.id)
         .collect::<Vec<_>>();
     assert_eq!(shell_faces.len(), 1);
     let face = shell_faces[0];
@@ -511,7 +514,7 @@ fn decode_builds_shared_explicit_open_shell_topology() {
         .geometry
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
+        .find(|loop_| Some(&loop_.id) == face.loops.stated().next())
         .unwrap();
     assert_eq!(
         result
@@ -898,7 +901,7 @@ fn assert_outer_loops_counterclockwise_about_oriented_normal(ir: &CadIr) {
             Sense::Forward => normal,
             Sense::Reversed => Vector3::new(-normal.x, -normal.y, -normal.z),
         };
-        let [loop_id] = face.loops.iter().collect::<Vec<_>>()[..] else {
+        let [loop_id] = face.loops.stated().collect::<Vec<_>>()[..] else {
             panic!("every face has one loop");
         };
         let area = polygon_loop_area_about(ir, loop_id, oriented);

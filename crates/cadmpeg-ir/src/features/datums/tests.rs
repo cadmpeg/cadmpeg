@@ -37,7 +37,7 @@ fn datum_axis_partial_states_have_one_checked_wire_spelling() {
         reversed: None,
     };
     let option = std::collections::BTreeMap::from([(
-        cadmpeg_core::nonblank_literal!("f3d:ref_type"),
+        crate::codec_name!("f3d:ref_type"),
         NativeOption::Integer(Dimension::Literal(19)),
     )]);
     for draft in [
@@ -91,13 +91,13 @@ fn datum_axis_walks_bound_dimensions_and_preserves_colliding_option_literals() {
     let replacements = TextReplacements::build(replacements.iter()).unwrap();
     let options = std::collections::BTreeMap::from([
         (
-            cadmpeg_core::text::NonBlankString::new(source).unwrap(),
+            crate::design::names::CodecName::try_from(source.to_owned()).unwrap(),
             NativeOption::Text(Dimension::Literal(
                 cadmpeg_core::text::NonBlankString::new(source).unwrap(),
             )),
         ),
         (
-            cadmpeg_core::text::NonBlankString::new(target).unwrap(),
+            crate::design::names::CodecName::try_from(target.to_owned()).unwrap(),
             NativeOption::Real(Dimension::Negated(ParameterId::mint(source).unwrap())),
         ),
     ]);
@@ -188,7 +188,7 @@ fn datum_axis_validation_reaches_bound_parameter_owners_and_nested_subjects() {
         origin: Some(origin()),
         direction: Some(direction()),
         native_options: std::collections::BTreeMap::from([(
-            cadmpeg_core::nonblank_literal!("test:offset"),
+            crate::codec_name!("test:offset"),
             NativeOption::Length(Dimension::Parameter(parameter)),
         )]),
         ..Default::default()
@@ -532,7 +532,7 @@ fn datum_axis_validation_rejects_bad_witness_frames_and_construction_controls() 
     ir.model.features.push(feature(
         DatumAxisDraft {
             native_options: std::collections::BTreeMap::from([(
-                cadmpeg_core::nonblank_literal!("test:witness"),
+                crate::codec_name!("test:witness"),
                 NativeOption::Selection(selection),
             )]),
             inputs: vec![ConstructionInput {
@@ -586,7 +586,7 @@ fn datum_axis_bound_values_require_parameter_records() {
     let mut consumer = feature(
         DatumAxisDraft {
             native_options: std::collections::BTreeMap::from([(
-                cadmpeg_core::nonblank_literal!("test:length"),
+                crate::codec_name!("test:length"),
                 NativeOption::Length(Dimension::Parameter(wrong_target)),
             )]),
             ..Default::default()
@@ -630,7 +630,7 @@ fn datum_axis_picks_require_the_declared_target_arena() {
     ir.model.features.push(feature(
         DatumAxisDraft {
             native_options: std::collections::BTreeMap::from([(
-                cadmpeg_core::nonblank_literal!("test:target"),
+                crate::codec_name!("test:target"),
                 NativeOption::Selection(picks),
             )]),
             ..Default::default()
@@ -750,7 +750,7 @@ fn datum_axis_target_checks_use_declarations_and_reach_nested_contexts() {
         let mut consumer = feature(
             DatumAxisDraft {
                 source_settings: std::collections::BTreeMap::from([(
-                    cadmpeg_core::nonblank_literal!("test:selection"),
+                    crate::codec_name!("test:selection"),
                     NativeOption::Selection(selection),
                 )]),
                 ..Default::default()
@@ -900,7 +900,7 @@ fn datum_axis_region_boundaries_require_the_selected_sketch_owner() {
         ir.model.features.push(feature(
             DatumAxisDraft {
                 source_settings: std::collections::BTreeMap::from([(
-                    cadmpeg_core::nonblank_literal!("test:region"),
+                    crate::codec_name!("test:region"),
                     NativeOption::Selection(selection),
                 )]),
                 ..Default::default()

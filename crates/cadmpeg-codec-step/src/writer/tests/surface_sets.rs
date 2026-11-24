@@ -40,12 +40,11 @@ fn whole_patch_sheet() -> CadIr {
         ShellId::mint(id("shell")).unwrap(),
         RegionId::mint(id("region")).unwrap(),
     ));
-    ir.geometry.regions.push(Region {
-        id: RegionId::mint(id("region")).unwrap(),
-        body: BodyId::mint(id("body")).unwrap(),
-        shells: vec![ShellId::mint(id("shell")).unwrap()],
-        native_ref: None,
-    });
+    ir.geometry.regions.push(Region::new(
+        RegionId::mint(id("region")).unwrap(),
+        BodyId::mint(id("body")).unwrap(),
+        vec![ShellId::mint(id("shell")).unwrap()],
+    ));
     ir.geometry.bodies.push(Body {
         id: BodyId::mint(id("body")).unwrap(),
         kind: BodyKind::Sheet,
@@ -54,6 +53,7 @@ fn whole_patch_sheet() -> CadIr {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     ir.finalize();
     ir
@@ -95,7 +95,7 @@ fn a_sheet_of_whole_bounded_surfaces_round_trips_as_a_geometric_set() {
     let [face] = geometry.faces.as_slice() else {
         panic!("one face: {:#?}", geometry.faces);
     };
-    assert!(face.loops.is_empty());
+    assert!(face.loops.stated().next().is_none());
 }
 
 /// The `#n = TYPE(...)` records of a written file, by instance number:
@@ -229,7 +229,7 @@ fn a_placed_sheet_maps_its_bounded_surface_representation() {
         let [face] = geometry.faces.as_slice() else {
             panic!("pass {pass}: one face: {:#?}", geometry.faces);
         };
-        assert!(face.loops.is_empty());
+        assert!(face.loops.stated().next().is_none());
         decoded_ir = decoded.ir().clone();
     }
     assert_eq!(text.matches("= MAPPED_ITEM(").count(), 1);
@@ -276,7 +276,11 @@ fn sheet_loop_counts(ir: &CadIr) -> Vec<usize> {
         geometry.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Sheet
     );
-    let mut counts: Vec<usize> = geometry.faces.iter().map(|face| face.loops.len()).collect();
+    let mut counts: Vec<usize> = geometry
+        .faces
+        .iter()
+        .map(|face| face.loops.stated().count())
+        .collect();
     counts.sort_unstable();
     counts
 }
@@ -361,7 +365,7 @@ fn a_pmi_target_on_a_curve_bounded_face_keeps_the_sheet_a_shell() {
         .geometry
         .faces
         .iter()
-        .find(|face| face.loops.len() == 2)
+        .find(|face| face.loops.stated().count() == 2)
         .unwrap();
     let edge = source
         .ir()
@@ -678,13 +682,13 @@ fn ring_and_disc_sharing_an_edge() -> CadIr {
     let ring = geometry
         .faces
         .iter()
-        .find(|face| face.loops.len() == 2)
+        .find(|face| face.loops.stated().count() == 2)
         .unwrap()
         .clone();
     let disc_index = geometry
         .faces
         .iter()
-        .position(|face| face.loops.len() == 1)
+        .position(|face| face.loops.stated().count() == 1)
         .unwrap();
     let disc = geometry.faces[disc_index].clone();
     let loop_coedges = |geometry: &cadmpeg_ir::document::Topology,
@@ -743,7 +747,7 @@ fn ring_and_disc_sharing_an_edge() -> CadIr {
     geometry.faces[disc_index].shell = ring.shell.clone();
     geometry.shells.retain(|shell| shell.id != disc.shell);
     for region in &mut geometry.regions {
-        region.shells.retain(|shell| shell != &disc.shell);
+        region.retain_stated_shells(|shell| shell != &disc.shell);
     }
     ir.finalize();
     ir
@@ -913,13 +917,13 @@ fn ring_and_disc_sharing_a_vertex() -> CadIr {
     let ring = geometry
         .faces
         .iter()
-        .find(|face| face.loops.len() == 2)
+        .find(|face| face.loops.stated().count() == 2)
         .unwrap()
         .clone();
     let disc_index = geometry
         .faces
         .iter()
-        .position(|face| face.loops.len() == 1)
+        .position(|face| face.loops.stated().count() == 1)
         .unwrap();
     let disc = geometry.faces[disc_index].clone();
     let face_edges = |geometry: &cadmpeg_ir::document::Topology,
@@ -972,7 +976,7 @@ fn ring_and_disc_sharing_a_vertex() -> CadIr {
     geometry.faces[disc_index].shell = ring.shell.clone();
     geometry.shells.retain(|shell| shell.id != disc.shell);
     for region in &mut geometry.regions {
-        region.shells.retain(|shell| shell != &disc.shell);
+        region.retain_stated_shells(|shell| shell != &disc.shell);
     }
     ir.finalize();
     ir
@@ -1071,7 +1075,7 @@ fn ring_whose_loops_share_a_vertex() -> CadIr {
             .and_then(|edge| edge.start().cloned())
             .unwrap()
     };
-    let loops: Vec<_> = geometry.faces[0].loops.iter().cloned().collect();
+    let loops: Vec<_> = geometry.faces[0].loops.stated().cloned().collect();
     let first_edges = loop_edges(geometry, &loops[0]);
     let second_edges = loop_edges(geometry, &loops[1]);
     let kept = start_of(geometry, &first_edges);
@@ -1152,7 +1156,7 @@ fn ring_whose_loops_share_an_edge() -> CadIr {
     let geometry = &mut ir.geometry;
     assert_eq!(geometry.faces.len(), 1);
     assert_eq!(geometry.edges.len(), 2);
-    let loops: Vec<_> = geometry.faces[0].loops.iter().cloned().collect();
+    let loops: Vec<_> = geometry.faces[0].loops.stated().cloned().collect();
     let coedge_of = |geometry: &cadmpeg_ir::document::Topology,
                      loop_id: &cadmpeg_ir::ids::LoopId| {
         let face_loop = geometry

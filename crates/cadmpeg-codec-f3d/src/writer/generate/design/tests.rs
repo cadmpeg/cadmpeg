@@ -15,7 +15,7 @@ use cadmpeg_ir::design::evaluation::{
     CurrentState, Evaluation, EvaluationStatus, StateBase, StateContent, StateDelta,
 };
 use cadmpeg_ir::design::expr::{
-    BinaryOp, Expression, ExpressionDialect, ExpressionToken, Neutral, Node,
+    Expression, ExpressionDialect, ExpressionToken, MulOp, Neutral, Node,
 };
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ids::{ArrangementId, ContainerId, EvaluationId};
@@ -108,6 +108,7 @@ fn feature(id: &str, family: OperationFamily) -> Feature {
         suppressed: None,
         definition: FeatureDefinition {
             operation: FeatureOperation::Unresolved { family },
+            assembly: None,
             refine: None,
             fuzzy_tolerance: None,
         },
@@ -170,11 +171,11 @@ fn scoped_cube() -> CadIr {
         parameter(
             "half",
             "Half",
-            neutral(Node::Binary {
-                op: BinaryOp::Divide,
-                left: Box::new(reference("width")),
-                right: Box::new(number(2.0, None)),
-            }),
+            neutral(Node::mul(
+                reference("width"),
+                MulOp::Divide,
+                number(2.0, None),
+            )),
             Some(30.0),
         ),
         parameter(

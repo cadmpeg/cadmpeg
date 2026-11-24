@@ -1412,7 +1412,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         let mut second_region = disconnected.geometry.regions[0].clone();
         second_region.id = cadmpeg_ir::ids::RegionId::mint("test:model:entity#second-region")
             .expect("identity grammar");
-        second_region.shells.clear();
+        second_region.set_shells(Vec::new());
         disconnected.geometry.regions.push(second_region);
         assert_eq!(
             placement(&disconnected, dimensions, std::slice::from_ref(&output),),
@@ -1485,11 +1485,10 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
         second_region.id = cadmpeg_ir::ids::RegionId::mint("test:model:entity#second-region")
             .expect("identity grammar");
         second_region.body = second_body.id.clone();
-        second_region.shells =
-            vec![
-                cadmpeg_ir::ids::ShellId::mint("test:model:entity#second-shell")
-                    .expect("identity grammar"),
-            ];
+        second_region.set_shells(vec![cadmpeg_ir::ids::ShellId::mint(
+            "test:model:entity#second-shell",
+        )
+        .expect("identity grammar")]);
         let mut second_shell = ir.geometry.shells[0].clone();
         second_shell.id = cadmpeg_ir::ids::ShellId::mint("test:model:entity#second-shell")
             .expect("identity grammar");

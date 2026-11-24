@@ -667,6 +667,7 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     };
     let sweep = |id: &str, outputs: Vec<BodyId>| Feature {
         product_definition: None,
