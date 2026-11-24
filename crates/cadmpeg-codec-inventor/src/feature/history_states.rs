@@ -633,6 +633,12 @@ impl<'a> Closed<'a> {
         }
     }
 
+    /// Whether the archive was built.
+    #[cfg(test)]
+    pub(crate) fn archive_built(&self) -> bool {
+        self.archive.get().is_some()
+    }
+
     /// Records of every revision, by revision identifier. `None` when the
     /// archive does not close.
     pub(crate) fn archive(&self) -> Option<&HashMap<i64, Record>> {

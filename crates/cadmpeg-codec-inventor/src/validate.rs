@@ -2537,7 +2537,10 @@ fn validate_features(
                                 Some((*parameter, value))
                             },
                             data.feature_history_states.iter().any(|state| {
-                                state.feature == raw_feature.id() && state.state_after.is_some()
+                                state.feature == raw_feature.id()
+                                    && state.state_after.is_some()
+                                    && state.binding
+                                        == crate::feature::history_states::Binding::Bound
                             }),
                         )
                     })

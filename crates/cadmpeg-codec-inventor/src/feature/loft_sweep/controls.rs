@@ -26,6 +26,7 @@ pub(crate) enum NativeReason {
     Profile,
     ResultTopology,
     ResultStateBounded,
+    ResultStateFailed,
     ResultIdentity,
 }
 
@@ -40,7 +41,7 @@ impl NativeReason {
             | Self::SectionRecord
             | Self::SectionCondition
             | Self::SectionOption => InventorLossCode::FeatureLoftOperandsNative,
-            Self::ResultTopology | Self::ResultStateBounded => {
+            Self::ResultTopology | Self::ResultStateBounded | Self::ResultStateFailed => {
                 InventorLossCode::FeatureLoftResultOperandsNative
             }
             Self::ResultCollection | Self::Profile | Self::ResultIdentity => {
@@ -58,6 +59,7 @@ impl NativeReason {
             Self::SectionParameters => "section scalar operands differ from zero dimensionless and right-angle nominal and model values".to_owned(),
             Self::Profile => "section selection does not resolve to one consumed planar profile".to_owned(),
             Self::ResultTopology => "complete generator-owned result does not prove ordered positional loft construction".to_owned(),
+            Self::ResultStateFailed => "history state of the loft does not decode".to_owned(),
             Self::ResultStateBounded => "history state of the loft passed the local work cap of state views".to_owned(),
             Self::ResultIdentity => "result body identity does not resolve".to_owned(),
         };

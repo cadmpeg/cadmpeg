@@ -2,6 +2,7 @@
 
 use super::*;
 use serde_json::json;
+use std::rc::Rc;
 
 fn model() -> CadIr {
     let mut partial = json!({
@@ -517,9 +518,13 @@ impl FixedStates {
 }
 
 impl ResultStates for FixedStates {
-    fn after(&self, _: &DecodeContext<'_>, source_index: u32) -> Result<StateModel, CodecError> {
+    fn after(
+        &self,
+        _: &DecodeContext<'_>,
+        source_index: u32,
+    ) -> Result<Rc<StateModel>, CodecError> {
         self.asked.borrow_mut().push(source_index);
-        Ok((self.outcome)(&self.model))
+        Ok(Rc::new((self.outcome)(&self.model)))
     }
 }
 
@@ -596,4 +601,67 @@ fn a_state_view_over_its_work_cap_keeps_the_loft_unproved_as_bounded() {
     ));
     // A final model that proves the loft never reads the state.
     assert!(proof(Some(&legacy_model()), Some(&bounded)).is_ok());
+}
+
+#[test]
+fn a_failed_state_is_its_own_refusal() {
+    let later = consumed_cap();
+    let failed = FixedStates::new(CadIr::empty(), |_| StateModel::Failed);
+    assert!(matches!(
+        proof(Some(&later), Some(&failed)),
+        Err(Unproved::StateFailed)
+    ));
+}
+
+fn final_proof(model: &CadIr, bound: bool) -> bool {
+    loft_final_proof(model, 17, [19, 23], legacy_curves, bound).is_some()
+}
+
+#[test]
+fn a_bound_state_proves_a_loft_whose_cap_a_later_feature_consumed_or_copied() {
+    for later in [consumed_cap(), copied_cap()] {
+        assert!(loft_result(&later, 17, [19, 23], legacy_curves).is_none());
+        assert!(final_proof(&later, true));
+    }
+    // A complete final model needs no state.
+    assert!(final_proof(&legacy_model(), false));
+}
+
+#[test]
+fn a_loft_without_a_bound_state_needs_the_final_model_to_prove_it() {
+    for later in [consumed_cap(), copied_cap()] {
+        assert!(!final_proof(&later, false));
+    }
+}
+
+#[test]
+fn a_bound_state_does_not_admit_an_owned_face_that_contradicts_the_loft() {
+    let check = |edit: &dyn Fn(&mut CadIr)| {
+        let mut model = consumed_cap();
+        edit(&mut model);
+        assert!(!final_proof(&model, true));
+    };
+    // A cap on a surface that is not a plane.
+    check(&|model| {
+        model.geometry.surfaces[1].geometry = self::model().geometry.surfaces[2].geometry.clone();
+    });
+    // A cap of a section that the loft does not use.
+    check(&|model| model.model.attributes[0].values[10] = Some(AttributeValue::Integer(40)));
+    // A side face whose last section differs from the loft.
+    check(&|model| model.model.attributes[1].values[16] = Some(AttributeValue::Integer(40)));
+    // A side face whose curve is not on the section boundary.
+    check(&|model| model.model.attributes[1].values[10] = Some(AttributeValue::Integer(99)));
+    // A cap in a form that no loft writes.
+    check(&|model| model.model.attributes[0].values[11] = Some(AttributeValue::Integer(261)));
+    // A name of another family on a face of the generator.
+    let sweep = self::model();
+    assert!(loft_final_proof(&sweep, 17, [19, 23], legacy_curves, true).is_none());
+}
+
+#[test]
+fn a_bound_state_admits_a_final_model_that_holds_no_face_of_the_loft() {
+    // Generator 18 names no face: every face of the loft is gone.
+    assert!(loft_final_proof(&legacy_model(), 18, [19, 23], legacy_curves, true).is_some());
+    assert!(loft_final_proof(&legacy_model(), 18, [19, 23], legacy_curves, false).is_none());
+    assert!(loft_final_proof(&legacy_model(), 17, [19, 19], legacy_curves, true).is_none());
 }

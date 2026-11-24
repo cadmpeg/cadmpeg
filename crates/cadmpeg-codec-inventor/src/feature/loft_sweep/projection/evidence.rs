@@ -322,19 +322,7 @@ pub(in crate::feature::loft_sweep) fn loft(
                 }) =>
             {
                 let member = side_tag(values)?.member;
-                let construction = surface.geometry.procedural_construction()?;
-                let procedural = geometry
-                    .procedural_surfaces
-                    .iter()
-                    .find(|procedural| &procedural.id == construction)?;
-                let ProceduralSurfaceDefinition::Loft(payload) = procedural.definition() else {
-                    return None;
-                };
-                if !matches!(surface.geometry.solved()?, SolvedSurfaceGeometry::Nurbs(_))
-                    || !unconstrained_loft(payload)
-                {
-                    return None;
-                }
+                side_surface_is_loft(geometry, &surface.geometry)?;
                 if !sides.insert(usize::try_from(member).ok()?) {
                     return None;
                 }
@@ -347,6 +335,186 @@ pub(in crate::feature::loft_sweep) fn loft(
         && !sides.is_empty()
         && (1..=sides.len()).all(|member| sides.contains(&member)))
     .then_some(())
+}
+
+/// Whether a side-face surface is an unconstrained procedural loft with a
+/// NURBS solution.
+fn side_surface_is_loft(geometry: &Topology, surface: &SurfaceGeometry) -> Option<()> {
+    let construction = surface.procedural_construction()?;
+    let procedural = geometry
+        .procedural_surfaces
+        .iter()
+        .find(|procedural| &procedural.id == construction)?;
+    let ProceduralSurfaceDefinition::Loft(payload) = procedural.definition() else {
+        return None;
+    };
+    (matches!(surface.solved()?, SolvedSurfaceGeometry::Nurbs(_)) && unconstrained_loft(payload))
+        .then_some(())
+}
+
+/// Loft result proof from the final model alone, for the validator. The
+/// final model holds the result faces unless a later feature consumed or
+/// split a cap, or copied faces with a pattern or a mirror. The history state
+/// after the loft holds them then (spec section 13.2), and the validator
+/// cannot decode the state. The loft stays proved when `history_bound` says
+/// that the loft has a bound history state and no generator-owned face of the
+/// final model contradicts the loft.
+pub(in crate::feature::loft_sweep) fn loft_final_proof(
+    ir: &CadIr,
+    generator: u32,
+    sections: [u32; 2],
+    section_curves: impl Fn(usize) -> Vec<i64>,
+    history_bound: bool,
+) -> Option<()> {
+    if loft_result(ir, generator, sections, &section_curves).is_some() {
+        return Some(());
+    }
+    (history_bound && loft_owned_consistent(ir, generator, sections, &section_curves)).then_some(())
+}
+
+/// Whether no generator-owned face of `ir` contradicts the loft. A later
+/// feature removes a cap or a side face, splits it, or copies it with a
+/// pattern or a mirror. Removal leaves gaps in the member indices and a copy
+/// repeats a name, so neither contradicts the loft, and a face that is gone
+/// proves nothing. A named face contradicts the loft when no such operation
+/// produces it: a cap that is not a plane, a cap of a section that the loft
+/// does not use, a side face whose first or last section or curve differs from
+/// the loft, a side face that is not an unconstrained loft surface, a side
+/// member index below one, or a name of another family. An empty owned set is
+/// consistent.
+pub(in crate::feature::loft_sweep) fn loft_owned_consistent(
+    ir: &CadIr,
+    generator: u32,
+    sections: [u32; 2],
+    section_curves: impl Fn(usize) -> Vec<i64>,
+) -> bool {
+    let geometry = &ir.geometry;
+    if sections[0] == sections[1] {
+        return false;
+    }
+    let is_plane = |face: &Face| {
+        geometry
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == face.surface)
+            .is_some_and(|surface| {
+                matches!(
+                    &surface.geometry,
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+                )
+            })
+    };
+    let is_loft_side = |face: &Face| {
+        geometry
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == face.surface)
+            .is_some_and(|surface| side_surface_is_loft(geometry, &surface.geometry).is_some())
+    };
+    let first_curves = section_curves(0);
+    let last_curves = section_curves(1);
+    let uses = |section: i64| sections.iter().any(|source| i64::from(*source) == section);
+    let faces = ir
+        .geometry
+        .faces
+        .iter()
+        .map(|face| (face.id.as_str(), face))
+        .collect::<HashMap<_, _>>();
+    for attribute in &ir.model.attributes {
+        let AttributeTarget::Face(id) = &attribute.target.entity else {
+            continue;
+        };
+        let name = attribute.name.as_str();
+        let integers = |values: &[Option<AttributeValue>]| {
+            values
+                .iter()
+                .map(|value| match value {
+                    Some(AttributeValue::Integer(value)) => Some(*value),
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>()
+        };
+        let consistent = if name == "ATTRIB_CUSTOM-attrib" {
+            let [_, _, _, _, _, Some(AttributeValue::String(family)), Some(AttributeValue::Integer(1)), Some(AttributeValue::Integer(44)), Some(AttributeValue::Integer(1)), Some(AttributeValue::Integer(source)), Some(AttributeValue::Integer(-1)), rest @ ..] =
+                attribute.values.as_slice()
+            else {
+                continue;
+            };
+            if *source != i64::from(generator)
+                || !matches!(
+                    family.as_str(),
+                    "INV_NMX_GEN_TAG" | "INV_NMX_SWEEPGENERATED_TAG" | "INV_NMX_ORDERED_GEN_TAG"
+                )
+            {
+                continue;
+            }
+            let Some(face) = faces.get(id.as_str()) else {
+                return false;
+            };
+            match (family.as_str(), integers(rest)) {
+                ("INV_NMX_GEN_TAG", Some(values)) => {
+                    matches!(values[..], [0, section, 260] if uses(section)) && is_plane(face)
+                }
+                ("INV_NMX_ORDERED_GEN_TAG", Some(values)) => {
+                    side_tag(&values).is_some_and(|tag| {
+                        tag.first_section == i64::from(sections[0])
+                            && tag.last_section == i64::from(sections[1])
+                            && first_curves.contains(&tag.first_curve)
+                            && last_curves.contains(&tag.last_curve)
+                            && tag.member >= 1
+                    }) && is_loft_side(face)
+                }
+                _ => false,
+            }
+        } else if name == LEGACY_CAP_CLASS || name == LEGACY_SIDE_CLASS {
+            let [_, _, _, _, _, Some(AttributeValue::Integer(_)), Some(AttributeValue::Integer(count)), rest @ ..] =
+                attribute.values.as_slice()
+            else {
+                continue;
+            };
+            let Some(integers) = integers(rest) else {
+                continue;
+            };
+            let Some(pairs) = usize::try_from(*count)
+                .ok()
+                .and_then(|count| count.checked_mul(2))
+                .filter(|pairs| *count >= 1 && *pairs <= integers.len())
+            else {
+                continue;
+            };
+            let (names, tail) = integers.split_at(pairs);
+            if !names
+                .chunks_exact(2)
+                .any(|pair| pair[0] == i64::from(generator))
+            {
+                continue;
+            }
+            let Some(face) = faces.get(id.as_str()) else {
+                return false;
+            };
+            *count == 1
+                && names[1] == -1
+                && is_plane(face)
+                && if name == LEGACY_CAP_CLASS {
+                    matches!(tail[..], [0, section, 260] if uses(section))
+                } else {
+                    matches!(
+                        tail[..],
+                        [2, first_curve, first_section, 258, 0, 0, last_curve, last_section, 258, 0, 0]
+                            if first_section == i64::from(sections[0])
+                                && last_section == i64::from(sections[1])
+                                && first_curves.contains(&first_curve)
+                                && last_curves.contains(&last_curve)
+                    )
+                }
+        } else {
+            continue;
+        };
+        if !consistent {
+            return false;
+        }
+    }
+    true
 }
 
 /// Loft result check for either attribute carrier. `section_curves` lists the
@@ -369,6 +537,8 @@ pub(in crate::feature::loft_sweep) enum Unproved {
     /// Neither the final model nor the state after the loft holds a complete
     /// generator-owned result.
     Result,
+    /// The history state of the loft does not decode.
+    StateFailed,
     /// The views of history states passed their work cap.
     Bounded,
     /// The decode of a state failed.
@@ -394,11 +564,12 @@ pub(in crate::feature::loft_sweep) fn loft_proof(
     let Some(states) = states else {
         return Err(Unproved::Result);
     };
-    match states.after(ctx, generator).map_err(Unproved::Codec)? {
+    match &*states.after(ctx, generator).map_err(Unproved::Codec)? {
         StateModel::Model(model) => {
-            loft_result(&model, generator, sections, &section_curves).ok_or(Unproved::Result)
+            loft_result(model, generator, sections, &section_curves).ok_or(Unproved::Result)
         }
         StateModel::Unavailable => Err(Unproved::Result),
+        StateModel::Failed => Err(Unproved::StateFailed),
         StateModel::Bounded => Err(Unproved::Bounded),
     }
 }

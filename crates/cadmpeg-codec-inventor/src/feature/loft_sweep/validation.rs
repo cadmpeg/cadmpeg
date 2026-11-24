@@ -60,7 +60,7 @@ impl<'a> ValidationIndex<'a> {
         definition: &FeatureDefinition,
         property: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
         parameter: impl Fn(PmDcReference) -> Option<(&'a PmDcParameter, &'a ParameterValue)>,
-        has_history_state: bool,
+        history_bound: bool,
     ) -> bool {
         if !controls::validates(source, definition, property, parameter) {
             return false;
@@ -103,28 +103,22 @@ impl<'a> ValidationIndex<'a> {
         let [first, last] = selected.as_slice() else {
             return false;
         };
-        // The result faces are in the final model, or in the history state
-        // after the loft (spec section 13.2). The validator reads the model
-        // only, so a loft that the final model no longer proves needs the
-        // joined state.
-        evidence::loft_result(
+        let sections = [first.0.header.source_index, last.0.header.source_index];
+        let curves = |section: usize| {
+            selected
+                .get(section)
+                .map_or_else(Vec::new, |(raw, sketch, profile)| {
+                    self.profiles
+                        .curve_names(token, raw.identity.record_ordinal, sketch, profile)
+                })
+        };
+        evidence::loft_final_proof(
             self.ir,
             source.header.source_index,
-            [first.0.header.source_index, last.0.header.source_index],
-            |section| {
-                selected
-                    .get(section)
-                    .map_or_else(Vec::new, |(raw, sketch, profile)| {
-                        self.profiles.curve_names(
-                            token,
-                            raw.identity.record_ordinal,
-                            sketch,
-                            profile,
-                        )
-                    })
-            },
+            sections,
+            curves,
+            history_bound,
         )
         .is_some()
-            || has_history_state
     }
 }

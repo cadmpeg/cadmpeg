@@ -179,6 +179,7 @@ fn loft(
     )
     .map_err(|failure| match failure {
         evidence::Unproved::Result => Refusal::Native(NativeReason::ResultTopology),
+        evidence::Unproved::StateFailed => Refusal::Native(NativeReason::ResultStateFailed),
         evidence::Unproved::Bounded => Refusal::Native(NativeReason::ResultStateBounded),
         evidence::Unproved::Codec(error) => Refusal::Codec(error),
     })?;
