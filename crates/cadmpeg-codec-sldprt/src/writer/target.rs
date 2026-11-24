@@ -187,7 +187,7 @@ fn finish(
         ));
         losses.extend(unwritten.notes());
     }
-    if let Written::StoredCompoundFile { loss } = written {
+    if let Written::Stored { loss } = written {
         losses.push(loss.clone());
     }
     if let Some(message) = displacement {
@@ -195,8 +195,8 @@ fn finish(
     }
     losses.extend(carried_source_losses(input.fidelity, &write_path));
     let path_note = match &write_path {
-        WritePath::VerbatimReplay if matches!(written, Written::StoredCompoundFile { .. }) => {
-            "preserved compound-file source replayed verbatim without the document's edits"
+        WritePath::VerbatimReplay if matches!(written, Written::Stored { .. }) => {
+            "preserved source part replayed verbatim without the document's edits"
         }
         WritePath::VerbatimReplay => "preserved source container replayed verbatim",
         WritePath::Patched { .. } => "preserved source container replayed with semantic patches",

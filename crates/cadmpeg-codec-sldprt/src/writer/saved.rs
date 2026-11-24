@@ -13,22 +13,24 @@ use cadmpeg_ir::design::expr::ExpressionDialect;
 use cadmpeg_ir::design::units::Unit;
 use cadmpeg_ir::document::{CadIr, Model};
 use cadmpeg_ir::features::parameters::DesignParameter;
+use cadmpeg_ir::report::loss::LossNote;
 
 use crate::design_v11::parameters::LITERAL_UNITS;
 use crate::history::literals::{dimension_display, parse_parameter_literal};
+use crate::loss::SldprtLossCode;
 
 /// `input`'s part with the history arenas the CADIR wire omits restored
 /// from its retained source, where it was read from CADIR JSON and `target`
 /// does not replay it unedited.
 ///
-/// A restore that the design edits refuse refuses the write, except for a
-/// compound-file part that `target` preserves: that part is left as read and
-/// the refusal goes to `notes`, so the write is the stored part with the loss
-/// that states no edit is written.
+/// The restored part holds every design edit those arenas state, and
+/// `losses` names each other edit by its path. Where the retained source
+/// cannot be restored from, the part is left as read and `notes` says why.
 pub(crate) fn restore(
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
     notes: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Option<CadIr>, CodecError> {
     let Some(image) = saved_source(input, crate::SOURCE_IMAGE_ID, target.preserves_source())?
     else {
@@ -44,17 +46,60 @@ pub(crate) fn restore(
         })
         .and_then(|decoded| restore_history(input.ir, decoded.ir(), &SolidWorksText));
     match restored {
-        Ok(restored) => Ok(Some(restored)),
-        Err(error)
-            if !matches!(error, CodecError::ResourceLimit(_) | CodecError::Io(_))
-                && target.preserves_source()
-                && crate::container::is_compound_file(image) =>
-        {
-            notes.push(error.to_string());
+        Ok(restored) => {
+            losses.extend(unwritten_losses(&restored.unwritten));
+            Ok(Some(restored.ir))
+        }
+        Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => Err(error),
+        Err(error) => {
+            notes.push(format!(
+                "the history arenas of the document read from CADIR are not restored from its \
+                 retained source part: {error}"
+            ));
             Ok(None)
         }
-        Err(error) => Err(error),
     }
+}
+
+/// One loss per kind of design record that holds an edit the restored
+/// history arenas cannot state, naming each such edit by its path.
+fn unwritten_losses(unwritten: &[String]) -> Vec<LossNote> {
+    let mut parameters = Vec::new();
+    let mut features = Vec::new();
+    let mut others = Vec::new();
+    for path in unwritten {
+        if path.starts_with("design.parameters[") {
+            parameters.push(path.as_str());
+        } else if path.starts_with("design.features[") {
+            features.push(path.as_str());
+        } else {
+            others.push(path.as_str());
+        }
+    }
+    [
+        (
+            SldprtLossCode::WriterParameterEditUnwritten,
+            "parameters",
+            parameters,
+        ),
+        (
+            SldprtLossCode::WriterFeatureEditUnwritten,
+            "features",
+            features,
+        ),
+        (SldprtLossCode::WriterDesignEditUnwritten, "records", others),
+    ]
+    .into_iter()
+    .filter(|(_, _, paths)| !paths.is_empty())
+    .map(|(code, records, paths)| {
+        code.note(format!(
+            "the document was read from CADIR, and the feature history of its retained source \
+             part cannot state these edits of its design {records}, so the output keeps the \
+             stored state: {}",
+            paths.join("; ")
+        ))
+    })
+    .collect()
 }
 
 /// The text of a `Keywords` dimension or equation.

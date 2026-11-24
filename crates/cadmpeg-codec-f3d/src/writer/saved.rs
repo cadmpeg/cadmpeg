@@ -41,7 +41,15 @@ pub(crate) fn restore(
         })
         .and_then(|decoded| restore_history(input.ir, decoded.ir(), &FusionText));
     match restored {
-        Ok(restored) => Ok(Some(restored)),
+        Ok(restored) if restored.unwritten.is_empty() => Ok(Some(restored.ir)),
+        Ok(restored) => {
+            notes.push(format!(
+                "the document was read from CADIR, and its history arenas cannot state these \
+                 design edits: {}",
+                restored.unwritten.join("; ")
+            ));
+            Ok(None)
+        }
         Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => Err(error),
         Err(error) => {
             notes.push(error.to_string());

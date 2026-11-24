@@ -12,10 +12,12 @@
 //! Each changed parameter definition is replayed on them with
 //! [`Editor::set_parameter_expression`](crate::design::edit::Editor::set_parameter_expression),
 //! which sets the caches and stale states the edit derives. A design value
-//! that differs from the decode's is an edit the history cannot take, and
-//! refuses the restore, unless it is the replayed value, or the replay
-//! changed it and it still holds the decode's: a cache the edit made stale.
-//! An evaluation's `status` is derived and never refuses.
+//! that differs from the decode's is an edit the history cannot take, unless
+//! it is the replayed value, or the replay changed it and it still holds the
+//! decode's: a cache the edit made stale. The restore leaves such an edit
+//! out and names its path, so that the writer writes every other edit and
+//! reports the ones it leaves out. An evaluation's `status` is derived and
+//! is never an edit.
 //!
 //! [`ArenaName::WIRE_OMITTED`]: crate::document::ArenaName::WIRE_OMITTED
 
@@ -83,29 +85,47 @@ pub fn saved_source<'a>(
     Ok(Some(image))
 }
 
+/// A document read from CADIR JSON with the arenas the wire omits restored.
+#[derive(Debug)]
+pub struct Restored {
+    /// The document, with each edit of its `design` records that the
+    /// restored arenas state applied to them. Its `design` holds the caches
+    /// and states those edits derive, and holds each other edit as the decode
+    /// does.
+    pub ir: CadIr,
+    /// The path of each design edit that the restored arenas cannot state,
+    /// sorted, each with why where the restore knows it. `ir` does not hold
+    /// these edits.
+    pub unwritten: Vec<String>,
+}
+
 /// `read`, a document read from CADIR JSON, with the arenas the wire omits
 /// taken from `decoded`, the decode of the source `read` was saved from, and
-/// each edit of its `design` records since that decode applied to them. Its
-/// `design` holds the caches and states those edits derive.
+/// each edit of its `design` records since that decode that those arenas can
+/// state applied to them. [`Restored::unwritten`] names each other edit.
 ///
 /// # Errors
 ///
-/// [`CodecError::NotImplemented`] that names each design edit the history
-/// arenas cannot state, and [`CodecError::Malformed`] where a design arena
-/// has no JSON form.
+/// [`CodecError::Malformed`] where a design arena has no JSON form.
 pub fn restore_history(
     read: &CadIr,
     decoded: &CadIr,
     text: &dyn HistoryText,
-) -> Result<CadIr, CodecError> {
-    let mut unmapped = Vec::new();
-    let mut replayed = decoded.clone();
+) -> Result<Restored, CodecError> {
+    let mut unwritten = Vec::new();
+    // Records whose edit is named whole, so the residue names nothing in them.
+    let mut named = Vec::new();
+    let mut restored = read.clone();
+    restored.model.adopt_omitted_arenas(&decoded.model);
     let stored = decoded
         .design
         .parameters
         .iter()
         .map(|parameter| (&parameter.id, parameter))
         .collect::<HashMap<_, _>>();
+    let spellings = spellings(decoded, &stored);
+    let mut replayed = decoded.clone();
+    let mut expressions = Vec::new();
     for parameter in &read.design.parameters {
         let Some(before) = stored.get(&parameter.id) else {
             continue;
@@ -113,13 +133,37 @@ pub fn restore_history(
         if before.definition == parameter.definition {
             continue;
         }
-        if let ParameterDefinition::Expression(expression) = &parameter.definition {
-            if let Err(error) = replayed.set_parameter_expression(&parameter.id, expression.clone())
-            {
-                unmapped.push(format!(
-                    "design.parameters[{}].definition: {error}",
-                    parameter.id
-                ));
+        let ParameterDefinition::Expression(expression) = &parameter.definition else {
+            continue;
+        };
+        let stated = restored
+            .model
+            .parameters
+            .iter()
+            .position(|history| history.id == parameter.id)
+            .ok_or_else(|| "no history parameter restates it".to_owned())
+            .and_then(|at| {
+                history_expression(
+                    &parameter.definition,
+                    &restored.model.parameters[at],
+                    text,
+                    &spellings,
+                    &restored.model,
+                )
+                .map(|stated| (at, stated))
+            })
+            .and_then(|stated| {
+                replayed
+                    .set_parameter_expression(&parameter.id, expression.clone())
+                    .map(|()| stated)
+                    .map_err(|error| error.to_string())
+            });
+        match stated {
+            Ok(stated) => expressions.push(stated),
+            Err(why) => {
+                let record = format!("design.parameters[{}]", parameter.id);
+                unwritten.push(format!("{record}.definition: {why}"));
+                named.push(record);
             }
         }
     }
@@ -132,97 +176,16 @@ pub fn restore_history(
         else {
             continue;
         };
-        if !matches!(
-            feature.suppressed,
-            Some(Dimension::Parameter(_) | Dimension::Negated(_))
-        ) {
-            target.suppressed.clone_from(&feature.suppressed);
+        // A suppression a parameter binds has no history field; the residue
+        // names it.
+        let suppressed = match &feature.suppressed {
+            None => Some(None),
+            Some(Dimension::Literal(flag)) => Some(Some(*flag)),
+            Some(Dimension::Parameter(_) | Dimension::Negated(_)) => None,
         }
-        target.name.clone_from(&feature.name);
-    }
-    let json = |design: &crate::document::Design| {
-        serde_json::to_value(design).map_err(|error| {
-            CodecError::malformed(format!("the design records have no JSON form: {error}"))
-        })
-    };
-    residue(
-        &json(&read.design)?,
-        &json(&decoded.design)?,
-        &json(&replayed.design)?,
-        "design",
-        &mut unmapped,
-    );
-    refuse(&unmapped)?;
-
-    let mut restored = read.clone();
-    restored.model.adopt_omitted_arenas(&decoded.model);
-    let spellings = spellings(decoded, &stored);
-    for parameter in &replayed.design.parameters {
-        let Some(before) = stored.get(&parameter.id) else {
-            continue;
-        };
-        let definition_edited = before.definition != parameter.definition;
-        if !definition_edited && before.value == parameter.value {
-            continue;
-        }
-        let Some(at) = restored
-            .model
-            .parameters
-            .iter()
-            .position(|history| history.id == parameter.id)
-        else {
-            unmapped.push(format!(
-                "design.parameters[{}]: no history parameter restates it",
-                parameter.id
-            ));
-            continue;
-        };
-        if definition_edited {
-            let history = &restored.model.parameters[at];
-            match history_expression(
-                &parameter.definition,
-                history,
-                text,
-                &spellings,
-                &restored.model,
-            ) {
-                Ok((expression, dependencies)) => {
-                    let history = &mut restored.model.parameters[at];
-                    history.expression = expression;
-                    if history.dependencies.iter().collect::<BTreeSet<_>>()
-                        != dependencies.iter().collect::<BTreeSet<_>>()
-                    {
-                        let mut members = DistinctMembers::default();
-                        for dependency in dependencies {
-                            members.insert(dependency);
-                        }
-                        history.dependencies = members;
-                    }
-                }
-                Err(why) => unmapped.push(format!(
-                    "design.parameters[{}].definition: {why}",
-                    parameter.id
-                )),
-            }
-        }
-        let history = &mut restored.model.parameters[at];
-        history.value = history_value(
-            parameter.value.as_ref(),
-            history.value.as_ref(),
-            &parameter.kind,
-        );
-    }
-    let stored_features = decoded
-        .design
-        .features
-        .iter()
-        .map(|feature| (&feature.id, feature))
-        .collect::<HashMap<_, _>>();
-    for feature in &replayed.design.features {
-        let Some(before) = stored_features.get(&feature.id) else {
-            continue;
-        };
-        if before.suppressed == feature.suppressed && before.name == feature.name {
+        .filter(|_| target.suppressed != feature.suppressed);
+        let renamed = target.name != feature.name;
+        if suppressed.is_none() && !renamed {
             continue;
         }
         let Some(history) = restored
@@ -231,40 +194,84 @@ pub fn restore_history(
             .iter_mut()
             .find(|history| history.id == feature.id)
         else {
-            unmapped.push(format!(
-                "design.features[{}]: no history feature restates it",
-                feature.id
-            ));
+            let record = format!("design.features[{}]", feature.id);
+            unwritten.push(format!("{record}: no history feature restates it"));
+            named.push(record);
             continue;
         };
-        if before.suppressed != feature.suppressed {
-            match &feature.suppressed {
-                None => history.suppressed = None,
-                Some(Dimension::Literal(flag)) => history.suppressed = Some(*flag),
-                Some(Dimension::Parameter(_) | Dimension::Negated(_)) => unmapped.push(format!(
-                    "design.features[{}].suppressed: a parameter binds it",
-                    feature.id
-                )),
-            }
+        if let Some(flag) = suppressed {
+            target.suppressed.clone_from(&feature.suppressed);
+            history.suppressed = flag;
         }
-        if before.name != feature.name {
+        if renamed {
+            target.name.clone_from(&feature.name);
             history.name.clone_from(&feature.name);
         }
     }
-    refuse(&unmapped)?;
-    restored.design = replayed.design;
-    Ok(restored)
-}
+    let json = |design: &crate::document::Design| {
+        serde_json::to_value(design).map_err(|error| {
+            CodecError::malformed(format!("the design records have no JSON form: {error}"))
+        })
+    };
+    let mut residual = Vec::new();
+    residue(
+        &json(&read.design)?,
+        &json(&decoded.design)?,
+        &json(&replayed.design)?,
+        "design",
+        &mut residual,
+    );
+    unwritten.extend(
+        residual
+            .into_iter()
+            .filter(|path| !named.iter().any(|record| path.starts_with(record.as_str()))),
+    );
 
-fn refuse(unmapped: &[String]) -> Result<(), CodecError> {
-    if unmapped.is_empty() {
-        return Ok(());
+    for (at, (expression, dependencies)) in expressions {
+        let history = &mut restored.model.parameters[at];
+        history.expression = expression;
+        if history.dependencies.iter().collect::<BTreeSet<_>>()
+            != dependencies.iter().collect::<BTreeSet<_>>()
+        {
+            let mut members = DistinctMembers::default();
+            for dependency in dependencies {
+                members.insert(dependency);
+            }
+            history.dependencies = members;
+        }
     }
-    Err(CodecError::NotImplemented(format!(
-        "the document was read from CADIR, and its history arenas cannot state these design \
-         edits: {}",
-        unmapped.join("; ")
-    )))
+    for parameter in &replayed.design.parameters {
+        let Some(before) = stored.get(&parameter.id) else {
+            continue;
+        };
+        if before.value == parameter.value {
+            continue;
+        }
+        let Some(history) = restored
+            .model
+            .parameters
+            .iter_mut()
+            .find(|history| history.id == parameter.id)
+        else {
+            unwritten.push(format!(
+                "design.parameters[{}].value: no history parameter restates it",
+                parameter.id
+            ));
+            continue;
+        };
+        history.value = history_value(
+            parameter.value.as_ref(),
+            history.value.as_ref(),
+            &parameter.kind,
+        );
+    }
+    restored.design = replayed.design;
+    unwritten.sort();
+    unwritten.dedup();
+    Ok(Restored {
+        ir: restored,
+        unwritten,
+    })
 }
 
 /// Adds to `out` the path of each value where `read` differs from `stored`,

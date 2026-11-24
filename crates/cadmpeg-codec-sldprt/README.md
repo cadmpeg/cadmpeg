@@ -214,6 +214,17 @@ states that no edit is written. `cadmpeg convert
 --reject-lossy=export` refuses such a write; `--reject-errors` does not, because
 it judges the written file's check findings, not export losses.
 
+A part read from CADIR JSON holds none of the feature, sketch, parameter, and
+configuration arenas the writer applies native history edits from. Given its
+decode sidecar, the writer restores them from the decode of the retained source
+part and writes into them each edit of a parameter definition or value, or of a
+feature suppression or name, that the `design` records state. It leaves out an
+edit those arenas cannot state, such as a parameter comment, and a
+`writer.parameter-edit-unwritten`, `writer.feature-edit-unwritten`, or
+`writer.design-edit-unwritten` loss names it by its path. Where the retained
+source does not decode, the output is the stored part, and an
+`export:edit.dropped` loss names it.
+
 Semantic regeneration accepts solid bodies with at most five regions and at
 most six shells per solid region. Sheet regions require exactly one shell. It
 writes analytic and non-periodic NURBS geometry, body and face base colors,
