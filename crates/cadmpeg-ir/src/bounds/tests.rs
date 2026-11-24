@@ -3,7 +3,9 @@
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use super::{read_json, text_depth, Bound, Measure, Measured, Place, MAX_DOCUMENT_DEPTH};
+use super::{
+    read_json, text_depth, Bound, Measure, Measured, Place, DIGEST_WALK_DEPTH, MAX_DOCUMENT_DEPTH,
+};
 use crate::design::dimension::ParameterRef;
 use crate::design::expr::{Neutral, Node, UnaryOp};
 
@@ -29,6 +31,11 @@ fn a_document_reads_at_the_bound_and_is_refused_past_it() {
         refusal.to_string().contains("levels of a CADIR document"),
         "{refusal}"
     );
+}
+
+#[test]
+fn the_digest_walk_nests_twice_the_document_bound() {
+    assert_eq!(u64::try_from(2 * MAX_DOCUMENT_DEPTH), Ok(DIGEST_WALK_DEPTH));
 }
 
 fn measure(value: &impl Serialize) -> Measured {

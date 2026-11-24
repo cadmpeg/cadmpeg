@@ -23,6 +23,12 @@ pub const MAX_DOCUMENT_DEPTH: usize = 128;
 /// The deepest expression tree a CADIR document holds, a leaf being one level.
 pub const MAX_EXPRESSION_DEPTH: usize = 64;
 
+/// The least nesting the decode wrapper's digest walk admits: twice
+/// [`MAX_DOCUMENT_DEPTH`], for the nesting a value adds beside its level of
+/// JSON (an option, a newtype, a scalar), so that the walk reaches the first
+/// container past the bound.
+pub(crate) const DIGEST_WALK_DEPTH: u64 = 256;
+
 /// Reads `text` as one JSON value of `T`, as [`deserializer`] admits it.
 ///
 /// # Errors

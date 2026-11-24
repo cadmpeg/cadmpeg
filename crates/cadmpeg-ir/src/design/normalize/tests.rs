@@ -1694,8 +1694,8 @@ fn innermost_value(ir: &CadIr, key: &str) -> Option<ScalarDimension> {
     point.inputs[0].value.clone()
 }
 
-/// Decodes the unit cube with a datum whose point nests 300 deep, past the
-/// default recursion ceiling, and one whose point nests one deep.
+/// Decodes the unit cube with a datum whose point nests 24 deep, within the
+/// document's depth bound, and one whose point nests one deep.
 struct DeepCodec;
 
 impl CodecBackend for DeepCodec {
@@ -1717,7 +1717,7 @@ impl CodecBackend for DeepCodec {
         let mut ir = crate::examples::unit_cube().unwrap();
         ir.design
             .features
-            .push(datum("deep", DatumElement::Points(vec![nested_point(300)])));
+            .push(datum("deep", DatumElement::Points(vec![nested_point(24)])));
         ir.design.features.push(datum(
             "shallow",
             DatumElement::Points(vec![nested_point(1)]),
@@ -1753,7 +1753,11 @@ fn incomplete(result: &DecodeResult) -> Vec<&LossNote> {
 
 #[test]
 fn a_record_too_deep_to_normalize_is_kept_as_decoded_with_a_warning() {
-    let result = decode_deep(DecodePolicy::default());
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_recursion_depth = 16;
+    let result = decode_deep(policy);
+    let text = serde_json::to_string(result.ir()).unwrap();
+    assert!(crate::bounds::text_depth(&text) <= crate::bounds::MAX_DOCUMENT_DEPTH);
     let ratio = |value| Some(ScalarDimension::Ratio(Dimension::Literal(real(value))));
     assert_eq!(innermost_value(result.ir(), "shallow"), ratio(1.0));
     assert_eq!(
@@ -1775,9 +1779,7 @@ fn a_record_too_deep_to_normalize_is_kept_as_decoded_with_a_warning() {
 
 #[test]
 fn the_normalizer_reads_the_callers_ceilings() {
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_recursion_depth = 1024;
-    let result = decode_deep(policy);
+    let result = decode_deep(DecodePolicy::default());
     let ratio = Some(ScalarDimension::Ratio(Dimension::Literal(real(1.0))));
     assert_eq!(innermost_value(result.ir(), "deep"), ratio);
     assert!(incomplete(&result).is_empty());
