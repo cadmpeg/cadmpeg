@@ -387,7 +387,7 @@ fn a_dimension_fit_designation_is_capital_letters_and_a_grade() {
 }
 
 #[test]
-fn basic_single_limit_and_decimals_need_a_stated_nominal() {
+fn basic_and_single_limit_need_a_stated_nominal() {
     let length = || Some(literal(10.0, PmiQuantity::Length));
     let mut ir = document([
         stating(
@@ -416,21 +416,6 @@ fn basic_single_limit_and_decimals_need_a_stated_nominal() {
         ),
     ]);
     assert_errors(&mut ir, "basic or single-limit tolerance and no nominal", 2);
-
-    let mut ir = document([
-        stating(PmiDimensionKind::Size, None, None, Some(2)),
-        stating(
-            PmiDimensionKind::Other("slope".into()),
-            Some(literal(0.5, PmiQuantity::Ratio)),
-            None,
-            Some(2),
-        ),
-    ]);
-    assert_errors(
-        &mut ir,
-        "states decimals, but no length or angle nominal",
-        2,
-    );
 }
 
 fn warnings(ir: &mut CadIr) -> Vec<Finding> {

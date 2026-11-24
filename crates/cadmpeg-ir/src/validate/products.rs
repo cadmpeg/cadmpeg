@@ -177,7 +177,6 @@ pub(super) fn check_products(
         }
     }
     check_root_definition(ir, findings);
-    decode_set::check_component_ids(ir, findings);
     if let Some(definition) = placement_cycle(ctx, ir)? {
         record_finding(
             findings,
@@ -409,7 +408,7 @@ mod tests {
             );
             assert!(joint.set_frame_sense(frame_sense));
             ir.model.assembly_joints.push(joint);
-            crate::test_support::add_root(&mut ir);
+            crate::examples::add_document_root(&mut ir);
             let mut findings = Vec::new();
             check_products(
                 &cadmpeg_core::decode::test_support::service_decode_context(),
@@ -455,7 +454,7 @@ mod tests {
             None,
         ));
 
-        crate::test_support::add_root(&mut ir);
+        crate::examples::add_document_root(&mut ir);
         let mut findings = Vec::new();
         check_products(
             &cadmpeg_core::decode::test_support::service_decode_context(),
@@ -564,7 +563,7 @@ mod tests {
                 .expect("identity grammar"),
         );
         ir.model.assembly_joints.push(joint);
-        crate::test_support::add_root(&mut ir);
+        crate::examples::add_document_root(&mut ir);
         let mut findings = Vec::new();
         check_products(
             &cadmpeg_core::decode::test_support::service_decode_context(),
