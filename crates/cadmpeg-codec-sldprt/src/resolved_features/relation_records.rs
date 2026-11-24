@@ -398,30 +398,33 @@ impl<'l> TokenRelations<'l> {
     }
 
     /// The family and class of the relation instance that the display
-    /// scalar `display` and the driving scalar `driving` after it form: both
-    /// in one feature with the same operand cells and one token form whose
-    /// parameter-class token is two above its relation-class token, where
-    /// that token names the parameter class the lane declares once and a
-    /// relation class is declared directly before that declaration, followed
-    /// by four zero bytes.
+    /// scalar `display` forms, with the driving scalar `driving` after it
+    /// where the dimension drives a parameter: both in one feature with the
+    /// same operand cells and one token form whose parameter-class token is
+    /// two above its relation-class token, where that token names the
+    /// parameter class the lane declares once and a relation class is
+    /// declared directly before that declaration, followed by four zero
+    /// bytes.
     fn relation(
         &mut self,
         display: &FeatureInputScalar,
-        driving: &FeatureInputScalar,
+        driving: Option<&FeatureInputScalar>,
     ) -> Option<(FeatureInputRelationFamily, &'l str)> {
-        if display.role != FeatureInputScalarRole::Display
-            || driving.role != FeatureInputScalarRole::Driving
-            || display.feature_ref != driving.feature_ref
-            || display.operands.is_empty()
-            || !same_operand_cells(&display.operands, &driving.operands)
-        {
+        if display.role != FeatureInputScalarRole::Display || display.operands.is_empty() {
             return None;
         }
         let (relation_token, parameter_token) = self.tokens(display)?;
-        if self.tokens(driving)? != (relation_token, parameter_token)
-            || relation_token.checked_add(2)? != parameter_token
-        {
+        if relation_token.checked_add(2)? != parameter_token {
             return None;
+        }
+        if let Some(driving) = driving {
+            if driving.role != FeatureInputScalarRole::Driving
+                || display.feature_ref != driving.feature_ref
+                || !same_operand_cells(&display.operands, &driving.operands)
+                || self.tokens(driving)? != (relation_token, parameter_token)
+            {
+                return None;
+            }
         }
         let lane = self.lane;
         let class = match self
@@ -527,11 +530,11 @@ pub(super) fn relation_instances(
             {
                 continue;
             }
-            // A display and a driving scalar in the token form state the
-            // relation class their tokens name (§2).
-            let token_pair = lane
-                .scalars
-                .get(scalar_index + 1)
+            // A display scalar in the token form, with the driving scalar
+            // after it where one drives the dimension, states the relation
+            // class its tokens name (§2).
+            let next = lane.scalars.get(scalar_index + 1);
+            let token_pair = next
                 .filter(|driving| {
                     !candidate_counts.contains_key(driving.id.as_str())
                         && relation_class_offsets
@@ -541,7 +544,17 @@ pub(super) fn relation_instances(
                             )
                             .is_none_or(|offset| *offset >= driving.offset)
                 })
-                .and_then(|driving| token_relations.relation(scalar, driving));
+                .and_then(|driving| token_relations.relation(scalar, Some(driving)))
+                .or_else(|| {
+                    let driven_after = next.is_some_and(|driving| {
+                        driving.role == FeatureInputScalarRole::Driving
+                            && driving.feature_ref == scalar.feature_ref
+                            && same_operand_cells(&scalar.operands, &driving.operands)
+                    });
+                    (!driven_after)
+                        .then(|| token_relations.relation(scalar, None))
+                        .flatten()
+                });
             if let Some((family, class_ref)) = token_pair {
                 groups.push(RelationGroup {
                     feature_ref,
@@ -2477,6 +2490,24 @@ mod relation_records_tests {
                 .collect::<Vec<_>>(),
             vec![vec![lane.scalars[0].id.clone()]]
         );
+    }
+
+    /// A display scalar in the token form with no driving scalar after it,
+    /// a driven dimension, states the relation class its tokens name.
+    #[test]
+    fn a_driven_token_form_dimension_states_its_relation() {
+        let mut lane = token_form_lane(0x30, 0x32);
+        lane.scalars.pop();
+        let instances = relation_instances(&sketch_history(), &lane).unwrap();
+        let driven = instances
+            .iter()
+            .find(|relation| relation.scalar_refs() == [lane.scalars[3].id.clone()])
+            .expect("the driven dimension's relation");
+        assert_eq!(
+            driven.family,
+            FeatureInputRelationFamily::PointPointDistance
+        );
+        assert_eq!(driven.parameter_scalar_ref(), None);
     }
 
     /// A relation class declared in place, with its zero u32 and its
