@@ -181,6 +181,7 @@ fn relief(
     object: u32,
     overrides: &mut Vec<&'static str>,
     bound: &BTreeSet<u32>,
+    governed: bool,
     losses: &mut Vec<LossNote>,
 ) -> Option<Relief> {
     let after = RELIEF_TYPE_AFTER_NAME + if partial { PARTIAL_SHIFT } else { 0 };
@@ -206,6 +207,10 @@ fn relief(
         None
     };
     let mut length = |after: usize, what: &str, name: &'static str| {
+        // A value bound to a document variable follows the rule (§10.3).
+        if governed && matches!(slots.bound(after, bound), Ok(true)) {
+            return None;
+        }
         let metres = match slots.double(after, what) {
             Ok(metres) => metres,
             Err(reason) => {
@@ -254,13 +259,20 @@ fn flange(
         object,
         slots.jdim(ANGLE_AFTER_NAME, "angle").and_then(turn),
     );
-    let radius = take(
-        losses,
-        object,
-        slots
-            .double(RADIUS_AFTER_NAME, "bend radius")
-            .and_then(|metres| positive_length(metres, "bend radius")),
-    );
+    // A value bound to a document variable follows the rule (§10.3), which
+    // the feature states as `None`.
+    let governed = !ir.design.sheet_metal_rules.is_empty();
+    let radius = if governed && matches!(slots.bound(RADIUS_AFTER_NAME, bound), Ok(true)) {
+        None
+    } else {
+        take(
+            losses,
+            object,
+            slots
+                .double(RADIUS_AFTER_NAME, "bend radius")
+                .and_then(|metres| positive_length(metres, "bend radius")),
+        )
+    };
     let mut overrides = Vec::new();
     if radius.is_some() && matches!(slots.bound(RADIUS_AFTER_NAME, bound), Ok(false)) {
         overrides.push("bend_radius");
@@ -300,7 +312,15 @@ fn flange(
         None => None,
     };
     let relief = if extent.is_some() {
-        relief(slots, partial, object, &mut overrides, bound, losses)
+        relief(
+            slots,
+            partial,
+            object,
+            &mut overrides,
+            bound,
+            governed,
+            losses,
+        )
     } else {
         None
     };
