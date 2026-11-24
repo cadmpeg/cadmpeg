@@ -7,9 +7,10 @@
 use super::error;
 use super::nominals::{nominal_quantity, BoundParameters};
 use crate::design::dimension::Dimension;
-use crate::design::parameter::{Deviations, FitDeviations, Tolerance};
+use crate::design::parameter::{Deviations, FitDeviations, LimitSide, Tolerance};
 use crate::pmi::{LimitsAndFits, PmiDimension, PmiQuantity};
 use crate::report::check::Finding;
+use crate::scalar::FiniteReal;
 
 pub(super) fn check_dimension_tolerance(
     annotation: &str,
@@ -59,8 +60,9 @@ pub(super) fn check_dimension_tolerance(
 /// What a PMI dimension states beside its nominal (part 10, §8): a fit's
 /// designations are capital letters and a grade; a tolerance goes with a
 /// length or angle, and a fit with a length; `Basic` and `SingleLimit` go
-/// with a stated nominal; and a tolerance or `decimals` equal to the bound
-/// parameter's is a second spelling of it (D60, D61).
+/// with a stated nominal; and a tolerance, compared in the dimension's sign,
+/// or `decimals` equal to the bound parameter's is a second spelling of it
+/// (D60, D61).
 pub(super) fn check_dimension_statements(
     parameters: &BoundParameters<'_>,
     annotation: &str,
@@ -106,13 +108,17 @@ pub(super) fn check_dimension_statements(
         }
     }
     let bound = match &dimension.nominal {
-        Some(Dimension::Parameter(id)) => parameters.design(id.as_str()).map(|p| (p, true)),
-        Some(Dimension::Negated(id)) => parameters.design(id.as_str()).map(|p| (p, false)),
+        Some(Dimension::Parameter(id)) => parameters.design(id.as_str()).map(|p| (p, false)),
+        Some(Dimension::Negated(id)) => parameters.design(id.as_str()).map(|p| (p, true)),
         Some(Dimension::Literal(_)) | None => None,
     };
-    if let Some((parameter, same_sign)) = bound {
-        if same_sign && parameter.tolerance.is_some() && dimension.tolerance == parameter.tolerance
-        {
+    if let Some((parameter, negated)) = bound {
+        let in_dimension_sign = if negated {
+            parameter.tolerance.as_ref().and_then(mirrored)
+        } else {
+            parameter.tolerance.clone()
+        };
+        if in_dimension_sign.is_some() && dimension.tolerance == in_dimension_sign {
             warning(
                 findings,
                 annotation,
@@ -133,6 +139,39 @@ pub(super) fn check_dimension_statements(
             );
         }
     }
+}
+
+/// A tolerance in the opposite sign: its lower and upper exchanged and
+/// negated (part 10, D61). A fit keeps its designations.
+fn mirrored(tolerance: &Tolerance) -> Option<Tolerance> {
+    let flip = |deviations: &Deviations| {
+        Some(Deviations {
+            lower: FiniteReal::new(-deviations.upper.get())?,
+            upper: FiniteReal::new(-deviations.lower.get())?,
+        })
+    };
+    Some(match tolerance {
+        Tolerance::Deviations(deviations) => Tolerance::Deviations(flip(deviations)?),
+        Tolerance::Fit {
+            fit,
+            mate,
+            deviations,
+        } => Tolerance::Fit {
+            fit: fit.clone(),
+            mate: mate.clone(),
+            deviations: match deviations {
+                Some(FitDeviations::Cell(stated)) => Some(FitDeviations::Cell(flip(stated)?)),
+                Some(FitDeviations::Own(stated)) => Some(FitDeviations::Own(flip(stated)?)),
+                Some(FitDeviations::Unchecked(stated)) => {
+                    Some(FitDeviations::Unchecked(flip(stated)?))
+                }
+                None => None,
+            },
+        },
+        Tolerance::SingleLimit(LimitSide::Minimum) => Tolerance::SingleLimit(LimitSide::Maximum),
+        Tolerance::SingleLimit(LimitSide::Maximum) => Tolerance::SingleLimit(LimitSide::Minimum),
+        Tolerance::General | Tolerance::Basic => tolerance.clone(),
+    })
 }
 
 /// A designation's `form_variance` holds capital letters only, and its

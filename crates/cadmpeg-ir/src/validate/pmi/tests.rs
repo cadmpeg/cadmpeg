@@ -470,3 +470,26 @@ fn a_directed_location_has_two_targets() {
         "{findings:#?}"
     );
 }
+
+/// Under `Negated` the tolerance compares in the dimension's sign: the
+/// parameter's mirrored, its lower and upper exchanged and negated (D61).
+#[test]
+fn a_negated_dimension_compares_its_tolerance_with_the_parameters_mirrored() {
+    let negated = |tolerance: Tolerance| {
+        let mut ir = bound_document(
+            [("length", ValueKind::Quantity(Quantity::LENGTH))],
+            [stating(
+                PmiDimensionKind::Size,
+                Some(Dimension::Negated(parameter_id("length"))),
+                Some(tolerance),
+                None,
+            )],
+        );
+        ir.design.parameters[0].tolerance = Some(Tolerance::Deviations(deviations(-0.1, 0.2)));
+        warnings(&mut ir)
+    };
+    let found = negated(Tolerance::Deviations(deviations(-0.2, 0.1)));
+    assert_eq!(found.len(), 1, "{found:#?}");
+    assert!(found[0].message.contains("(D61)"));
+    assert!(negated(Tolerance::Deviations(deviations(-0.1, 0.2))).is_empty());
+}
