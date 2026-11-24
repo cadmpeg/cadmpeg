@@ -23,6 +23,10 @@ pub(super) enum OnshapeLossCode {
     EdgeGeometryUnsampled,
     StepUnreadable,
     RollbackUnread,
+    AssemblyReferenceUnresolved,
+    AssemblyRecordUnsupported,
+    MateUnsupported,
+    MateLimitsUnresolved,
 }
 impl OnshapeLossCode {
     const fn code(self) -> &'static str {
@@ -46,6 +50,10 @@ impl OnshapeLossCode {
             Self::EdgeGeometryUnsampled => "topology.edge-geometry-unsampled",
             Self::StepUnreadable => "step.unreadable",
             Self::RollbackUnread => "history.rollback-unread",
+            Self::AssemblyReferenceUnresolved => "assembly.reference-unresolved",
+            Self::AssemblyRecordUnsupported => "assembly.record-unsupported",
+            Self::MateUnsupported => "assembly.mate-unsupported",
+            Self::MateLimitsUnresolved => "assembly.mate-limits-unresolved",
         }
     }
     pub(super) fn matches(self, note: &LossNote) -> bool {

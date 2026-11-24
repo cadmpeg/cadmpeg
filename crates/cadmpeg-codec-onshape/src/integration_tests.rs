@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Synthetic bundle parity and admission tests.
+mod assembly;
 mod bundle;
 mod face_sketch;
 mod member_isolation;

@@ -115,3 +115,24 @@ Question: Does the sign of the `sketchMatrix` normal of a face sketch follow the
 Known: The `sketchMatrix` normal sign and the face `orientation` value are both stored.
 
 Need: Place sketches on faces whose `orientation` is `false` and on faces whose surface normal points into the solid. Compare the matrix normal with the surface normal and the orientation value.
+
+## ONSHAPE-011 — Assembly mate parameter quantities
+
+Question: Which assembly feature parameters establish enabled mate limits,
+offsets, and their signs relative to the evaluated connector frames?
+
+Known: An assembly definition stores mate types and pairs of evaluated
+connector frames in `featureData.matedEntities`. Each connector stores an
+instance path and an origin with three axes. The assembly feature response
+stores the corresponding native feature parameters.
+
+Need: Save a two-part revolute assembly with a lower angular limit, then an
+upper angular limit, then an angular offset. Repeat with a slider's lower
+and upper travel limits. Compare the feature parameters and evaluated
+connector frames after each control change.
+
+Conflict: Applying an offset already included in an evaluated connector
+frame changes the joint twice. A limit's sign depends on connector order.
+
+Note: Evaluated mates retain their frames and record
+`assembly.mate-limits-unresolved`. The feature response remains a bundle asset.

@@ -20,14 +20,20 @@ microversion across all responses that declare a microversion.
 
 ## 2. Manifest and members
 
-`document.microversion` is a nonblank string. `elements` is an array with
-one element. That element has `type: "PARTSTUDIO"` and a nonblank `id`.
-The ID consists of ASCII letters, digits, underscores and hyphens. It forms
-the member prefix `partstudios/<id>`.
+`document.microversion` is a nonblank string. `elements` is an array of
+element records. Each record has a `type` and a nonblank `id`.
+`PARTSTUDIO` identifies a Part Studio. `ASSEMBLY` identifies an assembly.
+`root_element` identifies the selected root element.
+The ID consists of ASCII letters, digits, underscores and hyphens. A Part
+Studio ID forms the member prefix `partstudios/<id>`. An assembly ID forms
+`assemblies/<id>`. `external` entries store `documentId`, `elementId`, and
+`microversionId` for references into other documents.
 
 | Member | Value |
 | --- | --- |
 | `manifest.json` | Bundle identity and pinned document snapshot |
+| `assemblies/<id>/definition.json` | Assembly definition response |
+| `assemblies/<id>/features.json` | Assembly feature response |
 | `partstudios/<id>/features.json` | Ordered Part Studio feature response |
 | `partstudios/<id>/bodydetails/index.json` | Rollback ordinals with body responses |
 | `partstudios/<id>/bodydetails/<ordinal>.json` | Input topology at that rollback |
@@ -237,3 +243,38 @@ feature in source operand order. Feature ordinals give timeline order.
 
 Each bound applies before the corresponding unbounded operation. A compact
 reference also charges its expanded value size and depth.
+
+## Assembly definitions
+
+An assembly definition stores `rootAssembly`, `subAssemblies`, and `parts`.
+`rootAssembly.instances` lists direct instances. Each instance stores `id`
+and `type`. Its reference fields are `documentId`, `elementId`,
+`documentMicroversion`, and `configuration`. Optional `name` and `suppressed`
+fields state the instance name and suppression state.
+A `Part` instance also stores `partId`. An `Assembly` instance refers to a
+subassembly definition by document, element, microversion, and configuration.
+`subAssemblies` holds the corresponding definition records and their direct
+`instances`. `parts` holds part identities and names.
+
+`rootAssembly.occurrences` stores placements. `path` is the ordered array of
+instance IDs from the root. `transform` holds 16 row-major coefficients. The
+matrix maps prototype coordinates to root assembly coordinates. Translation
+uses metres. The bottom row is `[0, 0, 0, 1]`. `fixed` grounds the occurrence.
+Nested placement is the inverse parent transform multiplied by the child
+transform. `suppressed` holds an instance out of the assembly.
+
+An evaluated assembly feature stores `id`, `suppressed`, and `featureData`.
+A mate's `featureData` stores `mateType` and two `matedEntities`. Each mated
+entity stores `matedOccurrence`, an instance path relative to its assembly,
+and `matedCS`, its connector frame in the part coordinates. `matedCS` stores
+three-component `origin`, `xAxis`, `yAxis`, and `zAxis` arrays. The origin uses
+metres. The axes are the columns of the connector rotation matrix.
+
+| `mateType` | Joint family |
+| --- | --- |
+| `FASTENED` | Fixed |
+| `REVOLUTE` | Revolute |
+| `SLIDER` | Slider |
+| `CYLINDRICAL` | Cylindrical |
+| `PLANAR` | Plane coincidence with aligned axes |
+| `BALL` | Ball |
