@@ -37,6 +37,8 @@ pub(crate) enum AlibreLossCode {
     TopologyFaceOwnerUnprojected,
     /// A framed record has no leading source-name component.
     SourceRecordNameUnresolved,
+    /// Integers of the extended entity base have no neutral projection.
+    SourceRecordExtensionsUnprojected,
     /// The ACIS save format lies outside the verified Spatial ACIS bands.
     SourceDialectUnverified,
     /// Streams of the container carry no decoded content in the IR.
@@ -56,6 +58,7 @@ impl AlibreLossCode {
         Self::TopologyShellUnprojected,
         Self::TopologyFaceOwnerUnprojected,
         Self::SourceRecordNameUnresolved,
+        Self::SourceRecordExtensionsUnprojected,
         Self::SourceDialectUnverified,
         Self::SourceStreamsUndecoded,
     ];
@@ -72,6 +75,7 @@ impl AlibreLossCode {
             Self::TopologyShellUnprojected => "topology.shell-unprojected",
             Self::TopologyFaceOwnerUnprojected => "topology.face-owner-unprojected",
             Self::SourceRecordNameUnresolved => "source.record-name-unresolved",
+            Self::SourceRecordExtensionsUnprojected => "source.record-extensions-unprojected",
             Self::SourceDialectUnverified => "source.kernel-dialect-unverified",
             Self::SourceStreamsUndecoded => "source.streams-undecoded",
         }
@@ -89,6 +93,7 @@ impl AlibreLossCode {
             | Self::TopologyShellUnprojected
             | Self::TopologyFaceOwnerUnprojected
             | Self::SourceRecordNameUnresolved
+            | Self::SourceRecordExtensionsUnprojected
             | Self::SourceDialectUnverified
             | Self::SourceStreamsUndecoded => Severity::Warning,
         }
@@ -102,7 +107,8 @@ impl AlibreLossCode {
             | Self::VertexToleranceUnresolved
             | Self::EdgeToleranceUnresolved
             | Self::TopologyShellUnprojected
-            | Self::TopologyFaceOwnerUnprojected => LossTaxonomy::GeometryNotTransferred,
+            | Self::TopologyFaceOwnerUnprojected
+            | Self::SourceRecordExtensionsUnprojected => LossTaxonomy::GeometryNotTransferred,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::ContainerNoncanonical | Self::SourceRecordNameUnresolved => {
                 LossTaxonomy::NoncanonicalSourceSyntax
@@ -145,6 +151,7 @@ mod tests {
                 "topology.shell-unprojected",
                 "topology.face-owner-unprojected",
                 "source.record-name-unresolved",
+                "source.record-extensions-unprojected",
                 "source.kernel-dialect-unverified",
                 "source.streams-undecoded",
             ]

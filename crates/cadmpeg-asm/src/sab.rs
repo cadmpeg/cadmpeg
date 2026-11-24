@@ -585,19 +585,49 @@ pub(crate) fn lex(
     Ok(out)
 }
 
+/// The integers [`normalize_extended_base`] removed. Neither integer has a
+/// neutral projection, and the source states neither one.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ExtendedBaseRemoval {
+    /// Records that lost the integer between the entity id and the pattern
+    /// reference.
+    pub base_integers: usize,
+    /// `body` records that also lost the integer before the first-lump
+    /// reference.
+    pub body_integers: usize,
+}
+
+impl ExtendedBaseRemoval {
+    /// Whether the normalization removed nothing.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.base_integers == 0 && self.body_integers == 0
+    }
+}
+
 /// Rewrite records of a save format with the extended entity base to the base
-/// the shared decoders read: entity id, then pattern reference.
+/// the shared decoders read: entity id, then pattern reference. Returns what
+/// it removed, for the caller to report.
 ///
-/// A record qualifies when its third value is an integer followed by a
-/// reference; that integer is removed. A `body` record then also stores one
-/// integer before its first-lump reference, which is removed too.
-pub fn normalize_extended_base(records: &mut [Record], save_format: Option<u32>) {
+/// A record qualifies when it is not an attribute record (its name does not end
+/// in `attrib`; attribute records keep their stored form) and its third value
+/// is an integer followed by a reference. That integer is removed. A `body`
+/// record then also stores one integer before its first-lump reference, which
+/// is removed too.
+pub fn normalize_extended_base(
+    records: &mut [Record],
+    save_format: Option<u32>,
+) -> ExtendedBaseRemoval {
+    let mut removed = ExtendedBaseRemoval::default();
     if !save_format
         .is_some_and(|version| crate::kernel_header::EXTENDED_ACIS_SAVE_FORMATS.contains(&version))
     {
-        return;
+        return removed;
     }
     for record in records {
+        if record.name.ends_with("attrib") {
+            continue;
+        }
         let value_positions: Vec<usize> = record
             .tokens
             .iter()
@@ -610,12 +640,14 @@ pub fn normalize_extended_base(records: &mut [Record], save_format: Option<u32>)
         if !matches!(value(2), Some(Token::Long(_))) || !matches!(value(3), Some(Token::Ref(_))) {
             continue;
         }
+        removed.base_integers += 1;
         let mut drop = vec![value_positions[2]];
         if record.head() == "body"
             && matches!(value(3), Some(Token::Ref(_)))
             && matches!(value(4), Some(Token::Long(_)))
         {
             drop.push(value_positions[4]);
+            removed.body_integers += 1;
         }
         let kept: Vec<Token> = record
             .tokens
@@ -626,6 +658,7 @@ pub fn normalize_extended_base(records: &mut [Record], save_format: Option<u32>)
             .collect();
         record.tokens = kept.into();
     }
+    removed
 }
 
 /// Identifier intern table of a stream that writes `name%<u32 LE>` for the
@@ -936,7 +969,7 @@ fn frame_impl(
 mod tests {
     use super::{
         exact_identifier_at, frame as frame_stream, frame_history as frame_history_stream,
-        payload_token, Record,
+        payload_token, Record, Token,
     };
     use crate::kernel_header::RefWidth;
     use crate::stream_error::{StreamError, StreamFailure};
@@ -2263,5 +2296,63 @@ mod tests {
         let plain = interned_record("shell", [0x80, 0, 0, 0]);
         let error = frame_interned(&plain, false).expect_err("no table, raw suffix");
         assert!(format!("{error:?}").contains("not valid UTF-8"));
+    }
+
+    fn base_record(name: &str, tokens: Vec<Token>) -> Record {
+        Record {
+            index: 0,
+            name: name.to_owned(),
+            tokens: tokens.into(),
+            offset: 0,
+            len: 0,
+        }
+    }
+
+    #[test]
+    fn extended_base_normalization_reports_what_it_removes() {
+        let reference = |at| Token::Ref(at);
+        let extended = |name: &str, extra: Vec<Token>| {
+            let mut tokens = vec![reference(-1), Token::Long(5), Token::Long(77), reference(-1)];
+            tokens.extend(extra);
+            base_record(name, tokens)
+        };
+        let attribute = base_record(
+            "name_attrib-gen-attrib",
+            vec![reference(-1), Token::Long(6), Token::Long(77), reference(-1)],
+        );
+        let mut records = vec![
+            extended("body", vec![Token::Long(88), reference(2)]),
+            extended("face", vec![reference(3)]),
+            attribute.clone(),
+            // The third value is a reference: the record has no extended base.
+            base_record("point", vec![reference(-1), Token::Long(7), reference(-1)]),
+        ];
+        let removed = super::normalize_extended_base(&mut records, Some(3300));
+        assert_eq!(removed, super::ExtendedBaseRemoval { base_integers: 2, body_integers: 1 });
+        assert!(!removed.is_empty());
+        assert_eq!(
+            *records[0].tokens,
+            [reference(-1), Token::Long(5), reference(-1), reference(2)]
+        );
+        assert_eq!(
+            *records[1].tokens,
+            [reference(-1), Token::Long(5), reference(-1), reference(3)]
+        );
+        assert_eq!(records[2].tokens, attribute.tokens, "attribute records keep their form");
+        assert_eq!(records[3].tokens.len(), 3);
+    }
+
+    #[test]
+    fn extended_base_normalization_leaves_other_save_formats_alone() {
+        let record = base_record(
+            "body",
+            vec![Token::Ref(-1), Token::Long(5), Token::Long(77), Token::Ref(-1)],
+        );
+        for save_format in [None, Some(700), Some(10_000)] {
+            let mut records = vec![record.clone()];
+            let removed = super::normalize_extended_base(&mut records, save_format);
+            assert!(removed.is_empty(), "{save_format:?}");
+            assert_eq!(records[0].tokens, record.tokens);
+        }
     }
 }

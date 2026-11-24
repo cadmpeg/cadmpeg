@@ -133,6 +133,7 @@ fn decode_acis_binary(
             "ACIS binary header has no record stream",
         ));
     };
+    let mut extensions = false;
     let payload = if ctx.container_only() {
         None
     } else {
@@ -152,7 +153,9 @@ fn decode_acis_binary(
                 CodecError::malformed(format_args!("ACIS SAB framing failed: {error}"))
             })
         })?;
-        sab::normalize_extended_base(&mut records, header.metadata.save_format_version);
+        extensions =
+            !sab::normalize_extended_base(&mut records, header.metadata.save_format_version)
+                .is_empty();
         let brep = decode_with_header(
             ctx,
             &records,
@@ -183,12 +186,23 @@ fn decode_acis_binary(
         None,
         layers(&evidence),
     )?;
-    if header.metadata.unreadable_product_fields().next().is_some() {
+    if extensions {
+        result.body.losses.push(SatLossCode::SourceRecordExtensionsUnprojected.note(
+            "ACIS base extension integers have no neutral projection; shared entity fields decoded; complete stream retained"));
+    }
+    let header_span = header
+        .metadata
+        .unreadable_product_fields()
+        .next()
+        .is_some()
+        .then_some(("sat:source:header#0", 0..stream.offset()));
+    let extension_span = extensions.then_some(("sat:source:record-extensions#0", 0..bytes.len()));
+    if header_span.is_some() || extension_span.is_some() {
         retain_source(
             ctx,
             &mut result,
             bytes,
-            [("sat:source:header#0", 0..stream.offset())],
+            header_span.into_iter().chain(extension_span),
         )?;
     }
     Ok(result)
@@ -304,8 +318,9 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
             .map(|span| span.start),
         &mut result.body.losses,
     );
-    let extensions =
-        !ctx.container_only() && (1100..10_000).contains(&text_header.save_format_version);
+    let extensions = !ctx.container_only()
+        && cadmpeg_asm::kernel_header::EXTENDED_ACIS_SAVE_FORMATS
+            .contains(&text_header.save_format_version);
     if extensions {
         result.body.losses.push(SatLossCode::SourceRecordExtensionsUnprojected.note(
             "ACIS base extension integers and class-specific tails have no neutral projection; shared entity fields decoded; complete stream retained"));

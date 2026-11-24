@@ -203,6 +203,11 @@ fn every_specimen_decodes_to_a_checked_solid() {
         let kinds = loss_kinds(&result);
         assert!(kinds.contains(&AlibreLossCode::SourceDialectUnverified.kind()));
         assert!(kinds.contains(&AlibreLossCode::SourceStreamsUndecoded.kind()));
+        // Every specimen is at save format 33.0, which stores the extended entity base.
+        assert!(
+            kinds.contains(&AlibreLossCode::SourceRecordExtensionsUnprojected.kind()),
+            "{name}"
+        );
     }
 }
 

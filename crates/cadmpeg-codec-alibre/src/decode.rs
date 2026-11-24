@@ -53,7 +53,8 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             message: message.into(),
         });
     };
-    let brep = decode_kernel_stream(ctx, bytes, &kernel)?;
+    let (brep, removed) = decode_kernel_stream(ctx, bytes, &kernel)?;
+    losses.extend(extensions_loss(removed));
     losses.extend(container.undecoded_streams_loss());
     from_kernel(ctx, classification, &kernel, brep, losses, digest)
 }
@@ -62,7 +63,7 @@ fn decode_kernel_stream(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     kernel: &KernelStream,
-) -> Result<AsmBrep, CodecError> {
+) -> Result<(AsmBrep, sab::ExtendedBaseRemoval), CodecError> {
     let header = &kernel.header;
     let limit = acis_header::solved_record_limit_with_header(bytes, header);
     let framed = sab::frame_for_header(
@@ -79,8 +80,8 @@ fn decode_kernel_stream(
             CodecError::malformed(format_args!("ACIS SAB framing failed: {error}"))
         })
     })?;
-    sab::normalize_extended_base(&mut records, header.metadata.save_format_version);
-    decode_with_header(
+    let removed = sab::normalize_extended_base(&mut records, header.metadata.save_format_version);
+    let brep = decode_with_header(
         ctx,
         &records,
         bytes,
@@ -88,7 +89,19 @@ fn decode_kernel_stream(
         SAB_STREAM,
         cadmpeg_asm::asm_format!("alibre"),
         DecodePurpose::Model,
-    )
+    )?;
+    Ok((brep, removed))
+}
+
+/// The one note of a stream whose records stored the extended entity base. The
+/// decoder reads the shared entity fields and drops the integers the base adds.
+fn extensions_loss(removed: sab::ExtendedBaseRemoval) -> Option<LossNote> {
+    (!removed.is_empty()).then(|| {
+        AlibreLossCode::SourceRecordExtensionsUnprojected.note(format!(
+            "the extended entity base stores an integer in {} record(s), and a body record stores one more in {}; the source states neither, and the decoder drops them",
+            removed.base_integers, removed.body_integers
+        ))
+    })
 }
 
 fn header_attributes(header: &KernelHeader) -> BTreeMap<String, String> {
