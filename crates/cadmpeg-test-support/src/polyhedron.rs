@@ -151,12 +151,11 @@ pub fn polyhedron(corners: &[[f64; 3]], faces: &[&[usize]]) -> Result<CadIr, Exa
     let region = polyhedron_id!(RegionId, "region", 0_usize);
     let body = polyhedron_id!(BodyId, "body", 0_usize);
     ir.geometry.shells.push(Shell::new(shell, region.clone()));
-    ir.geometry.regions.push(Region {
-        id: region.clone(),
-        body: body.clone(),
-        shells: vec![polyhedron_id!(ShellId, "shell", 0_usize)],
-        native_ref: None,
-    });
+    ir.geometry.regions.push(Region::new(
+        region.clone(),
+        body.clone(),
+        vec![polyhedron_id!(ShellId, "shell", 0_usize)],
+    ));
     ir.geometry.bodies.push(Body {
         id: body,
         kind: BodyKind::Solid,
@@ -165,6 +164,7 @@ pub fn polyhedron(corners: &[[f64; 3]], faces: &[&[usize]]) -> Result<CadIr, Exa
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     ir.finalize();
     Ok(ir)

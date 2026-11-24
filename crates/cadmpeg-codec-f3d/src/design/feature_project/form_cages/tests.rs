@@ -1012,10 +1012,6 @@ fn neutral_form_cage(id: &str, uuid: &str) -> cadmpeg_ir::SubdSurface {
                 "FusionAssetName[Active]/TSplines.BlobParts/TSpline.{uuid}.tsm"
             ))
             .unwrap(),
-            name: None,
-            color: None,
-            visible: None,
-            layer: None,
             instance_path: Vec::new(),
         }),
         cage: cadmpeg_ir::subd::SubdCage::default(),

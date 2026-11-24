@@ -1312,7 +1312,7 @@ fn surface_patch_reference_occupancy_preserves_boundary_endpoints() {
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             ref continuity,
             ..
-        })) if continuity.resolved().map(|resolved| resolved.conditions.as_slice())
+        })) if continuity.as_ref().map(|resolved| resolved.conditions.as_slice())
             == Some(
                 &[
                     cadmpeg_ir::features::surface_inputs::FilledSurfaceBoundaryCondition::Contact {},
@@ -1347,7 +1347,7 @@ fn surface_patch_reference_occupancy_preserves_boundary_endpoints() {
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             ref continuity,
             ..
-        })) if continuity.resolved().map(|resolved| resolved.conditions.as_slice())
+        })) if continuity.as_ref().map(|resolved| resolved.conditions.as_slice())
             == Some(
                 &[
                     cadmpeg_ir::features::surface_inputs::FilledSurfaceBoundaryCondition::Contact {},

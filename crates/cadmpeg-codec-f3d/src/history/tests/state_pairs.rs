@@ -1309,13 +1309,13 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
-    brep.regions.push(Region {
-        id: RegionId::mint(id(2)).expect("identity grammar"),
-        body: BodyId::mint(id(1)).expect("identity grammar"),
-        shells: vec![ShellId::mint(id(3)).expect("identity grammar")],
-        native_ref: None,
-    });
+    brep.regions.push(Region::new(
+        RegionId::mint(id(2)).expect("identity grammar"),
+        BodyId::mint(id(1)).expect("identity grammar"),
+        vec![ShellId::mint(id(3)).expect("identity grammar")],
+    ));
     brep.shells.push(Shell::new(
         ShellId::mint(id(3)).expect("identity grammar"),
         RegionId::mint(id(2)).expect("identity grammar"),

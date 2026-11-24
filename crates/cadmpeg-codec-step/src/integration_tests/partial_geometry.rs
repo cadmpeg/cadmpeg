@@ -191,7 +191,7 @@ fn a_fitting_resource_limit_is_reported_by_the_encoder() {
 #[test]
 fn a_face_with_an_unwritable_inner_boundary_is_not_filled_in() {
     let mut ir = unit_cube().unwrap();
-    let outer = ir.geometry.faces[0].loops.iter().next().unwrap().clone();
+    let outer = ir.geometry.faces[0].loops.stated().next().unwrap().clone();
     let inner = cadmpeg_ir::ids::LoopId::mint("test:recovery:loop#missing").unwrap();
     ir.geometry.faces[0].loops = cadmpeg_ir::topology::FaceLoops::classified(outer, vec![inner]);
     let mut output = Vec::new();

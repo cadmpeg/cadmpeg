@@ -46,7 +46,7 @@ pub(crate) fn decode(bytes: &[u8]) -> DecodeResult {
         .unwrap()
 }
 pub(crate) fn wire(result: &DecodeResult) -> Value {
-    let mut wire = serde_json::to_value(result.ir()).unwrap();
+    let mut wire = cadmpeg_test_support::wire::in_memory_json(result.ir());
     wire["model"]["features"]
         .as_array_mut()
         .unwrap()

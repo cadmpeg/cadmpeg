@@ -407,13 +407,22 @@ fn a_mesh_with_a_non_finite_vertex_is_rejected() {
     };
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
-    let body = display_geometry(&ctx, "part.ol", &geometry, None, &mut ir, &mut losses)
-        .unwrap()
-        .unwrap();
-    assert_eq!(body.as_str(), "pvz:model:body#part.ol");
+    let part: cadmpeg_ir::ids::ProductDefinitionId =
+        "pvz:model:product-definition#part".try_into().unwrap();
+    display_geometry(
+        &ctx,
+        "part.ol",
+        &geometry,
+        None,
+        Some(part.clone()),
+        &mut ir,
+        &mut losses,
+    )
+    .unwrap();
+    assert!(ir.geometry.bodies.is_empty());
     assert_eq!(ir.model.tessellations.len(), 1);
     let mesh = &ir.model.tessellations[0];
-    assert_eq!(mesh.body.as_ref(), Some(&body));
+    assert_eq!(mesh.of, cadmpeg_ir::tessellation::Meshed::definition(part));
     assert_eq!(
         mesh.vertices()[1].get(),
         cadmpeg_ir::math::Point3::new(f64::from(0.001_f32) * 1000.0, 0.0, 0.0)
@@ -430,11 +439,9 @@ fn a_mesh_with_a_non_finite_vertex_is_rejected() {
         meshes: Vec::new(),
         ..geometry
     };
-    assert!(
-        display_geometry(&ctx, "e.ol", &empty, None, &mut ir, &mut Vec::new())
-            .unwrap()
-            .is_none()
-    );
+    let meshes = ir.model.tessellations.len();
+    display_geometry(&ctx, "e.ol", &empty, None, None, &mut ir, &mut Vec::new()).unwrap();
+    assert_eq!(ir.model.tessellations.len(), meshes);
 }
 
 #[test]
@@ -524,7 +531,7 @@ fn an_appearance_colour_outside_the_unit_range_is_rejected() {
         crate::ol::decode(&ctx, cadmpeg_core::decode::View::over_retained(&bytes)).unwrap();
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
-    display_geometry(&ctx, "hot.ol", &geometry, None, &mut ir, &mut losses).unwrap();
+    display_geometry(&ctx, "hot.ol", &geometry, None, None, &mut ir, &mut losses).unwrap();
     assert!(ir.model.appearances[0].base_color.is_none());
     assert_eq!(ir.model.appearance_bindings.len(), 1);
     assert_eq!(

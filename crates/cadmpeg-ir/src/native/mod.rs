@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::text::{CodecId, NonBlankString};
 use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::{JsonSchema, Schema, SchemaGenerator};
@@ -78,6 +79,26 @@ fn max_container_depth(value: &Value, limit: usize) -> Option<usize> {
         }
     }
     Some(deepest)
+}
+
+/// Rewrites every negative zero inside `value` as zero: a document holds one
+/// zero in every float, a native record's included (§2.5).
+fn hold_one_zero(value: &mut Value) {
+    let mut pending = vec![value];
+    while let Some(value) = pending.pop() {
+        match value {
+            Value::Array(items) => pending.extend(items.iter_mut()),
+            Value::Object(entries) => pending.extend(entries.values_mut()),
+            Value::Number(number)
+                if number
+                    .as_f64()
+                    .is_some_and(|number| number == 0.0 && number.is_sign_negative()) =>
+            {
+                *value = Value::from(0.0);
+            }
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+        }
+    }
 }
 
 /// Records `value` at `depth` when it is a container.
@@ -159,6 +180,9 @@ pub enum NativeConvertError {
         #[source]
         source: Box<NativeConvertError>,
     },
+    /// An arena name holds no character that is not white space.
+    #[error("native arena name {0:?} is blank")]
+    BlankArena(String),
     /// A named arena contains a refused record.
     #[error("native arena {arena}: {source}")]
     Arena {
@@ -177,6 +201,14 @@ pub enum NativeConvertError {
     /// A source-independent unknown record has no retained source counterpart.
     #[error("native unknown record has no retained source record: {0}")]
     MissingRetainedSourceRecord(String),
+    /// A native namespace is named by text that is not a codec id (§2.2).
+    #[error("native namespace {0:?} is not a codec id")]
+    NamespaceNotCodecId(String),
+}
+
+/// The codec id that names the native namespace `format`.
+pub(crate) fn namespace_codec(format: &str) -> Result<CodecId, NativeConvertError> {
+    CodecId::new(format).ok_or_else(|| NativeConvertError::NamespaceNotCodecId(format.to_owned()))
 }
 
 impl From<NativeConvertError> for cadmpeg_core::CodecError {
@@ -287,6 +319,7 @@ impl NativeRecord {
             };
             max_field_depth = max_field_depth.max(field_depth);
         }
+        fields.values_mut().for_each(hold_one_zero);
         let json = render(&id, &fields);
         let depth = 1 + max_field_depth;
         Ok(Self { id, json, depth })
@@ -527,7 +560,8 @@ impl NativeRecord {
     }
 
     /// Build a canonical record directly from pre-formatted canonical compact
-    /// JSON text (`{"id":...}` with `id` first and remaining keys sorted) of
+    /// JSON text (`{"id":...}` with `id` first, remaining keys sorted, and a
+    /// float zero written `0.0`, never `-0.0`, per §2.5) of
     /// known container nesting `depth` (`>= 1`, `<= MAX_NATIVE_NESTING_DEPTH + 1`).
     ///
     /// Enforces identity validation, caller depth admission, and retained-byte
@@ -849,6 +883,11 @@ where
     Ok(converted)
 }
 
+/// The arena key `name` spells, refused when it is blank.
+fn arena_name(name: &str) -> Result<NonBlankString, NativeConvertError> {
+    NonBlankString::new(name).ok_or_else(|| NativeConvertError::BlankArena(name.to_owned()))
+}
+
 /// Source-format arena collection.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -856,7 +895,7 @@ where
 pub struct NativeNamespace {
     /// Record arenas keyed by stable arena name.
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    arenas: BTreeMap<String, Vec<NativeRecord>>,
+    arenas: BTreeMap<NonBlankString, Vec<NativeRecord>>,
 }
 
 impl NativeNamespace {
@@ -870,12 +909,12 @@ impl NativeNamespace {
 
     /// Return the record arenas keyed by stable arena name.
     #[must_use]
-    pub fn arenas(&self) -> &BTreeMap<String, Vec<NativeRecord>> {
+    pub fn arenas(&self) -> &BTreeMap<NonBlankString, Vec<NativeRecord>> {
         &self.arenas
     }
 
     /// Return the record arenas for modification.
-    pub fn arenas_mut(&mut self) -> &mut BTreeMap<String, Vec<NativeRecord>> {
+    pub fn arenas_mut(&mut self) -> &mut BTreeMap<NonBlankString, Vec<NativeRecord>> {
         &mut self.arenas
     }
 
@@ -900,7 +939,7 @@ impl NativeNamespace {
         name: impl AsRef<str>,
         records: I,
     ) -> Result<(), NativeConvertError> {
-        let name = name.as_ref().to_owned();
+        let name = arena_name(name.as_ref())?;
 
         let converted = match arena_from(ctx, records.into_iter().map(Ok::<T, NativeConvertError>))
         {
@@ -908,7 +947,7 @@ impl NativeNamespace {
             Err(source) if source.resource_limit().is_some() => return Err(source),
             Err(source) => {
                 return Err(NativeConvertError::Arena {
-                    arena: name,
+                    arena: name.into_string(),
                     source: Box::new(source),
                 });
             }
@@ -920,9 +959,15 @@ impl NativeNamespace {
 
     /// Replace an arena with pre-built canonical [`NativeRecord`]s, sorted in
     /// canonical identity order (preserving input order for equal identities).
-    pub fn set_arena_records(&mut self, name: impl AsRef<str>, mut records: Vec<NativeRecord>) {
+    pub fn set_arena_records(
+        &mut self,
+        name: impl AsRef<str>,
+        mut records: Vec<NativeRecord>,
+    ) -> Result<(), NativeConvertError> {
+        let name = arena_name(name.as_ref())?;
         records.sort_by(|left, right| left.id().cmp(right.id()));
-        self.arenas.insert(name.as_ref().to_owned(), records);
+        self.arenas.insert(name, records);
+        Ok(())
     }
 
     /// Admit an arena through a codec-owned collection constructor.
@@ -967,7 +1012,7 @@ impl NativeNamespace {
         let mut typed = Vec::new();
         if let Some((arena, records)) = self.arenas.get_key_value(name) {
             for record in records {
-                typed.push(read_record(ctx, arena, record)?);
+                typed.push(read_record(ctx, arena.as_str(), record)?);
             }
         }
         Ok(typed)
@@ -991,7 +1036,7 @@ impl NativeNamespace {
                     let arena = cadmpeg_core::decode::DecodeArena::new();
                     let policy = cadmpeg_core::decode::DecodePolicy::default();
                     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-                    read_record(&ctx, name, record)
+                    read_record(&ctx, name.as_str(), record)
                 })
             })
     }
@@ -1008,7 +1053,7 @@ impl NativeNamespace {
             .flat_map(move |(arena, records)| {
                 records
                     .iter()
-                    .map(move |record| read_record(ctx, arena, record))
+                    .map(move |record| read_record(ctx, arena.as_str(), record))
             })
     }
 
@@ -1031,18 +1076,18 @@ impl NativeNamespace {
             .flat_map(move |(arena, records)| {
                 records
                     .iter()
-                    .map(move |record| read_record_fast(ctx, arena, record, fast))
+                    .map(move |record| read_record_fast(ctx, arena.as_str(), record, fast))
             })
     }
 }
 
-/// Native records grouped by source-format namespace id.
+/// Native records grouped by the codec id of their namespace.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct Native(
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    pub  BTreeMap<String, NativeNamespace>,
+    pub  BTreeMap<CodecId, NativeNamespace>,
 );
 
 impl Native {
@@ -1052,8 +1097,8 @@ impl Native {
     }
 
     /// Return or create a source-format namespace.
-    pub fn namespace_mut(&mut self, format: impl Into<String>) -> &mut NativeNamespace {
-        self.0.entry(format.into()).or_default()
+    pub fn namespace_mut(&mut self, format: CodecId) -> &mut NativeNamespace {
+        self.0.entry(format).or_default()
     }
 
     /// Whether every namespace arena is in increasing order of id.
@@ -1100,8 +1145,8 @@ impl Native {
                 namespace.arenas.iter().filter_map(move |(kind, records)| {
                     let count = NonZeroUsize::new(records.len())?;
                     Some(LossCount {
-                        format: format.clone(),
-                        kind: kind.clone(),
+                        format: format.to_string(),
+                        kind: kind.as_str().to_owned(),
                         count,
                     })
                 })

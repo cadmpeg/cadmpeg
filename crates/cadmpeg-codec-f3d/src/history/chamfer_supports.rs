@@ -79,7 +79,7 @@ pub(super) fn note(brep: &cadmpeg_asm::brep::AsmBrep) {
             continue;
         };
         let face_forward = face.sense == Sense::Forward;
-        for loop_ in &face.loops {
+        for loop_ in face.loops.stated() {
             face_of_loop.insert(loop_.as_str(), (slot, face_forward));
         }
     }

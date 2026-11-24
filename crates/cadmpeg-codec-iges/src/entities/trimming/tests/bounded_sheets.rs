@@ -48,7 +48,7 @@ fn decode_builds_a_parametrically_bounded_sheet() {
         .geometry
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
+        .find(|loop_| Some(&loop_.id) == face.loops.stated().next())
         .unwrap();
     let coedge = result
         .ir()
@@ -104,7 +104,7 @@ fn decode_builds_an_ordered_multi_segment_bounded_sheet() {
         .geometry
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
+        .find(|loop_| Some(&loop_.id) == face.loops.stated().next())
         .unwrap();
     assert_eq!(loop_.coedges().len(), 4);
     let senses = loop_
@@ -168,7 +168,7 @@ fn decode_accepts_a_bounded_sheet_join_within_global_resolution() {
         .geometry
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
+        .find(|loop_| Some(&loop_.id) == face.loops.stated().next())
         .expect("bounded loop");
     assert_eq!(loop_.coedges().len(), 4);
     assert_eq!(
@@ -332,13 +332,13 @@ fn decode_builds_a_valid_face_local_trimmed_sheet() {
         .find(|face| face.id.as_str() == "iges:model:face#D9")
         .unwrap();
     assert_eq!(face.surface.as_str(), "iges:model:surface#D1");
-    assert_eq!(face.loops.len(), 1);
+    assert_eq!(face.loops.stated().count(), 1);
     let loop_ = result
         .ir()
         .geometry
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
+        .find(|loop_| Some(&loop_.id) == face.loops.stated().next())
         .unwrap();
     assert_eq!(
         result
@@ -396,7 +396,7 @@ fn decode_builds_a_trimmed_sheet_from_a_native_circle_pcurve() {
         .geometry
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
+        .find(|loop_| Some(&loop_.id) == face.loops.stated().next())
         .unwrap();
     let coedge = result
         .ir()
@@ -468,7 +468,7 @@ fn decode_maps_a_line_generatrix_pcurve_to_the_neutral_distance_parameter() {
         .geometry
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
+        .find(|loop_| Some(&loop_.id) == face.loops.stated().next())
         .unwrap();
     let coedge = result
         .ir()
@@ -527,7 +527,7 @@ fn decode_unscales_procedural_pcurve_coordinates_before_neutral_mapping() {
         .geometry
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
+        .find(|loop_| Some(&loop_.id) == face.loops.stated().next())
         .unwrap();
     let coedge = result
         .ir()
@@ -598,7 +598,7 @@ fn decode_builds_a_model_curve_only_trimmed_sheet() {
         .geometry
         .loops
         .iter()
-        .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
+        .find(|loop_| Some(&loop_.id) == face.loops.stated().next())
         .unwrap();
     let coedge = result
         .ir()

@@ -146,10 +146,16 @@ fn owned_source_session_replaces_native_unknown_identity_floor() {
     let old = "test:source:unknown#old";
     let other = "test:source:unknown#other";
     for (format, id) in [("rhino", old), ("other", other)] {
-        ir.native.namespace_mut(format).arenas_mut().insert(
-            "unknowns".into(),
-            vec![crate::NativeRecord::new(id.try_into().unwrap(), serde_json::Map::new()).unwrap()],
-        );
+        ir.native
+            .namespace_mut(crate::design::names::CodecId::new(format).expect("a codec id"))
+            .arenas_mut()
+            .insert(
+                cadmpeg_core::nonblank_literal!("unknowns"),
+                vec![
+                    crate::NativeRecord::new(id.try_into().unwrap(), serde_json::Map::new())
+                        .unwrap(),
+                ],
+            );
     }
     let mut session = CommitSession::new(ir, &ctx, Some("rhino")).unwrap();
     let staged = "test:source:unknown#staged";
@@ -275,13 +281,17 @@ fn speculative_session_append_extends_native_cache_and_preserves_rejected_positi
         ("alpha", "alpha", "test:native:record#third"),
     ] {
         let mut native = crate::native::Native::default();
-        native.namespace_mut(format).arenas_mut().insert(
-            arena.into(),
-            vec![
-                crate::NativeRecord::new(identity.try_into().unwrap(), serde_json::Map::new())
-                    .unwrap(),
-            ],
-        );
+        native
+            .namespace_mut(crate::design::names::CodecId::new(format).expect("a codec id"))
+            .arenas_mut()
+            .insert(
+                cadmpeg_core::text::NonBlankString::new(arena).expect("an arena name"),
+                vec![crate::NativeRecord::new(
+                    identity.try_into().unwrap(),
+                    serde_json::Map::new(),
+                )
+                .unwrap()],
+            );
         session
             .try_append(
                 crate::document::Topology::default(),
