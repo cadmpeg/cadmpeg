@@ -247,6 +247,9 @@ mod tests {
                 "history.face-selection-unresolved",
                 "history.loft-settings-unmapped",
                 "history.direction-flag-assumed",
+                "history.state-unread",
+                "history.state-index-mismatch",
+                "history.hole-position-unresolved",
                 "history.stream-unread",
                 "history.presentation-unmapped",
             ]
