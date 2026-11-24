@@ -1343,6 +1343,31 @@ fn phase5_freeze_shared_admissibility_fixtures() {
     .is_ok());
 }
 
+/// A finding of a check outside the draft and instance sets does not drop a
+/// candidate.
+#[test]
+fn admission_ignores_findings_outside_its_checks() {
+    let ir = cadmpeg_test_support::admissibility::rejected_outside_admission("rhino:test")
+        .expect("fixture identities are valid");
+    assert!(cadmpeg_ir::admit_with_annotations(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &ir,
+        &cadmpeg_ir::Annotations::default(),
+        cadmpeg_ir::RHINO_DRAFT_CHECKS,
+        Vec::new(),
+    )
+    .expect("admit the model")
+    .is_ok());
+    assert!(cadmpeg_ir::admit(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &ir,
+        cadmpeg_ir::RHINO_INSTANCE_CHECKS,
+        Vec::new()
+    )
+    .expect("admit the model")
+    .is_ok());
+}
+
 #[test]
 fn decode_context_transitions_object_status_once_and_links_unknowns() {
     let archive = ArchiveVersion::V5;

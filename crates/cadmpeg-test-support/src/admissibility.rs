@@ -5,7 +5,8 @@
 //! and the full annotation validator with `ArenaOrder` removed. Codec admission
 //! uses the Check subsets defined by each production route.
 
-use cadmpeg_ir::ids::{PointId, RegionId, ShellId, VertexId};
+use cadmpeg_ir::ids::{PointId, ProductDefinitionId, RegionId, ShellId, VertexId};
+use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, Storage};
 use cadmpeg_ir::topology::{Point, Shell, Vertex};
 use cadmpeg_ir::CadIr;
 
@@ -64,9 +65,27 @@ pub fn rejected_missing_region(prefix: &str) -> Result<CadIr, FixtureError> {
     Ok(ir)
 }
 
+/// Two root definitions: rejected by full validation (`Counts`), a check
+/// outside every decoder admission set, so every admission gate accepts it.
+pub fn rejected_outside_admission(prefix: &str) -> Result<CadIr, FixtureError> {
+    let mut ir = CadIr::empty();
+    for key in 0..2 {
+        ir.model.product_definitions.push(ProductDefinition::new(
+            ProductDefinitionId::mint(format!("{prefix}:definition#{key}"))?,
+            Storage::File {
+                document: ExternalDocument::default(),
+                source: None,
+            },
+        ));
+    }
+    Ok(ir)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{accepted_empty, rejected_missing_point, rejected_missing_region};
+    use super::{
+        accepted_empty, rejected_missing_point, rejected_missing_region, rejected_outside_admission,
+    };
     use cadmpeg_ir::annotations::Annotations;
     use cadmpeg_ir::report::check::Check;
     use cadmpeg_ir::validate::{validate_neutral, validate_neutral_with_annotations};
@@ -123,5 +142,23 @@ mod tests {
             .is_ok());
         assert!(!rhino_draft_gate(&ir, &annotations));
         assert!(!rhino_instance_gate(&ir));
+    }
+
+    #[test]
+    fn rejected_outside_admission_holds_errors_of_no_admission_check() {
+        let ir = rejected_outside_admission("test:model").expect("valid identity");
+        let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
+        assert!(!report.is_ok(), "{report:?}");
+        assert!(
+            report
+                .findings
+                .iter()
+                .filter(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)
+                .all(
+                    |finding| !cadmpeg_ir::DRAFT_CORE_CHECKS.contains(&finding.check)
+                        && finding.check != Check::Annotations
+                ),
+            "{report:?}"
+        );
     }
 }
