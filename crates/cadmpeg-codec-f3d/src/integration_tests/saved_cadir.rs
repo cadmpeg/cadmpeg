@@ -20,6 +20,8 @@ use cadmpeg_ir::report::export::{ExportReport, WritePath};
 use cadmpeg_ir::scalar::{FiniteReal, Length};
 use cadmpeg_ir::CadIr;
 
+use crate::test_support::smbh_geometry_test::synthetic_geometry_with_history_smbh;
+use crate::test_support::zip_test::f3d_with_smbh_and_manifest_version;
 use crate::F3dCodec;
 
 const SOURCE: &[u8] = include_bytes!("../../../../corpus/f3d/region_A.f3d");
@@ -170,5 +172,35 @@ fn a_design_edit_the_history_cannot_state_is_named() {
         report.notes.iter().any(|note| note.contains(&comment)),
         "{:?}",
         report.notes
+    );
+}
+
+/// A saved design written to a catalog row other than its source's dialect
+/// is generated from the restored history arenas, as the document that holds
+/// them is.
+#[test]
+fn a_saved_design_synthesizes_as_its_decode_does() {
+    let decoded = decode(&f3d_with_smbh_and_manifest_version(
+        &synthetic_geometry_with_history_smbh(),
+        "3-3-0-0",
+    ));
+    let synthesized = |ir: &CadIr| {
+        let plan = F3dCodec
+            .plan(
+                EncodeInput::new(ir, Some(decoded.source_fidelity())),
+                TargetRequest::Explicit("f3d:manifest-3-2-0-0"),
+            )
+            .expect("plan");
+        assert!(matches!(
+            plan.report().write_path(),
+            WritePath::Synthesized { .. }
+        ));
+        let mut bytes = Vec::new();
+        let report = plan.write_to(&mut bytes).expect("write");
+        (bytes, report.losses, report.notes)
+    };
+    assert_eq!(
+        synthesized(&saved(decoded.ir())),
+        synthesized(&held(&decoded))
     );
 }

@@ -272,7 +272,8 @@ impl SldprtCodec {
             return Err(CodecError::NotImplemented(
                 "the document was read from CADIR, which does not carry the feature, sketch, \
                  parameter, and configuration arenas the SLDPRT writer applies native history \
-                 edits from; write it from the decoded source file"
+                 edits from, and no retained source part restored them; write it from the \
+                 decoded source file"
                     .into(),
             ));
         }
@@ -552,9 +553,9 @@ impl EncoderBackend for SldprtCodec {
         &self,
         input: EncodeInput<'_>,
         target: &ResolvedWrite<'_>,
-        _notes: &mut Vec<String>,
+        notes: &mut Vec<String>,
     ) -> Result<Option<CadIr>, CodecError> {
-        writer::saved::restore(input, target)
+        writer::saved::restore(input, target, notes)
     }
 }
 

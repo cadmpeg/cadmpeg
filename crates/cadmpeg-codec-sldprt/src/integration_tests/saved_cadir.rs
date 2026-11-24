@@ -17,6 +17,7 @@ use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::scalar::{FiniteReal, Length};
 use cadmpeg_ir::CadIr;
 
+use crate::loss::SldprtLossCode;
 use crate::test_support::container::{make_block, native_envelope_fixture, sldprt_with_body};
 use crate::test_support::native::sldprt_native;
 use crate::test_support::parasolid::triangle_body;
@@ -171,6 +172,45 @@ fn a_design_edit_the_history_cannot_state_refuses_and_names_it() {
     assert!(
         error.contains(&format!("design.parameters[{id}].comment")),
         "{error}"
+    );
+}
+
+/// A compound-file part whose edit the history cannot state is written as
+/// its stored part: the loss states that no edit is written, and a note
+/// names the edit.
+#[test]
+fn an_edited_saved_compound_file_part_is_written_as_stored() {
+    let source = cadmpeg_test_support::compound::compound_fixture();
+    let decoded = decode(source.clone());
+    let mut parameter = saved(decode(part()).ir()).design.parameters.remove(0);
+    parameter.comment = Some("edited".into());
+    let id = parameter.id.clone();
+    let mut read = saved(decoded.ir());
+    read.design.parameters.push(parameter);
+
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(&read, Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .expect("an edited compound-file part plans");
+    let mut bytes = Vec::new();
+    let report = plan.write_to(&mut bytes).expect("write");
+
+    assert_eq!(bytes, source);
+    assert!(
+        report
+            .losses
+            .iter()
+            .any(|loss| loss.code == SldprtLossCode::WriterCompoundFileEditUnwritten.kind()),
+        "{:?}",
+        report.losses
+    );
+    let path = format!("design.parameters[{id}]");
+    assert!(
+        report.notes.iter().any(|note| note.contains(&path)),
+        "{:?}",
+        report.notes
     );
 }
 

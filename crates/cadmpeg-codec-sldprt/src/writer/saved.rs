@@ -20,23 +20,41 @@ use crate::history::literals::{dimension_display, parse_parameter_literal};
 /// `input`'s part with the history arenas the CADIR wire omits restored
 /// from its retained source, where it was read from CADIR JSON and `target`
 /// does not replay it unedited.
+///
+/// A restore that the design edits refuse refuses the write, except for a
+/// compound-file part that `target` preserves: that part is left as read and
+/// the refusal goes to `notes`, so the write is the stored part with the loss
+/// that states no edit is written.
 pub(crate) fn restore(
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
+    notes: &mut Vec<String>,
 ) -> Result<Option<CadIr>, CodecError> {
     let Some(image) = saved_source(input, crate::SOURCE_IMAGE_ID, target.preserves_source())?
     else {
         return Ok(None);
     };
-    let decoded = crate::SldprtCodec
+    let restored = crate::SldprtCodec
         .decode(&mut Cursor::new(image), &DecodeOptions::default())
         .map_err(|failure| match failure {
             DecodeFailure::Codec(error) => error,
             other => CodecError::malformed(format_args!(
                 "SLDPRT retained source cannot be decoded: {other}"
             )),
-        })?;
-    restore_history(input.ir, decoded.ir(), &SolidWorksText).map(Some)
+        })
+        .and_then(|decoded| restore_history(input.ir, decoded.ir(), &SolidWorksText));
+    match restored {
+        Ok(restored) => Ok(Some(restored)),
+        Err(error)
+            if !matches!(error, CodecError::ResourceLimit(_) | CodecError::Io(_))
+                && target.preserves_source()
+                && crate::container::is_compound_file(image) =>
+        {
+            notes.push(error.to_string());
+            Ok(None)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 /// The text of a `Keywords` dimension or equation.
