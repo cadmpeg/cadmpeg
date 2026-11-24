@@ -673,25 +673,6 @@ pub(crate) fn read(part: &Part21) -> Result<Option<History>, CodecError> {
         axis_at: BTreeMap::new(),
         history: History::default(),
     };
-    let mut operations = Vec::new();
-    for (at, state) in states.iter().enumerate() {
-        let state = reader.get(*state, "DESIGNSTATE", "a state is not a DESIGNSTATE")?;
-        let operation = reader.get_any(reference(state, 2, "a state has no operation")?)?;
-        let target = operation.arg(1).and_then(Value::as_ref);
-        match (operation.name.as_str(), target) {
-            ("DEFINESKETCHOPERATION", Some(sketch)) => {
-                reader.sketch_at.insert(sketch, at);
-            }
-            ("DESIGNPLANEOPERATION", Some(plane)) => {
-                reader.plane_at.insert(plane, at);
-            }
-            ("DESIGNAXISOPERATION", Some(axis)) => {
-                reader.axis_at.insert(axis, at);
-            }
-            _ => {}
-        }
-        operations.push((state, operation));
-    }
     for table in part
         .instances
         .values()
@@ -701,14 +682,118 @@ pub(crate) fn read(part: &Part21) -> Result<Option<History>, CodecError> {
             reader.parameter(parameter)?;
         }
     }
-    for (state, operation) in operations {
-        let feature = reader.feature(state, operation)?;
-        reader.history.features.push(feature);
+    let mut unread = Vec::new();
+    let mut disagree = Vec::new();
+    let mut indexed = 0_i64;
+    for (at, id) in states.iter().enumerate() {
+        match reader.state(*id) {
+            Ok((state, operation, feature)) => {
+                // The index is 0 for the states of the principal datums and
+                // sketches, and the 1-based position among the other states
+                // for the rest.
+                let expected = if reader.carries_index(operation) {
+                    indexed += 1;
+                    indexed
+                } else {
+                    0
+                };
+                let stored = state.arg(1).and_then(Value::as_int);
+                if stored != Some(expected) {
+                    disagree.push(format!(
+                        "state {} at position {at} stores index {} where position implies {expected}",
+                        feature.name,
+                        stored.map_or_else(|| "none".to_owned(), |index| index.to_string()),
+                    ));
+                }
+                let target = operation.arg(1).and_then(Value::as_ref);
+                let next = reader.history.features.len();
+                match (operation.name.as_str(), target) {
+                    ("DEFINESKETCHOPERATION", Some(sketch)) => {
+                        reader.sketch_at.insert(sketch, next);
+                    }
+                    ("DESIGNPLANEOPERATION", Some(plane)) => {
+                        reader.plane_at.insert(plane, next);
+                    }
+                    ("DESIGNAXISOPERATION", Some(axis)) => {
+                        reader.axis_at.insert(axis, next);
+                    }
+                    _ => {}
+                }
+                reader.history.features.push(feature);
+            }
+            Err(CodecError::Malformed(reason)) => {
+                // An unreadable state holds no index to check, and takes no
+                // position among the indexed states it may have held.
+                unread.push(format!("record #{id} at position {at}: {reason}"));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    if !unread.is_empty() {
+        reader
+            .history
+            .losses
+            .push(AlibreLossCode::HistoryStateUnread.note(aggregate(
+                "states of the history are not read, and the features that depend on them follow",
+                &unread,
+            )));
+    }
+    if !disagree.is_empty() {
+        reader
+            .history
+            .losses
+            .push(AlibreLossCode::HistoryStateIndexMismatch.note(aggregate(
+                "states store an index that disagrees with their position in the state list; the list orders the features",
+                &disagree,
+            )));
     }
     Ok(Some(reader.history))
 }
 
+/// The most examples a loss that aggregates many records names.
+const MAX_LOSS_EXAMPLES: usize = 8;
+
+/// One message for `entries`: the count, then at most [`MAX_LOSS_EXAMPLES`] of them.
+fn aggregate(what: &str, entries: &[String]) -> String {
+    let shown = entries
+        .iter()
+        .take(MAX_LOSS_EXAMPLES)
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join("; ");
+    let more = entries.get(MAX_LOSS_EXAMPLES..).map_or(0, <[String]>::len);
+    let tail = if more == 0 {
+        String::new()
+    } else {
+        format!("; and {more} more")
+    };
+    format!("{} {what}: {shown}{tail}", entries.len())
+}
+
 impl<'a> Reader<'a> {
+    /// Reads one state of the list into its feature.
+    fn state(&mut self, id: u32) -> Result<(&'a Instance, &'a Instance, Feature), CodecError> {
+        let state = self.get(id, "DESIGNSTATE", "a state is not a DESIGNSTATE")?;
+        let operation = self.get_any(reference(state, 2, "a state has no operation")?)?;
+        let feature = self.feature(state, operation)?;
+        Ok((state, operation, feature))
+    }
+
+    /// Whether the state of `operation` holds a position among the states of
+    /// modeling features and user datums, and not the index 0 of the origin,
+    /// the principal axes and planes, and the sketches.
+    fn carries_index(&self, operation: &Instance) -> bool {
+        if operation.name == "DEFINESKETCHOPERATION" {
+            return false;
+        }
+        let principal = operation
+            .arg(1)
+            .and_then(Value::as_ref)
+            .and_then(|target| self.part.get(target))
+            .is_some_and(|target| target.name.starts_with("DESIGNPRIMARY"));
+        !principal
+    }
+
     fn get_any(&self, id: u32) -> Result<&'a Instance, CodecError> {
         self.part
             .get(id)
@@ -967,6 +1052,95 @@ mod tests {
         };
         reader.dimension_annotations(part.get(1).unwrap(), "R1");
         reader.history.losses
+    }
+
+    /// A history of datum states `(name, index, point target class)`, over a
+    /// `DESIGNPRIMARYPOINT` per state.
+    fn read_states(states: &[(&str, i64)], broken: Option<usize>) -> History {
+        let ids: Vec<String> = (0..states.len()).map(|n| format!("#{}", 100 + n)).collect();
+        let mut lines = vec![
+            "HEADER;".to_owned(),
+            "FILE_SCHEMA (('ALIBRE_SCHEMA'));".to_owned(),
+            "ENDSEC;".to_owned(),
+            "DATA;".to_owned(),
+            format!("#1=DESIGNPARTSTATECONTEXT(({}),#100);", ids.join(",")),
+        ];
+        for (n, (name, index)) in states.iter().enumerate() {
+            let base = 200 + 10 * n;
+            lines.push(format!(
+                "#{}=DESIGNSTATE('{name}',{index},#{base},.T.,$,$,$,$,$);",
+                100 + n
+            ));
+            lines.push(format!("#{base}=DESIGNPOINTOPERATION($,#{});", base + 1));
+            lines.push(format!(
+                "#{}=DESIGNPRIMARYPOINT($,'p',#{});",
+                base + 1,
+                base + 2
+            ));
+            if broken != Some(n) {
+                lines.push(format!("#{}=CARTESIAN_POINT('',(0.,0.,0.));", base + 2));
+            }
+        }
+        lines.push("ENDSEC;".to_owned());
+        let text = lines.join("\n");
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let ctx = DecodeContext::for_loaded_input(&arena, &policy, 0).unwrap();
+        let part = crate::part21::parse(&ctx, text.as_bytes()).unwrap();
+        read(&part).unwrap().unwrap()
+    }
+
+    fn charged_as(history: &History, code: AlibreLossCode) -> Vec<&LossNote> {
+        history
+            .losses
+            .iter()
+            .filter(|note| note.code == code.kind())
+            .collect()
+    }
+
+    #[test]
+    fn indices_that_match_the_list_charge_nothing() {
+        let history = read_states(&[("A", 0), ("B", 0)], None);
+        assert_eq!(history.features.len(), 2);
+        assert!(history.losses.is_empty());
+    }
+
+    #[test]
+    fn an_index_that_disagrees_with_the_position_is_charged_and_the_list_orders() {
+        // Principal datums hold 0; the index 5 is no position among the states.
+        let history = read_states(&[("A", 0), ("B", 5), ("C", 0)], None);
+        let names: Vec<_> = history.features.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, ["A", "B", "C"]);
+        let notes = charged_as(&history, AlibreLossCode::HistoryStateIndexMismatch);
+        let [note] = notes.as_slice() else {
+            panic!("one loss");
+        };
+        assert_eq!(note.severity, Severity::Warning);
+        assert!(note.message.starts_with("1 states"), "{}", note.message);
+        assert!(note.message.contains("state B at position 1"));
+    }
+
+    #[test]
+    fn an_unreadable_state_keeps_the_states_that_read() {
+        let history = read_states(&[("A", 0), ("B", 0), ("C", 0)], Some(1));
+        let names: Vec<_> = history.features.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, ["A", "C"]);
+        let notes = charged_as(&history, AlibreLossCode::HistoryStateUnread);
+        let [note] = notes.as_slice() else {
+            panic!("one loss");
+        };
+        assert_eq!(note.severity, Severity::Warning);
+        assert!(note.message.contains("position 1"), "{}", note.message);
+        assert!(charged_as(&history, AlibreLossCode::HistoryStateIndexMismatch).is_empty());
+    }
+
+    #[test]
+    fn the_examples_of_an_aggregated_loss_are_bounded() {
+        let entries: Vec<String> = (0..20).map(|n| format!("e{n}")).collect();
+        let message = aggregate("things", &entries);
+        assert!(message.starts_with("20 things"));
+        assert!(message.contains("e7") && !message.contains("e8"));
+        assert!(message.ends_with("and 12 more"));
     }
 
     #[test]
