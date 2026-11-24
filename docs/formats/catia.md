@@ -659,9 +659,10 @@ integer occupies more than one byte. The 57-byte tail prefix is:
 Every scalar is finite. Current U and V limits are ordered. The reference
 scalar is positive. In the 79-byte, 87-byte, and `87 + 24*K`-byte forms, it
 is bit-identical to the current V upper limit. Maximal V contains current V.
-The station rails and center define the ball radius. A class-`30` result can select a truncated V interval inside the class-`32` current V interval. The class-`32` transverse chart extent keeps its parameter scale throughout that result interval.
-
-A class-`37` construction radius and stored opening angle define the two rail directions about each center. Stored rails can differ from that section by up to `2e-6` mm.
+The station rails and center define the ball radius. The terminal transverse
+chart extent sets the V parameter scale. A class-`30` result window retains
+that scale and the support's native U knot domain. Its V limits can select a
+subinterval of the transverse chart.
 
 The 79-byte form has this 22-byte suffix after the prefix:
 

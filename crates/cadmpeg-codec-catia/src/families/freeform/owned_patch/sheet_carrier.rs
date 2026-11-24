@@ -42,7 +42,6 @@ pub(super) enum Carrier<'a> {
         chart_end: f64,
         native_v_upper: Option<f64>,
         variable_radius: bool,
-        result_bounds: Option<[[f64; 2]; 2]>,
         max_rail_shift_mm: f64,
     },
     Cylinder(SpatialCylinder),
@@ -70,7 +69,6 @@ impl Carrier<'_> {
             chart_end,
             native_v_upper,
             variable_radius: false,
-            result_bounds: None,
             max_rail_shift_mm,
         })
     }
@@ -86,24 +84,9 @@ impl Carrier<'_> {
                 chart_end,
                 native_v_upper: Some(upper),
                 variable_radius: true,
-                result_bounds: None,
                 max_rail_shift_mm: 0.0,
             })
         })
-    }
-
-    pub(super) fn with_result_bounds(mut self, bounds: [[f64; 2]; 2]) -> Option<Self> {
-        let native = self.bounds()?;
-        if !bounds.into_iter().zip(native).all(|([lo, hi], [a, b])| {
-            lo.is_finite() && hi.is_finite() && a <= lo && lo < hi && hi <= b
-        }) {
-            return None;
-        }
-        let Self::OwnedRollingBall { result_bounds, .. } = &mut self else {
-            return None;
-        };
-        *result_bounds = Some(bounds);
-        Some(self)
     }
 
     pub(super) fn untransferred_plane_bounds(&self) -> Option<[[f64; 2]; 2]> {
@@ -114,13 +97,6 @@ impl Carrier<'_> {
     }
 
     pub(super) fn bounds(&self) -> Option<[[f64; 2]; 2]> {
-        if let Self::OwnedRollingBall {
-            result_bounds: Some(bounds),
-            ..
-        } = self
-        {
-            return Some(*bounds);
-        }
         match self {
             Self::RollingBall(..) | Self::OwnedRollingBall { .. } => {
                 let (ProceduralSurfaceDefinition::RollingBallJet(jet), radius) =

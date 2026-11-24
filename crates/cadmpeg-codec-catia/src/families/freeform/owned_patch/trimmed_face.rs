@@ -18,8 +18,7 @@ use cadmpeg_ir::topology::IncreasingParameterInterval;
 use cadmpeg_ir::units::FinitePoint2;
 
 use crate::families::a5a8::records::{
-    a5_extended_rolling_curve, a5_owned_rolling_curves, a5_rolling_curve_on_construction_radius,
-    a5_ruled_guides_from_records,
+    a5_extended_rolling_curve, a5_owned_rolling_curves, a5_ruled_guides_from_records,
 };
 use crate::families::b2::records::{
     b2_circles_from_records, b2_spheres_from_records, owned_cone_charts, owned_edge_nodes,
@@ -180,8 +179,8 @@ where
                         let basis = (self.resolve)(support, bridge.support)?;
                         let native =
                             a5_owned_rolling_curves(self.bytes, std::slice::from_ref(target))
-                                .next()?;
-                        let chart_end = native.chart_v_end;
+                                .next();
+                        let chart_end = native.as_ref().map_or(bounds[1][1], |jet| jet.chart_v_end);
                         let cached = (self.physical)(target.byte_offset())
                             .and_then(|position| carriers.get(&position));
                         for distance in [bridge.distance, -bridge.distance] {
@@ -191,19 +190,16 @@ where
                             if let Some(definition) =
                                 cached.and_then(|&i| rolling_ball(ir, i, radius))
                             {
-                                return Carrier::OwnedRollingBall {
+                                return Some(Carrier::OwnedRollingBall {
                                     definition: Box::new(Cow::Borrowed(definition)),
                                     chart_end,
                                     native_v_upper: None,
                                     variable_radius: false,
-                                    result_bounds: None,
                                     max_rail_shift_mm: 0.0,
-                                }
-                                .with_result_bounds(bounds);
+                                });
                             }
                             if let Some(carrier) =
-                                Carrier::rolling_ball_at_radius(native.clone(), radius, chart_end)
-                                    .and_then(|carrier| carrier.with_result_bounds(bounds))
+                                Carrier::rolling_ball_at_radius(native.clone()?, radius, chart_end)
                             {
                                 return Some(carrier);
                             }
@@ -300,17 +296,10 @@ where
                     {
                         return Some(Carrier::RollingBall(definition, radius));
                     }
-                    let build = |jet: crate::families::a5a8::records::A5FreeformCurve| {
-                        let end = jet.chart_v_end;
-                        Carrier::rolling_ball_at_radius(jet, radius, end)
-                    };
-                    return a5_owned_rolling_curves(self.bytes, std::slice::from_ref(carrier))
-                        .next()
-                        .and_then(build)
-                        .or_else(|| {
-                            a5_rolling_curve_on_construction_radius(self.bytes, carrier, radius)
-                                .and_then(build)
-                        });
+                    let jet = a5_owned_rolling_curves(self.bytes, std::slice::from_ref(carrier))
+                        .next()?;
+                    let v_end = jet.chart_v_end;
+                    return Carrier::rolling_ball_at_radius(jet, radius, v_end);
                 }
                 let (reference, class, radius) = analytic_bridge(bytes)?;
                 let carrier = self.records.get((self.resolve)(support, reference)?)?;

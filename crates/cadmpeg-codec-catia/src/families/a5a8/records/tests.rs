@@ -1660,27 +1660,3 @@ fn owned_rolling_ball_scalar_map_uses_the_terminal_span() {
         None
     );
 }
-
-#[test]
-fn rolling_ball_construction_radius_admits_small_rail_correction() {
-    let positions = |second_radius| {
-        [
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            second_radius,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            std::f64::consts::FRAC_PI_2,
-        ]
-        .map(|value| super::FiniteReal::new(value).expect("finite station"))
-    };
-    let (site, shift) =
-        super::project_rolling_ball_rails(positions(1.000_001), 1.0).expect("rail correction");
-    assert!((site.limit2.distance(site.center.get()) - 1.0).abs() < 1e-12);
-    assert!((shift - 0.000_001).abs() < 1e-12);
-    assert!(super::project_rolling_ball_rails(positions(1.00001), 1.0).is_none());
-}
