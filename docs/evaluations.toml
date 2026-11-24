@@ -148,3 +148,10 @@ date = 2026-11-09
 level = 2
 files = 1
 result = "one assembly decodes and validates clean; bodies are faceted B-reps rebuilt from display meshes"
+
+[[evaluation]]
+dialect = "solidedge:cfb"
+date = 2026-11-24
+level = 2
+files = 605
+result = "part, sheet-metal, and assembly documents with a primary partition decode to placed analytic and NURBS carriers in millimetres with bodies, regions, shells, faces, loops, edges, and vertices; geometry validation raises no error on any; 631 of 649 shells close; structural validation still reports the missing root product definition on every document, so the model level is not reached"
