@@ -347,6 +347,7 @@ fn insert_binding_record(
         id,
         target: target.into(),
         appearance: retained_appearance,
+        precedence: None,
         source_entity_id: None,
         object_type: Some(object_type),
         visible: None,

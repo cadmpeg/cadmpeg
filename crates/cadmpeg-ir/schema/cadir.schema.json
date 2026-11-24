@@ -1684,6 +1684,17 @@
             "null"
           ]
         },
+        "precedence": {
+          "description": "How the binding stands against what the definitions inside the one\nthat states it state for the entities under its target.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AppearancePrecedence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "source_entity_id": {
           "description": "Fusion design-entity id, such as `0_985`.",
           "type": [
@@ -1719,6 +1730,21 @@
       "description": "Identifies a decoded [`crate::appearance::Appearance`] asset.",
       "$ref": "#/$defs/Identity"
     },
+    "AppearancePrecedence": {
+      "description": "How an appearance stated in one definition stands against what the\ndefinitions it places state for the entities under its target.",
+      "oneOf": [
+        {
+          "description": "The appearance holds over everything the placed definitions state.",
+          "type": "string",
+          "const": "outer"
+        },
+        {
+          "description": "The appearance holds over what the placed definitions state on its\nown target or a farther one, and under what they state on a nearer one.",
+          "type": "string",
+          "const": "nearest"
+        }
+      ]
+    },
     "AppearanceTarget": {
       "description": "A topology entity which receives an appearance.",
       "oneOf": [
@@ -1750,6 +1776,24 @@
             },
             "value": {
               "$ref": "#/$defs/OccurrenceId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "Appearance of a product definition as a whole, below what the\ndefinition states on its entities.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "definition"
+            },
+            "value": {
+              "$ref": "#/$defs/ProductDefinitionId"
             }
           },
           "additionalProperties": false,
@@ -2074,7 +2118,7 @@
           "description": "The instance's appearance.",
           "anyOf": [
             {
-              "$ref": "#/$defs/AppearanceId"
+              "$ref": "#/$defs/InstanceAppearance"
             },
             {
               "type": "null"
@@ -40112,6 +40156,25 @@
             "native"
           ]
         }
+      ]
+    },
+    "InstanceAppearance": {
+      "description": "The appearance an arrangement sets on an instance, and how it stands\nagainst what the instance's prototype states (§5.11, §8).",
+      "type": "object",
+      "properties": {
+        "appearance": {
+          "description": "The appearance.",
+          "$ref": "#/$defs/AppearanceId"
+        },
+        "precedence": {
+          "description": "How the appearance stands against what the prototype states.",
+          "$ref": "#/$defs/AppearancePrecedence"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "appearance",
+        "precedence"
       ]
     },
     "InstanceBodies": {

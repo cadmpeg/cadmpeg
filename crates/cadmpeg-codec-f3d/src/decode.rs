@@ -6754,6 +6754,7 @@ pub(crate) fn resolve_face_appearance_bindings(
                 id,
                 target: target.into(),
                 appearance: appearance_id,
+                precedence: None,
                 source_entity_id: None,
                 object_type: None,
                 visible: None,

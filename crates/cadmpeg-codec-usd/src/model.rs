@@ -1000,6 +1000,7 @@ impl Builder<'_, '_, '_, '_> {
             id: crate::ids::appearance_binding(key),
             target: target.into(),
             appearance,
+            precedence: None,
             source_entity_id: Some(surface.material),
             object_type: None,
             visible: None,
@@ -1056,6 +1057,7 @@ impl Builder<'_, '_, '_, '_> {
             }
             .into(),
             appearance,
+            precedence: None,
             source_entity_id: Some(surface.material),
             object_type: None,
             visible: None,

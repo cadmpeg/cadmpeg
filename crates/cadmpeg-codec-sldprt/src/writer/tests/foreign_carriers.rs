@@ -1172,6 +1172,7 @@ fn a_face_binding_whose_colour_differs_from_the_face_colour_is_named_and_the_bod
         id: "other:model:appearance-binding#blue".try_into().unwrap(),
         target: AppearanceTarget::Face(face).into(),
         appearance: appearance.id.clone(),
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,

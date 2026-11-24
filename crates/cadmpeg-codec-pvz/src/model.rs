@@ -481,6 +481,7 @@ pub(crate) fn display_geometry(
                         id: crate::ids::appearance_binding(member, index),
                         target: AppearanceTarget::Tessellation(id.to_string()).into(),
                         appearance: crate::ids::appearance(member, base),
+                        precedence: None,
                         source_entity_id: None,
                         object_type: None,
                         visible: None,

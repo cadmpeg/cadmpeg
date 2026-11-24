@@ -429,6 +429,7 @@ pub(super) fn decode(
                     .into(),
                     target: target.into(),
                     appearance: appearance_id.clone(),
+                    precedence: None,
                     source_entity_id: Some(format!("#{target_step}")),
                     object_type: None,
                     visible,

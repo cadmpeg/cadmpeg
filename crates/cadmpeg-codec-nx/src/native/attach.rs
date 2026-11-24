@@ -746,6 +746,7 @@ fn attach_rm_appearances(
             id: binding_id,
             target: AppearanceTarget::Unresolved.into(),
             appearance: appearance_id,
+            precedence: None,
             source_entity_id: Some(binding.source_id),
             object_type: Some("RMFastLoad object ID".into()),
             visible: None,
