@@ -22,9 +22,8 @@ use crate::loss::SldprtLossCode;
 use crate::native::SldprtNative;
 
 /// Codec digests that state a `SolidWorks` feature-history baseline. A
-/// document whose sidecar records either is a `SolidWorks` source, whose
-/// history edits take the patch path; only a document with neither is reduced
-/// here.
+/// document written with either is a `SolidWorks` source, whose history edits
+/// take the patch path; only a document with neither is reduced here.
 const HISTORY_BASELINES: [&str; 2] = [
     "sldprt_neutral_feature_local_sha256",
     "sldprt_native_history_sha256",
@@ -59,8 +58,8 @@ struct Removed {
 }
 
 impl HistoryDrop {
-    /// Whether a document whose sidecar records `digests` is one whose history
-    /// this pass may reduce.
+    /// Whether a document written with the codec digests `digests` is one
+    /// whose history this pass may reduce.
     pub(super) fn applies(digests: &CodecDigests) -> bool {
         HISTORY_BASELINES
             .iter()

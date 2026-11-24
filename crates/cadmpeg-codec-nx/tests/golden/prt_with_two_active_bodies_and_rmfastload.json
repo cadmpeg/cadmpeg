@@ -7207,6 +7207,8 @@
           }
         }
       },
+      "codec_digests": {},
+      "content_digest": "<elided: digest over tolerantly compared geometry>",
       "decode_digest": "c1830243944317a442fde25f4852af1b6d609fd67846db4468ccdb4e12ac2ed4",
       "file_digests": {},
       "retained_records": {

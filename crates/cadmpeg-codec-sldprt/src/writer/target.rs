@@ -3,7 +3,8 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    carried_source_losses, target::ResolvedWrite, EncodeInput, ExportBody, WritePath,
+    carried_source_losses, edit_unverified, target::ResolvedWrite, EncodeInput, ExportBody,
+    WritePath,
 };
 use cadmpeg_ir::source_fidelity::CodecDigests;
 use cadmpeg_ir::Annotations;
@@ -28,11 +29,27 @@ use crate::{source_records, ReplaySkipped, SemanticFidelity, SemanticPath, Sldpr
 ///
 /// The catalog default supplies the target only when there is nothing to
 /// inherit: the document has no source, or a source of another format.
+///
+/// The write compares the codec digests of the sidecar. A part given no
+/// sidecar compares those of the document itself, reads it as unedited, and
+/// charges `export:edit.unverified`.
 pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
-    let (written, bytes) = match write(input, resolved) {
+    let of_document;
+    let (digests, unverified) = match input.fidelity {
+        Some(fidelity) => (&fidelity.codec_digests, false),
+        None if input.ir.source.is_some() && crate::codec_digests::holds_history(input.ir) => {
+            of_document = crate::codec_digests::of_document(input.ir)?;
+            (&of_document, true)
+        }
+        None => {
+            of_document = CodecDigests::new();
+            (&of_document, false)
+        }
+    };
+    let (written, bytes) = match write(input, resolved, digests) {
         Err(error @ CodecError::NotImplemented(_)) if resolved.entry().is_none() => {
             let synthesis_targets = crate::dialect::TARGETS
                 .iter()
@@ -47,12 +64,21 @@ pub(crate) fn plan(
         result => result?,
     };
     check_honesty(resolved, &written)?;
-    Ok(finish(
+    let mut body = finish(
         input,
         resolved.displacement_message(),
         &written,
         bytes,
-    ))
+        digests,
+    );
+    if unverified {
+        body.losses.push(edit_unverified(
+            "the SLDPRT part comes with no decode sidecar, so its edits since decode are not \
+             known; the writer reads it as unedited and writes the records its native lanes \
+             hold, so an edit of a neutral record those lanes state is not written",
+        ));
+    }
+    Ok(body)
 }
 
 /// Run replay when the target equals the source row; otherwise run the
@@ -60,6 +86,7 @@ pub(crate) fn plan(
 fn write(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
+    digests: &CodecDigests,
 ) -> Result<(Written, Vec<u8>), CodecError> {
     let replay_eligible = resolved.preserves_source();
     let mut bytes = Vec::new();
@@ -74,10 +101,10 @@ fn write(
                 &mut bytes,
             )?
         }
-        Some(value) => SldprtCodec::write_semantic(
+        Some(_) => SldprtCodec::write_semantic(
             input.ir,
             &Annotations::default(),
-            &value.codec_digests,
+            digests,
             &[],
             SemanticFidelity::NotConsumed,
             &mut bytes,
@@ -85,7 +112,7 @@ fn write(
         None => SldprtCodec::write_semantic(
             input.ir,
             &Annotations::default(),
-            &CodecDigests::new(),
+            digests,
             &[],
             if replay_eligible {
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing)
@@ -118,6 +145,7 @@ fn finish(
     displacement: Option<String>,
     written: &Written,
     bytes: Vec<u8>,
+    digests: &CodecDigests,
 ) -> ExportBody {
     let write_path = written.path();
     let mut losses: Vec<_> = written
@@ -152,10 +180,6 @@ fn finish(
         let regenerated_brep = coverage.pcurves
             != cadmpeg_ir::codec::write::ArenaDisposition::Written
             && !super::requires_native_partition(input.ir);
-        let none = CodecDigests::new();
-        let digests = input
-            .fidelity
-            .map_or(&none, |fidelity| &fidelity.codec_digests);
         losses.extend(super::accounting::losses(
             input.ir,
             digests,

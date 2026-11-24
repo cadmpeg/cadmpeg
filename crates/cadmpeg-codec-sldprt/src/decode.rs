@@ -6483,7 +6483,10 @@ fn stamp_sketch_baseline(
 
 /// Record the B-rep partition, metadata object and PMI baselines the write
 /// path compares against; see [`brep_local_sha256`].
-fn stamp_local_digests(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
+pub(crate) fn stamp_local_digests(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+) -> Result<(), CodecError> {
     ir.finalize();
     let brep_hash = brep_local_sha256_in_place(ctx, ir)?;
     if let Some(source) = &mut ir.source {

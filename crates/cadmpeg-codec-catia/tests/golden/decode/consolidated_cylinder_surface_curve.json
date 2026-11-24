@@ -1400,6 +1400,8 @@
         }
       }
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "f528899ab96238795f96202b56cf3ea7d63fe34cab074f2efe009dfd9cd63865",
     "file_digests": {},
     "retained_records": {

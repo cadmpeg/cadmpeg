@@ -883,31 +883,24 @@ fn fixtures_replay_verbatim() {
     assert_eq!(marked, ["container_metadata_only"]);
 }
 
-/// Write path requires a decode baseline.
+/// A document its sidecar reads as edited is patched from the retained
+/// source image, never replayed (§3.4, Paths), and the patched file decodes.
 #[test]
-fn fixtures_without_a_baseline_regenerate_and_report_the_declined_patch() {
+fn fixtures_read_as_edited_are_patched() {
     for &(name, _) in fixtures() {
         let input = read_fixture(name).expect("committed fixture");
         semantic_roundtrip(&F3dCodec, name, &input, |outcome| match outcome {
             SemanticOutcome::Refused { error } => {
-                panic!("fixture `{name}`: a missing baseline must not refuse the write: {error}")
+                panic!("fixture `{name}`: a document read as edited must not refuse the write: {error}")
             }
             SemanticOutcome::Written { report, bytes } => {
                 assert!(
-                    matches!(report.write_path(), WritePath::Synthesized { .. }),
+                    matches!(report.write_path(), WritePath::Patched { .. }),
                     "fixture `{name}`: {}",
                     report.write_path()
                 );
-                assert!(
-                    report.losses.iter().any(|loss| {
-                        loss.code == crate::loss::F3dLossCode::WriterPatchDeclined.kind()
-                            && loss.message.contains("baseline")
-                    }),
-                    "fixture `{name}`: {:#?}",
-                    report.losses
-                );
                 decode_result(bytes).unwrap_or_else(|error| {
-                    panic!("fixture `{name}`: the regenerated file decodes: {error}")
+                    panic!("fixture `{name}`: the patched file decodes: {error}")
                 });
             }
         });

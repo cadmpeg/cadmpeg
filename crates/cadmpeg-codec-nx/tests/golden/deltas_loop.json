@@ -557,6 +557,8 @@
           }
         }
       },
+      "codec_digests": {},
+      "content_digest": "<elided: digest over tolerantly compared geometry>",
       "decode_digest": "977d223c799d7e71ca435aaca7c53092d6a96dbf26825027177b4cd74026a004",
       "file_digests": {},
       "retained_records": {

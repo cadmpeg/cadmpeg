@@ -558,15 +558,15 @@ impl SourceFidelity {
     ///
     /// # Errors
     ///
-    /// The digest's session could not be opened or closed.
+    /// The digest's session could not be opened.
     pub fn edited(&self, ir: &CadIr) -> Result<bool, CodecError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-        let edited = !crate::hash::content_digest(&ctx, ir)
-            .is_ok_and(|digest| digest == self.content_digest);
-        ctx.finish_session()?;
-        Ok(edited)
+        Ok(
+            !crate::hash::content_digest(&ctx, ir)
+                .is_ok_and(|digest| digest == self.content_digest),
+        )
     }
 
     /// Append source metadata after checking every table for collisions.
