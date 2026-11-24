@@ -15,19 +15,47 @@ use crate::loss::AlibreLossCode;
 pub(crate) const SAB_STREAM: &str = "SAB_DATA";
 /// Stream holding the Alibre feature model as STEP text.
 pub(crate) const STEP_STREAM: &str = "STEP_DATA";
+/// Stream holding the component references of an assembly.
+pub(crate) const CONSTITUENTS_STREAM: &str = "CONSTITUENTS";
 const PROPERTIES_STREAM: &str = "PROP_DATA";
 const VERSION_STREAM: &str = "VERSION";
 
-/// Whether directory paths carry both body streams of a part.
+/// The kind of document a compound file holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DocumentKind {
+    /// A part: the `SAB_DATA` and `STEP_DATA` streams.
+    Part,
+    /// An assembly: the `CONSTITUENTS` and `STEP_DATA` streams and no `SAB_DATA`.
+    Assembly,
+}
+
+fn has_stream(paths: &[String], name: &str) -> bool {
+    paths.iter().any(|path| path.eq_ignore_ascii_case(name))
+}
+
+/// The document kind that directory paths carry the streams of.
+pub(crate) fn document_kind(paths: &[String]) -> Option<DocumentKind> {
+    if !has_stream(paths, STEP_STREAM) {
+        return None;
+    }
+    if has_stream(paths, SAB_STREAM) {
+        Some(DocumentKind::Part)
+    } else if has_stream(paths, CONSTITUENTS_STREAM) {
+        Some(DocumentKind::Assembly)
+    } else {
+        None
+    }
+}
+
+/// Whether directory paths carry the streams of a part or of an assembly.
 pub(crate) fn has_alibre_evidence(paths: &[String]) -> bool {
-    [SAB_STREAM, STEP_STREAM]
-        .iter()
-        .all(|name| paths.iter().any(|path| path.eq_ignore_ascii_case(name)))
+    document_kind(paths).is_some()
 }
 
 /// One parsed Alibre compound container.
 pub(crate) struct AlibreContainer<'a> {
     snapshot: CompoundSnapshot<'a>,
+    kind: DocumentKind,
 }
 
 impl<'a> AlibreContainer<'a> {
@@ -38,13 +66,18 @@ impl<'a> AlibreContainer<'a> {
             .iter()
             .map(|entry| entry.path().to_owned())
             .collect();
-        if !has_alibre_evidence(&paths) {
+        let Some(kind) = document_kind(&paths) else {
             return Err(CodecError::WrongFormat(
-                "not an Alibre part: the compound file lacks the SAB_DATA and STEP_DATA streams"
+                "not an Alibre document: the compound file lacks the SAB_DATA and STEP_DATA streams of a part and the CONSTITUENTS and STEP_DATA streams of an assembly"
                     .into(),
             ));
-        }
-        Ok(Self { snapshot })
+        };
+        Ok(Self { snapshot, kind })
+    }
+
+    /// Whether the container holds a part or an assembly.
+    pub(crate) fn kind(&self) -> DocumentKind {
+        self.kind
     }
 
     /// Opens one named stream of the container.
@@ -82,6 +115,28 @@ impl<'a> AlibreContainer<'a> {
         (!names.is_empty()).then(|| {
             AlibreLossCode::SourceStreamsUndecoded
                 .note(format!("streams without a decoder: {}", names.join(", ")))
+        })
+    }
+
+    /// The loss naming the streams of an assembly whose content the IR does
+    /// not carry: every stream but `STEP_DATA`, which the assembly reader
+    /// decodes.
+    pub(crate) fn undecoded_assembly_streams_loss(&self) -> Option<LossNote> {
+        let names: Vec<&str> = self
+            .snapshot
+            .entries()
+            .iter()
+            .filter_map(|entry| match entry {
+                CompoundEntry::Stream(stream) => Some(stream.path()),
+                CompoundEntry::Storage(_) => None,
+            })
+            .filter(|name| !name.eq_ignore_ascii_case(STEP_STREAM))
+            .collect();
+        (!names.is_empty()).then(|| {
+            AlibreLossCode::SourceStreamsUndecoded.note(format!(
+                "streams without a decoder: {}; the component references of CONSTITUENTS repeat those of STEP_DATA",
+                names.join(", ")
+            ))
         })
     }
 
@@ -148,6 +203,9 @@ fn classify(entry: &CompoundEntry) -> ContainerRole {
     if path.eq_ignore_ascii_case(STEP_STREAM) {
         return ContainerRole::RootExchange;
     }
+    if path.eq_ignore_ascii_case(CONSTITUENTS_STREAM) {
+        return ContainerRole::ExternalReferences;
+    }
     if path.eq_ignore_ascii_case(PROPERTIES_STREAM) {
         return ContainerRole::Properties;
     }
@@ -179,8 +237,26 @@ mod tests {
     }
 
     #[test]
+    fn an_assembly_has_the_component_stream_and_no_body_stream() {
+        assert!(has_alibre_evidence(&paths(&[
+            "CONSTITUENTS",
+            "PROP_DATA",
+            "STEP_DATA"
+        ])));
+        assert_eq!(
+            super::document_kind(&paths(&["constituents", "step_data"])),
+            Some(super::DocumentKind::Assembly)
+        );
+        assert_eq!(
+            super::document_kind(&paths(&["CONSTITUENTS", "SAB_DATA", "STEP_DATA"])),
+            Some(super::DocumentKind::Part)
+        );
+    }
+
+    #[test]
     fn other_compound_files_are_not_claimed() {
-        assert!(!has_alibre_evidence(&paths(&["STEP_DATA", "CONSTITUENTS"])));
+        assert!(!has_alibre_evidence(&paths(&["CONSTITUENTS", "PROP_DATA"])));
+        assert!(!has_alibre_evidence(&paths(&["STEP_DATA", "PROP_DATA"])));
         assert!(!has_alibre_evidence(&paths(&[
             "RSeStorage",
             "RSeStorage/RSeSegInfo"

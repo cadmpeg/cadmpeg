@@ -5,7 +5,9 @@
 //! The host row follows the leading bytes of the `SAB_DATA` stream. The magic
 //! `ACIS BinaryFile` with a framed header selects `alibre:cfb-acis-binary`,
 //! admitted. Any other `SAB_DATA` content is `alibre:unknown`, refused: decode
-//! returns [`cadmpeg_core::CodecError::UnsupportedDialect`].
+//! returns [`cadmpeg_core::CodecError::UnsupportedDialect`]. A compound file with
+//! the `CONSTITUENTS` and `STEP_DATA` streams and no `SAB_DATA` stream is an
+//! assembly, `alibre:cfb-assembly`, admitted, with no kernel layer.
 //! The ACIS save format is banded on the separate `acis:` kernel layer owned by
 //! `cadmpeg-asm`.
 
@@ -59,6 +61,14 @@ pub(crate) fn classify(kernel: Option<&KernelStream>) -> Classification {
     }
 }
 
+/// Classifies an assembly, which holds no kernel stream.
+pub(crate) fn classify_assembly() -> Classification {
+    Classification {
+        host: DialectMatch::admitted(ALIBRE_CFB_ASSEMBLY),
+        kernel: None,
+    }
+}
+
 impl Classification {
     /// The recovery loss the kernel layer charges, if it recovered.
     pub(crate) fn kernel_loss(&self) -> Option<LossNote> {
@@ -95,6 +105,15 @@ mod tests {
         let classification = classify(None);
         assert_eq!(classification.host.dialect(), &ALIBRE_UNKNOWN);
         assert_eq!(classification.host.admission(), &Admission::Refused);
+        assert!(classification.kernel.is_none());
+        assert!(classification.kernel_loss().is_none());
+    }
+
+    #[test]
+    fn an_assembly_is_admitted_without_a_kernel_layer() {
+        let classification = super::classify_assembly();
+        assert_eq!(classification.host.dialect(), &super::ALIBRE_CFB_ASSEMBLY);
+        assert_eq!(classification.host.admission(), &Admission::Admitted);
         assert!(classification.kernel.is_none());
         assert!(classification.kernel_loss().is_none());
     }

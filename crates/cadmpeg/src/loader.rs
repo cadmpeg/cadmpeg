@@ -107,7 +107,7 @@ fn load(
         ResolvedSource::Cadir => {}
         ResolvedSource::Unrecognized => {
             return Err(anyhow!(
-                "unrecognized format for {}; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP, ASM sat/smt/smb/sab, Creo View pvz, eDrawings easm/eprt, Alibre AD_PRT, OpenUSD usda/usdc/usd/usdz, .cadir.json; use --input-format to override detection",
+                "unrecognized format for {}; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP, ASM sat/smt/smb/sab, Creo View pvz, eDrawings easm/eprt, Alibre AD_PRT/AD_ASM, OpenUSD usda/usdc/usd/usdz, .cadir.json; use --input-format to override detection",
                 path.display()
             )
             .into());

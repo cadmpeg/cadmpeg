@@ -144,7 +144,7 @@ scored = ["nx:splmsstr", "nx:legacy-cfb"]
 
 [format.alibre]
 level = 3
-scored = ["alibre:cfb-acis-binary"]
+scored = ["alibre:cfb-acis-binary", "alibre:cfb-assembly"]
 
 [format.sat]
 level = 3
@@ -914,6 +914,15 @@ reason = """
 decoded and pinned by the golden snapshots over the committed `.AD_PRT`
 specimens; the format has no recorded evaluation, so the row stays at the
 snapshot-domain floor"""
+
+[[support]]
+dialect = "alibre:cfb-assembly"
+read = "detected"
+write = "none"
+reason = """
+decoded and pinned by the golden snapshots over the committed `.AD_ASM`
+specimens and their part files; the format has no recorded evaluation, so the
+row stays at the snapshot-domain floor"""
 
 [[support]]
 dialect = "alibre:unknown"
