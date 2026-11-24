@@ -127,7 +127,7 @@ Some `None` fields decide how a stored number is read: a measure, a side count, 
 
 ### 2.5 Wire form
 
-The JSON form of a document, and of its `SourceFidelity` sidecar, is the serde form of the types this document states (§2.7, Annex A), under the rules below. The rules on numbers, keys, and depth bind every JSON value the document holds, a native record's fields included. The rules on types bind those types, the `Native` map, its namespaces and arenas, and each native record's `id`. A native record's other fields are its codec's: its codec alone writes and reads them (§3.1, Linkage; §3.4), and it writes each record as one object, `id` first and then its fields in key order by code point, as is every object inside a field.
+The JSON form of a document, and of its `SourceFidelity` sidecar, is the serde form of the types this document states (§2.7, Annexes A and B), under the rules below. The rules on numbers, keys, and depth bind every JSON value the document holds, a native record's fields included. The rules on types bind those types, the `Native` map, its namespaces and arenas, and each native record's `id`. A native record's other fields are its codec's: its codec alone writes and reads them (§3.1, Linkage; §3.4), and it writes each record as one object, `id` first and then its fields in key order by code point, as is every object inside a field.
 
 - Field and variant names are snake_case. No struct or enum has a member this document does not state: a reader ignores one and reports it (§3.3, Reading CADIR), and no writer writes one.
 - An enum whose variants hold no data serializes as the variant's name (`"semi_finish"`).
@@ -136,7 +136,7 @@ The JSON form of a document, and of its `SourceFidelity` sidecar, is the serde f
 - A newtype struct over one value (an id, `InstanceIndex`, `Unit`) serializes as that value, except `Uuid`, which serializes as its hyphenated string (§7.6), and `Neutral`, which serializes as canonical text with side lists (§5.13).
 - Each value has one spelling. Every `Option` field is omitted for `None` and is never written `null`. Every list, map, and set field is always written, `[]` or `{}` when empty, and is never omitted. No newtype variant wraps an `Option`, so every optional value of a struct or a variant is a field under this rule. An `Option` that is a list element, an array element, or a map value writes `null` for `None`, because its position or its key says which value is unstated. A reader states each of these values in its one spelling and reports what it changed (§3.3, Reading CADIR).
 - A map whose key serializes as a JSON string (an id, a name, a variant name) is a JSON object, and each key is written once. A map with any other key (`EntityRef`, `OccurrencePath`, an integer) serializes as an array of `[key, value]` pairs sorted by key, each key once. A set serializes as an array sorted by value, each member once. A pair map and an `Unordered` member list write their arrays in order. A reader states each of these in its one spelling and reports what it changed (§3.3, Reading CADIR).
-- **Order.** Sorted sets and sorted maps use the derived structural order: a struct by its fields in declared order, an enum by its variants in declared order and then by payload, `None` before `Some`, a list lexicographically, a string by code point, and a number by value. A `Members<T, Unordered>` list (§5.6) sorts by its members' identity keys in that order: a `Picked` by `(target, context, native, domain)`, where a pick inside a domain compares by its own key, and a member with no witness by its value. A witness is compared only in the key of a `Native` pick that carries no native name, in the same order. Two implementations that sort the same picks write the same array. An object's members carry no order: a reader admits a struct's fields and a map's keys in any order, and states a key stated twice only where every copy holds one value (§3.3, Reading CADIR), and a writer writes a struct's fields in declared order and a map's keys in their type's order, so a key that is an enum variant's name follows declared variant order, not the code points of the name.
+- **Order.** Sorted sets and sorted maps use the derived structural order: a struct by its fields in declared order, an enum by its variants in declared order and then by payload, `None` before `Some`, a Boolean `false` before `true`, a list lexicographically, a string by code point, and a number by value. A `Members<T, Unordered>` list (§5.6) sorts by its members' identity keys in that order: a `Picked` by `(target, context, native, domain)`, where a pick inside a domain compares by its own key, and a member with no witness by its value. A witness is compared only in the key of a `Native` pick that carries no native name, in the same order. Two implementations that sort the same picks write the same array. An object's members carry no order: a reader admits a struct's fields and a map's keys in any order, and states a key stated twice only where every copy holds one value (§3.3, Reading CADIR), and a writer writes a struct's fields in declared order and a map's keys in their type's order, so a key that is an enum variant's name follows declared variant order, not the code points of the name.
 - A number is a JSON number read as a 64-bit float, or as an integer for an integer field. A float field is written as the shortest digit string that reads back to the same value, in a form its magnitude decides: from 10⁻⁵ up to and excluding 10¹⁶, fixed notation with at least one digit after the point (`2.0`, `0.375`, `0.00001`, `9999999999999998.0`); outside that range, exponent notation with one digit before the point, a point only where more digits follow, `e`, the exponent's sign, `+` or `-`, and the exponent with no leading zero (`1e-6`, `1.5e-7`, `1e+16`, `1.2345678901234568e+17`). These are the forms `serde_json` 1.0.154 writes through its float printer `zmij` 1.0, the version the release locks, so the reference writer's own serializer writes canonical bytes. An integer field is written as an integer. A number has one zero. A float field is read by its value, not its spelling: `-0`, `-0.0`, and `0` read as 0, as `1`, `1.00`, and `1e0` read as 1. A document holds 0, never −0, in every float it holds, a native record's included, so no edit, order, digest, or evaluation tells them apart; a float zero is written `0.0`. A decoder that reads a source zero whose sign the source uses for another fact (a side, a direction) states that fact in its typed field, never in the sign of a zero. Canonical expression text writes a number in ECMAScript's form instead (§5.13), with fixed notation from 10⁻⁶ up to and excluding 10²¹ and no fraction part on a whole number: the two differ because a float field keeps a point or an exponent so that it never reads as an integer field, while canonical text holds real numbers only and writes `10[mm]` as its author wrote it.
 - The JSON Schema is generated from the types by `cadir_json_schema()` (`schemars::schema_for!(CadIr)`, under the `schema` feature) and is part of the release.
 - **Depth.** The depth of a JSON value is 0 for a number, a string, a Boolean, or `null`, and for an array or an object one more than the depth of its deepest member, 1 where it has none. A document has depth at most 128, its root object included, and so does a sidecar. A neutral expression tree (§5.13) has depth at most 64: a leaf has depth 1 and a node one more than its deepest operand, and a chain is one node (§5.13), each condition and value of an `If` counting as its operand, so `a + b + c` has depth 2, `(a + b) * c` depth 3, and `if(p, a, if(q, b, c))` depth 2. These two bounds are part of the wire: every reader of CADIR reads every document within them, and no document states a value past one. A decoder states none (§3.3), and the decode wrapper gives up a record a decoder stated past one, as a part; a reader gives up the record that holds one (§3.3, Reading CADIR); and a writer of CADIR drops it, and each record that needs it, as content the target cannot hold (§3.4). They bound every type that nests: `TopoName`, `Picked`, a construction's nested constructions, `AttributeJson`, a process `Step` folder, a `ProgramStep` group, a `Statement` block, and a carrier whose basis is another carrier (§5.6). A `PatternLayout` does not nest a layout, an assembly feature's operation is not itself an assembly feature, and a `Cycle.expansion` holds no `Cycle`. `ResourceLimits` holds no ceiling for a type of this document.
@@ -192,7 +192,7 @@ pub struct Native(BTreeMap<CodecId, BTreeMap<NonBlankString, Vec<NativeRecord>>>
 - **`BundleMetadata`** is a fragment's reproduction metadata (§2.6). `signature` identifies the finding the fragment reproduces. `check` is the wire name of the check that found it, an open name, so that a new check is no change of wire. `numbers` holds each number the finding's message stated, with the band inside which a reproduction agrees; `hash` is the first eight bytes of the SHA-256 of the signature's other fields less `numbers`, in lower-case hexadecimal. `entity_kind` is the entity's kind and may be empty. `roots` are the stripped root identities, and `context` is the caller's opaque data. `manifest` lists each arena the cut keeps, with its row count and its serialized size. `incomplete_reason` states why a bounded cut is incomplete.
 - **`Native`** maps a codec id (§2.2) to that codec's arenas, and each arena name to its records, sorted by id. A record is an object whose first field is `id`; its other fields are its codec's (§2.5).
 
-The types this document names and does not state here or in its parts are listed in Annex A. These are the carrier geometry (`SolvedSurfaceGeometry`, `SolvedCurveGeometry`, `PcurveGeometry` with `PcurveNurbs`, `ProceduralSurfaceDefinition`, `ProceduralCurveDefinition` and the records they hold) and the fields of a model-class record that §8 does not list. Annex A is part of this document.
+The types this document names and does not state here or in its parts are listed in Annex A, and the types of `SourceFidelity` in Annex B. These are the carrier geometry (`SolvedSurfaceGeometry`, `SolvedCurveGeometry`, `PcurveGeometry` with `PcurveNurbs`, `ProceduralSurfaceDefinition`, `ProceduralCurveDefinition` and the records they hold) and the fields of a model-class record that §8 does not list. Annex A is part of this document.
 
 ### 2.8 Checked types and rules
 
@@ -245,6 +245,8 @@ A source's encoding of content the document states (kernel delta chains, byte la
 **Unrepresented.** `SourceFidelity.unrepresented` is the union of the `untyped` classes of retained records. A decoder marks a retained record `untyped`, with the classes its bytes can hold, where it keeps the record without decoding it: an unknown record type, a skipped region, a part of a class the request excluded, or a given-up part. Where the undecoded bytes have no retained record of their own and lie in a retained record that the decoder decodes in part, such as a whole-file source image, that retained record is marked `untyped`, with the classes those bytes can hold. The mark is set with `RetainedSourceRecord::with_untyped` or `SourceFidelity::mark_untyped`, never derived from a loss or from scope.
 
 **Rule B: no source layout in neutral records.** A neutral record holds no source byte offset, length, record size, or digest of source bytes. A native record keeps the offsets and lengths that its writer's patch path uses, as typed fields, and no others. A count of source records is not stored. The sidecar holds one digest per file of the decode: `SourceFidelity.decode_digest: Sha256Digest` is the root file's, and `SourceFidelity.file_digests: BTreeMap<ProductDefinitionId, Sha256Digest>` holds the digest of each component file, keyed by its `File` definition; the root definition, whose file `decode_digest` covers, has no entry (§8.1). A sidecar is stale when `decode_digest` or an entry of `file_digests` differs from its file. `SourceFidelity.content_digest: Sha256Digest` is the SHA-256 of the canonical JSON (§2.5) of the whole document the decode returned, `scope` and `repro` included, taken by the decode wrapper after it sets `scope` and normalizes (§2.1). A document is edited when the SHA-256 of its canonical JSON differs from `content_digest`. Neither the document nor `SourceMeta.attributes` holds a digest of the document. `SourceFidelity.codec_digests: BTreeMap<NonBlankString, Sha256Digest>` holds the narrower digests by which a codec's patch path finds what changed, under keys its format specification lists; only that codec reads them. Writers that replay (F3D, SolidWorks, IGES) keep each file's source image for replay; the FreeCAD writer patches from the archive entries its native records hold and keeps no image; decode-only codecs keep none.
+
+**The sidecar file.** A decode sidecar is one JSON object with four fields, in this order: `ir_version`, the `IrVersion` (§2.7); `ir_sha256`, the `Sha256Digest` of the exact CADIR bytes it describes; `report`, the decode's report, a JSON object whose form is the CLI's report contract and is no part of the wire; and `fidelity`, the decode's `SourceFidelity`, whose types Annex B states. A reader ignores a sidecar that it cannot read or whose `ir_sha256` differs from the SHA-256 of the CADIR bytes it reads with it, and charges `sidecar.stale`.
 
 ### 3.2 Report
 
@@ -614,7 +616,7 @@ An evaluation is a state of a scope under one configuration: the model at a posi
 - This is the storage the kernels use. A decoder of a delta-chain format (ASM, Parasolid, Creo increments) composes the stored deltas between two design positions into one neutral delta per position (§3.1), and follows the source's own chain: a format that chains back from the current model (ASM, Parasolid) gives each state the next later stored state as its base, and the last stored state before the current state's position `p` the base `Current(p)`. A decoder of a format that stores each state in full (FreeCAD) gives each state the nearest earlier stored state of its container as its base, and the first `Empty`, and shares records with that base as Full snapshots (below) states. In a kernel index space that the current geometry does not hold (§2.2), the states chain from `Empty`: a chain-back format gives the last stored state of that space the base `Empty` in place of `Current(p)`.
 - **Full snapshots.** A decoder of a format that stores each state in full mints ids by one procedure, so that two decoders mint the same ids:
   - A body of an ordered container keeps one id through that container's states, the id it has in the first state that holds it. The i-th region of that body, and the j-th shell of its i-th region, keep the base's ids at the same positions.
-  - Every other record is matched with the base's records of its kind, bottom-up by content: points, curves, surfaces, and pcurves, then vertices and edges, then loops, coedges, and faces. A record matches a base record when every field is equal once each id it holds is mapped through the matches already made, parent pointers included (a face's `shell`, a loop's `face`, a coedge's `owner_loop`). Loops, coedges, and faces refer to one another through those pointers, their child lists, and `radial_next`, so they are matched together: their matching pairs are the largest set of pairs under which every pair is equal with its references mapped through the earlier matches and through the set itself. A matched record keeps the base's id and is shared; every other record is new.
+  - Every other record is matched with the base's records of its kind, bottom-up by content: points, curves, surfaces, and pcurves, then vertices and edges, then loops, coedges, and faces. A record matches a base record when every field but `source_object` (§5.6) is equal once each id it holds is mapped through the matches already made, parent pointers included (a face's `shell`, a loop's `face`, a coedge's `owner_loop`). Loops, coedges, and faces refer to one another through those pointers, their child lists, and `radial_next`, so they are matched together: their matching pairs are the largest set of pairs under which every pair is equal with its references mapped through the earlier matches and through the set itself. A matched record keeps the base's id and `source_object` and is shared; every other record is new.
   - A new record takes its key (§2.2) from the stored shape that holds its state. Where several of the source's stored shapes hold one state (a first feature's `Shape` and `AddSubShape`), the first in the document's object order gives the key, and within one object its result property (`Shape`) before any other (`AddSubShape`); a container's repeat of its `Tip` is no stored shape (D33). A shared record keeps its key from the first state that holds it.
   - A `Tool(f)` state is based on `Empty`, and its body is a body of its own: every record of it is new and keyed by `f`'s tool shape (`AddSubShape`).
   - Example: a PartDesign Body holds a Pad, whose state is a box, and a Pocket that cuts a round hole through the box's top face. The Pad state is based on `Empty`. FreeCAD stores it as `Pad.Shape` and as `Pad.AddSubShape`, and the first gives the keys: `body#Pad.Shape`, `region#Pad.Shape.Solid1`, `shell#Pad.Shape.Shell1`, the top face `face#Pad.Shape.Face6`, its loop `loop#Pad.Shape.Wire6`, that loop's second coedge `coedge#Pad.Shape.Wire6.2`, and the top face's plane `surface#Pad.Shape.Face6.Surface`. The Pocket state is based on the Pad state. Its body, region, and shell keep the Pad state's ids. Its eight corner points and vertices, its twelve straight edges and their lines, and its six planes equal the Pad state's and are shared, with their `Pad.Shape` keys. In the Pocket state the top face has a second loop, so it matches no face of the base. The loop whose `face` it is then differs from the base's, and so do that loop's coedges, the coedges beside them through `radial_next`, and in turn every face, loop, and coedge of the shell: all are new, keyed by `Pocket.Shape` (`Face1` to `Face7`, `Wire1`, `Wire1.1`, …), as are the hole's cylinder, its circular edges, and their curves, points, and vertices. `Tool(Pocket)`, the cylinder that FreeCAD stores as `Pocket.AddSubShape`, is based on `Empty`: its body is `body#Pocket.AddSubShape`, and its other records are keyed by that shape too.
@@ -1423,10 +1425,10 @@ pub enum LimitSide { Minimum, Maximum }
 - **Definition.** `Expression(e)` states the value by an expression; a literal parameter holds a one-literal expression. Where the source stores a parameter's value and no text for it (a SolidWorks or Creo dimension that no equation or relation sets, a CATIA or FreeCAD literal), the literal is in the unit the source declares for the parameter, else in the definition's authoring unit for its quantity (§5.15), else in the unit in which the source stores the number. Its number is the shortest decimal whose value in the canonical unit equals the stored value to 15 significant digits, so a length typed as 0.3 in an inch document and stored as 0.00762 metres is `0.3[in]`. The unit is one the source states, for the parameter, for the definition, or by its own storage; a decoder never chooses a unit because a number agrees in it, and never reads a number from text it rendered itself. `Driven` states that geometry determines the value: a reference dimension (a SolidWorks driven dimension, a FreeCAD reference constraint, an Inventor reference parameter). The `Dimension` that binds a driven parameter (a sketch constraint, a PMI annotation) states what it measures (D11). `Assigned(p)` states that parameter program `p` sets the value (§5.14). `Unset` states that the source holds the parameter with no value and no definition of it (a CATIA parameter whose stored evaluation is unset and that no formula, rule, or table sets): it has no `value`, a reference to it has no value (§5.13), and `set_dimension` gives it a literal. A parameter whose formula, rule, or table the source stores, and whose evaluation it stores unset, is that definition with no `value`. A definition the source stores and the decoder does not read (a Creo dimension whose stored value is a token form the decoder does not decode) is `Source` with no tokens, the partial form of an expression from which nothing was read (§3.3); a writer of the same codec re-emits it from the native record, and any other writer writes the parameter as unstated (§5.13). A parameter whose expression references other parameters is driven by them; `set_dimension` refuses it with `DrivenParameter` and its references, and refuses `Driven` and `Assigned` parameters the same way (§4).
 - **Minted parameters.** A decoder emits a parameter for every value an expression or a driven dimension needs and the source stores no parameter for. A driven dimension binds a `Driven` parameter; where the source names none (FreeCAD reference constraints, addressable by index), the parameter takes a positional key (§2.2). A feature property that any expression references (FreeCAD `Box.Height`, `Sketch.Constraints.Width`; process expressions such as `FinalDepth = Box.Height - Box001.Height`) is a parameter owned by the feature, and the feature's `Dimension` binds it (§5.14 folding); a container property that an expression binds (FreeCAD `Body.Placement.Base.z = Spreadsheet.height / 2`) is a parameter owned by the container, which its `placement` construction binds. A parameter minted for a reference to a parameter of an unread document (§5.13) is a parameter of the referencing scope with no owner, named by the source's text for the reference (`d7:2`) where that name is free among the scope's parameters with no owner, whose expression is the `External` reference. Its `value` is the number the source stores beside the reference where it stores one, and `None` otherwise. A scope holds one such parameter for each reference, its `through` path included, that its expressions read so. It is no user parameter of the source, and a writer writes none for it (§5.13).
 - `display` states the source's diameter or radius presentation of the value (D7) only where it differs from what the dimension that binds the parameter measures: the parameter of a `RadialMeasure::Diameter` dimension has no `display`. A SolidWorks `Ordinate` semantic dimension supplies a length as a linear one does; that it is measured from an ordinate datum is not stated, so its subtype is the parameter's native option `sldprt:dimension_subtype` (Rule N case (a), part 11). `comment` is the source's comment on the parameter. A parameter keeps the source facts no field holds (D3) in two `NativeOptions` maps by Rule N case, as an operation keeps them (§3.4, §6): `native_options` holds the facts whose meaning no stored file known to the project settles (case (a)) and the typed facts whose carrier is unread, which a writer of another codec charges a loss for, and `source_settings` the case (b) facts, which only a writer of the codec writes: the Fusion favourite flag `f3d:favorite`, a UI marking, and the role string Fusion stores on a model parameter, `f3d:role` (`"Linear Dimension-1"`), read as the label Fusion generates for the dimension that creates the parameter, which the `Dimension` that binds it states (both case (b)), the literal that the record of a Fusion driven dimension's parameter stores, `f3d:literal`, which can differ from the measured value that is the parameter's `value` (case (b): the geometry determines the value), and the tolerance's display, places, and order keys (below). Each value takes the `NativeOption` arm of its kind: `Text` for a name, a code, or a record the source stores as one string, kept whole; `Length`, `Angle`, or `Real` for a number with that quantity; `Integer` for a count or an index; and `Bool` for a flag.
-- **Tolerance.** `tolerance` is the tolerance of the dimension that the parameter's value drives, a fact of the dimension and not of its display, in the parameter's canonical unit (its `kind` gives the quantity). `Tolerance` is the document's one tolerance type: a PMI dimension's `tolerance` takes the same arms with the same meanings, in the canonical unit of the dimension's quantity (§8). Each arm is what the source states; `None` is a tolerance not stated or not read, and takes nothing. `Deviations` holds the deviations in force, each the limit less the nominal (`lower` negative where the lower limit lies below the nominal, `upper` positive where the upper limit lies above it). The type has no limits or symmetric form: limits and a symmetric tolerance are displays of the two deviations about the nominal, one tolerance, so the display stays the source's (Creo's `creo:tol_type` in `source_settings`, below; on a PMI dimension in the annotation's `source_settings`, §8). A decoder states the two deviations in order, and keeps the source's stored order as `catia:tol_order` or `sldprt:tol_order` in `source_settings` wherever it is not the lower then the upper (case (b): the two limits are the tolerance, and the order is how the source stores them), as a CATIA record that stores +0.1 before −0.1 does, and a SolidWorks record that stores +0.05 as its lower deviation and +0.02 as its upper. A `Deviations` has `lower` below `upper` (part 10): a source record whose two deviations are equal and that stores no designation states no `tolerance` and keeps the record as a native option, as a SolidWorks kind-2 record that holds 0 and 0 does (below). `Fit` holds a limits-and-fits designation, as §8's `LimitsAndFits`: `fit` is the designation of the feature the dimension sizes, and `mate` the mating feature's, since ISO 286-1 makes a fit's designation the pair of a hole's and a shaft's at one size; `mate`'s `zone` is the other zone than `fit`'s (part 10). The designation is the intent, and a writer to a format that holds fits writes it. Where a source record stores both designations, the first in its stored order is the dimension's own (inferred: the Inventor record's fields are `hole_fit` then `shaft_fit`); an Inventor annotation can store a pair, `H7` and `h7` (§8). `deviations` holds the deviations the source stores beside the designation, in one of three arms, by one rule for every format. `Cell`: they equal the designation's cell at the nominal in the published table of a standard the decoder holds (ISO 286 or ANSI B4.1, §8), a table the file stores counting only where it equals that cell; they are a cache (K2, D58) of the designation and the nominal's value, which an edit of the value clears and a configuration that overrides the value does not restate. `Own`: the source stores deviations that differ from that cell; they are the source's own and in force, and an edit keeps them. `Unchecked`: the decoder holds no published table for the designation's standard; an edit clears them, as for `Cell`. The decoder separates `Cell` from `Own` under Rule H1, the cell being the stored result it sets the deviations against. `deviations` is `None` where the source stores no deviations beside the designation (STEP's fit; a designation Creo stores as text), or stores 0 and 0, which is not the designation's cell and states no deviations (above). Where both are stored the deviations do not determine the designation, so `fit` is stated and not derived. `fit.source` is stated only where the source names the standard, and a cell match fills nothing (§2.4); no SolidWorks or Inventor dimension record names one, so their fits state `source: None` (§8). The arm of `deviations` is read against the decoder's table and fills no `source`, so a fit with no `source` may state `Cell`. `General` states that the dimension has no tolerance of its own, so its definition's general tolerance applies (`ProductDefinition.general_tolerance`, §8.1, which says what a length, radius, diameter, or angle takes). The general tolerance is the definition's rule for every dimension that states no tolerance of its own: a model parameter states `General`, and so does a PMI dimension bound to no parameter (§8). `General` is stated only where the definition states the rule for the parameter's quantity, `linear` for a length and `angular` for an angle, and where that rule states an entry for the dimension (a `decimals` the `ByDecimals` map holds, or a size in a class range of `Iso2768`); a decoder that finds none states `None`, since `General` there would be a second spelling of no tolerance (part 10). `Basic` states that the dimension is theoretically exact: it has no tolerance of its own and the general tolerance does not apply to it. `SingleLimit` states one limit only: the nominal is that limit, the least permitted value under `Minimum` and the greatest under `Maximum`, and the value may lie anywhere beyond it on the other side. Both are defined by ASME Y14.5 and ISO 129-1, the basic dimension and the single-limit dimension, and STEP AP242 carries both. SolidWorks names them in the vendor's list of kinds: basic (kind 1), minimum (kind 5), and maximum (kind 6). Kind 1 is a basic dimension, though not every basic dimension stores kind 1, and no stored file known to the project holds a genuine kind 5 or 6 record (part 11). `SingleLimit` therefore carries no offset from the nominal, since no stored file known to the project gives one, and the SolidWorks decoder states it only under Rule H1 (below). A configuration states no tolerance of its own: no stored file known to the project gives a configuration one (§5.11, part 11), though SolidWorks stores a dimension's tolerance record once per configuration lane (part 11). A writer whose target holds fits writes `fit` and `mate`, and writes the deviations as the target's override of the fit where they are `Own`, or where the target's own cell at the nominal differs from `Cell` or `Unchecked` deviations; where the target cannot hold that override it writes the deviations as the dimension's, keeps the designation where the target can, and charges `export:fit.restated` naming the parameter. One whose target holds no fit writes the deviations as the dimension's and charges `export:fit.restated` naming the parameter, and where `deviations` is `None`, or a configuration's value differs from the base value under `Cell` or `Unchecked`, it writes no tolerance there and charges `export:fit.dropped` naming the parameter (D58). Where a PMI dimension's `nominal` binds the parameter, the parameter's `tolerance` is canonical: the PMI dimension states a `tolerance` of its own only where it differs from the parameter's, whatever the arm, compared as values, and an equal one is a Warning (D61).
+- **Tolerance.** `tolerance` is the tolerance of the dimension that the parameter's value drives, a fact of the dimension and not of its display, in the parameter's canonical unit (its `kind` gives the quantity). `Tolerance` is the document's one tolerance type: a PMI dimension's `tolerance` takes the same arms with the same meanings, in the canonical unit of the dimension's quantity (§8). Each arm is what the source states; `None` is a tolerance not stated or not read, and takes nothing. `Deviations` holds the deviations in force, each the limit less the nominal (`lower` negative where the lower limit lies below the nominal, `upper` positive where the upper limit lies above it). The type has no limits or symmetric form: limits and a symmetric tolerance are displays of the two deviations about the nominal, one tolerance, so the display stays the source's (Creo's `creo:tol_type` in `source_settings`, below; on a PMI dimension in the annotation's `source_settings`, §8). A decoder states the two deviations in order, and keeps the source's stored order as `<codec>:tol_order`, the Text `upper_lower`, in `source_settings` wherever it is not the lower then the upper (case (b): the two limits are the tolerance, and the order is how the source stores them), as a CATIA record that stores +0.1 before −0.1 does, and a SolidWorks record that stores +0.05 as its lower deviation and +0.02 as its upper. A `Deviations` has `lower` below `upper` (part 10): a source record whose two deviations are equal and that stores no designation states no `tolerance` and keeps the two deviations as the native options `<codec>:lower_deviation` and `<codec>:upper_deviation`, each in the arm of the dimension's quantity (`Length`, `Angle`, or `Real`), as a SolidWorks kind-2 record that holds 0 and 0 does (below). `Fit` holds a limits-and-fits designation, as §8's `LimitsAndFits`: `fit` is the designation of the feature the dimension sizes, and `mate` the mating feature's, since ISO 286-1 makes a fit's designation the pair of a hole's and a shaft's at one size; `mate`'s `zone` is the other zone than `fit`'s (part 10). The designation is the intent, and a writer to a format that holds fits writes it. Where a source record stores both designations, the first in its stored order is the dimension's own (inferred: the Inventor record's fields are `hole_fit` then `shaft_fit`); an Inventor annotation can store a pair, `H7` and `h7` (§8). `deviations` holds the deviations the source stores beside the designation, in one of three arms, by one rule for every format. `Cell`: they equal the designation's cell at the nominal in the published table of a standard the decoder holds (ISO 286 or ANSI B4.1, §8), a table the file stores counting only where it equals that cell; they are a cache (K2, D58) of the designation and the nominal's value, which an edit of the value clears and a configuration that overrides the value does not restate. `Own`: the source stores deviations that differ from that cell; they are the source's own and in force, and an edit keeps them. `Unchecked`: the decoder holds no published table for the designation's standard; an edit clears them, as for `Cell`. The decoder separates `Cell` from `Own` under Rule H1, the cell being the stored result it sets the deviations against. `deviations` is `None` where the source stores no deviations beside the designation (STEP's fit; a designation Creo stores as text), or stores 0 and 0, which is not the designation's cell and states no deviations (above). Where both are stored the deviations do not determine the designation, so `fit` is stated and not derived. `fit.source` is stated only where the source names the standard, and a cell match fills nothing (§2.4); no SolidWorks or Inventor dimension record names one, so their fits state `source: None` (§8). The arm of `deviations` is read against the decoder's table and fills no `source`, so a fit with no `source` may state `Cell`. `General` states that the dimension has no tolerance of its own, so its definition's general tolerance applies (`ProductDefinition.general_tolerance`, §8.1, which says what a length, radius, diameter, or angle takes). The general tolerance is the definition's rule for every dimension that states no tolerance of its own: a model parameter states `General`, and so does a PMI dimension bound to no parameter (§8). `General` is stated only where the definition states the rule for the parameter's quantity, `linear` for a length and `angular` for an angle, and where that rule states an entry for the dimension (a `decimals` the `ByDecimals` map holds, or a size in a class range of `Iso2768`); a decoder that finds none states `None`, since `General` there would be a second spelling of no tolerance (part 10). `Basic` states that the dimension is theoretically exact: it has no tolerance of its own and the general tolerance does not apply to it. `SingleLimit` states one limit only: the nominal is that limit, the least permitted value under `Minimum` and the greatest under `Maximum`, and the value may lie anywhere beyond it on the other side. Both are defined by ASME Y14.5 and ISO 129-1, the basic dimension and the single-limit dimension, and STEP AP242 carries both. SolidWorks names them in the vendor's list of kinds: basic (kind 1), minimum (kind 5), and maximum (kind 6). Kind 1 is a basic dimension, though not every basic dimension stores kind 1, and no stored file known to the project holds a genuine kind 5 or 6 record (part 11). `SingleLimit` therefore carries no offset from the nominal, since no stored file known to the project gives one, and the SolidWorks decoder states it only under Rule H1 (below). A configuration states no tolerance of its own: no stored file known to the project gives a configuration one (§5.11, part 11), though SolidWorks stores a dimension's tolerance record once per configuration lane (part 11). A writer whose target holds fits writes `fit` and `mate`, and writes the deviations as the target's override of the fit where they are `Own`, or where the target's own cell at the nominal differs from `Cell` or `Unchecked` deviations; where the target cannot hold that override it writes the deviations as the dimension's, keeps the designation where the target can, and charges `export:fit.restated` naming the parameter. One whose target holds no fit writes the deviations as the dimension's and charges `export:fit.restated` naming the parameter, and where `deviations` is `None`, or a configuration's value differs from the base value under `Cell` or `Unchecked`, it writes no tolerance there and charges `export:fit.dropped` naming the parameter (D58). Where a PMI dimension's `nominal` binds the parameter, the parameter's `tolerance` is canonical: the PMI dimension states a `tolerance` of its own only where it differs from the parameter's, whatever the arm, compared as values, and an equal one is a Warning (D61).
 - **Decimals.** `decimals` is the key by which a definition's general tolerance by decimal places looks up the dimension's entry (§8.1), not the number of places the source displays. Where a source stores that key apart from the places it displays, the stored key decides the tolerance in force, and `decimals` states it; displayed places that differ from the key are Rule N case (b), kept in `source_settings` (Creo's `creo:places_denom`; on a PMI dimension, §8). A source that stores no separate key states its displayed places as the key (§8), which is inferred: a rule by decimals keys on the places shown. Creo's key is `digits` where it is set, and otherwise `places_denom`, the places the dimension displays. A Creo dimension whose `places_denom` differs from its key keeps it as `creo:places_denom` in `source_settings`. The Creo decoder states `decimals` on parameters only, since it mints no `PmiDimension` for a model dimension (§8). A nominal-display record with no places field states none. Where a PMI dimension's `nominal` binds the parameter, `decimals` is canonical, and that dimension's own `decimals` (§8) states its value only where it differs (D60).
 - **Creo tolerances.** Every Creo dimension's tolerance record holds a form code and two slots. On binary files Creo's own attributes read the codes: 1 is nominal (no tolerance shown), 2 plus-minus, 3 limits, 4 symmetric, and 8 symmetric superscript; slot 0 is the deviation below the nominal, stored positive, and slot 1 the deviation above, and on code 3 the slots are deviations, not limits. An angle dimension's slots are degrees (the attribute holds radians), and the decoder converts them to radians. The Creo decoder states `Deviations { lower: −slot 0, upper: slot 1 }` on codes 2, 3, 4, and 8. On code 1 it states `General` where the slots equal what the definition's general tolerance gives the dimension (§8.1), and `Deviations` from the slots where they differ, since a dimension that does not follow the rule in force states its own tolerance and so keeps its value: a length in an ISO model that holds the per-decimals entry (no field marks which rule a length follows), a size at or below 0.5 that holds the first range's value (a size the class gives no value), and a dimension with more decimals than the table holds. On a model whose definition states no general tolerance the decoder states no `tolerance` on code 1. A record with `tol_class` set names an ISO 286 fit: `tol_class` is the IT grade and `tol_table_index` picks one of the file's stored tables in its stored order (2i the shaft table at position i, 2i + 1 the hole table). The decoder states `Fit`, whatever the form code, with `fit`'s `form_variance` the table's letter, `zone` `Hole` or `Shaft`, `grade` the class in decimal, and `source` `Iso286`, the standard whose tables the file stores, and `mate: None`. Where the slots equal in magnitude the stored table's cell at the row holding the nominal, the deviations are that signed cell, since the slots may hold magnitudes and only the table gives the signs; such a record may have form code 1, in a binary or a text-section file. They are `Cell` where that cell equals ISO 286's published cell, `Own` where it does not, and `Unchecked` where the decoder holds no published ISO 286 table (above). Where the slots do not equal the stored cell, the deviations are `Own`, −slot 0 and slot 1 as on codes 2, 3, 4, and 8. The files' stored tables are not set against the published cells (part 11). Text-section files carry no attribute oracle, and three numberings of their codes fit every stored record; codes 2 and 4 state a tolerance under all three, so the decoder states `Deviations` on those and no `tolerance` on codes 1 and 3, whose nominal code is not separated (part 11), except a record whose class matches its stored table cell, which states its `Fit` as above; a text-section record on code 1 or 3 whose class does not match states `Fit` with the class and its stored deviations as `Own`, and keeps the table index as `creo:tol_table_index` (case (a)). The form code stays `creo:tol_type` in `source_settings` (case (b): how the tolerance is displayed). A dimension that states no `tolerance` keeps its slots as `creo:tol_slot_1` (slot 0) and `creo:tol_slot_2` (slot 1), each as stored, where they differ from what its definition's general tolerance gives it, and on every such dimension of a model that states no general tolerance (case (a): which tolerance they hold the file does not mark).
-- **Other sources' tolerances.** SolidWorks, Inventor, and CATIA V5 store a tolerance on a model dimension; NX, Fusion, and FreeCAD store none. The SolidWorks decoder reads a feature dimension's tolerance kind with its values in metres: kind 2 is `Deviations` with `a` the upper and `b` the lower (a record that holds 0 and 0 states no `tolerance`), kind 4 `Deviations` of ±`a`, kind 1 `Basic`, kind 5 `SingleLimit(Minimum)`, kind 6 `SingleLimit(Maximum)`, kinds 7 and 9 with a designation and deviations `Fit` with `source: None`, `mate: None`, and the deviations `Cell` where they are ISO 286's cell at the nominal and `Own` otherwise, and kind 8, deviations with no designation, `Deviations`; kind 7 with no designation and no deviations and kind 0, none, state no `tolerance`, and so does kind 3, which keeps `sldprt:tolerance`. Kinds 8 and 9 are named by the vendor's order of kinds only, and kinds 5 and 6 by the vendor's list with no calibration (part 11); kind 1 is a basic dimension (above). The reading of the kinds is calibrated on DimXpert annotations, and is under Rule H1: where the file stores an annotation of the same dimension, the decoder states the arm only where the annotation's tolerance agrees with it, and otherwise states no `tolerance` and keeps the kind and values as the native option `sldprt:tolerance` (case (a)); the reading is in part 11. A tolerance has no stored geometry to test, so its stored result is that annotation. Where the file stores none, the kind's reading falls under Rule H1's clause for a rule the decoder cannot test (§3.1), and no kind meets its floor, so on every kind the decoder states no `tolerance` and keeps `sldprt:tolerance`. A fit with a designation is not under the clause: its deviations are set against ISO 286's cell, which the decoder holds (above). The SolidWorks decoder states no `general_tolerance` while the stored form of the method in force (block, general, or general block) is not located (§8.1, part 11), so it states no `General`. In an Inventor file a parameter's `tolerance` code (2 or 3, whose meanings are not separated) goes with one designation record in the same segment, holding the upper and lower deviations in centimetres and the hole and shaft designations; no record names the standard, and the stored deviations may be a cell of ANSI B4.1's inch table or match no published table. The decoder states `Fit`, with `fit` the designation the record holds, `mate: None`, and `source: None`, and the stored deviations `Cell` where they are ANSI B4.1's cell, under Rule H1 (the cell is the stored result it is set against), and `Own` otherwise (part 11). The link from the parameter to its record is by shared segment and one-to-one count, not a decoded pointer (part 11). CATIA's `Tolerance` holds a mode and two slots, slot 0 the lower deviation and slot 1 the upper, signed, in millimetres or degrees: the decoder states `Deviations`, converting degrees to radians. In a CATIA nullable numeric pair a slot written `E8` is 0.0: in `Range` and `Tolerance` fields CATIA writes no explicit binary64 0.0, writes an unbounded side as ±1e12, and writes the zero bound of a non-negative quantity as `E8` (inferred from the encoding). So a record whose lower slot is `E8` states `Deviations` with `lower: 0`. An enabled record with both slots zero (`E8`) holds 0 and 0, so it states no `tolerance` and keeps the record as the native option `catia:tolerance` (case (a)), as SolidWorks's 0/0 kind-2 records do; where an annotation of its dimension holds another tolerance, its PMI dimension states that tolerance as its own (D61). A CATIA 3D-annotation dimension may name a class (`ANSI B4.3-1978-f`) and store its own limits, which no symmetric class value equals. Where such a dimension binds a parameter by inference (the one toleranced parameter whose stored pair is equal), it states the parameter's `Deviations`, with the class name the parameter's native option `catia:tolerance_class`. A dimension of this kind that binds no parameter (an oriented dimension) is a PMI dimension that states its own `Deviations`, with the class name in the annotation's `native_options` (§8; case (a); part 11). The tolerance keys of this paragraph and the last are case (a) entries of `native_options`, which a writer of another codec does not write and charges a loss naming the parameter for, and so are a PMI annotation's native values in its `native_options`, whose loss names the annotation; `creo:tol_type`, `creo:places_denom`, and the stored orders are case (b) entries of `source_settings`, which a writer of another codec ignores (§3.4).
+- **Other sources' tolerances.** SolidWorks, Inventor, and CATIA V5 store a tolerance on a model dimension; NX, Fusion, and FreeCAD store none. The SolidWorks decoder reads a feature dimension's tolerance kind with its values in metres: kind 2 is `Deviations` with `a` the upper and `b` the lower (a record that holds 0 and 0 states no `tolerance`), kind 4 `Deviations` of ±`a`, kind 1 `Basic`, kind 5 `SingleLimit(Minimum)`, kind 6 `SingleLimit(Maximum)`, kinds 7 and 9 with a designation and deviations `Fit` with `source: None`, `mate: None`, and the deviations `Cell` where they are ISO 286's cell at the nominal and `Own` otherwise, and kind 8, deviations with no designation, `Deviations`; kind 7 with no designation and no deviations and kind 0, none, state no `tolerance`, and so does kind 3, which keeps `sldprt:tolerance`. Kinds 8 and 9 are named by the vendor's order of kinds only, and kinds 5 and 6 by the vendor's list with no calibration (part 11); kind 1 is a basic dimension (above). The reading of the kinds is calibrated on DimXpert annotations, and is under Rule H1: where the file stores an annotation of the same dimension, the decoder states the arm only where the annotation's tolerance agrees with it, and otherwise states no `tolerance` and keeps the kind and values as the native option `sldprt:tolerance` (case (a)); the reading is in part 11. A tolerance has no stored geometry to test, so its stored result is that annotation. Where the file stores none, the kind's reading falls under Rule H1's clause for a rule the decoder cannot test (§3.1), and no kind meets its floor, so on every kind the decoder states no `tolerance` and keeps `sldprt:tolerance`. A fit with a designation is not under the clause: its deviations are set against ISO 286's cell, which the decoder holds (above). The SolidWorks decoder states no `general_tolerance` while the stored form of the method in force (block, general, or general block) is not located (§8.1, part 11), so it states no `General`. In an Inventor file a parameter's `tolerance` code (2 or 3, whose meanings are not separated) goes with one designation record in the same segment, holding the upper and lower deviations in centimetres and the hole and shaft designations; no record names the standard, and the stored deviations may be a cell of ANSI B4.1's inch table or match no published table. The decoder states `Fit`, with `fit` the designation the record holds, `mate: None`, and `source: None`, and the stored deviations `Cell` where they are ANSI B4.1's cell, under Rule H1 (the cell is the stored result it is set against), and `Own` otherwise (part 11). The link from the parameter to its record is by shared segment and one-to-one count, not a decoded pointer (part 11). CATIA's `Tolerance` holds a mode and two slots, slot 0 the lower deviation and slot 1 the upper, signed, in millimetres or degrees: the decoder states `Deviations`, converting degrees to radians. In a CATIA nullable numeric pair a slot written `E8` is 0.0: in `Range` and `Tolerance` fields CATIA writes no explicit binary64 0.0, writes an unbounded side as ±1e12, and writes the zero bound of a non-negative quantity as `E8` (inferred from the encoding). So a record whose lower slot is `E8` states `Deviations` with `lower: 0`. An enabled record with both slots zero (`E8`) holds 0 and 0, so it states no `tolerance` and keeps the native options `catia:lower_deviation` and `catia:upper_deviation` (case (a)), as SolidWorks's 0/0 kind-2 records do; where an annotation of its dimension holds another tolerance, its PMI dimension states that tolerance as its own (D61). A CATIA 3D-annotation dimension may name a class (`ANSI B4.3-1978-f`) and store its own limits, which no symmetric class value equals. Where such a dimension binds a parameter by inference (the one toleranced parameter whose stored pair is equal), it states the parameter's `Deviations`, with the class name the parameter's native option `catia:tolerance_class`. A dimension of this kind that binds no parameter (an oriented dimension) is a PMI dimension that states its own `Deviations`, with the class name in the annotation's `native_options` (§8; case (a); part 11). The tolerance keys of this paragraph and the last are case (a) entries of `native_options`, which a writer of another codec does not write and charges a loss naming the parameter for, and so are a PMI annotation's native values in its `native_options`, whose loss names the annotation; `creo:tol_type`, `creo:places_denom`, and the stored orders are case (b) entries of `source_settings`, which a writer of another codec ignores (§3.4).
 - **Native record.** Where a source stores a parameter in two records (a SolidWorks dimension and the equation row that drives it), `native_ref` names the record that gives the parameter its identity, the dimension; the writer of the same codec finds the equation through its own native records.
 - **Spreadsheets.** A sheet is a feature (a FreeCAD spreadsheet, a VarSet's table) whose operation is `Spreadsheet(s)` (§6), naming its one record `s` in the `spreadsheets` arena; it is stateless (§5.4). The record is a `Spreadsheet`, which names no feature, since the feature's operation names the record:
 
@@ -5042,9 +5044,9 @@ For Fusion, `ExternalDocument.document_id` is the lineage URN and `version` is t
 
 Validation uses reference lookup and in-IR arithmetic and never refuses a decode (§3.3). It checks the rules below and the structural rules of the model records: every reference a neutral or a native record holds resolves, except a feature or container that a pick's name mentions (Names, below); loops and radial rings close, and the members of one radial ring use one edge; a wire edge, a free vertex, and each cage outside a form's `cage` belong to exactly one shell; every surface, curve, pcurve, and point carrier is reached; a subdivision cage's source associations resolve; a sidecar annotation names an entity, a stream, and a field path of the document; a periodic carrier's parameter domain is canonical; an edge's curve meets the edge's vertices at the ends of its range, in the edge's direction; a coedge's use curve meets them at the ends of its interval, in the coedge's direction; a coedge's pcurves, taken in order and mapped through its face's surface, run between them: the first begins at the start of the interval its use states and the last ends at the end of the interval its use states, in the coedge's direction, and a use that states no interval takes its pcurve's `parameter_range`, in either direction; a pcurve whose use and record state no interval is not checked; a native arena's record count, ids, links, and payload spans agree with its records; and an opaque payload and a retained record have the length and the SHA-256 digest stated for them. A radial ring of two coedges of one sense, an annotation field path the document's types do not have, and a tolerance outside the canonical range are Warnings. A rule is an Error unless it says Warning. Part 10 states no condition of a checked type (§2.8). The one-spelling rules below are also the decode wrapper's normalizer (§3.1), so a decoded document meets them by construction; validation checks them on every document.
 
-**Coincidence.** Where a rule compares two positions of model geometry (a curve's end, a use curve's end, or a pcurve's image with a vertex; the two ends of a curve whose closure is decided, §5.6; a solved carrier with its construction), they agree where their distance is at most the coincidence allowance, the sum of three terms. The first is the tolerance in force: the largest `tolerance` of the edge and of its two vertices and, for a pcurve's image, of the face, each that states none taking `tolerances.linear` (§2.3); for the closure of the curve of an edge with no vertex, that edge's; for a tolerant intersection's stored end points, the intersection's own tolerance; and `tolerances.linear` where the rule compares no face, edge, or vertex. The second is the fit tolerance of each stored approximation that either position is evaluated through (a solved carrier's cache, a support surface's cache, a pcurve), since each lies within its own fit of the exact geometry and two of them can differ by the sum; an approximation that states no fit tolerance adds none. The third is the evaluation resolution, 2⁻⁴⁴ times the largest magnitude that enters the evaluation of the two positions: their own coordinates, and the coordinates and radii that the carriers they are evaluated on store (origins, centres, control points). It bounds the rounding that binary64 arithmetic leaves on values of that size. The allowance has no other term. Every `Topology` of a document (a state delta, a cage-defined feature, a witness body) is checked at that document's `tolerances`. A position that needs a carrier the IR does not hold in closed form, or a pcurve on a surface whose own parameterization the IR does not hold, is not compared.
+**Coincidence.** Where a rule compares two positions of model geometry (a curve's end, a use curve's end, or a pcurve's image with a vertex; the two ends of a curve whose closure is decided, §5.6; a solved carrier with its construction), they agree where their distance is at most the coincidence allowance: the sum of three terms, or the binding floor where the comparison has one and it is larger. The first term is the tolerance in force: the largest `tolerance` of the edge and of its two vertices and, for a pcurve's image, of the face, each that states none taking `tolerances.linear` (§2.3); for the closure of the curve of an edge with no vertex, that edge's; for a tolerant intersection's stored end points, the intersection's own tolerance; and `tolerances.linear` where the rule compares no face, edge, or vertex. The second is the fit tolerance of each stored approximation that either position is evaluated through (a solved carrier's cache, a support surface's cache, a pcurve), since each lies within its own fit of the exact geometry and two of them can differ by the sum; an approximation that states no fit tolerance adds none. The third is the evaluation resolution, 2⁻⁴⁴ times the largest magnitude of a coordinate of the positions the rule compares. It bounds the rounding that binary64 arithmetic leaves on values of that size. A comparison of a vertex with an edge's curve end, a use curve's end, or a pcurve's image, and the closure of the curve of an edge with no vertex, have a binding floor: the largest of 0.01 mm, `tolerances.linear`, the `tolerance` of each face, edge, and vertex that the first term reads, and the fit tolerance of the edge's curve cache, of the use curve's cache, or of the coedge's first and last pcurves. A comparison of a procedural curve's solved carrier with a support surface's pcurve mapped through its surface, or with an offset curve's base end points moved by the offset distance (Caches, below), has a binding floor 0.01 mm larger than the largest of 0.01 mm, `tolerances.linear`, and the fit tolerance of the solved curve's cache and of the support surface's cache. No other comparison has a binding floor, and the allowance has no other term. Every `Topology` of a document (a state delta, a cage-defined feature, a witness body) is checked at that document's `tolerances`. A position that needs a carrier the IR does not hold in closed form, or a pcurve on a surface whose own parameterization the IR does not hold, is not compared.
 
-**Partial statements.** A rule constrains what a record states. Where a record states less than a rule reads (an `Unresolved` or `Native` operation, a `Native` arm of any type, an `Unread` selection, a `Native` pick target, a `Native` occurrence step, a `Native` anchor, an `Expression::Source`, a partial face, a marked region, shell, or body (§5.6), a field that is `None`, an evaluation or process state with no content), the rule is not checked on what is not stated: a rule about an operation's operands, their count, kinds, or names does not fire on an `Unresolved` or `Native` operation; a rule about a selection's picks does not fire on an `Unread` selection, which satisfies a rule that requires picks; a `Native` pick counts as one pick and is of any kind a rule requires; a rule that constrains a value does not fire where the value is `None`; and no rule on a face with no loops, on the edges a `Solid` body's faces use, or on whether a shell's faces are connected fires on a partial face, on a marked shell, or on a shell or region that holds either. A rule about the partial form itself fires: a rule that requires a field to be stated or forbids it, a rule that reads an `Unresolved` operation's family (§5.4), and a rule on what a partial form carries (a `Native` pick carries a native name or a witness; a `Native` anchor occurs only where the target definition has no scope in this document).
+**Partial statements.** A rule constrains what a record states. Where a record states less than a rule reads (an `Unresolved` or `Native` operation, a `Native` arm of any type, an `AnnotationDimensionKind::Other`, an `Unread` selection, a `Native` pick target, a `Native` occurrence step, a `Native` anchor, an `Expression::Source`, a partial face, a marked region, shell, or body (§5.6), a field that is `None`, an evaluation or process state with no content), the rule is not checked on what is not stated: a rule about an operation's operands, their count, kinds, or names does not fire on an `Unresolved` or `Native` operation; a rule about a selection's picks does not fire on an `Unread` selection, which satisfies a rule that requires picks; a `Native` pick counts as one pick and is of any kind a rule requires; a rule that constrains a value does not fire where the value is `None`; and no rule on a face with no loops, on the edges a `Solid` body's faces use, or on whether a shell's faces are connected fires on a partial face, on a marked shell, or on a shell or region that holds either. A rule about the partial form itself fires: a rule that requires a field to be stated or forbids it, a rule that reads an `Unresolved` operation's family (§5.4), and a rule on what a partial form carries (a `Native` pick carries a native name or a witness; a `Native` anchor occurs only where the target definition has no scope in this document).
 
 **Bounded values.** A rule that bounds the value of a `Dimension` (§5.14), its sign, its range, or its order against another value, is an Error on a `Literal`. A bound dimension stores no value: its value in a configuration is its parameter's cache for that configuration (§5.13), with the opposite sign or the complement under `Negated`, and that is a cache (K2). So the same bound on it is a Warning in each configuration for which the cache is stated, and is not checked for another. A bound over several values is an Error where every one of them is literal, and otherwise a Warning on the values that their literals and stated caches give in a configuration. The admission of `T` (positive, nonzero, an enumerator name) is a rule of its own (Parameters, expressions, programs, dimensions, below) and is not stated again here. Any other rule that reads a dimension's value (a spelling the value would repeat, a structure that goes with the value, an index within a count) reads a literal only, unless it says that the value resolves (`is_stateless`, §5.4).
 
@@ -5279,22 +5281,22 @@ Validation uses reference lookup and in-IR arithmetic and never refuses a decode
 - A `Joint`'s connectors resolve; a world connector has no inputs and a resolved value.
 - `Motion` joints other than `Rigid` have `Frame` connectors; a `Rigid` motion's connectors may be any variant. `Coincident`, `Distance`, `Parallel`, `Perpendicular`, and `Angle` connectors are `Plane`, `Axis`, `Point`, `Frame`, or `Entity`; `Concentric` connectors are `Axis`, `Frame`, or `Entity`; `Tangent` has an `Entity` connector.
 - A `PinSlot`'s `slide` is another axis than its `axis`. `AxisLimits` names an axis the motion leaves free by its `axis` (§6.7), at most once per axis. `Bounds` holds at least one bound; two literal bounds satisfy `min ≤ max`.
-- `Coupling.joints` picks exactly two `Joint` features as `Feature` targets, and neither is the coupling itself. A `Coupling` whose `joints` is absent has connectors that each pick a member it couples.
+- `Coupling.joints` picks exactly two `Joint` features as `Feature` targets, and neither is the coupling itself. In a `Coupling` whose `joints` is absent, every connector that is a construction holds at least one input.
 - `ComponentPattern.seeds` and `MirrorComponents.seeds` pick only `Component` targets. Every `ComponentInstance.occurrences` has the length of `seeds`; no instance index repeats; no occurrence repeats across instances. `MirrorComponents.results` has the length of `seeds`.
 - A `RigidGroup` has at least two `members`, distinct paths from a definition the scope spans, each step an `Occurrence`.
-- A definition that states `assembly`, in a feature or in a configuration's override of it (§5.11), belongs to a feature of the assembly definition's scope, or of a Fusion root scope whose `Feature.component` names the component. Its operation is no `Place`, `PlaceSet`, `Joint`, `RigidGroup`, `ComponentPattern`, `MirrorComponents`, `Stored`, `DeleteBodies`, `TransformBodies`, `Flex`, `Graft`, `Knit`, or `Mesh`, and no `Unresolved` whose `family` names one of these; it is no `Split` in `Mutual` mode and no `SheetMetal` `Convert`; every `Boolean::Apply.targets` and `Targets` in it, and its `ShellFeature.bodies`, `Combine.target`, and `SplitMode::ByTools.targets`, are `None`, and no `Boolean` in it is `NewBody`. Every pick of `AssemblyContext.participants` carries an occurrence context. No selection in it is `Named` with no pick, a selection with `Unread` picks is its only entry, no pick is in two of its selections, and its selections state one `at`. An `Affected` term occurs only among the `terms` of a selection of `AssemblyContext.participants`, in at most one selection of a context, with no seeds and no `propagation`; where that selection's `resolved` is stated, it holds no participant another entry of the context states. Where a context holds an `Affected` term, each rule that tests whether an instance is one of the context's participants (a hole series' parts, a split's piece picks, and the instance bodies and resulting features below) reads that selection's `resolved` where it is stated, and is not checked otherwise.
-- The instance bodies an assembly feature makes are at paths of its `Instances` participants only. A feature whose `driven_by` names an assembly feature that holds no `Native` participants is a feature of the definition one of its `Definitions` participants resolves in.
+- A definition that states `assembly`, in a feature or in a configuration's override of it (§5.11), belongs to a feature of the scope of the definition that its participants' context paths start from, or of a Fusion root scope whose `Feature.component` names the component. Its operation is no `Place`, `PlaceSet`, `Joint`, `RigidGroup`, `ComponentPattern`, `MirrorComponents`, `Stored`, `DeleteBodies`, `TransformBodies`, `Flex`, `Graft`, `Knit`, or `Mesh`, and no `Unresolved` whose `family` names one of these; it is no `Split` in `Mutual` mode and no `SheetMetal` `Convert`; every `Boolean::Apply.targets` and `Targets` in it, and its `ShellFeature.bodies`, `Combine.target`, and `SplitMode::ByTools.targets`, are `None`, and no `Boolean` in it is `NewBody`. Every pick of `AssemblyContext.participants` carries an occurrence context. No selection in it is `Named` with no pick, a selection with `Unread` picks is its only entry, no pick is in two of its selections, and its selections state one `at`. An `Affected` term occurs only among the `terms` of a selection of `AssemblyContext.participants`, in at most one selection of a context, with no seeds and no `propagation`; where that selection's `resolved` is stated, it holds no participant another entry of the context states. Where a context holds an `Affected` term, each rule that tests whether an instance is one of the context's participants (a hole series' parts, a split's piece picks, and the resulting features below) reads that selection's `resolved` where it is stated, and is not checked otherwise.
+- A feature whose `driven_by` names an assembly feature that holds no `Native` participants is a feature of the definition one of its `Definitions` participants resolves in.
 - A feature with `driven_by` is in a scope other than its driver's.
-- Joint, rigid-group, placement, pattern, and mirror features belong to the one scope that spans the definitions owning the occurrences they name (§5.1). Where the source has joints and no history, that scope is the root definition's (§6.7).
+- Joint, rigid-group, placement, pattern, and mirror features belong to the one scope that spans the definitions owning the occurrences they name (§5.1). A decoder states the joints of a source that has no history as features of the root definition's scope (§6.7).
 - A `Slot` joint's two connectors are `Entity` connectors. A `Path` joint's first connector is an `Entity` that picks a path and its second a `Point`; its `pitch_yaw` and `roll` name different axes.
 
 **Topology and model records (§5.6, §8).**
 - Every edge that a face of a `Solid` body uses is used at least twice by the faces of that body, unless the edge has no curve or a degenerate one (Warning).
-- A face's `loops` name each loop once. A shell's faces are connected through shared edges or vertices. A partial face, and a marked region, shell, or body, is reported at Warning (`topology.partial`). A region's mark names each shell once, none that its `shells` names, and each shell it names states that region. A face with no loops is the only face of its shell, and its surface is no plane, cylinder, or cone, and no placed surface whose basis, through every placement, is one (§5.6, Faces and loops). A shell's `members` name each wire edge, free vertex, and cage once. A shell whose `members` name a cage names nothing else, no face lies in it, and it is the only shell of its body's only region.
+- A face's `loops` name each loop once. A shell's faces are connected through shared edges or vertices. A `Wire` body's shells hold no face (Warning). A partial face, and a marked region, shell, or body, is reported at Warning under the check `topology_partial`. A region's mark names each shell once, none that its `shells` names, and each shell it names states that region. A face with no loops is the only face of its shell, and its surface is no plane, cylinder, or cone, and no placed surface whose basis, through every placement, is one (§5.6, Faces and loops). A shell's `members` name each wire edge, free vertex, and cage once. A shell whose `members` name a cage names nothing else, no face lies in it, and it is the only shell of its body's only region.
 - Each procedural surface of a `Topology` is the `construction` of exactly one of its surfaces, and each procedural curve of exactly one of its curves.
 - A tessellation's `Meshed::Body` names a body of the geometry its `state` names, and each of its `faces` a face of that body. `Display` and `Definition` name a product definition whose storage is not `External`. `Pmi` names a PMI annotation whose definition is `Presentation`. An `Unresolved` tessellation states no `state`. A tessellation's `state` follows the instance-target rule below.
 - An appearance `Tessellation` target, a `TriangleGroup`'s `tessellation`, a presentation item's `Tessellation`, and an `AttributeTarget::Tessellation` name a tessellation of the model. The `source_id`s a tessellation's `triangle_groups` state are distinct, and a `TriangleGroup`'s `group` is one of them. A triangle group's `face` requires that its tessellation is `of: Body`, that the face is a face of that body, that the face is one of the arm's `faces` when that list is not empty, and that no other group of the tessellation names the face. The instance-target rule that the entity is a record of the prototype does not apply to a tessellation target.
-- A `Record` target names an arena of §2's `Model`, §5's `Design`, or `Topology` and an id of that arena; an appearance `Record` target names no arena whose records another arm of `AppearanceTarget` names (a product definition as a whole is a `Definition` target, an occurrence an `Occurrence`, a body a `Body`). `Drawing.direction` and `x_direction` and a camera's `orientation` are not zero. A semantic annotation's `reflex` occurs only with an angle kind, `negated` only with a kind that is not an angle, and `line_directions` only with a `Distance`, `HorizontalDistance`, or `VerticalDistance` kind. A `DirectedLocation` dimension's annotation has two targets. A stated PMI `nominal`'s quantity agrees with `dimension`: an `Angular` dimension's is an `Angle`, that of every other kind but `Other` a `Length`, and only an `Other` dimension's may be a `Ratio`. A PMI `nominal` that binds a parameter binds one whose kind is a length, an angle, or dimensionless, as its quantity is. A `PmiDimension` whose `nominal` binds a parameter that states a `tolerance` states a `tolerance` of its own only where it differs from the parameter's, compared as values: an equal one is a Warning (D61). A `PmiDimension` whose `nominal` binds a parameter that states `decimals` states `decimals` of its own only where they differ from the parameter's: equal `decimals` are a Warning (D60). A datum system's references name `Datum` annotations. A `GeometricTolerance.maximum_upper` exceeds its magnitude where the magnitude is a `Length`. A `ToleranceZoneForm::Other` holds neither `cylindrical or circular` nor `spherical`, compared without regard to ASCII case. A `DimensionModifier::Other` holds none of `reference`, `auxiliary`, `statistical`, and `controlled radius`, compared without regard to ASCII case.
+- A `Record` target names an arena of §2's `Model`, §5's `Design`, or `Topology` and an id of that arena; an appearance `Record` target names no arena whose records another arm of `AppearanceTarget` names (a product definition as a whole is a `Definition` target, an occurrence an `Occurrence`, a body a `Body`). `Drawing.direction` and `x_direction` and a camera's `orientation` are not zero. A semantic annotation's `reflex` occurs only with an angle kind, `negated` only with a kind that is not an angle, and `line_directions` only with a `Distance`, `HorizontalDistance`, or `VerticalDistance` kind. A `DirectedLocation` dimension's annotation has two targets. A stated PMI `nominal`'s quantity agrees with `dimension`: an `Angular` dimension's is an `Angle`, that of every other kind but `Other` a `Length`, and only an `Other` dimension's may be a `Ratio`. A PMI `nominal` that binds a parameter binds one whose kind is a length, an angle, or dimensionless, as its quantity is. A `PmiDimension` whose `nominal` binds a parameter that states a `tolerance` states a `tolerance` of its own only where it differs from the parameter's, compared as values in the dimension's sign: under `Negated` with the parameter's tolerance mirrored, its lower and upper exchanged and negated. An equal one is a Warning (D61). A `PmiDimension` whose `nominal` binds a parameter that states `decimals` states `decimals` of its own only where they differ from the parameter's: equal `decimals` are a Warning (D60). A datum system's references name `Datum` annotations. A `GeometricTolerance.maximum_upper` exceeds its magnitude where the magnitude is a `Length`. A `ToleranceZoneForm::Other` holds neither `cylindrical or circular` nor `spherical`, compared without regard to ASCII case. A `DimensionModifier::Other` holds none of `reference`, `auxiliary`, `statistical`, and `controlled radius`, compared without regard to ASCII case.
 - A `Drawing.views` entry names a drawing record that is no `Page` and no `Template`; no list repeats an entry, and no record is reached from itself through `views`. `base_view` names a `View`, `Projection`, `Section`, or `Detail` record, and base views form no cycle. A `ReferenceTarget::Drawing` names a drawing record, and a `Curve` part indexes that record's `curves`. `Annotation` and `Pmi` targets name existing records.
 - An appearance binding whose target is `Unresolved` states `source_entity_id` or `native_ref`, and its target has `path: None` and `state: None`. No `source_entity_id` is blank.
 - An appearance binding states `precedence` where its target is an `Occurrence`, a `Definition` that owns an occurrence, or a `Body` or `Tessellation` whose `path` is stated, and states none on every other binding (§8). A `Definition` target names a product definition of the model and has `path: None`.
@@ -5344,11 +5346,11 @@ Validation uses reference lookup and in-IR arithmetic and never refuses a decode
 - The `Removal` process states whose `feature` names one `MaterialRemoval` feature are states of one operation.
 - A `ProfileCurve` whose carrier is a line, a parabola, or a hyperbola, or a `Transformed` placement of one, states its `range`.
 
-**Caches (K2).** Where reference lookup, adjacency, or in-IR arithmetic decides it, and, for a cache of a state, a sketch, or a toolpath, where that record's status is `Current`. No cache check evaluates geometry the IR does not hold in closed form: a tangent plane, a curvature, a projection, or an intersection with a curved carrier.
-- a parameter value against a literal expression; a neutral expression that depends on no measure, in its own tree or through the parameters it references, against its cached value where its evaluation has a value (§5.13), within the linear tolerance for lengths, the angular tolerance for angles, and a relative 1e-9 otherwise (Warning). No value that depends on a measure is checked: the source evaluates a measure with a kernel and stores it at its own precision (§5.13);
+**Caches (K2).** Where reference lookup, adjacency, or in-IR arithmetic decides it, and, for a cache of a state, a sketch, or a toolpath, where that record's status is `Current`. Each rule in this list is a Warning. Where a rule states no tolerance, it compares lengths within the linear tolerance, angles within the angular tolerance, and other numbers within a relative 1e-9; an angle between directions that the end points of segments give is compared within the angular tolerance plus, for each such segment, twice the linear tolerance over its length, since each end point is known within the linear tolerance. No cache check evaluates geometry the IR does not hold in closed form: a tangent plane, a curvature, a projection, or an intersection with a curved carrier.
+- a parameter value against a literal expression; a neutral expression that depends on no measure, in its own tree or through the parameters it references, against its cached value where its evaluation has a value (§5.13), within the linear tolerance for lengths, the angular tolerance for angles, and a relative 1e-9 otherwise. No value that depends on a measure is checked: the source evaluates a measure with a kernel and stores it at its own precision (§5.13);
 - solved sketch geometry against the residuals of the constraints that incidence and arithmetic on points, lines, circles, and arcs decide (coincidence, a point on a line or circle, horizontal, vertical, parallel, perpendicular, tangency between lines and circles, distances, angles, radii, and equal lengths and radii); a constraint on a spline, a conic, or a derived curve is not checked; a point's position against the end, center, or fit position of each curve it bounds;
-- a procedural curve against its solved carrier (D23), at the two ends of the solved curve's used parameter range: each support surface's pcurve mapped through its surface, a tolerant intersection's stored end points, and an offset curve's base end points moved by the offset distance, agree with the solved curve's end points within the coincidence allowance (Warning: the source's kernel computes the solved carrier and stores it at its own precision); a point that needs a carrier the IR does not hold in closed form, or an evaluation past the caller's work ceiling, is not checked;
-- a construction's `resolved`, and a sketch's resolved frame, against each input that arithmetic on its reference's stored values decides (a point, vertex, line, plane, or frame reference under `Coincident`, `Parallel`, `Perpendicular`, `Offset`, `Angle`, `Midway`, or `Coordinates`, and `Center` or `AxisOf` of a circle or arc), within tolerance, where its references' geometry is in a `Current` state (Warning: after an edit of its inputs a construction keeps its `resolved`, which states the solution it takes, §5.9); an input that needs a tangent, a curvature, a projection, or an intersection with a curved carrier is not checked;
+- a procedural curve against its solved carrier (D23), at the two ends of the solved curve's used parameter range: each support surface's pcurve mapped through its surface, a tolerant intersection's stored end points, and an offset curve's base end points moved by the offset distance, agree with the solved curve's end points within the coincidence allowance (the source's kernel computes the solved carrier and stores it at its own precision); a point that needs a carrier the IR does not hold in closed form, or an evaluation past the caller's work ceiling, is not checked;
+- a construction's `resolved`, and a sketch's resolved frame, against each input that arithmetic on its reference's stored values decides (a point, vertex, line, plane, or frame reference under `Coincident`, `Parallel`, `Perpendicular`, `Offset`, `Angle`, `Midway`, or `Coordinates`, and `Center` or `AxisOf` of a circle or arc), within tolerance, where its references' geometry is in a `Current` state (after an edit of its inputs a construction keeps its `resolved`, which states the solution it takes, §5.9); an input that needs a tangent, a curvature, a projection, or an intersection with a curved carrier is not checked;
 - each `resolved_in` value the same way, against its configuration's states;
 - a rule selection's `resolved` against its terms' result where in-IR adjacency decides it (`Of`, `Boundary`, `LoopEdges`, `All`);
 - a `Transformation`'s `resolved` against its composed steps;
@@ -5727,7 +5729,7 @@ Each fact below is open in its meaning, or is a target application's behaviour; 
 
 ## Annex A. Record types stated by schema
 
-Each type below is given by the JSON Schema of its wire form, generated from the reference implementation when this document was released and frozen with it; a change to it is a change of wire (§3.6). Each type's description states every condition a reader enforces on its values (§2.8). §5.6 states the evaluation of the analytic, NURBS, polyline, and placed carriers. A procedural definition is stated by its fields: this document states no evaluation for it beyond the solved carrier its record caches (D23).
+Each type below is given by the JSON Schema of its wire form, generated from the reference implementation when this document was released and frozen with it; a change to it is a change of wire (§3.6). The declared order of a type below (§2.5, Order) is the order in which the reference implementation declares the fields and variants of its wire form: an object's `required` list names its required fields in that order, and a `oneOf` lists its variants in that order. An object's `properties` are listed in code-point order of the field names. Each type's description states every condition a reader enforces on its values (§2.8). §5.6 states the evaluation of the analytic, NURBS, polyline, and placed carriers. A procedural definition is stated by its fields: this document states no evaluation for it beyond the solved carrier its record caches (D23).
 
 ### `BlendCrossSection`
 
@@ -18160,5 +18162,367 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       ]
     }
   ]
+}
+```
+
+## Annex B. Sidecar types stated by schema
+
+Each type below is given by the JSON Schema of its wire form in the decode sidecar (§3.1, The sidecar file): `SourceFidelity` and each type it holds that this document does not state elsewhere. The types are generated from the reference implementation when this document was released and frozen with it, under the opening paragraph of Annex A; a change to one is a change of wire (§3.6). Annex B is part of this document.
+
+### `AnnotationProvenance`
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "offset": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "stream": {
+      "$ref": "#/$defs/StreamName"
+    },
+    "tag": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "stream",
+    "offset"
+  ]
+}
+```
+
+### `Annotations`
+
+```json
+{
+  "description": "Document-wide provenance and exactness tables keyed by globally unique\nentity id.\n\nAn entity absent from `exactness` is byte-exact.",
+  "type": "object",
+  "properties": {
+    "exactness": {
+      "description": "Non-byte-exact entity or field annotations.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/ExactnessNote"
+      }
+    },
+    "provenance": {
+      "description": "Source location for each annotated entity.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/AnnotationProvenance"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "provenance",
+    "exactness"
+  ]
+}
+```
+
+### `Exactness`
+
+```json
+{
+  "description": "How an entity or field value was established from its source.",
+  "oneOf": [
+    {
+      "description": "Read verbatim from the source stream with no transformation beyond\ndocumented unit conversion.",
+      "type": "string",
+      "const": "byte_exact"
+    },
+    {
+      "description": "Computed deterministically from byte-exact inputs.",
+      "type": "string",
+      "const": "derived"
+    },
+    {
+      "description": "Filled in from context or convention rather than an explicit source field.",
+      "type": "string",
+      "const": "inferred"
+    },
+    {
+      "description": "Origin or trustworthiness could not be established.",
+      "type": "string",
+      "const": "unknown"
+    }
+  ]
+}
+```
+
+### `ExactnessNote`
+
+```json
+{
+  "description": "Exactness for an entity and sparse overrides for its serialized fields.",
+  "oneOf": [
+    {
+      "description": "The entity itself is not byte-exact; listed fields override it.",
+      "type": "object",
+      "properties": {
+        "entity": {
+          "description": "Exactness of the entity except where overridden by `fields`.",
+          "$ref": "#/$defs/Inexactness"
+        },
+        "fields": {
+          "description": "Exactness overrides keyed by serde field path.",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "[\\s\\S]": {
+              "$ref": "#/$defs/Exactness"
+            }
+          }
+        },
+        "kind": {
+          "type": "string",
+          "const": "entity"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "entity",
+        "fields"
+      ]
+    },
+    {
+      "description": "The entity is byte-exact apart from the listed fields.",
+      "type": "object",
+      "properties": {
+        "fields": {
+          "description": "Exactness overrides keyed by serde field path.",
+          "$ref": "#/$defs/NonEmptyMap"
+        },
+        "kind": {
+          "type": "string",
+          "const": "fields"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "fields"
+      ]
+    }
+  ]
+}
+```
+
+### `Inexactness`
+
+```json
+{
+  "description": "Exactness of an entity that is not byte-exact.",
+  "oneOf": [
+    {
+      "description": "Computed deterministically from byte-exact inputs.",
+      "type": "string",
+      "const": "derived"
+    },
+    {
+      "description": "Filled in from context or convention rather than an explicit source field.",
+      "type": "string",
+      "const": "inferred"
+    },
+    {
+      "description": "Origin or trustworthiness could not be established.",
+      "type": "string",
+      "const": "unknown"
+    }
+  ]
+}
+```
+
+### `NonEmptyMap`
+
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "minProperties": 1,
+  "patternProperties": {
+    "[\\s\\S]": {
+      "$ref": "#/$defs/Exactness"
+    }
+  }
+}
+```
+
+### `RetainedBytes`
+
+```json
+{
+  "description": "The retained image of a source record: its bytes, or the length and digest\nof bytes that are not retained.",
+  "oneOf": [
+    {
+      "description": "The source bytes themselves. Their length and digest are functions of\nthem, so neither is stored.",
+      "type": "object",
+      "properties": {
+        "data": {
+          "description": "Retained source bytes.",
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "const": "inline"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "data"
+      ]
+    },
+    {
+      "description": "Unavailable source bytes, described by their length and digest.",
+      "type": "object",
+      "properties": {
+        "byte_len": {
+          "description": "Number of source bytes.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "kind": {
+          "type": "string",
+          "const": "digest"
+        },
+        "sha256": {
+          "description": "Lowercase hexadecimal SHA-256 of the source bytes.",
+          "$ref": "#/$defs/Sha256Digest"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "byte_len",
+        "sha256"
+      ]
+    }
+  ]
+}
+```
+
+### `RetainedSourceRecord`
+
+```json
+{
+  "description": "Source bytes retained for native recovery or replay.\n\nThe record is addressed by its id in\n[`SourceFidelity::retained_records`], so it carries no id of its own.",
+  "type": "object",
+  "properties": {
+    "bytes": {
+      "description": "Retained image of the source bytes.",
+      "$ref": "#/$defs/RetainedBytes"
+    },
+    "offset": {
+      "description": "First byte offset in the source stream.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "stream": {
+      "description": "Source stream containing the record.",
+      "type": "string"
+    },
+    "untyped": {
+      "description": "Content classes the bytes can hold where the decoder keeps the record\nwithout decoding it.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "stream",
+    "offset",
+    "bytes",
+    "untyped"
+  ]
+}
+```
+
+### `SourceFidelity`
+
+```json
+{
+  "description": "Decode-time source digests, annotations, and retained native records.\n\nRetained identities are admitted only through checked insertion.\n\n```compile_fail\nuse cadmpeg_ir::hash::digest::Sha256Digest;\nlet mut fidelity = cadmpeg_ir::SourceFidelity::new(Sha256Digest::digest(b\"source\"));\nfidelity.retained_records().clear();\n```",
+  "type": "object",
+  "properties": {
+    "annotations": {
+      "description": "Sparse source locations and conversion exactness.",
+      "$ref": "#/$defs/Annotations"
+    },
+    "codec_digests": {
+      "description": "The decoding codec's narrower digests, keyed as its format\nspecification lists.",
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+          "$ref": "#/$defs/Sha256Digest"
+        }
+      }
+    },
+    "content_digest": {
+      "description": "SHA-256 of the canonical JSON of the document the decode returned.",
+      "$ref": "#/$defs/Sha256Digest"
+    },
+    "decode_digest": {
+      "description": "SHA-256 of the decode's root file.",
+      "$ref": "#/$defs/Sha256Digest"
+    },
+    "file_digests": {
+      "description": "SHA-256 of each component file, keyed by its `File` definition.",
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^(?:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+:){2}[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+#[^#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])": {
+          "$ref": "#/$defs/Sha256Digest"
+        }
+      }
+    },
+    "retained_records": {
+      "description": "Native records retained for recovery or replay, keyed by record id.",
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^(?:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+:){2}[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+#[^#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])": {
+          "$ref": "#/$defs/RetainedSourceRecord"
+        }
+      }
+    },
+    "unrepresented": {
+      "description": "Union of the retained records' untyped classes.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "decode_digest",
+    "file_digests",
+    "content_digest",
+    "codec_digests",
+    "unrepresented",
+    "annotations",
+    "retained_records"
+  ]
+}
+```
+
+### `StreamName`
+
+```json
+{
+  "type": "string",
+  "minLength": 1
 }
 ```

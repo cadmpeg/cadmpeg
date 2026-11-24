@@ -195,6 +195,9 @@ fn a_definition_does_not_place_itself() {
             "product definition places itself".into()
         )]
     );
+    assert!(findings(&ir)
+        .iter()
+        .all(|finding| finding.severity == crate::report::Severity::Warning));
 }
 
 #[test]
