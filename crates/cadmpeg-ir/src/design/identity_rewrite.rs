@@ -9,8 +9,8 @@ use super::construction::{
 use super::dimension::{Dimension, ParameterRef, RefTarget};
 use super::expr::{Expression, ExpressionToken, Neutral, Node};
 use super::names::{
-    CodecId, GenerationRole, Generator, InstanceIndex, NameKind, NativeName, NativeNameValue,
-    TopoName,
+    CodecId, CodecName, GenerationRole, Generator, InstanceIndex, NameKind, NativeName,
+    NativeNameValue, TopoName,
 };
 use super::options::NativeOption;
 use super::parameter::Deviations;
@@ -107,6 +107,7 @@ impl<T: Keyed + RewriteIdentities, O: MemberOrder> RewriteIdentities for Members
 }
 
 rewrite_scalar!(CodecId);
+rewrite_scalar!(CodecName);
 rewrite_scalar!(super::parameter::Tolerance);
 rewrite_scalar!(super::units::Quantity);
 rewrite_scalar!(NativeName);
@@ -187,7 +188,7 @@ rewrite_enum!(StepRef, []; {Occurrence(value), Native(value)});
 rewrite_record!(Witness, []; {point, direction, endpoints, frame, curves, surface, body});
 rewrite_enum!(PickDomain, []; {EdgeInterval {start, end}, Limits {start, end}, Fragment(value), Containing(value)});
 rewrite_record!(RuleTerm<O>, [O: MemberOrder]; {rule, seeds, propagation});
-rewrite_enum!(SelectionRule, []; {Explicit, All {kind}, Of {kind}, LoopEdges, Boundary, Chain {end}, Region {boundary}, Intersection {with}, Native(literal)});
+rewrite_enum!(SelectionRule, []; {Explicit, All {kind}, Of {kind}, LoopEdges, Boundary, Chain {end}, Region {boundary}, Intersection {with}, Affected, Native(literal)});
 rewrite_enum!(Propagation, []; {Off, Minimal, Connected {continuity, angle, gap}, Native(literal)});
 rewrite_record!(SketchRegion, []; {outer, holes});
 rewrite_record!(BoundaryUse, []; {entity, fragment});

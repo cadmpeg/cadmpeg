@@ -360,7 +360,7 @@ fn face_tolerance_below_display_resolution_is_refused() {
         .find(|face| face.id == face_id)
         .expect("test face exists")
         .tolerance = Some(
-        cadmpeg_ir::scalar::PositiveReal::new(stated)
+        cadmpeg_ir::scalar::PositiveLength::new(stated)
             .expect("the test tolerance is positive and finite"),
     );
 

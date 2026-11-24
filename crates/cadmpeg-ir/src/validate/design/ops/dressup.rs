@@ -537,11 +537,11 @@ fn check_series(
     if hole.series.is_empty() {
         return;
     }
-    if !site.in_assembly_feature {
+    if !site.assembly {
         error(
             findings,
             site.entity,
-            format_args!("a Hole with a series is not the operation of an AssemblyFeature"),
+            format_args!("a Hole with a series is in a definition that states no assembly"),
         );
     }
     for (at, stage) in hole.series.iter().enumerate() {

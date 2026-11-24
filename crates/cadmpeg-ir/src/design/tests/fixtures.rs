@@ -19,8 +19,8 @@ use crate::design::expr::{
 };
 use crate::design::ids::{ContainerId, ProcessParameterId, PublicationId};
 use crate::design::names::{
-    Base64Bytes, CodecId, GenerationRole, Generator, HoleFaceRole, InstanceIndex, NameEntry,
-    NameKind, NameTable, NativeName, NativeNameValue, TopoName,
+    Base64Bytes, GenerationRole, Generator, HoleFaceRole, InstanceIndex, NameEntry, NameKind,
+    NameTable, NativeName, NativeNameValue, TopoName,
 };
 use crate::design::options::{NativeOption, NativeOptions};
 use crate::design::refs::{
@@ -101,7 +101,7 @@ pub(super) fn parameter_ref(key: u32) -> ParameterRef {
 
 pub(super) fn native_name() -> NativeName {
     NativeName {
-        codec: CodecId::from(text("sldprt")),
+        codec: crate::codec_id!("sldprt"),
         value: NativeNameValue::Text(text("Face1")),
     }
 }
@@ -273,7 +273,7 @@ pub(super) fn generation_roles() -> Vec<GenerationRole> {
         GenerationRole::Seam,
         GenerationRole::Body,
         GenerationRole::Hole(HoleFaceRole::HeadFloor),
-        GenerationRole::Other(text("sldprt:lip")),
+        GenerationRole::Other(crate::codec_name!("sldprt:lip")),
     ]
 }
 
@@ -554,7 +554,8 @@ pub(super) fn selection_rules() -> Vec<SelectionRule> {
         SelectionRule::Intersection {
             with: members_of(&[3]),
         },
-        SelectionRule::Native(text("nx:tangent_curves")),
+        SelectionRule::Affected,
+        SelectionRule::Native(crate::codec_name!("nx:tangent_curves")),
     ]
 }
 
@@ -567,7 +568,7 @@ pub(super) fn propagations() -> Vec<Propagation> {
             angle: None,
             gap: Some(Dimension::Parameter(id("parameter", 1))),
         },
-        Propagation::Native(text("catia:point_continuity")),
+        Propagation::Native(crate::codec_name!("catia:point_continuity")),
     ]
 }
 
@@ -620,16 +621,16 @@ pub(super) fn selections<O: MemberOrder>() -> Vec<Selection<O>> {
 pub(super) fn source_mode() -> SourceMode {
     let options = NativeOptions::from([
         (
-            text("sldprt:flip"),
+            crate::codec_name!("sldprt:flip"),
             NativeOption::Bool(Dimension::Literal(true)),
         ),
         (
-            text("sldprt:offset"),
+            crate::codec_name!("sldprt:offset"),
             NativeOption::Length(Dimension::Literal(length(2.5))),
         ),
     ]);
     SourceMode {
-        codec: CodecId::from(text("sldprt")),
+        codec: crate::codec_id!("sldprt"),
         method: NativeNameValue::Integers(vec![4]),
         native_options: options,
         source_settings: NativeOptions::new(),
@@ -777,7 +778,7 @@ pub(super) fn relations() -> Vec<Relation> {
         Relation::Radius,
         Relation::Limit,
         Relation::Fold,
-        Relation::Native(text("creo:on_surface")),
+        Relation::Native(crate::codec_name!("creo:on_surface")),
     ]
 }
 

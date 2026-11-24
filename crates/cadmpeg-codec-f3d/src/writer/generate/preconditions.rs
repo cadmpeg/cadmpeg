@@ -1336,12 +1336,12 @@ mod tests {
     use cadmpeg_asm::brep::records::identity::NativeRecordNamespace;
     use cadmpeg_asm::brep::records::{EvaluatedToleranceSlot, TolerantVertexTail};
     use cadmpeg_core::CodecError;
-    use cadmpeg_ir::scalar::PositiveReal;
 
     #[test]
     fn tolerant_vertex_precondition_rejects_unset_with_a_neutral_tolerance() {
         let mut target = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-        target.geometry.vertices[0].tolerance = Some(PositiveReal::new(0.025).unwrap());
+        target.geometry.vertices[0].tolerance =
+            Some(cadmpeg_ir::scalar::PositiveLength::new(0.025).unwrap());
         let native = F3dNative {
             tolerant_vertex_tails: vec![TolerantVertexTail {
                 source_namespace: NativeRecordNamespace::new(crate::ids::ID_FORMAT),

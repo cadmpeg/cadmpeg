@@ -16,9 +16,11 @@ use crate::design::ops::body::{
     BodyMate, Combine, DeleteBodies, DeleteFaces, ExternalDocument, Extract, Flex, FlexKind, Graft,
     Heal, Kept, MoveFaces, NewComponent, PieceForm, ReplaceFaces, Retention, ScaleFactors, Split,
     SplitMethod, SplitMode, SplitTool, Template, TemplateInput, TemplateInstance,
-    TemplateParameter, TransformBodies, TransformMode, TransformStep, Transformation,
+    TemplateParameter, ToolExtension, TransformBodies, TransformMode, TransformStep,
+    Transformation,
 };
 use crate::design::ops::shared::{Alignment, JointKind, Locus, ToolDisposition};
+use crate::design::ops::surface::ExtendMethod;
 use crate::design::options::{BooleanOp, ProjectionDirection};
 use crate::design::tests::arm_failures;
 use crate::scalar::{FiniteReal, NonNegativeLength, NonZeroReal, PositiveLength};
@@ -186,7 +188,25 @@ fn list_kept() -> Vec<Kept<Vec<Option<Dimension<bool>>>>> {
 fn split_tools() -> Vec<SplitTool> {
     vec![
         SplitTool::Plane(Box::new(plane_construction())),
-        SplitTool::Geometry(faces(41)),
+        SplitTool::Geometry {
+            tools: faces(41),
+            extend: None,
+        },
+        SplitTool::Geometry {
+            tools: faces(41),
+            extend: tool_extensions().pop(),
+        },
+        SplitTool::Silhouette(Box::new(direction_construction())),
+    ]
+}
+
+fn tool_extensions() -> Vec<ToolExtension> {
+    vec![
+        ToolExtension::Off,
+        ToolExtension::Extended { method: None },
+        ToolExtension::Extended {
+            method: Some(ExtendMethod::Tangent),
+        },
     ]
 }
 
@@ -203,7 +223,7 @@ fn split_methods() -> Vec<SplitMethod> {
 fn split_modes() -> Vec<SplitMode> {
     vec![
         SplitMode::ByTools {
-            targets: faces(42),
+            targets: Some(faces(42)),
             tools: split_tools().remove(0),
             method: Some(SplitMethod::Intersect),
             kept: Some(Kept::Side {
@@ -211,10 +231,16 @@ fn split_modes() -> Vec<SplitMode> {
             }),
         },
         SplitMode::ByTools {
-            targets: faces(42),
+            targets: None,
             tools: split_tools().remove(1),
             method: None,
             kept: None,
+        },
+        SplitMode::ByTools {
+            targets: Some(faces(42)),
+            tools: split_tools().remove(3),
+            method: None,
+            kept: Some(Kept::Native(text("f3d:silhouette_split_solid_body"))),
         },
         SplitMode::Mutual {
             elements: ordered(43),
@@ -235,7 +261,7 @@ fn splits() -> Vec<Split> {
             source_settings: settings(),
         },
         Split {
-            mode: split_modes().remove(3),
+            mode: split_modes().remove(4),
             native_options: BTreeMap::new(),
             source_settings: BTreeMap::new(),
         },
@@ -553,6 +579,7 @@ fn every_template_and_body_operation_type_round_trips() {
     report.check("Split", splits());
     report.check("SplitMode", split_modes());
     report.check("SplitTool", split_tools());
+    report.check("ToolExtension", tool_extensions());
     report.check("SplitMethod", split_methods());
     report.check("Kept<Dimension<bool>>", flag_kept());
     report.check("Kept<Vec<Option<Dimension<bool>>>>", list_kept());
@@ -654,6 +681,36 @@ fn an_option_field_is_omitted_and_a_list_field_is_always_written() {
     refuses::<Transformation>("{}");
     let message = refuses::<Transformation>(r#"{"steps": [], "resolved": null}"#);
     assert!(message.contains("resolved"), "{message}");
+}
+
+/// §6.5: a `Geometry` split tool holds its selection under `tools` and its
+/// extension under `extend`, and a `Silhouette` tool is its direction.
+#[test]
+fn a_split_tool_states_its_extension_and_its_silhouette() {
+    let geometry = to_value(&split_tools().remove(2));
+    assert_eq!(geometry["kind"], json!("geometry"));
+    assert_eq!(geometry["tools"], to_value(&faces(41)));
+    assert_eq!(
+        geometry["extend"],
+        json!({"kind": "extended", "method": {"kind": "tangent"}})
+    );
+    assert_eq!(
+        to_value(&ToolExtension::Extended { method: None }),
+        json!({"kind": "extended"})
+    );
+    assert_eq!(to_value(&ToolExtension::Off), json!({"kind": "off"}));
+    refuses::<ToolExtension>(r#"{"kind": "off", "method": {"kind": "tangent"}}"#);
+    let bare = to_value(&faces(41));
+    let mut old = bare.as_object().unwrap().clone();
+    old.insert("kind".to_owned(), json!("geometry"));
+    refuses::<SplitTool>(&serde_json::Value::Object(old).to_string());
+    let silhouette = to_value(&split_tools().remove(3));
+    let mut direction = to_value(&direction_construction());
+    direction
+        .as_object_mut()
+        .unwrap()
+        .insert("kind".to_owned(), json!("silhouette"));
+    assert_eq!(silhouette, direction);
 }
 
 /// A combine's new component is omitted for `None`, refuses `null`, and

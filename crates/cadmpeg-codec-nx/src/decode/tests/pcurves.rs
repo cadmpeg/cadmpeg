@@ -342,7 +342,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
             id: vertex.clone(),
             point,
             tolerance: Some(
-                cadmpeg_ir::scalar::PositiveReal::new(EPS_TOPOLOGY_TOLERANCE)
+                cadmpeg_ir::scalar::PositiveLength::new(EPS_TOPOLOGY_TOLERANCE)
                     .expect("positive finite tolerance"),
             ),
             native_ref: None,
@@ -352,7 +352,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(sphere_circle)),
             ends: Some(cadmpeg_ir::topology::EdgeEnds::new(vertex.clone(), vertex)),
             tolerance: Some(
-                cadmpeg_ir::scalar::PositiveReal::new(EPS_TOPOLOGY_TOLERANCE)
+                cadmpeg_ir::scalar::PositiveLength::new(EPS_TOPOLOGY_TOLERANCE)
                     .expect("positive finite tolerance"),
             ),
             native_ref: None,

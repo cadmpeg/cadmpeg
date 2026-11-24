@@ -133,7 +133,10 @@ fn construction<K: ConstructionKind>(resolved: Option<K::Value>) -> Construction
 }
 
 fn native_options() -> NativeOptions {
-    NativeOptions::from([(text("f3d:point_flags"), NativeOption::Integer(lit(5)))])
+    NativeOptions::from([(
+        crate::codec_name!("f3d:point_flags"),
+        NativeOption::Integer(lit(5)),
+    )])
 }
 
 /// Writes `value`, reads it back strictly under the desktop ceilings, writes

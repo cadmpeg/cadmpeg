@@ -477,7 +477,7 @@ pub(super) fn decode(
                 })? {
                     if upper_first {
                         ir.model.pmi[index.get()].source_settings.insert(
-                            cadmpeg_core::nonblank_literal!("step:tol_order"),
+                            cadmpeg_ir::codec_name!("step:tol_order"),
                             NativeOption::Text(Dimension::Literal(
                                 cadmpeg_core::nonblank_literal!("upper_lower"),
                             )),
@@ -509,7 +509,7 @@ pub(super) fn decode(
             })? {
                 if let Some(zone_variance) = NonBlankString::new(zone_variance) {
                     ir.model.pmi[index.get()].native_options.insert(
-                        cadmpeg_core::nonblank_literal!("step:zone_variance"),
+                        cadmpeg_ir::codec_name!("step:zone_variance"),
                         NativeOption::Text(Dimension::Literal(zone_variance)),
                     );
                 }
@@ -1037,15 +1037,15 @@ fn admit_dimension(
         }) {
             tolerance = Some(Tolerance::Deviations(deviations));
             source_settings.insert(
-                cadmpeg_core::nonblank_literal!("step:tolerance_display"),
+                cadmpeg_ir::codec_name!("step:tolerance_display"),
                 NativeOption::Text(Dimension::Literal(cadmpeg_core::nonblank_literal!(
                     "limits"
                 ))),
             );
         } else {
             for (name, limit) in [
-                (cadmpeg_core::nonblank_literal!("step:lower_limit"), lower),
-                (cadmpeg_core::nonblank_literal!("step:upper_limit"), upper),
+                (cadmpeg_ir::codec_name!("step:lower_limit"), lower),
+                (cadmpeg_ir::codec_name!("step:upper_limit"), upper),
             ] {
                 native_options.insert(name, measure_option(limit));
             }

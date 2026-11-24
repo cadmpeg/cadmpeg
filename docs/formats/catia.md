@@ -1192,15 +1192,15 @@ forward from the end of their frame's allocation. Width-coded and compact
 backward references count backward from its start. A reference must select
 an allocation start.
 
+A governing sheet root belongs to its complete logical record source. Its allocation header and payload can span physical extents. Allocation counts include the full header width, including four-byte allocation headers. Source-local root and face ordinals remain distinct from physical byte positions.
+
 A backward sheet group has payload
 `81 <shell-distance> 05 01 <bounds:f32le[6]> <tail>`.
 The width-coded or compact backward shell distance selects a preceding
 roster by its allocation end. Intervening allocations can separate that
 roster from the group. The group allocation width and the shell distance
 occupy separate fields.
-The referenced A-family class-`61` roster has count `18 <n:u16le>`,
-followed by `n` allocation references and the packed sheet orientation
-lane. The references name distinct class-`5f` faces in roster order.
+The referenced class-`61` roster uses its family's count and allocation-reference grammar. The A-family wide count is `18 <n:u16le>`; the B-family compact count is `80+n`. The count is followed by `n` allocation references and the packed sheet orientation lane. The references name distinct class-`5f` faces in roster order.
 The member lane can mix new owned faces with reused preceding faces.
 In this group, a backward distance counts from the end of its frame's
 allocation and selects the end of a preceding frame's allocation.
