@@ -27,6 +27,7 @@ mod operation;
 pub(crate) mod parameters;
 mod pattern;
 mod sheet_metal;
+mod split;
 #[cfg(test)]
 mod tests;
 mod thread;

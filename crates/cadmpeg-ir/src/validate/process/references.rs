@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! References between process records (§7.3 to §7.8): tooling, machines,
-//! machining features, groups, parameter owners, codec ids, and units.
+//! machining features, groups, parameter owners, and units.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::mem::discriminant;
@@ -8,12 +8,10 @@ use std::mem::discriminant;
 use super::order::on_cycles;
 use super::records::{OwnerKey, ProcessRecords};
 use crate::design::ids::{MachineId, MachiningFeatureId};
-use crate::design::names::NativeName;
 use crate::design::units::UnitSymbol;
 use crate::process::feature::MachiningFeatureClass;
 use crate::process::groups::GroupKind;
 use crate::process::operation::{ProcessGeometry, Tooling};
-use crate::provenance::CodecFormat;
 use crate::report::check::Finding;
 
 pub(super) fn check_references(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
@@ -21,7 +19,7 @@ pub(super) fn check_references(records: &ProcessRecords<'_>, findings: &mut Vec<
     check_machining_features(records, findings);
     check_groups(records, findings);
     check_owners(records, findings);
-    check_codecs_and_units(records, findings);
+    check_units(records, findings);
 }
 
 /// `Tooling`, `Preset.tool`, `ToolPocket.tool`, `Setup.machine`, and
@@ -317,28 +315,11 @@ fn check_owners(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
     }
 }
 
-/// Every `native_kind` codec is a known codec id; a unit named outside an
-/// expression is a length symbol where it states a length unit.
-fn check_codecs_and_units(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
+/// A unit named outside an expression is a length symbol where it states a
+/// length unit.
+fn check_units(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
     let process = &records.ir.process;
-    let codec = |holder: &str, kind: &NativeName, findings: &mut Vec<Finding>| {
-        let codec = kind.codec.as_str();
-        if CodecFormat::parse(codec).is_none() {
-            super::error(
-                findings,
-                holder,
-                format_args!("native_kind codec `{codec}` is no known codec id"),
-            );
-        }
-    };
-    for operation in &process.operations {
-        codec(operation.id.as_str(), &operation.native_kind, findings);
-    }
-    for feature in &process.features {
-        codec(feature.id.as_str(), &feature.native_kind, findings);
-    }
     for tool in &process.tools {
-        codec(tool.id.as_str(), &tool.native_kind, findings);
         if let Some(unit) = tool.unit {
             length_unit(tool.id.as_str(), "tool's unit", unit, findings);
         }

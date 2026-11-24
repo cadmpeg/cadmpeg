@@ -125,7 +125,10 @@ pub(super) fn emit_vertices(
         ir.geometry.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,
-            tolerance: vertex_tolerances.get(&index).copied(),
+            tolerance: vertex_tolerances
+                .get(&index)
+                .copied()
+                .map(cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real),
             native_ref: None,
         });
     }
@@ -169,7 +172,10 @@ pub(super) fn emit_vertices(
         ir.geometry.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,
-            tolerance: vertex_tolerances.get(&index).copied(),
+            tolerance: vertex_tolerances
+                .get(&index)
+                .copied()
+                .map(cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real),
             native_ref: None,
         });
     }

@@ -16,7 +16,7 @@ use cadmpeg_ir::geometry::{Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeo
 use cadmpeg_ir::ids::{
     BodyId, CurveId, EdgeId, PointId, ProceduralCurveId, RegionId, ShellId, SurfaceId, VertexId,
 };
-use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
@@ -60,10 +60,11 @@ struct ClosedWireMember<'a> {
     parameter_range: Option<[f64; 2]>,
 }
 
-const ZERO_ENTITY_WIRE_TOLERANCE: PositiveReal = match PositiveReal::new(2e-3) {
-    Some(tolerance) => tolerance,
-    None => panic!("zero-entity point tolerance must be positive and finite"),
-};
+const ZERO_ENTITY_WIRE_TOLERANCE: cadmpeg_ir::scalar::PositiveLength =
+    match cadmpeg_ir::scalar::PositiveLength::new(2e-3) {
+        Some(tolerance) => tolerance,
+        None => panic!("zero-entity point tolerance must be positive and finite"),
+    };
 
 fn closed_wire_loop_members<'a>(
     run: &'a crate::families::zero_entity::records::ZeroEntitySupportRun,

@@ -23,6 +23,7 @@ use crate::design::feature::{
     Driver, Feature, FeatureDefinition, FeatureOperation, FuzzyTolerance, Link, LinkState,
     OperationFamily, StoredOrigin,
 };
+use crate::design::ops::assembly::{AssemblyContext, ContextEffect};
 use crate::design::ops::body::TransformStep;
 use crate::design::ops::sheet_metal::{BendAllowance, BendSpec, RadiusSide, SheetMetalRule};
 use crate::design::options::{NativeOption, NativeOptions};
@@ -38,7 +39,7 @@ use crate::design::units::{Quantity, ValueKind};
 use crate::document::{Design, Topology};
 use crate::pmi::{FitStandard, FitZone, LimitsAndFits};
 use crate::products::NestedOverride;
-use crate::scalar::Fraction;
+use crate::scalar::{Fraction, PositiveReal};
 use crate::spreadsheets::{CellAddress, SpreadsheetCell, SpreadsheetDimension, SpreadsheetRange};
 use crate::transform::Transform;
 
@@ -282,7 +283,7 @@ pub(super) fn links() -> Vec<Link> {
             source: Some(selections().remove(0)),
             document: Some(fixtures::definition_ref()),
             transform: Some(Transform::identity()),
-            scale: Some(real(2.0)),
+            scale: Some(PositiveReal::new(2.0).unwrap()),
             associative: Some(true),
             state: Some(LinkState::OutOfDate),
             native_ref: Some("catia:link#1".to_owned()),
@@ -363,14 +364,13 @@ pub(super) fn operation_families() -> Vec<OperationFamily> {
         RigidGroup,
         ComponentPattern,
         MirrorComponents,
-        AssemblyFeature,
         MaterialRemoval,
     ]
 }
 
 fn native_options() -> NativeOptions {
     NativeOptions::from([(
-        text("sldprt:auto_select"),
+        crate::codec_name!("sldprt:auto_select"),
         NativeOption::Bool(Dimension::Literal(true)),
     )])
 }
@@ -395,7 +395,7 @@ pub(super) fn feature_operations() -> Vec<FeatureOperation> {
             family: OperationFamily::Fillet,
         },
         FeatureOperation::Native {
-            kind: text("nx:untrim"),
+            kind: crate::codec_name!("nx:untrim"),
             native_options: native_options(),
             source_settings: NativeOptions::new(),
         },
@@ -406,6 +406,7 @@ pub(super) fn feature_definitions() -> Vec<FeatureDefinition> {
     vec![
         FeatureDefinition {
             operation: FeatureOperation::Sketch(id("sketch", 1)),
+            assembly: None,
             refine: None,
             fuzzy_tolerance: None,
         },
@@ -413,8 +414,22 @@ pub(super) fn feature_definitions() -> Vec<FeatureDefinition> {
             operation: FeatureOperation::Unresolved {
                 family: OperationFamily::Extrude,
             },
+            assembly: None,
             refine: Some(false),
             fuzzy_tolerance: Some(FuzzyTolerance::Automatic),
+        },
+        FeatureDefinition {
+            operation: FeatureOperation::Unresolved {
+                family: OperationFamily::Hole,
+            },
+            assembly: Some(AssemblyContext {
+                participants: BTreeMap::from([
+                    (None, selections().remove(0)),
+                    (Some(ContextEffect::Definitions), selections().remove(1)),
+                ]),
+            }),
+            refine: None,
+            fuzzy_tolerance: None,
         },
     ]
 }
@@ -692,6 +707,7 @@ pub(super) fn parameter_definitions() -> Vec<ParameterDefinition> {
         ParameterDefinition::Expression(fixtures::expressions().remove(0)),
         ParameterDefinition::Driven,
         ParameterDefinition::Assigned(id("parameter-program", 1)),
+        ParameterDefinition::Unset,
     ]
 }
 
@@ -772,7 +788,7 @@ pub(super) fn design_parameters() -> Vec<DesignParameter> {
             comment: Some("Depth".to_owned()),
             native_options: native_options(),
             source_settings: NativeOptions::from([(
-                text("f3d:favorite"),
+                crate::codec_name!("f3d:favorite"),
                 NativeOption::Bool(Dimension::Literal(true)),
             )]),
             native_ref: Some("sldprt:dimension#1".to_owned()),

@@ -1391,7 +1391,7 @@ fn standard_carrier_surface_ids(ir: &CadIr) -> HashMap<u32, Option<SurfaceId>> {
         let Some(source) = surface.source_object.as_ref() else {
             continue;
         };
-        if source.format != cadmpeg_ir::codec_format!(crate::dialect::FORMAT) {
+        if source.format != cadmpeg_ir::codec_id!(crate::dialect::FORMAT) {
             continue;
         }
         let Some(tag) = source
@@ -3199,7 +3199,7 @@ fn append_resolved_consolidated_surface_curves(
                         ]
                         .into_iter()
                         .flatten()
-                        .map(cadmpeg_ir::scalar::PositiveReal::get)
+                        .map(cadmpeg_ir::scalar::PositiveLength::get)
                         .fold(cadmpeg_ir::units::COINCIDENCE_TOLERANCE, f64::max);
                         let mut coedges = Vec::new();
                         for (side, surface) in standard_surfaces.iter().enumerate() {
