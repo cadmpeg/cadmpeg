@@ -446,7 +446,7 @@
       "exactness": {
         "f3d:brep:entity#11": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         }

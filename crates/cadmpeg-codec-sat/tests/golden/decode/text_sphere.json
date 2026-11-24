@@ -301,8 +301,8 @@
       "exactness": {
         "sat:brep:entity#5": {
           "fields": {
-            "geometry.axis": "derived",
-            "geometry.ref_direction": "derived"
+            "geometry.value.axis": "derived",
+            "geometry.value.ref_direction": "derived"
           },
           "kind": "fields"
         }

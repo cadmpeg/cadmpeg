@@ -722,17 +722,17 @@
           },
           "nx:s0:intersection-pcurve#13": {
             "fields": {
-              "fit_tolerance": "derived",
               "geometry": "derived",
-              "parameter_range": "derived"
+              "metadata.form.fit_tolerance": "derived",
+              "metadata.form.parameter_range": "derived"
             },
             "kind": "fields"
           },
           "nx:s0:intersection-pcurve#7": {
             "fields": {
-              "fit_tolerance": "derived",
               "geometry": "derived",
-              "parameter_range": "derived"
+              "metadata.form.fit_tolerance": "derived",
+              "metadata.form.parameter_range": "derived"
             },
             "kind": "fields"
           },

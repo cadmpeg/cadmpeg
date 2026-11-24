@@ -1254,7 +1254,6 @@
         "catia:consolidated:construction#0": {
           "entity": "derived",
           "fields": {
-            "curve": "derived",
             "definition": "derived"
           },
           "kind": "entity"

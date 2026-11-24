@@ -2009,115 +2009,115 @@
       "exactness": {
         "f3d:brep:entity#16": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         },
         "f3d:brep:entity#17": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         },
         "f3d:brep:entity#18": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         },
         "f3d:brep:entity#19": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         },
         "f3d:brep:entity#20": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         },
         "f3d:brep:entity#21": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         },
         "f3d:brep:entity#22": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
         "f3d:brep:entity#23": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
         "f3d:brep:entity#24": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
         "f3d:brep:entity#25": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
         "f3d:brep:entity#26": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
         "f3d:brep:entity#27": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
         "f3d:brep:entity#28": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
         "f3d:brep:entity#29": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
         "f3d:brep:entity#30": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
         "f3d:brep:entity#31": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
         "f3d:brep:entity#32": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
         "f3d:brep:entity#33": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         }

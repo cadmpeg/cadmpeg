@@ -695,8 +695,8 @@
         },
         "sldprt:brep:surf#10": {
           "fields": {
-            "geometry.axis": "derived",
-            "geometry.ref_direction": "derived"
+            "geometry.value.axis": "derived",
+            "geometry.value.ref_direction": "derived"
           },
           "kind": "fields"
         }

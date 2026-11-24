@@ -572,7 +572,7 @@
       "exactness": {
         "sldprt:brep:surf#10": {
           "fields": {
-            "geometry.u_axis": "derived"
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         },
@@ -583,8 +583,7 @@
         },
         "sldprt:displaylist:record#348:0": {
           "fields": {
-            "body": "derived",
-            "faces": "derived"
+            "of": "derived"
           },
           "kind": "fields"
         }
