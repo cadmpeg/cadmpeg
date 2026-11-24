@@ -186,10 +186,12 @@ impl Walk for FeatureDefinition {
     fn walk(&mut self, into: &mut Visit<'_, '_>) -> Result<(), CodecError> {
         let Self {
             operation,
+            assembly,
             refine: _,
             fuzzy_tolerance: _,
         } = self;
         operation.walk(into)?;
+        assembly.walk(into)?;
         Ok(())
     }
 }
@@ -246,7 +248,6 @@ impl Walk for FeatureOperation {
             Self::RigidGroup(f0) => f0.walk(into),
             Self::ComponentPattern(f0) => f0.walk(into),
             Self::MirrorComponents(f0) => f0.walk(into),
-            Self::AssemblyFeature(f0) => f0.walk(into),
             Self::Stored {
                 bodies: _,
                 tessellations: _,

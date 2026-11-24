@@ -263,7 +263,7 @@ fn split(
 ) -> FeatureOperation {
     FeatureOperation::Split(Box::new(new::Split {
         mode: new::SplitMode::ByTools {
-            targets,
+            targets: Some(targets),
             tools,
             method: Some(new::SplitMethod::Intersect),
             kept,

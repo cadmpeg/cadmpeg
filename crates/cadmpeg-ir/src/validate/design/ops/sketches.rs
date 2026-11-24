@@ -1312,7 +1312,7 @@ fn check_pattern<S: Space>(
         entity: ops.id,
         feature: ops.id,
         scope: None,
-        in_assembly_feature: false,
+        assembly: false,
     };
     let seeds: BTreeSet<&str> = pattern.seeds.iter().map(|s| S::entity(s)).collect();
     for seed in &pattern.seeds {

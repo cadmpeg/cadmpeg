@@ -359,8 +359,14 @@ pub struct Split {
 pub enum SplitMode {
     /// Cuts `targets` with `tools` and leaves the tools unchanged.
     ByTools {
-        /// The bodies or faces cut.
-        targets: SetSelection,
+        /// The bodies or faces cut. `None` where the definition states
+        /// `assembly`, whose participants are cut.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_targets"
+        )]
+        targets: Option<SetSelection>,
         /// The tools that cut them.
         tools: SplitTool,
         /// How the tools meet the targets.
@@ -948,5 +954,6 @@ cadmpeg_core::named_optional_field!(deserialize_role<T>, T, "role");
 cadmpeg_core::named_optional_field!(deserialize_simplify<T>, T, "simplify");
 cadmpeg_core::named_optional_field!(deserialize_tangent<T>, T, "tangent");
 cadmpeg_core::named_optional_field!(deserialize_target<T>, T, "target");
+cadmpeg_core::named_optional_field!(deserialize_targets<T>, T, "targets");
 cadmpeg_core::named_optional_field!(deserialize_tools_after<T>, T, "tools_after");
 cadmpeg_core::named_optional_field!(deserialize_variant<T>, T, "variant");

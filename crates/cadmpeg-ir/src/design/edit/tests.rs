@@ -112,6 +112,7 @@ fn operation(key: u32, operation: FeatureOperation) -> Feature {
         suppressed: None,
         definition: FeatureDefinition {
             operation,
+            assembly: None,
             refine: None,
             fuzzy_tolerance: None,
         },

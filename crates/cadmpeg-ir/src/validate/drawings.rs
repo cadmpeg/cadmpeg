@@ -220,6 +220,7 @@ mod tests {
                     operation: crate::design::feature::FeatureOperation::Unresolved {
                         family: crate::design::feature::OperationFamily::Extrude,
                     },
+                    assembly: None,
                     refine: None,
                     fuzzy_tolerance: None,
                 },

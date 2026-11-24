@@ -260,6 +260,7 @@ fn datum(key: &str, element: DatumElement) -> Feature {
                 native_options: BTreeMap::new(),
                 source_settings: BTreeMap::new(),
             })),
+            assembly: None,
             refine: None,
             fuzzy_tolerance: None,
         },

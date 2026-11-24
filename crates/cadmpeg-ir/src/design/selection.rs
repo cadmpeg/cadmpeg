@@ -850,6 +850,13 @@ pub enum SelectionRule {
         /// The faces the seeds' faces meet.
         with: Members<Picked, Unordered>,
     },
+    /// Every component instance below the owner's definition that exists in
+    /// the anchored state and whose bodies differ when the operation of the
+    /// selection's feature is applied to that instance alone. It takes no
+    /// seeds and no propagation, and occurs only as a term of an assembly
+    /// feature's participants.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Affected,
     /// A source rule whose meaning is not established, written
     /// `codec:rule`.
     Native(CodecName),

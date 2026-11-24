@@ -203,7 +203,7 @@ fn split_methods() -> Vec<SplitMethod> {
 fn split_modes() -> Vec<SplitMode> {
     vec![
         SplitMode::ByTools {
-            targets: faces(42),
+            targets: Some(faces(42)),
             tools: split_tools().remove(0),
             method: Some(SplitMethod::Intersect),
             kept: Some(Kept::Side {
@@ -211,7 +211,7 @@ fn split_modes() -> Vec<SplitMode> {
             }),
         },
         SplitMode::ByTools {
-            targets: faces(42),
+            targets: None,
             tools: split_tools().remove(1),
             method: None,
             kept: None,

@@ -267,6 +267,7 @@ fn resolved_item(
         suppressed: feature.suppressed.map(Dimension::Literal),
         definition: FeatureDefinition {
             operation,
+            assembly: None,
             refine: None,
             fuzzy_tolerance: None,
         },
@@ -327,6 +328,7 @@ fn unprojected_item(
             .map(Dimension::Literal),
         definition: FeatureDefinition {
             operation,
+            assembly: None,
             refine: None,
             fuzzy_tolerance: None,
         },
