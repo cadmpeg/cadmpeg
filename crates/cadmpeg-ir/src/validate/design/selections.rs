@@ -247,9 +247,24 @@ fn check_rules(selection: &SelectionView<'_>, site: Site<'_>, findings: &mut Vec
             SelectionRule::All { .. } if seeded => {
                 record(format_args!("an All rule term has seeds"));
             }
-            SelectionRule::All { .. } => {}
-            _ if !seeded => record(format_args!("a rule term other than All has no seeds")),
+            SelectionRule::Affected if seeded => {
+                record(format_args!("an Affected rule term has seeds"));
+            }
+            SelectionRule::All { .. } | SelectionRule::Affected => {}
+            _ if !seeded => record(format_args!(
+                "a rule term other than All or Affected has no seeds"
+            )),
             _ => {}
+        }
+        if matches!(term.rule, SelectionRule::Affected) {
+            if term.propagation.is_some() {
+                record(format_args!("an Affected rule term states a propagation"));
+            }
+            if !selection.participants {
+                record(format_args!(
+                    "an Affected rule term is outside an assembly context's participants"
+                ));
+            }
         }
         if let SelectionRule::Region { boundary } = term.rule {
             let curves = boundary.as_slice().iter().any(picks_curve);

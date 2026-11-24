@@ -2264,34 +2264,39 @@
       "description": "Identifies a [`crate::physics::Articulation`] record.",
       "$ref": "#/$defs/Identity"
     },
-    "AssemblyFeature": {
-      "description": "An operation (an extrude or revolve cut, a hole, a split, a fillet) run in\nthe assembly over the occurrences, or bodies through occurrence contexts,\nthat it modifies.",
+    "AssemblyContext": {
+      "description": "The context of an assembly feature: the occurrences, or bodies through\noccurrence contexts, that the feature's operation changes, keyed by what it\nchanges for them. `None` keys the participants whose effect the source does\nnot state. On the wire it is an array of `[effect, selection]` pairs in key\norder.",
       "type": "object",
       "properties": {
-        "effect": {
-          "description": "What the feature changes. `None`, not stated.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ContextEffect"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "operation": {
-          "description": "The operation the feature runs.",
-          "$ref": "#/$defs/FeatureOperation2"
-        },
         "participants": {
-          "description": "What the feature modifies, its picks carrying occurrence contexts: the\nonly statement of it, since the operation states no body operand of\nits own.",
-          "$ref": "#/$defs/Selection2"
+          "description": "The participants, one selection per effect.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ContextEffect"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              {
+                "$ref": "#/$defs/Selection2"
+              }
+            ]
+          },
+          "uniqueItems": true
         }
       },
       "additionalProperties": false,
       "required": [
-        "participants",
-        "operation"
+        "participants"
       ]
     },
     "AssemblyJoint": {
@@ -11333,7 +11338,7 @@
       ]
     },
     "ContextEffect": {
-      "description": "What an assembly feature changes.",
+      "description": "What an assembly feature changes for the participants under it.",
       "oneOf": [
         {
           "description": "Only the participating instances: the result is `instance_bodies` of\nthe assembly definition at each participant's path.",
@@ -11350,7 +11355,7 @@
           ]
         },
         {
-          "description": "The participants' definitions: each changed definition's scope holds a\nresulting feature with `driven_by` naming the assembly feature.",
+          "description": "The participants' definitions: each changed definition's scope holds a\nresulting feature with `driven_by` naming the feature whose definition\nstates the context.",
           "type": "object",
           "properties": {
             "kind": {
@@ -24440,9 +24445,20 @@
       ]
     },
     "FeatureDefinition2": {
-      "description": "A feature's one operation and the cleanup the source states for its\nresult. On the wire it has no wrapper level.",
+      "description": "A feature's one operation, the assembly context it runs in, and the\ncleanup the source states for its result. On the wire it has no wrapper\nlevel.",
       "type": "object",
       "properties": {
+        "assembly": {
+          "description": "The participants of an assembly feature, which runs its operation in\nan assembly over them. `None` on every other feature.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AssemblyContext"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "fuzzy_tolerance": {
           "description": "The Boolean tolerance the feature carries.",
           "anyOf": [
@@ -30227,24 +30243,6 @@
             },
             "value": {
               "$ref": "#/$defs/MirrorComponents"
-            }
-          },
-          "additionalProperties": false,
-          "required": [
-            "kind",
-            "value"
-          ]
-        },
-        {
-          "description": "An operation run in the assembly over its participants (§6.7).",
-          "type": "object",
-          "properties": {
-            "kind": {
-              "type": "string",
-              "const": "assembly_feature"
-            },
-            "value": {
-              "$ref": "#/$defs/AssemblyFeature"
             }
           },
           "additionalProperties": false,
@@ -53266,11 +53264,6 @@
           "const": "mirror_components"
         },
         {
-          "description": "An assembly feature.",
-          "type": "string",
-          "const": "assembly_feature"
-        },
-        {
           "description": "A material removal.",
           "type": "string",
           "const": "material_removal"
@@ -73781,6 +73774,20 @@
           ]
         },
         {
+          "description": "Every component instance below the owner's definition that exists in\nthe anchored state and whose bodies differ when the operation of the\nselection's feature is applied to that instance alone. It takes no\nseeds and no propagation, and occurs only as a term of an assembly\nfeature's participants.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "affected"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
           "description": "A source rule whose meaning is not established, written\n`codec:rule`.",
           "type": "object",
           "properties": {
@@ -87126,8 +87133,15 @@
               ]
             },
             "targets": {
-              "description": "The bodies or faces cut.",
-              "$ref": "#/$defs/Selection2"
+              "description": "The bodies or faces cut. `None` where the definition states\n`assembly`, whose participants are cut.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Selection2"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "tools": {
               "description": "The tools that cut them.",
@@ -87137,7 +87151,6 @@
           "additionalProperties": false,
           "required": [
             "kind",
-            "targets",
             "tools"
           ]
         },
