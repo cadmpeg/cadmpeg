@@ -11,11 +11,12 @@ use super::record_finding;
 use crate::document::CadIr;
 use crate::index::identities::BorrowedIdentities;
 use crate::pmi::{DimensionModifier, PmiDefinition, PmiTarget};
+use crate::report::check::Ruled;
 use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 use nominals::BoundParameters;
 
-fn error(findings: &mut Vec<Finding>, annotation: &str, message: std::fmt::Arguments<'_>) {
+fn error(findings: &mut Vec<Finding>, annotation: &str, message: Ruled<'_>) {
     record_finding(
         findings,
         Check::Pmi,
@@ -79,7 +80,7 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                     Check::Pmi,
                     crate::report::Severity::Error,
                     Some(annotation.id.as_str()),
-                    format_args!("{}", "unresolved PMI target"),
+                    crate::rule!("pmi.unresolved-pmi-target", "{}", "unresolved PMI target"),
                 );
             }
         }
@@ -95,7 +96,11 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                             Check::Pmi,
                             crate::report::Severity::Error,
                             Some(annotation.id.as_str()),
-                            format_args!("{}", "unresolved datum reference"),
+                            crate::rule!(
+                                "pmi.unresolved-datum-reference",
+                                "{}",
+                                "unresolved datum reference"
+                            ),
                         );
                     }
                 }
@@ -128,7 +133,10 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                         Check::Pmi,
                         crate::report::Severity::Error,
                         Some(annotation.id.as_str()),
-                        format_args!("inconsistent geometric tolerance-zone constraints"),
+                        crate::rule!(
+                            "pmi.inconsistent-geometric-tolerance-zone-constraints",
+                            "inconsistent geometric tolerance-zone constraints"
+                        ),
                     );
                 }
                 if zones
@@ -140,7 +148,10 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                         Check::Pmi,
                         crate::report::Severity::Error,
                         Some(annotation.id.as_str()),
-                        format_args!("tolerance zone's other form names a typed form"),
+                        crate::rule!(
+                            "pmi.tolerance-zone-other-form-names-typed",
+                            "tolerance zone's other form names a typed form"
+                        ),
                     );
                 }
                 if let Some(id) = datum_system {
@@ -153,7 +164,7 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                             Check::Pmi,
                             crate::report::Severity::Error,
                             Some(annotation.id.as_str()),
-                            format_args!("unresolved datum system"),
+                            crate::rule!("pmi.unresolved-datum-system", "unresolved datum system"),
                         );
                     }
                 }
@@ -165,7 +176,10 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                         Check::Pmi,
                         crate::report::Severity::Error,
                         Some(annotation.id.as_str()),
-                        format_args!("dimension nominal quantity disagrees with its kind"),
+                        crate::rule!(
+                            "pmi.dimension-nominal-quantity-disagrees-kind",
+                            "dimension nominal quantity disagrees with its kind"
+                        ),
                     );
                 }
                 if dimension
@@ -178,7 +192,10 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                         Check::Pmi,
                         crate::report::Severity::Error,
                         Some(annotation.id.as_str()),
-                        format_args!("dimension's other modifier names a typed modifier"),
+                        crate::rule!(
+                            "pmi.dimension-other-modifier-names-typed-modifier",
+                            "dimension's other modifier names a typed modifier"
+                        ),
                     );
                 }
                 let id = annotation.id.as_str();
@@ -193,7 +210,10 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                             Check::Pmi,
                             crate::report::Severity::Error,
                             Some(annotation.id.as_str()),
-                            format_args!("unresolved semantic annotation"),
+                            crate::rule!(
+                                "pmi.unresolved-semantic-annotation",
+                                "unresolved semantic annotation"
+                            ),
                         );
                         break;
                     }

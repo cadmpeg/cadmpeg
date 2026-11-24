@@ -11,7 +11,7 @@
 use crate::document::CadIr;
 use crate::index::identities::IdentitySet;
 use crate::report::{
-    check::{Check, Finding, ValidationReport},
+    check::{Check, Finding, Ruled, ValidationReport},
     loss::LossNote,
     Severity,
 };
@@ -74,15 +74,15 @@ fn record_finding(
     check: Check,
     severity: Severity,
     entity: Option<&str>,
-    message: std::fmt::Arguments<'_>,
+    message: Ruled<'_>,
 ) {
-    let message = std::fmt::format(message);
     let entity = entity.map(str::to_owned);
     findings.push(Finding {
         related: Vec::new(),
         check,
+        rule: message.rule.clone(),
         severity,
-        message,
+        message: std::fmt::format(message.message),
         entity,
     });
 }
@@ -93,12 +93,13 @@ fn record_related_finding(
     severity: Severity,
     entity: &str,
     related: &[&str],
-    message: std::fmt::Arguments<'_>,
+    message: Ruled<'_>,
 ) {
     let mut finding = Finding {
         check,
+        rule: message.rule.clone(),
         severity,
-        message: std::fmt::format(message),
+        message: std::fmt::format(message.message),
         entity: Some(entity.to_owned()),
         related: Vec::new(),
     };
@@ -145,7 +146,7 @@ fn validate_model_with_index<'ir>(
     check_wire_topology(ir, &mut findings);
     if ir.fragment {
         record_finding(&mut findings, Check::FragmentSkipped, Severity::Info, None,
-            format_args!("skipped carrier_reachability: document-wide ownership requires a complete document"));
+            crate::rule!("validate.skipped-carrier-reachability-document-wide-ownership", "skipped carrier_reachability: document-wide ownership requires a complete document"));
     } else {
         check_carrier_reachability(ctx, ids.native_view(), &mut findings)?;
     }
@@ -326,7 +327,7 @@ mod tests {
                 crate::report::check::Check::ReferentialIntegrity,
                 crate::report::Severity::Error,
                 entity,
-                format_args!("unresolved reference {}", 7),
+                crate::rule!("test.unresolved-reference", "unresolved reference {}", 7),
             );
         }
         assert_eq!(findings.len(), 2);

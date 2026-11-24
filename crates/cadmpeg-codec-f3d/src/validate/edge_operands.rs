@@ -179,6 +179,9 @@ pub(super) fn validate_face_boundaries<'a>(
     if ctx.ir.fragment && native.asm_histories.is_empty() && !native.design_edge_operands.is_empty()
     {
         findings.push(Finding {
+            rule: cadmpeg_ir::rule_name!(
+                "f3d/edge_operands.skipped-f3d-historical-face-boundaries-cited"
+            ),
             check: Check::FragmentSkipped,
             severity: Severity::Info,
             entity: None,

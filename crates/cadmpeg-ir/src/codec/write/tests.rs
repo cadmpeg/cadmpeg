@@ -662,6 +662,7 @@ fn finding(entity: Option<&str>, message: &str, severity: Severity) -> Finding {
     Finding {
         related: Vec::new(),
         check: Check::ReferentialIntegrity,
+        rule: crate::rule_name!("test.fixture-reference"),
         severity,
         entity: entity.map(str::to_owned),
         message: message.into(),

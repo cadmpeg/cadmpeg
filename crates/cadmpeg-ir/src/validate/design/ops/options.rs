@@ -38,7 +38,7 @@ pub(super) fn check_native_keys(wire: &Value, findings: &mut Vec<Finding>) {
                     error(
                         findings,
                         owner,
-                        format_args!(
+                        crate::rule!("design.key-both-native-options-source-settings", 
                             "key {key:?} is in both native_options and source_settings of one record"
                         ),
                     );
@@ -63,7 +63,10 @@ pub(super) fn check_profile(
         error(
             findings,
             site.entity,
-            format_args!("{field} holds no pick; a profile holds at least one or is Unread"),
+            crate::rule!(
+                "design.holds-no-pick-profile-holds-least",
+                "{field} holds no pick; a profile holds at least one or is Unread"
+            ),
         );
     }
     let allowed = |class: Class| {
@@ -83,7 +86,10 @@ pub(super) fn check_profile(
         error(
             findings,
             site.entity,
-            format_args!("{field} picks {class}, which no profile is made of"),
+            crate::rule!(
+                "design.picks-no-profile-made",
+                "{field} picks {class}, which no profile is made of"
+            ),
         );
     }
 }
@@ -95,7 +101,10 @@ pub(super) fn check_path(site: Site<'_>, field: &str, path: &PathRef, findings: 
         error(
             findings,
             site.entity,
-            format_args!("{field} holds no pick; a path holds at least one or is Unread"),
+            crate::rule!(
+                "design.holds-no-pick-path-holds-least",
+                "{field} holds no pick; a path holds at least one or is Unread"
+            ),
         );
     }
     let allowed = |class: Class| {
@@ -112,7 +121,10 @@ pub(super) fn check_path(site: Site<'_>, field: &str, path: &PathRef, findings: 
         error(
             findings,
             site.entity,
-            format_args!("{field} picks {class}, which no path is made of"),
+            crate::rule!(
+                "design.picks-no-path-made",
+                "{field} picks {class}, which no path is made of"
+            ),
         );
     }
 }
@@ -182,7 +194,11 @@ pub(super) fn check_boolean(
         BooleanOp::Assemble | BooleanOp::Compound | BooleanOp::UnionTrim => error(
             findings,
             site.entity,
-            format_args!("Boolean op {} occurs only as a Combine's op", op_name(op)),
+            crate::rule!(
+                "design.boolean-op-occurs-only-combine-op",
+                "Boolean op {} occurs only as a Combine's op",
+                op_name(op)
+            ),
         ),
         BooleanOp::Sew => {
             let sheet = match at {
@@ -194,7 +210,10 @@ pub(super) fn check_boolean(
                 error(
                     findings,
                     site.entity,
-                    format_args!("Sew occurs only in an output whose result is a sheet"),
+                    crate::rule!(
+                        "design.sew-occurs-only-output-result-sheet",
+                        "Sew occurs only in an output whose result is a sheet"
+                    ),
                 );
             }
         }
@@ -216,7 +235,10 @@ pub(super) fn check_targets(
             error(
                 findings,
                 site.entity,
-                format_args!("Targets::Selected picks {class}; its picks resolve to bodies"),
+                crate::rule!(
+                    "design.targets-selected-picks-picks-resolve-bodies",
+                    "Targets::Selected picks {class}; its picks resolve to bodies"
+                ),
             );
         }
     }
@@ -224,7 +246,10 @@ pub(super) fn check_targets(
         error(
             findings,
             site.entity,
-            format_args!("a member of a Body container states targets; its target is its body"),
+            crate::rule!(
+                "design.member-body-container-states-targets-target",
+                "a member of a Body container states targets; its target is its body"
+            ),
         );
     }
 }
@@ -273,7 +298,10 @@ pub(super) fn check_length_span(
                 error(
                     findings,
                     site.entity,
-                    format_args!("{field} is a symmetric span of zero"),
+                    crate::rule!(
+                        "design.symmetric-span-zero",
+                        "{field} is a symmetric span of zero"
+                    ),
                 );
             }
         }
@@ -307,7 +335,7 @@ pub(super) fn check_angle_span(
                 error(
                     findings,
                     site.entity,
-                    format_args!(
+                    crate::rule!("design.symmetric-angular-span-literal-amount-nonzero", 
                         "{field} is a symmetric angular span of {value}; a literal amount is nonzero and at most π per side or 2π in total"
                     ),
                 );
@@ -327,7 +355,10 @@ fn check_between<Q>(
         error(
             findings,
             site.entity,
-            format_args!("{field} is a Span::Between with AtOrigin at both start and end"),
+            crate::rule!(
+                "design.span-between-atorigin-both-start-end",
+                "{field} is a Span::Between with AtOrigin at both start and end"
+            ),
         );
     }
 }
@@ -361,7 +392,8 @@ pub(super) fn check_limit<Q>(
         error(
             findings,
             site.entity,
-            format_args!(
+            crate::rule!(
+                "design.togeometry-target-picks-picks-faces-surfaces",
                 "{field} ToGeometry.target picks {class}; it picks faces, surfaces, or bodies"
             ),
         );
@@ -370,19 +402,28 @@ pub(super) fn check_limit<Q>(
         error(
             findings,
             site.entity,
-            format_args!("{field} ToGeometry.far occurs only where target picks bodies"),
+            crate::rule!(
+                "design.togeometry-far-occurs-only-where-target",
+                "{field} ToGeometry.far occurs only where target picks bodies"
+            ),
         );
     }
     match offset {
         Some(LimitOffset::Angle(_)) if !angular => error(
             findings,
             site.entity,
-            format_args!("{field} LimitOffset::Angle occurs only in an angular limit"),
+            crate::rule!(
+                "design.limitoffset-angle-occurs-only-angular-limit",
+                "{field} LimitOffset::Angle occurs only in an angular limit"
+            ),
         ),
         Some(LimitOffset::Translated(_)) if angular => error(
             findings,
             site.entity,
-            format_args!("{field} LimitOffset::Translated occurs only in a length limit"),
+            crate::rule!(
+                "design.limitoffset-translated-occurs-only-length-limit",
+                "{field} LimitOffset::Translated occurs only in a length limit"
+            ),
         ),
         _ => {}
     }
@@ -399,7 +440,10 @@ pub(super) fn check_thickness(site: Site<'_>, thickness: &Thickness, findings: &
             error(
                 findings,
                 site.entity,
-                format_args!("Thickness::Offsets has outside + inside not above zero"),
+                crate::rule!(
+                    "design.thickness-offsets-outside-inside-not-above",
+                    "Thickness::Offsets has outside + inside not above zero"
+                ),
             );
         }
     }

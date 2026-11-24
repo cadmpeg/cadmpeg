@@ -96,14 +96,20 @@ pub(in crate::validate) fn check_coedge_pairing(
                     Check::CoedgePairing,
                     Severity::Error,
                     owner,
-                    format_args!("radial ring crosses edges"),
+                    crate::rule!(
+                        "topology.radial-ring-crosses-edges",
+                        "radial ring crosses edges"
+                    ),
                 );
                 record_finding(
                     findings,
                     Check::CoedgePairing,
                     Severity::Error,
                     owner,
-                    format_args!("radial ring does not close"),
+                    crate::rule!(
+                        "topology.radial-ring-does-not-close",
+                        "radial ring does not close"
+                    ),
                 );
             }
             RadialStatus::DoesNotClose => {
@@ -112,7 +118,10 @@ pub(in crate::validate) fn check_coedge_pairing(
                     Check::CoedgePairing,
                     Severity::Error,
                     owner,
-                    format_args!("radial ring does not close"),
+                    crate::rule!(
+                        "topology.radial-ring-does-not-close",
+                        "radial ring does not close"
+                    ),
                 );
             }
             RadialStatus::Closed(2) => {
@@ -123,7 +132,10 @@ pub(in crate::validate) fn check_coedge_pairing(
                             Check::CoedgePairing,
                             Severity::Warning,
                             owner,
-                            format_args!("two-member radial ring has equal coedge senses"),
+                            crate::rule!(
+                                "topology.two-member-radial-ring-equal-coedge",
+                                "two-member radial ring has equal coedge senses"
+                            ),
                         );
                     }
                 }
@@ -176,7 +188,10 @@ pub(in crate::validate) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Fi
                     Check::WireTopology,
                     Severity::Error,
                     Some(shell.id.as_str()),
-                    format_args!("wire edge is also referenced by a coedge"),
+                    crate::rule!(
+                        "topology.wire-edge-also-referenced-coedge",
+                        "wire edge is also referenced by a coedge"
+                    ),
                 );
             }
         }
@@ -187,7 +202,10 @@ pub(in crate::validate) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Fi
                     Check::WireTopology,
                     Severity::Error,
                     Some(shell.id.as_str()),
-                    format_args!("free vertex is also referenced by an edge"),
+                    crate::rule!(
+                        "topology.free-vertex-also-referenced-edge",
+                        "free vertex is also referenced by an edge"
+                    ),
                 );
             }
         }
@@ -201,7 +219,10 @@ pub(in crate::validate) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Fi
                 Check::WireTopology,
                 Severity::Error,
                 Some(edge.id.as_str()),
-                format_args!("wire edge must belong to exactly one shell"),
+                crate::rule!(
+                    "topology.wire-edge-must-belong-exactly-one",
+                    "wire edge must belong to exactly one shell"
+                ),
             );
         }
     }
@@ -217,7 +238,10 @@ pub(in crate::validate) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Fi
                 Check::WireTopology,
                 Severity::Error,
                 Some(vertex.id.as_str()),
-                format_args!("free vertex must belong to exactly one shell"),
+                crate::rule!(
+                    "topology.free-vertex-must-belong-exactly-one",
+                    "free vertex must belong to exactly one shell"
+                ),
             );
         }
     }
@@ -249,7 +273,10 @@ pub(in crate::validate) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Fi
                 Check::WireTopology,
                 Severity::Error,
                 Some(body.id.as_str()),
-                format_args!("wire body contains faces"),
+                crate::rule!(
+                    "topology.wire-body-contains-faces",
+                    "wire body contains faces"
+                ),
             );
         }
     }
@@ -289,7 +316,8 @@ pub(in crate::validate) fn check_child_list_reciprocity(ir: &CadIr, findings: &m
                     Check::ReferentialIntegrity,
                     Severity::Error,
                     Some(region.id.as_str()),
-                    format_args!(
+                    crate::rule!(
+                        "topology.region-mark-names-shell-twice-one",
                         "region's mark names shell `{}` twice, or one its `shells` names",
                         shell.as_str()
                     ),
@@ -315,7 +343,11 @@ pub(in crate::validate) fn check_child_list_reciprocity(ir: &CadIr, findings: &m
                     Check::ReferentialIntegrity,
                     Severity::Error,
                     Some(face.id.as_str()),
-                    format_args!("face lists loop `{}` more than once", loop_.as_str()),
+                    crate::rule!(
+                        "topology.face-lists-loop-more-once",
+                        "face lists loop `{}` more than once",
+                        loop_.as_str()
+                    ),
                 );
             }
             if loop_faces
@@ -354,7 +386,10 @@ pub(in crate::validate) fn check_child_list_reciprocity(ir: &CadIr, findings: &m
                     Check::WireTopology,
                     Severity::Error,
                     Some(shell.id.as_str()),
-                    format_args!("shell lists member `{member}` more than once"),
+                    crate::rule!(
+                        "topology.shell-lists-member-more-once",
+                        "shell lists member `{member}` more than once"
+                    ),
                 );
             }
         }
@@ -382,7 +417,10 @@ fn reciprocity_error(findings: &mut Vec<Finding>, owner: &str, kind: &str, child
         Check::ReferentialIntegrity,
         Severity::Error,
         Some(owner),
-        format_args!("lists {kind} `{child}`, whose parent is another record"),
+        crate::rule!(
+            "topology.lists-parent-another-record",
+            "lists {kind} `{child}`, whose parent is another record"
+        ),
     );
 }
 
@@ -392,7 +430,10 @@ fn unlisted_error(findings: &mut Vec<Finding>, child: &str, kind: &str, parent: 
         Check::ReferentialIntegrity,
         Severity::Error,
         Some(child),
-        format_args!("is not listed by its {kind} `{parent}`"),
+        crate::rule!(
+            "topology.not-listed",
+            "is not listed by its {kind} `{parent}`"
+        ),
     );
 }
 
@@ -417,7 +458,8 @@ pub(in crate::validate) fn check_closed_edges(ir: &CadIr, findings: &mut Vec<Fin
                 Check::GeometricConsistency,
                 Severity::Error,
                 Some(edge.id.as_str()),
-                format_args!(
+                crate::rule!(
+                    "topology.edge-no-vertex-must-carrier-curve",
                     "edge with no vertex must have a carrier curve and no parameter range"
                 ),
             );
@@ -439,7 +481,8 @@ pub(in crate::validate) fn check_closed_edges(ir: &CadIr, findings: &mut Vec<Fin
                 Check::RingOrder,
                 Severity::Error,
                 Some(coedge.id.as_str()),
-                format_args!(
+                crate::rule!(
+                    "topology.coedge-edge-no-vertex-must-only",
                     "coedge of an edge with no vertex must be the only coedge of its loop"
                 ),
             );
@@ -564,7 +607,10 @@ pub(in crate::validate) fn check_shell_connectivity(ir: &CadIr, findings: &mut V
                 Check::ShellTopology,
                 Severity::Error,
                 Some(shell.id.as_str()),
-                format_args!("shell faces are disconnected through shared edges or vertices"),
+                crate::rule!(
+                    "topology.shell-faces-disconnected-through-shared-edges",
+                    "shell faces are disconnected through shared edges or vertices"
+                ),
             );
         }
     }
@@ -606,7 +652,7 @@ pub(in crate::validate) fn check_partial_topology(ir: &CadIr, findings: &mut Vec
             Check::TopologyPartial,
             Severity::Warning,
             Some(id),
-            format_args!("{message}"),
+            crate::rule!("topology.unstated-children", "{message}"),
         );
     }
 }

@@ -24,7 +24,11 @@ use super::super::records::DesignRecords;
 
 pub(super) fn check_fillet(site: Site<'_>, fillet: &Fillet, findings: &mut Vec<Finding>) {
     if fillet.sets.is_empty() {
-        error(findings, site.entity, format_args!("Fillet.sets is empty"));
+        error(
+            findings,
+            site.entity,
+            crate::rule!("design.fillet-sets-empty", "Fillet.sets is empty"),
+        );
     }
     for set in &fillet.sets {
         check_fillet_set(site, set, findings);
@@ -36,7 +40,10 @@ pub(super) fn check_fillet(site: Site<'_>, fillet: &Fillet, findings: &mut Vec<F
                 error(
                     findings,
                     site.entity,
-                    format_args!("BlendControls.keep shares a pick with a set's edges"),
+                    crate::rule!(
+                        "design.blendcontrols-keep-shares-pick-set-edges",
+                        "BlendControls.keep shares a pick with a set's edges"
+                    ),
                 );
             }
         }
@@ -59,7 +66,10 @@ fn check_fillet_set(site: Site<'_>, set: &FilletSet, findings: &mut Vec<Finding>
                 error(
                     findings,
                     site.entity,
-                    format_args!("Faces.first.faces and Faces.second.faces share a pick"),
+                    crate::rule!(
+                        "design.faces-first-faces-faces-second-faces",
+                        "Faces.first.faces and Faces.second.faces share a pick"
+                    ),
                 );
             }
             let holds = usize::from(first.hold.is_some()) + usize::from(second.hold.is_some());
@@ -76,7 +86,10 @@ fn check_fillet_set(site: Site<'_>, set: &FilletSet, findings: &mut Vec<Finding>
                         error(
                             findings,
                             site.entity,
-                            format_args!("a FullRound's center and side selections share a pick"),
+                            crate::rule!(
+                                "design.fullround-center-side-selections-share-pick",
+                                "a FullRound's center and side selections share a pick"
+                            ),
                         );
                     }
                 }
@@ -91,7 +104,10 @@ fn check_fillet_set(site: Site<'_>, set: &FilletSet, findings: &mut Vec<Finding>
         Some(FilletSize::Held) if holds == 0 => error(
             findings,
             site.entity,
-            format_args!("FilletSize::Held occurs in a set with no hold"),
+            crate::rule!(
+                "design.filletsize-held-occurs-set-no-hold",
+                "FilletSize::Held occurs in a set with no hold"
+            ),
         ),
         Some(FilletSize::Variable(stations)) => {
             check_stations(site, stations, findings);
@@ -103,7 +119,8 @@ fn check_fillet_set(site: Site<'_>, set: &FilletSet, findings: &mut Vec<Finding>
                 error(
                     findings,
                     site.entity,
-                    format_args!(
+                    crate::rule!(
+                        "design.variable-radius-no-positive-literal-bound",
                         "a Variable radius has no positive literal or bound station value"
                     ),
                 );
@@ -119,7 +136,8 @@ fn check_fillet_set(site: Site<'_>, set: &FilletSet, findings: &mut Vec<Finding>
         error(
             findings,
             site.entity,
-            format_args!(
+            crate::rule!(
+                "design.filletsize-byprofile-occurs-exactly-where-profile",
                 "FilletSize::ByProfile occurs exactly where the profile is Conic(CenterAndRho)"
             ),
         );
@@ -138,7 +156,11 @@ fn check_fillet_set(site: Site<'_>, set: &FilletSet, findings: &mut Vec<Finding>
             error(
                 findings,
                 site.entity,
-                format_args!("a conic rho of {} lies outside (0, 1)", rho.get()),
+                crate::rule!(
+                    "design.conic-rho-lies-outside-0-1",
+                    "a conic rho of {} lies outside (0, 1)",
+                    rho.get()
+                ),
             );
         }
     }
@@ -149,7 +171,10 @@ fn check_stations<Q>(site: Site<'_>, stations: &Stations<Q>, findings: &mut Vec<
         error(
             findings,
             site.entity,
-            format_args!("Stations.points holds fewer than two entries"),
+            crate::rule!(
+                "design.stations-points-holds-fewer-two-entries",
+                "Stations.points holds fewer than two entries"
+            ),
         );
     }
     let mut last: Vec<(&Along, f64)> = Vec::new();
@@ -168,7 +193,10 @@ fn check_stations<Q>(site: Site<'_>, stations: &Stations<Q>, findings: &mut Vec<
                 error(
                     findings,
                     site.entity,
-                    format_args!("station fractions on one Along do not strictly increase"),
+                    crate::rule!(
+                        "design.station-fractions-one-along-do-not",
+                        "station fractions on one Along do not strictly increase"
+                    ),
                 );
             }
             *previous = fraction;
@@ -180,7 +208,10 @@ fn check_stations<Q>(site: Site<'_>, stations: &Stations<Q>, findings: &mut Vec<
         error(
             findings,
             site.entity,
-            format_args!("Stations.chain_start occurs where no station is on Along::Chain"),
+            crate::rule!(
+                "design.stations-chain-start-occurs-where-no",
+                "Stations.chain_start occurs where no station is on Along::Chain"
+            ),
         );
     }
 }
@@ -197,7 +228,10 @@ fn check_controls(
             error(
                 findings,
                 site.entity,
-                format_args!("Corner.vertex picks {class}, not a vertex"),
+                crate::rule!(
+                    "design.corner-vertex-picks-not-vertex",
+                    "Corner.vertex picks {class}, not a vertex"
+                ),
             );
         }
         if let Some(Setbacks::PerEdge(setbacks)) = &corner.setbacks {
@@ -206,7 +240,10 @@ fn check_controls(
                     error(
                         findings,
                         site.entity,
-                        format_args!("EdgeSetback.edge picks {class}, not an edge"),
+                        crate::rule!(
+                            "design.edgesetback-edge-picks-not-edge",
+                            "EdgeSetback.edge picks {class}, not an edge"
+                        ),
                     );
                 }
                 if setbacks[..at]
@@ -216,7 +253,10 @@ fn check_controls(
                     error(
                         findings,
                         site.entity,
-                        format_args!("Setbacks::PerEdge names one edge twice"),
+                        crate::rule!(
+                            "design.setbacks-peredge-names-one-edge-twice",
+                            "Setbacks::PerEdge names one edge twice"
+                        ),
                     );
                 }
             }
@@ -252,7 +292,7 @@ fn check_transition(
         error(
             findings,
             site.entity,
-            format_args!(
+            crate::rule!("design.transition-members-names-set-past-sets", 
                 "transition {at} has {members} members or names a set past the {sets} sets; its kind takes other counts"
             ),
         );
@@ -265,7 +305,10 @@ fn check_transition(
         error(
             findings,
             site.entity,
-            format_args!("transition {at} is a SweptAround of two members with no against"),
+            crate::rule!(
+                "design.transition-sweptaround-two-members-no-against",
+                "transition {at} is a SweptAround of two members with no against"
+            ),
         );
     }
     if let Some(TransitionKind::CornerSphere { lengths, .. }) = &transition.kind {
@@ -273,7 +316,8 @@ fn check_transition(
             error(
                 findings,
                 site.entity,
-                format_args!(
+                crate::rule!(
+                    "design.transition-cornersphere-lengths-states-none-three",
                     "transition {at} is a CornerSphere with {} lengths; it states none or three",
                     lengths.len()
                 ),
@@ -284,7 +328,11 @@ fn check_transition(
 
 pub(super) fn check_chamfer(site: Site<'_>, chamfer: &Chamfer, findings: &mut Vec<Finding>) {
     if chamfer.sets.is_empty() {
-        error(findings, site.entity, format_args!("Chamfer.sets is empty"));
+        error(
+            findings,
+            site.entity,
+            crate::rule!("design.chamfer-sets-empty", "Chamfer.sets is empty"),
+        );
     }
     for set in &chamfer.sets {
         if let Some(ChamferSize::Vertex(setbacks)) = &set.size {
@@ -292,7 +340,8 @@ pub(super) fn check_chamfer(site: Site<'_>, chamfer: &Chamfer, findings: &mut Ve
                 error(
                     findings,
                     site.entity,
-                    format_args!(
+                    crate::rule!(
+                        "design.chamfersize-vertex-holds-entries-holds-three",
                         "ChamferSize::Vertex holds {} entries; it holds three",
                         setbacks.len()
                     ),
@@ -304,7 +353,10 @@ pub(super) fn check_chamfer(site: Site<'_>, chamfer: &Chamfer, findings: &mut Ve
                 error(
                     findings,
                     site.entity,
-                    format_args!("BlendControls.keep shares a pick with a set's edges"),
+                    crate::rule!(
+                        "design.blendcontrols-keep-shares-pick-set-edges",
+                        "BlendControls.keep shares a pick with a set's edges"
+                    ),
                 );
             }
         }
@@ -322,7 +374,8 @@ pub(super) fn check_shell(site: Site<'_>, shell: &ShellFeature, findings: &mut V
             error(
                 findings,
                 site.entity,
-                format_args!(
+                crate::rule!(
+                    "design.shellfeature-faces-selections-share-pick-other",
                     "ShellFeature.faces selections share a pick with each other or with removed"
                 ),
             );
@@ -335,7 +388,11 @@ pub(super) fn check_shell(site: Site<'_>, shell: &ShellFeature, findings: &mut V
 
 pub(super) fn check_draft(site: Site<'_>, draft: &Draft, findings: &mut Vec<Finding>) {
     if draft.sets.is_empty() {
-        error(findings, site.entity, format_args!("Draft.sets is empty"));
+        error(
+            findings,
+            site.entity,
+            crate::rule!("design.draft-sets-empty", "Draft.sets is empty"),
+        );
     }
     let anchored = draft.neutral.is_some() || draft.parting.is_some();
     for set in &draft.sets {
@@ -347,14 +404,20 @@ pub(super) fn check_draft(site: Site<'_>, draft: &Draft, findings: &mut Vec<Find
             error(
                 findings,
                 site.entity,
-                format_args!("a Two or Symmetric draft angle needs neutral or parting"),
+                crate::rule!(
+                    "design.two-symmetric-draft-angle-needs-neutral",
+                    "a Two or Symmetric draft angle needs neutral or parting"
+                ),
             );
         }
         if set.faces.is_none() && set.fixed.is_none() {
             error(
                 findings,
                 site.entity,
-                format_args!("DraftSet.faces is None where fixed is absent"),
+                crate::rule!(
+                    "design.draftset-faces-none-where-fixed-absent",
+                    "DraftSet.faces is None where fixed is absent"
+                ),
             );
         }
         if let Some(DraftAngle::Variable(stations)) = &set.angle {
@@ -365,14 +428,20 @@ pub(super) fn check_draft(site: Site<'_>, draft: &Draft, findings: &mut Vec<Find
         warning(
             findings,
             site.entity,
-            format_args!("the draft states none of neutral, parting, or a set's fixed"),
+            crate::rule!(
+                "design.draft-states-none-neutral-parting-set",
+                "the draft states none of neutral, parting, or a set's fixed"
+            ),
         );
     }
     if draft.steps.is_some() && draft.parting.is_none() {
         error(
             findings,
             site.entity,
-            format_args!("Draft.steps occurs only with parting"),
+            crate::rule!(
+                "design.draft-steps-occurs-only-parting",
+                "Draft.steps occurs only with parting"
+            ),
         );
     }
 }
@@ -398,7 +467,11 @@ pub(super) fn check_offset(
     findings: &mut Vec<Finding>,
 ) {
     if offset.sets.is_empty() {
-        error(findings, site.entity, format_args!("Offset.sets is empty"));
+        error(
+            findings,
+            site.entity,
+            crate::rule!("design.offset-sets-empty", "Offset.sets is empty"),
+        );
     }
     if let OffsetResult::Copy(output) = &offset.result {
         options::check_sheet_output(index, site, output, findings);
@@ -422,7 +495,7 @@ pub(super) fn check_hole(
                 error(
                     findings,
                     site.entity,
-                    format_args!("HolePositions::Points.centers is present where no pick targets a whole sketch"),
+                    crate::rule!("design.holepositions-points-centers-present-where-no", "HolePositions::Points.centers is present where no pick targets a whole sketch"),
                 );
             }
             let allowed = |class| picks::is_point(class) || class == picks::Class::Sketch;
@@ -430,7 +503,10 @@ pub(super) fn check_hole(
                 error(
                     findings,
                     site.entity,
-                    format_args!("HolePositions::Points picks {class}, not a point or a sketch"),
+                    crate::rule!(
+                        "design.holepositions-points-picks-not-point-sketch",
+                        "HolePositions::Points picks {class}, not a point or a sketch"
+                    ),
                 );
             }
             let no_point = picks::named(points).unwrap_or_default().iter().any(|pick| {
@@ -445,7 +521,7 @@ pub(super) fn check_hole(
                 error(
                     findings,
                     site.entity,
-                    format_args!("HolePositions::Points picks a sketch entity, a datum, or a sketch frame entity that is no point"),
+                    crate::rule!("design.holepositions-points-picks-sketch-entity-datum", "HolePositions::Points picks a sketch entity, a datum, or a sketch frame entity that is no point"),
                 );
             }
         }
@@ -454,7 +530,10 @@ pub(super) fn check_hole(
                 error(
                     findings,
                     site.entity,
-                    format_args!("HolePositions::Placed holds no construction"),
+                    crate::rule!(
+                        "design.holepositions-placed-holds-no-construction",
+                        "HolePositions::Placed holds no construction"
+                    ),
                 );
             }
             if let Some(start) = &hole.start {
@@ -476,7 +555,8 @@ pub(super) fn check_hole(
                     error(
                         findings,
                         site.entity,
-                        format_args!(
+                        crate::rule!(
+                            "design.placed-hole-position-coincident-hole-start",
                             "a placed hole position is Coincident with Hole.start, which states it"
                         ),
                     );
@@ -494,7 +574,7 @@ pub(super) fn check_hole(
             error(
                 findings,
                 site.entity,
-                format_args!("a tapped hole states Hole.standard; its designation is only in thread.standard"),
+                crate::rule!("design.tapped-hole-states-hole-standard-designation", "a tapped hole states Hole.standard; its designation is only in thread.standard"),
             );
         }
     }
@@ -541,7 +621,10 @@ fn check_series(
         error(
             findings,
             site.entity,
-            format_args!("a Hole with a series is in a definition that states no assembly"),
+            crate::rule!(
+                "design.hole-series-definition-states-no-assembly",
+                "a Hole with a series is in a definition that states no assembly"
+            ),
         );
     }
     for (at, stage) in hole.series.iter().enumerate() {
@@ -552,7 +635,10 @@ fn check_series(
             error(
                 findings,
                 site.entity,
-                format_args!("two series stages pick one participant"),
+                crate::rule!(
+                    "design.two-series-stages-pick-one-participant",
+                    "two series stages pick one participant"
+                ),
             );
         }
         match &stage.hole {
@@ -561,7 +647,10 @@ fn check_series(
                     error(
                         findings,
                         site.entity,
-                        format_args!("a StageHole::PartFeature stage picks other than one part"),
+                        crate::rule!(
+                            "design.stagehole-partfeature-stage-picks-other-one",
+                            "a StageHole::PartFeature stage picks other than one part"
+                        ),
                     );
                 }
                 let is_hole = index
@@ -572,7 +661,8 @@ fn check_series(
                     error(
                         findings,
                         site.entity,
-                        format_args!(
+                        crate::rule!(
+                            "design.stagehole-partfeature-names-no-hole-feature",
                             "StageHole::PartFeature names {}, which is no Hole feature",
                             feature.as_str()
                         ),
@@ -592,7 +682,7 @@ fn check_series(
                         error(
                             findings,
                             site.entity,
-                            format_args!("a tapped series stage states StageHole::Stated.standard; its designation is only in thread.standard"),
+                            crate::rule!("design.tapped-series-stage-states-stagehole-stated", "a tapped series stage states StageHole::Stated.standard; its designation is only in thread.standard"),
                         );
                     }
                 }
@@ -623,7 +713,7 @@ fn check_hole_shape(
                         error(
                             findings,
                             site.entity,
-                            format_args!("a TangentToTangent slot's length does not exceed its bore diameter"),
+                            crate::rule!("design.tangenttotangent-slot-length-does-not-exceed", "a TangentToTangent slot's length does not exceed its bore diameter"),
                         );
                     }
                 }
@@ -642,7 +732,10 @@ fn check_hole_shape(
         error(
             findings,
             site.entity,
-            format_args!("HoleBottom::Trimmed occurs with an extent that ends on no face"),
+            crate::rule!(
+                "design.holebottom-trimmed-occurs-extent-ends-no",
+                "HoleBottom::Trimmed occurs with an extent that ends on no face"
+            ),
         );
     }
 }
@@ -668,7 +761,10 @@ fn check_bore(site: Site<'_>, bore: &Bore, findings: &mut Vec<Finding>) {
             error(
                 findings,
                 site.entity,
-                format_args!("a Cone states diameter, depth, and angle; it states at most two"),
+                crate::rule!(
+                    "design.cone-states-diameter-depth-angle-states",
+                    "a Cone states diameter, depth, and angle; it states at most two"
+                ),
             );
         }
     }
@@ -688,7 +784,10 @@ fn check_bore(site: Site<'_>, bore: &Bore, findings: &mut Vec<Finding>) {
         error(
             findings,
             site.entity,
-            format_args!("a hole head's diameter does not exceed the bore diameter"),
+            crate::rule!(
+                "design.hole-head-diameter-does-not-exceed",
+                "a hole head's diameter does not exceed the bore diameter"
+            ),
         );
     }
 }
@@ -705,7 +804,10 @@ fn check_thread_spec(site: Site<'_>, spec: &ThreadSpec, findings: &mut Vec<Findi
         error(
             findings,
             site.entity,
-            format_args!("thread diameters are not minor < pitch < major"),
+            crate::rule!(
+                "design.thread-diameters-not-minor-pitch-major",
+                "thread diameters are not minor < pitch < major"
+            ),
         );
     }
     if let Some(ThreadLength::ToElement { element, .. }) = &spec.length {
@@ -724,7 +826,10 @@ fn check_face_edge_or_plane(
         error(
             findings,
             site.entity,
-            format_args!("{field} picks {class}; it resolves to faces, edges, or planes"),
+            crate::rule!(
+                "design.picks-resolves-faces-edges-planes",
+                "{field} picks {class}; it resolves to faces, edges, or planes"
+            ),
         );
     }
 }
@@ -762,7 +867,10 @@ pub(super) fn check_thread(
         error(
             findings,
             site.entity,
-            format_args!("a Thread selects only bore faces of a hole whose thread is present"),
+            crate::rule!(
+                "design.thread-selects-only-bore-faces-hole",
+                "a Thread selects only bore faces of a hole whose thread is present"
+            ),
         );
     }
 }
@@ -784,14 +892,20 @@ pub(super) fn check_dome(site: Site<'_>, dome: &Dome, findings: &mut Vec<Finding
         error(
             findings,
             site.entity,
-            format_args!("Dome.faces picks {class}, not a face"),
+            crate::rule!(
+                "design.dome-faces-picks-not-face",
+                "Dome.faces picks {class}, not a face"
+            ),
         );
     }
     if dome.points.is_some() && dome.height.is_some() {
         error(
             findings,
             site.entity,
-            format_args!("a Dome with points states a height"),
+            crate::rule!(
+                "design.dome-points-states-height",
+                "a Dome with points states a height"
+            ),
         );
     }
 }
@@ -801,7 +915,10 @@ pub(super) fn check_decal(site: Site<'_>, decal: &Decal, findings: &mut Vec<Find
         error(
             findings,
             site.entity,
-            format_args!("Decal.faces picks {class}, not a face"),
+            crate::rule!(
+                "design.decal-faces-picks-not-face",
+                "Decal.faces picks {class}, not a face"
+            ),
         );
     }
 }

@@ -64,7 +64,10 @@ pub(super) fn check_semantic_annotations(
                 Check::ReferentialIntegrity,
                 Severity::Error,
                 Some(annotation.id.as_str()),
-                format_args!("invalid semantic annotation reference, order, or numeric state"),
+                crate::rule!(
+                    "semantic_annotations.invalid-semantic-annotation-reference-order-numeric",
+                    "invalid semantic annotation reference, order, or numeric state"
+                ),
             );
         }
     }

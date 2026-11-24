@@ -41,7 +41,10 @@ pub(super) fn check_products(
                     Check::ReferentialIntegrity,
                     crate::report::Severity::Error,
                     Some(id),
-                    format_args!("invalid product definition owner"),
+                    crate::rule!(
+                        "products.invalid-product-definition-owner",
+                        "invalid product definition owner"
+                    ),
                 );
             }
         }
@@ -65,7 +68,10 @@ pub(super) fn check_products(
                         Check::ReferentialIntegrity,
                         crate::report::Severity::Error,
                         Some(feature.id.as_str()),
-                        format_args!("feature output is not owned by its product definition"),
+                        crate::rule!(
+                            "products.feature-output-not-owned-product-definition",
+                            "feature output is not owned by its product definition"
+                        ),
                     );
                 }
             }
@@ -116,7 +122,7 @@ pub(super) fn check_products(
                     Check::ReferentialIntegrity,
                     crate::report::Severity::Error,
                     Some(definition.id.as_str()),
-                    format_args!("{message}"),
+                    crate::rule!("products.sketch-owning-definition", "{message}"),
                 );
                 break;
             }
@@ -128,7 +134,10 @@ pub(super) fn check_products(
                     Check::ReferentialIntegrity,
                     crate::report::Severity::Error,
                     Some(definition.id.as_str()),
-                    format_args!("invalid product body reference"),
+                    crate::rule!(
+                        "products.invalid-product-body-reference",
+                        "invalid product body reference"
+                    ),
                 );
                 break;
             }
@@ -151,7 +160,7 @@ pub(super) fn check_products(
                     Check::ReferentialIntegrity,
                     crate::report::Severity::Error,
                     Some(definition.id.as_str()),
-                    format_args!("{message}"),
+                    crate::rule!("products.occurrence-owning-definition", "{message}"),
                 );
                 break;
             }
@@ -171,7 +180,7 @@ pub(super) fn check_products(
                 Check::ReferentialIntegrity,
                 crate::report::Severity::Error,
                 Some(occurrence.id.as_str()),
-                format_args!("{message}"),
+                crate::rule!("products.occurrence-prototype-and-owner", "{message}"),
             );
         }
     }
@@ -182,7 +191,10 @@ pub(super) fn check_products(
             Check::ReferentialIntegrity,
             crate::report::Severity::Error,
             Some(definition),
-            format_args!("product definition places itself"),
+            crate::rule!(
+                "products.product-definition-places-itself",
+                "product definition places itself"
+            ),
         );
     }
     for joint in &ir.model.assembly_joints {
@@ -194,7 +206,10 @@ pub(super) fn check_products(
                     Check::ReferentialIntegrity,
                     crate::report::Severity::Error,
                     Some(joint.id.as_str()),
-                    format_args!("assembly joint frame sense contradicts its kind's sense"),
+                    crate::rule!(
+                        "products.assembly-joint-frame-sense-contradicts-kind",
+                        "assembly joint frame sense contradicts its kind's sense"
+                    ),
                 );
             }
         }
@@ -205,7 +220,10 @@ pub(super) fn check_products(
                     Check::ReferentialIntegrity,
                     crate::report::Severity::Error,
                     Some(joint.id.as_str()),
-                    format_args!("invalid assembly joint driving parameter"),
+                    crate::rule!(
+                        "products.invalid-assembly-joint-driving-parameter",
+                        "invalid assembly joint driving parameter"
+                    ),
                 );
             }
         }
@@ -225,7 +243,10 @@ pub(super) fn check_products(
                     Check::ReferentialIntegrity,
                     crate::report::Severity::Error,
                     Some(joint.id.as_str()),
-                    format_args!("assembly joint couples other than two other joints"),
+                    crate::rule!(
+                        "products.assembly-joint-couples-other-two-other",
+                        "assembly joint couples other than two other joints"
+                    ),
                 );
             }
         }
@@ -237,7 +258,10 @@ pub(super) fn check_products(
                         Check::ReferentialIntegrity,
                         crate::report::Severity::Error,
                         Some(joint.id.as_str()),
-                        format_args!("invalid assembly joint operands, frames, or limits"),
+                        crate::rule!(
+                            "products.invalid-assembly-joint-operands-frames-limits",
+                            "invalid assembly joint operands, frames, or limits"
+                        ),
                     );
                     break;
                 }
@@ -271,7 +295,10 @@ fn check_root_definition(ir: &CadIr, findings: &mut Vec<Finding>) {
                 Check::Counts,
                 crate::report::Severity::Error,
                 None,
-                format_args!("document states no root definition"),
+                crate::rule!(
+                    "products.document-states-no-root-definition",
+                    "document states no root definition"
+                ),
             );
         }
         None => {}
@@ -283,7 +310,10 @@ fn check_root_definition(ir: &CadIr, findings: &mut Vec<Finding>) {
                     crate::report::Severity::Error,
                     extra.id.as_str(),
                     &[first.id.as_str()],
-                    format_args!("document states more than one root definition"),
+                    crate::rule!(
+                        "products.document-states-more-one-root-definition",
+                        "document states more than one root definition"
+                    ),
                 );
             }
         }
@@ -296,7 +326,10 @@ fn check_root_definition(ir: &CadIr, findings: &mut Vec<Finding>) {
                 crate::report::Severity::Error,
                 root.id.as_str(),
                 &[occurrence.id.as_str()],
-                format_args!("an occurrence places the root definition"),
+                crate::rule!(
+                    "products.occurrence-places-root-definition",
+                    "an occurrence places the root definition"
+                ),
             );
         }
     }

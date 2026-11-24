@@ -128,6 +128,7 @@ pub(super) fn validate_act(
 
     if ctx.ir.fragment {
         findings.push(Finding {
+ rule: cadmpeg_ir::rule_name!("f3d/design_records.skipped-f3d-act-document-root-f3d"),
             check: Check::FragmentSkipped, severity: Severity::Info, entity: None,
             related: Vec::new(),
             message: "skipped f3d.act_document_root and f3d.act_ordinal_coverage: complete ACT stream required".into(),
@@ -625,7 +626,8 @@ pub(super) fn validate_body_bindings(
                 ids::same_native_occurrence(key.source_namespace.as_str(), binding.id())
             });
         if source_outside_fragment {
-            findings.push(Finding { check: Check::FragmentSkipped, severity: Severity::Info,
+            findings.push(Finding {
+ rule: cadmpeg_ir::rule_name!("f3d/design_records.skipped-f3d-body-binding-source-resolution"), check: Check::FragmentSkipped, severity: Severity::Info,
                 entity: Some(binding.id().to_owned()), related: Vec::new(),
                 message: "skipped f3d.body_binding_source_resolution: source BREP keys are outside this fragment".into() });
         }

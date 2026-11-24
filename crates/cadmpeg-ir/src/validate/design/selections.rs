@@ -6,6 +6,7 @@
 //! anchor does not reach, so its order is not checked here. A pick whose
 //! target definition has no scope in this document is not checked.
 
+use crate::report::check::Ruled;
 use std::collections::BTreeSet;
 
 use cadmpeg_core::decode::DecodeContext;
@@ -108,7 +109,10 @@ pub(super) fn check<'a>(
                 super::error(
                     findings,
                     at,
-                    format_args!("an instance-body path states a step configuration"),
+                    crate::rule!(
+                        "design.instance-body-path-states-step-configuration",
+                        "an instance-body path states a step configuration"
+                    ),
                 );
             }
             check_path(&index.records, None, path, &moved, at, findings);
@@ -131,7 +135,7 @@ fn check_anchor<'a>(
             let ordered =
                 feature.is_some_and(|feature| index.in_ordered(MemberKey::Feature(feature)));
             if !ordered {
-                super::error(findings, at, format_args!(
+                super::error(findings, at, crate::rule!("design.selection-anchored-input-not-definition-sketch", 
                         "a selection anchored Input is not in the definition, a sketch, or a parameter of a feature of an ordered container"
                     ),
                 );
@@ -142,7 +146,10 @@ fn check_anchor<'a>(
                 super::error(
                     findings,
                     at,
-                    format_args!("a selection is pinned to a position that does not resolve"),
+                    crate::rule!(
+                        "design.selection-pinned-position-does-not-resolve",
+                        "a selection is pinned to a position that does not resolve"
+                    ),
                 );
             }
         }
@@ -165,7 +172,7 @@ fn check_anchor<'a>(
                 Anchor::Pinned(_) => false,
             };
             if !admitted {
-                super::error(findings, at, format_args!(
+                super::error(findings, at, crate::rule!("design.selection-member-unordered-container-pinned-state", 
                         "a selection of a member of unordered container {} is pinned to a state other than another member's result",
                         container.id().as_str()
                     ),
@@ -179,7 +186,7 @@ fn check_anchor<'a>(
                 .is_some_and(|definition| index.records.scopes.contains_key(definition))
         });
         if scoped {
-            super::error(findings, at, format_args!("a selection anchored Native picks in a definition that has a scope in this document"),
+            super::error(findings, at, crate::rule!("design.selection-anchored-native-picks-definition-scope", "a selection anchored Native picks in a definition that has a scope in this document"),
             );
         }
     }
@@ -240,28 +247,39 @@ fn check_rules(selection: &SelectionView<'_>, site: Site<'_>, findings: &mut Vec
         return;
     };
     let at = site.holder.record();
-    let mut record = |message: std::fmt::Arguments<'_>| super::error(findings, at, message);
+    let mut record = |message: Ruled<'_>| super::error(findings, at, message);
     for term in terms.iter().chain(excluded) {
         let seeded = !term.seeds.is_empty();
         match term.rule {
             SelectionRule::All { .. } if seeded => {
-                record(format_args!("an All rule term has seeds"));
+                record(crate::rule!(
+                    "design.all-rule-term-seeds",
+                    "an All rule term has seeds"
+                ));
             }
             SelectionRule::Affected if seeded => {
-                record(format_args!("an Affected rule term has seeds"));
+                record(crate::rule!(
+                    "design.affected-rule-term-seeds",
+                    "an Affected rule term has seeds"
+                ));
             }
             SelectionRule::All { .. } | SelectionRule::Affected => {}
-            _ if !seeded => record(format_args!(
+            _ if !seeded => record(crate::rule!(
+                "design.rule-term-other-all-affected-no",
                 "a rule term other than All or Affected has no seeds"
             )),
             _ => {}
         }
         if matches!(term.rule, SelectionRule::Affected) {
             if term.propagation.is_some() {
-                record(format_args!("an Affected rule term states a propagation"));
+                record(crate::rule!(
+                    "design.affected-rule-term-states-propagation",
+                    "an Affected rule term states a propagation"
+                ));
             }
             if !selection.participants {
-                record(format_args!(
+                record(crate::rule!(
+                    "design.affected-rule-term-outside-assembly-context",
                     "an Affected rule term is outside an assembly context's participants"
                 ));
             }
@@ -273,7 +291,7 @@ fn check_rules(selection: &SelectionView<'_>, site: Site<'_>, findings: &mut Vec
                 .iter()
                 .any(|seed| matches!(seed.domain, Some(PickDomain::Containing(_))));
             if curves && !containing {
-                record(format_args!("a Region term whose boundary picks curves has no seed with a Containing domain"),
+                record(crate::rule!("design.region-term-boundary-picks-curves-no", "a Region term whose boundary picks curves has no seed with a Containing domain"),
                 );
             }
         }
@@ -281,7 +299,7 @@ fn check_rules(selection: &SelectionView<'_>, site: Site<'_>, findings: &mut Vec
     let explicit = |term: &&TermView<'_>| matches!(term.rule, SelectionRule::Explicit);
     if let [only] = terms.as_slice() {
         if explicit(&only) && only.propagation.is_none() && excluded.is_empty() {
-            record(format_args!("a rule selection whose only term is Explicit, with no propagation and no exclusions, is Named"),
+            record(crate::rule!("design.rule-selection-only-term-explicit-no", "a rule selection whose only term is Explicit, with no propagation and no exclusions, is Named"),
             );
         }
     }
@@ -291,7 +309,8 @@ fn check_rules(selection: &SelectionView<'_>, site: Site<'_>, findings: &mut Vec
             .iter()
             .any(|earlier| earlier.propagation == term.propagation)
         {
-            record(format_args!(
+            record(crate::rule!(
+                "design.two-explicit-terms-one-selection-equal",
                 "two Explicit terms of one selection have equal propagation"
             ));
         }
@@ -326,7 +345,8 @@ fn check_pick<'a>(
         super::error(
             findings,
             at,
-            format_args!(
+            crate::rule!(
+                "design.pick-names-does-not-exist",
                 "a pick names a {} that does not exist",
                 target_kind(&pick.target)
             ),
@@ -339,7 +359,10 @@ fn check_pick<'a>(
             super::error(
                 findings,
                 at,
-                format_args!("a Native pick carries neither a native name nor a witness"),
+                crate::rule!(
+                    "design.native-pick-carries-neither-native-name",
+                    "a Native pick carries neither a native name nor a witness"
+                ),
             );
         }
     }
@@ -388,7 +411,10 @@ fn check_pick<'a>(
             super::error(
                 findings,
                 at,
-                format_args!("a Component pick's context names no occurrence"),
+                crate::rule!(
+                    "design.component-pick-context-names-no-occurrence",
+                    "a Component pick's context names no occurrence"
+                ),
             );
         }
     }
@@ -497,7 +523,8 @@ fn check_in_state<'a>(
             super::error(
                 findings,
                 at,
-                format_args!(
+                crate::rule!(
+                    "design.pick-resolved-entity-not-record-anchored",
                     "a pick's resolved entity {} is not a record of its anchored state",
                     entity.id()
                 ),
@@ -516,7 +543,7 @@ fn check_in_state<'a>(
             Check::Design,
             Severity::Warning,
             Some(at),
-            format_args!("an Entity pick's name matches no entity of its anchored state, a lost operand (D51)"),
+            crate::rule!("design.entity-pick-name-matches-no-entity", "an Entity pick's name matches no entity of its anchored state, a lost operand (D51)"),
         );
     }
 }
@@ -616,7 +643,8 @@ fn check_target_order<'a>(
         Check::Design,
         severity,
         Some(at),
-        format_args!(
+        crate::rule!(
+            "design.pick-names-feature-does-not-depend",
             "a pick names feature {target}, which does not depend-order before its anchor{}",
             if cycle {
                 " (a back-edge of a dependency cycle)"
@@ -651,7 +679,8 @@ fn check_datum_part(index: &DesignIndex<'_>, pick: &Picked, at: &str, findings: 
         super::error(
             findings,
             at,
-            format_args!(
+            crate::rule!(
+                "design.pick-names-part-datum-feature-does",
                 "a pick names a part that datum feature {} does not have",
                 feature.as_str()
             ),
@@ -684,7 +713,7 @@ fn check_principal<'a>(
         if definition != scope.as_str()
             && !index.records.spanned_definitions(scope.as_str()).contains(definition));
     if !ordered || elsewhere {
-        super::error(findings, site.holder.record(), format_args!("a Principal pick names container {}, which is not an ordered container of the scope that spans its definition", container.as_str()),
+        super::error(findings, site.holder.record(), crate::rule!("design.principal-pick-names-container-not-ordered", "a Principal pick names container {}, which is not an ordered container of the scope that spans its definition", container.as_str()),
         );
     }
 }
@@ -703,7 +732,8 @@ fn check_definition(
         super::error(
             findings,
             at,
-            format_args!(
+            crate::rule!(
+                "design.pick-context-names-definition-does-not",
                 "a pick context names definition {}, which does not exist",
                 definition.definition.as_str()
             ),
@@ -735,7 +765,7 @@ pub(in crate::validate) fn check_path(
     at: &str,
     findings: &mut Vec<Finding>,
 ) {
-    let mut record = |message: std::fmt::Arguments<'_>| {
+    let mut record = |message: Ruled<'_>| {
         super::error(findings, at, message);
     };
     let mut native = false;
@@ -748,7 +778,8 @@ pub(in crate::validate) fn check_path(
                 continue;
             }
             StepRef::Occurrence(_) if native => {
-                record(format_args!(
+                record(crate::rule!(
+                    "design.occurrence-path-names-occurrence-after-native",
                     "an occurrence path names an occurrence after a Native step"
                 ));
                 return;
@@ -756,7 +787,8 @@ pub(in crate::validate) fn check_path(
             StepRef::Occurrence(occurrence) => occurrence,
         };
         let Some(record_) = records.occurrences.get(occurrence.as_str()) else {
-            record(format_args!(
+            record(crate::rule!(
+                "design.occurrence-path-names-occurrence-does-not",
                 "an occurrence path names occurrence {}, which does not exist",
                 occurrence.as_str()
             ));
@@ -765,7 +797,8 @@ pub(in crate::validate) fn check_path(
         if let (Some(expected), false) = (previous, moved.contains(occurrence.as_str())) {
             let placed_in = records.occurrence_owner(occurrence.as_str());
             if placed_in.is_some_and(|placed_in| placed_in != expected) {
-                record(format_args!(
+                record(crate::rule!(
+                    "design.occurrence-path-step-not-occurrence-previous",
                     "occurrence path step {} is not an occurrence of the previous step's prototype",
                     occurrence.as_str()
                 ));

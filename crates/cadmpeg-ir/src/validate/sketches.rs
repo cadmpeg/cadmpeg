@@ -510,7 +510,11 @@ pub(super) fn check_sketches(
                         Check::GeometricConsistency,
                         crate::report::Severity::Error,
                         Some(sketch.id.as_str()),
-                        format_args!("{}", "sketch profile has disconnected consecutive entities"),
+                        crate::rule!(
+                            "sketches.sketch-profile-disconnected-consecutive-entities",
+                            "{}",
+                            "sketch profile has disconnected consecutive entities"
+                        ),
                     );
                 }
             }
@@ -541,7 +545,8 @@ pub(super) fn check_sketches(
                         Check::ReferentialIntegrity,
                         crate::report::Severity::Error,
                         Some(sketch.id.as_str()),
-                        format_args!(
+                        crate::rule!(
+                            "sketches.spatial-sketch-profile-entity-does-not",
                             "{}",
                             "spatial sketch profile entity does not belong to its sketch"
                         ),
@@ -560,7 +565,8 @@ pub(super) fn check_sketches(
                         Check::GeometricConsistency,
                         crate::report::Severity::Error,
                         Some(sketch.id.as_str()),
-                        format_args!(
+                        crate::rule!(
+                            "sketches.single-entity-spatial-sketch-profile-not",
                             "{}",
                             "single-entity spatial sketch profile is not a full circle"
                         ),
@@ -594,7 +600,8 @@ pub(super) fn check_sketches(
                             Check::GeometricConsistency,
                             crate::report::Severity::Error,
                             Some(sketch.id.as_str()),
-                            format_args!(
+                            crate::rule!(
+                                "sketches.spatial-sketch-profile-disconnected-consecutive-entities",
                                 "{}",
                                 "spatial sketch profile has disconnected consecutive entities"
                             ),
@@ -612,7 +619,8 @@ pub(super) fn check_sketches(
                 Check::ReferentialIntegrity,
                 crate::report::Severity::Error,
                 Some(id),
-                format_args!(
+                crate::rule!(
+                    "sketches.spatial-sketch-entity-references-missing-spatial",
                     "{}",
                     "spatial sketch entity references a missing spatial sketch"
                 ),
@@ -627,7 +635,11 @@ pub(super) fn check_sketches(
                     Check::ParameterDomain,
                     crate::report::Severity::Error,
                     Some(id),
-                    format_args!("{}", "invalid spatial sketch NURBS surface"),
+                    crate::rule!(
+                        "sketches.invalid-spatial-sketch-nurbs-surface",
+                        "{}",
+                        "invalid spatial sketch NURBS surface"
+                    ),
                 );
             }
         }
@@ -645,7 +657,8 @@ pub(super) fn check_sketches(
                 Check::ReferentialIntegrity,
                 crate::report::Severity::Error,
                 Some(constraint.id.as_str()),
-                format_args!(
+                crate::rule!(
+                    "sketches.spatial-constraint-references-missing-spatial-sketch",
                     "{}",
                     "spatial constraint references a missing spatial sketch"
                 ),
@@ -702,7 +715,8 @@ pub(super) fn check_sketches(
                     Check::ReferentialIntegrity,
                     crate::report::Severity::Error,
                     Some(constraint.id.as_str()),
-                    format_args!(
+                    crate::rule!(
+                        "sketches.spatial-constraint-member-does-not-belong",
                         "{}",
                         "spatial constraint member does not belong to its sketch"
                     ),
@@ -731,7 +745,11 @@ pub(super) fn check_sketches(
                     Check::ReferentialIntegrity,
                     crate::report::Severity::Error,
                     Some(constraint.id.as_str()),
-                    format_args!("{}", "spatial coincidence requires two points"),
+                    crate::rule!(
+                        "sketches.spatial-coincidence-requires-two-points",
+                        "{}",
+                        "spatial coincidence requires two points"
+                    ),
                 );
             }
             SpatialConstraint::Symmetric {
@@ -766,7 +784,7 @@ pub(super) fn check_sketches(
                     _ => false,
                 };
                 if !solved {
-                    record_finding(findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "spatial symmetry requires two points reflected across a nondegenerate line"));
+                    record_finding(findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), crate::rule!("sketches.spatial-symmetry-requires-two-points-reflected", "{}", "spatial symmetry requires two points reflected across a nondegenerate line"));
                 }
             }
             SpatialConstraint::Midpoint { point, entity }
@@ -789,7 +807,11 @@ pub(super) fn check_sketches(
                     Check::ReferentialIntegrity,
                     crate::report::Severity::Error,
                     Some(constraint.id.as_str()),
-                    format_args!("{}", "spatial midpoint requires a point and line"),
+                    crate::rule!(
+                        "sketches.spatial-midpoint-requires-point-line",
+                        "{}",
+                        "spatial midpoint requires a point and line"
+                    ),
                 );
             }
             SpatialConstraint::PointOnSurface { point, surface }
@@ -812,7 +834,8 @@ pub(super) fn check_sketches(
                     Check::ReferentialIntegrity,
                     crate::report::Severity::Error,
                     Some(constraint.id.as_str()),
-                    format_args!(
+                    crate::rule!(
+                        "sketches.spatial-point-surface-requires-point-surface",
                         "{}",
                         "spatial point-on-surface requires a point and surface"
                     ),
@@ -848,7 +871,11 @@ pub(super) fn check_sketches(
                     Check::ReferentialIntegrity,
                     crate::report::Severity::Error,
                     Some(constraint.id.as_str()),
-                    format_args!("{}", "spatial tangent requires two curves"),
+                    crate::rule!(
+                        "sketches.spatial-tangent-requires-two-curves",
+                        "{}",
+                        "spatial tangent requires two curves"
+                    ),
                 );
             }
             SpatialConstraint::ParallelLineDistance {
@@ -878,7 +905,7 @@ pub(super) fn check_sketches(
                         && (measured - expected).abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9 * scale
                 });
                 if !matches {
-                    record_finding(findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "spatial distance requires parallel lines separated by its length parameter"));
+                    record_finding(findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), crate::rule!("sketches.spatial-distance-requires-parallel-lines-separated", "{}", "spatial distance requires parallel lines separated by its length parameter"));
                 }
             }
             SpatialConstraint::RepeatedParallelLineDistance { pairs, parameter } => {
@@ -896,7 +923,7 @@ pub(super) fn check_sketches(
                     spatial_length_parameter_matches(measured, parameter, &parameter_values)
                 });
                 if !matches {
-                    record_finding(findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "repeated spatial distance requires disjoint parallel-line pairs matching one length parameter"));
+                    record_finding(findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), crate::rule!("sketches.repeated-spatial-distance-requires-disjoint-parallel", "{}", "repeated spatial distance requires disjoint parallel-line pairs matching one length parameter"));
                 }
             }
             SpatialConstraint::PointDistance {
@@ -932,7 +959,7 @@ pub(super) fn check_sketches(
                         && (measured - expected).abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9 * scale
                 });
                 if !matches {
-                    record_finding(findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "spatial point distance requires two points separated by its length parameter"));
+                    record_finding(findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), crate::rule!("sketches.spatial-point-distance-requires-two-points", "{}", "spatial point distance requires two points separated by its length parameter"));
                 }
             }
             SpatialConstraint::PointLineDistance {
@@ -958,7 +985,8 @@ pub(super) fn check_sketches(
                         Check::ReferentialIntegrity,
                         crate::report::Severity::Error,
                         Some(constraint.id.as_str()),
-                        format_args!(
+                        crate::rule!(
+                            "sketches.spatial-point-line-distance-requires-point",
                             "{}",
                             "spatial point-line distance requires a point and line"
                         ),
@@ -976,7 +1004,7 @@ pub(super) fn check_sketches(
                     None => None,
                 };
                 if !spatial_length_parameter_matches(measured, parameter, &parameter_values) {
-                    record_finding(findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "spatial point-line distance requires a point-to-line distance matching its length parameter"));
+                    record_finding(findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), crate::rule!("sketches.spatial-point-line-distance-requires-point-line", "{}", "spatial point-line distance requires a point-to-line distance matching its length parameter"));
                 }
             }
             SpatialConstraint::LineLength { entity, parameter } => {
@@ -990,7 +1018,8 @@ pub(super) fn check_sketches(
                         Check::GeometricConsistency,
                         crate::report::Severity::Error,
                         Some(constraint.id.as_str()),
-                        format_args!(
+                        crate::rule!(
+                            "sketches.spatial-line-length-requires-line-matching",
                             "{}",
                             "spatial line length requires a line matching its length parameter"
                         ),
@@ -1023,7 +1052,7 @@ pub(super) fn check_sketches(
                         )
                     });
                 if !matches {
-                    record_finding(findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "repeated spatial line length requires distinct lines matching one length parameter"));
+                    record_finding(findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), crate::rule!("sketches.repeated-spatial-line-length-requires-distinct", "{}", "repeated spatial line length requires distinct lines matching one length parameter"));
                 }
             }
             SpatialConstraint::ParallelLineSetDistance {
@@ -1075,7 +1104,7 @@ pub(super) fn check_sketches(
                     && second_collinear
                     && spatial_length_parameter_matches(measured, parameter, &parameter_values);
                 if !matches {
-                    record_finding(findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), format_args!("{}", "spatial parallel-line-set distance requires collinear carriers with overlapping spans separated by its length parameter"));
+                    record_finding(findings, Check::GeometricConsistency, crate::report::Severity::Error, Some(constraint.id.as_str()), crate::rule!("sketches.spatial-parallel-line-set-distance-requires", "{}", "spatial parallel-line-set distance requires collinear carriers with overlapping spans separated by its length parameter"));
                 }
             }
             SpatialConstraint::Offset {
@@ -1121,7 +1150,8 @@ pub(super) fn check_sketches(
                         Check::GeometricConsistency,
                         crate::report::Severity::Error,
                         Some(constraint.id.as_str()),
-                        format_args!(
+                        crate::rule!(
+                            "sketches.spatial-offset-source-result-members-must",
                             "{}",
                             "spatial offset source and result members must be curves"
                         ),
@@ -1133,7 +1163,11 @@ pub(super) fn check_sketches(
                         Check::GeometricConsistency,
                         crate::report::Severity::Error,
                         Some(constraint.id.as_str()),
-                        format_args!("{}", "spatial offset distance does not match its parameter"),
+                        crate::rule!(
+                            "sketches.spatial-offset-distance-does-not-match",
+                            "{}",
+                            "spatial offset distance does not match its parameter"
+                        ),
                     );
                 }
             }
@@ -1148,7 +1182,11 @@ pub(super) fn check_sketches(
                         Check::ReferentialIntegrity,
                         crate::report::Severity::Error,
                         Some(constraint.id.as_str()),
-                        format_args!("{}", "spatial directional constraint requires a line"),
+                        crate::rule!(
+                            "sketches.spatial-directional-constraint-requires-line",
+                            "{}",
+                            "spatial directional constraint requires a line"
+                        ),
                     );
                     continue;
                 };
@@ -1170,7 +1208,8 @@ pub(super) fn check_sketches(
                         Check::GeometricConsistency,
                         crate::report::Severity::Error,
                         Some(constraint.id.as_str()),
-                        format_args!(
+                        crate::rule!(
+                            "sketches.spatial-line-not-parallel-constraint-direction",
                             "{}",
                             "spatial line is not parallel to its constraint direction"
                         ),
@@ -1497,7 +1536,11 @@ pub(super) fn check_sketches(
                 Check::Counts,
                 crate::report::Severity::Error,
                 Some(constraint.id.as_str()),
-                format_args!("{}", "invalid sketch constraint arity"),
+                crate::rule!(
+                    "sketches.invalid-sketch-constraint-arity",
+                    "{}",
+                    "invalid sketch constraint arity"
+                ),
             );
         }
         if let Constraint::Diameter { entity, parameter } = constraint.definition.kind() {
@@ -1530,7 +1573,8 @@ pub(super) fn check_sketches(
                     Check::GeometricConsistency,
                     crate::report::Severity::Error,
                     Some(constraint.id.as_str()),
-                    format_args!(
+                    crate::rule!(
+                        "sketches.diameter-parameter-does-not-equal-twice",
                         "{}",
                         "diameter parameter does not equal twice the circular radius"
                     ),
@@ -1549,7 +1593,11 @@ pub(super) fn check_sketches(
                     Check::GeometricConsistency,
                     crate::report::Severity::Error,
                     Some(constraint.id.as_str()),
-                    format_args!("{}", "point-on-object support is itself a point"),
+                    crate::rule!(
+                        "sketches.point-object-support-itself-point",
+                        "{}",
+                        "point-on-object support is itself a point"
+                    ),
                 );
             }
         }
@@ -1561,7 +1609,7 @@ pub(super) fn check_sketches(
                 Check::ReferentialIntegrity,
                 crate::report::Severity::Error,
                 Some(constraint.id.as_str()),
-                format_args!("{message}"),
+                crate::rule!("sketches.constraint-entity-kinds", "{message}"),
             );
         }
         for locus in constraint_loci(constraint.definition.kind()) {
@@ -1590,7 +1638,8 @@ pub(super) fn check_sketches(
                     Check::GeometricConsistency,
                     crate::report::Severity::Error,
                     Some(constraint.id.as_str()),
-                    format_args!(
+                    crate::rule!(
+                        "sketches.sketch-constraint-locus-incompatible-entity",
                         "{}",
                         "sketch constraint locus is incompatible with its entity"
                     ),
@@ -1627,7 +1676,8 @@ pub(super) fn check_sketches(
                         Check::GeometricConsistency,
                         crate::report::Severity::Error,
                         Some(constraint.id.as_str()),
-                        format_args!(
+                        crate::rule!(
+                            "sketches.sketch-offset-pair-does-not-match",
                             "{}",
                             "sketch offset pair does not match its oriented distance"
                         ),
@@ -1649,7 +1699,8 @@ pub(super) fn check_sketches(
                     Check::GeometricConsistency,
                     crate::report::Severity::Error,
                     Some(constraint.id.as_str()),
-                    format_args!(
+                    crate::rule!(
+                        "sketches.projected-copy-entities-do-not-identical",
                         "{}",
                         "projected-copy entities do not have identical geometry"
                     ),

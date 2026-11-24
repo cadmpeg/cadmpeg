@@ -30,7 +30,10 @@ pub(in crate::validate) fn check_position(
                 super::error(
                     findings,
                     entity,
-                    format_args!("{position} names no ordered container of the design"),
+                    crate::rule!(
+                        "design.names-no-ordered-container-design",
+                        "{position} names no ordered container of the design"
+                    ),
                 );
             }
             ordered
@@ -48,7 +51,8 @@ pub(in crate::validate) fn check_position(
                 super::error(
                     findings,
                     entity,
-                    format_args!(
+                    crate::rule!(
+                        "design.names-no-member-container-no-ordered",
                         "{position} names no member of a container and no ordered root container"
                     ),
                 );
@@ -93,7 +97,10 @@ pub(super) fn check_evaluations(
         super::error(
             findings,
             id,
-            format_args!("the depth of the evaluation's chain of state bases overflows"),
+            crate::rule!(
+                "design.depth-evaluation-chain-state-bases-overflows",
+                "the depth of the evaluation's chain of state bases overflows"
+            ),
         );
         StateChains::default()
     });
@@ -102,7 +109,7 @@ pub(super) fn check_evaluations(
             super::error(
                 findings,
                 id,
-                format_args!("evaluation's chain of state bases is {depth} deep, past the ceiling of {max_chain_depth} a reader admits"),
+                crate::rule!("design.evaluation-chain-state-bases-deep-past", "evaluation's chain of state bases is {depth} deep, past the ceiling of {max_chain_depth} a reader admits"),
             );
         }
     }
@@ -115,7 +122,10 @@ pub(super) fn check_evaluations(
             super::error(
                 findings,
                 id,
-                format_args!("evaluation's scope {scope} has no design scope"),
+                crate::rule!(
+                    "design.evaluation-scope-no-design-scope",
+                    "evaluation's scope {scope} has no design scope"
+                ),
             );
         }
         let configuration = evaluation
@@ -126,14 +136,16 @@ pub(super) fn check_evaluations(
             (None, true) => super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "design.evaluation-states-no-configuration-scope-configurations",
                     "evaluation states no configuration, but its scope has configurations"
                 ),
             ),
             (Some(configuration), false) => super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "design.evaluation-names-configuration-scope-none",
                     "evaluation names configuration {configuration}, but its scope has none"
                 ),
             ),
@@ -146,7 +158,7 @@ pub(super) fn check_evaluations(
                     super::error(
                         findings,
                         id,
-                        format_args!("evaluation names {configuration}, which is no configuration of its scope"),
+                        crate::rule!("design.evaluation-names-no-configuration-scope", "evaluation names {configuration}, which is no configuration of its scope"),
                     );
                 }
             }
@@ -160,7 +172,7 @@ pub(super) fn check_evaluations(
                     super::error(
                         findings,
                         id,
-                        format_args!("evaluation evaluates {position}, which is the state at that ordered container's rollback position"),
+                        crate::rule!("design.evaluation-evaluates-state-ordered-container-rollback", "evaluation evaluates {position}, which is the state at that ordered container's rollback position"),
                     );
                 }
                 let active = design_scope.is_some_and(|s| {
@@ -170,7 +182,7 @@ pub(super) fn check_evaluations(
                     super::error(
                         findings,
                         id,
-                        format_args!("evaluation of the active configuration repeats the current state at {position}"),
+                        crate::rule!("design.evaluation-active-configuration-repeats-current-state", "evaluation of the active configuration repeats the current state at {position}"),
                     );
                 }
                 match position {
@@ -183,7 +195,7 @@ pub(super) fn check_evaluations(
                     super::error(
                         findings,
                         id,
-                        format_args!("evaluation evaluates the tool body of {feature}, which is no feature of the design"),
+                        crate::rule!("design.evaluation-evaluates-tool-body-no-feature", "evaluation evaluates the tool body of {feature}, which is no feature of the design"),
                     );
                 }
                 Some(feature)
@@ -194,7 +206,7 @@ pub(super) fn check_evaluations(
                 super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!("design.feature-stateless-evaluation-configuration-no-evaluation", 
                         "feature {} is stateless in the evaluation's configuration and has no evaluation there",
                         feature.id.as_str()
                     ),
@@ -206,7 +218,8 @@ pub(super) fn check_evaluations(
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "design.evaluation-repeats-scope-configuration-evaluation",
                     "evaluation repeats the scope, configuration, and `of` of evaluation {first}"
                 ),
             );
@@ -216,7 +229,7 @@ pub(super) fn check_evaluations(
                 super::error(
                     findings,
                     id,
-                    format_args!("evaluation with no content has status `current`; it is `stale` or `failed`"),
+                    crate::rule!("design.evaluation-no-content-status-current-stale", "evaluation with no content has status `current`; it is `stale` or `failed`"),
                 );
             }
             continue;
@@ -232,14 +245,14 @@ pub(super) fn check_evaluations(
                         super::error(
                             findings,
                             id,
-                            format_args!("state base names {position}; a stated rollback position is spelled through its member"),
+                            crate::rule!("design.state-base-names-stated-rollback-position", "state base names {position}; a stated rollback position is spelled through its member"),
                         );
                     }
                     if !current_positions(index, scope).contains(&position) {
                         super::error(
                             findings,
                             id,
-                            format_args!("state base names {position}, which is the position of no current state of the evaluation's scope"),
+                            crate::rule!("design.state-base-names-position-no-current", "state base names {position}, which is the position of no current state of the evaluation's scope"),
                         );
                     }
                 }
@@ -248,7 +261,8 @@ pub(super) fn check_evaluations(
                 None if index.ir.fragment => super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!(
+                        "design.fragment-does-not-hold-evaluation-base",
                         "the fragment does not hold the evaluation's base {}",
                         base.as_str()
                     ),
@@ -256,7 +270,8 @@ pub(super) fn check_evaluations(
                 None => super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!(
+                        "design.state-base-no-evaluation-design",
                         "state base {} is no evaluation of the design",
                         base.as_str()
                     ),
@@ -264,7 +279,8 @@ pub(super) fn check_evaluations(
                 Some(base) if base.content.is_none() => super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!(
+                        "design.state-base-evaluation-no-content",
                         "state base {} is an evaluation with no content",
                         base.id.as_str()
                     ),
@@ -276,7 +292,8 @@ pub(super) fn check_evaluations(
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "design.evaluation-own-ancestor-through-state-bases",
                     "evaluation is its own ancestor through its state bases; bases form a forest"
                 ),
             );
@@ -426,7 +443,8 @@ pub(super) fn check_path_steps(
                 super::error(
                     findings,
                     entity,
-                    format_args!(
+                    crate::rule!(
+                        "design.path-names-no-occurrence-model",
                         "{what} path names {}, which is no occurrence of the model",
                         occurrence.as_str()
                     ),
@@ -470,7 +488,8 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
                     super::error(
                         findings,
                         entity,
-                        format_args!(
+                        crate::rule!(
+                            "design.current-state-lists-no-body-current",
                             "current state lists {}, which is no body of the current geometry",
                             body.as_str()
                         ),
@@ -488,7 +507,8 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
                 super::error(
                     findings,
                     entity,
-                    format_args!(
+                    crate::rule!(
+                        "design.unproduced-entry-must-body-current-geometry",
                         "unproduced entry {} must be a body of the current geometry",
                         body.as_str()
                     ),
@@ -498,7 +518,8 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
                 super::error(
                     findings,
                     entity,
-                    format_args!(
+                    crate::rule!(
+                        "design.unproduced-body-must-owned-definition-scope",
                         "unproduced body {} must be owned by a definition the scope spans",
                         body.as_str()
                     ),
@@ -510,7 +531,7 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
                 super::error(
                     findings,
                     entity,
-                    format_args!("an instance path has a pose in {count} current states of the scope; it has one in at most one"),
+                    crate::rule!("design.instance-path-pose-current-states-scope", "an instance path has a pose in {count} current states of the scope; it has one in at most one"),
                 );
             }
         }
@@ -528,7 +549,7 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
                 super::error(
                     findings,
                     body,
-                    format_args!("body of scoped definition {entity} belongs to no current state or unproduced set"),
+                    crate::rule!("design.body-scoped-definition-belongs-no-current", "body of scoped definition {entity} belongs to no current state or unproduced set"),
                 );
             }
         }
@@ -538,7 +559,7 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
             super::error(
                 findings,
                 body,
-                format_args!("body belongs to {count} current states or unproduced sets; it belongs to exactly one"),
+                crate::rule!("design.body-belongs-current-states-unproduced-sets", "body belongs to {count} current states or unproduced sets; it belongs to exactly one"),
             );
         }
     }
@@ -564,7 +585,7 @@ fn check_current_position(
             super::error(
                 findings,
                 entity,
-                format_args!(
+                crate::rule!("design.current-state-stated-rollback-position-spelled", 
                     "current state is at {at}; a stated rollback position is spelled through its member"
                 ),
             );
@@ -579,7 +600,7 @@ fn check_current_position(
             super::error(
                 findings,
                 entity,
-                format_args!(
+                crate::rule!("design.current-state-not-rollback-position-container", 
                     "current state is at {at}, not at the rollback position of container {}, {rollback}",
                     container.id().as_str()
                 ),
@@ -612,7 +633,8 @@ fn check_stored_features(index: &DesignRecords<'_>, findings: &mut Vec<Finding>)
                 super::error(
                     findings,
                     holder,
-                    format_args!(
+                    crate::rule!(
+                        "design.stored-feature-names-no-tessellation-model",
                         "stored feature names {}, which is no tessellation of the model",
                         tessellation.as_str()
                     ),
@@ -648,7 +670,7 @@ fn check_stored_features(index: &DesignRecords<'_>, findings: &mut Vec<Finding>)
                     super::error(
                         findings,
                         id,
-                        format_args!("stored feature names {}, which is no body of the current state after it", body.as_str()),
+                        crate::rule!("design.stored-feature-names-no-body-current", "stored feature names {}, which is no body of the current state after it", body.as_str()),
                     );
                 }
             }

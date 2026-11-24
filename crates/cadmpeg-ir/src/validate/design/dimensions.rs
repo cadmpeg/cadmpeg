@@ -45,7 +45,8 @@ pub(super) fn check_dimensions(index: &DesignRecords<'_>, findings: &mut Vec<Fin
             None => super::error(
                 findings,
                 binding.holder,
-                format_args!(
+                crate::rule!(
+                    "design.dimension-binds-no-parameter-design",
                     "a dimension binds {}, which is no parameter of the design",
                     binding.parameter
                 ),
@@ -56,7 +57,7 @@ pub(super) fn check_dimensions(index: &DesignRecords<'_>, findings: &mut Vec<Fin
                         super::error(
                             findings,
                             binding.holder,
-                            format_args!(
+                            crate::rule!("design.dimension-binds-parameter-not-owner-scope", 
                                 "a dimension binds {}, a parameter of {}, not of its owner's scope {scope}",
                                 binding.parameter,
                                 parameter.scope.as_str()
@@ -86,7 +87,10 @@ pub(super) fn check_dimensions(index: &DesignRecords<'_>, findings: &mut Vec<Fin
                 super::warning(
                     findings,
                     parameter.id.as_str(),
-                    format_args!("driven parameter is bound by no dimension"),
+                    crate::rule!(
+                        "design.driven-parameter-bound-no-dimension",
+                        "driven parameter is bound by no dimension"
+                    ),
                 );
             }
         }
@@ -406,7 +410,8 @@ fn check_bound(
         super::error(
             findings,
             holder,
-            format_args!(
+            crate::rule!(
+                "design.dimension-negated-only-signed-quantity-boolean",
                 "a {} dimension is `negated`; only a signed quantity or a Boolean is",
                 value.name
             ),
@@ -422,9 +427,11 @@ fn check_bound(
         super::error(
             findings,
             holder,
-            format_args!(
+            crate::rule!(
+                "design.dimension-binds-kind",
                 "a {} dimension binds {id}, whose kind is {:?}",
-                value.name, record.kind
+                value.name,
+                record.kind
             ),
         );
         return;
@@ -434,7 +441,8 @@ fn check_bound(
             super::warning(
                 findings,
                 holder,
-                format_args!(
+                crate::rule!(
+                    "design.dimension-binds-cached-value-does-not",
                     "a {} dimension binds {id}, whose cached value {cached:?} it does not admit",
                     value.name
                 ),
@@ -467,7 +475,8 @@ fn check_sketch_constraints<S: SketchSpace>(
             super::error(
                 findings,
                 id(&constraint.id),
-                format_args!(
+                crate::rule!(
+                    "design.diameter-dimension-binds-states-display",
                     "a diameter dimension binds {}, which states a `display`",
                     parameter.as_str()
                 ),

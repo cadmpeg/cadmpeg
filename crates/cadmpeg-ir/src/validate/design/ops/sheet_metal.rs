@@ -27,7 +27,14 @@ pub(super) fn check_rules(index: &DesignRecords<'_>, findings: &mut Vec<Finding>
     for rule in &index.ir.design.sheet_metal_rules {
         let id = rule.id.as_str();
         if !ids.insert(id) {
-            error(findings, id, format_args!("sheet-metal rule id repeats"));
+            error(
+                findings,
+                id,
+                crate::rule!(
+                    "design.sheet-metal-rule-id-repeats",
+                    "sheet-metal rule id repeats"
+                ),
+            );
         }
         match &rule.allowance {
             Some(BendAllowance::KFactorTable(table)) => check_k_factor_table(id, table, findings),
@@ -49,7 +56,10 @@ fn check_k_factor_table(id: &str, table: &KFactorTable, findings: &mut Vec<Findi
         error(
             findings,
             id,
-            format_args!("a KFactorTable is empty or its ratios do not increase strictly"),
+            crate::rule!(
+                "design.kfactortable-empty-ratios-do-not-increase",
+                "a KFactorTable is empty or its ratios do not increase strictly"
+            ),
         );
     }
 }
@@ -66,7 +76,8 @@ fn check_bend_table(id: &str, table: &BendTable, findings: &mut Vec<Finding>) {
         error(
             findings,
             id,
-            format_args!(
+            crate::rule!(
+                "design.bendtable-no-block-blocks-not-strictly",
                 "a BendTable has no block or its blocks are not in strictly increasing thickness"
             ),
         );
@@ -85,7 +96,7 @@ fn check_bend_table(id: &str, table: &BendTable, findings: &mut Vec<Finding>) {
             error(
                 findings,
                 id,
-                format_args!("a BendTable block's radii or angles are empty or not strictly increasing, or its values are not one row per angle of one value per radius"),
+                crate::rule!("design.bendtable-block-radii-angles-empty-not", "a BendTable block's radii or angles are empty or not strictly increasing, or its values are not one row per angle of one value per radius"),
             );
         }
     }
@@ -93,14 +104,24 @@ fn check_bend_table(id: &str, table: &BendTable, findings: &mut Vec<Finding>) {
 
 fn check_equations(id: &str, equations: &BendEquations, findings: &mut Vec<Finding>) {
     if equations.ranges.is_empty() {
-        error(findings, id, format_args!("a BendEquations has no range"));
+        error(
+            findings,
+            id,
+            crate::rule!(
+                "design.bendequations-no-range",
+                "a BendEquations has no range"
+            ),
+        );
     }
     for range in &equations.ranges {
         if range.from.get() >= range.to.get() {
             error(
                 findings,
                 id,
-                format_args!("an AngleRange's from is not below its to"),
+                crate::rule!(
+                    "design.anglerange-not-below",
+                    "an AngleRange's from is not below its to"
+                ),
             );
         }
     }
@@ -113,7 +134,10 @@ fn check_equations(id: &str, equations: &BendEquations, findings: &mut Vec<Findi
             error(
                 findings,
                 id,
-                format_args!("BendEquations ranges are out of order or overlap"),
+                crate::rule!(
+                    "design.bendequations-ranges-out-order-overlap",
+                    "BendEquations ranges are out of order or overlap"
+                ),
             );
         }
     }
@@ -150,7 +174,10 @@ fn check_one(
         error(
             findings,
             site.entity,
-            format_args!("{field} picks other than one {what}"),
+            crate::rule!(
+                "design.picks-other-one",
+                "{field} picks other than one {what}"
+            ),
         );
     }
 }
@@ -176,7 +203,8 @@ pub(super) fn check_sheet_metal(
             error(
                 findings,
                 site.entity,
-                format_args!(
+                crate::rule!(
+                    "design.sheet-metal-rule-no-rule-feature",
                     "sheet-metal rule {} is no rule of the feature's scope",
                     rule.as_str()
                 ),
@@ -211,7 +239,7 @@ pub(super) fn check_sheet_metal(
                     error(
                         findings,
                         site.entity,
-                        format_args!("ContourFlange.thickness is other than OneSide with Left, Right, or no side, Symmetric, or Native"),
+                        crate::rule!("design.contourflange-thickness-other-oneside-left-right", "ContourFlange.thickness is other than OneSide with Left, Right, or no side, Symmetric, or Native"),
                     );
                 }
             }
@@ -219,17 +247,26 @@ pub(super) fn check_sheet_metal(
                 (Some(_), Some(_)) => error(
                     findings,
                     site.entity,
-                    format_args!("a ContourFlange with edges states an extent"),
+                    crate::rule!(
+                        "design.contourflange-edges-states-extent",
+                        "a ContourFlange with edges states an extent"
+                    ),
                 ),
                 (None, None) => error(
                     findings,
                     site.entity,
-                    format_args!("a ContourFlange without edges states no extent"),
+                    crate::rule!(
+                        "design.contourflange-without-edges-states-no-extent",
+                        "a ContourFlange without edges states no extent"
+                    ),
                 ),
                 (None, Some(_)) if width.is_some() => error(
                     findings,
                     site.entity,
-                    format_args!("a ContourFlange without edges states a width"),
+                    crate::rule!(
+                        "design.contourflange-without-edges-states-width",
+                        "a ContourFlange without edges states a width"
+                    ),
                 ),
                 _ => {}
             }
@@ -251,7 +288,7 @@ pub(super) fn check_sheet_metal(
                         error(
                             findings,
                             site.entity,
-                            format_args!("a ContourFlange.extent end is other than AtOrigin, a positive Amount, ToPoint, ToPlane, or ToGeometry"),
+                            crate::rule!("design.contourflange-extent-end-other-atorigin-positive", "a ContourFlange.extent end is other than AtOrigin, a positive Amount, ToPoint, ToPlane, or ToGeometry"),
                         );
                     }
                 }
@@ -261,7 +298,8 @@ pub(super) fn check_sheet_metal(
                     error(
                         findings,
                         site.entity,
-                        format_args!(
+                        crate::rule!(
+                            "design.flangewidth-peredge-other-one-pair-per",
                             "FlangeWidth::PerEdge has other than one pair per selected edge"
                         ),
                     );
@@ -283,7 +321,10 @@ pub(super) fn check_sheet_metal(
                     error(
                         findings,
                         site.entity,
-                        format_args!("two VertexBends pick one vertex"),
+                        crate::rule!(
+                            "design.two-vertexbends-pick-one-vertex",
+                            "two VertexBends pick one vertex"
+                        ),
                     );
                 }
                 if bend.radius.as_ref() == Some(&vertex_bend.radius)
@@ -292,7 +333,10 @@ pub(super) fn check_sheet_metal(
                     warning(
                         findings,
                         site.entity,
-                        format_args!("a VertexBend restates the flange's bend radius and side"),
+                        crate::rule!(
+                            "design.vertexbend-restates-flange-bend-radius-side",
+                            "a VertexBend restates the flange's bend radius and side"
+                        ),
                     );
                 }
             }
@@ -310,7 +354,10 @@ pub(super) fn check_sheet_metal(
                 error(
                     findings,
                     site.entity,
-                    format_args!("Hem.position is other than AtEdge or TangentToSide"),
+                    crate::rule!(
+                        "design.hem-position-other-atedge-tangenttoside",
+                        "Hem.position is other than AtEdge or TangentToSide"
+                    ),
                 );
             }
         }
@@ -324,7 +371,10 @@ pub(super) fn check_sheet_metal(
                 error(
                     findings,
                     site.entity,
-                    format_args!("a Bend states both angle and flat_length"),
+                    crate::rule!(
+                        "design.bend-states-both-angle-flat-length",
+                        "a Bend states both angle and flat_length"
+                    ),
                 );
             }
             let allowed =
@@ -333,7 +383,8 @@ pub(super) fn check_sheet_metal(
                 error(
                     findings,
                     site.entity,
-                    format_args!(
+                    crate::rule!(
+                        "design.sheetmetalkind-bend-line-picks-picks-sketch",
                         "SheetMetalKind::Bend.line picks {class}; it picks sketch lines or edges"
                     ),
                 );
@@ -360,7 +411,10 @@ pub(super) fn check_sheet_metal(
                     error(
                         findings,
                         site.entity,
-                        format_args!("ConnectBetween::Apart's two selections are one"),
+                        crate::rule!(
+                            "design.connectbetween-apart-two-selections-one",
+                            "ConnectBetween::Apart's two selections are one"
+                        ),
                     );
                 }
             }
@@ -369,14 +423,20 @@ pub(super) fn check_sheet_metal(
                     error(
                         findings,
                         site.entity,
-                        format_args!("ConnectBetween::SharedEdge picks {class}, not an edge"),
+                        crate::rule!(
+                            "design.connectbetween-sharededge-picks-not-edge",
+                            "ConnectBetween::SharedEdge picks {class}, not an edge"
+                        ),
                     );
                 }
                 if double.is_some() || extension.is_some() {
                     error(
                         findings,
                         site.entity,
-                        format_args!("a SharedEdge Connect states double or extension"),
+                        crate::rule!(
+                            "design.sharededge-connect-states-double-extension",
+                            "a SharedEdge Connect states double or extension"
+                        ),
                     );
                 }
             }
@@ -422,7 +482,10 @@ pub(super) fn check_sheet_metal(
                     error(
                         findings,
                         site.entity,
-                        format_args!("a ConvertRip.path is other than Edges or Sketched"),
+                        crate::rule!(
+                            "design.convertrip-path-other-edges-sketched",
+                            "a ConvertRip.path is other than Edges or Sketched"
+                        ),
                     );
                 }
                 check_rip_path(site, &rip.path, findings);
@@ -434,14 +497,20 @@ pub(super) fn check_sheet_metal(
                 error(
                     findings,
                     site.entity,
-                    format_args!("BreakCorner.corners is empty"),
+                    crate::rule!(
+                        "design.breakcorner-corners-empty",
+                        "BreakCorner.corners is empty"
+                    ),
                 );
             }
             if let Some(class) = picks::refused(corners, picks::is_edge) {
                 error(
                     findings,
                     site.entity,
-                    format_args!("BreakCorner.corners picks {class}, not an edge"),
+                    crate::rule!(
+                        "design.breakcorner-corners-picks-not-edge",
+                        "BreakCorner.corners picks {class}, not an edge"
+                    ),
                 );
             }
         }
@@ -522,7 +591,8 @@ pub(super) fn check_sheet_metal(
                 error(
                     findings,
                     site.entity,
-                    format_args!(
+                    crate::rule!(
+                        "design.toolform-tool-names-definition-feature-scope",
                         "ToolForm.tool names {}, a definition the feature's scope spans",
                         tool.definition.as_str()
                     ),
@@ -545,7 +615,7 @@ pub(super) fn check_sheet_metal(
                     error(
                         findings,
                         site.entity,
-                        format_args!("a ToolForm constraint has no connector whose picks carry a Definition context naming its tool"),
+                        crate::rule!("design.toolform-constraint-no-connector-picks-carry", "a ToolForm constraint has no connector whose picks carry a Definition context naming its tool"),
                     );
                 }
             }
@@ -586,7 +656,10 @@ fn check_bends(site: Site<'_>, bends: Option<&BendSet>, findings: &mut Vec<Findi
             error(
                 findings,
                 site.entity,
-                format_args!("BendSet::Selected selects {class}, not a bend face"),
+                crate::rule!(
+                    "design.bendset-selected-selects-not-bend-face",
+                    "BendSet::Selected selects {class}, not a bend face"
+                ),
             );
         }
     }
@@ -608,7 +681,10 @@ fn check_relief(
             error(
                 findings,
                 site.entity,
-                format_args!("a Relief states both width and width_ratio"),
+                crate::rule!(
+                    "design.relief-states-both-width-width-ratio",
+                    "a Relief states both width and width_ratio"
+                ),
             );
         }
     }
@@ -620,7 +696,10 @@ fn check_flange(site: Site<'_>, flange: &Flange, findings: &mut Vec<Finding>) {
         error(
             findings,
             site.entity,
-            format_args!("Flange.height_datum occurs without a Distance height or an outline"),
+            crate::rule!(
+                "design.flange-height-datum-occurs-without-distance",
+                "Flange.height_datum occurs without a Distance height or an outline"
+            ),
         );
     }
     if let Some(outline) = &flange.outline {
@@ -640,7 +719,7 @@ fn check_flange(site: Site<'_>, flange: &Flange, findings: &mut Vec<Finding>) {
             error(
                 findings,
                 site.entity,
-                format_args!("a Flange with an outline picks other than one edge, states a height datum other than InnerSharp or OuterSharp, or states a height, width, or angle"),
+                crate::rule!("design.flange-outline-picks-other-one-edge", "a Flange with an outline picks other than one edge, states a height datum other than InnerSharp or OuterSharp, or states a height, width, or angle"),
             );
         }
     }
@@ -649,7 +728,8 @@ fn check_flange(site: Site<'_>, flange: &Flange, findings: &mut Vec<Finding>) {
         (Some(FlangeWidth::PerEdge(pairs)), Some(edges)) if pairs.len() != edges => error(
             findings,
             site.entity,
-            format_args!(
+            crate::rule!(
+                "design.flangewidth-peredge-pairs-edges",
                 "FlangeWidth::PerEdge has {} pairs for {edges} edges",
                 pairs.len()
             ),
@@ -658,7 +738,8 @@ fn check_flange(site: Site<'_>, flange: &Flange, findings: &mut Vec<Finding>) {
             error(
                 findings,
                 site.entity,
-                format_args!(
+                crate::rule!(
+                    "design.flangewidth-centeredperedge-widths-edges",
                     "FlangeWidth::CenteredPerEdge has {} widths for {edges} edges",
                     widths.len()
                 ),
@@ -678,14 +759,17 @@ pub(super) fn check_rip(site: Site<'_>, rip: &Rip, convert: bool, findings: &mut
                 error(
                     findings,
                     site.entity,
-                    format_args!("Rip::Faces.faces is empty"),
+                    crate::rule!("design.rip-faces-faces-empty", "Rip::Faces.faces is empty"),
                 );
             }
             if let Some(class) = picks::refused(faces, picks::is_face) {
                 error(
                     findings,
                     site.entity,
-                    format_args!("Rip::Faces.faces picks {class}, not a face"),
+                    crate::rule!(
+                        "design.rip-faces-faces-picks-not-face",
+                        "Rip::Faces.faces picks {class}, not a face"
+                    ),
                 );
             }
         }
@@ -694,7 +778,8 @@ pub(super) fn check_rip(site: Site<'_>, rip: &Rip, convert: bool, findings: &mut
                 error(
                     findings,
                     site.entity,
-                    format_args!(
+                    crate::rule!(
+                        "design.rip-along-path-edges-rip-faces",
                         "a Rip::Along's path is Edges, which is a Rip::Faces or a ConvertRip"
                     ),
                 );
@@ -729,7 +814,10 @@ fn check_rip_path(site: Site<'_>, path: &RipPath, findings: &mut Vec<Finding>) {
                 error(
                     findings,
                     site.entity,
-                    format_args!("a RipPath::Line's from and to are one point"),
+                    crate::rule!(
+                        "design.rippath-line-one-point",
+                        "a RipPath::Line's from and to are one point"
+                    ),
                 );
             }
         }
@@ -738,7 +826,7 @@ fn check_rip_path(site: Site<'_>, path: &RipPath, findings: &mut Vec<Finding>) {
                 error(
                     findings,
                     site.entity,
-                    format_args!("RipPath::Edges is empty"),
+                    crate::rule!("design.rippath-edges-empty", "RipPath::Edges is empty"),
                 );
             }
         }

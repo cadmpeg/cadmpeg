@@ -11,8 +11,8 @@
 //! checks do. A reference to a record the state does not hold is the closure
 //! rule's.
 
+use crate::report::check::Ruled;
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -20,7 +20,7 @@ use cadmpeg_core::CodecError;
 use super::{Arena, ResolvedState};
 use crate::document::Topology;
 use crate::geometry::{Curve, ProceduralCurve};
-use crate::report::check::Finding;
+use crate::report::check::{Finding, RuleName};
 use crate::scalar::PositiveLength;
 use crate::topology::{Coedge, Edge, Face, Loop, Region, Shell};
 use crate::validate::geometry_consistency::vertexless_edge_on_open_carrier;
@@ -90,15 +90,16 @@ impl<'a> Records<'a> {
 }
 
 /// The breaches of a state that involve a record the evaluation's own delta
-/// holds, in the order found. A breach is identified by its message, which
-/// names its records and its direction.
+/// holds, in the order found. A breach is identified by its rule and its
+/// message, which names its records and its direction.
 #[derive(Default)]
-struct Breaches(Vec<String>);
+struct Breaches(Vec<(RuleName, String)>);
 
 impl Breaches {
-    fn breach(&mut self, own: bool, message: fmt::Arguments<'_>) {
+    fn breach(&mut self, own: bool, message: Ruled<'_>) {
         if own {
-            self.0.push(message.to_string());
+            self.0
+                .push((message.rule.clone(), message.message.to_string()));
         }
     }
 }
@@ -123,12 +124,19 @@ pub(super) fn check_state_topology(
     }
     let mut inherited = Breaches::default();
     check_topology(ctx, linear, &Records::of(base, &restated), &mut inherited)?;
-    let inherited: BTreeSet<String> = inherited.0.into_iter().collect();
+    let inherited: BTreeSet<(RuleName, String)> = inherited.0.into_iter().collect();
     let mut breaches = Breaches::default();
     check_topology(ctx, linear, &Records::of(state, &restated), &mut breaches)?;
-    for message in breaches.0 {
-        if !inherited.contains(&message) {
-            super::super::error(findings, evaluation, format_args!("{message}"));
+    for (rule, message) in breaches.0 {
+        if !inherited.contains(&(rule.clone(), message.clone())) {
+            super::super::error(
+                findings,
+                evaluation,
+                Ruled {
+                    rule: &rule,
+                    message: format_args!("{message}"),
+                },
+            );
         }
     }
     Ok(())
@@ -156,7 +164,8 @@ fn check_child_lists(records: &Records<'_>, breaches: &mut Breaches) {
                 if child.record.region.as_str() != id {
                     breaches.breach(
                         region.own || child.own,
-                        format_args!(
+                        crate::rule!(
+                            "design.region-lists-shell-parent-another-record",
                             "region {id} lists shell {shell}, whose parent is another record"
                         ),
                     );
@@ -171,14 +180,18 @@ fn check_child_lists(records: &Records<'_>, breaches: &mut Breaches) {
             if !seen.insert(loop_) {
                 breaches.breach(
                     face.own,
-                    format_args!("face {id} lists loop {loop_} more than once"),
+                    crate::rule!(
+                        "design.face-lists-loop-more-once",
+                        "face {id} lists loop {loop_} more than once"
+                    ),
                 );
             }
             if let Some(child) = records.loops.get(loop_) {
                 if child.record.face.as_str() != id {
                     breaches.breach(
                         face.own || child.own,
-                        format_args!(
+                        crate::rule!(
+                            "design.face-lists-loop-parent-another-record",
                             "face {id} lists loop {loop_}, whose parent is another record"
                         ),
                     );
@@ -193,7 +206,8 @@ fn check_child_lists(records: &Records<'_>, breaches: &mut Breaches) {
                 if child.record.owner_loop.as_str() != id {
                     breaches.breach(
                         loop_.own || child.own,
-                        format_args!(
+                        crate::rule!(
+                            "design.loop-lists-coedge-parent-another-record",
                             "loop {id} lists coedge {coedge}, whose parent is another record"
                         ),
                     );
@@ -211,7 +225,10 @@ fn check_child_lists(records: &Records<'_>, breaches: &mut Breaches) {
             {
                 breaches.breach(
                     shell.own || parent.own,
-                    format_args!("shell {id} is not listed by its region {region}"),
+                    crate::rule!(
+                        "design.shell-not-listed-region",
+                        "shell {id} is not listed by its region {region}"
+                    ),
                 );
             }
         }
@@ -230,7 +247,10 @@ fn check_child_lists(records: &Records<'_>, breaches: &mut Breaches) {
             if !seen.insert(member) {
                 breaches.breach(
                     shell.own,
-                    format_args!("shell {id} lists member {member} more than once"),
+                    crate::rule!(
+                        "design.shell-lists-member-more-once",
+                        "shell {id} lists member {member} more than once"
+                    ),
                 );
             }
         }
@@ -241,7 +261,10 @@ fn check_child_lists(records: &Records<'_>, breaches: &mut Breaches) {
             if !parent.record.loops.contains(&loop_.record.id) {
                 breaches.breach(
                     loop_.own || parent.own,
-                    format_args!("loop {id} is not listed by its face {face}"),
+                    crate::rule!(
+                        "design.loop-not-listed-face",
+                        "loop {id} is not listed by its face {face}"
+                    ),
                 );
             }
         }
@@ -252,7 +275,10 @@ fn check_child_lists(records: &Records<'_>, breaches: &mut Breaches) {
             if !parent.record.coedges().contains(&coedge.record.id) {
                 breaches.breach(
                     coedge.own || parent.own,
-                    format_args!("coedge {id} is not listed by its loop {owner}"),
+                    crate::rule!(
+                        "design.coedge-not-listed-loop",
+                        "coedge {id} is not listed by its loop {owner}"
+                    ),
                 );
             }
         }
@@ -279,7 +305,8 @@ fn check_vertexless_edges(
         else {
             breaches.breach(
                 edge.own,
-                format_args!(
+                crate::rule!(
+                    "design.edge-no-vertex-needs-carrier-curve",
                     "edge {id} has no vertex, so it needs a carrier curve and no parameter range"
                 ),
             );
@@ -307,7 +334,8 @@ fn check_vertexless_edges(
         {
             breaches.breach(
                 own,
-                format_args!(
+                crate::rule!(
+                    "design.edge-no-vertex-lies-open-carrier",
                     "edge {id} has no vertex and lies on an open carrier curve {}",
                     curve_id.as_str()
                 ),
@@ -330,7 +358,7 @@ fn check_vertexless_edges(
         if parent.record.coedges().len() != 1 {
             breaches.breach(
                 coedge.own || edge.own || parent.own,
-                format_args!(
+                crate::rule!("design.coedge-uses-edge-no-vertex-not", 
                     "coedge {id} uses edge {edge_id}, which has no vertex, and is not the only coedge of its loop {owner}"
                 ),
             );

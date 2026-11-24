@@ -115,13 +115,15 @@ pub(super) fn validate_history_graphs(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .iter()
             .any(|scope| scope.history_state_id().is_some())
     {
-        findings.push(Finding { check: Check::FragmentSkipped, severity: Severity::Info,
+        findings.push(Finding {
+ rule: cadmpeg_ir::rule_name!("f3d/links.skipped-f3d-history-state-links-f3d"), check: Check::FragmentSkipped, severity: Severity::Info,
             entity: None, related: Vec::new(),
             message: "skipped f3d.history_state_links and f3d.historical_candidates: cited ASM states are outside this fragment".into() });
     }
     for history in &native.asm_histories {
         if let Err(error) = history.check_transitions() {
             findings.push(Finding {
+                rule: cadmpeg_ir::rule_name!("f3d/links.fusion-asm-history-transition-invalid"),
                 check: Check::NativeLinks,
                 severity: Severity::Error,
                 message: format!("Fusion ASM history transition is invalid: {error:?}"),

@@ -27,13 +27,13 @@ pub(super) fn check_typed_references(
                         if finding.entity.as_deref() != Some(owner) { continue; }
                         if finding.message.contains(target) { return Ok(()); }
                     }
-                    record_finding(findings, Check::ReferentialIntegrity, Severity::Error, Some(owner), format_args!("unresolved typed reference {target}"));
+                    record_finding(findings, Check::ReferentialIntegrity, Severity::Error, Some(owner), crate::rule!("referential_integrity.unresolved-typed-reference", "unresolved typed reference {target}"));
                     Ok(())
                 });
                 match walk {
                     Ok(()) => {}
                     Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Err(error),
-                    Err(error) => record_finding(findings, Check::ReferentialIntegrity, Severity::Error, Some(owner), format_args!("entity schema cannot state its typed references: {error}")),
+                    Err(error) => record_finding(findings, Check::ReferentialIntegrity, Severity::Error, Some(owner), crate::rule!("referential_integrity.entity-schema-cannot-state-typed-references", "entity schema cannot state its typed references: {error}")),
                 }
             })*
         };

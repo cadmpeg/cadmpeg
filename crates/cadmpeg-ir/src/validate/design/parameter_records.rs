@@ -43,7 +43,10 @@ pub(super) fn check_parameter_records(index: &DesignRecords<'_>, findings: &mut 
             None if !cells.contains(id) => super::error(
                 findings,
                 id,
-                format_args!("parameter states no name but is no spreadsheet cell's parameter"),
+                crate::rule!(
+                    "design.parameter-states-no-name-no-spreadsheet",
+                    "parameter states no name but is no spreadsheet cell's parameter"
+                ),
             ),
             None => {}
         }
@@ -53,7 +56,10 @@ pub(super) fn check_parameter_records(index: &DesignRecords<'_>, findings: &mut 
             super::error(
                 findings,
                 id,
-                format_args!("an `Unset` parameter states a `value`; it has none"),
+                crate::rule!(
+                    "design.unset-parameter-states-value-none",
+                    "an `Unset` parameter states a `value`; it has none"
+                ),
             );
         }
     }
@@ -66,7 +72,10 @@ pub(super) fn check_parameter_records(index: &DesignRecords<'_>, findings: &mut 
             super::error(
                 findings,
                 scope,
-                format_args!("{count} parameters of the scope with {owner} are named {name:?}"),
+                crate::rule!(
+                    "design.parameters-scope-named",
+                    "{count} parameters of the scope with {owner} are named {name:?}"
+                ),
             );
         }
     }
@@ -99,13 +108,19 @@ fn check_owner(
                 super::error(
                     findings,
                     id,
-                    format_args!("parameter's owner {feature} is no feature of the design"),
+                    crate::rule!(
+                        "design.parameter-owner-no-feature-design",
+                        "parameter's owner {feature} is no feature of the design"
+                    ),
                 );
             } else if index.scope_of(MemberKey::Feature(feature)) != Some(scope) {
                 super::error(
                     findings,
                     id,
-                    format_args!("parameter's owner {feature} is no feature of its scope {scope}"),
+                    crate::rule!(
+                        "design.parameter-owner-no-feature-scope",
+                        "parameter's owner {feature} is no feature of its scope {scope}"
+                    ),
                 );
             }
         }
@@ -115,12 +130,18 @@ fn check_owner(
                 None => super::error(
                     findings,
                     id,
-                    format_args!("parameter's owner {container} is no container of the design"),
+                    crate::rule!(
+                        "design.parameter-owner-no-container-design",
+                        "parameter's owner {container} is no container of the design"
+                    ),
                 ),
                 Some(Container::Unordered { .. }) => super::error(
                     findings,
                     id,
-                    format_args!("parameter's owner {container} is an unordered container"),
+                    crate::rule!(
+                        "design.parameter-owner-unordered-container",
+                        "parameter's owner {container} is an unordered container"
+                    ),
                 ),
                 Some(Container::Ordered { .. })
                     if index.scope_of(MemberKey::Container(container)) != Some(scope) =>
@@ -128,7 +149,8 @@ fn check_owner(
                     super::error(
                         findings,
                         id,
-                        format_args!(
+                        crate::rule!(
+                            "design.parameter-owner-no-container-scope",
                             "parameter's owner {container} is no container of its scope {scope}"
                         ),
                     );
@@ -152,7 +174,7 @@ fn check_owner(
                 super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!("design.parameter-owner-no-model-attribute-value", 
                         "parameter's owner {} is no model attribute with a value naming the parameter",
                         attribute.as_str()
                     ),
@@ -182,7 +204,8 @@ fn check_kind(parameter: &DesignParameter, findings: &mut Vec<Finding>) {
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "design.parameter-value-does-not-follow-kind",
                     "parameter's value {value:?} does not follow its kind {:?}",
                     parameter.kind
                 ),
@@ -196,7 +219,10 @@ fn check_kind(parameter: &DesignParameter, findings: &mut Vec<Finding>) {
         super::error(
             findings,
             id,
-            format_args!("parameter states a unit but its kind is no quantity"),
+            crate::rule!(
+                "design.parameter-states-unit-kind-no-quantity",
+                "parameter states a unit but its kind is no quantity"
+            ),
         );
         return;
     };
@@ -205,12 +231,18 @@ fn check_kind(parameter: &DesignParameter, findings: &mut Vec<Finding>) {
         Ok((_, quantity)) => super::error(
             findings,
             id,
-            format_args!("parameter's unit has the quantity {quantity:?}, not its kind's {kind:?}"),
+            crate::rule!(
+                "design.parameter-unit-quantity-not-kind",
+                "parameter's unit has the quantity {quantity:?}, not its kind's {kind:?}"
+            ),
         ),
         Err(_) => super::error(
             findings,
             id,
-            format_args!("parameter's unit has exponents outside the quantity range"),
+            crate::rule!(
+                "design.parameter-unit-exponents-outside-quantity-range",
+                "parameter's unit has exponents outside the quantity range"
+            ),
         ),
     }
 }
@@ -239,7 +271,10 @@ fn check_spreadsheets(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
                 super::error(
                     findings,
                     feature,
-                    format_args!("feature's spreadsheet {sheet} is no spreadsheet of the design"),
+                    crate::rule!(
+                        "design.feature-spreadsheet-no-spreadsheet-design",
+                        "feature's spreadsheet {sheet} is no spreadsheet of the design"
+                    ),
                 );
             }
         }
@@ -252,7 +287,8 @@ fn check_spreadsheets(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
                 super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!(
+                        "design.spreadsheet-named-features-spreadsheet-operations-one",
                         "spreadsheet is named by {} features' spreadsheet operations; one names it",
                         features.len()
                     ),
@@ -263,7 +299,10 @@ fn check_spreadsheets(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
                 super::error(
                     findings,
                     id,
-                    format_args!("spreadsheet is named by no feature's spreadsheet operation"),
+                    crate::rule!(
+                        "design.spreadsheet-named-no-feature-spreadsheet-operation",
+                        "spreadsheet is named by no feature's spreadsheet operation"
+                    ),
                 );
                 continue;
             }
@@ -277,7 +316,7 @@ fn check_spreadsheets(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
                 super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!("design.spreadsheet-cell-parameter-no-parameter-owned", 
                         "spreadsheet cell's parameter {parameter} is no parameter owned by the sheet's feature {owner}"
                     ),
                 );

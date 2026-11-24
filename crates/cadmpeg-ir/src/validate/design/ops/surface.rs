@@ -35,7 +35,10 @@ pub(super) fn check_patch(
                 error(
                     findings,
                     site.entity,
-                    format_args!("a PatchBounds::Loops loop is empty"),
+                    crate::rule!(
+                        "design.patchbounds-loops-loop-empty",
+                        "a PatchBounds::Loops loop is empty"
+                    ),
                 );
             }
             for edge in outer.iter().chain(inner.iter().flatten()) {
@@ -48,7 +51,10 @@ pub(super) fn check_patch(
         error(
             findings,
             site.entity,
-            format_args!("Patch.planar is true where a condition is other than Free"),
+            crate::rule!(
+                "design.patch-planar-true-where-condition-other",
+                "Patch.planar is true where a condition is other than Free"
+            ),
         );
     }
     options::check_sheet_output(index, site, &patch.output, findings);
@@ -68,14 +74,20 @@ pub(super) fn check_knit(
         error(
             findings,
             site.entity,
-            format_args!("Knit.elements holds fewer than two picks"),
+            crate::rule!(
+                "design.knit-elements-holds-fewer-two-picks",
+                "Knit.elements holds fewer than two picks"
+            ),
         );
     }
     if knit.healing.is_some() && knit.tolerance.is_none() {
         error(
             findings,
             site.entity,
-            format_args!("Knit.healing occurs without a tolerance"),
+            crate::rule!(
+                "design.knit-healing-occurs-without-tolerance",
+                "Knit.healing occurs without a tolerance"
+            ),
         );
     }
     options::check_sheet_output(index, site, &knit.output, findings);
@@ -86,14 +98,20 @@ pub(super) fn check_unsew(site: Site<'_>, unsew: &Unsew, findings: &mut Vec<Find
         error(
             findings,
             site.entity,
-            format_args!("Unsew.edges picks no edge"),
+            crate::rule!(
+                "design.unsew-edges-picks-no-edge",
+                "Unsew.edges picks no edge"
+            ),
         );
     }
     if let Some(class) = picks::refused(&unsew.edges, picks::is_edge) {
         error(
             findings,
             site.entity,
-            format_args!("Unsew.edges picks {class}, not an edge"),
+            crate::rule!(
+                "design.unsew-edges-picks-not-edge",
+                "Unsew.edges picks {class}, not an edge"
+            ),
         );
     }
 }
@@ -105,7 +123,10 @@ fn check_up_to(site: Site<'_>, field: &str, selection: &SetSelection, findings: 
         error(
             findings,
             site.entity,
-            format_args!("{field} selects {class}; it selects points, faces, or planes"),
+            crate::rule!(
+                "design.selects-selects-points-faces-planes",
+                "{field} selects {class}; it selects points, faces, or planes"
+            ),
         );
     }
 }
@@ -121,7 +142,10 @@ pub(super) fn check_extend(
             error(
                 findings,
                 site.entity,
-                format_args!("a literal ExtendLimit::Distance is not positive"),
+                crate::rule!(
+                    "design.literal-extendlimit-distance-not-positive",
+                    "a literal ExtendLimit::Distance is not positive"
+                ),
             );
         }
         Some(ExtendLimit::UpTo(target)) => {
@@ -153,7 +177,10 @@ pub(super) fn check_implicit_sweep(
         error(
             findings,
             site.entity,
-            format_args!("ImplicitSweep.solution is 0; it is at least 1"),
+            crate::rule!(
+                "design.implicitsweep-solution-0-least-1",
+                "ImplicitSweep.solution is 0; it is at least 1"
+            ),
         );
     }
     swept::check_corner(
@@ -175,7 +202,10 @@ pub(super) fn check_implicit_sweep(
                 error(
                     findings,
                     site.entity,
-                    format_args!("LineMode::Curve.from occurs without an angle"),
+                    crate::rule!(
+                        "design.linemode-curve-occurs-without-angle",
+                        "LineMode::Curve.from occurs without an angle"
+                    ),
                 );
             }
             for length in lengths.iter().flatten() {
@@ -190,7 +220,8 @@ pub(super) fn check_implicit_sweep(
                 error(
                     findings,
                     site.entity,
-                    format_args!(
+                    crate::rule!(
+                        "design.circlemode-centerangles-states-one-angle-states",
                         "CircleMode::CenterAngles states one angle; it states both or neither"
                     ),
                 );
@@ -199,7 +230,10 @@ pub(super) fn check_implicit_sweep(
                 error(
                     findings,
                     site.entity,
-                    format_args!("CircleMode::CenterAngles.from occurs without an angle"),
+                    crate::rule!(
+                        "design.circlemode-centerangles-occurs-without-angle",
+                        "CircleMode::CenterAngles.from occurs without an angle"
+                    ),
                 );
             }
         }
@@ -210,7 +244,8 @@ pub(super) fn check_implicit_sweep(
                 error(
                     findings,
                     site.entity,
-                    format_args!(
+                    crate::rule!(
+                        "design.implicitsection-conic-guides-two-five",
                         "an ImplicitSection::Conic has {} guides; it has two to five",
                         guides.len()
                     ),
@@ -220,7 +255,8 @@ pub(super) fn check_implicit_sweep(
                 error(
                     findings,
                     site.entity,
-                    format_args!(
+                    crate::rule!(
+                        "design.implicitsection-conic-states-parameter-other-two",
                         "an ImplicitSection::Conic states a parameter with other than two guides"
                     ),
                 );
@@ -229,7 +265,10 @@ pub(super) fn check_implicit_sweep(
                 error(
                     findings,
                     site.entity,
-                    format_args!("an ImplicitSection::Conic parameter lies outside (0, 1)"),
+                    crate::rule!(
+                        "design.implicitsection-conic-parameter-lies-outside-0",
+                        "an ImplicitSection::Conic parameter lies outside (0, 1)"
+                    ),
                 );
             }
         }
@@ -248,7 +287,10 @@ pub(super) fn check_boundary_fill(
         error(
             findings,
             site.entity,
-            format_args!("BoundaryFill.cells or one of its cell selections is empty"),
+            crate::rule!(
+                "design.boundaryfill-cells-one-cell-selections-empty",
+                "BoundaryFill.cells or one of its cell selections is empty"
+            ),
         );
     }
     if let Some(boolean) = &fill.boolean {
@@ -270,7 +312,8 @@ pub(super) fn check_curve(
                 error(
                     findings,
                     site.entity,
-                    format_args!(
+                    crate::rule!(
+                        "design.splinecurve-points-holds-points-holds-least",
                         "SplineCurve.points holds {} points; it holds at least {least}",
                         spline.points.len()
                     ),
@@ -291,7 +334,10 @@ pub(super) fn check_curve(
                 error(
                     findings,
                     site.entity,
-                    format_args!("the two BridgeEnd selections are one pick with one at"),
+                    crate::rule!(
+                        "design.two-bridgeend-selections-one-pick-one",
+                        "the two BridgeEnd selections are one pick with one at"
+                    ),
                 );
             }
         }
@@ -301,7 +347,8 @@ pub(super) fn check_curve(
         } if *sides < 3 => error(
             findings,
             site.entity,
-            format_args!(
+            crate::rule!(
+                "design.curvedefinition-polygon-sides-literal-count-least",
                 "CurveDefinition::Polygon has {sides} sides; a literal count is at least 3"
             ),
         ),
@@ -323,7 +370,10 @@ pub(super) fn check_form(site: Site<'_>, form: &Form, findings: &mut Vec<Finding
         error(
             findings,
             site.entity,
-            format_args!("Form.cage holds records other than subds, or no subds record"),
+            crate::rule!(
+                "design.form-cage-holds-records-other-subds",
+                "Form.cage holds records other than subds, or no subds record"
+            ),
         );
     }
     for surface in &cage.subds {
@@ -338,7 +388,10 @@ pub(super) fn check_form(site: Site<'_>, form: &Form, findings: &mut Vec<Finding
             error(
                 findings,
                 site.entity,
-                format_args!("a side of a CatmullClark cage holds other than one edge"),
+                crate::rule!(
+                    "design.side-catmullclark-cage-holds-other-one",
+                    "a side of a CatmullClark cage holds other than one edge"
+                ),
             );
         }
         let mut intervals = surface
@@ -351,7 +404,10 @@ pub(super) fn check_form(site: Site<'_>, form: &Form, findings: &mut Vec<Finding
                 error(
                     findings,
                     site.entity,
-                    format_args!("two edges of a CatmullClark cage state different knot intervals"),
+                    crate::rule!(
+                        "design.two-edges-catmullclark-cage-state-different",
+                        "two edges of a CatmullClark cage state different knot intervals"
+                    ),
                 );
             }
         }
@@ -372,14 +428,20 @@ pub(super) fn check_mesh(
                 error(
                     findings,
                     site.entity,
-                    format_args!("MeshKind::Combine.op is other than Join, Cut, or Intersect"),
+                    crate::rule!(
+                        "design.meshkind-combine-op-other-join-cut",
+                        "MeshKind::Combine.op is other than Join, Cut, or Intersect"
+                    ),
                 );
             }
             if picks::is_empty(tools) {
                 error(
                     findings,
                     site.entity,
-                    format_args!("MeshKind::Combine.tools is empty"),
+                    crate::rule!(
+                        "design.meshkind-combine-tools-empty",
+                        "MeshKind::Combine.tools is empty"
+                    ),
                 );
             }
         }
@@ -394,7 +456,8 @@ pub(super) fn check_mesh(
             error(
                 findings,
                 site.entity,
-                format_args!(
+                crate::rule!(
+                    "design.meshkind-section-names-sketch-no-sketch",
                     "MeshKind::Section names sketch {}, which is no sketch record",
                     sketch.as_str()
                 ),

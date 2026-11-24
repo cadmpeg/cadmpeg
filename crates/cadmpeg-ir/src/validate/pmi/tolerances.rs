@@ -27,7 +27,10 @@ pub(super) fn check_dimension_tolerance(
                 error(
                     findings,
                     annotation,
-                    format_args!("dimension's fit and its mate state the same zone"),
+                    crate::rule!(
+                        "pmi.dimension-fit-mate-state-same-zone",
+                        "dimension's fit and its mate state the same zone"
+                    ),
                 );
             }
             deviations.as_ref().map(|deviations| match deviations {
@@ -43,7 +46,8 @@ pub(super) fn check_dimension_tolerance(
             error(
                 findings,
                 annotation,
-                format_args!(
+                crate::rule!(
+                    "pmi.dimension-lower-deviation-not-below-upper",
                     "dimension's lower deviation {} is not below its upper deviation {}",
                     lower.get(),
                     upper.get()

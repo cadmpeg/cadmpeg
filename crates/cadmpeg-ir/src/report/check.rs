@@ -349,6 +349,8 @@ macro_rules! rule {
 pub struct Finding {
     /// Which check produced this finding.
     pub check: Check,
+    /// The rule the finding reports.
+    pub rule: RuleName,
     /// Severity.
     pub severity: Severity,
     /// Human-readable explanation.
@@ -414,6 +416,7 @@ mod tests {
     fn finding_without_related_writes_an_empty_list() -> Result<(), serde_json::Error> {
         let wire = serde_json::json!({
             "check": "referential_integrity",
+            "rule": "test.invalid-reference",
             "severity": "error",
             "message": "invalid reference",
             "entity": "test:model:feature#consumer",
@@ -423,6 +426,46 @@ mod tests {
         assert!(finding.related.is_empty());
         assert_eq!(serde_json::to_value(finding)?, wire);
         Ok(())
+    }
+
+    #[test]
+    fn a_finding_names_its_rule_in_the_rule_grammar() {
+        let wire = |rule: &str| {
+            serde_json::json!({
+                "check": "referential_integrity",
+                "rule": rule,
+                "severity": "error",
+                "message": "invalid reference",
+                "related": []
+            })
+        };
+        for good in [
+            "topology.free-vertex",
+            "f3d/links.native-ref",
+            "design_x.a1",
+        ] {
+            let finding: Finding = serde_json::from_value(wire(good)).expect(good);
+            assert_eq!(finding.rule.as_str(), good);
+        }
+        for bad in [
+            "topology",
+            "Topology.x",
+            "topology.-x",
+            "a/b/c.d",
+            "topology.x_y",
+            "",
+        ] {
+            assert!(
+                serde_json::from_value::<Finding>(wire(bad)).is_err(),
+                "{bad}"
+            );
+        }
+        let mut missing = wire("topology.free-vertex");
+        missing
+            .as_object_mut()
+            .expect("a finding is an object")
+            .remove("rule");
+        assert!(serde_json::from_value::<Finding>(missing).is_err());
     }
 
     #[test]
@@ -444,6 +487,7 @@ mod tests {
     #[test]
     fn finding_round_trips_related_ids_in_order() -> Result<(), serde_json::Error> {
         let finding = Finding {
+            rule: crate::rule_name!("test.invalid-dependencies"),
             check: Check::ReferentialIntegrity,
             severity: Severity::Error,
             message: "invalid dependencies".into(),

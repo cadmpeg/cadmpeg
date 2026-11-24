@@ -100,6 +100,7 @@ fn an_edit_that_adds_an_error_to_a_document_that_holds_one_is_refused() {
 
 fn finding(check: Check, severity: Severity, entity: Option<&str>, message: &str) -> Finding {
     Finding {
+        rule: crate::rule_name!("test.fixture-reference"),
         check,
         severity,
         message: message.to_owned(),
