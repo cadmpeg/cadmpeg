@@ -1157,20 +1157,30 @@ macro_rules! declare_document_arenas {
         }
 
         impl CadIr {
-            /// Removes every record of `id` from the arena `field` of `home`,
-            /// returning the number of copies and their canonical JSON text,
-            /// or `None` where the arena holds none.
-            pub(crate) fn take_records(&mut self, home: &str, field: &str, id: &str) -> Option<(usize, String)> {
+            /// The canonical JSON text of the records of `id` in the arena
+            /// `field` of `home`, or `None` where the arena holds none.
+            pub(crate) fn record_text(&self, home: &str, field: &str, id: &str) -> Option<String> {
                 use crate::schema::ArenaRecord;
                 $(if home == stringify!($home) && field == stringify!($field) {
-                    let (taken, kept): (Vec<$ty>, Vec<$ty>) = std::mem::take(&mut self.$home.$field)
-                        .into_iter()
-                        .partition(|entity| entity.record_identity() == id);
-                    self.$home.$field = kept;
-                    return (!taken.is_empty())
-                        .then(|| (taken.len(), crate::give_up::record_text(&taken)));
+                    let copies: Vec<&$ty> = self.$home.$field
+                        .iter()
+                        .filter(|entity| entity.record_identity() == id)
+                        .collect();
+                    return (!copies.is_empty()).then(|| crate::give_up::record_text(&copies));
                 })*
                 None
+            }
+
+            /// Removes every record of `id` from the arena `field` of `home`,
+            /// returning the number removed.
+            pub(crate) fn remove_records(&mut self, home: &str, field: &str, id: &str) -> usize {
+                use crate::schema::ArenaRecord;
+                $(if home == stringify!($home) && field == stringify!($field) {
+                    let before = self.$home.$field.len();
+                    self.$home.$field.retain(|entity| entity.record_identity() != id);
+                    return before - self.$home.$field.len();
+                })*
+                0
             }
 
             /// Whether a record of any arena, neutral or native, has the id

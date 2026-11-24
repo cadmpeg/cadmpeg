@@ -393,14 +393,14 @@ impl DecodeResult {
             &mut self.source_fidelity,
             format.as_str(),
             copies.keys().cloned().collect(),
-            |seed, released| {
+            |seed, released, retained| {
                 DecodeLossCode::IdRepeated.note(format!(
                     "the decoder emitted {} {} times in arena {}, and the copies differ, so the \
                      document states none of them; record={}; {}",
                     seed.id,
                     copies.get(seed).copied().unwrap_or(released.copies),
                     seed.arena,
-                    released.stub,
+                    retained.stub,
                     released.tail(&[&seed.id])
                 ))
             },
@@ -506,7 +506,7 @@ impl DecodeResult {
             &mut self.source_fidelity,
             format.as_str(),
             bounds.keys().cloned().collect(),
-            |seed, released| {
+            |seed, released, retained| {
                 DecodeLoss::new(
                     crate::unknown::part::record_unreadable_kind(),
                     format!(
@@ -514,8 +514,8 @@ impl DecodeResult {
                          decode wrapper gave it up; {}",
                         seed.arena.kind(),
                         released.path,
-                        released.length,
-                        released.stub,
+                        retained.length,
+                        retained.stub,
                         seed.id,
                         seed.arena,
                         bounds.get(seed).map_or("", String::as_str),

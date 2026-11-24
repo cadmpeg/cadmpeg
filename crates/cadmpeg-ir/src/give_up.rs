@@ -10,7 +10,8 @@
 //!
 //! Giving a record up drops, transitively, each record that needs it, and
 //! marks each record that holds it by a parent pointer or as a member whose
-//! position states no value of the design (§3.3).
+//! position states no value of the design (§3.3). The CADIR writer drops a
+//! record past a bound by the same removal, without the part (§3.4).
 
 use std::collections::BTreeSet;
 
@@ -87,21 +88,26 @@ pub(crate) struct Seed {
     pub(crate) id: String,
 }
 
-/// What giving up one seed did to the document.
+/// What removing one seed did to the document.
 #[derive(Debug)]
 pub(crate) struct Released {
-    /// The id of the part's `unknowns` stub.
-    pub(crate) stub: String,
-    /// The record's path in the document, the part's stream.
+    /// The record's path in the document.
     pub(crate) path: String,
-    /// The length of the retained text.
-    pub(crate) length: usize,
     /// The copies of the id the arena held.
     pub(crate) copies: usize,
-    /// The records dropped because they need the given-up record, sorted.
+    /// The records dropped because they need the removed record, sorted.
     pub(crate) dropped: BTreeSet<String>,
     /// The records kept in a partial form or with a mark, sorted.
     pub(crate) marked: BTreeSet<String>,
+}
+
+/// The part a given-up seed leaves.
+#[derive(Debug)]
+pub(crate) struct Retained {
+    /// The id of the part's `unknowns` stub.
+    pub(crate) stub: String,
+    /// The length of the retained text.
+    pub(crate) length: usize,
 }
 
 impl Released {
@@ -190,12 +196,10 @@ pub(crate) fn record_text<T: Serialize>(copies: &[T]) -> String {
     }
 }
 
-/// Gives up each seed, in order, as a part (§3.3): removes every copy of it,
-/// adds its `unknowns` stub to `codec`'s namespace and its canonical JSON to
-/// `fidelity` as an `untyped` retained record, drops each record that needs
-/// it, and marks each record that holds it by a parent pointer or as a
-/// member. `loss` states the loss of each seed from what its give-up did. A
-/// seed an earlier seed's give-up dropped is not given up again.
+/// Gives up each seed, in order, as a part (§3.3): removes it as
+/// [`drop_records`] does, and adds its `unknowns` stub to `codec`'s
+/// namespace and its canonical JSON to `fidelity` as an `untyped` retained
+/// record. `loss` states the loss of each seed from what its give-up did.
 ///
 /// # Errors
 ///
@@ -207,33 +211,28 @@ pub(crate) fn give_up(
     fidelity: &mut SourceFidelity,
     codec: &'static str,
     seeds: Vec<Seed>,
-    mut loss: impl FnMut(&Seed, &Released) -> LossNote,
+    mut loss: impl FnMut(&Seed, &Released, &Retained) -> LossNote,
 ) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = Vec::new();
     for seed in seeds {
-        let parents = parents(ir, &seed.arena, &seed.id);
-        let Some((copies, text)) = take(ir, &seed.arena, &seed.id) else {
+        let Some(text) = text(ir, &seed.arena, &seed.id) else {
             continue;
         };
-        let path = format!("{}/{}", seed.arena, seed.id);
-        let kind = seed.arena.kind();
-        let mut released = Released {
-            stub: GivenUpPart::record_id(codec, kind, &path)?
-                .as_str()
-                .to_owned(),
-            path,
-            length: text.len(),
-            copies,
-            dropped: BTreeSet::new(),
-            marked: BTreeSet::new(),
+        let Some(released) = remove(ctx, ir, &seed)? else {
+            continue;
         };
-        mark_parents(ir, &parents, &mut released.marked);
-        release(ctx, ir, &seed.id, &mut released)?;
         ctx.retain_bytes(
-            cadmpeg_core::decode::u64_from_index(released.length),
+            cadmpeg_core::decode::u64_from_index(text.len()),
             "given-up record text",
         )?;
-        let note = loss(&seed, &released);
+        let kind = seed.arena.kind();
+        let retained = Retained {
+            stub: GivenUpPart::record_id(codec, kind, &released.path)?
+                .as_str()
+                .to_owned(),
+            length: text.len(),
+        };
+        let note = loss(&seed, &released, &retained);
         let part = GivenUpPart::of_record(
             codec,
             kind,
@@ -247,12 +246,65 @@ pub(crate) fn give_up(
     Ok(losses)
 }
 
-/// Removes every copy of `id` from `arena`, returning the number of copies
-/// and their canonical JSON text, or `None` where the arena holds none.
-fn take(ir: &mut CadIr, arena: &Arena, id: &str) -> Option<(usize, String)> {
+/// Removes each seed, in order: every copy of it, each record that needs
+/// it, transitively, and each mark a record that holds it by a parent
+/// pointer or as a member takes (§3.3). A seed an earlier seed's removal
+/// dropped is skipped.
+///
+/// # Errors
+///
+/// A resource refusal for a rewritten `unknowns` arena.
+pub(crate) fn drop_records(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    seeds: Vec<Seed>,
+) -> Result<Vec<(Seed, Released)>, CodecError> {
+    let mut removed = Vec::new();
+    for seed in seeds {
+        if let Some(released) = remove(ctx, ir, &seed)? {
+            removed.push((seed, released));
+        }
+    }
+    Ok(removed)
+}
+
+/// Removes every copy of `seed` and releases it, or returns `None` where
+/// its arena holds none.
+fn remove(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    seed: &Seed,
+) -> Result<Option<Released>, CodecError> {
+    let parents = parents(ir, &seed.arena, &seed.id);
+    let copies = take(ir, &seed.arena, &seed.id);
+    if copies == 0 {
+        return Ok(None);
+    }
+    let mut released = Released {
+        path: format!("{}/{}", seed.arena, seed.id),
+        copies,
+        dropped: BTreeSet::new(),
+        marked: BTreeSet::new(),
+    };
+    mark_parents(ir, &parents, &mut released.marked);
+    release(ctx, ir, &seed.id, &mut released)?;
+    Ok(Some(released))
+}
+
+/// The canonical JSON text of the copies of `id` in `arena`, or `None`
+/// where the arena holds none.
+fn text(ir: &CadIr, arena: &Arena, id: &str) -> Option<String> {
     match arena {
-        Arena::Home { home, field } => ir.take_records(home, field, id),
-        Arena::Native { codec, arena } => ir.native.take_records(codec, arena, id),
+        Arena::Home { home, field } => ir.record_text(home, field, id),
+        Arena::Native { codec, arena } => ir.native.record_text(codec, arena, id),
+    }
+}
+
+/// Removes every copy of `id` from `arena`, returning the number removed.
+fn take(ir: &mut CadIr, arena: &Arena, id: &str) -> usize {
+    match arena {
+        Arena::Home { home, field } => ir.remove_records(home, field, id),
+        Arena::Native { codec, arena } => ir.native.remove_records(codec, arena, id),
     }
 }
 
@@ -338,7 +390,7 @@ fn release(
                 continue;
             }
             let parents = parents(ir, &holder.arena, &holder.id);
-            if take(ir, &holder.arena, &holder.id).is_none() {
+            if take(ir, &holder.arena, &holder.id) == 0 {
                 continue;
             }
             mark_parents(ir, &parents, &mut released.marked);

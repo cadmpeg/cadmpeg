@@ -43,15 +43,22 @@ fn run(ir: &mut CadIr, seed: Seed) -> (Outcome, SourceFidelity) {
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).expect("root");
     let mut fidelity = SourceFidelity::for_root(root);
     let mut outcome = Outcome::default();
-    let losses = give_up(&ctx, ir, &mut fidelity, CODEC, vec![seed], |_, released| {
-        outcome = Outcome {
-            stub: released.stub.clone(),
-            path: released.path.clone(),
-            dropped: released.dropped.clone(),
-            marked: released.marked.clone(),
-        };
-        LossNote::new(record_unreadable_kind(), released.tail(&[]))
-    })
+    let losses = give_up(
+        &ctx,
+        ir,
+        &mut fidelity,
+        CODEC,
+        vec![seed],
+        |_, released, retained| {
+            outcome = Outcome {
+                stub: retained.stub.clone(),
+                path: released.path.clone(),
+                dropped: released.dropped.clone(),
+                marked: released.marked.clone(),
+            };
+            LossNote::new(record_unreadable_kind(), released.tail(&[]))
+        },
+    )
     .expect("the give-up commits");
     assert_eq!(losses.len(), 1);
     (outcome, fidelity)

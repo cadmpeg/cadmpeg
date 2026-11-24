@@ -1140,21 +1140,33 @@ impl Native {
         records.get(index).map(|record| record.id().to_owned())
     }
 
+    /// The canonical JSON text of the records of `id` in `codec`'s arena
+    /// `arena`, or `None` where the arena holds none.
+    pub(crate) fn record_text(&self, codec: &str, arena: &str, id: &str) -> Option<String> {
+        let copies: Vec<&NativeRecord> = self
+            .0
+            .get(codec)?
+            .arenas
+            .get(arena)?
+            .iter()
+            .filter(|record| record.id() == id)
+            .collect();
+        (!copies.is_empty()).then(|| crate::give_up::record_text(&copies))
+    }
+
     /// Removes every record of `id` from `codec`'s arena `arena`, returning
-    /// the number of copies and their canonical JSON text, or `None` where
-    /// the arena holds none.
-    pub(crate) fn take_records(
-        &mut self,
-        codec: &str,
-        arena: &str,
-        id: &str,
-    ) -> Option<(usize, String)> {
-        let records = self.0.get_mut(codec)?.arenas.get_mut(arena)?;
-        let (taken, kept): (Vec<NativeRecord>, Vec<NativeRecord>) = std::mem::take(records)
-            .into_iter()
-            .partition(|record| record.id() == id);
-        *records = kept;
-        (!taken.is_empty()).then(|| (taken.len(), crate::give_up::record_text(&taken)))
+    /// the number removed.
+    pub(crate) fn remove_records(&mut self, codec: &str, arena: &str, id: &str) -> usize {
+        let Some(records) = self
+            .0
+            .get_mut(codec)
+            .and_then(|namespace| namespace.arenas.get_mut(arena))
+        else {
+            return 0;
+        };
+        let before = records.len();
+        records.retain(|record| record.id() != id);
+        before - records.len()
     }
 
     /// Whether a record of any namespace arena has the id `id`.
