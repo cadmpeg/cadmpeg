@@ -25,7 +25,6 @@ pub(crate) enum SolidEdgeLossCode {
     CurveUnsupported,
     EdgeTrimUnresolved,
     KernelUnverified,
-    FeaturesPending,
     AttributesPending,
     WireTopologyUnsupported,
     BodyKindAssumed,
@@ -139,10 +138,6 @@ impl SolidEdgeLossCode {
             Self::WireTopologyUnsupported => (
                 "topology.wire-unsupported",
                 LossTaxonomy::TopologyNotTransferred,
-            ),
-            Self::FeaturesPending => (
-                "feature.decode-pending",
-                LossTaxonomy::MetadataNotTransferred,
             ),
             Self::SurfaceUnresolved => ("surface.unresolved", LossTaxonomy::GeometryNotTransferred),
             Self::CurveUnresolved => ("curve.unresolved", LossTaxonomy::GeometryNotTransferred),

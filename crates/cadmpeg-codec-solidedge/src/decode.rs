@@ -194,10 +194,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             SolidEdgeLossCode::AttributesPending
                 .note("body names, colours, and visibility remain undecoded"),
         );
-        body.losses.push(
-            SolidEdgeLossCode::FeaturesPending
-                .note("feature records and assembly placements remain undecoded"),
-        );
     }
     body.transfer = DecodeTransfer::at(ctx.depth(), !ir.geometry.bodies.is_empty());
     Ok(Decoded {
