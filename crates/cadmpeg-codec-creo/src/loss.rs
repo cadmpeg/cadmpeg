@@ -638,8 +638,8 @@ impl CreoLossCode {
             | Self::AssemblyPlacementUnresolved
             | Self::AssemblyMemberReferenceUnresolved
             | Self::AssemblyConstraintsNotTransferred
-            | Self::DesignParameterReferenceAsText => Severity::Warning,
-            Self::NonVisibleCarrierVisibilityNotStated => Severity::Warning,
+            | Self::DesignParameterReferenceAsText
+            | Self::NonVisibleCarrierVisibilityNotStated => Severity::Warning,
         }
     }
 
