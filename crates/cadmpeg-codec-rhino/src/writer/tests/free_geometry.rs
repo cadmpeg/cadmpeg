@@ -981,11 +981,7 @@ fn free_curve_decodes_with_its_layer_and_display_and_rewrites() {
         .iter()
         .any(|appearance| appearance.id == binding.appearance && appearance.base_color.is_some()));
 
-    let mut rewritten = decoded.clone();
-    for curve in &mut rewritten.geometry.curves {
-        curve.source_object = None;
-    }
-    let (_, losses) = write(&rewritten).expect("the writer omits the display it cannot write");
+    let (_, losses) = write(decoded).expect("the writer omits the display it cannot write");
     for arena in ["presentation_layers", "appearance_bindings", "appearances"] {
         assert!(
             losses
