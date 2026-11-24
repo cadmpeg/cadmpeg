@@ -148,6 +148,7 @@ pub(super) fn emit_topology(
     }
     let vertex_point =
         |vertex_xmt: u32| resolved_vertex_point(graph, points, &point_positions, vertex_xmt);
+    let mut partial_face_xmts: BTreeSet<u32> = BTreeSet::new();
     for (face_xmt, loops) in &mut face_boundaries {
         loops.retain(|(loop_xmt, face_loop)| {
             let FaceLoop::Vertex { fin_xmt, vertex } = face_loop else {
@@ -158,8 +159,9 @@ pub(super) fn emit_topology(
                 return true;
             }
             topology_losses.push(crate::loss::NxLossCode::TopologyVertexLoopUnresolved.note(
-                format!("parasolid#{stream_index} LOOP {loop_xmt} of FACE {face_xmt} is omitted: vertex-loop FIN {fin_xmt} names VERTEX {} without a resolved POINT", vertex_xmt.map_or_else(|| "null".to_owned(), |xmt| xmt.to_string())),
+                format!("parasolid#{stream_index} LOOP {loop_xmt} of FACE {face_xmt} is omitted, and the face is stated partial: vertex-loop FIN {fin_xmt} names VERTEX {} without a resolved POINT", vertex_xmt.map_or_else(|| "null".to_owned(), |xmt| xmt.to_string())),
             ));
+            partial_face_xmts.insert(*face_xmt);
             false
         });
     }
@@ -797,6 +799,7 @@ pub(super) fn emit_topology(
     }
     let mut loops: BTreeMap<u32, LoopId> = BTreeMap::new();
     let mut loop_specs: BTreeMap<u32, (LoopId, FaceId)> = BTreeMap::new();
+    let mut partial_faces: BTreeSet<FaceId> = BTreeSet::new();
     for &loop_xmt in valid_loop_rings.keys() {
         let Some(node) = graph.get(NodeKind::Loop, loop_xmt) else {
             continue;
@@ -826,8 +829,9 @@ pub(super) fn emit_topology(
         });
         if !ring_resolves {
             topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
-                format!("parasolid#{stream_index} LOOP {loop_xmt} of {face_ref} states no resolvable coedge ring: loop {id} is omitted from its face"),
+                format!("parasolid#{stream_index} LOOP {loop_xmt} of {face_ref} states no resolvable coedge ring: loop {id} is omitted, and face {face_ref} is stated partial"),
             ));
+            partial_faces.insert(face_ref.clone());
             continue;
         }
         annotate_node(annotations, id.as_str(), source_stream, node, "LOOP");
@@ -1227,8 +1231,9 @@ pub(super) fn emit_topology(
             };
             let Some(ring) = ring else {
                 topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
-                    format!("parasolid#{stream_index} LOOP {loop_xmt} of {face} states no resolvable coedge ring: loop {id} is omitted from its face"),
+                    format!("parasolid#{stream_index} LOOP {loop_xmt} of {face} states no resolvable coedge ring: loop {id} is omitted, and face {face} is stated partial"),
                 ));
+                partial_faces.insert(face.clone());
                 continue;
             };
 
@@ -1251,8 +1256,8 @@ pub(super) fn emit_topology(
     for pending in pending_faces {
         let boundary_failed = if let Some(failure) = face_loop_failures.remove(&pending.xmt) {
             topology_losses.push(crate::loss::NxLossCode::TopologyFaceLoopUnresolved.note(
-                format!("parasolid#{stream_index} FACE {} has an unresolved boundary: {failure}; face is emitted without loops",
-                pending.xmt),
+                format!("parasolid#{stream_index} FACE {} has an unresolved boundary: {failure}; face {} is stated partial",
+                pending.xmt, pending.id),
             ));
             true
         } else {
@@ -1275,12 +1280,20 @@ pub(super) fn emit_topology(
             )?;
         }
 
+        let loops = if boundary_failed
+            || partial_faces.contains(&pending.id)
+            || partial_face_xmts.contains(&pending.xmt)
+        {
+            cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops }
+        } else {
+            cadmpeg_ir::topology::FaceLoops::unspecified(loops)
+        };
         ir.geometry.faces.push(Face {
             id: pending.id,
             shell: pending.shell,
             surface: pending.surface,
             sense: pending.sense,
-            loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
+            loops,
             name: None,
             color: None,
             tolerance: pending.tolerance,
