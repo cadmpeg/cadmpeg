@@ -136,9 +136,9 @@ fn bound(key: u32, parameter: u32) -> Feature {
     operation(
         key,
         FeatureOperation::Native {
-            kind: NonBlankString::new("test:op").unwrap(),
+            kind: crate::codec_name!("test:op"),
             native_options: NativeOptions::from([(
-                NonBlankString::new("test:depth").unwrap(),
+                crate::codec_name!("test:depth"),
                 NativeOption::Length(Dimension::Parameter(parameter_id(parameter))),
             )]),
             source_settings: NativeOptions::new(),

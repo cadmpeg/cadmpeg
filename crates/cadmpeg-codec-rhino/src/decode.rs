@@ -5176,7 +5176,7 @@ pub(crate) fn embedded_brep_json(
     };
     let association = SourceObjectAssociation {
         geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Rhino,
+        format: cadmpeg_ir::codec_id!("rhino"),
         object_id: cadmpeg_core::text::NonBlankString::new("embedded-history-brep".to_string())?,
         name: None,
         color: None,
@@ -6370,7 +6370,7 @@ fn source_association(
     }
     Ok(SourceObjectAssociation {
         geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Rhino,
+        format: cadmpeg_ir::codec_id!("rhino"),
         object_id,
         name,
         color: identity.effective_color.map(color).or(parent_color),

@@ -1391,7 +1391,7 @@ fn standard_carrier_surface_ids(ir: &CadIr) -> HashMap<u32, Option<SurfaceId>> {
         let Some(source) = surface.source_object.as_ref() else {
             continue;
         };
-        if source.format != cadmpeg_ir::codec_format!(crate::dialect::FORMAT) {
+        if source.format != cadmpeg_ir::codec_id!(crate::dialect::FORMAT) {
             continue;
         }
         let Some(tag) = source

@@ -370,7 +370,7 @@ pub(super) fn operation_families() -> Vec<OperationFamily> {
 
 fn native_options() -> NativeOptions {
     NativeOptions::from([(
-        text("sldprt:auto_select"),
+        crate::codec_name!("sldprt:auto_select"),
         NativeOption::Bool(Dimension::Literal(true)),
     )])
 }
@@ -395,7 +395,7 @@ pub(super) fn feature_operations() -> Vec<FeatureOperation> {
             family: OperationFamily::Fillet,
         },
         FeatureOperation::Native {
-            kind: text("nx:untrim"),
+            kind: crate::codec_name!("nx:untrim"),
             native_options: native_options(),
             source_settings: NativeOptions::new(),
         },
@@ -773,7 +773,7 @@ pub(super) fn design_parameters() -> Vec<DesignParameter> {
             comment: Some("Depth".to_owned()),
             native_options: native_options(),
             source_settings: NativeOptions::from([(
-                text("f3d:favorite"),
+                crate::codec_name!("f3d:favorite"),
                 NativeOption::Bool(Dimension::Literal(true)),
             )]),
             native_ref: Some("sldprt:dimension#1".to_owned()),

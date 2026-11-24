@@ -5136,7 +5136,7 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
         let object_id = crate::entities::geometry::SourceObjectId::new(sequence).text();
         if !ir.geometry.curves.iter().any(|curve| {
             curve.source_object.as_ref().is_some_and(|source| {
-                source.format == cadmpeg_ir::CodecFormat::Iges
+                source.format == cadmpeg_ir::codec_id!("iges")
                     && source.object_id.as_str() == object_id
             })
         }) {
@@ -5197,7 +5197,7 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
         let object_id = crate::entities::geometry::SourceObjectId::new(sequence).text();
         if !ir.geometry.surfaces.iter().any(|surface| {
             surface.source_object.as_ref().is_some_and(|source| {
-                source.format == cadmpeg_ir::CodecFormat::Iges
+                source.format == cadmpeg_ir::codec_id!("iges")
                     && source.object_id.as_str() == object_id
             })
         }) {
