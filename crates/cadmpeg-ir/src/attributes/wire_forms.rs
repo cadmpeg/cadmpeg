@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 
 use super::{AttributeExpression, AttributeJson, AttributeTarget, AttributeValue, SourceAttribute};
 use crate::design::dimension::{ParameterRef, RefTarget};
-use crate::design::expr::{BinaryOp, Constant, Expression, Neutral, Node};
+use crate::design::expr::{Constant, Expression, MulOp, Neutral, Node};
 use crate::features::ParameterId;
 
 fn read<T: DeserializeOwned>(wire: &Value) -> Result<T, CodecError> {
@@ -136,14 +136,14 @@ fn mass() -> ParameterId {
 fn expression() -> AttributeExpression {
     AttributeExpression {
         path: "Length".into(),
-        expression: Expression::Neutral(Neutral(Node::Binary {
-            op: BinaryOp::Multiply,
-            left: Box::new(Node::Reference(ParameterRef {
+        expression: Expression::Neutral(Neutral(Node::mul(
+            Node::Reference(ParameterRef {
                 target: RefTarget::Parameter(mass()),
                 through: None,
-            })),
-            right: Box::new(Node::Constant(Constant::Pi)),
-        })),
+            }),
+            MulOp::Multiply,
+            Node::Constant(Constant::Pi),
+        ))),
         comment: Some("doubled".into()),
     }
 }

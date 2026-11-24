@@ -10,7 +10,7 @@ use crate::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use crate::attributes::{AttributeExpression, AttributeTarget, AttributeValue, SourceAttribute};
 use crate::design::dimension::{ParameterRef, RefTarget};
 use crate::design::expr::{
-    parse, BinaryOp, Constant, Expression, ExpressionDialect, ExpressionToken, Measure,
+    parse, AddOp, BinaryOp, Constant, Expression, ExpressionDialect, ExpressionToken, Measure,
     MeasureKind, MeasureTarget, Neutral, Node,
 };
 use crate::design::parameter::{DesignParameter, ParameterDefinition};
@@ -297,14 +297,6 @@ fn expression_value(expression: Expression) -> Vec<Option<AttributeValue>> {
     }))]
 }
 
-fn binary(op: BinaryOp, left: Node<ParameterRef>, right: Node<ParameterRef>) -> Node<ParameterRef> {
-    Node::Binary {
-        op,
-        left: Box::new(left),
-        right: Box::new(right),
-    }
-}
-
 fn measure(anchor: &serde_json::Value) -> Node<ParameterRef> {
     let selection = json!({
         "at": anchor,
@@ -354,21 +346,17 @@ fn an_attribute_expression_meets_the_expression_rules() {
     );
     assert_eq!(findings(neutral(text())), none);
     assert_eq!(
-        findings(neutral(binary(BinaryOp::Equal, text(), text()))),
+        findings(neutral(Node::binary(BinaryOp::Equal, text(), text()))),
         none
     );
     assert_eq!(
-        findings(neutral(Node::If(Box::new([
-            Node::Boolean(true),
-            text(),
-            text()
-        ])))),
+        findings(neutral(Node::branch(Node::Boolean(true), text(), text()))),
         none
     );
     assert_eq!(
-        findings(neutral(binary(
-            BinaryOp::Add,
+        findings(neutral(Node::add(
             text(),
+            AddOp::Add,
             Node::Constant(Constant::Pi)
         ))),
         ["expression text is not a comparison's operand, a branch, or the root"]

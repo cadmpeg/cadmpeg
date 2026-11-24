@@ -363,9 +363,11 @@ fn check_expression(
                 left,
                 right,
             } => pending.extend([(left.as_ref(), true), (right.as_ref(), true)]),
-            Node::If(branches) => {
-                let [condition, then, otherwise] = branches.as_ref();
-                pending.extend([(condition, false), (then, true), (otherwise, true)]);
+            Node::If { cases, otherwise } => {
+                for (condition, value) in cases {
+                    pending.extend([(condition, false), (value, true)]);
+                }
+                pending.push((otherwise.as_ref(), true));
             }
             _ => pending.extend(node.operands().map(|operand| (operand, false))),
         }

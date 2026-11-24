@@ -12,7 +12,9 @@
 use cadmpeg_core::convert::{f64_from_i64, truncate_f64_to_i32};
 
 use crate::design::dimension::ParameterRef;
-use crate::design::expr::{BendVariable, BinaryOp, Constant, Function, MeasureKind, Node, UnaryOp};
+use crate::design::expr::{
+    AddOp, BendVariable, BinaryOp, Constant, Function, MeasureKind, MulOp, Node, UnaryOp,
+};
 use crate::design::parameter::ParameterValue;
 use crate::design::units::{Quantity, Unit, ValueKind};
 use crate::math::portable::Portable;
@@ -266,30 +268,76 @@ fn compare(op: BinaryOp, left: Value, right: Value) -> Result<Value, EvalError> 
     Ok(Value::Boolean(result))
 }
 
+/// One step of a left-to-right evaluation: a `Binary` node's operator, or
+/// the operator between two operands of a chain.
+#[derive(Clone, Copy)]
+enum Pair {
+    Binary(BinaryOp),
+    Add(AddOp),
+    Mul(MulOp),
+    And,
+    Or,
+}
+
+/// A run's first operand and each later operand with the step that joins it.
+type Run<'a, R> = (&'a Node<R>, Vec<(Pair, &'a Node<R>)>);
+
+/// A two-operand node or a chain as its first operand and each later operand
+/// with the step that joins it, in order; `None` for any other node, and for
+/// a run of `and` or `or` with no operand.
+fn pairs<R>(node: &Node<R>) -> Option<Run<'_, R>> {
+    Some(match node {
+        Node::Binary { op, left, right } => {
+            (left.as_ref(), vec![(Pair::Binary(*op), right.as_ref())])
+        }
+        Node::Sum { first, rest } => (
+            first.as_ref(),
+            rest.iter()
+                .map(|(op, operand)| (Pair::Add(*op), operand))
+                .collect(),
+        ),
+        Node::Product { first, rest } => (
+            first.as_ref(),
+            rest.iter()
+                .map(|(op, operand)| (Pair::Mul(*op), operand))
+                .collect(),
+        ),
+        Node::All(operands) | Node::Any(operands) => {
+            let step = if matches!(node, Node::All(_)) {
+                Pair::And
+            } else {
+                Pair::Or
+            };
+            let (first, rest) = operands.split_first()?;
+            (first, rest.iter().map(|operand| (step, operand)).collect())
+        }
+        _ => return None,
+    })
+}
+
 fn binary<R>(
-    op: BinaryOp,
+    op: Pair,
     left: Value,
     right: Value,
     right_node: &Node<R>,
 ) -> Result<Value, EvalError> {
     match op {
-        BinaryOp::Add | BinaryOp::Subtract => {
+        Pair::Add(op) => {
             let (left, a) = number(&left, "+ and -")?;
             let (right, b) = number(&right, "+ and -")?;
             let quantity = same(a, b, "+ and -")?;
-            let value = if op == BinaryOp::Add {
-                left + right
-            } else {
-                left - right
+            let value = match op {
+                AddOp::Add => left + right,
+                AddOp::Subtract => left - right,
             };
             finite(value, quantity)
         }
-        BinaryOp::Multiply => {
+        Pair::Mul(MulOp::Multiply) => {
             let (left, a) = number(&left, "*")?;
             let (right, b) = number(&right, "*")?;
             finite(left * right, combined(a, b, 1)?)
         }
-        BinaryOp::Divide => {
+        Pair::Mul(MulOp::Divide) => {
             let (left, a) = number(&left, "/")?;
             let (right, b) = number(&right, "/")?;
             if right == 0.0 {
@@ -297,7 +345,7 @@ fn binary<R>(
             }
             finite(left / right, combined(a, b, -1)?)
         }
-        BinaryOp::Power => {
+        Pair::Binary(BinaryOp::Power) => {
             let (base, a) = number(&left, "^")?;
             let (exponent, b) = number(&right, "^")?;
             same(b, DIMENSIONLESS, "an exponent")?;
@@ -308,16 +356,18 @@ fn binary<R>(
                 .ok_or_else(|| type_error("a dimensioned base takes a literal exponent"))?;
             finite(power(base, literal)?, raised_quantity(a, literal)?)
         }
-        BinaryOp::Equal
-        | BinaryOp::NotEqual
-        | BinaryOp::Less
-        | BinaryOp::LessEqual
-        | BinaryOp::Greater
-        | BinaryOp::GreaterEqual => compare(op, left, right),
-        BinaryOp::And => Ok(Value::Boolean(
+        Pair::Binary(
+            op @ (BinaryOp::Equal
+            | BinaryOp::NotEqual
+            | BinaryOp::Less
+            | BinaryOp::LessEqual
+            | BinaryOp::Greater
+            | BinaryOp::GreaterEqual),
+        ) => compare(op, left, right),
+        Pair::And => Ok(Value::Boolean(
             boolean(&left, "and")? & boolean(&right, "and")?,
         )),
-        BinaryOp::Or => Ok(Value::Boolean(
+        Pair::Or => Ok(Value::Boolean(
             boolean(&left, "or")? | boolean(&right, "or")?,
         )),
     }
@@ -456,9 +506,13 @@ fn call(function: Function, args: Vec<Value>) -> Result<Value, EvalError> {
 enum Task<'a, R = ParameterRef> {
     Visit(&'a Node<R>),
     Unary(UnaryOp),
-    Binary(BinaryOp, &'a Node<R>),
+    Binary(Pair, &'a Node<R>),
     Call(Function, usize),
-    Branch(&'a Node<R>, &'a Node<R>),
+    /// Tests the ladder's first condition, or takes `otherwise` where no
+    /// case is left.
+    Ladder(&'a [(Node<R>, Node<R>)], &'a Node<R>),
+    /// Takes the value of the condition just tested, or tests the rest.
+    Branch(&'a Node<R>, &'a [(Node<R>, Node<R>)], &'a Node<R>),
 }
 
 /// Evaluates a neutral design expression tree on canonical values.
@@ -520,20 +574,24 @@ pub(super) fn evaluate_tree<R>(
                     tasks.push(Task::Unary(*op));
                     tasks.push(Task::Visit(operand));
                 }
-                Node::Binary { op, left, right } => {
-                    tasks.push(Task::Binary(*op, right));
-                    tasks.push(Task::Visit(right));
-                    tasks.push(Task::Visit(left));
+                Node::Binary { .. }
+                | Node::Sum { .. }
+                | Node::Product { .. }
+                | Node::All(_)
+                | Node::Any(_) => {
+                    let (first, steps) =
+                        pairs(node).ok_or_else(|| type_error("a run states no operand"))?;
+                    for (op, operand) in steps.into_iter().rev() {
+                        tasks.push(Task::Binary(op, operand));
+                        tasks.push(Task::Visit(operand));
+                    }
+                    tasks.push(Task::Visit(first));
                 }
                 Node::Call { function, args } => {
                     tasks.push(Task::Call(*function, args.len()));
                     tasks.extend(args.iter().rev().map(Task::Visit));
                 }
-                Node::If(branches) => {
-                    let [condition, then, otherwise] = branches.as_ref();
-                    tasks.push(Task::Branch(then, otherwise));
-                    tasks.push(Task::Visit(condition));
-                }
+                Node::If { cases, otherwise } => tasks.push(Task::Ladder(cases, otherwise)),
             },
             Task::Unary(op) => {
                 let operand = pop(&mut values)?;
@@ -552,13 +610,19 @@ pub(super) fn evaluate_tree<R>(
                 let args = values.split_off(start);
                 values.push(call(function, args)?);
             }
-            Task::Branch(then, otherwise) => {
-                let taken = if boolean(&pop(&mut values)?, "if")? {
-                    then
+            Task::Ladder(cases, otherwise) => match cases.split_first() {
+                Some(((condition, value), more)) => {
+                    tasks.push(Task::Branch(value, more, otherwise));
+                    tasks.push(Task::Visit(condition));
+                }
+                None => tasks.push(Task::Visit(otherwise)),
+            },
+            Task::Branch(value, more, otherwise) => {
+                if boolean(&pop(&mut values)?, "if")? {
+                    tasks.push(Task::Visit(value));
                 } else {
-                    otherwise
-                };
-                tasks.push(Task::Visit(taken));
+                    tasks.push(Task::Ladder(more, otherwise));
+                }
             }
         }
     }
@@ -651,21 +715,16 @@ fn expect_quantity(operand: Type, expected: Quantity, what: &str) -> Result<(), 
     }
 }
 
-fn binary_type<R>(
-    op: BinaryOp,
-    left: Type,
-    right: Type,
-    right_node: &Node<R>,
-) -> Result<Type, String> {
+fn binary_type<R>(op: Pair, left: Type, right: Type, right_node: &Node<R>) -> Result<Type, String> {
     let domain = |error: EvalError| error.to_string();
     Ok(match op {
-        BinaryOp::Add | BinaryOp::Subtract => number_type(same_type(
+        Pair::Add(_) => number_type(same_type(
             quantity_of(left, "+ and -")?,
             quantity_of(right, "+ and -")?,
             "+ and -",
         )?),
-        BinaryOp::Multiply | BinaryOp::Divide => {
-            let sign = if op == BinaryOp::Multiply { 1 } else { -1 };
+        Pair::Mul(op) => {
+            let sign = if op == MulOp::Multiply { 1 } else { -1 };
             match (
                 quantity_of(left, "* and /")?,
                 quantity_of(right, "* and /")?,
@@ -674,7 +733,7 @@ fn binary_type<R>(
                 _ => Type::Unknown,
             }
         }
-        BinaryOp::Power => {
+        Pair::Binary(BinaryOp::Power) => {
             let base = quantity_of(left, "^")?;
             expect_quantity(right, DIMENSIONLESS, "an exponent")?;
             match base {
@@ -687,12 +746,14 @@ fn binary_type<R>(
                 None => Type::Unknown,
             }
         }
-        BinaryOp::Equal
-        | BinaryOp::NotEqual
-        | BinaryOp::Less
-        | BinaryOp::LessEqual
-        | BinaryOp::Greater
-        | BinaryOp::GreaterEqual => {
+        Pair::Binary(
+            op @ (BinaryOp::Equal
+            | BinaryOp::NotEqual
+            | BinaryOp::Less
+            | BinaryOp::LessEqual
+            | BinaryOp::Greater
+            | BinaryOp::GreaterEqual),
+        ) => {
             let equality = matches!(op, BinaryOp::Equal | BinaryOp::NotEqual);
             match (left, right) {
                 (Type::Text, Type::Text | Type::Unknown) | (Type::Unknown, Type::Text)
@@ -710,7 +771,7 @@ fn binary_type<R>(
             }
             Type::Boolean
         }
-        BinaryOp::And | BinaryOp::Or => {
+        Pair::And | Pair::Or => {
             boolean_type(left, "and and or")?;
             boolean_type(right, "and and or")?;
             Type::Boolean
@@ -780,9 +841,11 @@ fn branch_type(then: Type, otherwise: Type) -> Result<Type, String> {
 enum Check<'a, R = ParameterRef> {
     Visit(&'a Node<R>),
     Unary(UnaryOp),
-    Binary(BinaryOp, &'a Node<R>),
+    Binary(Pair, &'a Node<R>),
     Call(Function, usize),
-    If,
+    /// A ladder of this many cases, its conditions, values, and `otherwise`
+    /// on the type stack.
+    If(usize),
 }
 
 /// Where an expression occurs, which decides the variables in scope.
@@ -853,18 +916,26 @@ pub(crate) fn check_types<R>(
                     tasks.push(Check::Unary(*op));
                     tasks.push(Check::Visit(operand));
                 }
-                Node::Binary { op, left, right } => {
-                    tasks.push(Check::Binary(*op, right));
-                    tasks.push(Check::Visit(right));
-                    tasks.push(Check::Visit(left));
+                Node::Binary { .. }
+                | Node::Sum { .. }
+                | Node::Product { .. }
+                | Node::All(_)
+                | Node::Any(_) => {
+                    let (first, steps) = pairs(node).ok_or("a run states no operand")?;
+                    for (op, operand) in steps.into_iter().rev() {
+                        tasks.push(Check::Binary(op, operand));
+                        tasks.push(Check::Visit(operand));
+                    }
+                    tasks.push(Check::Visit(first));
                 }
                 Node::Call { function, args } => {
                     tasks.push(Check::Call(*function, args.len()));
                     tasks.extend(args.iter().rev().map(Check::Visit));
                 }
-                Node::If(branches) => {
-                    tasks.push(Check::If);
-                    tasks.extend(branches.iter().rev().map(Check::Visit));
+                Node::If { cases, .. } => {
+                    tasks.push(Check::If(cases.len()));
+                    let operands: Vec<_> = node.operands().collect();
+                    tasks.extend(operands.into_iter().rev().map(Check::Visit));
                 }
             },
             Check::Unary(op) => {
@@ -890,11 +961,14 @@ pub(crate) fn check_types<R>(
                 let args = types.split_off(start);
                 types.push(call_type(function, &args)?);
             }
-            Check::If => {
-                let otherwise = pop(&mut types)?;
-                let then = pop(&mut types)?;
-                boolean_type(pop(&mut types)?, "if")?;
-                types.push(branch_type(then, otherwise)?);
+            Check::If(cases) => {
+                let mut taken = pop(&mut types)?;
+                for _ in 0..cases {
+                    let value = pop(&mut types)?;
+                    boolean_type(pop(&mut types)?, "if")?;
+                    taken = branch_type(value, taken)?;
+                }
+                types.push(taken);
             }
         }
     }
