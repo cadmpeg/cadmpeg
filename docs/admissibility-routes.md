@@ -58,6 +58,7 @@ constants below.
 
 | route                                            | constant / policy                           | notes                                                                                                                                   |
 | ------------------------------------------------ | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| F3D history body                                 | `DRAFT_CORE_CHECKS`                         | one nest and its origin feature in a scratch document; a nest that fails is dropped with `feature.history-body-undecoded`              |
 | Rhino draft                                      | `RHINO_DRAFT_CHECKS` = core + `Annotations` | `ArenaOrder` excluded (pre-finalize)                                                                                                    |
 | Rhino instance                                   | `RHINO_INSTANCE_CHECKS` = core              | `ArenaOrder` excluded; no mid-expansion finalize                                                                                        |
 | CATIA admission                                  | `CATIA_ADMISSION_CHECKS` = core             | finalize first; pending native identities via admit helper                                                                              |
