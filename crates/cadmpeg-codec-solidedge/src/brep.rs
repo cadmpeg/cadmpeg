@@ -18,7 +18,7 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{Magnification, PositiveLength};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, EdgeCarrier, EdgeEnds, Face, FaceLoops, Loop, LoopBoundary,
-    LoopRing, Point, Region, Sense, Shell, Vertex,
+    LoopRing, Point, Region, RegionUnstated, Sense, Shell, Unstated, Vertex,
 };
 use cadmpeg_ir::CadIr;
 use cadmpeg_parasolid::records::primary::Node;
@@ -339,6 +339,7 @@ pub(crate) fn project(
             name: None,
             color: None,
             visible: None,
+            unstated: None,
             native_ref: None,
         });
         let mut candidates = Vec::new();
@@ -349,37 +350,47 @@ pub(crate) fn project(
         {
             let (shells, defect) = chain(&nodes, ptr(region, "shell"), "next");
             chain_losses(defect, "a region's shells", losses);
+            let truncated = defect.is_some();
             let owns_faces = shells.iter().any(|shell| {
                 nodes
                     .get(shell)
                     .and_then(|shell| ptr(*shell, "face"))
                     .is_some_and(|face| nodes.contains_key(&face))
             });
-            candidates.push((region, shells, owns_faces));
+            candidates.push((region, shells, owns_faces, truncated));
         }
         // A void region that owns no face has its boundary in the shell of a
         // neighbouring region and transfers no region of its own when the body
         // also has a solid region or a region that owns a face.
         let has_material = candidates
             .iter()
-            .any(|(region, _, owns_faces)| *owns_faces || region.char("type") == Some(b'S'));
+            .any(|(region, _, owns_faces, _)| *owns_faces || region.char("type") == Some(b'S'));
         let mut regions = Vec::new();
-        for (region, shells, owns_faces) in candidates {
+        for (region, shells, owns_faces, truncated) in candidates {
             if has_material && !owns_faces && region.char("type") != Some(b'S') {
                 continue;
             }
             for shell in &shells {
                 selected_shells.insert(*shell, region.index());
             }
-            regions.push(Region {
-                id: region_id(stream, region.index()),
-                body: body_id(stream, body.index()),
-                shells: shells
+            let mut record = Region::new(
+                region_id(stream, region.index()),
+                body_id(stream, body.index()),
+                shells
                     .into_iter()
                     .map(|shell| shell_id(stream, shell))
                     .collect(),
-                native_ref: None,
-            });
+            );
+            if truncated {
+                // The chain stops at its defect: the shells after it are not
+                // stated.
+                record.unstated = Some(if record.stated_shells().next().is_some() {
+                    RegionUnstated::Voids
+                } else {
+                    RegionUnstated::Unclassified { shells: Vec::new() }
+                });
+            }
+            regions.push(record);
         }
         if regions.is_empty() {
             let (shells, defect) = chain(&nodes, ptr(body, "shell"), "next");
@@ -387,19 +398,28 @@ pub(crate) fn project(
             for shell in &shells {
                 selected_shells.insert(*shell, body.index());
             }
-            regions.push(Region {
-                id: region_id(stream, body.index()),
-                body: body_id(stream, body.index()),
-                shells: shells
+            let mut record = Region::new(
+                region_id(stream, body.index()),
+                body_id(stream, body.index()),
+                shells
                     .into_iter()
                     .map(|shell| shell_id(stream, shell))
                     .collect(),
-                native_ref: None,
-            });
+            );
+            if defect.is_some() {
+                record.unstated = Some(if record.stated_shells().next().is_some() {
+                    RegionUnstated::Voids
+                } else {
+                    RegionUnstated::Unclassified { shells: Vec::new() }
+                });
+            }
+            regions.push(record);
         }
         ir.geometry.regions.extend(regions);
     }
     let mut face_shells = BTreeMap::new();
+    // Shells that do not state every member.
+    let mut partial_shells: BTreeSet<ShellId> = BTreeSet::new();
     // The shells of each region that hold faces.
     let mut region_face_shells: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
     for (shell_index, region) in selected_shells {
@@ -411,12 +431,16 @@ pub(crate) fn project(
                 SolidEdgeLossCode::WireTopologyUnsupported
                     .note("free shell edges and vertices remain undecoded"),
             );
+            partial_shells.insert(shell_id(stream, shell_index));
         }
         ir.geometry.shells.push(Shell::new(
             shell_id(stream, shell_index),
             region_id(stream, region),
         ));
         let (shell_faces, defect) = chain(&nodes, ptr(shell, "face"), "next");
+        if defect.is_some() {
+            partial_shells.insert(shell_id(stream, shell_index));
+        }
         chain_losses(defect, "a shell's faces", losses);
         if !shell_faces.is_empty() {
             region_face_shells
@@ -445,7 +469,8 @@ pub(crate) fn project(
     let mut emitted = Emitted::default();
     let mut edge_reads = EdgeReads::new();
     let mut face_reads = Vec::new();
-    for (face_index, shell) in face_shells {
+    for (face_index, shell) in &face_shells {
+        let (face_index, shell) = (*face_index, *shell);
         let Some(face) = nodes.get(&face_index).copied() else {
             continue;
         };
@@ -910,6 +935,19 @@ pub(crate) fn project(
             tolerance: tolerance(face_node, losses),
             native_ref: None,
         });
+    }
+    let transferred: BTreeSet<&FaceId> = ir.geometry.faces.iter().map(|face| &face.id).collect();
+    for (face, shell) in &face_shells {
+        if !transferred.contains(&face_id(stream, *face)) {
+            partial_shells.insert(shell_id(stream, *shell));
+        }
+    }
+    for shell in &mut ir.geometry.shells {
+        if partial_shells.contains(&shell.id) {
+            // A face that did not transfer leaves the shell open in the
+            // model, so the shell states that its faces are incomplete.
+            shell.unstated = Some(Unstated::Members);
+        }
     }
     let populated: BTreeSet<&ShellId> = ir.geometry.faces.iter().map(|face| &face.shell).collect();
     for shells in region_face_shells.values() {

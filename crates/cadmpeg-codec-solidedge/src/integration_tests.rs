@@ -193,7 +193,7 @@ fn one_body_with_two_solid_regions_stays_one_body() {
     assert_eq!(ir.geometry.faces.len(), 2);
     for region in &ir.geometry.regions {
         assert_eq!(region.body, ir.geometry.bodies[0].id);
-        assert_eq!(region.shells.len(), 1);
+        assert_eq!(region.stated_shells().count(), 1);
     }
     assert_ne!(ir.geometry.regions[0].id, ir.geometry.regions[1].id);
     assert_geometry_valid(ir);
@@ -226,14 +226,15 @@ fn void_region_that_owns_a_face_transfers_as_its_own_region() {
     assert_eq!(ir.geometry.faces.len(), 2);
     for region in &ir.geometry.regions {
         assert_eq!(region.body, ir.geometry.bodies[0].id);
-        assert_eq!(region.shells.len(), 1);
+        assert_eq!(region.stated_shells().count(), 1);
     }
     for shell in &ir.geometry.shells {
         assert!(ir
             .geometry
             .regions
             .iter()
-            .any(|region| region.id == shell.region && region.shells.contains(&shell.id)));
+            .any(|region| region.id == shell.region
+                && region.stated_shells().any(|stated| stated == &shell.id)));
     }
     for face in &ir.geometry.faces {
         assert!(ir
