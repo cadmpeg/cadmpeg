@@ -724,7 +724,7 @@ resolve a seed feature?
 
 **Question.** Which field identifies a point record whose u32 at marker +17 is `2` or a relation code?
 
-**Known.** Such a record stores the coordinate tag `1e 00` at marker +64 and holds a slot in the point array of its block. Its u32 at marker +17 is `2` or a relation code.
+**Known.** Such a record stores the coordinate tag `1e 00` at marker +64 and holds a slot in the point array of its block. Its u32 at marker +17 is `2` or a relation code. The decoder types the relation that such a code names only where the entities that the record's links resolve to satisfy that relation, and keeps the relation native otherwise.
 
 **Need.** We must draw these points to type the relations that name them.
 
@@ -1425,3 +1425,11 @@ The other axis-parallel support frames include the frames of those families whos
 **Known.** An edge flange stores its own `D1` (radius) and `D2` (K-factor) scalar and `PMISemanticDataDB` records after its `moOneBend_c` child (`sldprt.md` §2, sheet-metal dimensions). Where the sheet-metal feature states a radius and K-factor other than the edge flange's own `D1` and `D2` and the bend uses the sheet-metal feature's, the child's `D1` equals the sheet-metal feature's `D1` and is the inner radius of the bend's cylindrical faces. No byte of the edge flange is known to differ between the two choices.
 
 **Need.** An edge flange that applies its own radius and K-factor in a part whose sheet-metal feature states others, beside the same part with the default chosen, compared byte for byte.
+
+### DI-95. Operands and measured direction of a point-point distance relation
+
+**Question.** Which marker roster do the two operand addresses of an `sgPntPntDist` relation index when their tag is a lane-local class token, and which field states whether the dimension measures the Euclidean, the horizontal, or the vertical separation of its two points?
+
+**Known.** The relation object writes its relation class, a zero u32 and its parameter class, then a display-role scalar and a driving-role scalar of the same name (`sldprt.md` §2). Each scalar ends with two operand cells, compact 8-byte cells or 12-byte cells, each a class token and a u16 address, and then u16 `1`, u16 `1`, u16 `1` and four zero bytes. Read as feature-local object indices, the addresses of a relation can select two coordinate-bearing points whose horizontal or vertical separation equals the driving scalar and whose Euclidean separation differs from it. Read as zero-based ordinals over all coordinate-bearing markers of the owning feature in byte order, with the point records of DI-46 included, the same addresses select two points whose Euclidean separation equals the driving scalar. In such a sketch, the other relations of the class that use the same token also fit the ordinal reading, and their object-index reading selects no pair at the driving distance. The u16 triple after the operand cells is `1`, `1`, `1` in relations whose points are separated on one axis only and in relations whose points are separated on both. The decoder keeps a relation native when its resolved operands measure another value than its driving scalar.
+
+**Need.** A sketch with two points on no common axis, dimensioned three times with point-to-point dimensions placed aligned, horizontal and vertical, saved, and the three relation objects and their `moDisplayDistanceDim_c` display objects compared, together with a second save in which a point marker is added before the dimensioned points.

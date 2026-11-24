@@ -207,7 +207,7 @@ impl Fixture {
         )
         .unwrap();
         assert_eq!(constraints.len(), 1);
-        assert_ne!(constraints[0].active, Some(false));
+        assert_eq!(constraints[0].active, None);
         constraints.remove(0).definition.kind().clone()
     }
 }
@@ -243,6 +243,16 @@ fn disagreeing_driving_value_keeps_the_relation_native() {
         fixture.parameter.value,
         Some(ParameterValue::Length(Length::new(30.0).unwrap()))
     );
+    assert!(matches!(
+        fixture.constraint_kind(),
+        SketchConstraintDefinitionInput::Native { .. }
+    ));
+}
+
+#[test]
+fn a_stored_length_its_resolved_points_contradict_keeps_the_relation_native() {
+    let mut fixture = Fixture::new(0.03);
+    fixture.parameter.value = Some(ParameterValue::Length(Length::new(30.0).unwrap()));
     assert!(matches!(
         fixture.constraint_kind(),
         SketchConstraintDefinitionInput::Native { .. }

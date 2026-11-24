@@ -1195,7 +1195,6 @@ pub(crate) fn append_design_losses(
         .iter()
         .filter(|constraint| {
             !sketch_constraint_has_complete_neutral_semantics(constraint.definition.kind())
-                && constraint.active != Some(false)
         })
         .count();
     let native_spatial_constraints = ir
