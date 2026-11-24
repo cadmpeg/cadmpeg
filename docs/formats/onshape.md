@@ -177,11 +177,15 @@ is directed along its stored direction. The direction of a line with
 `clockwise` field establishes its sense. The `MODEL` domain binds the
 feature to its Part Studio model.
 
-A single planar target with a closed convex line boundary admits an exact
-`UP_TO_NEXT` intersection for a closed convex line profile. Each positive
-ray-plane intersection lies within all target boundary half-planes.
-Convexity extends coverage across the complete profile. The target plane,
-line carriers, endpoints and coedge directions are stored in the rollback.
+`UP_TO_NEXT` ends on the first stored planar face that every ray of the profile
+meets. The operation is `ADD`, `REMOVE` or `INTERSECT`; `NEW` has no target
+body. The profile is a closed convex line boundary. The rollback state lists
+the faces of every body before the feature. Each face stores a plane, line
+carriers, endpoints and loops with an outer or hole role. A ray meets a face
+where its positive plane intersection lies inside the outer loop and outside
+every hole. The target covers the complete profile. No other face meets a ray
+of the profile at a smaller positive distance. A plane parallel to the travel
+direction that crosses the profile prevents the target.
 
 A present `booleanScope` or `scope` parameter has a `queries` array. A nonempty
 scope list identifies target bodies at the consuming rollback. An empty

@@ -800,7 +800,9 @@ impl State {
         model: &cadmpeg_ir::document::Model,
     ) -> Mapping<Value> {
         next::prove(self, feature, profile, model).map_err(|reason| {
-            format!("UP_TO_NEXT needs exact coverage and first intersection: {reason}")
+            format!(
+                "UP_TO_NEXT needs exact coverage and first intersection over the complete profile: {reason}"
+            )
         })
     }
 

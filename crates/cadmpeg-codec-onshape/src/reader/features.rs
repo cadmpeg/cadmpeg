@@ -724,7 +724,13 @@ pub(super) fn map(
         .and_then(Value::as_str)
         .is_some_and(|s| !s.is_empty())
     {
-        return Err("custom FeatureScript features are not supported yet".into());
+        // The bundle keeps input selections in bodydetails and only a final STEP export.
+        // Neither proves the complete shape at this feature's output.
+        let name = text(feature, "name").or_else(|_| text(feature, "featureId"))?;
+        return Err(format!(
+            "custom FeatureScript feature {name} is not supported yet: bundle format 1 \
+             lacks complete per-feature body geometry to prove a frozen step"
+        ));
     }
     for key in [
         "hasSecondDirection",
