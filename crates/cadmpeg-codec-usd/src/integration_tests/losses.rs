@@ -332,6 +332,23 @@ fn physics_losses_are_emitted() {
 }
 
 #[test]
+fn design_state_beside_the_joints_is_reported_on_write() {
+    let source = decode("#usda 1.0\ndef Xform \"A\"\n{\n}\ndef Xform \"B\"\n{\n}\ndef PhysicsFixedJoint \"J\"\n{\n    rel physics:body0 = </A>\n    rel physics:body1 = </B>\n}\n");
+    let (mut ir, _, _) = source.into_parts();
+    let (_, report) = encode(&ir);
+    assert!(!emitted(
+        &report.losses,
+        UsdLossCode::ExportDesignNotWritten
+    ));
+    ir.design.scopes[0].active_arrangements.insert(
+        cadmpeg_ir::design::ids::ArrangementId::mint("test:design:arrangement#open")
+            .expect("identity grammar"),
+    );
+    let (_, report) = encode(&ir);
+    assert!(emitted(&report.losses, UsdLossCode::ExportDesignNotWritten));
+}
+
+#[test]
 fn an_unread_property_of_a_group_prim_is_reported() {
     assert_decode_emits(
         "#usda 1.0\ndef Xform \"A\"\n{\n    float custom:thing = 3\n    double3 xformOp:translate = (1, 0, 0)\n    uniform token[] xformOpOrder = [\"xformOp:translate\"]\n}\n",

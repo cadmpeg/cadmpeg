@@ -173,11 +173,21 @@ fn design_losses(ir: &CadIr) -> Option<LossNote> {
                 || !scope.occurrences.is_empty()
         })
         .count();
-    (features + scopes > 0).then(|| {
+    let parts: Vec<String> = [
+        (features > 0).then(|| format!("{features} design feature(s) other than joints")),
+        (scopes > 0).then(|| {
+            format!(
+                "the configuration, arrangement, and occurrence state of {scopes} design scope(s)"
+            )
+        }),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    (!parts.is_empty()).then(|| {
         UsdLossCode::ExportDesignNotWritten.note(format!(
-            "{features} design features other than joints and the configuration, arrangement, \
-             and occurrence state of {scopes} design scopes have no UsdPhysics or PhysX form \
-             and were not written"
+            "{} have no UsdPhysics or PhysX form and were not written",
+            parts.join(" and ")
         ))
     })
 }
