@@ -42,6 +42,77 @@ fn cadir_encoder_streams_the_canonical_json_shape() {
     assert_eq!(encoded, canonical.as_bytes());
 }
 
+/// The CADIR writer drops a record nested past the document bound and
+/// removes the stub link that names it; the record at the bound stays.
+#[test]
+fn cadir_encoder_drops_a_record_past_the_document_bound() {
+    const WITHIN: &str = "test:native:within#1";
+    const PAST: &str = "test:native:past#1";
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    let record = |id: &str, depth: usize| {
+        let field = (0..depth).fold(serde_json::Value::Null, |inner, _| {
+            serde_json::Value::Array(vec![inner])
+        });
+        crate::NativeRecord::new(
+            crate::ids::Identity::new(id).unwrap(),
+            [("field".to_owned(), field)].into_iter().collect(),
+        )
+        .unwrap()
+    };
+    let within = crate::bounds::MAX_DOCUMENT_DEPTH - 5;
+    ir.native
+        .namespace_mut(crate::design::names::CodecId::new("test").unwrap())
+        .set_arena_records(
+            "deep",
+            vec![record(WITHIN, within), record(PAST, within + 1)],
+        )
+        .unwrap();
+    let stub = crate::NativeUnknownRecord {
+        id: crate::ids::UnknownId::mint("test:source:part#holder").unwrap(),
+        links: vec![crate::ids::Identity::new(PAST).unwrap()],
+    };
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    ir.set_native_unknowns(&ctx, "test", std::slice::from_ref(&stub))
+        .unwrap();
+
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("a record past the bound does not refuse the write");
+    let unwritable = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "value.unwritable")
+        .collect::<Vec<_>>();
+    let [loss] = unwritable.as_slice() else {
+        panic!("one loss for the one record: {unwritable:?}");
+    };
+    assert!(
+        loss.message.contains(PAST) && loss.message.contains("native.test.deep"),
+        "{}",
+        loss.message
+    );
+    let mut encoded = Vec::new();
+    plan.write_to(&mut encoded).unwrap();
+    let written = CadIr::from_json(std::str::from_utf8(&encoded).unwrap()).unwrap();
+    let kept = written
+        .native
+        .namespace("test")
+        .unwrap()
+        .arenas()
+        .get("deep")
+        .unwrap()
+        .iter()
+        .map(crate::NativeRecord::id)
+        .collect::<Vec<_>>();
+    assert_eq!(kept, [WITHIN]);
+    let stubs = written.native_unknowns("test").unwrap();
+    assert_eq!(stubs.len(), 1);
+    assert!(stubs[0].links.is_empty());
+    assert_eq!(written.geometry.faces.len(), ir.geometry.faces.len());
+    assert_eq!(written.geometry.points.len(), ir.geometry.points.len());
+}
+
 #[test]
 fn cadir_encoder_census_matches_validation_counts() {
     let ir = directed_subd_sum().unwrap();

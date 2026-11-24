@@ -9,8 +9,9 @@
 //! dimensions, units, and the shared option types of the feature vocabulary.
 //!
 //! Each type has the wire form of §2.5 of the CADIR v11 specification. Read a
-//! document that holds them through [`read::from_str`], which enforces the
-//! nesting ceilings of [`cadmpeg_core::decode::ResourceLimits`].
+//! document that holds them through [`read::from_str`], which reads a
+//! document as deep as the bounds of §2.5 admit and walks each chain of state
+//! bases under [`cadmpeg_core::decode::ResourceLimits`].
 
 pub mod configuration;
 pub mod construction;

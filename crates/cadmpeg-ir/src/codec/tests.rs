@@ -772,6 +772,30 @@ fn the_sealed_wrapper_states_no_copy_of_a_repeated_id_whose_copies_differ_and_ch
         "{}",
         loss.message
     );
+    let [stub]: [_; 1] = result
+        .ir()
+        .native_unknowns("test")
+        .expect("the test stubs")
+        .try_into()
+        .expect("one stub for the one repeated id");
+    assert!(stub.links.is_empty());
+    assert!(
+        loss.message
+            .contains(&format!("record={}", stub.id.as_str()))
+            && loss.message.contains(cube.geometry.vertices[0].id.as_str()),
+        "{}",
+        loss.message
+    );
+    assert!(result
+        .source_fidelity()
+        .retained_record(stub.id.as_str())
+        .is_some());
+    assert!(!result
+        .ir()
+        .geometry
+        .vertices
+        .iter()
+        .any(|vertex| vertex.point == cube.geometry.points[0].id));
 }
 
 #[test]
@@ -810,13 +834,66 @@ fn the_sealed_wrapper_records_the_digest_of_the_document_it_returns() {
     );
 }
 
+/// A decoder that states the unit cube with repro metadata whose context
+/// nests past the levels the digest walk admits, outside every record.
+struct DeepContextCodec;
+
+impl CodecBackend for DeepContextCodec {
+    const FORMAT: FormatId = FormatId::new("test");
+
+    fn detect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _prefix: View<'_>,
+    ) -> Result<Confidence, CodecError> {
+        Ok(Confidence::No)
+    }
+
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        panic!("the digest test does not inspect")
+    }
+
+    fn decode_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<Decoded, CodecError> {
+        let mut ir = unit_cube().expect("valid unit cube fixture");
+        let finding = crate::report::check::Finding {
+            rule: crate::rule_name!("test.unresolved-link"),
+            check: crate::report::check::Check::NativeLinks,
+            severity: crate::report::Severity::Error,
+            entity: None,
+            related: Vec::new(),
+            message: "unresolved link".into(),
+        };
+        let levels = usize::try_from(crate::bounds::DIGEST_WALK_DEPTH).unwrap();
+        ir.repro = Some(Box::new(crate::repro::BundleMetadata {
+            signature: crate::repro::Signature::new(
+                &finding,
+                crate::codec_id!("cadir"),
+                crate::repro::Stage::Check,
+            ),
+            roots: Vec::new(),
+            context: (0..levels).fold(crate::attributes::AttributeJson::Null, |inner, _| {
+                crate::attributes::AttributeJson::Array(vec![inner])
+            }),
+            manifest: Vec::new(),
+            incomplete_reason: None,
+        }));
+        Ok(decoded(ir))
+    }
+}
+
 #[test]
 fn a_document_without_canonical_json_keeps_no_content_digest_and_reads_as_edited() {
-    let mut options = DecodeOptions::default();
-    options.policy.limits.max_recursion_depth = 1;
-    let result = RepeatedIdentityCodec { differ: false }
-        .decode(&mut Cursor::new(Vec::new()), &options)
-        .expect("a digest the depth limit refuses does not refuse the decode");
+    let result = DeepContextCodec
+        .decode(&mut Cursor::new(Vec::new()), &DecodeOptions::default())
+        .expect("a digest the walk refuses does not refuse the decode");
     assert_eq!(result.source_fidelity().content_digest, None);
     assert!(result.source_fidelity().edited(result.ir()).unwrap());
     let unavailable = result
@@ -829,4 +906,148 @@ fn a_document_without_canonical_json_keeps_no_content_digest_and_reads_as_edited
         panic!("one loss for the missing digest: {unavailable:?}");
     };
     assert_eq!(loss.severity, crate::report::Severity::Warning);
+    let outside = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::unknown::part::record_unreadable_kind())
+        .collect::<Vec<_>>();
+    let [loss] = outside.as_slice() else {
+        panic!("one loss for the depth outside every record: {outside:?}");
+    };
+    assert!(
+        loss.message.contains("outside every record"),
+        "{}",
+        loss.message
+    );
+}
+
+/// A decoder that states, beside the unit cube, two native records: one at
+/// the document's depth bound and one a level past it. A native record sits
+/// at the document's fifth level, so its field nests at most 123 levels.
+struct PastTheBoundCodec;
+
+impl PastTheBoundCodec {
+    const WITHIN: &'static str = "test:native:within#1";
+    const PAST: &'static str = "test:native:past#1";
+}
+
+impl CodecBackend for PastTheBoundCodec {
+    const FORMAT: FormatId = FormatId::new("test");
+
+    fn detect_impl(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        Ok(Confidence::No)
+    }
+
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        panic!("the depth bound test does not inspect")
+    }
+
+    fn decode_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<Decoded, CodecError> {
+        let mut ir = unit_cube().expect("valid unit cube fixture");
+        let record = |id: &str, depth: usize| {
+            let field = (0..depth).fold(serde_json::Value::Null, |inner, _| {
+                serde_json::Value::Array(vec![inner])
+            });
+            crate::NativeRecord::new(
+                crate::ids::Identity::new(id).expect("valid native identity"),
+                [("field".to_owned(), field)].into_iter().collect(),
+            )
+            .expect("valid native record")
+        };
+        let within = crate::bounds::MAX_DOCUMENT_DEPTH - 5;
+        ir.native
+            .namespace_mut(crate::design::names::CodecId::new("test").expect("a codec id"))
+            .set_arena_records(
+                "deep",
+                vec![record(Self::WITHIN, within), record(Self::PAST, within + 1)],
+            )
+            .expect("a valid arena");
+        Ok(decoded(ir))
+    }
+}
+
+/// The wrapper digests a document at the bound and gives up the record past
+/// it under a policy whose recursion ceiling is the bound's, too.
+#[test]
+fn the_sealed_wrapper_gives_up_a_record_past_the_document_bound() {
+    for policy in [DecodePolicy::desktop(), DecodePolicy::service()] {
+        let options = DecodeOptions {
+            policy,
+            ..DecodeOptions::default()
+        };
+        let result = PastTheBoundCodec
+            .decode(&mut Cursor::new(Vec::new()), &options)
+            .expect("a record past the bound does not refuse the file");
+        let arena = result
+            .ir()
+            .native
+            .namespace("test")
+            .expect("the test namespace")
+            .arenas()
+            .get("deep")
+            .expect("the deep arena");
+        let kept = arena
+            .iter()
+            .map(crate::NativeRecord::id)
+            .collect::<Vec<_>>();
+        assert_eq!(kept, [PastTheBoundCodec::WITHIN]);
+        let unreadable = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == crate::unknown::part::record_unreadable_kind())
+            .collect::<Vec<_>>();
+        let [loss] = unreadable.as_slice() else {
+            panic!("one loss for the one record: {unreadable:?}");
+        };
+        assert_eq!(loss.severity, crate::report::Severity::Error);
+        assert!(
+            loss.message.contains(PastTheBoundCodec::PAST)
+                && loss.message.contains("native.test.deep"),
+            "{}",
+            loss.message
+        );
+        let [stub]: [_; 1] = result
+            .ir()
+            .native_unknowns("test")
+            .expect("the test stubs")
+            .try_into()
+            .expect("one stub for the one record");
+        assert!(
+            loss.message
+                .contains(&format!("record={}", stub.id.as_str())),
+            "{}",
+            loss.message
+        );
+        let retained = result
+            .source_fidelity()
+            .retained_record(stub.id.as_str())
+            .expect("the record's retained text");
+        assert_eq!(
+            retained.stream(),
+            format!("native.test.deep/{}", PastTheBoundCodec::PAST)
+        );
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop()).unwrap();
+        assert_eq!(
+            result.source_fidelity().content_digest,
+            Some(crate::hash::content_digest(&ctx, result.ir()).unwrap())
+        );
+        let text = serde_json::to_string(result.ir()).unwrap();
+        assert!(CadIr::from_json(&text).is_ok());
+    }
 }

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Wire forms, strict round trips, canonical expression text, member
-//! identity, nesting ceilings, and schemas of the design module.
+//! identity, depth bounds, and schemas of the design module.
 
-mod ceilings;
+mod bounds;
 mod expressions;
 mod fixtures;
 mod identity_rewrite;

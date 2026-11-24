@@ -10,7 +10,6 @@ use super::EditError;
 use crate::design::evaluation::StateBase;
 use crate::design::ids::EvaluationId;
 use crate::design::names::NameEntry;
-use crate::design::read::Ceiling;
 use crate::design::refs::{EntityRef, Position};
 use crate::design::selection::OccurrencePath;
 use crate::document::Topology;
@@ -181,7 +180,7 @@ impl CadIr {
         id: &EvaluationId,
         limits: &ResourceLimits,
     ) -> Result<ResolvedState, StateResolutionError> {
-        let limit = Ceiling::StateChain.of(limits);
+        let limit = limits.max_state_chain_depth;
         let mut seen = BTreeSet::new();
         let scope = &self
             .design

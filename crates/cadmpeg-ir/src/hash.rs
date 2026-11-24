@@ -83,6 +83,44 @@ pub fn content_digest(
     canonical_json_digest(ctx, ir)
 }
 
+/// Returns [`content_digest`], and the records of `ir` past a bound of §2.5,
+/// found in the same walk. A refused walk returns what it found before the
+/// refusal.
+pub(crate) fn measured_content_digest(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> (
+    Result<digest::Sha256Digest, DigestError>,
+    crate::bounds::Measured,
+) {
+    let mut buffered =
+        std::io::BufWriter::with_capacity(DIGEST_BUFFER_BYTES, DigestWriter(Sha256::new()));
+    let mut measure = crate::bounds::Measure::new(&mut buffered);
+    let written = write_canonical_json(
+        CanonicalAdmission::limited(ctx, "walk document digest"),
+        &mut measure,
+        ir,
+    );
+    let measured = measure.finish();
+    let digest = written
+        .map_err(DigestError::from)
+        .and_then(|()| finish_digest(buffered));
+    (digest, measured)
+}
+
+/// The canonical JSON of `ir`, with each record it holds past a bound of
+/// §2.5. The walk admits every depth.
+pub(crate) fn measured_canonical_json(
+    ir: &CadIr,
+) -> Result<(Vec<u8>, crate::bounds::Measured), CanonicalJsonError> {
+    let mut bytes = Vec::new();
+    let mut measure = crate::bounds::Measure::new(&mut bytes);
+    let written = write_canonical_json(CanonicalAdmission::unlimited(), &mut measure, ir);
+    let measured = measure.finish();
+    written?;
+    Ok((bytes, measured))
+}
+
 fn canonical_json_digest<T: Serialize + ?Sized>(
     ctx: &DecodeContext<'_>,
     value: &T,
@@ -94,6 +132,12 @@ fn canonical_json_digest<T: Serialize + ?Sized>(
         &mut buffered,
         value,
     )?;
+    finish_digest(buffered)
+}
+
+fn finish_digest(
+    buffered: std::io::BufWriter<DigestWriter>,
+) -> Result<digest::Sha256Digest, DigestError> {
     let writer = buffered
         .into_inner()
         .map_err(|error| DigestError::Write(error.into_error()))?;

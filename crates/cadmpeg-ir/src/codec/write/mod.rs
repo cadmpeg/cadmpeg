@@ -455,18 +455,81 @@ impl EncoderBackend for CadirEncoder {
     const TARGET: DialectFree = DialectFree;
 
     fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
-        let mut bytes = crate::hash::finite_json::to_canonical_json_string(input.ir)
-            .map_err(|error| CodecError::Malformed(error.to_string()))?
-            .into_bytes();
+        let malformed = |error: crate::hash::finite_json::CanonicalJsonError| {
+            CodecError::Malformed(error.to_string())
+        };
+        let (mut bytes, measured) =
+            crate::hash::measured_canonical_json(input.ir).map_err(malformed)?;
+        let mut losses = Vec::new();
+        let written;
+        let ir = if measured.records.is_empty() {
+            input.ir
+        } else {
+            let (ir, dropped) = drop_records_past_the_bounds(input.ir, &measured.records)?;
+            losses = dropped;
+            bytes = crate::hash::finite_json::to_canonical_json_string(&ir)
+                .map_err(malformed)?
+                .into_bytes();
+            written = ir;
+            &written
+        };
         bytes.push(b'\n');
         // CADIR is the neutral document itself: there is no container to
         // replay or patch, so this encoder has one path and states it.
-        Ok(ExportBody::synthesized(
+        let mut body = ExportBody::synthesized(
             bytes,
-            input.ir,
+            ir,
             ArenaCoverage::Declared(coverage::cadir_dispositions()),
-        ))
+        );
+        body.losses = losses;
+        Ok(body)
     }
+}
+
+/// A copy of `ir` without each record of `records`, which it holds past a
+/// bound of §2.5, and without each record that needs one, as §3.3 drops a
+/// record (§3.4). Each such record charges one `export:value.unwritable`
+/// that names it, the bound, and the records dropped and marked with it.
+fn drop_records_past_the_bounds(
+    ir: &CadIr,
+    records: &std::collections::BTreeMap<crate::bounds::Place, crate::bounds::Bound>,
+) -> Result<(CadIr, Vec<LossNote>), CodecError> {
+    let mut ir = ir.clone();
+    ir.finalize();
+    let bounds: std::collections::BTreeMap<crate::give_up::Seed, crate::bounds::Bound> = records
+        .iter()
+        .filter_map(|(place, bound)| ir.record_at(place).map(|seed| (seed, *bound)))
+        .collect();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    let removed = crate::give_up::drop_records(&ctx, &mut ir, bounds.keys().cloned().collect())?;
+    let losses = removed
+        .into_iter()
+        .filter_map(|(seed, released)| {
+            let reason = format!(
+                "drops record {} of arena {}, which {}, with each record that needs it; \
+                 marked=[{}]",
+                seed.id,
+                seed.arena,
+                bounds
+                    .get(&seed)
+                    .map_or_else(String::new, |bound| bound.describe()),
+                released
+                    .marked
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            value_unwritable(
+                CadirEncoder::FORMAT.as_str(),
+                &reason,
+                std::iter::once(seed.id).chain(released.dropped),
+            )
+        })
+        .collect();
+    Ok((ir, losses))
 }
 
 #[cfg(test)]

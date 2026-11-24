@@ -30,14 +30,13 @@ from the name of the constant.
    ceilings. `DecodeContext` charges six of them: `max_input_bytes`,
    `max_decompressed_bytes_total`, `max_decompressed_bytes_per_expand`,
    `max_retained_bytes`, `max_entities`, and `max_recursion_depth`. Excess
-   refuses the session and sets the fuse. Reading CADIR design values
-   (`cadmpeg_ir::design::read::from_str`) enforces four as nesting
-   ceilings: `max_expression_depth`, `max_name_depth`, `max_pick_depth`, and
-   `max_construction_depth`. Reading a document enforces
+   refuses the session and sets the fuse. Reading a document enforces
    `max_state_chain_depth` on each chain of state bases its evaluations
-   and process states form, and refuses a cycle as malformed. Excess refuses that read with
-   `CodecError::ResourceLimit` (`RecursionDepth`, `BudgetExceeded`); it sets
-   no fuse.
+   and process states form, and refuses a cycle as malformed. Excess refuses
+   that read with `CodecError::ResourceLimit` (`RecursionDepth`,
+   `BudgetExceeded`); it sets no fuse. The depth of a document and of an
+   expression are bounds of the CADIR wire (§2.5), `MAX_DOCUMENT_DEPTH` and
+   `MAX_EXPRESSION_DEPTH`, and no session ceiling.
 4. **Local work cap.** The limit bounds a search, an iteration, a
    convergence loop, a walk over derived data, or the size of derived output.
    A `WorkBudget` or a local counter enforces it. At exhaustion the decoder
@@ -217,10 +216,11 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-core`           | `src/decode/tree.rs`                               | `MAX_XML_TAG_ATTRIBUTES`                  | `256`                                                   | 2    | Attributes in one XML tag, counted by the scan before `parse_xml`. roxmltree compares each attribute with the earlier ones in its tag. Excess is `NotImplemented` for that text and does not set the fuse.                                                                  |
 | `cadmpeg-core`           | `src/decode/tree.rs`                               | `MAX_XML_NAMESPACE_PREFIXES`              | `256`                                                   | 2    | Distinct namespace prefixes declared in one XML text, counted by the same scan. roxmltree searches the namespaces in scope per element and copies them into each declaring element. Excess is `NotImplemented` and does not set the fuse.                                  |
 | `cadmpeg-ir`             | `src/native/mod.rs`                                | `MAX_NATIVE_NESTING_DEPTH`                | `256`                                                   | 1    | CADIR native field nesting. `NativeRecord::new`, replay and canonical text refuse a deeper field with `FieldNestsTooDeep`.                                                                                                                                                   |
-| `cadmpeg-ir` | `src/document/read.rs` | `MAX_DEPTH` | `128` | 1 | JSON nesting depth of §2.5 in `CadIr::read`. A deeper record is given up as a part and charges `decode/record.unreadable`; the read continues. |
 | `cadmpeg-ir` | `src/document/read.rs` | `MAX_REPAIRS` | `64` | 2 | Refusals one record's repairs take in `CadIr::read`. Exhaustion gives the record up as a part and charges `decode/record.unreadable`. |
 | `cadmpeg-ir` | `src/document/read.rs` | `MAX_COLLECTION_SITES` | `16` | 2 | Objects of one record tried as the home of one omitted collection in `CadIr::read`. A record that no tried site repairs is given up as a part and charges `decode/record.unreadable`. |
 | `cadmpeg-ir`             | `src/geometry.rs`                                  | `MAX_GEOMETRY_NESTING`                    | `256`                                                   | 1    | Placed curve, surface and pcurve basis chain depth. `try_new` refuses a deeper chain.                                                                                                                                                                                        |
+| `cadmpeg-ir` | `src/bounds.rs` | `MAX_DOCUMENT_DEPTH` | `128` | 1 | CADIR document depth (§2.5). Reading refuses deeper text as malformed before it parses it; the decode wrapper gives up each record a decoder states past it with `decode/record.unreadable`. |
+| `cadmpeg-ir` | `src/bounds.rs` | `MAX_EXPRESSION_DEPTH` | `64` | 1 | Neutral expression tree depth (§2.5). Parsing refuses a deeper tree as malformed; the decode wrapper gives up each record that holds one with `decode/record.unreadable`. |
 | `cadmpeg-ir`             | `src/eval.rs`                                      | `MAX_PATCHES`                             | `1_000_000`                                             | 4    | Patch-queue cap in NURBS surface start search, checked with the caller's `WorkBudget`. Exhaustion returns `None`; the caller owns the loss.                                                                                                                                  |
 | `cadmpeg-ir`             | `src/eval.rs`                                      | `MAX_ITERATIONS`                          | `24`                                                    | 4    | Newton iterations in `nurbs_surface_parameter_near_point`. Exhaustion returns the current candidate or `None`; the caller owns the residual check and any loss.                                                                                                              |
 | `cadmpeg-ir`             | `src/eval.rs`                                      | `MAX_LINE_SEARCH_STEPS`                   | `12`                                                    | 4    | Line-search steps inside the same Newton loop. Exhaustion ends the iteration.                                                                                                                                                                                                |

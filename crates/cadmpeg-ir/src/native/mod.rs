@@ -37,8 +37,10 @@ pub(crate) fn test_ctx() -> DecodeContext<'static> {
 /// per container, and `canon::CanonText` enters one frame per container.
 /// The bound is therefore stated where a field enters the record, so every
 /// reader of a constructed record is already inside it.
-/// It is twice the 128 containers a `serde_json` text parse admits, so every
-/// field a CADIR document can state is read back.
+/// It bounds stored text in memory and is deeper than any field a CADIR
+/// document holds, so every such field is read back. A document holds a
+/// native record at its fifth level, and the decode wrapper gives up a record
+/// that passes the document's 128 levels (§2.5).
 const MAX_NATIVE_NESTING_DEPTH: usize = 256;
 
 /// The text every refusal of [`MAX_NATIVE_NESTING_DEPTH`] carries.
@@ -1123,21 +1125,70 @@ impl Native {
     }
 
     /// States one record of each id in each sorted namespace arena whose
-    /// copies hold one value and none of an id whose copies differ,
-    /// returning each such id.
-    pub(crate) fn drop_repeated_ids(&mut self) -> Vec<crate::document::RepeatedId> {
+    /// copies hold one value, and returns each id whose copies differ, all of
+    /// whose copies it keeps.
+    pub(crate) fn repeated_ids(&mut self) -> Vec<crate::document::RepeatedId> {
         let mut repeated = Vec::new();
         for (format, namespace) in &mut self.0 {
             for (arena, records) in &mut namespace.arenas {
                 crate::document::drop_repeated_copies(
                     records,
                     NativeRecord::id,
-                    &format!("native.{format}.{arena}"),
+                    &crate::give_up::Arena::Native {
+                        codec: format.as_str().to_owned(),
+                        arena: arena.as_str().to_owned(),
+                    },
                     &mut repeated,
                 );
             }
         }
         repeated
+    }
+
+    /// The id of the record at `index` of `codec`'s arena `arena`.
+    pub(crate) fn id_at(&self, codec: &str, arena: &str, index: usize) -> Option<String> {
+        let records = self.0.get(codec)?.arenas.get(arena)?;
+        records.get(index).map(|record| record.id().to_owned())
+    }
+
+    /// The canonical JSON text of the records of `id` in `codec`'s arena
+    /// `arena`, or `None` where the arena holds none.
+    pub(crate) fn record_text(&self, codec: &str, arena: &str, id: &str) -> Option<String> {
+        let copies: Vec<&NativeRecord> = self
+            .0
+            .get(codec)?
+            .arenas
+            .get(arena)?
+            .iter()
+            .filter(|record| record.id() == id)
+            .collect();
+        (!copies.is_empty()).then(|| crate::give_up::record_text(&copies))
+    }
+
+    /// Removes every record of `id` from `codec`'s arena `arena`, returning
+    /// the number removed.
+    pub(crate) fn remove_records(&mut self, codec: &str, arena: &str, id: &str) -> usize {
+        let Some(records) = self
+            .0
+            .get_mut(codec)
+            .and_then(|namespace| namespace.arenas.get_mut(arena))
+        else {
+            return 0;
+        };
+        let before = records.len();
+        records.retain(|record| record.id() != id);
+        before - records.len()
+    }
+
+    /// Whether a record of any namespace arena has the id `id`.
+    pub(crate) fn holds_id(&self, id: &str) -> bool {
+        self.0.values().any(|namespace| {
+            namespace
+                .arenas
+                .values()
+                .flatten()
+                .any(|record| record.id() == id)
+        })
     }
 
     /// Sort every arena into canonical identity order.

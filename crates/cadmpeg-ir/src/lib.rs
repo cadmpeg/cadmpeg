@@ -44,6 +44,7 @@ pub mod annotations;
 pub mod appearance;
 pub mod assets;
 pub mod attributes;
+pub mod bounds;
 pub mod bytes;
 pub mod codec;
 pub mod compare;
@@ -59,6 +60,7 @@ pub mod eval;
 pub mod examples;
 pub mod features;
 pub mod geometry;
+pub(crate) mod give_up;
 pub mod hash;
 pub mod history_body;
 
