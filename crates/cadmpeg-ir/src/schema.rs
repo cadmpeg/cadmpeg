@@ -493,9 +493,8 @@ macro_rules! impl_entity_schema {
     };
 }
 
-impl_entity_schema!(crate::topology::Body, Body, id; id, kind, transform, name, color, visible, native_ref);
-impl_entity_schema!(crate::topology::Region, Region, id; id, body, shells, native_ref);
-impl_entity_schema!(crate::topology::Shell, Shell, id; id, region, members, native_ref);
+impl_entity_schema!(crate::topology::Body, Body, id; id, kind, transform, name, color, visible, unstated, native_ref);
+impl_entity_schema!(crate::topology::Shell, Shell, id; id, region, members, unstated, native_ref);
 impl_entity_schema!(crate::topology::Face, Face, id; id, shell, surface, sense, loops, name, color, tolerance, native_ref);
 impl_entity_schema!(crate::topology::Loop, Loop, id; id, face, boundary, native_ref);
 impl_entity_schema!(crate::topology::Coedge, Coedge, id; id, owner_loop, edge, radial_next, sense, pcurves, use_curve, native_ref);

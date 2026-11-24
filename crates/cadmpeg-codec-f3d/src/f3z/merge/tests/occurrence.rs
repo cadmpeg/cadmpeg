@@ -180,6 +180,7 @@ fn saved_edge_loss_counts_final_archive_ownership_once() {
                 color: None,
                 visible: None,
                 native_ref: None,
+                unstated: None,
             })
             .collect();
         let member_loss = crate::decode::saved_free_edge_bodies_loss(&member).unwrap();
@@ -293,13 +294,13 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         }],
-        regions: vec![Region {
-            id: RegionId::mint("f3d:brep:entity#2").expect("identity grammar"),
-            body: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
-            shells: Vec::new(),
-            native_ref: None,
-        }],
+        regions: vec![Region::new(
+            RegionId::mint("f3d:brep:entity#2").expect("identity grammar"),
+            BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
+            Vec::new(),
+        )],
         ..Topology::default()
     };
     for ordinal in 0..2 {
@@ -426,6 +427,7 @@ fn occurrence_merge_preserves_a_body_name_that_spells_its_identity() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     };
     let scoped = OccurrenceScope {
         native_text: &TextReplacements::default(),

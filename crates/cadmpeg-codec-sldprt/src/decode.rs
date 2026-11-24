@@ -1939,13 +1939,13 @@ pub(crate) fn append_design_losses(
                     (match boundary {
                         SurfaceBoundary::Edges(edges) => incomplete_edge_selection(edges),
                         SurfaceBoundary::Path(path) => incomplete_path(path),
-                    }) || if continuity.uniform_value()
+                    }) || if continuity.as_ref().and_then(cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuity::uniform_continuity)
                         == Some(cadmpeg_ir::features::surface_inputs::SurfaceContinuity::Contact)
                     {
                         incomplete_optional_face_selection(support_faces)
                     } else {
                         incomplete_face_selection(support_faces)
-                    } || continuity.is_unresolved()
+                    } || continuity.is_none()
                         || merge_result.is_none()
                 }
                 FeatureOperation::TrimSurface {
@@ -6703,6 +6703,7 @@ mod digest_tests {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
         ir
     }

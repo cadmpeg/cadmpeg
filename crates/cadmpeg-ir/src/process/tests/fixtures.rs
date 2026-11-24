@@ -11,9 +11,7 @@ use crate::design::construction::{
     kinds, AxisValue, Construction, ConstructionKind, FrameAxis, FrameValue,
 };
 use crate::design::dimension::{Dimension, ParamRef, ParameterRef, RefTarget};
-use crate::design::expr::{
-    BinaryOp, Expression, ExpressionDialect, ExpressionToken, Neutral, Node,
-};
+use crate::design::expr::{AddOp, Expression, ExpressionDialect, ExpressionToken, Neutral, Node};
 use crate::design::ids::{
     MachineId, MachiningFeatureId, OperationId, PresetId, ProcessGroupId, ProcessParameterId,
     ProgramId, SetupId, ToolId,
@@ -315,11 +313,11 @@ pub(super) fn frame_construction() -> ProcessConstruction<kinds::Frame> {
 
 pub(super) fn process_expressions() -> Vec<Expression<ParamRef>> {
     vec![
-        Expression::Neutral(Neutral(Node::Binary {
-            op: BinaryOp::Subtract,
-            left: Box::new(Node::Reference(design_ref(1))),
-            right: Box::new(Node::Reference(ParamRef::Process(parameter(1)))),
-        })),
+        Expression::Neutral(Neutral(Node::add(
+            Node::Reference(design_ref(1)),
+            AddOp::Subtract,
+            Node::Reference(ParamRef::Process(parameter(1))),
+        ))),
         Expression::Source {
             dialect: ExpressionDialect::FusionCam,
             tokens: vec![

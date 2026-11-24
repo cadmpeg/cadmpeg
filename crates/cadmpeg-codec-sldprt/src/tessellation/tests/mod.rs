@@ -610,19 +610,23 @@ fn model_with_body() -> CadIr {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     }];
-    ir.geometry.regions = vec![Region {
-        id: RegionId::mint("synthetic:test:region#region").expect("identity grammar"),
-        body: BodyId::mint("synthetic:test:body#body").expect("identity grammar"),
-        shells: vec![ShellId::mint("synthetic:test:shell#shell").expect("identity grammar")],
-        native_ref: None,
-    }];
+    ir.geometry.regions = vec![Region::new(
+        RegionId::mint("synthetic:test:region#region").expect("identity grammar"),
+        BodyId::mint("synthetic:test:body#body").expect("identity grammar"),
+        vec![ShellId::mint("synthetic:test:shell#shell").expect("identity grammar")],
+    )];
 
     ir
 }
 
 fn set_shell_faces(ir: &mut CadIr, faces: &[FaceId]) {
-    let shell = ir.geometry.regions[0].shells[0].clone();
+    let shell = ir.geometry.regions[0]
+        .stated_shells()
+        .cloned()
+        .collect::<Vec<_>>()[0]
+        .clone();
     ir.geometry.shells = vec![Shell::new(shell.clone(), ir.geometry.regions[0].id.clone())];
     for face in &mut ir.geometry.faces {
         if faces.contains(&face.id) {
@@ -951,12 +955,11 @@ fn split_between_two_bodies(ir: &mut CadIr, active: &FaceId, stored: &FaceId) ->
     let mut second = ir.geometry.bodies[0].clone();
     second.id = body.clone();
     ir.geometry.bodies.push(second);
-    ir.geometry.regions.push(Region {
-        id: region.clone(),
-        body: body.clone(),
-        shells: vec![shell.clone()],
-        native_ref: None,
-    });
+    ir.geometry.regions.push(Region::new(
+        region.clone(),
+        body.clone(),
+        vec![shell.clone()],
+    ));
     ir.geometry.shells.push(Shell::new(shell.clone(), region));
     for face in &mut ir.geometry.faces {
         if face.id == *stored {

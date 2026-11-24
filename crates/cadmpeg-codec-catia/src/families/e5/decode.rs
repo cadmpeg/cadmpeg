@@ -1053,14 +1053,12 @@ fn attach_e5_free_vertices(
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     admission.charge()?;
-    ir.geometry.regions.push(Region {
-        id: region_id.clone(),
-        body: body_id,
-        shells,
-        native_ref: None,
-    });
+    ir.geometry
+        .regions
+        .push(Region::new(region_id.clone(), body_id, shells));
     admission.charge()?;
     if free_vertices.is_empty() {
         return Ok(());
@@ -2135,6 +2133,7 @@ fn emit_e5_bodies(
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
         for (component, component_faces) in plan.components.iter().enumerate() {
             let region_id = region_ids[component].clone();
@@ -2152,12 +2151,9 @@ fn emit_e5_bodies(
             annotations.derived(&region_id, "shells")?;
             let shells = vec![shell_id.clone()];
             admission.charge()?;
-            ir.geometry.regions.push(Region {
-                id: region_id.clone(),
-                body: body_id.clone(),
-                shells,
-                native_ref: None,
-            });
+            ir.geometry
+                .regions
+                .push(Region::new(region_id.clone(), body_id.clone(), shells));
             annotate(
                 annotations,
                 &shell_id,

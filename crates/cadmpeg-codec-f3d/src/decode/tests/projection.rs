@@ -690,8 +690,8 @@ fn filled_surface_completeness_requires_boundary_conditions_support_and_merge() 
             )
             .expect("identity grammar")])),
             support_faces,
-            continuity: cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuityState::uniform(
-                continuity,
+            continuity: Some(
+                cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuity::one(continuity),
             ),
             merge_result,
             interior_constraints: Vec::new(),

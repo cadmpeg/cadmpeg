@@ -47,7 +47,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::tessellation::{
     Meshed, Tessellation, TessellationMesh, TextureCoordinateAddressing,
 };
-use cadmpeg_ir::topology::{Body, Color, Sense};
+use cadmpeg_ir::topology::{Body, Color, FaceBoundary, Sense};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
@@ -1119,7 +1119,7 @@ impl<'ir> Writer<'ir> {
             for (face, surface) in faces {
                 match surface.and_then(nurbs_surface) {
                     Some(nurbs)
-                        if face.loops.is_empty()
+                        if face.loops.boundary().is_some_and(FaceBoundary::is_empty)
                             || self.whole_domain(face, nurbs)
                             || (!exact && self.trim_loops(face).is_some()) =>
                     {
@@ -1151,7 +1151,14 @@ impl<'ir> Writer<'ir> {
     /// Whether the one loop of `face` runs along the boundary of the domain
     /// of its surface `nurbs`: each pcurve is a segment on one side.
     fn whole_domain(&self, face: &cadmpeg_ir::topology::Face, nurbs: &NurbsSurface) -> bool {
-        let [loop_id] = face.loops.iter().collect::<Vec<_>>()[..] else {
+        let Some(
+            FaceBoundary::Unspecified([loop_id])
+            | FaceBoundary::Classified {
+                outer: loop_id,
+                inner: [],
+            },
+        ) = face.loops.boundary()
+        else {
             return false;
         };
         let Some(loop_) = self
@@ -1336,19 +1343,20 @@ impl<'ir> Writer<'ir> {
     )> {
         let query = cadmpeg_ir::index::StandardIndex;
         let mut out = Vec::new();
-        for region in self.ordered(self.index.ir().geometry.body_regions(&body.id), |region| {
-            region.id.as_str()
-        }) {
+        for region in self.ordered(
+            self.index.ir().geometry.stated_body_regions(&body.id),
+            |region| region.id.as_str(),
+        ) {
             for shell in self.ordered(
                 region
-                    .shells
-                    .iter()
+                    .stated_shells()
                     .filter_map(|shell| self.index.shells(shell.as_str(), query)),
                 |shell| shell.id.as_str(),
             ) {
-                for face in self.ordered(self.index.ir().geometry.shell_faces(&shell.id), |face| {
-                    face.id.as_str()
-                }) {
+                for face in self.ordered(
+                    self.index.ir().geometry.stated_shell_faces(&shell.id),
+                    |face| face.id.as_str(),
+                ) {
                     let surface = self.index.surfaces(face.surface.as_str(), query);
                     out.push((face, surface));
                 }
@@ -1689,7 +1697,9 @@ impl<'ir> Writer<'ir> {
         if reversed {
             self.out.line("uniform token orientation = \"leftHanded\"");
         }
-        if !face.loops.is_empty() && !self.whole_domain(face, nurbs) {
+        if face.loops.boundary().is_none_or(|loops| !loops.is_empty())
+            && !self.whole_domain(face, nurbs)
+        {
             if let Some(loops) = self.trim_loops(face) {
                 self.trim_attributes(&loops);
             }
@@ -1704,13 +1714,13 @@ impl<'ir> Writer<'ir> {
         let query = cadmpeg_ir::index::StandardIndex;
         let index = &self.index;
         let mut edges = Vec::new();
-        for region in self.ordered(index.ir().geometry.body_regions(&body.id), |region| {
-            region.id.as_str()
-        }) {
+        for region in self.ordered(
+            index.ir().geometry.stated_body_regions(&body.id),
+            |region| region.id.as_str(),
+        ) {
             for shell in self.ordered(
                 region
-                    .shells
-                    .iter()
+                    .stated_shells()
                     .filter_map(|shell| index.shells(shell.as_str(), query)),
                 |shell| shell.id.as_str(),
             ) {
@@ -1945,7 +1955,11 @@ impl<'ir> Writer<'ir> {
 
     /// The losses of the write.
     fn losses(&self) -> Vec<LossNote> {
-        let mut losses = Vec::new();
+        let mut losses = cadmpeg_ir::codec::write::partial_topology_omitted(
+            "USD",
+            &self.index.ir().geometry,
+            "it is written as its complete faces, with no B-rep solid",
+        );
         if !self.unwritten.body_physics.is_empty() {
             losses.push(UsdLossCode::ExportPhysicsNotWritten.note(format!(
                 "the rigid body, mass, or velocities of {} bodies with a transform of their own \

@@ -191,9 +191,12 @@ fn repro_native_feature_closure_keeps_numeric_joins_and_type_rows() {
     assert!(!serde_json::to_string(&model_bundle)
         .unwrap()
         .contains("PLANTED"));
-    let parsed: CadIr = serde_json::from_slice(&serde_json::to_vec(&bundle).unwrap()).unwrap();
+    let bytes = serde_json::to_vec(&bundle).unwrap();
+    let parsed: CadIr = serde_json::from_slice(&bytes).unwrap();
     assert!(parsed.fragment);
-    assert_eq!(parsed.repro.unwrap().context, bundle.context);
+    assert!(parsed.repro.is_some());
+    let read: Bundle = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(read.context, bundle.context);
 }
 
 #[test]
@@ -335,7 +338,7 @@ fn repro_classified_source_keeps_codec_and_strips_declarations() {
     ));
     let bundle = cut(&document, &finding, &CutOptions::default()).unwrap();
     assert_eq!(bundle.document.source.as_ref().unwrap().format(), "f3d");
-    assert_eq!(bundle.signature.codec, "f3d");
+    assert_eq!(bundle.signature.codec.as_str(), "f3d");
     assert!(!serde_json::to_string(&bundle)
         .unwrap()
         .contains("PLANTED_MEMBER"));

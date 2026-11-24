@@ -278,7 +278,7 @@
               },
               "radius": 2.0,
               "ref_direction": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               }
@@ -498,7 +498,7 @@
               "frame_token": 25,
               "kind": "resolved",
               "reference_direction": [
-                -0.0,
+                0.0,
                 1.0,
                 0.0
               ]

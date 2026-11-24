@@ -63,12 +63,9 @@ fn solid(ir: &mut CadIr, surfaces: Vec<(SolvedSurfaceGeometry, Sense)>) {
             .push(Shell::new(shell.clone(), region.clone()));
         shells.push(shell);
     }
-    ir.geometry.regions.push(Region {
-        id: region.clone(),
-        body: body.clone(),
-        shells,
-        native_ref: None,
-    });
+    ir.geometry
+        .regions
+        .push(Region::new(region.clone(), body.clone(), shells));
     ir.geometry.bodies.push(Body {
         id: body,
         kind: BodyKind::Solid,
@@ -77,6 +74,7 @@ fn solid(ir: &mut CadIr, surfaces: Vec<(SolvedSurfaceGeometry, Sense)>) {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
 }
 
@@ -197,7 +195,7 @@ fn pole_pair(ir: &mut CadIr, height: f64) {
             },
             native_ref: None,
         });
-        let mut loops: Vec<_> = ir.geometry.faces[0].loops.iter().cloned().collect();
+        let mut loops: Vec<_> = ir.geometry.faces[0].loops.stated().cloned().collect();
         loops.push(lp);
         ir.geometry.faces[0].loops = FaceLoops::unspecified(loops);
     }

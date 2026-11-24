@@ -437,7 +437,7 @@ fn exact_streams_become_solids_that_keep_their_tessellation() {
         let cube = body(member);
         assert_eq!(cube.kind, BodyKind::Solid);
         assert_eq!(cube.name, None);
-        assert_eq!(geometry.body_regions(&cube.id).count(), 1);
+        assert_eq!(geometry.stated_body_regions(&cube.id).count(), 1);
         let faces = geometry
             .faces
             .iter()
@@ -510,7 +510,7 @@ fn closed_and_open_shells_of_one_member_become_a_solid_and_a_sheet() {
             .regions
             .iter()
             .filter(|region| region.body == body.id)
-            .map(|region| region.shells.len())
+            .map(|region| region.stated_shells().count())
             .sum()
     };
     assert_eq!((shells(solid), shells(sheet)), (1, 1));

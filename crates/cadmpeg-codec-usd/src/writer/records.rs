@@ -1054,7 +1054,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
             None
         };
         let mut loops = Vec::new();
-        for loop_id in &face.loops {
+        for loop_id in face.loops.boundary().into_iter().flatten() {
             let Some(loop_) = self.index.loops(loop_id.as_str(), StandardIndex) else {
                 continue;
             };
@@ -1352,18 +1352,21 @@ pub(super) fn export<'ir>(
     tessellator: &mut Tessellator<'ir>,
     meshes_wanted: bool,
 ) -> Option<Exported> {
+    let geometry = &index.ir().geometry;
+    let lists = geometry.child_lists();
+    let regions = lists.complete_body_regions(&body.id)?;
+    let complete = regions
+        .iter()
+        .map(|region| lists.complete_shells(region))
+        .collect::<Option<Vec<_>>>()?;
     let mut exporter = Exporter::new(ir, index, tessellator, meshes_wanted);
-    for region in index.ir().geometry.body_regions(&body.id) {
+    for shells in complete {
         let mut region_shells = Vec::new();
-        for shell_id in &region.shells {
+        for shell_id in shells {
             let Some(shell) = index.shells(shell_id.as_str(), StandardIndex) else {
                 continue;
             };
-            let shell_faces = index
-                .ir()
-                .geometry
-                .shell_faces(&shell.id)
-                .collect::<Vec<_>>();
+            let shell_faces = lists.stated_shell_faces(&shell.id);
             if shell_faces.is_empty() {
                 continue;
             }

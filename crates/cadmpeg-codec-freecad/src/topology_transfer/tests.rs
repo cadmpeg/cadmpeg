@@ -1592,7 +1592,7 @@ Co 1001000 +2 1 +2 3 *
         result
             .ir()
             .geometry
-            .body_regions(&result.ir().geometry.bodies[0].id)
+            .stated_body_regions(&result.ir().geometry.bodies[0].id)
             .count(),
         2
     );

@@ -2089,8 +2089,8 @@
               "kind": "legacy"
             },
             "direction": {
-              "x": -0.0,
-              "y": -0.0,
+              "x": 0.0,
+              "y": 0.0,
               "z": -1.0
             },
             "directrix": "fcstd:model:surface#Body:Shape:Body.Shape.brp:1:directrix",
@@ -2105,8 +2105,8 @@
               "kind": "legacy"
             },
             "direction": {
-              "x": -0.0,
-              "y": -0.0,
+              "x": 0.0,
+              "y": 0.0,
               "z": -1.0
             },
             "directrix": "fcstd:model:surface#Pad:AddSubShape:Pad.AddSubShape.brp:1:directrix",
@@ -2121,8 +2121,8 @@
               "kind": "legacy"
             },
             "direction": {
-              "x": -0.0,
-              "y": -0.0,
+              "x": 0.0,
+              "y": 0.0,
               "z": -1.0
             },
             "directrix": "fcstd:model:surface#Pad:Shape:Pad.Shape.brp:1:directrix",
@@ -2137,8 +2137,8 @@
               "kind": "legacy"
             },
             "direction": {
-              "x": -0.0,
-              "y": -0.0,
+              "x": 0.0,
+              "y": 0.0,
               "z": -1.0
             },
             "directrix": "fcstd:model:surface#Sketch:Shape:Sketch.Shape.brp:1:directrix",
@@ -2363,7 +2363,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -2393,7 +2393,7 @@
                 "u_axis": {
                   "x": 1.0,
                   "y": 0.0,
-                  "z": -0.0
+                  "z": 0.0
                 }
               },
               "kind": "transformed",
@@ -2458,7 +2458,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -2488,7 +2488,7 @@
                 "u_axis": {
                   "x": 1.0,
                   "y": 0.0,
-                  "z": -0.0
+                  "z": 0.0
                 }
               },
               "kind": "transformed",

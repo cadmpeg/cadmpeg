@@ -874,12 +874,11 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
         out.shells.push(shell_record);
     }
     for (region, shells) in regions.iter().enumerate() {
-        out.regions.push(Region {
-            id: id::region(key, region),
-            body: crate::ids::body(key),
-            shells: shells.iter().map(|shell| id::shell(key, *shell)).collect(),
-            native_ref: None,
-        });
+        out.regions.push(Region::new(
+            id::region(key, region),
+            crate::ids::body(key),
+            shells.iter().map(|shell| id::shell(key, *shell)).collect(),
+        ));
     }
     Ok(out)
 }

@@ -99,13 +99,13 @@ fn exact_curve(offset: f64) -> CadIr {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
-    ir.geometry.regions.push(cadmpeg_ir::topology::Region {
-        id: region.clone(),
+    ir.geometry.regions.push(cadmpeg_ir::topology::Region::new(
+        region.clone(),
         body,
-        shells: vec![shell.clone()],
-        native_ref: None,
-    });
+        vec![shell.clone()],
+    ));
     ir.geometry
         .shells
         .push(cadmpeg_ir::topology::Shell::with_members(

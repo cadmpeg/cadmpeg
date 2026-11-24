@@ -44,7 +44,7 @@ fn planar_solid_volume_and_ccw_loops(ir: &CadIr) -> (f64, bool) {
         if face.sense == Sense::Reversed {
             normal = Vector3::new(-normal.x, -normal.y, -normal.z);
         }
-        for loop_id in &face.loops {
+        for loop_id in face.loops.stated() {
             let ring = geometry.loops.iter().find(|l| &l.id == loop_id).unwrap();
             let LoopBoundary::Ring(ring) = &ring.boundary else {
                 panic!("edge loop");

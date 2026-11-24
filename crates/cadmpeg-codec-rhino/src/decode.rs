@@ -3111,12 +3111,14 @@ impl<'a> DecodeContext<'a> {
                         region_id.clone(),
                         vertex_id.clone(),
                     ));
-                self.session.append_geometry_mut()?.regions.push(Region {
-                    id: region_id.clone(),
-                    body: body_id.clone(),
-                    shells: vec![shell_id.clone()],
-                    native_ref: None,
-                });
+                self.session
+                    .append_geometry_mut()?
+                    .regions
+                    .push(Region::new(
+                        region_id.clone(),
+                        body_id.clone(),
+                        vec![shell_id.clone()],
+                    ));
                 self.session.append_geometry_mut()?.bodies.push(body(
                     identity,
                     body_id.clone(),
@@ -3209,12 +3211,14 @@ impl<'a> DecodeContext<'a> {
                 let shell =
                     Shell::with_members(shell_id.clone(), region_id.clone(), Vec::new(), vertices);
                 self.session.append_geometry_mut()?.shells.push(shell);
-                self.session.append_geometry_mut()?.regions.push(Region {
-                    id: region_id.clone(),
-                    body: body_id.clone(),
-                    shells: vec![shell_id],
-                    native_ref: None,
-                });
+                self.session
+                    .append_geometry_mut()?
+                    .regions
+                    .push(Region::new(
+                        region_id.clone(),
+                        body_id.clone(),
+                        vec![shell_id],
+                    ));
                 self.session.append_geometry_mut()?.bodies.push(body(
                     identity,
                     body_id.clone(),
@@ -4305,12 +4309,11 @@ fn stage_extrusion_caps(
         ir.geometry
             .shells
             .push(Shell::new(shell_id.clone(), region_id.clone()));
-        ir.geometry.regions.push(Region {
-            id: region_id.clone(),
-            body: body_id.clone(),
-            shells: vec![shell_id.clone()],
-            native_ref: None,
-        });
+        ir.geometry.regions.push(Region::new(
+            region_id.clone(),
+            body_id.clone(),
+            vec![shell_id.clone()],
+        ));
         annotate_derived(annotations, &shell_id.to_string());
         annotate_derived(annotations, &region_id.to_string());
         region_ids.push(region_id);
@@ -4329,6 +4332,7 @@ fn stage_extrusion_caps(
         color: association.color,
         visible: association.visible,
         native_ref: None,
+        unstated: None,
     });
     annotate_derived(annotations, &body_id.to_string());
     Ok(body_id.to_string())
@@ -5092,14 +5096,9 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             shell_free_vertices,
         ));
         if let Some(region) = regions.iter_mut().find(|region| region.id == region_id) {
-            region.shells.push(shell_id);
+            region.push_shell(shell_id);
         } else {
-            regions.push(Region {
-                id: region_id,
-                body: body_id.clone(),
-                shells: vec![shell_id],
-                native_ref: None,
-            });
+            regions.push(Region::new(region_id, body_id.clone(), vec![shell_id]));
         }
     }
     staged.draft.geometry_mut().regions = regions;
@@ -5126,6 +5125,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         color: association.color,
         visible: association.visible,
         native_ref: None,
+        unstated: None,
     });
 
     for curve in &staged.draft.geometry().curves {
@@ -6431,6 +6431,7 @@ fn body(
         color: association.color,
         visible: association.visible,
         native_ref: None,
+        unstated: None,
     }
 }
 

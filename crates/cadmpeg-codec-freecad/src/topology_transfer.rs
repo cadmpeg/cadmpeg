@@ -724,6 +724,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
         if matches!(
             root_kind,
@@ -787,12 +788,9 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             shells.extend(added);
         }
         if !shells.is_empty() {
-            ir.geometry.regions.push(Region {
-                id: region_id.clone(),
-                body: body.clone(),
-                shells,
-                native_ref: None,
-            });
+            ir.geometry
+                .regions
+                .push(Region::new(region_id.clone(), body.clone(), shells));
             if shape.kind() == TextShapeKind::Solid {
                 self.bind_topology(
                     TextShapeKind::Solid,

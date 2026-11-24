@@ -146,7 +146,7 @@
               "ref_direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -200,7 +200,7 @@
               "ref_direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -375,7 +375,7 @@
               "v": 0.0
             },
             "y_axis": {
-              "u": -0.0,
+              "u": 0.0,
               "v": 1.0
             }
           },
@@ -399,7 +399,7 @@
             "kind": "line",
             "origin": {
               "u": 6.283185307179586,
-              "v": -0.0
+              "v": 0.0
             }
           },
           "id": "fcstd:model:pcurve#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:4%3A2%3A1",
@@ -422,7 +422,7 @@
             "kind": "line",
             "origin": {
               "u": 0.0,
-              "v": -0.0
+              "v": 0.0
             }
           },
           "id": "fcstd:model:pcurve#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:4%3A2%3A2",
@@ -472,7 +472,7 @@
               "v": 0.0
             },
             "y_axis": {
-              "u": -0.0,
+              "u": 0.0,
               "v": 1.0
             }
           },
@@ -555,7 +555,7 @@
               "ref_direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -584,7 +584,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -613,7 +613,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },

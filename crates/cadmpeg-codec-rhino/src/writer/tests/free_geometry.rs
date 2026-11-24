@@ -615,13 +615,13 @@ fn free_vertex_body_preserves_point_cloud_grouping() {
         ),
         visible: Some(false),
         native_ref: None,
+        unstated: None,
     });
-    ir.geometry.regions.push(cadmpeg_ir::topology::Region {
-        id: region_id.clone(),
-        body: body_id,
-        shells: vec![shell_id.clone()],
-        native_ref: None,
-    });
+    ir.geometry.regions.push(cadmpeg_ir::topology::Region::new(
+        region_id.clone(),
+        body_id,
+        vec![shell_id.clone()],
+    ));
     ir.geometry
         .shells
         .push(cadmpeg_ir::topology::Shell::with_members(

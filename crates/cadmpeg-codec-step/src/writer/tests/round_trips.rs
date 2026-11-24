@@ -763,7 +763,7 @@ pub(super) fn wire_body_ir(alpha: f64) -> CadIr {
     ir.geometry.shells[0].members =
         vec![cadmpeg_ir::topology::ShellMember::WireEdge { id: edge.id }];
     ir.geometry.regions.truncate(1);
-    ir.geometry.regions[0].shells = vec![ir.geometry.shells[0].id.clone()];
+    ir.geometry.regions[0].set_shells(vec![ir.geometry.shells[0].id.clone()]);
     ir.geometry.bodies.truncate(1);
     ir.geometry.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
     ir.geometry.bodies[0].color =
@@ -1091,7 +1091,9 @@ fn every_reference_resolves() {
 fn unclassified_face_loops_round_trip_without_inventing_outer_roles() {
     let mut ir = unit_cube().expect("unit cube fixture");
     for face in &mut ir.geometry.faces {
-        face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(face.loops.to_vec());
+        face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(
+            face.loops.stated().cloned().collect::<Vec<_>>(),
+        );
     }
     let output = export(&ir);
     assert_eq!(output.matches("FACE_OUTER_BOUND").count(), 0);
