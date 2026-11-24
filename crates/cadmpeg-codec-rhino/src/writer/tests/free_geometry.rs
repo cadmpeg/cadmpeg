@@ -941,11 +941,11 @@ fn free_curve_decodes_with_its_layer_and_display_and_rewrites() {
                 TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
-            .map(|_| bytes)
+            .map(|report| (bytes, report.losses))
     };
     let decoded = RhinoCodec
         .decode(
-            &mut Cursor::new(write(&ir).expect("a free curve is writable")),
+            &mut Cursor::new(write(&ir).expect("a free curve is writable").0),
             &DecodeOptions::default(),
         )
         .expect("required invariant");
@@ -981,5 +981,17 @@ fn free_curve_decodes_with_its_layer_and_display_and_rewrites() {
         .iter()
         .any(|appearance| appearance.id == binding.appearance && appearance.base_color.is_some()));
 
-    write(decoded).expect("the writer omits the display it cannot write");
+    let mut rewritten = decoded.clone();
+    for curve in &mut rewritten.geometry.curves {
+        curve.source_object = None;
+    }
+    let (_, losses) = write(&rewritten).expect("the writer omits the display it cannot write");
+    for arena in ["presentation_layers", "appearance_bindings", "appearances"] {
+        assert!(
+            losses
+                .iter()
+                .any(|loss| loss.message.contains(&format!("model arena `{arena}`"))),
+            "{arena}: {losses:#?}"
+        );
+    }
 }
