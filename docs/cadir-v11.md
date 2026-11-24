@@ -5727,7 +5727,7 @@ Each fact below is open in its meaning, or is a target application's behaviour; 
 
 ## Annex A. Record types stated by schema
 
-Each type below is given by the JSON Schema of its wire form, generated from the reference implementation when this document was released and frozen with it; a change to it is a change of wire (§3.6). Each type's description states every condition a reader enforces on its values (§2.8). §5.6 states the evaluation of the analytic, NURBS, polyline, and placed carriers. A procedural definition is stated by its fields: this document states no evaluation for it beyond the solved carrier its record caches (D23).
+Each type below is given by the JSON Schema of its wire form, generated from the reference implementation when this document was released and frozen with it; a change to it is a change of wire (§3.6). The declared order of a type below (§2.5, Order) is the order in which the reference implementation declares the fields and variants of its wire form: an object's `required` list names its required fields in that order, and a `oneOf` lists its variants in that order. An object's `properties` are listed in code-point order of the field names. Each type's description states every condition a reader enforces on its values (§2.8). §5.6 states the evaluation of the analytic, NURBS, polyline, and placed carriers. A procedural definition is stated by its fields: this document states no evaluation for it beyond the solved carrier its record caches (D23).
 
 ### `BlendCrossSection`
 
