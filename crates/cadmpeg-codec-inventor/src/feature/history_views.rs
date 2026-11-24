@@ -7,16 +7,17 @@
 //! in the active body. The view decodes that state into a scratch model that
 //! the loft result check reads. It adds no record to the document, and the
 //! nest cap and nest work budget of [`super::history_bodies`] do not apply to
-//! it.
+//! it. The decode of one state into a scratch model is shared with the nests.
 
 use cadmpeg_asm::brep::{decode_with_header, DecodePurpose};
 use cadmpeg_asm::history::{materialize_record_table, walk_entity_versions_until};
 use cadmpeg_asm::kernel_header::BinaryHeader;
+use cadmpeg_asm::sab::Record;
 use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ops::ControlFlow;
 use std::rc::Rc;
 
@@ -25,6 +26,12 @@ use crate::kernel::ActiveCarrier;
 
 /// Cap of records materialized for all views of a part.
 pub(crate) const MAX_STATE_VIEW_WORK: usize = 1 << 21;
+
+/// Cap of decoded state models that the views of a part keep. Each model is a
+/// whole scratch document, so the cache holds a few at once, which covers
+/// lofts that share a state. A request past the cap drops the cached models
+/// first and decodes again, which the work cap bounds.
+pub(crate) const MAX_STATE_VIEW_MODELS: usize = 4;
 
 /// The model of one history state.
 pub(crate) enum StateModel {
@@ -115,37 +122,77 @@ impl<'c, 'a> StateViews<'c, 'a> {
         let Some(archive) = self.closed.archive() else {
             return Ok(StateModel::Unavailable);
         };
-        let Some(table) = versions.and_then(|versions| {
-            materialize_record_table(&versions, |revision| archive.get(&revision))
-        }) else {
+        let Some(versions) = versions else {
             return Ok(StateModel::Failed);
         };
-        let stream = format!("inventor:history:{ordinal}");
-        let brep = match decode_with_header(
-            ctx,
-            &table,
-            self.carrier.bytes.window(),
-            Some(&header.metadata),
-            &stream,
-            cadmpeg_asm::asm_format!("inventor"),
-            DecodePurpose::Model,
-        ) {
-            Ok(brep) => brep,
-            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Err(_) => return Ok(StateModel::Failed),
-        };
-        drop(table);
-        let mut model = CadIr::empty();
-        match cadmpeg_asm::brep::transfer::transfer_into_ir(
-            ctx,
-            &mut model,
-            cadmpeg_ir::codec_id!("inventor"),
-            brep,
-        ) {
-            Ok(_) => Ok(StateModel::Model(Box::new(model))),
-            Err(error @ CodecError::ResourceLimit(_)) => Err(error),
-            Err(_) => Ok(StateModel::Failed),
-        }
+        Ok(
+            match decode_scratch(
+                ctx,
+                self.carrier.bytes.window(),
+                header,
+                archive,
+                &versions,
+                ordinal,
+            )? {
+                Some(scratch) => StateModel::Model(Box::new(scratch.model)),
+                None => StateModel::Failed,
+            },
+        )
+    }
+}
+
+/// The scratch model of one history state.
+pub(crate) struct Scratch {
+    /// Native body keys of the bodies of the state, by body identity.
+    pub(crate) body_keys: Vec<(String, u64)>,
+    /// The decoded and transferred state.
+    pub(crate) model: CadIr,
+}
+
+/// Materialize the records of the state at `ordinal` from its `versions` and
+/// transfer them into a scratch model. `None` when the state does not
+/// materialize, decode or transfer. Only a resource limit is an error.
+pub(crate) fn decode_scratch(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    header: &BinaryHeader,
+    archive: &HashMap<i64, Record>,
+    versions: &BTreeMap<i64, i64>,
+    ordinal: u32,
+) -> Result<Option<Scratch>, CodecError> {
+    let Some(table) = materialize_record_table(versions, |revision| archive.get(&revision)) else {
+        return Ok(None);
+    };
+    let stream = format!("inventor:history:{ordinal}");
+    let brep = match decode_with_header(
+        ctx,
+        &table,
+        bytes,
+        Some(&header.metadata),
+        &stream,
+        cadmpeg_asm::asm_format!("inventor"),
+        DecodePurpose::Model,
+    ) {
+        Ok(brep) => brep,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => return Ok(None),
+    };
+    drop(table);
+    let body_keys = brep
+        .body_native_keys
+        .iter()
+        .filter_map(|record| Some((record.body.as_str().to_owned(), record.asm_body_key?)))
+        .collect();
+    let mut model = CadIr::empty();
+    match cadmpeg_asm::brep::transfer::transfer_into_ir(
+        ctx,
+        &mut model,
+        cadmpeg_ir::codec_id!("inventor"),
+        brep,
+    ) {
+        Ok(_) => Ok(Some(Scratch { body_keys, model })),
+        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+        Err(_) => Ok(None),
     }
 }
 
@@ -170,10 +217,29 @@ impl ResultStates for StateViews<'_, '_> {
         // A bounded request can succeed after the cap frees, so only a
         // decided outcome is kept.
         if !matches!(*model, StateModel::Bounded) {
-            self.decoded.borrow_mut().insert(ordinal, Rc::clone(&model));
+            keep(
+                &mut self.decoded.borrow_mut(),
+                MAX_STATE_VIEW_MODELS,
+                ordinal,
+                &model,
+            );
         }
         Ok(model)
     }
+}
+
+/// Keep `model` for `ordinal` in `cache`, which holds at most `limit` models.
+/// A full cache drops its models first.
+fn keep(
+    cache: &mut HashMap<u32, Rc<StateModel>>,
+    limit: usize,
+    ordinal: u32,
+    model: &Rc<StateModel>,
+) {
+    if cache.len() >= limit {
+        cache.clear();
+    }
+    cache.insert(ordinal, Rc::clone(model));
 }
 
 #[cfg(test)]

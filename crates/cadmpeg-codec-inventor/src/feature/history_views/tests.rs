@@ -171,3 +171,22 @@ fn two_sources_of_one_state_decode_it_once() {
         assert!(Rc::ptr_eq(&first, &second));
     });
 }
+
+#[test]
+fn the_cache_holds_at_most_its_limit_of_models() {
+    let model = Rc::new(StateModel::Unavailable);
+    let mut cache = HashMap::new();
+    for ordinal in 0..3 {
+        keep(&mut cache, 2, ordinal, &model);
+        assert!(cache.len() <= 2);
+    }
+    // The third request found the cache full, dropped both, and kept itself.
+    assert_eq!(cache.keys().copied().collect::<Vec<_>>(), [2]);
+    // An evicted state decodes again and gives the same answer.
+    with_views(1 << 20, |ctx, views| {
+        let first = decoded(views.after(ctx, OLDER));
+        views.decoded.borrow_mut().clear();
+        let second = decoded(views.after(ctx, OLDER));
+        assert_eq!(first.geometry.faces.len(), second.geometry.faces.len());
+    });
+}
