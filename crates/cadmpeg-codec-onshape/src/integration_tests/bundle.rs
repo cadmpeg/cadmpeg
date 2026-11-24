@@ -121,6 +121,98 @@ fn synthetic_bundles_retain_the_expected_cadir_rows_and_final_step() {
 }
 
 #[test]
+fn custom_features_name_the_missing_frozen_shape_even_with_rollback_details() {
+    let source = fixture("plate-fillet");
+    let (original, _) = read(&source).unwrap();
+    for ordinal in [1, 2] {
+        let bytes = changed(&source, |path, value| {
+            if path.ends_with("features.json") {
+                // A custom studio can use the same feature type as a built-in.
+                value["features"][ordinal]["namespace"] = json!("synthetic");
+            }
+        });
+        let (model, report) = read(&bytes).unwrap();
+        let wire = timeline(&model);
+        let feature = &wire["model"]["features"][ordinal];
+        assert_eq!(feature["definition"]["value"]["kind"], "native");
+        assert_eq!(feature["outputs"], json!([]));
+        let name = feature["name"].as_str().unwrap();
+        let suffix = format!("; subject: {name}");
+        let unsupported: Vec<_> = report
+            .losses()
+            .iter()
+            .filter(|l| l.code.as_deref() == Some("onshape/history.not-supported"))
+            .collect();
+        // The custom feature has exactly one loss. A later feature that consumed its result can
+        // add its own; nothing earlier may.
+        let later: Vec<&str> = wire["model"]["features"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .skip(ordinal + 1)
+            .filter_map(|f| f["name"].as_str())
+            .collect();
+        let losses: Vec<_> = unsupported
+            .iter()
+            .filter(|l| l.detail.ends_with(&suffix))
+            .collect();
+        assert_eq!(losses.len(), 1, "{unsupported:?}");
+        for other in unsupported.iter().filter(|l| !l.detail.ends_with(&suffix)) {
+            assert!(
+                later
+                    .iter()
+                    .any(|name| other.detail.ends_with(&format!("; subject: {name}"))),
+                "{other:?}"
+            );
+        }
+        let reason = format!(
+            "custom FeatureScript feature {name} is not supported yet: bundle format 1 \
+             lacks complete per-feature body geometry to prove a frozen step"
+        );
+        assert_eq!(
+            losses[0].detail,
+            format!("{reason}; kept the final STEP geometry{suffix}")
+        );
+        assert!(feature["definition"]["value"]["value"]["kind"]
+            .as_str()
+            .unwrap()
+            .contains(&reason));
+        assert_eq!(model.source_step, original.source_step);
+        assert_eq!(model.ir.geometry, original.ir.geometry);
+    }
+}
+
+#[test]
+fn custom_feature_stop_uses_its_id_when_the_name_is_absent() {
+    let bytes = changed(&fixture("unsupported"), |path, value| {
+        if path.ends_with("features.json") {
+            value["features"][2].as_object_mut().unwrap().remove("name");
+        }
+    });
+    let (_, report) = read(&bytes).unwrap();
+    assert!(report.losses().iter().any(|l| l
+        .detail
+        .contains("custom FeatureScript feature Custom feature")
+        && l.detail.ends_with("; subject: Custom feature")));
+}
+
+#[test]
+fn suppressed_custom_features_do_not_report_a_frozen_shape_gap() {
+    for key in ["suppressed", "parentSuppressed"] {
+        let bytes = changed(&fixture("unsupported"), |path, value| {
+            if path.ends_with("features.json") {
+                value["features"][2][key] = json!(true);
+            }
+        });
+        let (_, report) = read(&bytes).unwrap();
+        assert!(!report.losses().iter().any(|l| l
+            .code
+            .as_deref()
+            .is_some_and(|code| code.starts_with("onshape/"))));
+    }
+}
+
+#[test]
 fn built_in_plane_queries_preserve_quoted_identity() {
     for (plane, expected) in [
         ("Top", vec!["sketch", "revolve"]),
@@ -532,26 +624,52 @@ fn up_to_next(operation: &str, extra: Option<([f64; 3], [f64; 3])>) -> Vec<u8> {
 
 #[test]
 fn up_to_next_ends_on_the_first_face_every_profile_ray_meets() {
-    for bytes in [
-        up_to_next("REMOVE", None),
-        up_to_next("NEW", None),
-        up_to_next(
-            "REMOVE",
-            Some(([0.005, 0.002, 0.0005], [0.008, 0.004, 0.001])),
+    for (bytes, typed) in [
+        (up_to_next("REMOVE", None), true),
+        (up_to_next("NEW", None), false),
+        (
+            up_to_next(
+                "REMOVE",
+                Some(([0.005, 0.002, 0.0005], [0.008, 0.004, 0.001])),
+            ),
+            false,
         ),
     ] {
         let (model, report) = read(&bytes).unwrap();
-        assert_eq!(kinds(&model), ["sketch", "extrude", "native"]);
-        assert!(report.losses().iter().any(|loss| loss.code.as_deref()
-            == Some("onshape/history.not-supported")
-            && loss
-                .detail
-                .contains("exact coverage and first intersection")));
+        assert_eq!(
+            kinds(&model),
+            [
+                "sketch",
+                "extrude",
+                if typed { "extrude" } else { "native" }
+            ]
+        );
+        let unproved = report.losses().iter().any(|loss| {
+            loss.code.as_deref() == Some("onshape/history.not-supported")
+                && loss
+                    .detail
+                    .contains("exact coverage and first intersection over the complete profile")
+        });
+        if typed {
+            assert!(!unproved, "{:?}", report.losses());
+            let wire = timeline(&model);
+            let termination = &wire["model"]["features"][2]["definition"]["value"]["value"]
+                ["extent"]["side"]["termination"];
+            assert_eq!(termination["kind"], "to_face");
+            assert_eq!(termination["face"]["value"]["faces"], json!(["high2"]));
+            // The target's producer is the feature that made the body.
+            assert!(wire["model"]["features"][2]["dependencies"]
+                .as_array()
+                .unwrap()
+                .contains(&wire["model"]["features"][1]["id"]));
+        } else {
+            assert!(unproved, "{:?}", report.losses());
+        }
     }
 }
 
 #[test]
-fn up_to_next_retains_a_slanted_planar_end_for_the_writer_to_gate() {
+fn up_to_next_takes_a_slanted_planar_end_over_the_complete_profile() {
     // Raise the top of a synthetic box linearly along X, leaving its bottom on XY.
     let bytes = changed(&up_to_next("REMOVE", None), |path, value| {
         if !path.ends_with("bodydetails/2.json") {
@@ -587,13 +705,10 @@ fn up_to_next_retains_a_slanted_planar_end_for_the_writer_to_gate() {
     let (model, report) = read(&bytes).unwrap();
     assert_eq!(
         kinds(&model),
-        ["sketch", "extrude", "native"],
+        ["sketch", "extrude", "extrude"],
         "{:?}",
         report.losses()
     );
-    assert!(report.losses().iter().any(|loss| loss
-        .detail
-        .contains("exact coverage and first intersection")));
 }
 
 #[test]
