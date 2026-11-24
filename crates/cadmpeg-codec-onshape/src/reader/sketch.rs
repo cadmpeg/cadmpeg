@@ -40,6 +40,11 @@ pub(super) fn frame(
             return Err("a sketch on more than one face is not supported yet".into());
         };
         let support = face(native.as_str().ok_or("a sketch face id is not a string")?)?;
+        // Without a stored plane object the face closure returns the frame admitted from
+        // the sketch's `sketchMatrix` row, complete with its in-plane axis.
+        if feature.get("plane").is_none() && support.get("u_axis").is_some() {
+            return Ok(support);
+        }
         attachment_frame(feature, &support)
     };
     let plane = if query
