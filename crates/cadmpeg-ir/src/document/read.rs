@@ -209,7 +209,7 @@ impl Reader<'_, '_> {
         let part = Part::at(
             "cadir",
             "record",
-            u64::try_from(start).unwrap_or(u64::MAX),
+            cadmpeg_core::decode::u64_from_index(start),
             &self.bytes[start..end],
             classes.iter().copied(),
         )
@@ -687,6 +687,7 @@ impl<'r, 'a> Reader<'r, 'a> {
                 let positions: Vec<usize> = copies.iter().map(|(at, _)| *at).collect();
                 if !holds_one {
                     for (_, span) in &copies {
+                        // discarded-value: `record.repeated` charges the key.
                         let _ = self.give_up_part(
                             *span,
                             &format!("{path}.{key}"),
@@ -867,6 +868,7 @@ impl<'r, 'a> Reader<'r, 'a> {
                 continue;
             }
             for (_, span) in &copies {
+                // discarded-value: `record.repeated` charges the id.
                 let _ = self.give_up_part(
                     *span,
                     &format!("{path} {record_id}"),
