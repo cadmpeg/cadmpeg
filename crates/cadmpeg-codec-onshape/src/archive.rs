@@ -49,7 +49,7 @@ impl<'a> Bundle<'a> {
         let manifest_text = std::str::from_utf8(manifest_view.window())
             .map_err(|e| failure(format!("manifest.json: {e}")))?;
         let manifest = ctx.parse_json_value(manifest_text, "Onshape manifest")?;
-        let prefixes: Vec<String> = manifest
+        let mut prefixes: Vec<String> = manifest
             .get("elements")
             .and_then(Value::as_array)
             .filter(|elements| elements.len() <= super::reader::ROWS)
@@ -58,12 +58,20 @@ impl<'a> Bundle<'a> {
             .filter_map(|element| element.get("id").and_then(Value::as_str))
             .map(|id| format!("partstudios/{id}/"))
             .collect();
+        for root in studio_prefix("", &manifest) {
+            if !prefixes.contains(&root) {
+                prefixes.push(root);
+            }
+        }
         let mut members = BTreeMap::new();
         let mut json = BTreeMap::from([("manifest.json".to_owned(), manifest)]);
         let mut remaining = EXPANDED_BYTES;
         let mut losses = Vec::new();
         let mut seen = std::collections::BTreeSet::new();
-        for entry in snapshot.entries() {
+        // Captured manifests come first so that each one names the responses it owns.
+        let mut entries: Vec<_> = snapshot.entries().iter().collect();
+        entries.sort_by_key(|entry| !reference_manifest(&entry.name));
+        for entry in entries {
             let name = &entry.name;
             if !seen.insert(name)
                 || name.contains('\\')
@@ -144,7 +152,9 @@ impl<'a> Bundle<'a> {
                 )));
                 continue;
             }
-            if prefixes.iter().any(|prefix| schema_response(name, prefix))
+            let captured = reference_manifest(name);
+            if captured
+                || prefixes.iter().any(|prefix| schema_response(name, prefix))
                 || (name.starts_with("assemblies/")
                     && (name.ends_with("/definition.json") || name.ends_with("/features.json")))
             {
@@ -164,6 +174,10 @@ impl<'a> Bundle<'a> {
                 };
                 match parsed {
                     Ok(value) => {
+                        if captured {
+                            let folder = name.strip_suffix("manifest.json").unwrap_or_default();
+                            prefixes.extend(studio_prefix(folder, &value));
+                        }
                         json.insert(name.clone(), value);
                     }
                     Err(error) => {
@@ -207,11 +221,35 @@ impl<'a> Bundle<'a> {
             .ok_or_else(|| failure(format!("{path} is missing")))
     }
     pub(super) fn admit_microversions(&mut self, expected: &str) {
+        // A captured studio has its own pin. The nearest enclosing manifest owns each
+        // member; a referenced response is never checked against the host pin.
+        let pins: BTreeMap<String, String> = self
+            .json
+            .iter()
+            .filter_map(|(path, value)| {
+                let folder = path.strip_suffix("manifest.json")?;
+                let mid = value.get("document")?.get("microversion")?.as_str()?;
+                Some((folder.to_owned(), mid.to_owned()))
+            })
+            .collect();
         let mut omitted = Vec::new();
         for (path, value) in &self.json {
-            if path == "manifest.json" {
+            if path.strip_suffix("manifest.json").is_some() {
                 continue;
             }
+            let expected = match path.rsplit_once("partstudios/") {
+                Some(("", _)) | None => expected,
+                Some((folder, _)) => match pins.get(folder) {
+                    Some(mid) => mid.as_str(),
+                    None => {
+                        self.losses.push(OnshapeLossCode::MemberUnreadable.note(format!(
+                            "{path}: the referenced studio microversion is missing; omitted the member"
+                        )));
+                        omitted.push(path.clone());
+                        continue;
+                    }
+                },
+            };
             for key in ["sourceMicroversion", "microversionId"] {
                 if let Err(reason) = super::reader::microversion(value, key, expected) {
                     let action = if path.ends_with("/sketches.json") {
@@ -371,6 +409,47 @@ pub(super) fn manifest(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Value,
     Ok(ctx.parse_json_value(text, "Onshape manifest")?)
 }
 
+/// The member folder of the responses a manifest selects.
+fn studio_prefix(folder: &str, manifest: &Value) -> Option<String> {
+    let element = manifest
+        .get("root_element")
+        .or_else(|| manifest.pointer("/elements/0/id"))?
+        .as_str()?;
+    (!element.is_empty()
+        && element
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-'))
+    .then(|| format!("{folder}partstudios/{element}/"))
+}
+
+/// A captured referenced studio manifest at `references/<document>/<version>/<element>/`,
+/// nested at most seven levels deep.
+fn reference_manifest(name: &str) -> bool {
+    let mut remaining = name;
+    for _ in 0..crate::reader::MAX_REFERENCE_DEPTH {
+        let Some(path) = remaining.strip_prefix("references/") else {
+            return false;
+        };
+        let mut parts = path.splitn(4, '/');
+        for _ in 0..3 {
+            if !parts
+                .next()
+                .is_some_and(|id| id.len() == 24 && id.bytes().all(|b| b.is_ascii_hexdigit()))
+            {
+                return false;
+            }
+        }
+        let Some(tail) = parts.next() else {
+            return false;
+        };
+        if tail == "manifest.json" {
+            return true;
+        }
+        remaining = tail;
+    }
+    false
+}
+
 fn has_extension(name: &str, suffix: &str) -> bool {
     name.rsplit_once('.')
         .is_some_and(|(_, extension)| extension == suffix)
@@ -399,3 +478,6 @@ fn schema_response(name: &str, prefix: &str) -> bool {
                 && ordinal.bytes().all(|b| b.is_ascii_digit())
         })
 }
+
+#[cfg(test)]
+mod tests;

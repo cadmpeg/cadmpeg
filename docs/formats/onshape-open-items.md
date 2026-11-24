@@ -145,6 +145,18 @@ not charged. A switch set to `false` silences the limit or offset parameters
 whose names carry its own qualifying words, and a switch with more qualifying
 words than a parameter silences that parameter. Source responses remain assets.
 
+## ONSHAPE-012 — Derived insert placement and configuration
+
+Question: Which stored fields place or configure a derived Part Studio insert, and how do they move the inserted bodies?
+
+Known: A derived feature that has only the `partStudio` reference, an empty `configuration` and an optional whole-studio `parts` query inserts bodies at their source placement. The decoder reads it as stored geometry with a design reference.
+
+Need: Derived features that store a transform, mate connector, configuration value or partial part selection, with the rollback states before and after each feature and the captured source studio.
+
+Conflict: A stored transform or configuration changes the inserted bodies. Without it the decoder cannot state their final placement.
+
+Note: A derived feature with any other parameter or reference member remains Native with `history.not-supported`.
+
 ## ONSHAPE-030 — Shell wall sense with opposite direction
 
 Question: Does a stored `oppositeDirection` of `true` on a `shell` feature grow the wall outward from the original boundary, and which side of an opening face carries the wall?

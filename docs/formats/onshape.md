@@ -23,10 +23,13 @@ microversion across all responses that declare a microversion.
 `document.microversion` is a nonblank string. `elements` is an array of
 element records. Each record has a `type` and a nonblank `id`.
 `PARTSTUDIO` identifies a Part Studio. `ASSEMBLY` identifies an assembly.
-A single-Part-Studio bundle selects its sole element. For assembly selection,
+A Part Studio bundle selects its sole element. A bundle whose elements are all
+`PARTSTUDIO` selects the element named by the string `root_element`; a repeated
+element ID in such a bundle is invalid. For assembly selection,
 `root_element` accepts an element-ID string or an object with a string `id`.
 Omission and `null` select the first `ASSEMBLY` element in source order.
-An element ID declared more than once selects its first declaration.
+In an assembly bundle, an element ID declared more than once selects its first
+declaration.
 The ID consists of ASCII letters, digits, underscores and hyphens. A Part
 Studio ID forms the member prefix `partstudios/<id>`. An assembly ID forms
 `assemblies/<id>`. `external` entries store `documentId`, `elementId`, and
@@ -48,6 +51,11 @@ The STEP member can be absent for a nonempty feature list composed of
 sketches, variable assignments and suppressed features. Other feature lists
 require the STEP member. Configuration and variable response members are
 optional. Additional members carry opaque data.
+
+The optional manifest field `root_element` is a nonblank element ID. It selects
+the Part Studio of a manifest with several `PARTSTUDIO` elements. A manifest
+with several elements and no `root_element` is not a valid Part Studio bundle.
+Element IDs are unique within a manifest.
 
 The manifest can carry document identity, names, fetch time, API version,
 fetcher identity, request counts, member path labels and configuration
@@ -84,6 +92,42 @@ the rollback response for their consuming feature. A deterministic ID must
 resolve uniquely in that response. Tangent chains follow the response's
 vertex connectivity and edge tangents. A next-face termination requires a
 common first intersection across the complete selected profile.
+
+### 3.1 Referenced Part Studios
+
+A `derived` or `importDerived` feature inserts the bodies of another Part
+Studio. Its reference is a structured value with `documentId`, `versionId`
+and `elementId`, each 24 hexadecimal digits. The members `btType` and an
+empty `configuration` can accompany them. Any other member names a
+configuration or placement and is not part of the unchanged-placement
+insert. All reference values in one feature name one studio.
+
+The captured studio is a nested bundle in the folder
+`references/<documentId>/<versionId>/<elementId>/`. The folder holds a
+`manifest.json` and the `partstudios/<id>` members of section 2. Its manifest
+states the same `documentId` as `document.id`, the same `versionId` as
+`document.wvid`, `workspace_or_version` equal to `v`, and `root_element`
+equal to `elementId`. A captured studio can reference further studios in its
+own `references` folder, to a depth of seven.
+
+A captured manifest has its own `document.microversion`. Every response
+under that folder declares that microversion, not the host microversion.
+
+The bodies of a derived feature are the solid bodies present in the rollback
+state after the feature and absent from the state before it. Bodies of the
+state before the feature are unchanged. These bodies match the bodies of the
+captured studio one to one by name. The name of a captured final body is the
+STEP product name or, for a sole unnamed solid, the name of the single solid
+in the final rollback state of the captured studio. A `parts` parameter lists
+deterministic body IDs. It selects the whole captured studio when it lists
+every solid of the final rollback state.
+
+A `boolean` feature in a studio with a derived feature has `targets` and
+`tools` query lists of deterministic body IDs, an `operationType` of `UNION`,
+`ADD`, `SUBTRACTION`, `REMOVE`, `INTERSECTION` or `INTERSECT`, and a Boolean
+`keepTools`. It has one target body and one or more disjoint tool bodies,
+each present in the rollback state before the feature. Each body resolves
+to the single feature that made it in the rollback history.
 
 ## 4. Sketches, quantities and selections
 
