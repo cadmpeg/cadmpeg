@@ -792,6 +792,7 @@ fn finding(check: Check, message: impl Into<String>, entity: Option<String>) -> 
     Finding {
         related: Vec::new(),
         check,
+        rule: cadmpeg_ir::rule_name!("freecad/lib.native-records"),
         severity: FindingSeverity::Error,
         message: message.into(),
         entity,

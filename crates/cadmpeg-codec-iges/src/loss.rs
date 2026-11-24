@@ -140,7 +140,8 @@ loss_codes! {
     WriterMinimumResolutionAdjusted => "writer.minimum-resolution-adjusted",
     /// An unowned dependent edge was withheld.
     WriterSupportEdgeNotRepresented => "writer.support-edge-not-represented",
-    /// Free-geometry points or vertices have no topology output.
+    /// Free-geometry points or vertices have no topology output, or an
+    /// analytic surface on no face has no bounded output.
     WriterFreeGeometryOmitted => "writer.free-geometry-omitted",
     /// Free edges or curves that duplicate a written carrier were not written.
     WriterDuplicateCarrierOmitted => "writer.duplicate-carrier-omitted",

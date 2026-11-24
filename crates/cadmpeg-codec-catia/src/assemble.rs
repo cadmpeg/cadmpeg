@@ -76,7 +76,7 @@ pub(crate) fn annotate(
 ///
 /// Matches [`DecodeResult::new`](cadmpeg_ir::codec::DecodeResult::new), which
 /// sorts arenas by entity id before a document leaves the codec. Admission uses
-/// [`cadmpeg_ir::CATIA_ADMISSION_CHECKS`], not full final-document validation.
+/// [`cadmpeg_ir::CATIA_ADMISSION`], not full final-document validation.
 pub(crate) fn neutral_model_is_admissible(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
@@ -87,7 +87,7 @@ pub(crate) fn neutral_model_is_admissible(
         ctx,
         ir,
         pending_unknowns.iter().map(|record| record.id().as_str()),
-        cadmpeg_ir::CATIA_ADMISSION_CHECKS,
+        cadmpeg_ir::CATIA_ADMISSION,
         Vec::new(),
     )?
     .is_ok())
