@@ -17,7 +17,7 @@ use crate::design::names::{
 use crate::design::refs::EntityRef;
 use crate::design::scope::DesignScope;
 use crate::design::selection::{Anchor, PickTarget, Picked, Witness};
-use crate::document::CadIr;
+use crate::document::{CadIr, Topology};
 use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 
@@ -397,6 +397,43 @@ fn construction_inputs_are_checked_against_their_kind_and_relation() {
     let ir = timeline(features);
     assert_finding(&ir, Check::Design, Severity::Error, "literal false");
     assert_finding(&ir, Check::Design, Severity::Error, "solution is 0");
+}
+
+#[test]
+fn a_built_centroid_reference_is_a_warning() {
+    let point = |inputs: Vec<Value>| {
+        json!({"kind": "datum", "value": {
+            "element": {"kind": "points", "value": [construction(inputs)]},
+            "native_options": {},
+            "source_settings": {}
+        }})
+    };
+    let built = json!({
+        "role": {"subject": "whole", "relation": {"kind": "centroid"}},
+        "reference": {"kind": "built", "value": {
+            "kind": "point",
+            "inputs": [input(
+                "coincident",
+                Some(named(input_anchor(), vec![principal("origin")])),
+                None,
+            )],
+            "after": [],
+            "resolved_in": {}
+        }}
+    });
+    let mut features = planes();
+    features[1] = feature("b", point(vec![built]));
+    let ir = timeline(features);
+    let message = "a nested construction is the reference of a Centroid input";
+    assert_finding(&ir, Check::Design, Severity::Warning, message);
+    let findings = findings(&ir);
+    assert!(
+        !findings
+            .iter()
+            .any(|finding| finding.severity == Severity::Error
+                && finding.message.contains("nested construction")),
+        "{findings:#?}"
+    );
 }
 
 #[test]
@@ -784,15 +821,7 @@ fn a_witness_body_is_closed_over_its_own_references() {
     let mut body = ir.geometry.clone();
     body.shells.clear();
     let mut pick = current_pick(PickTarget::Native { within: None });
-    pick.witness = Some(Witness {
-        point: None,
-        direction: None,
-        endpoints: None,
-        frame: None,
-        curves: Vec::new(),
-        surface: None,
-        body: Some(Box::new(body)),
-    });
+    pick.witness = Some(witness_body(body));
     publish(&mut ir, pick);
     let findings = findings(&ir);
     assert!(
@@ -801,6 +830,57 @@ fn a_witness_body_is_closed_over_its_own_references() {
             .any(|finding| finding.message.starts_with("witness body:")
                 && finding.severity == Severity::Error),
         "{findings:#?}"
+    );
+}
+
+fn witness_body(body: Topology) -> Witness {
+    Witness {
+        point: None,
+        direction: None,
+        endpoints: None,
+        frame: None,
+        curves: Vec::new(),
+        surface: None,
+        body: Some(Box::new(body)),
+    }
+}
+
+#[test]
+fn a_witness_body_meets_the_rules_of_one_topology() {
+    let witness_findings = |body: Topology| {
+        let mut ir = named_cube();
+        let mut pick = current_pick(PickTarget::Native { within: None });
+        pick.witness = Some(witness_body(body));
+        publish(&mut ir, pick);
+        findings(&ir)
+            .into_iter()
+            .filter(|finding| finding.message.starts_with("witness body:"))
+            .collect::<Vec<_>>()
+    };
+    let ir = named_cube();
+    let found = witness_findings(ir.geometry.clone());
+    assert!(found.is_empty(), "{found:#?}");
+
+    let mut body = ir.geometry.clone();
+    let first = body.coedges[0].clone();
+    body.coedges[0].radial_next = body
+        .coedges
+        .iter()
+        .find(|coedge| coedge.edge != first.edge)
+        .unwrap()
+        .id
+        .clone();
+    let found = witness_findings(body);
+    assert!(
+        found
+            .iter()
+            .any(|finding| finding.severity == Severity::Error
+                && finding.message
+                    == format!(
+                        "witness body: record {}: radial ring crosses edges",
+                        first.id.as_str()
+                    )),
+        "{found:#?}"
     );
 }
 

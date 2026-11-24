@@ -917,3 +917,52 @@ fn a_triangle_group_states_its_face_only_when_it_has_one() {
     let back: TessellationTriangleGroup = serde_json::from_value(value).unwrap();
     assert_eq!(back.face, Some(face));
 }
+
+#[test]
+fn a_tessellation_states_what_it_is_under_of() {
+    let unresolved = serde_json::to_value(mesh()).unwrap();
+    assert_eq!(unresolved["of"], serde_json::json!({"kind": "unresolved"}));
+    assert!(unresolved.get("body").is_none() && unresolved.get("faces").is_none());
+
+    let body = mesh().with_of(super::Meshed::Body {
+        body: crate::ids::BodyId::mint("test:mesh:body#0").unwrap(),
+        faces: vec![crate::ids::FaceId::mint("test:mesh:face#0").unwrap()],
+    });
+    let wire = serde_json::to_value(&body).unwrap();
+    assert_eq!(
+        wire["of"],
+        serde_json::json!({"kind": "body", "body": "test:mesh:body#0", "faces": ["test:mesh:face#0"]})
+    );
+    assert_eq!(serde_json::from_value::<Tessellation>(wire).unwrap(), body);
+
+    let definition = mesh().with_of(super::Meshed::Definition {
+        definition: crate::ids::ProductDefinitionId::mint("test:mesh:product#0").unwrap(),
+        name: cadmpeg_core::text::NonBlankString::new("Mesh".to_owned()),
+        color: crate::topology::Color::new(1.0, 0.0, 0.0, 1.0),
+        visible: Some(false),
+    });
+    let wire = serde_json::to_value(&definition).unwrap();
+    assert_eq!(
+        wire["of"],
+        serde_json::json!({
+            "kind": "definition",
+            "definition": "test:mesh:product#0",
+            "name": "Mesh",
+            "color": {"r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0},
+            "visible": false
+        })
+    );
+    assert_eq!(
+        serde_json::from_value::<Tessellation>(wire).unwrap(),
+        definition
+    );
+
+    rejects_wire_field("of", serde_json::json!({"kind": "display"}));
+    rejects_wire_field(
+        "of",
+        serde_json::json!({"kind": "definition", "definition": "test:mesh:product#0", "name": null}),
+    );
+    let mut legacy = serde_json::to_value(mesh()).unwrap();
+    legacy["body"] = serde_json::json!("test:mesh:body#0");
+    assert!(serde_json::from_value::<Tessellation>(legacy).is_err());
+}

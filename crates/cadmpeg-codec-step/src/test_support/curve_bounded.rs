@@ -205,12 +205,11 @@ pub(crate) fn implicit_outer_sheet(support: SolvedSurfaceGeometry, sense: Sense)
         id(ShellId::mint, "shell", "sheet"),
         id(RegionId::mint, "region", "sheet"),
     ));
-    ir.geometry.regions.push(Region {
-        id: id(RegionId::mint, "region", "sheet"),
-        body: id(BodyId::mint, "body", "sheet"),
-        shells: vec![id(ShellId::mint, "shell", "sheet")],
-        native_ref: None,
-    });
+    ir.geometry.regions.push(Region::new(
+        id(RegionId::mint, "region", "sheet"),
+        id(BodyId::mint, "body", "sheet"),
+        vec![id(ShellId::mint, "shell", "sheet")],
+    ));
     ir.geometry.bodies.push(Body {
         id: id(BodyId::mint, "body", "sheet"),
         kind: BodyKind::Sheet,
@@ -219,6 +218,7 @@ pub(crate) fn implicit_outer_sheet(support: SolvedSurfaceGeometry, sense: Sense)
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     ir.finalize();
     ir

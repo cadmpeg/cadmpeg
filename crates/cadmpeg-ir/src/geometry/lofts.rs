@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::num::NonZeroI64;
 
 /// One scalar row in native loft subdata.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 #[serde(bound(deserialize = "R: Deserialize<'de>"))]
@@ -32,7 +32,7 @@ pub struct LoftSubdataRow<R = f64> {
 }
 
 /// Native loft constraint table with structurally consistent dimensions.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
@@ -80,6 +80,17 @@ pub(super) struct LoftSubdataTableWire<R = f64> {
 pub(super) struct LoftSubdataTableWriteWire<'a, R> {
     pub(super) type_code: i64,
     pub(super) rows: &'a [LoftSubdataRow<R>],
+}
+
+impl<R: crate::structural_order::StructuralOrd> crate::structural_order::StructuralOrd
+    for LoftSubdataTable<R>
+{
+    /// The order of the written form, `type_code` and then `rows`.
+    fn structural_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.type_code
+            .structural_cmp(&other.type_code)
+            .then_with(|| self.rows.structural_cmp(&other.rows))
+    }
 }
 
 impl<R: Serialize> Serialize for LoftSubdataTable<R> {
@@ -184,7 +195,7 @@ impl<R> LoftSubdata<R> {
 /// carry is absent from the type, so the revision-gated `support_bounds` and
 /// the type-zero `secondary_pcurve` are unknown keys here rather than values a
 /// reader has to refuse.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(rename = "LoftProfileData"))]
 #[serde(deny_unknown_fields)]
@@ -219,7 +230,7 @@ pub struct ClassicLoftProfileData<R = f64, V = Vector3> {
 }
 
 /// Type-selected fields of one loft profile member.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[serde(bound(deserialize = "R: Deserialize<'de>, V: Deserialize<'de>"))]
@@ -344,7 +355,7 @@ impl<R, V> LoftMemberForm<R, V> {
 }
 
 /// One referenced curve together with its optional native parameter bounds.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 #[serde(bound(deserialize = "R: Deserialize<'de>"))]
@@ -363,7 +374,7 @@ pub struct LoftPathCurve<R = f64> {
 }
 
 /// One curve member of a loft profile.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(
@@ -378,7 +389,7 @@ pub struct LoftProfileMember<R = f64, V = Vector3> {
 }
 
 /// Native path data attached to one loft section entry.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 #[serde(bound(deserialize = "R: Deserialize<'de>"))]
@@ -398,7 +409,7 @@ pub struct LoftPath<R = f64> {
 }
 
 /// One parameterized entry in a native loft section.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(
@@ -415,7 +426,7 @@ pub struct LoftSectionEntry<R = f64, V = Vector3> {
 }
 
 /// Revision-gated `loft_spl_sur` form fields.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 #[serde(bound(deserialize = "R: Deserialize<'de>"))]
@@ -436,7 +447,7 @@ pub struct LoftRevisionForm<R = f64> {
 }
 
 /// Ordered native loft section.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(
@@ -449,7 +460,7 @@ pub struct LoftSection<R = f64, V = Vector3> {
 }
 
 /// Token retained from the variable bridge preceding a loft solved cache.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -467,7 +478,7 @@ pub enum LoftBridgeToken<R = f64> {
 }
 
 /// One member of a compound-loft scale block.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(
@@ -484,7 +495,7 @@ pub struct CompoundLoftScaleMember<R = f64, V = Vector3> {
 }
 
 /// Complete `_readScaleClLoft` payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(
@@ -503,7 +514,7 @@ pub struct CompoundLoftScale<R = f64, V = Vector3> {
 }
 
 /// Direction carrier in the zero-kind compound-loft tail.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CompoundLoftDirection<V = Vector3> {
@@ -533,7 +544,7 @@ impl<V> CompoundLoftDirection<V> {
 }
 
 /// Structurally selected tail of `cl_loft_spl_sur`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -592,7 +603,7 @@ pub enum CompoundLoftTail<R = f64, V = Vector3> {
 }
 
 /// A bounded list of compound-loft scales.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[serde(
     try_from = "Vec<CompoundLoftScale<R, V>>",
     bound(deserialize = "R: Deserialize<'de>, V: Deserialize<'de>")
@@ -670,7 +681,7 @@ impl<const CAPACITY: usize, R, V> TryFrom<Vec<CompoundLoftScale<R, V>>>
 }
 
 /// Complete native compound-loft construction graph.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(
@@ -687,7 +698,7 @@ pub struct CompoundLoftConstruction<R = f64, V = Vector3> {
 }
 
 /// Initial solved-shape branch of a scaled compound loft.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -704,7 +715,7 @@ pub enum ScaledCompoundLoftShape<R = f64> {
 }
 
 /// Structurally selected middle branch of a scaled compound loft.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -756,7 +767,7 @@ pub enum ScaledCompoundLoftBranch<R = f64, V = Vector3> {
 }
 
 /// Complete native scaled compound-loft construction graph.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(

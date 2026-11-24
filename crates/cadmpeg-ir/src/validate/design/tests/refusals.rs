@@ -442,6 +442,41 @@ fn a_linear_instance_index_lies_in_its_run() {
     );
 }
 
+/// §6.5 `Composite`: each stage applies to every instance the earlier stages
+/// produced, so a `Mirror` or `Scale` stage's coordinate 0 is the instance it
+/// starts from, and a `Scale` stage after the first has its slice, 0 to
+/// count − 1, as its coordinate.
+#[test]
+fn a_composite_mirror_or_scale_stage_counts_its_coordinate_from_zero() {
+    let linear = json!({"kind": "linear", "value": {"first": {
+        "direction": {"inputs": [], "after": [], "resolved_in": {}, "resolved": {"x": 1.0, "y": 0.0, "z": 0.0}},
+        "run": {
+            "spacing": {"kind": "pitch", "value": {"count": {"kind": "literal", "value": 2}, "pitch": literal(1.0)}},
+            "increments": []
+        }
+    }}});
+    let scale = json!({"kind": "scale", "value": {
+        "factor": literal(2.0),
+        "count": {"kind": "literal", "value": 2},
+        "center": {"kind": "centroid"}
+    }});
+    let mirror = json!({"kind": "mirror", "value": {
+        "plane": {"inputs": [], "after": [], "resolved_in": {}}
+    }});
+    let refused = "names no implicit copy";
+    for stage in [scale, mirror] {
+        let composite = json!({"kind": "composite", "value": [linear.clone(), stage]});
+        assert_no_finding(&patterned_in(&composite, &[1, 0]), refused);
+        assert_no_finding(&patterned_in(&composite, &[0, 1]), refused);
+        assert_finding(
+            &patterned_in(&composite, &[1, 2]),
+            Check::Design,
+            Severity::Error,
+            refused,
+        );
+    }
+}
+
 /// Interim, gap 20261119-ERR1-C-H6-2: an unread side of a `Path` run may be
 /// `Against`, which reaches the seed's step count, so its upper bound is the
 /// greater of `last` and a literal seed, and there is none for a parameter

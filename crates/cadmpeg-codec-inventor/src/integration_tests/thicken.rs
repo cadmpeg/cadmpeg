@@ -107,7 +107,9 @@ fn thicken_selection_validation_checks_both_references() {
     );
     for field in ["faces", "parameter"] {
         let mut changed = ir.clone();
-        let namespace = changed.native.namespace_mut("inventor");
+        let namespace = changed
+            .native
+            .namespace_mut(cadmpeg_ir::codec_id!("inventor"));
         let mut properties: Vec<serde_json::Value> = namespace
             .arena_as("pm_dc_feature_properties")
             .expect("native properties");
@@ -163,7 +165,9 @@ fn thicken_validation_rejects_control_families_on_the_wrong_classes() {
         .expect("synthetic validation context");
     for family in ["thicken_control13", "thicken_control14"] {
         let mut changed = ir.clone();
-        let namespace = changed.native.namespace_mut("inventor");
+        let namespace = changed
+            .native
+            .namespace_mut(cadmpeg_ir::codec_id!("inventor"));
         let mut properties: Vec<serde_json::Value> = namespace
             .arena_as("pm_dc_feature_properties")
             .expect("native properties");
@@ -231,7 +235,9 @@ fn offset_bytes_use_the_selection_dimension_and_validate_signed_motion() {
         "{findings:?}"
     );
     let mut changed = ir.clone();
-    let namespace = changed.native.namespace_mut("inventor");
+    let namespace = changed
+        .native
+        .namespace_mut(cadmpeg_ir::codec_id!("inventor"));
     let mut sources: Vec<serde_json::Value> =
         namespace.arena_as("pm_dc_features").expect("native source");
     sources[0]["save_version_major"] = 18.into();

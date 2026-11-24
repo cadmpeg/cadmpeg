@@ -225,13 +225,13 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
-    geometry.regions.push(Region {
-        id: RegionId::mint("test:model:entity#blind-region").expect("identity grammar"),
-        body: body.clone(),
-        shells: vec![ShellId::mint("test:model:entity#blind-shell").expect("identity grammar")],
-        native_ref: None,
-    });
+    geometry.regions.push(Region::new(
+        RegionId::mint("test:model:entity#blind-region").expect("identity grammar"),
+        body.clone(),
+        vec![ShellId::mint("test:model:entity#blind-shell").expect("identity grammar")],
+    ));
     geometry.shells.push(Shell::new(
         ShellId::mint("test:model:entity#blind-shell").expect("identity grammar"),
         RegionId::mint("test:model:entity#blind-region").expect("identity grammar"),
@@ -590,13 +590,13 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
-        geometry.regions.push(Region {
-            id: RegionId::mint("test:model:entity#region").expect("identity grammar"),
-            body: body.clone(),
-            shells: vec![ShellId::mint("test:model:entity#shell").expect("identity grammar")],
-            native_ref: None,
-        });
+        geometry.regions.push(Region::new(
+            RegionId::mint("test:model:entity#region").expect("identity grammar"),
+            body.clone(),
+            vec![ShellId::mint("test:model:entity#shell").expect("identity grammar")],
+        ));
         geometry.shells.push(Shell::new(
             ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             RegionId::mint("test:model:entity#region").expect("identity grammar"),
@@ -1171,7 +1171,7 @@ fn solid_body_index_matches_the_first_owner_scan_over_many_bodies() {
             let mut region = cube.geometry.regions[0].clone();
             region.id = region_id.clone();
             region.body = body_id.clone();
-            region.shells = vec![shell_id.clone()];
+            region.set_shells(vec![shell_id.clone()]);
             ir.geometry.regions.push(region);
         }
         ir.geometry
@@ -1195,23 +1195,26 @@ fn solid_body_index_matches_the_first_owner_scan_over_many_bodies() {
     }
     let scan = |body_id: &BodyId, connected_solid: bool| {
         let body = ir.geometry.bodies.iter().find(|body| body.id == *body_id)?;
-        let regions = ir.geometry.body_regions(&body.id).collect::<Vec<_>>();
+        let regions = ir
+            .geometry
+            .stated_body_regions(&body.id)
+            .collect::<Vec<_>>();
         if connected_solid && (body.kind != BodyKind::Solid || regions.len() != 1) {
             return None;
         }
         let mut faces = Vec::new();
         for region in regions {
-            if connected_solid && region.shells.len() != 1 {
+            if connected_solid && region.stated_shells().count() != 1 {
                 return None;
             }
-            for shell_id in &region.shells {
+            for shell_id in &region.stated_shells().cloned().collect::<Vec<_>>() {
                 let shell = ir
                     .geometry
                     .shells
                     .iter()
                     .find(|shell| shell.id == *shell_id && shell.region == region.id)?;
                 let mut seen = std::collections::HashSet::new();
-                for face in ir.geometry.shell_faces(&shell.id) {
+                for face in ir.geometry.stated_shell_faces(&shell.id) {
                     if seen.insert(&face.id) {
                         faces.push((face.id.clone(), face.surface.clone()));
                     }

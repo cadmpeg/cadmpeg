@@ -164,7 +164,7 @@ mod tests {
             let mut document = cadmpeg_ir::CadIr::empty();
             document
                 .native
-                .namespace_mut("f3d")
+                .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
                 .set_arena(&ctx, "namespace_probe", &[typed])
                 .unwrap();
             let document: cadmpeg_ir::CadIr =

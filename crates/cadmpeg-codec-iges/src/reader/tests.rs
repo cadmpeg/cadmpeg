@@ -318,7 +318,7 @@ fn decode_enforces_each_iges_session_resource_dimension() {
 }
 
 #[test]
-fn semantic_decode_barrier_rejects_invalid_cadir() {
+fn an_invalid_projection_keeps_the_document_and_names_each_finding() {
     let mut ir = CadIr::empty();
     ir.geometry.vertices.push(Vertex {
         id: VertexId::mint("iges:model:vertex#invalid").expect("identity grammar"),
@@ -327,31 +327,51 @@ fn semantic_decode_barrier_rejects_invalid_cadir() {
         native_ref: None,
     });
 
-    let error = crate::test_support::with_service_context(&[], |ctx| {
-        crate::reader::reject_invalid_semantic_ir(ctx, &ir)
+    let losses = crate::test_support::with_service_context(&[], |ctx| {
+        crate::reader::invalid_semantic_ir(ctx, &ir)
     })
-    .unwrap_err();
+    .expect("validation runs");
 
-    assert!(error.to_string().contains("referential_integrity"));
-    assert!(error.to_string().contains("iges:model:vertex#invalid"));
-    assert!(error.to_string().contains("iges:model:point#missing"));
+    let errors = cadmpeg_ir::validate_neutral(&ir, Vec::new())
+        .expect("validation runs")
+        .error_count();
+    assert_eq!(
+        losses.len(),
+        errors,
+        "one loss per Error finding: {losses:?}"
+    );
+    assert!(losses
+        .iter()
+        .all(|loss| loss.code == IgesLossCode::ProjectionInvalid.kind()));
+    assert!(
+        losses.iter().any(|loss| {
+            loss.message.contains("referential_integrity")
+                && loss.message.contains("iges:model:vertex#invalid")
+                && loss.message.contains("iges:model:point#missing")
+        }),
+        "{losses:?}"
+    );
 }
 
-/// Phase 5 freeze: shared builders must match the IGES rejection gate.
+/// Phase 5 freeze: shared builders against the IGES projection check.
 #[test]
 fn phase5_freeze_shared_admissibility_fixtures() {
     let accepted = cadmpeg_test_support::admissibility::accepted_empty();
     assert!(crate::test_support::with_service_context(&[], |ctx| {
-        crate::reader::reject_invalid_semantic_ir(ctx, &accepted)
+        crate::reader::invalid_semantic_ir(ctx, &accepted)
     })
-    .is_ok());
+    .expect("validation runs")
+    .is_empty());
     let rejected = cadmpeg_test_support::admissibility::rejected_missing_point("iges:model")
         .expect("fixture identities are valid");
-    let error = crate::test_support::with_service_context(&[], |ctx| {
-        crate::reader::reject_invalid_semantic_ir(ctx, &rejected)
+    let losses = crate::test_support::with_service_context(&[], |ctx| {
+        crate::reader::invalid_semantic_ir(ctx, &rejected)
     })
-    .unwrap_err();
-    assert!(error.to_string().contains("referential_integrity"));
+    .expect("validation runs");
+    assert!(!losses.is_empty());
+    assert!(losses
+        .iter()
+        .all(|loss| loss.code == IgesLossCode::ProjectionInvalid.kind()));
 }
 
 fn tagged_loss(tag: &str) -> LossNote {

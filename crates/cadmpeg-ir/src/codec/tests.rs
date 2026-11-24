@@ -787,3 +787,49 @@ fn the_sealed_wrapper_states_one_record_for_equal_copies_of_an_id_and_charges_no
         .iter()
         .any(|loss| loss.code == super::loss::DecodeLossCode::IdRepeated.note("").code));
 }
+
+#[test]
+fn the_sealed_wrapper_records_the_digest_of_the_document_it_returns() {
+    let result = RepeatedIdentityCodec { differ: false }
+        .decode(&mut Cursor::new(Vec::new()), &DecodeOptions::default())
+        .expect("the unit cube decodes");
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    assert_eq!(
+        result.source_fidelity().content_digest,
+        crate::hash::content_digest(&ctx, result.ir()).unwrap()
+    );
+    assert!(!result.source_fidelity().edited(result.ir()).unwrap());
+
+    let (mut ir, _, fidelity) = result.into_parts();
+    let mut scope = ContentScope::full();
+    scope.process = false;
+    ir.set_scope(scope).unwrap();
+    assert!(
+        fidelity.edited(&ir).unwrap(),
+        "a change of scope alone is an edit"
+    );
+}
+
+#[test]
+fn a_document_without_canonical_json_keeps_no_content_digest_and_reads_as_edited() {
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_recursion_depth = 1;
+    let result = RepeatedIdentityCodec { differ: false }
+        .decode(&mut Cursor::new(Vec::new()), &options)
+        .expect("a digest the depth limit refuses does not refuse the decode");
+    assert_eq!(
+        result.source_fidelity().content_digest,
+        crate::hash::digest::Sha256Digest::digest(&[])
+    );
+    assert!(result.source_fidelity().edited(result.ir()).unwrap());
+    let unavailable = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.to_string() == "decode/content-digest.unavailable")
+        .collect::<Vec<_>>();
+    let [loss] = unavailable.as_slice() else {
+        panic!("one loss for the missing digest: {unavailable:?}");
+    };
+    assert_eq!(loss.severity, crate::report::Severity::Warning);
+}

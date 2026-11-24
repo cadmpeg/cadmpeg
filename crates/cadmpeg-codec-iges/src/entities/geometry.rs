@@ -1393,12 +1393,6 @@ pub(super) fn source_object(
     entry: &DirectoryEntry,
 ) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
     let object_id = format!("D{}", entry.sequence);
-    let name = std::str::from_utf8(&entry.label)
-        .ok()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned);
-    let layer = entry.level.map(|level| level.to_string());
     Ok(SourceObjectAssociation {
         geometry_role: Some(if entry.status.is_physically_dependent() {
             cadmpeg_ir::SourceGeometryRole::Support
@@ -1409,10 +1403,6 @@ pub(super) fn source_object(
         object_id: cadmpeg_core::text::NonBlankString::new(object_id).ok_or_else(|| {
             cadmpeg_core::CodecError::malformed("source object_id must not be empty")
         })?,
-        name,
-        color: None,
-        visible: Some(entry.status.is_visible()),
-        layer,
         instance_path: Vec::new(),
     })
 }
@@ -2625,16 +2615,14 @@ pub(crate) fn project_geometry(
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
         let region_shells = vec![shell.clone()];
 
         ctx.charge_entities(1, "iges_geometry_wire_topology")?;
-        ir.geometry.regions.push(Region {
-            id: region.clone(),
-            body,
-            shells: region_shells,
-            native_ref: None,
-        });
+        ir.geometry
+            .regions
+            .push(Region::new(region.clone(), body, region_shells));
 
         ctx.charge_entities(1, "iges_geometry_wire_topology")?;
         if wire_edges.is_empty() && free_vertices.is_empty() {
