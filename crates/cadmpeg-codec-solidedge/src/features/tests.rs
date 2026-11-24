@@ -457,3 +457,38 @@ fn the_timeline_states_the_readable_features_around_an_unreadable_one() {
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code.local_code(), "feature.storage-unread");
 }
+
+#[test]
+fn a_folder_crossing_an_earlier_folder_is_not_stated() {
+    let part = |object, name: &str| Listed {
+        object,
+        kind: Kind::Function(Some(name.into())),
+        suppressed: Some(false),
+    };
+    let folder = |object, members: &[u32]| Listed {
+        object,
+        kind: Kind::Folder(Some(members.to_vec())),
+        suppressed: None,
+    };
+    let listed = [
+        folder(20, &[10, 11]),
+        part(10, "JMProtrusionFunction"),
+        folder(21, &[11, 12]),
+        part(11, "JMHoleFunction"),
+        part(12, "JMRoundFunction"),
+    ];
+    let mut losses = Vec::new();
+    let timeline = super::timeline(&listed, &mut losses).unwrap();
+    assert_eq!(timeline.features.len(), 3);
+    assert_eq!(
+        timeline
+            .folders
+            .iter()
+            .map(|folder| (folder.first, folder.last))
+            .collect::<Vec<_>>(),
+        vec![(0, 1)]
+    );
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "feature.folder-unread"));
+}

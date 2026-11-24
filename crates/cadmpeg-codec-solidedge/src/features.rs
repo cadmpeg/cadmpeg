@@ -447,6 +447,13 @@ fn timeline(listed: &[Listed], losses: &mut Vec<LossNote>) -> Option<Timeline> {
             .as_deref()
             .and_then(|members| folder_run(members, &index))
         {
+            Some(folder) if folders.iter().any(|stated| crosses(stated, &folder)) => {
+                losses.push(SolidEdgeLossCode::FeatureFolderUnread.note(format!(
+                    "folder object {:#x} overlaps an earlier folder without nesting; it is not \
+                     stated",
+                    entry.object
+                )));
+            }
             Some(folder) => folders.push(folder),
             None => losses.push(SolidEdgeLossCode::FeatureFolderUnread.note(format!(
                 "folder object {:#x} does not list a run of consecutive features; it is not stated",
@@ -463,6 +470,14 @@ fn timeline(listed: &[Listed], losses: &mut Vec<LossNote>) -> Option<Timeline> {
         )));
     }
     Some(Timeline { features, folders })
+}
+
+/// Whether two folder runs share a feature and neither holds the other.
+fn crosses(first: &Folder, second: &Folder) -> bool {
+    let overlap = first.first <= second.last && second.first <= first.last;
+    let first_holds = first.first <= second.first && second.last <= first.last;
+    let second_holds = second.first <= first.first && first.last <= second.last;
+    overlap && !first_holds && !second_holds
 }
 
 /// The rollback position that the navigator's last-feature identifier states
