@@ -96,6 +96,16 @@ Loop closure follows stored curve endpoints and parameter intervals. Analytic
 intersection and containment of closed boundaries establish hole nesting.
 Directed carrier turns establish loop sense.
 
+A `BTMIndividualSketchRegionQuery-140` whose `queryString` is
+`query = qSketchRegion(id + "<featureId>", <filterInnerLoops>);` selects
+the regions of that sketch named by the query string; its
+`deterministicIds` do not restrict that selection. With `filterInnerLoops`
+equal to `false` the selection is every region of the sketch. With `true`
+it excludes each region fully contained in another region; a region whose
+border has a vertex or edge on the containing region's boundary is not
+contained. A selected region retains the loops directly inside it as hole
+boundaries.
+
 A sketch's optional `plane` object stores its attachment frame. `origin` uses
 metres; `normal` and `x` store its normal and x axis. The axes are orthogonal.
 A referenced planar face and the stored attachment frame are coplanar. The

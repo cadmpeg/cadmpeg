@@ -187,6 +187,7 @@ pub(super) fn profile(
         .get("deterministicIds")
         .and_then(Value::as_array)
         .is_some_and(|a| !a.is_empty())
+        && !whole_sketch_region_query(query)
     {
         return Err("deterministic sketch-region subsets are not supported yet".into());
     }
@@ -199,9 +200,6 @@ pub(super) fn profile(
         )
     ) {
         return Err("the sketch query is not supported yet".into());
-    }
-    if super::boolean_field(query, "filterInnerLoops")? {
-        return Err("filtered inner sketch regions are not supported yet".into());
     }
     let sketch_id = id("sketch", text(query, "featureId")?);
     if !model.sketches.iter().any(|s| s.id.as_str() == sketch_id) {
@@ -216,7 +214,32 @@ pub(super) fn profile(
     }) {
         return Err("the selected sketch contains unresolved geometry".into());
     }
+    if super::boolean_field(query, "filterInnerLoops")? {
+        if query.get("btType").and_then(Value::as_str) != Some("BTMIndividualSketchRegionQuery-140")
+        {
+            return Err("filtered inner sketch regions are not supported yet".into());
+        }
+        return super::regions::filtered_profile(&sketch_id, model, inputs);
+    }
     Ok(json!({"kind": "sketch", "value": sketch_id}))
+}
+/// A sketch-region query whose query string selects every region of its sketch. Its
+/// `deterministicIds` are the regions that string resolved to at the last regeneration, so the
+/// string, not the list, is the selection.
+fn whole_sketch_region_query(query: &Value) -> bool {
+    let (Some("BTMIndividualSketchRegionQuery-140"), Some(sketch), Some(string)) = (
+        query.get("btType").and_then(Value::as_str),
+        query.get("featureId").and_then(Value::as_str),
+        query.get("queryString").and_then(Value::as_str),
+    ) else {
+        return false;
+    };
+    let inner = match query.get("filterInnerLoops").and_then(Value::as_bool) {
+        Some(true) => "true",
+        Some(false) | None => "false",
+    };
+    let expected = format!("query = qSketchRegion(id + \"{sketch}\", {inner});");
+    string.split_whitespace().eq(expected.split_whitespace())
 }
 fn sketch_entities(queries: &[Value], model: &Model, entity_type: &str) -> Mapping<Value> {
     let mut selected = std::collections::BTreeSet::new();
