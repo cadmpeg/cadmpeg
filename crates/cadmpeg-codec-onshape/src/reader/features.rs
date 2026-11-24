@@ -544,7 +544,7 @@ pub(super) fn dependencies(
                 matches!(key, "profiles" | "path")
                     || key == "booleanScope" && value(source, "operationType") != Some("NEW")
             }
-            Some("fillet" | "chamfer") => key == "entities",
+            Some("fillet" | "chamfer" | "shell") => key == "entities",
             Some("hole") => key == "scope" || key == hole_profile,
             _ => false,
         };
@@ -606,6 +606,7 @@ pub(super) fn dependencies(
                 | (Some("sketch"), "sketchPlane")
                 | (Some("extrude"), "endBoundEntityFace") => Some(topology::OperandKind::Face),
                 (Some("fillet" | "chamfer"), "entities") => Some(topology::OperandKind::Edge),
+                (Some("shell"), "entities") => Some(topology::OperandKind::Face),
                 (Some("revolve"), "axis")
                     if query.get("queryType").and_then(Value::as_str) != Some("SKETCH_ENTITY") =>
                 {
@@ -971,8 +972,91 @@ pub(super) fn map(
             Ok(definition(kind, operation))
         }
         "hole" => hole(feature, ordinal, inputs, model, report, unresolved),
+        "shell" => {
+            let state = scoped.map_or_else(|| inputs.load(ordinal, feature), Ok)?;
+            shell(feature, ordinal, &state, model, unresolved)
+        }
         other => Err(format!("{other} features are not supported yet")),
     }
+}
+
+/// Refusal prefix for a shell control outside the stored and specified forms.
+pub(super) const SHELL_REFUSAL: &str = "shell: ";
+
+fn shell_refusal(reason: &str) -> String {
+    format!("{SHELL_REFUSAL}{reason}")
+}
+
+/// Shell parameters named by the Onshape `shell` feature specification.
+const SHELL_PARAMETERS: [&str; 5] = [
+    "isHollow",
+    "entities",
+    "parts",
+    "thickness",
+    "oppositeDirection",
+];
+
+/// Whether every parameter key of a shell record is a specified key.
+pub(super) fn shell_record_valid(feature: &Value) -> bool {
+    rows(feature, "parameters").is_ok_and(|rows| {
+        rows.iter().all(|row| {
+            row.get("parameterId")
+                .and_then(Value::as_str)
+                .is_some_and(|key| SHELL_PARAMETERS.contains(&key))
+        })
+    })
+}
+
+/// Maps a face-removal shell. A stored `oppositeDirection` of `false` is the
+/// inward wall; the opposite sense and the hollow form carry no stored case.
+fn shell(
+    feature: &Value,
+    ordinal: usize,
+    state: &topology::State,
+    model: &mut Model,
+    unresolved: &BTreeSet<String>,
+) -> Mapping<Value> {
+    if !shell_record_valid(feature) {
+        return Err(shell_refusal(
+            "a parameter is outside the shell specification",
+        ));
+    }
+    if enabled(feature, "isHollow")? {
+        return Err(shell_refusal("hollow shells are not supported yet"));
+    }
+    if parameter(feature, "parts").is_ok() {
+        return Err(shell_refusal(
+            "a hollow part selection on a face-removal shell is not supported yet",
+        ));
+    }
+    if enabled(feature, "oppositeDirection")? {
+        return Err(shell_refusal(
+            "outward walls are not supported yet (ONSHAPE-030)",
+        ));
+    }
+    let faces = state.selection(feature, "entities", "faces")?;
+    if faces
+        .pointer("/value/faces")
+        .and_then(Value::as_array)
+        .is_none_or(Vec::is_empty)
+    {
+        return Err(shell_refusal("no faces to remove are selected"));
+    }
+    let thickness = length(feature, "thickness", model, unresolved)?;
+    owned_variable(
+        feature,
+        ordinal,
+        "thickness",
+        "Thickness",
+        super::expression::Dimension::Length,
+        model,
+        unresolved,
+    )?;
+    push(&mut model.feature_input_topologies, state.row.clone())?;
+    Ok(definition(
+        "shell",
+        json!({"removed_faces": faces, "thickness": thickness, "outward": false}),
+    ))
 }
 
 fn hole(
