@@ -158,18 +158,6 @@
     },
     "model": {
       "assets": [],
-      "features": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "configurations": [],
-      "parameters": [],
-      "sketches": [],
-      "sketch_entities": [],
-      "sketch_constraints": [],
-      "spatial_sketches": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketch_constraints": [],
-      "spreadsheets": [],
       "product_definitions": [
         {
           "id": "f3d:model:product-definition#root",
@@ -183,12 +171,10 @@
           ],
           "occurrences": [],
           "instance_bodies": [],
-          "representations": [],
-          "sketches": []
+          "representations": []
         }
       ],
       "occurrences": [],
-      "assembly_joints": [],
       "drawings": [],
       "semantic_annotations": [],
       "presentation_documents": [],
@@ -207,8 +193,7 @@
       "physics_scenes": [],
       "solver_settings": [],
       "declared_measures": [],
-      "point_clouds": [],
-      "history_bodies": []
+      "point_clouds": []
     },
     "design": {
       "scopes": [],

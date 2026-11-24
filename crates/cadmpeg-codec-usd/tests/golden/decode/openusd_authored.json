@@ -745,17 +745,11 @@
         }
       ],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [
         {
@@ -948,7 +942,6 @@
           ]
         }
       ],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -970,7 +963,6 @@
             "usd:stage:occurrence#/Plant/Leg1"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "Plant",
           "storage": {
             "kind": "embedded"
@@ -988,7 +980,6 @@
             "usd:stage:occurrence#/Plant/Frame/Rail"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "Frame",
           "storage": {
             "kind": "embedded"
@@ -1005,7 +996,6 @@
           "native_ref": "/Plant/Frame/Rail",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Rail",
           "storage": {
             "kind": "embedded"
@@ -1020,7 +1010,6 @@
           "native_ref": "/Plant/Frame/Tube",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Tube",
           "storage": {
             "kind": "embedded"
@@ -1037,7 +1026,6 @@
           "native_ref": "/Plant/Roof",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Roof",
           "storage": {
             "kind": "embedded"
@@ -1052,7 +1040,6 @@
           "native_ref": "/Plant/Leg0",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Leg",
           "storage": {
             "kind": "embedded"
@@ -1067,7 +1054,6 @@
             "usd:stage:occurrence#/Plant"
           ],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
@@ -1076,14 +1062,7 @@
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [
         {
           "channels": [],

@@ -717,6 +717,12 @@ impl Annotations {
         self.provenance.retain(|identity, _| keep(identity));
     }
 
+    /// Retain the provenance and exactness entries selected by identity.
+    pub fn retain_entities(&mut self, mut keep: impl FnMut(&str) -> bool) {
+        self.provenance.retain(|identity, _| keep(identity));
+        self.exactness.retain(|identity, _| keep(identity));
+    }
+
     /// Remap both tables. A collision leaves both tables unchanged.
     pub fn map_ids(
         &mut self,

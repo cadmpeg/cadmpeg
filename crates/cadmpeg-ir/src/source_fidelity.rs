@@ -554,7 +554,9 @@ impl SourceFidelity {
     /// Whether `ir` is edited: whether the SHA-256 of its canonical JSON
     /// differs from `content_digest` (§3.1, Rule B). A document that has no
     /// canonical JSON, because it holds a non-finite number or nests past the
-    /// depth a default session admits, is edited.
+    /// depth a default session admits, is edited. So is a document whose
+    /// arenas the CADIR wire omits differ from the baseline the decode wrapper
+    /// recorded in memory ([`crate::hash::omitted_arenas_edited`]).
     ///
     /// # Errors
     ///
@@ -565,7 +567,8 @@ impl SourceFidelity {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
         Ok(
             !crate::hash::content_digest(&ctx, ir)
-                .is_ok_and(|digest| digest == self.content_digest),
+                .is_ok_and(|digest| digest == self.content_digest)
+                || crate::hash::omitted_arenas_edited(&ctx, ir).unwrap_or(true),
         )
     }
 

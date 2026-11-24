@@ -202,36 +202,13 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [
-        {
-          "active": true,
-          "bodies": [
-            "sldprt:brep:body#900"
-          ],
-          "feature_states": {},
-          "id": "sldprt:model:configuration#768:0",
-          "name": "Default",
-          "native_ref": "sldprt:history:configuration#768:0",
-          "ordinal": 0,
-          "parameter_overrides": {},
-          "parameter_values": {},
-          "properties": {},
-          "source_index": 0
-        }
-      ],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -248,7 +225,6 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
@@ -257,71 +233,7 @@
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [
-        {
-          "construction": false,
-          "endpoint_refs": [
-            "0:sldprt:brep:point#60",
-            "0:sldprt:brep:point#60"
-          ],
-          "geometry": {
-            "center": {
-              "u": 0.0,
-              "v": 0.0
-            },
-            "kind": "ellipse",
-            "major_angle": 1.5707963267948966,
-            "major_radius": 2000.0,
-            "minor_radius": 1000.0
-          },
-          "geometry_ref": "0:sldprt:brep:curve#70",
-          "id": "sldprt:model:sketch-entity#348:0:0:0",
-          "native_ref": "0:sldprt:brep:edge#40",
-          "sketch": "sldprt:model:sketch#348:0:0"
-        }
-      ],
-      "sketches": [
-        {
-          "configuration": "0",
-          "id": "sldprt:model:sketch#348:0:0",
-          "name": "feature input elliptical sketch",
-          "native_ref": "sldprt:feature-input:resolved-features#348",
-          "placement": {
-            "frame": {
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 0.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "kind": "resolved"
-          },
-          "profiles": [
-            [
-              {
-                "entity": "sldprt:model:sketch-entity#348:0:0:0",
-                "reversed": false
-              }
-            ]
-          ]
-        }
-      ],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
