@@ -98,6 +98,8 @@ struct DeclarationIndex<'a, 'i> {
     relation_offsets: HashMap<&'i str, Vec<u64>>,
     /// Scalars in offset order; equal offsets keep slice order.
     scalars: Vec<&'a FeatureInputScalar>,
+    /// The end of each parameter-class declaration, by its offset.
+    parameter_ends: HashMap<u64, u64>,
 }
 
 impl<'a, 'i> DeclarationIndex<'a, 'i> {
@@ -123,10 +125,16 @@ impl<'a, 'i> DeclarationIndex<'a, 'i> {
         }
         let mut scalars = scalars.iter().collect::<Vec<_>>();
         scalars.sort_by_key(|scalar| scalar.offset);
+        let parameter_ends = classes
+            .iter()
+            .filter(|class| ArchiveParameterClass::from_class_name(&class.name).is_some())
+            .filter_map(|class| Some((class.offset, declaration_end(class)?)))
+            .collect();
         Self {
             intervals,
             relation_offsets,
             scalars,
+            parameter_ends,
         }
     }
 }
@@ -214,6 +222,24 @@ fn relation_declaration_candidate<'a>(
         RelationScope::Unbounded => None,
         RelationScope::Unstatable => return None,
     };
+    let in_scope = |scalar: &&&FeatureInputScalar| {
+        scope_end.is_none_or(|end| scalar.offset < end)
+            && class_feature.is_none_or(|feature| scalar.feature_ref.as_deref() == Some(feature))
+    };
+    // A relation class declared in place, followed by its object's zero u32
+    // and the parameter class declared in place, states the relation of the
+    // dimension whose name record follows them (§2), whatever its operands.
+    if let Some(&name) = declaration_end(class)
+        .and_then(|end| end.checked_add(RELATION_OBJECT_ZERO))
+        .and_then(|start| index.parameter_ends.get(&start))
+    {
+        let first = index
+            .scalars
+            .partition_point(|scalar| scalar.offset <= name);
+        if let Some(scalar) = index.scalars.get(first).filter(in_scope) {
+            return Some((class, scalar, family));
+        }
+    }
     let first_after = index
         .scalars
         .partition_point(|scalar| scalar.offset <= class.offset);
@@ -223,7 +249,7 @@ fn relation_declaration_candidate<'a>(
         .skip(first_after)
         .take_while(|scalar| scope_end.is_none_or(|end| scalar.offset < end))
         .find(|scalar| {
-            class_feature.is_none_or(|feature| scalar.feature_ref.as_deref() == Some(feature))
+            in_scope(scalar)
                 && if allow_dynamic {
                     relation_signature_for_declaration(family, scalar)
                 } else {
@@ -429,31 +455,6 @@ impl<'l> TokenRelations<'l> {
     }
 }
 
-/// Whether the display scalar at `index` of `scalars`, in `feature`, is the
-/// first scalar after the one scalar of `group` that a display or driving
-/// role frames, where that scalar, the one its relation-class declaration
-/// opens, holds the native role.
-fn first_framed_after_native(
-    group: &RelationGroup<'_>,
-    feature: &str,
-    scalars: &[FeatureInputScalar],
-    index: usize,
-) -> bool {
-    let [(declared, scalar)] = group.scalars.as_slice() else {
-        return false;
-    };
-    group.feature_ref == feature
-        && scalar.role == FeatureInputScalarRole::Native
-        && declared
-            .checked_add(1)
-            .and_then(|start| scalars.get(start..index))
-            .is_some_and(|between| {
-                between
-                    .iter()
-                    .all(|scalar| scalar.role == FeatureInputScalarRole::Native)
-            })
-}
-
 /// The zero u32 that opens a relation object, before its parameter class.
 const RELATION_OBJECT_ZERO: u64 = 4;
 
@@ -526,14 +527,11 @@ pub(super) fn relation_instances(
             {
                 continue;
             }
-            let declared_class = groups
-                .last()
-                .filter(|group| {
-                    first_framed_after_native(group, feature_ref, &lane.scalars, scalar_index)
-                })
-                .map(|group| group.class_ref);
-            let token_pair = declared_class
-                .and(lane.scalars.get(scalar_index + 1))
+            // A display and a driving scalar in the token form state the
+            // relation class their tokens name (§2).
+            let token_pair = lane
+                .scalars
+                .get(scalar_index + 1)
                 .filter(|driving| {
                     !candidate_counts.contains_key(driving.id.as_str())
                         && relation_class_offsets
@@ -543,8 +541,7 @@ pub(super) fn relation_instances(
                             )
                             .is_none_or(|offset| *offset >= driving.offset)
                 })
-                .and_then(|driving| token_relations.relation(scalar, driving))
-                .filter(|&(_, class_ref)| Some(class_ref) == declared_class);
+                .and_then(|driving| token_relations.relation(scalar, driving));
             if let Some((family, class_ref)) = token_pair {
                 groups.push(RelationGroup {
                     feature_ref,
@@ -2420,7 +2417,7 @@ mod relation_records_tests {
     }
 
     #[test]
-    fn the_first_token_form_dimension_after_a_native_declared_scalar_is_its_relation() {
+    fn each_token_form_dimension_states_the_relation_its_tokens_name() {
         let lane = token_form_lane(0x30, 0x32);
         assert_eq!(lane.scalars.len(), 5, "{:#?}", lane.scalars);
         let class = lane
@@ -2456,9 +2453,15 @@ mod relation_records_tests {
                 ),
                 (
                     FeatureInputRelationFamily::PointPointDistance,
-                    class,
+                    class.clone(),
                     ids(1..3),
                     Some(lane.scalars[2].id.clone())
+                ),
+                (
+                    FeatureInputRelationFamily::PointPointDistance,
+                    class,
+                    ids(3..5),
+                    Some(lane.scalars[4].id.clone())
                 ),
             ]
         );
@@ -2474,6 +2477,46 @@ mod relation_records_tests {
                 .collect::<Vec<_>>(),
             vec![vec![lane.scalars[0].id.clone()]]
         );
+    }
+
+    /// A relation class declared in place, with its zero u32 and its
+    /// parameter class declared in place, states the relation of the next
+    /// scalar, whose operands match no signature of the family, and a
+    /// display and a driving scalar in the token form after it state the
+    /// relation class their tokens name.
+    #[test]
+    fn an_in_place_declaration_states_the_relation_of_the_scalar_after_it() {
+        let mut lane = token_form_lane(0x30, 0x32);
+        let angle = class(1000, "sgAnglDim");
+        let angle_parameter = FeatureInputClass {
+            id: "sldprt:feature-input:class#lane:1019".into(),
+            offset: 1019,
+            name: "moAngleParameter_c".into(),
+            ..angle.clone()
+        };
+        let mut native = scalar(1050, FeatureInputScalarRole::Native);
+        native.feature_ref = Some("sketch".into());
+        native.operands = lane.scalars[3].operands.clone();
+        native.operands.iter_mut().for_each(|operand| {
+            operand.kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386);
+        });
+        lane.classes.extend([angle.clone(), angle_parameter]);
+        lane.scalars.insert(3, native.clone());
+        lane.scalars
+            .iter_mut()
+            .skip(4)
+            .for_each(|scalar| scalar.offset += 2000);
+        let instances = relation_instances(&sketch_history(), &lane).unwrap();
+        let angle_relation = instances
+            .iter()
+            .find(|relation| relation.class_ref == angle.id)
+            .expect("the in-place declaration's relation");
+        assert_eq!(angle_relation.family, FeatureInputRelationFamily::Angle);
+        assert_eq!(angle_relation.scalar_refs(), vec![native.id.clone()]);
+        assert!(instances
+            .iter()
+            .filter(|relation| relation.class_ref != angle.id)
+            .all(|relation| relation.family == FeatureInputRelationFamily::PointPointDistance));
     }
 
     #[test]
