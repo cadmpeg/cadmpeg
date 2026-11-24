@@ -365,6 +365,7 @@ pub fn validate_neutral_with_source_fidelity_for_decode(
             .map(crate::ids::UnknownId::as_str),
         &mut report.findings,
     )?;
+    products::decode_set::check_file_digests(ir, source_fidelity, &mut report.findings);
     Ok(report)
 }
 

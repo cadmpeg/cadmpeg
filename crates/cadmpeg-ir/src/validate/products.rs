@@ -7,6 +7,7 @@ use cadmpeg_core::CodecError;
 
 use super::record_finding;
 
+pub(in crate::validate) mod decode_set;
 pub(in crate::validate) mod definitions;
 use crate::document::CadIr;
 use crate::products::{JointOperands, OperandContainer, PairedJointKind};
@@ -176,6 +177,7 @@ pub(super) fn check_products(
         }
     }
     check_root_definition(ir, findings);
+    decode_set::check_component_ids(ir, findings);
     if let Some(definition) = placement_cycle(ctx, ir)? {
         record_finding(
             findings,
