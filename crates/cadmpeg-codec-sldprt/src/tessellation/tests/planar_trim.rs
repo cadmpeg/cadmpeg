@@ -35,8 +35,8 @@ fn sole_surface_owner_respects_its_planar_trim() {
     )
     .unwrap()
     .is_empty());
-    assert!(ir.model.tessellations[0].faces.is_empty());
-    assert!(ir.model.tessellations[0].body.is_none());
+    assert!(ir.model.tessellations[0].of.faces().is_empty());
+    assert!(ir.model.tessellations[0].of.body().is_none());
 }
 
 #[test]
@@ -97,7 +97,7 @@ fn owner_work_cap_leaves_tables_unassigned_and_names_the_bound() {
         .model
         .tessellations
         .iter()
-        .all(|mesh| mesh.faces.is_empty() && mesh.body.is_none()));
+        .all(|mesh| mesh.of.faces().is_empty() && mesh.of.body().is_none()));
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].code,

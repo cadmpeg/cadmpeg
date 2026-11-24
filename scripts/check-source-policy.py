@@ -771,10 +771,16 @@ def scan_patterns(path: Path, source: str) -> list[Finding]:
                     arguments[start:end] = source[start:end]
             arguments = "".join(arguments)
             format_id = codec_native_format(ROOT / "crates" / codec[1])
+            def own_text(group: str) -> str:
+                return (
+                    r'(?:"' + re.escape(format_id or "")
+                    + r'"|r(?P<' + group + r'>#{0,255})"' + re.escape(format_id or "")
+                    + r'"(?P=' + group + r'))'
+                )
             own_literal = re.compile(
-                r'\s*(?:"' + re.escape(format_id or "")
-                + r'"|r(?P<hashes>#{0,255})"' + re.escape(format_id or "")
-                + r'"(?P=hashes))\s*(?=[,)])'
+                r'\s*(?:' + own_text("hashes")
+                + r'|(?:(?:::)?cadmpeg_(?:ir|core)::)?codec_id!\s*\(\s*' + own_text("id_hashes")
+                + r'\s*\))\s*(?=[,)])'
             )
             for call in namespace_calls:
                 # Other APIs use namespace() with no argument.

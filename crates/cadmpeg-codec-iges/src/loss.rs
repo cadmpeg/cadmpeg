@@ -137,7 +137,8 @@ loss_codes! {
     WriterMinimumResolutionAdjusted => "writer.minimum-resolution-adjusted",
     /// An unowned dependent edge was withheld.
     WriterSupportEdgeNotRepresented => "writer.support-edge-not-represented",
-    /// Free-geometry points or vertices have no topology output.
+    /// Free-geometry points or vertices have no topology output, or an
+    /// analytic surface on no face has no bounded output.
     WriterFreeGeometryOmitted => "writer.free-geometry-omitted",
     /// Free edges or curves that duplicate a written carrier were not written.
     WriterDuplicateCarrierOmitted => "writer.duplicate-carrier-omitted",
@@ -151,6 +152,8 @@ loss_codes! {
     WriterBodyOpacityNotRepresented => "writer.body-opacity-not-represented",
     /// A free-geometry body has no single Directory Entry for visibility.
     WriterBodyVisibilityNotRepresented => "writer.body-visibility-not-represented",
+    /// The decoded document holds an error-severity validation finding.
+    ProjectionInvalid => "projection.invalid",
 }
 
 impl IgesLossCode {
@@ -212,7 +215,8 @@ impl IgesLossCode {
             | Self::WriterBodyNameNotRepresented
             | Self::WriterBodyColorNotRepresented
             | Self::WriterBodyOpacityNotRepresented
-            | Self::WriterBodyVisibilityNotRepresented => Severity::Warning,
+            | Self::WriterBodyVisibilityNotRepresented
+            | Self::ProjectionInvalid => Severity::Warning,
         }
     }
 
@@ -223,7 +227,8 @@ impl IgesLossCode {
             Self::OccurrenceExpansionOutputTruncated
             | Self::OccurrenceExpansionDepthTruncated
             | Self::OccurrenceRootInferenceBlocked
-            | Self::OccurrencePlacementMalformed => LossTaxonomy::DecodeDiagnostic,
+            | Self::OccurrencePlacementMalformed
+            | Self::ProjectionInvalid => LossTaxonomy::DecodeDiagnostic,
             Self::EntityRetainedUnprojected
             | Self::EntityOutsideEnvelope
             | Self::EntityNotProjected => LossTaxonomy::RecordNotTyped,
@@ -371,6 +376,7 @@ mod tests {
                 "writer.body-color-not-represented",
                 "writer.body-opacity-not-represented",
                 "writer.body-visibility-not-represented",
+                "projection.invalid",
             ]
         );
     }

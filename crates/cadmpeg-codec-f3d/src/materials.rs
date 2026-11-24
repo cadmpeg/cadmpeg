@@ -754,6 +754,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
                 ),
                 target: AppearanceTarget::Body(over.body.clone()).into(),
                 appearance: appearance.id.clone(),
+                precedence: None,
                 source_entity_id: None,
                 object_type: (object_types.get(&over.entity_suffix).map(String::as_str))
                     .map(std::borrow::ToOwned::to_owned),
@@ -1556,6 +1557,7 @@ fn bind_bodies(
             })?,
             target: AppearanceTarget::Body(body).into(),
             appearance: appearance.id.clone(),
+            precedence: None,
             source_entity_id: Some(assignment.entity_id.as_str().to_owned()),
             object_type: (object_types
                 .get(&assignment.entity_id.suffix())

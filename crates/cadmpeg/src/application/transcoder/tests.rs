@@ -122,14 +122,17 @@ fn encoder_planning_owns_unknown_explicit_target_admission() {
 #[cfg(feature = "step")]
 fn step_ir_with_unrepresentable_native_content() -> CadIr {
     let mut ir = CadIr::empty();
-    ir.native.namespace_mut("f3d").arenas_mut().insert(
-        "asm_histories".into(),
-        vec![cadmpeg_ir::NativeRecord::new(
-            cadmpeg_ir::ids::Identity::new("f3d:test:asm-history#0").expect("valid identity"),
-            serde_json::Map::default(),
-        )
-        .expect("valid native identity")],
-    );
+    ir.native
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::nonblank_literal!("asm_histories"),
+            vec![cadmpeg_ir::NativeRecord::new(
+                cadmpeg_ir::ids::Identity::new("f3d:test:asm-history#0").expect("valid identity"),
+                serde_json::Map::default(),
+            )
+            .expect("valid native identity")],
+        );
     ir.finalize();
     ir
 }
@@ -215,7 +218,6 @@ fn rhino_omitted_product_structure_is_rejected_by_the_shared_plan_gate() {
         .push(cadmpeg_ir::products::ProductDefinition {
             sketches: Vec::default(),
 
-            tessellations: Vec::new(),
             id: "cadir:model:product#group"
                 .try_into()
                 .expect("valid identity"),
@@ -265,7 +267,7 @@ struct NotImplementedEncoder;
 
 impl cadmpeg_ir::codec::write::EncoderBackend for NotImplementedEncoder {
     const FORMAT: cadmpeg_ir::codec::FormatId =
-        cadmpeg_ir::codec::FormatId::new("not-implemented-test");
+        cadmpeg_ir::codec::FormatId::new("notimplementedtest");
     const REQUEST: cadmpeg_core::decode::DecodeDepth = cadmpeg_core::decode::DecodeDepth::Full;
     type Target = cadmpeg_ir::codec::write::target::DialectFree;
     const TARGET: Self::Target = cadmpeg_ir::codec::write::target::DialectFree;
@@ -320,6 +322,7 @@ fn a_failed_plan_refuses_on_check_errors_only_under_reject_errors() {
         );
         conversion.reject_errors = reject_errors;
         conversion.validation.findings.push(Finding {
+            rule: cadmpeg_ir::rule_name!("cadmpeg/test.synthetic-document-wide-error"),
             related: Vec::new(),
             check: Check::Counts,
             severity: Severity::Error,
@@ -564,13 +567,14 @@ fn prepare_cadir_for_step(ir: &CadIr, path: &Path, reject_errors: bool) -> Prepa
 #[cfg(all(feature = "fcstd", feature = "step"))]
 #[test]
 fn a_design_arena_error_does_not_refuse_a_step_export_under_reject_errors() {
-    use cadmpeg_ir::features::FeatureId;
-    use cadmpeg_ir::report::{check::Check, Severity};
+    use cadmpeg_ir::ids::ProductDefinitionId;
+    use cadmpeg_ir::report::Severity;
 
     let (mut document, _) = checked_design_history();
-    let parameter_id = document.ir.model.parameters[0].id.to_string();
-    document.ir.model.parameters[0].owner =
-        Some(FeatureId::mint("fcstd:test:feature#missing").expect("valid absent feature identity"));
+    let parameter_id = document.ir.design.parameters[0].id.to_string();
+    document.ir.design.parameters[0].scope =
+        ProductDefinitionId::mint("fcstd:test:definition#missing")
+            .expect("valid absent definition identity");
     let directory = tempfile::tempdir().expect("temporary CADIR directory");
     let conversion =
         prepare_cadir_for_step(&document.ir, &directory.path().join("design.json"), true);
@@ -579,7 +583,6 @@ fn a_design_arena_error_does_not_refuse_a_step_export_under_reject_errors() {
     assert!(
         report.findings.iter().any(|finding| {
             finding.severity >= Severity::Error
-                && finding.check == Check::ReferentialIntegrity
                 && finding.entity.as_deref() == Some(parameter_id.as_str())
         }),
         "{report:?}"
@@ -591,7 +594,7 @@ fn a_design_arena_error_does_not_refuse_a_step_export_under_reject_errors() {
             .filter(|finding| finding.severity >= Severity::Error)
             .all(|finding| document
                 .ir
-                .model
+                .design
                 .parameters
                 .iter()
                 .any(|parameter| { finding.entity.as_deref() == Some(parameter.id.as_str()) })),
@@ -678,6 +681,7 @@ fn an_error_without_an_entity_refuses_a_step_export_under_reject_errors() {
         conversion.reject_errors = true;
         assert_eq!(conversion.validation.error_count(), 0);
         conversion.validation.findings.push(Finding {
+            rule: cadmpeg_ir::rule_name!("cadmpeg/test.synthetic-document-wide-error"),
             related: Vec::new(),
             check: Check::Counts,
             severity: Severity::Error,
@@ -686,6 +690,7 @@ fn an_error_without_an_entity_refuses_a_step_export_under_reject_errors() {
         });
         if include_design_error {
             conversion.validation.findings.push(Finding {
+                rule: cadmpeg_ir::rule_name!("cadmpeg/test.synthetic-design-error"),
                 related: Vec::new(),
                 check: Check::Counts,
                 severity: Severity::Error,
@@ -742,6 +747,7 @@ fn a_design_arena_error_refuses_a_freecad_round_trip_under_reject_errors() {
         };
         if inject_error {
             conversion.validation.findings.push(Finding {
+                rule: cadmpeg_ir::rule_name!("cadmpeg/test.synthetic-design-error"),
                 related: Vec::new(),
                 check: Check::Counts,
                 severity: Severity::Error,
@@ -787,6 +793,7 @@ fn a_carried_error_does_not_refuse_the_export_by_default() {
     );
     assert_eq!(conversion.validation.error_count(), 0);
     conversion.validation.findings.push(Finding {
+        rule: cadmpeg_ir::rule_name!("cadmpeg/test.synthetic-document-wide-error"),
         related: Vec::new(),
         check: Check::Counts,
         severity: Severity::Error,
@@ -816,6 +823,7 @@ fn an_f3d_native_design_record_error_does_not_refuse_a_step_export_under_reject_
     conversion.reject_errors = true;
     assert_eq!(conversion.validation.error_count(), 0);
     let finding = Finding {
+        rule: cadmpeg_ir::rule_name!("cadmpeg/test.synthetic-native-design-record-error"),
         related: Vec::new(),
         check: Check::Counts,
         severity: Severity::Error,

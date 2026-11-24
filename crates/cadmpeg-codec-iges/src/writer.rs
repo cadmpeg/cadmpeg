@@ -12,7 +12,8 @@ use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    ArenaCoverage, ArenaDisposition, ArenaDispositions, ExportBody, WritePath,
+    native_records_omitted, ArenaCoverage, ArenaDisposition, ArenaDispositions, ExportBody,
+    WritePath,
 };
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::eval::model_surface_point;
@@ -181,8 +182,9 @@ fn body(
 
 /// What [`synthesize`] does with each model arena.
 ///
-/// Arenas refused by `reject_unsupported_model` are `Dropped`; procedural
-/// curves are also `Dropped` because only their solved carriers are written and
+/// Arenas IGES has no place for are `Omitted`: the file is written without
+/// them, and the export wrapper charges each non-empty one. Procedural curves
+/// are `Dropped` because only their solved carriers are written and
 /// `procedural_reduction_losses` charges for their definitions. Topology and
 /// geometry go through the B-rep, trimmed-sheet or free-geometry entity graph.
 /// `points`, `curves`, `surfaces`, `edges` and `vertices` are `Reported` because
@@ -204,38 +206,38 @@ const SYNTHESIS_COVERAGE: ArenaDispositions = {
         points: Reported,
         surfaces: Reported,
         curves: Reported,
-        subds: Dropped,
+        subds: Omitted,
         pcurves: Written,
         procedural_surfaces: Reported,
         procedural_curves: Dropped,
-        assets: Dropped,
-        features: Dropped,
-        feature_input_topologies: Dropped,
-        feature_result_topologies: Dropped,
-        configurations: Dropped,
-        parameters: Dropped,
-        sketches: Dropped,
-        sketch_entities: Dropped,
-        sketch_constraints: Dropped,
-        spatial_sketches: Dropped,
-        spatial_sketch_entities: Dropped,
-        spatial_sketch_constraints: Dropped,
-        spreadsheets: Dropped,
-        product_definitions: Dropped,
-        occurrences: Dropped,
-        assembly_joints: Dropped,
-        drawings: Dropped,
-        semantic_annotations: Dropped,
-        presentation_documents: Dropped,
-        view_presentations: Dropped,
-        tessellations: Dropped,
+        assets: Omitted,
+        features: Omitted,
+        feature_input_topologies: Omitted,
+        feature_result_topologies: Omitted,
+        configurations: Omitted,
+        parameters: Omitted,
+        sketches: Omitted,
+        sketch_entities: Omitted,
+        sketch_constraints: Omitted,
+        spatial_sketches: Omitted,
+        spatial_sketch_entities: Omitted,
+        spatial_sketch_constraints: Omitted,
+        spreadsheets: Omitted,
+        product_definitions: Omitted,
+        occurrences: Omitted,
+        assembly_joints: Omitted,
+        drawings: Omitted,
+        semantic_annotations: Omitted,
+        presentation_documents: Omitted,
+        view_presentations: Omitted,
+        tessellations: Omitted,
         point_clouds: Omitted,
         history_bodies: Ignored,
-        appearances: Dropped,
-        appearance_bindings: Dropped,
-        attributes: Dropped,
-        pmi: Dropped,
-        presentation_layers: Dropped,
+        appearances: Omitted,
+        appearance_bindings: Omitted,
+        attributes: Omitted,
+        pmi: Omitted,
+        presentation_layers: Omitted,
         physical_materials: Omitted,
         mass_properties: Omitted,
         rigid_bodies: Omitted,
@@ -441,6 +443,15 @@ fn append_name_properties(
 }
 
 fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, CodecError> {
+    let (complete, partial_losses) = match cadmpeg_ir::codec::write::without_partial_topology(
+        ir,
+        "IGES",
+        "it is written as shells in no manifold solid",
+    )? {
+        Some((complete, losses)) => (Some(complete), losses),
+        None => (None, Vec::new()),
+    };
+    let ir = complete.as_ref().unwrap_or(ir);
     let lowered = cadmpeg_ir::codec::write::subset_lowering::lower_subset_curves(ir, |curve| {
         curve
             .geometry
@@ -454,8 +465,10 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     let ctx = &ctx;
     reject_unsupported_model(ir)?;
     reject_owned_wire_topology(ir)?;
-    validate_analytic_surface_context(ir)?;
-    let mut losses = procedural_reduction_losses(ir)?;
+    let unbounded_analytic = validate_analytic_surface_context(ir)?;
+    let mut losses = partial_losses;
+    losses.extend(unbounded_analytic.clone());
+    losses.extend(procedural_reduction_losses(ir)?);
     losses.extend(reject_unsupported_native(ir)?);
     for body in ir
         .geometry
@@ -548,7 +561,13 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         let mut entities = Vec::new();
         let mut consumed_points = std::collections::BTreeSet::new();
         let mut consumed_curves = BTreeSet::<String>::new();
-        let mut surfaces = ir.geometry.surfaces.iter().collect::<Vec<_>>();
+        let unbounded = unbounded_analytic_surfaces(ir);
+        let mut surfaces = ir
+            .geometry
+            .surfaces
+            .iter()
+            .filter(|surface| !unbounded.contains(surface.id.as_str()))
+            .collect::<Vec<_>>();
         surfaces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
         for surface in surfaces {
             append_surface_entities(
@@ -647,9 +666,13 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     resolve_entity_references(&mut entities)?;
     append_name_properties(&mut entities, &body_presentations)?;
     if entities.is_empty() {
-        return Err(CodecError::NotImplemented(
-            "IGES semantic writer refuses an empty model".into(),
-        ));
+        return Err(CodecError::NotImplemented(match unbounded_analytic {
+            Some(withheld) => format!(
+                "IGES semantic writer refuses an empty model; {}",
+                withheld.message
+            ),
+            None => "IGES semantic writer refuses an empty model".into(),
+        }));
     }
 
     let minimum_resolution = minimum_resolution_for_output(&index)?;
@@ -814,30 +837,58 @@ fn reject_owned_wire_topology(ir: &CadIr) -> Result<(), CodecError> {
     Ok(())
 }
 
-fn validate_analytic_surface_context(ir: &CadIr) -> Result<(), CodecError> {
-    let writes_brep = has_brep_topology(ir);
-    if let Some(surface) = ir.geometry.surfaces.iter().find(|surface| {
-        (matches!(
-            surface.geometry,
-            SurfaceGeometry::Solved(
-                SolvedSurfaceGeometry::Cylinder(_)
-                    | SolvedSurfaceGeometry::Cone(_)
-                    | SolvedSurfaceGeometry::Sphere(_)
-                    | SolvedSurfaceGeometry::Torus(_)
-            )
-        )) && (!writes_brep
-            || !ir
-                .geometry
-                .faces
-                .iter()
-                .any(|face| face.surface == surface.id))
-    }) {
-        return Err(CodecError::NotImplemented(format!(
-            "IGES analytic surface {} requires B-rep topology for Type 192 through 198 output; no bounded Type 128 domain is available",
-            surface.id
-        )));
+fn is_analytic_surface(surface: &Surface) -> bool {
+    matches!(
+        surface.geometry,
+        SurfaceGeometry::Solved(
+            SolvedSurfaceGeometry::Cylinder(_)
+                | SolvedSurfaceGeometry::Cone(_)
+                | SolvedSurfaceGeometry::Sphere(_)
+                | SolvedSurfaceGeometry::Torus(_)
+        )
+    )
+}
+
+/// Each analytic surface no face bounds. Types 192 through 198 have no
+/// bounded form outside a B-rep face, so the writer withholds them.
+fn unbounded_analytic_surfaces(ir: &CadIr) -> BTreeSet<&str> {
+    let bounded = ir
+        .geometry
+        .faces
+        .iter()
+        .map(|face| face.surface.as_str())
+        .collect::<BTreeSet<_>>();
+    ir.geometry
+        .surfaces
+        .iter()
+        .filter(|surface| is_analytic_surface(surface) && !bounded.contains(surface.id.as_str()))
+        .map(|surface| surface.id.as_str())
+        .collect()
+}
+
+/// Refuses an analytic face carrier outside the B-rep path, which has no
+/// bounded Type 128 domain, and names the analytic surfaces on no face that
+/// the writer withholds.
+fn validate_analytic_surface_context(ir: &CadIr) -> Result<Option<LossNote>, CodecError> {
+    let unbounded = unbounded_analytic_surfaces(ir);
+    if !has_brep_topology(ir) {
+        if let Some(surface) = ir.geometry.surfaces.iter().find(|surface| {
+            is_analytic_surface(surface) && !unbounded.contains(surface.id.as_str())
+        }) {
+            return Err(CodecError::NotImplemented(format!(
+                "IGES analytic surface {} requires B-rep topology for Type 192 through 198 output; no bounded Type 128 domain is available",
+                surface.id
+            )));
+        }
     }
-    Ok(())
+    if unbounded.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(IgesLossCode::WriterFreeGeometryOmitted.note(format!(
+        "{} analytic surface record(s) on no face were withheld: Types 192 through 198 have no bounded form outside a B-rep face: {}",
+        unbounded.len(),
+        unbounded.into_iter().collect::<Vec<_>>().join(", ")
+    ))))
 }
 
 impl crate::IgesVersion {
@@ -1733,7 +1784,13 @@ fn brep_entities(
         .collect::<Vec<_>>();
     let mut entities = Vec::new();
     let mut surface_indices = BTreeMap::new();
-    let mut surfaces = ir.geometry.surfaces.iter().collect::<Vec<_>>();
+    let unbounded = unbounded_analytic_surfaces(ir);
+    let mut surfaces = ir
+        .geometry
+        .surfaces
+        .iter()
+        .filter(|surface| !unbounded.contains(surface.id.as_str()))
+        .collect::<Vec<_>>();
     surfaces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     for surface in surfaces {
         if let Some(index) =
@@ -2609,7 +2666,13 @@ fn topology_entities(
         .collect::<std::collections::BTreeSet<_>>();
     let mut entities = Vec::new();
     let mut surface_indices = BTreeMap::new();
-    let mut surfaces = ir.geometry.surfaces.iter().collect::<Vec<_>>();
+    let unbounded = unbounded_analytic_surfaces(ir);
+    let mut surfaces = ir
+        .geometry
+        .surfaces
+        .iter()
+        .filter(|surface| !unbounded.contains(surface.id.as_str()))
+        .collect::<Vec<_>>();
     surfaces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     for surface in surfaces {
         if let Some(index) =
@@ -4823,76 +4886,10 @@ fn entity_counts(entities: &[Entity]) -> BTreeMap<String, usize> {
     counts
 }
 
+/// Refuses a body the writer cannot place and a vertex whose point is
+/// missing. Model content the file has no place for is not refused: the
+/// coverage declares it `Omitted`, and the export wrapper charges it.
 fn reject_unsupported_model(ir: &CadIr) -> Result<(), CodecError> {
-    let unsupported = [
-        ("subds", !ir.geometry.subds.is_empty()),
-        ("assets", !ir.model.assets.is_empty()),
-        ("features", !ir.model.features.is_empty()),
-        (
-            "feature_input_topologies",
-            !ir.model.feature_input_topologies.is_empty(),
-        ),
-        (
-            "feature_result_topologies",
-            !ir.model.feature_result_topologies.is_empty(),
-        ),
-        ("configurations", !ir.model.configurations.is_empty()),
-        ("parameters", !ir.model.parameters.is_empty()),
-        ("sketches", !ir.model.sketches.is_empty()),
-        ("sketch_entities", !ir.model.sketch_entities.is_empty()),
-        (
-            "sketch_constraints",
-            !ir.model.sketch_constraints.is_empty(),
-        ),
-        ("spatial_sketches", !ir.model.spatial_sketches.is_empty()),
-        (
-            "spatial_sketch_entities",
-            !ir.model.spatial_sketch_entities.is_empty(),
-        ),
-        (
-            "spatial_sketch_constraints",
-            !ir.model.spatial_sketch_constraints.is_empty(),
-        ),
-        ("spreadsheets", !ir.model.spreadsheets.is_empty()),
-        (
-            "product_definitions",
-            cadmpeg_ir::products::stated_definitions(&ir.model.product_definitions)
-                .next()
-                .is_some(),
-        ),
-        ("occurrences", !ir.model.occurrences.is_empty()),
-        ("assembly_joints", !ir.model.assembly_joints.is_empty()),
-        ("drawings", !ir.model.drawings.is_empty()),
-        (
-            "semantic_annotations",
-            !ir.model.semantic_annotations.is_empty(),
-        ),
-        (
-            "presentation_documents",
-            !ir.model.presentation_documents.is_empty(),
-        ),
-        (
-            "view_presentations",
-            !ir.model.view_presentations.is_empty(),
-        ),
-        ("tessellations", !ir.model.tessellations.is_empty()),
-        ("appearances", !ir.model.appearances.is_empty()),
-        (
-            "appearance_bindings",
-            !ir.model.appearance_bindings.is_empty(),
-        ),
-        ("attributes", !ir.model.attributes.is_empty()),
-        ("pmi", !ir.model.pmi.is_empty()),
-        (
-            "presentation_layers",
-            !ir.model.presentation_layers.is_empty(),
-        ),
-    ];
-    if let Some((arena, _)) = unsupported.into_iter().find(|(_, present)| *present) {
-        return Err(CodecError::NotImplemented(format!(
-            "IGES semantic writer does not encode model arena {arena}"
-        )));
-    }
     for body in &ir.geometry.bodies {
         if body
             .transform
@@ -5084,25 +5081,26 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
             )));
         }
     }
-    if let Some((arena, _)) = namespace.arenas().iter().find(|(arena, records)| {
-        if records.is_empty()
-            || ALLOWED_NATIVE_ARENAS.contains(&arena.as_str())
+    // W1: a native record the semantic writer does not encode is dropped and
+    // named, never refused for.
+    for (arena, records) in namespace.arenas() {
+        if ALLOWED_NATIVE_ARENAS.contains(&arena.as_str())
             || matches!(arena.as_str(), "product_properties" | "properties")
         {
-            return false;
+            continue;
         }
-        true
-    }) {
-        return Err(CodecError::NotImplemented(format!(
-            "IGES semantic writer cannot preserve native arena {arena}"
-        )));
+        losses.extend(native_records_omitted(
+            "IGES",
+            &format!("of native arena `{arena}`, which the semantic writer does not encode"),
+            records.iter().map(|record| record.id().to_owned()),
+        ));
     }
-    if let Some(record) = namespace
+    let unencoded_entities = namespace
         .arenas()
         .get("entities")
         .into_iter()
         .flatten()
-        .find(|record| {
+        .filter(|record| {
             let entity_type = record.field("entity_type").and_then(|value| value.as_i64());
             let name_property_represented = represented_name_properties
                 .as_ref()
@@ -5149,15 +5147,12 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
                     )
                 )
         })
-    {
-        let entity_type = record
-            .field("entity_type")
-            .and_then(|value| value.as_i64())
-            .unwrap_or_default();
-        return Err(CodecError::NotImplemented(format!(
-            "IGES semantic writer does not encode native entity type {entity_type}"
-        )));
-    }
+        .map(|record| record.id().to_owned());
+    losses.extend(native_records_omitted(
+        "IGES",
+        "whose entity the semantic writer does not encode",
+        unencoded_entities,
+    ));
     let mut native_entities = namespace.arenas().get("entities").into_iter().flatten();
     for record in native_entities.clone().filter(|record| {
         let entity_type = record.field("entity_type").and_then(|value| value.as_i64());

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeSet;
+
 use cadmpeg_core::decode::ContentScope;
 
 use super::{READER_JSON_DEPTH, RECORD_PREFIX_DEPTH};
@@ -8,7 +10,7 @@ use crate::process::operation::OperationKind;
 use crate::process::setup::{ProgramStep, Setup, Step};
 use crate::process::stock::StockRule;
 use crate::validate::process::fixture::{
-    assert_error, assert_no_process_finding, constant, document, id,
+    assert_error, assert_no_process_finding, constant, document, id, process_findings,
 };
 use crate::validate::process::walk::walk;
 
@@ -69,6 +71,39 @@ fn modifier_inputs_are_nonempty_existing_and_acyclic() {
     let mut ir = document();
     inputs(&mut ir).push(id("operation", "dogbone"));
     assert_error(&ir, "operation is its own input through modifier inputs");
+}
+
+#[test]
+fn every_operation_on_a_modifier_input_cycle_is_reported() {
+    let mut ir = document();
+    let modifier = ir.process.operations[0].clone();
+    for (key, targets) in [
+        ("a", &["b", "d"][..]),
+        ("b", &["c"]),
+        ("c", &["a"]),
+        ("d", &["b"]),
+    ] {
+        let mut operation = modifier.clone();
+        operation.id = id("operation", key);
+        let OperationKind::Modifier { inputs, .. } = &mut operation.kind else {
+            unreachable!("the fixture's first operation is a modifier")
+        };
+        *inputs = targets
+            .iter()
+            .map(|&target| id("operation", target))
+            .collect();
+        ir.process.operations.push(operation);
+    }
+    let reported: BTreeSet<String> = process_findings(&ir)
+        .into_iter()
+        .filter(|finding| finding.message == "operation is its own input through modifier inputs")
+        .filter_map(|finding| finding.entity)
+        .collect();
+    let expected: BTreeSet<String> = ["a", "b", "c", "d"]
+        .into_iter()
+        .map(|key| format!("test:process:operation#{key}"))
+        .collect();
+    assert_eq!(reported, expected);
 }
 
 #[test]

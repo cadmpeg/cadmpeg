@@ -304,7 +304,7 @@ pub(crate) fn collect(
     }
     let present = !rows.is_empty();
     ir.native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(ctx, "display_poses", &rows)?;
     Ok(present)
 }
@@ -475,7 +475,7 @@ pub(crate) fn bind(
         losses.push(F3dLossCode::SceneOverrideAmbiguous.note(format!("{ambiguous} display override row(s) share their alternating record-index path with multiple neutral occurrences")));
     }
     ir.native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(ctx, "display_poses", &rows)?;
     Ok(())
 }
@@ -504,7 +504,7 @@ pub(crate) fn rename_bound(
     }
     if changed {
         ir.native
-            .namespace_mut("f3d")
+            .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
             .set_arena(ctx, "display_poses", &rows)?;
     }
     Ok(())
@@ -540,6 +540,7 @@ pub(crate) fn validate(
             Some(cadmpeg_ir::report::check::Finding {
                 related: Vec::new(),
                 check: cadmpeg_ir::report::check::Check::NativeLinks,
+                rule: cadmpeg_ir::rule_name!("f3d/scene.displayed-pose-binding"),
                 severity: cadmpeg_ir::report::Severity::Error,
                 message: message.to_owned(),
                 entity: Some(row.id.clone()),

@@ -11,7 +11,7 @@
 use crate::document::CadIr;
 use crate::index::identities::IdentitySet;
 use crate::report::{
-    check::{Check, Finding, ValidationReport},
+    check::{Check, Finding, Ruled, ValidationReport},
     loss::LossNote,
     Severity,
 };
@@ -24,6 +24,7 @@ pub mod admit;
 mod annotations_native;
 mod appearance_attributes;
 mod carriers_parameterization;
+mod cycles;
 mod design;
 mod drawings;
 pub(crate) mod evaluation_cycles;
@@ -62,8 +63,9 @@ use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
 use topology::graphs::{
     check_child_list_reciprocity, check_closed_edges, check_coedge_pairing, check_partial_topology,
-    check_shell_connectivity, check_wire_topology,
+    check_shell_connectivity, check_solid_edge_uses, check_wire_topology,
 };
+use topology::procedural_owners::check_procedural_owners;
 use topology::{
     check_references, check_subdivision_schemes, check_tolerances, check_topology_tolerances,
 };
@@ -73,15 +75,15 @@ fn record_finding(
     check: Check,
     severity: Severity,
     entity: Option<&str>,
-    message: std::fmt::Arguments<'_>,
+    message: Ruled<'_>,
 ) {
-    let message = std::fmt::format(message);
     let entity = entity.map(str::to_owned);
     findings.push(Finding {
         related: Vec::new(),
         check,
+        rule: message.rule.clone(),
         severity,
-        message,
+        message: std::fmt::format(message.message),
         entity,
     });
 }
@@ -92,12 +94,13 @@ fn record_related_finding(
     severity: Severity,
     entity: &str,
     related: &[&str],
-    message: std::fmt::Arguments<'_>,
+    message: Ruled<'_>,
 ) {
     let mut finding = Finding {
         check,
+        rule: message.rule.clone(),
         severity,
-        message: std::fmt::format(message),
+        message: std::fmt::format(message.message),
         entity: Some(entity.to_owned()),
         related: Vec::new(),
     };
@@ -107,6 +110,26 @@ fn record_related_finding(
         }
     }
     findings.push(finding);
+}
+
+/// The refusal of a chain of state bases `depth` states long where it is
+/// past the caller's ceiling `limit`: a refusal of the session, and no
+/// finding on the document (§2.5).
+fn state_chain_refusal(limit: u64, depth: u64) -> Option<CodecError> {
+    let additional = depth
+        .checked_sub(limit)
+        .filter(|additional| *additional > 0)?;
+    Some(CodecError::ResourceLimit(
+        cadmpeg_core::decode::ResourceLimit {
+            scope: cadmpeg_core::decode::LimitScope::Session,
+            dimension: cadmpeg_core::decode::ResourceDimension::RecursionDepth,
+            reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
+            limit,
+            used: limit,
+            additional,
+            operation: "CADIR state base chain depth",
+        },
+    ))
 }
 
 /// Validate `ir` and copy `losses` into the returned report unchanged.
@@ -134,29 +157,11 @@ fn validate_model_with_index<'ir>(
     check_identity_and_order(ids, &mut findings)?;
     check_tolerances(ir, &mut findings);
     check_references(ctx, ir, ids, &mut findings)?;
+    check_procedural_owners(ir, &mut findings);
     check_evaluation_cycles(ctx, ir, ids, &mut findings)?;
     check_pmi(ir, &mut findings);
-    check_coedge_pairing(ir, &mut findings)?;
-    check_child_list_reciprocity(ir, &mut findings);
-    check_closed_edges(ir, &mut findings);
-    check_shell_connectivity(ir, &mut findings);
-    check_partial_topology(ir, &mut findings);
-    check_wire_topology(ir, &mut findings);
-    if ir.fragment {
-        record_finding(&mut findings, Check::FragmentSkipped, Severity::Info, None,
-            format_args!("skipped carrier_reachability: document-wide ownership requires a complete document"));
-    } else {
-        check_carrier_reachability(ctx, ids.native_view(), &mut findings)?;
-    }
+    check_topology_rules(ctx, ids, ids.native_view(), true, &mut findings)?;
     check_native_links(ids.native_view(), ids, &mut findings);
-    check_parameter_domains(ctx, ir, &mut findings)?;
-    check_edge_endpoint_consistency(ctx, ir, &mut findings)?;
-    let evaluations = crate::eval::admission::ModelEvaluationPass::new();
-    check_pcurve_surface_consistency(ctx, ids, &evaluations, &mut findings)?;
-    check_procedural_support_consistency(ctx, ids, &evaluations, &mut findings)?;
-    evaluations.report(&mut findings);
-    check_topology_tolerances(ir, &mut findings);
-    check_subdivision_schemes(ir, &mut findings);
     check_tessellations(ir, &mut findings);
     check_sketches(ctx, ir, &mut findings)?;
     check_spreadsheets(ir, &mut findings);
@@ -177,6 +182,90 @@ fn validate_model_with_index<'ir>(
         findings,
         losses,
     })
+}
+
+/// The rules of part 10 that read the records of one `Topology`: radial
+/// rings, child lists, edges with no vertex, shell connectivity, partial
+/// records, wire members, carrier reachability, parameter domains, the
+/// coincidence of an edge's curve, a coedge's use curve, and a coedge's
+/// pcurves with the vertices, topology tolerances, and subdivision schemes.
+/// `index` holds the topology as the geometry of its document; `reach` is
+/// the document whose records also reach carriers. With `caches`, each
+/// procedural curve is compared with its solved carrier (Caches, K2).
+fn check_topology_rules(
+    ctx: &DecodeContext<'_>,
+    index: &crate::index::ModelIndex<'_>,
+    reach: crate::native::view::NativeView<'_>,
+    caches: bool,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
+    let ir = index.ir();
+    check_coedge_pairing(ir, findings)?;
+    check_child_list_reciprocity(ir, findings);
+    check_closed_edges(ir, findings);
+    check_shell_connectivity(ir, findings);
+    check_solid_edge_uses(ir, findings);
+    check_partial_topology(ir, findings);
+    check_wire_topology(ir, findings);
+    if reach.ir.fragment {
+        record_finding(findings, Check::FragmentSkipped, Severity::Info, None,
+            crate::rule!("validate.skipped-carrier-reachability-document-wide-ownership", "skipped carrier_reachability: document-wide ownership requires a complete document"));
+    } else {
+        check_carrier_reachability(ctx, reach, &ir.geometry, findings)?;
+    }
+    check_parameter_domains(ctx, ir, findings)?;
+    check_edge_endpoint_consistency(ctx, ir, findings)?;
+    let evaluations = crate::eval::admission::ModelEvaluationPass::new();
+    check_pcurve_surface_consistency(ctx, index, &evaluations, findings)?;
+    if caches {
+        check_procedural_support_consistency(ctx, index, &evaluations, findings)?;
+    }
+    evaluations.report(findings);
+    check_topology_tolerances(ir, findings);
+    check_subdivision_schemes(&ir.geometry, findings);
+    Ok(())
+}
+
+/// The findings of the rules of one `Topology` that `document` holds outside
+/// its current geometry (a resolved state, a witness body): the topology is
+/// checked as the geometry of a document of its own, at `document`'s
+/// tolerances (part 10, Coincidence). With `references`, every reference of
+/// its records names a record of it.
+fn nested_topology_findings(
+    ctx: &DecodeContext<'_>,
+    document: crate::native::view::NativeView<'_>,
+    topology: crate::document::Topology,
+    references: bool,
+    caches: bool,
+) -> Result<Vec<Finding>, CodecError> {
+    let mut alone = CadIr::empty();
+    alone.fragment = document.ir.fragment;
+    alone.tolerances = document.ir.tolerances;
+    alone.geometry = topology;
+    let index = crate::index::ModelIndex::build(&alone);
+    let mut findings = Vec::new();
+    if references {
+        check_references(ctx, &alone, &index, &mut findings)?;
+    }
+    check_topology_rules(ctx, &index, document, caches, &mut findings)?;
+    Ok(findings)
+}
+
+/// `finding` on a record of a topology that the record `holder` holds, as a
+/// finding of `check` on `holder`: the message names `what` and the record,
+/// which leads the related entities.
+fn nested_finding(mut finding: Finding, check: Check, holder: &str, what: &str) -> Finding {
+    finding.message = match &finding.entity {
+        Some(entity) => format!("{what}: record {entity}: {}", finding.message),
+        None => format!("{what}: {}", finding.message),
+    };
+    if let Some(entity) = finding.entity.take() {
+        finding.related.insert(0, entity);
+    }
+    finding.related.retain(|id| id != holder);
+    finding.entity = Some(holder.to_owned());
+    finding.check = check;
+    finding
 }
 
 /// Validate an application-owned document under the explicit standalone policy.
@@ -298,6 +387,7 @@ pub fn validate_neutral_with_source_fidelity_for_decode(
             .map(crate::ids::UnknownId::as_str),
         &mut report.findings,
     )?;
+    products::decode_set::check_file_digests(ir, source_fidelity, &mut report.findings);
     Ok(report)
 }
 
@@ -325,7 +415,7 @@ mod tests {
                 crate::report::check::Check::ReferentialIntegrity,
                 crate::report::Severity::Error,
                 entity,
-                format_args!("unresolved reference {}", 7),
+                crate::rule!("test.unresolved-reference", "unresolved reference {}", 7),
             );
         }
         assert_eq!(findings.len(), 2);

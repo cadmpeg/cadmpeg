@@ -802,20 +802,13 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -832,24 +825,15 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -1466,33 +1450,33 @@
         },
         "catia:b5:edge#300": {
           "fields": {
+            "carrier.param_range": "derived",
             "ends.end": "derived",
-            "ends.start": "derived",
-            "param_range": "derived"
+            "ends.start": "derived"
           },
           "kind": "fields"
         },
         "catia:b5:edge#301": {
           "fields": {
+            "carrier.param_range": "derived",
             "ends.end": "derived",
-            "ends.start": "derived",
-            "param_range": "derived"
+            "ends.start": "derived"
           },
           "kind": "fields"
         },
         "catia:b5:edge#302": {
           "fields": {
+            "carrier.param_range": "derived",
             "ends.end": "derived",
-            "ends.start": "derived",
-            "param_range": "derived"
+            "ends.start": "derived"
           },
           "kind": "fields"
         },
         "catia:b5:edge#303": {
           "fields": {
+            "carrier.param_range": "derived",
             "ends.end": "derived",
-            "ends.start": "derived",
-            "param_range": "derived"
+            "ends.start": "derived"
           },
           "kind": "fields"
         },
@@ -1507,34 +1491,33 @@
         },
         "catia:b5:loop#400": {
           "fields": {
-            "boundary_role": "derived",
-            "coedges": "derived",
-            "face": "derived",
-            "vertex_uses": "derived"
+            "boundary.coedges": "derived",
+            "boundary.vertex_uses": "derived",
+            "face": "derived"
           },
           "kind": "fields"
         },
         "catia:b5:pcurve#200": {
           "fields": {
-            "parameter_range": "derived"
+            "metadata.form.parameter_range": "derived"
           },
           "kind": "fields"
         },
         "catia:b5:pcurve#201": {
           "fields": {
-            "parameter_range": "derived"
+            "metadata.form.parameter_range": "derived"
           },
           "kind": "fields"
         },
         "catia:b5:pcurve#202": {
           "fields": {
-            "parameter_range": "derived"
+            "metadata.form.parameter_range": "derived"
           },
           "kind": "fields"
         },
         "catia:b5:pcurve#203": {
           "fields": {
-            "parameter_range": "derived"
+            "metadata.form.parameter_range": "derived"
           },
           "kind": "fields"
         },
@@ -1576,7 +1559,6 @@
         "catia:b5:surface-curve#300": {
           "entity": "derived",
           "fields": {
-            "curve": "derived",
             "definition": "derived"
           },
           "kind": "entity"
@@ -1584,7 +1566,6 @@
         "catia:b5:surface-curve#301": {
           "entity": "derived",
           "fields": {
-            "curve": "derived",
             "definition": "derived"
           },
           "kind": "entity"
@@ -1592,7 +1573,6 @@
         "catia:b5:surface-curve#302": {
           "entity": "derived",
           "fields": {
-            "curve": "derived",
             "definition": "derived"
           },
           "kind": "entity"
@@ -1600,7 +1580,6 @@
         "catia:b5:surface-curve#303": {
           "entity": "derived",
           "fields": {
-            "curve": "derived",
             "definition": "derived"
           },
           "kind": "entity"
@@ -1815,6 +1794,8 @@
         }
       }
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "31685c6d94ac735e3f43009ccf5fe311b61e6424b9236ebec16360208ded42ce",
     "file_digests": {},
     "retained_records": {

@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_ir::{math::Point3, report::check::Check, CadIr};
+use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
+use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
+use cadmpeg_ir::topology::PcurveUse;
+use cadmpeg_ir::{
+    math::{Point2, Point3},
+    report::check::Check,
+    CadIr,
+};
 use cadmpeg_registry::{repro::Bundle, InputCatalog};
 use clap::Parser;
 
@@ -79,6 +86,7 @@ fn repro_cli_nonreproducing_cut_is_written_before_optional_failure() {
     let document = cadmpeg_ir::examples::unit_cube().unwrap();
     std::fs::write(&input, serde_json::to_vec(&document).unwrap()).unwrap();
     let finding = cadmpeg_ir::report::check::Finding {
+        rule: cadmpeg_ir::rule_name!("cadmpeg/test.synthetic-finding-requiring-additional-context"),
         check: Check::GeometricConsistency,
         severity: cadmpeg_ir::report::Severity::Error,
         entity: Some(document.geometry.bodies[0].id.to_string()),
@@ -114,4 +122,84 @@ fn repro_cli_nonreproducing_cut_is_written_before_optional_failure() {
         assert!(bundle.incomplete_reason.is_some());
         assert_eq!(bundle.document.geometry.bodies.len(), 1);
     }
+}
+
+fn holds_negative_zero(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Number(number) => number
+            .as_f64()
+            .is_some_and(|number| number == 0.0 && number.is_sign_negative()),
+        serde_json::Value::Array(items) => items.iter().any(holds_negative_zero),
+        serde_json::Value::Object(members) => members.values().any(holds_negative_zero),
+        serde_json::Value::Null | serde_json::Value::Bool(_) | serde_json::Value::String(_) => {
+            false
+        }
+    }
+}
+
+#[test]
+fn repro_bundle_holds_the_one_zero() {
+    let directory = tempfile::tempdir().unwrap();
+    let input = directory.path().join("model.json");
+    let report = directory.path().join("report.json");
+    let output = directory.path().join("bundle.json");
+    let mut document = cadmpeg_ir::examples::unit_cube().unwrap();
+    document.geometry.points[0].set_position(Point3::new(50.0, 0.0, 0.0).try_into().unwrap());
+    let validation = cadmpeg_ir::validate_neutral(&document, Vec::new()).unwrap();
+    let finding = validation
+        .findings
+        .into_iter()
+        .find(|finding| finding.check == Check::GeometricConsistency)
+        .unwrap();
+    let pcurve = cadmpeg_ir::ids::PcurveId::mint("synthetic:use:pcurve#1").unwrap();
+    document.geometry.pcurves.push(Pcurve {
+        id: pcurve.clone(),
+        geometry: PcurveGeometry::Line(
+            LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)).unwrap(),
+        ),
+        metadata: PcurveMetadata::default(),
+        native_ref: None,
+    });
+    for coedge in &mut document.geometry.coedges {
+        coedge.pcurves.push(PcurveUse {
+            pcurve: pcurve.clone(),
+            isoparametric: None,
+            parameter_range: Some(DirectedParameterRange::new([-0.0, 1.0]).unwrap()),
+        });
+    }
+    document.finalize();
+    let input_bytes = serde_json::to_vec(&document).unwrap();
+    assert!(holds_negative_zero(
+        &serde_json::from_slice(&input_bytes).unwrap()
+    ));
+    std::fs::write(&input, input_bytes).unwrap();
+    let payload = serde_json::json!({"input_path": input, "check_report": {"findings": [finding]}});
+    std::fs::write(&report, serde_json::to_vec(&payload).unwrap()).unwrap();
+    let cli = crate::Cli::try_parse_from([
+        "cadmpeg",
+        "repro",
+        "--from",
+        report.to_str().unwrap(),
+        "--finding",
+        "0",
+        "-o",
+        output.to_str().unwrap(),
+    ])
+    .unwrap();
+    let crate::Command::Repro(args) = cli.command else {
+        panic!("repro command expected");
+    };
+    crate::repro::run(&InputCatalog::with_builtins(), &args).unwrap();
+    let bytes = std::fs::read(&output).unwrap();
+    let bundle: Bundle = serde_json::from_slice(&bytes).unwrap();
+    assert!(bundle
+        .document
+        .geometry
+        .coedges
+        .iter()
+        .flat_map(|coedge| &coedge.pcurves)
+        .any(|use_| use_.parameter_range.is_some()));
+    assert!(!holds_negative_zero(
+        &serde_json::from_slice(&bytes).unwrap()
+    ));
 }

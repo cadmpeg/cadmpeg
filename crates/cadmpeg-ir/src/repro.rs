@@ -187,14 +187,12 @@ impl<'de> Deserialize<'de> for Bundle {
 }
 
 /// The codec whose document a finding is in: the source's codec, or
-/// `cadir` for a document with no source or a source format that is no
-/// codec id.
+/// `cadir` for a document with no source.
 fn finding_codec(document: &Document) -> CodecId {
-    document
-        .source
-        .as_ref()
-        .and_then(|source| CodecId::new(source.format()))
-        .unwrap_or_else(|| crate::codec_id!("cadir"))
+    document.source.as_ref().map_or_else(
+        || crate::codec_id!("cadir"),
+        |source| source.classification().codec(),
+    )
 }
 
 /// A row address within a document projection.

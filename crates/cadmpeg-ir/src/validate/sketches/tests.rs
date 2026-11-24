@@ -772,7 +772,7 @@ fn point_symmetry_loci_must_match_their_entities() {
 fn sketch_constraint_native_ref_must_resolve() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     // The document holds the native namespace that the links name.
-    ir.native.namespace_mut("native");
+    ir.native.namespace_mut(crate::codec_id!("native"));
     let id =
         crate::sketches::SketchConstraintId::mint("synthetic:test:sketch-constraint#native-ref")
             .unwrap();
@@ -832,10 +832,11 @@ fn sketch_constraint_native_ref_must_resolve() {
                 && finding.entity.as_deref() == Some(id.as_str())
                 && finding.message.contains("native:missing-operand#0")
         }));
-    let serialized = serde_json::to_string(&ir).unwrap();
-    let round_trip = CadIr::from_json(&serialized).unwrap();
+    let serialized = serde_json::to_string(&ir.model.sketch_constraints).unwrap();
+    let round_trip: Vec<crate::sketches::SketchConstraint> =
+        serde_json::from_str(&serialized).unwrap();
     assert!(matches!(
-        round_trip.model.sketch_constraints[0].definition.kind(),
+        round_trip[0].definition.kind(),
         crate::sketches::SketchConstraintDefinitionInput::Native {
             native_flags: Some(0x4000),
             ..
@@ -843,19 +844,20 @@ fn sketch_constraint_native_ref_must_resolve() {
     ));
     let crate::sketches::SketchConstraintDefinitionInput::Native {
         native_properties, ..
-    } = round_trip.model.sketch_constraints[0].definition.kind()
+    } = round_trip[0].definition.kind()
     else {
         unreachable!("test constraint is native")
     };
     assert_eq!(native_properties.get("mode").map(String::as_str), Some("7"));
     let mut without_properties = serde_json::from_str::<serde_json::Value>(&serialized).unwrap();
-    without_properties["model"]["sketch_constraints"][0]["definition"]
+    without_properties[0]["definition"]
         .as_object_mut()
         .unwrap()
         .remove("native_properties");
-    let error = CadIr::from_json(&serde_json::to_string(&without_properties).unwrap())
-        .unwrap_err()
-        .to_string();
+    let error =
+        serde_json::from_value::<Vec<crate::sketches::SketchConstraint>>(without_properties)
+            .unwrap_err()
+            .to_string();
     assert!(error.contains("native_properties"), "{error}");
 }
 
@@ -1087,6 +1089,7 @@ fn spatial_sketch_feature_owns_spatial_geometry() {
         native_ref: None,
     });
 
+    crate::examples::add_document_root(&mut ir);
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .findings

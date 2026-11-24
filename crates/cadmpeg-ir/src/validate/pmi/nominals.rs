@@ -37,6 +37,41 @@ impl<'a> BoundParameters<'a> {
                 .collect(),
         }
     }
+
+    /// The design parameter a nominal binds, where the design states it.
+    pub(super) fn design(&self, id: &str) -> Option<&'a DesignParameter> {
+        self.design.get(id).copied()
+    }
+}
+
+/// The quantity a PMI nominal has that binds a parameter of `kind`: a
+/// length, an angle, or a dimensionless ratio. `None` for any other kind.
+pub(super) fn bound_quantity(kind: &ValueKind) -> Option<PmiQuantity> {
+    match kind {
+        ValueKind::Quantity(Quantity::LENGTH) => Some(PmiQuantity::Length),
+        ValueKind::Quantity(Quantity::ANGLE) => Some(PmiQuantity::Angle),
+        ValueKind::Quantity(Quantity::REAL) => Some(PmiQuantity::Ratio),
+        ValueKind::Quantity(_)
+        | ValueKind::Integer
+        | ValueKind::Boolean
+        | ValueKind::Text
+        | ValueKind::Native(_) => None,
+    }
+}
+
+/// The quantity of a dimension's stated nominal: a literal's own, or that of
+/// the parameter it binds. `None` where no nominal is stated or its quantity
+/// is not known.
+pub(super) fn nominal_quantity(
+    parameters: &BoundParameters<'_>,
+    dimension: &PmiDimension,
+) -> Option<PmiQuantity> {
+    match dimension.nominal.as_ref()? {
+        Dimension::Literal(value) => Some(value.quantity),
+        Dimension::Parameter(id) | Dimension::Negated(id) => parameters
+            .design(id.as_str())
+            .and_then(|parameter| bound_quantity(&parameter.kind)),
+    }
 }
 
 pub(super) fn check_bound_nominal(
@@ -53,21 +88,22 @@ pub(super) fn check_bound_nominal(
             error(
                 findings,
                 annotation,
-                format_args!("dimension nominal binds {id}, which is no parameter of the document"),
+                crate::rule!(
+                    "pmi.dimension-nominal-binds-no-parameter-document",
+                    "dimension nominal binds {id}, which is no parameter of the document"
+                ),
             );
         }
         return;
     };
-    let quantity = match &parameter.kind {
-        ValueKind::Quantity(Quantity::LENGTH) => PmiQuantity::Length,
-        ValueKind::Quantity(Quantity::ANGLE) => PmiQuantity::Angle,
-        ValueKind::Quantity(Quantity::REAL) => PmiQuantity::Ratio,
-        ValueKind::Native(_) => return,
-        ValueKind::Quantity(_) | ValueKind::Integer | ValueKind::Boolean | ValueKind::Text => {
+    let quantity = match bound_quantity(&parameter.kind) {
+        Some(quantity) => quantity,
+        None if matches!(parameter.kind, ValueKind::Native(_)) => return,
+        None => {
             error(
                 findings,
                 annotation,
-                format_args!(
+                crate::rule!("pmi.dimension-nominal-binds-kind-no-length", 
                     "dimension nominal binds {id}, whose kind is no length, angle, or dimensionless quantity"
                 ),
             );
@@ -82,7 +118,8 @@ pub(super) fn check_bound_nominal(
         error(
             findings,
             annotation,
-            format_args!(
+            crate::rule!(
+                "pmi.dimension-nominal-binds-kind-disagrees-dimension",
                 "dimension nominal binds {id}, whose kind disagrees with the dimension's kind"
             ),
         );

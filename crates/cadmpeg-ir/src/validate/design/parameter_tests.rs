@@ -13,10 +13,12 @@ use crate::design::expr::{
     parse, Expression, ExpressionDialect, ExpressionToken, Measure, MeasureKind, MeasureTarget,
     Neutral,
 };
-use crate::design::feature::FeatureOperation;
-use crate::design::ops::shared::Law;
+use crate::design::feature::{FeatureOperation, FuzzyTolerance};
+use crate::design::ops::shared::{Law, Limit, Span};
 use crate::design::ops::sketch::{SketchConstraint, SketchRelation};
 use crate::design::ops::surface::{CurveDefinition, CurveFeature, EquationCoordinates};
+use crate::design::ops::swept::Extrude;
+use crate::design::options::SolidOutput;
 use crate::design::parameter::{
     Deviations, ParameterDefinition, ParameterOwner, ParameterValue, Tolerance,
 };
@@ -33,7 +35,7 @@ use crate::products::{
     ProductDefinition, Storage,
 };
 use crate::report::Severity;
-use crate::scalar::FiniteReal;
+use crate::scalar::{FiniteReal, Length};
 use crate::validate::design::fixture::{
     assert_finding, assert_no_design_finding, design_findings, document, feature, id, parameter,
     unresolved,
@@ -102,6 +104,33 @@ fn names_are_unique_per_scope_and_owner() {
     assert_no_design_finding(&ir);
     ir.design.parameters[1].name = None;
     assert_finding(&ir, "states no name but is no spreadsheet cell's parameter");
+}
+
+#[test]
+fn a_parameter_a_sketch_dimension_binds_needs_no_name() {
+    let mut ir = with_width();
+    ir.design.parameters[0].name = None;
+    assert_finding(&ir, "states no name but is no spreadsheet cell's parameter");
+    ir.design.sketch_constraints.push(SketchConstraint {
+        id: id("sketch-constraint", "width"),
+        sketch: id("sketch", "profile"),
+        relation: SketchRelation::Weight {
+            pole: id("sketch-entity", "pole"),
+            value: Dimension::Parameter(id("parameter", "width")),
+        },
+        name: None,
+        active: None,
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+        native_ref: None,
+    });
+    let findings = design_findings(&ir);
+    assert!(
+        !findings
+            .iter()
+            .any(|finding| finding.message.contains("states no name")),
+        "{findings:#?}"
+    );
 }
 
 #[test]
@@ -316,6 +345,91 @@ fn driven_parameters_are_bound() {
     );
     assert_finding(&ir, "a positive real dimension is `negated`");
     assert_finding(&ir, "binds test:design:parameter#measured, whose kind is");
+}
+
+/// `with_width`, a Boolean parameter `flag`, and the fixture's extrude made
+/// an extrude whose depth is `depth`.
+fn extruding(depth: Dimension<Length>) -> CadIr {
+    let mut ir = with_width();
+    let mut flag = parameter("flag", ValueKind::Boolean);
+    flag.definition = expression("false", &[]);
+    flag.value = Some(ParameterValue::Boolean(false));
+    ir.design.parameters.push(flag);
+    ir.design.features[0].definition.operation = FeatureOperation::Extrude(Box::new(Extrude {
+        profile: Selection {
+            at: Anchor::Input,
+            picks: Picks::Unread,
+            native: None,
+        },
+        loops: None,
+        direction: None,
+        origin: None,
+        span: Some(Span::Between {
+            start: Box::new(Limit::AtOrigin),
+            end: Box::new(Limit::Amount(depth)),
+        }),
+        draft: None,
+        fit: None,
+        outside: None,
+        sheet_cut: None,
+        output: SolidOutput {
+            body: None,
+            boolean: None,
+        },
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    }));
+    ir
+}
+
+#[test]
+fn a_feature_dimension_binds_a_parameter_of_its_value_type() {
+    let ir = extruding(Dimension::Parameter(id("parameter", "flag")));
+    assert_finding(
+        &ir,
+        "a length dimension binds test:design:parameter#flag, whose kind is Boolean",
+    );
+    let mut ir = with_width();
+    ir.design.features[0].definition.fuzzy_tolerance = Some(FuzzyTolerance::Explicit(
+        Dimension::Negated(id("parameter", "width")),
+    ));
+    assert_finding(&ir, "a positive length dimension is `negated`");
+    let mut ir = with_width();
+    ir.design.parameters[0].definition = expression("-2[mm]", &[]);
+    ir.design.parameters[0].value = Some(number(-2.0));
+    ir.design.features[0].definition.fuzzy_tolerance = Some(FuzzyTolerance::Explicit(
+        Dimension::Parameter(id("parameter", "width")),
+    ));
+    assert_warning(
+        &ir,
+        "a positive length dimension binds test:design:parameter#width, whose cached value",
+    );
+}
+
+#[test]
+fn feature_dimensions_of_their_parameters_value_type_break_no_rule() {
+    let mut ir = with_width();
+    ir.design.features[0].definition.fuzzy_tolerance = Some(FuzzyTolerance::Explicit(
+        Dimension::Parameter(id("parameter", "width")),
+    ));
+    assert_no_design_finding(&ir);
+    let ir = extruding(Dimension::Negated(id("parameter", "width")));
+    let findings = design_findings(&ir);
+    assert!(
+        !findings
+            .iter()
+            .any(|finding| finding.message.contains("dimension")),
+        "{findings:#?}"
+    );
+}
+
+#[test]
+fn an_unset_parameter_has_no_value() {
+    let mut ir = with_width();
+    ir.design.parameters[0].definition = ParameterDefinition::Unset;
+    assert_finding(&ir, "an `Unset` parameter states a `value`");
+    ir.design.parameters[0].value = None;
+    assert_no_design_finding(&ir);
 }
 
 #[test]
@@ -685,4 +799,109 @@ fn a_definitions_general_tolerance_is_checked() {
         &ir,
         "general tolerance states neither a linear nor an angular rule",
     );
+}
+
+/// Part 10: a `through` path resolves from the referencing scope's
+/// definition. The part places `pin` by occurrence `a`; `pin` places itself
+/// again by occurrence `nested`, which the part does not own.
+#[test]
+fn a_through_path_resolves_from_the_referencing_scope() {
+    use crate::design::selection::{PathStep, StepRef};
+    use crate::products::Occurrence;
+    const FRAGMENT: &str = "is not an occurrence of the previous step's prototype";
+    let through = |first: &str| {
+        let mut ir = with_width();
+        let pin = id::<ProductDefinitionId>("definition", "pin");
+        let mut definition = ProductDefinition::new(pin.clone(), Storage::Embedded);
+        definition.occurrences.push(id("occurrence", "nested"));
+        ir.model.product_definitions.push(definition);
+        ir.model
+            .product_definitions
+            .sort_by(|left, right| left.id.cmp(&right.id));
+        let part = id::<ProductDefinitionId>("definition", "part");
+        ir.model
+            .product_definitions
+            .iter_mut()
+            .find(|definition| definition.id == part)
+            .unwrap()
+            .occurrences
+            .push(id("occurrence", "a"));
+        ir.model.occurrences = vec![
+            Occurrence::new(id("occurrence", "a"), pin.clone(), None),
+            Occurrence::new(id("occurrence", "nested"), pin.clone(), None),
+        ];
+        let mut bolt = parameter("bolt", LENGTH);
+        bolt.scope = pin;
+        ir.design.parameters.push(bolt);
+        let reference = ParameterRef {
+            target: RefTarget::Parameter(id("parameter", "bolt")),
+            through: Some(OccurrencePath(vec![PathStep {
+                occurrence: StepRef::Occurrence(id("occurrence", first)),
+                configuration: None,
+            }])),
+        };
+        ir.design.parameters[0].definition = expression("$0", &[reference]);
+        ir.design
+            .parameters
+            .sort_by(|left, right| left.id.cmp(&right.id));
+        ir
+    };
+    let found = |ir: &CadIr| {
+        design_findings(ir)
+            .into_iter()
+            .any(|finding| finding.message.contains(FRAGMENT))
+    };
+    assert!(!found(&through("a")));
+    assert_finding(&through("nested"), FRAGMENT);
+}
+
+/// The fixture with an `External` definition `lib`, and a reference to its
+/// parameter `size`.
+fn with_library() -> (CadIr, ParameterRef) {
+    let mut ir = with_width();
+    let library = id::<ProductDefinitionId>("definition", "lib");
+    ir.model.product_definitions.push(ProductDefinition::new(
+        library.clone(),
+        Storage::External(ExternalDocument::default()),
+    ));
+    ir.model
+        .product_definitions
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    let reference = ParameterRef {
+        target: RefTarget::External {
+            definition: library,
+            name: NonBlankString::new("size").unwrap(),
+        },
+        through: None,
+    };
+    (ir, reference)
+}
+
+const EXTERNAL_PLACE: &str =
+    "an External reference is not the whole tree of an expression that states a design parameter's value";
+
+#[test]
+fn an_external_reference_is_the_whole_tree_of_a_parameter_value() {
+    let (mut ir, reference) = with_library();
+    ir.design.parameters[0].definition = expression("$0", std::slice::from_ref(&reference));
+    assert!(design_findings(&ir)
+        .iter()
+        .all(|finding| !finding.message.contains(EXTERNAL_PLACE)));
+    ir.design.parameters[0].definition = expression("$0 + 1[mm]", &[reference]);
+    assert_finding(&ir, EXTERNAL_PLACE);
+}
+
+#[test]
+fn parameters_naming_one_external_parameter_have_one_kind() {
+    const FRAGMENT: &str = "with another kind";
+    let (mut ir, reference) = with_library();
+    ir.design.parameters[0].definition = expression("$0", std::slice::from_ref(&reference));
+    let mut depth = parameter("depth", LENGTH);
+    depth.definition = expression("$0", std::slice::from_ref(&reference));
+    ir.design.parameters.insert(0, depth);
+    assert!(design_findings(&ir)
+        .iter()
+        .all(|finding| !finding.message.contains(FRAGMENT)));
+    ir.design.parameters[0].kind = ValueKind::Quantity(Quantity::ANGLE);
+    assert_finding(&ir, FRAGMENT);
 }

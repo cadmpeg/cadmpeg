@@ -144,7 +144,7 @@ The units flag and units-name values are defined by [IGES 5.3 §§2.2.4.3.14–2
 
 Semantic target profiles are explicit. IGES 5.1, 5.2, and 5.3 admit the complete emitted Type/form envelope: Types 100, 102, 104 Forms 0, 2, and 3, 110, 116, 120, 123, 124, 126, 128, 141, 142, 143, 144, 186, 190, 192, 194, 196, 198, and Types 502, 504, 508, 510, and 514 Form 1. IGES 5.0 admits Type 104 Forms 1, 2, and 3; its semantic writer emits the typed ellipse as Form 1, the hyperbola as Form 2, and the parabola as Form 3. Only IGES 5.3 admits Shell Entity Type 514 Form 2. Selecting 5.1 or 5.2 for a model that requires an open shell refuses the write before any bytes are produced. An entity outside the selected profile envelope also refuses the write before any bytes are produced. Type 120 Form 0 is also admitted by the exact revolution writer path for IGES 4.0 and 5.0; generated IGES 4.0 base-geometry records carry the nonzero Line Font required by Table 3. Generated Global field 19 is at least the shared neutral coincidence floor, every finite positive edge or vertex topology tolerance used by the writer, and the writer's scale-relative endpoint admission bound. The emitted field also uses the neutral document's positive finite `tolerances.linear` as a floor. When the geometry bound raises a positive source-declared tolerance, the writer emits `writer.minimum-resolution-adjusted` and names both values in the write report. The pcurve endpoint check and the generated field use the same effective topology tolerance.
 
-Semantic output maps the neutral analytic surface family directly. For IGES 4.0 and 5.0, Plane uses Type 108 Form 0 with a local `Z=0` equation and a rigid Directory transformation that carries the neutral plane frame. For IGES 5.1 through 5.3, Plane uses Type 190 Form 1. Circular cylinder, circular cone, sphere, and torus use Types 192, 194, 196, and 198 Form 1. A circular cylinder, circular cone, sphere, or torus must support B-rep topology and uses physically dependent Point Type 116 and Direction Type 123 entities. These analytic entities retain the exact unbounded carrier and its parameter frame without rational conversion. Types 192 through 198 are B-rep surface entities and are not emitted as standalone or trimmed-surface carriers. Type 108 and Type 120 do not express the cylinder, cone, sphere, or torus carriers, and Type 128 requires a finite parameterized patch. A non-B-rep analytic surface therefore refuses before bytes are produced. This refusal has no loss note because no output representation is selected.
+Semantic output maps the neutral analytic surface family directly. For IGES 4.0 and 5.0, Plane uses Type 108 Form 0 with a local `Z=0` equation and a rigid Directory transformation that carries the neutral plane frame. For IGES 5.1 through 5.3, Plane uses Type 190 Form 1. Circular cylinder, circular cone, sphere, and torus use Types 192, 194, 196, and 198 Form 1. A circular cylinder, circular cone, sphere, or torus must support B-rep topology and uses physically dependent Point Type 116 and Direction Type 123 entities. These analytic entities retain the exact unbounded carrier and its parameter frame without rational conversion. Types 192 through 198 are B-rep surface entities and are not emitted as standalone or trimmed-surface carriers. Type 108 and Type 120 do not express the cylinder, cone, sphere, or torus carriers, and Type 128 requires a finite parameterized patch. A cylinder, cone, sphere, or torus that carries a face outside a B-rep therefore refuses before bytes are produced; this refusal has no loss note because no output representation is selected. One that carries no face is withheld, and the rest of the model is written with `writer.free-geometry-omitted` naming each withheld surface. A model that writes no entity refuses, and the refusal names the withheld surfaces.
 
 Generated analytic frames accept normalized axis dot-product residuals through `1e-6`. The writer keeps the primary axis, removes its component from the reference axis, normalizes the repaired reference, and derives the third axis by a right-handed cross product. A placement's supplied third axis must have the same handedness and a cross-product residual through `1e-6`. Larger skew is malformed and is refused before output. The repair bound is a writer convention for finite-precision neutral frames, not an IGES file tolerance.
 
@@ -761,7 +761,7 @@ The CADIR `display_attributes` arena preserves every signed Directory display nu
 
 A positive Directory line-weight number selects that numbered increment in the uniform Global line-weight series and cannot exceed the Global maximum gradation count. With a positive Global field 17, its model-space width is `number * maximum_width / maximum_gradations`; neutral/native display width converts that result to millimetres. With V5.0 Global field 17 equal to zero, the same bounded number is relative: it requests that many standard strokes and has no physical width in the CADIR display record. Zero leaves the display width unspecified.
 
-A Manifold Solid B-rep Object or orphan Shell color binds to its body. A Face color binds to that face and overrides the body color for that face. Trimmed and bounded surface colors bind to their generated sheet body and face. The blank-status field determines body visibility. Curve and surface source-object associations retain their direct Directory colors.
+A Manifold Solid B-rep Object or orphan Shell color binds to its body. A Face color binds to that face and overrides the body color for that face. Trimmed and bounded surface colors bind to their generated sheet body and face. The blank-status field determines body visibility. A free curve's or surface's Directory color, level, blank status, and entity label stay in its native entity record: its source-object association holds only its identity.
 
 ## Byte accounting
 
@@ -769,11 +769,12 @@ The Fixed ASCII reader retains every physical card and every Directory/Parameter
 
 ## Decode admission
 
-A successful semantic decode has no error-severity neutral-validation finding.
-The reader validates referential integrity, geometry domains, topology
-ownership, endpoint agreement, pcurve agreement, transforms, and document
-invariants before it returns the document. A failed candidate does not commit
-partial topology.
+The reader validates the projected document before it returns it: referential
+integrity, geometry domains, topology ownership, endpoint agreement, pcurve
+agreement, transforms, and document invariants. Each error-severity finding
+records one `iges/projection.invalid` loss that names the finding's check,
+record, and message, and the reader returns the document. A failed candidate
+does not commit partial topology.
 
 Every non-null Directory Entry has one retained native identity and one
 `transfer_ledger` disposition, and so does every quarantined record. A

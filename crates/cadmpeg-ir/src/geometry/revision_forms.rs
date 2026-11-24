@@ -21,7 +21,7 @@ use std::num::NonZeroI64;
 /// arrays, tail boolean, and post-tail boolean run.
 // A source states raw scalars; a surface construction holds the admitted
 // form, whose scalars are `FiniteReal` values.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 #[serde(bound(deserialize = "F: Deserialize<'de> + Default, R: Deserialize<'de>"))]
@@ -52,7 +52,7 @@ pub struct RevisionSurfaceForm<F: Default = Vec<bool>, R = f64> {
 }
 
 /// Mutually exclusive payloads of a revision-gated approximation cache.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RevisionCacheForm<P = RevisionSurfaceParameterization> {
@@ -112,7 +112,7 @@ impl<P> RevisionCacheForm<P> {
 }
 
 /// Approximation state and its dependent fit contract for a variable blend.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
@@ -188,7 +188,7 @@ impl<R> VariableBlendCache<R> {
 /// spline-surface tail. This form stores no approximation cache and no fit
 /// tolerance; it stores the two parameter intervals followed by four enums, in
 /// the order the fields appear below.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 #[serde(bound(deserialize = "R: Deserialize<'de>"))]
@@ -227,7 +227,7 @@ impl<R> Default for RevisionSurfaceParameterization<R> {
 /// Complete native revision-gated `g2_blend_spl_sur` construction. The
 /// revision layout stores the two support sides in the variable-blend side
 /// layout and ends with the shared revision-gated surface tail.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "RevisionG2BlendConstructionWire")]
 pub struct RevisionG2BlendConstruction {
@@ -473,7 +473,7 @@ impl TryFrom<RevisionG2BlendConstructionWire> for RevisionG2BlendConstruction {
 /// Complete native revision-gated `cl_loft_spl_sur` construction. The
 /// revision layout is cache-first: the revision integer and shared
 /// revision-gated surface tail precede the construction fields.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "RevisionCompoundLoftConstructionWire")]
 pub struct RevisionCompoundLoftConstruction {
@@ -666,7 +666,7 @@ impl TryFrom<RevisionCompoundLoftConstructionWire> for RevisionCompoundLoftConst
 /// Both bounds select a trailing curve; all other forms contain no curve.
 // A source states raw bounds; a `RevisionCompoundLoftConstruction` holds the
 // admitted tail, whose bounds are `FiniteReal` values.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",

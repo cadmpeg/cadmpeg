@@ -31,7 +31,7 @@ fn validation_reports_a_malformed_curve_surface_reference_cycle() {
     assert!(!admit::admit(
         &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
-        admit::DRAFT_CORE_CHECKS,
+        admit::DRAFT_CORE,
         Vec::new()
     )
     .expect("admit the model")

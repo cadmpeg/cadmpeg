@@ -91,6 +91,18 @@
           "code": {
             "kind": "namespaced",
             "value": {
+              "code": "attribute.source-record-not-written",
+              "kind": "attributes_not_transferred",
+              "namespace": "step"
+            }
+          },
+          "message": "1 source attribute record(s) were not written to STEP",
+          "severity": "info"
+        },
+        {
+          "code": {
+            "kind": "namespaced",
+            "value": {
               "code": "target.source-dialect-displaced",
               "kind": "source_dialect_displaced",
               "namespace": "step",
@@ -196,6 +208,18 @@
             }
           },
           "message": "1 appearance asset(s) were reduced to STYLED_ITEM base colors; unsupported schemas, textures, and shader properties were not written to STEP",
+          "severity": "info"
+        },
+        {
+          "code": {
+            "kind": "namespaced",
+            "value": {
+              "code": "attribute.source-record-not-written",
+              "kind": "attributes_not_transferred",
+              "namespace": "step"
+            }
+          },
+          "message": "1 source attribute record(s) were not written to STEP",
           "severity": "info"
         },
         {

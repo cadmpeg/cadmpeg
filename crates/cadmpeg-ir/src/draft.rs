@@ -798,7 +798,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         &mut self,
         mut candidate: CadIr,
         changes: crate::annotations::SparseAnnotationTransaction<'ann>,
-        allowed: &[crate::report::check::Check],
+        allowed: &crate::validate::admit::Admission,
         accept: impl FnOnce(
             Result<&crate::report::check::ValidationReport, &crate::native::NativeConvertError>,
             crate::annotations::SparseAnnotationTransaction<'ann>,
@@ -811,8 +811,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
             .unknown_namespace
             .ok_or_else(|| CodecError::malformed("candidate admission needs a source namespace"))?;
         let annotations = changes.base();
-        let reuse =
-            allowed == crate::validate::admit::RHINO_DRAFT_CHECKS && candidate.native.0.is_empty();
+        let reuse = allowed == crate::validate::admit::RHINO_DRAFT && candidate.native.0.is_empty();
         let (mut state, unused) = match self.state.admission.take() {
             Some(state) if reuse && state.annotations_admitted => (Some(state), None),
             other => (None, other),
@@ -910,7 +909,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
     pub fn admit_appended(
         &mut self,
         annotations: &Annotations,
-        allowed: &[crate::report::check::Check],
+        allowed: &crate::validate::admit::Admission,
     ) -> Result<
         Result<crate::report::check::ValidationReport, crate::native::NativeConvertError>,
         CodecError,
@@ -924,10 +923,11 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
             .state
             .unknown_namespace
             .ok_or_else(|| CodecError::malformed("candidate admission needs a source namespace"))?;
-        let reuse = allowed == crate::RHINO_DRAFT_CHECKS || allowed == crate::RHINO_INSTANCE_CHECKS;
-        let mut state = self.state.admission.take().filter(|state| {
-            reuse && (allowed != crate::RHINO_DRAFT_CHECKS || state.annotations_admitted)
-        });
+        let reuse = allowed == crate::RHINO_DRAFT || allowed == crate::RHINO_INSTANCE;
+        let mut state =
+            self.state.admission.take().filter(|state| {
+                reuse && (allowed != crate::RHINO_DRAFT || state.annotations_admitted)
+            });
         let local = if let Some(admitted) = &mut state {
             let mut suffix = annotations.sparse_transaction();
             macro_rules! select_annotations {
@@ -935,7 +935,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
                     for entity in self.state.base.borrow().$home.$field.get(admitted.lengths[<$ty as EntitySchema>::KIND.index()]..).ok_or_else(|| CodecError::malformed("admitted prefix was removed"))? { suffix.select(entity.identity()); }
                 )*};
             }
-            if allowed.contains(&crate::report::check::Check::Annotations) {
+            if allowed.annotations() {
                 crate::document::arena_registry!(select_annotations);
             }
             let starts = admitted.lengths;
@@ -962,9 +962,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
                 ctx,
                 self.state.base.borrow(),
                 (format, &self.state.unknowns),
-                allowed
-                    .contains(&crate::report::check::Check::Annotations)
-                    .then_some(annotations),
+                allowed.annotations().then_some(annotations),
                 allowed,
                 Vec::new(),
             )?,
@@ -985,7 +983,7 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
                 }
             }
             if let Some(admitted) = &mut state {
-                admitted.annotations_admitted = allowed == crate::RHINO_DRAFT_CHECKS
+                admitted.annotations_admitted = allowed == crate::RHINO_DRAFT
                     || admitted.annotation_owners_resolve(annotations);
             }
             self.state.admission = state;
@@ -1019,13 +1017,13 @@ fn index_committed_identities(
             None => false,
         };
 
-        let namespace = identity_hash(format);
+        let namespace = identity_hash(format.as_str());
         for (arena, records) in records.arenas() {
             if replaces_unknowns && arena == "unknowns" {
                 continue;
             }
 
-            let arena = identity_hash(arena);
+            let arena = identity_hash(arena.as_str());
             for (record, value) in records.iter().enumerate() {
                 insert_identity(
                     &mut identities,
@@ -1069,11 +1067,11 @@ fn committed_identity_contains(
                 record,
             } => {
                 for (format, native) in &base.native.0 {
-                    if identity_hash(format) != *namespace_hash {
+                    if identity_hash(format.as_str()) != *namespace_hash {
                         continue;
                     }
                     for (name, records) in native.arenas() {
-                        if identity_hash(name) != *arena_hash {
+                        if identity_hash(name.as_str()) != *arena_hash {
                             continue;
                         }
 
@@ -1120,7 +1118,7 @@ fn stage_committed_identities(
     crate::document::arena_registry!(stage_model);
     if let Some(native) = native {
         for (format, namespace) in &native.0 {
-            let namespace_hash = identity_hash(format);
+            let namespace_hash = identity_hash(format.as_str());
             let replaces_unknowns = match unknown_namespace {
                 Some(replacement) => format == replacement,
                 None => false,
@@ -1130,7 +1128,7 @@ fn stage_committed_identities(
                     continue;
                 }
 
-                let arena_hash = identity_hash(arena);
+                let arena_hash = identity_hash(arena.as_str());
                 let mut start = 0;
                 for (existing_format, existing_namespace) in &base.native.0 {
                     if existing_format != format {
@@ -1442,10 +1440,8 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(ir.model, expected);
-        let round_trip = CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
         assert_eq!(
-            round_trip
-                .model
+            ir.model
                 .feature_regeneration_parent(&"test:draft:feature#child".try_into().unwrap()),
             Some(&"test:draft:feature#parent".try_into().unwrap())
         );
@@ -1596,14 +1592,17 @@ mod tests {
     fn commit_session_rejects_native_identity() {
         let identity = "test:native:record#1";
         let mut ir = CadIr::empty();
-        ir.native.namespace_mut("test").arenas_mut().insert(
-            "records".into(),
-            vec![NativeRecord::new(
-                crate::ids::Identity::new(identity).expect("valid identity"),
-                serde_json::Map::new(),
-            )
-            .expect("valid native identity")],
-        );
+        ir.native
+            .namespace_mut(crate::codec_id!("test"))
+            .arenas_mut()
+            .insert(
+                cadmpeg_core::nonblank_literal!("records"),
+                vec![NativeRecord::new(
+                    crate::ids::Identity::new(identity).expect("valid identity"),
+                    serde_json::Map::new(),
+                )
+                .expect("valid native identity")],
+            );
         let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 

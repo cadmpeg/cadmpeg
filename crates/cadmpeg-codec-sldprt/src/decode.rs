@@ -210,8 +210,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         if let Some(current) = &current {
             root.bodies.retain(|body| current.contains(body));
         }
+        let root = root.id.clone();
+        decoded.ir.display_unresolved_meshes(&root);
     }
     stamp_local_digests(ctx, &mut decoded.ir)?;
+    crate::codec_digests::move_to_sidecar(&mut decoded)?;
     Ok(decoded)
 }
 
@@ -367,7 +370,7 @@ fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeBody) {
         .model
         .tessellations
         .iter()
-        .filter(|mesh| mesh.body.is_none() || mesh.faces.is_empty())
+        .filter(|mesh| mesh.of.faces().is_empty())
         .count();
     if unresolved > 0 {
         report.losses.push(
@@ -1192,7 +1195,6 @@ pub(crate) fn append_design_losses(
         .iter()
         .filter(|constraint| {
             !sketch_constraint_has_complete_neutral_semantics(constraint.definition.kind())
-                && constraint.active != Some(false)
         })
         .count();
     let native_spatial_constraints = ir
@@ -3417,6 +3419,7 @@ fn retain_unresolved_appearance(
         id: binding_id,
         target: AppearanceTarget::Unresolved.into(),
         appearance: appearance_id,
+        precedence: None,
         source_entity_id: Some(unresolved.identity.clone()),
         object_type: Some(unresolved.owner_class.clone()),
         visible: None,
@@ -3598,6 +3601,7 @@ fn push_display_meshes(
                     ),
                     target: AppearanceTarget::Tessellation(id.clone()).into(),
                     appearance,
+                    precedence: None,
                     source_entity_id: Some(source_entity_id),
                     object_type: Some("DisplayFace".into()),
                     visible: None,
@@ -3737,10 +3741,12 @@ fn build_geometry_ir(
         &lanes,
         form_padding,
     );
-    crate::pmi::apply_to_parameters(
+    let refined_lengths = crate::pmi::apply_to_parameters(
         &mut ir.model.parameters,
         &ir.model.features,
         &pmi_dimensions,
+        length_unit,
+        length_places,
     )?;
     crate::resolved_features::projections::bind_parameter_scalars(
         &mut ir.model.parameters,
@@ -3758,6 +3764,7 @@ fn build_geometry_ir(
         &ir.model.features,
         &lanes,
     )?;
+    crate::history::configuration::convert_refined_configuration_values(&mut ir, &refined_lengths);
     crate::history::configuration::align_configuration_parameter_kinds(&mut ir);
     complete_resolved_configuration_parameter_snapshots(&mut ir)?;
     stamp_parameter_baseline(ctx, &mut ir)?;
@@ -4246,7 +4253,10 @@ fn build_geometry_ir(
         admitted_entities,
         "admit SLDPRT entities",
     )?;
-    native.store(ctx, ir.native.namespace_mut("sldprt"))?;
+    native.store(
+        ctx,
+        ir.native.namespace_mut(cadmpeg_ir::codec_id!("sldprt")),
+    )?;
     let mut unknowns = brep.unknowns;
     for owned_face_color in brep.face_colors {
         let annotation_source = &owned_face_color.source_stream;
@@ -4322,6 +4332,7 @@ fn build_geometry_ir(
                     id: binding_id,
                     target: AppearanceTarget::Face(target).into(),
                     appearance: id,
+                    precedence: None,
                     source_entity_id: Some(face_color.face_attr.to_string()),
                     object_type: Some("Face".into()),
                     visible: None,
@@ -4491,6 +4502,7 @@ fn build_geometry_ir(
             ),
             target: AppearanceTarget::Face(face_id.clone()).into(),
             appearance,
+            precedence: None,
             source_entity_id: Some(format!(
                 "{}:{}",
                 definition.source_name.as_str(),
@@ -4507,8 +4519,7 @@ fn build_geometry_ir(
         annotation_builder.field_exactness(id.as_str(), "color", Exactness::Derived)?;
     }
     for id in assigned_tessellations {
-        annotation_builder.field_exactness(id.as_str(), "body", Exactness::Derived)?;
-        annotation_builder.field_exactness(id.as_str(), "faces", Exactness::Derived)?;
+        annotation_builder.field_exactness(id.as_str(), "of", Exactness::Derived)?;
     }
     let mut annotations = annotation_builder.build();
     for source_block in &mut scan.blocks {
@@ -5267,10 +5278,12 @@ fn build_metadata_ir(
         &lanes,
         form_padding,
     );
-    crate::pmi::apply_to_parameters(
+    let refined_lengths = crate::pmi::apply_to_parameters(
         &mut ir.model.parameters,
         &ir.model.features,
         &pmi_dimensions,
+        length_unit,
+        length_places,
     )?;
     crate::resolved_features::projections::bind_parameter_scalars(
         &mut ir.model.parameters,
@@ -5288,6 +5301,7 @@ fn build_metadata_ir(
         &ir.model.features,
         &lanes,
     )?;
+    crate::history::configuration::convert_refined_configuration_values(&mut ir, &refined_lengths);
     crate::history::configuration::align_configuration_parameter_kinds(&mut ir);
     complete_resolved_configuration_parameter_snapshots(&mut ir)?;
     stamp_parameter_baseline(ctx, &mut ir)?;
@@ -5651,7 +5665,10 @@ fn build_metadata_ir(
         admitted_entities,
         "admit SLDPRT entities",
     )?;
-    native.store(ctx, ir.native.namespace_mut("sldprt"))?;
+    native.store(
+        ctx,
+        ir.native.namespace_mut(cadmpeg_ir::codec_id!("sldprt")),
+    )?;
     bind_active_configuration_partition(&mut ir);
     mark_active_configuration(&mut ir);
     crate::resolved_features::projections::note_blend_edge_generators(
@@ -6480,12 +6497,12 @@ fn stamp_sketch_baseline(
     Ok(())
 }
 
-/// Record the document and B-rep partition baselines the write path compares
-/// against.
-///
-/// Both are machine-local content digests and carry the `_local_sha256` suffix
-/// that says so; see [`document_local_sha256`] and [`brep_local_sha256`].
-fn stamp_local_digests(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
+/// Record the B-rep partition, metadata object and PMI baselines the write
+/// path compares against; see [`brep_local_sha256`].
+pub(crate) fn stamp_local_digests(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+) -> Result<(), CodecError> {
     ir.finalize();
     let brep_hash = brep_local_sha256_in_place(ctx, ir)?;
     if let Some(source) = &mut ir.source {
@@ -6546,31 +6563,18 @@ fn stamp_local_digests(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Co
             }
         }
     }
-    let hash = cadmpeg_ir::hash::document_local_sha256(
-        ctx,
-        ir,
-        ir.source.as_ref(),
-        "sldprt",
-        "sldprt:file:source-image#0",
-    )?;
-    if let Some(source) = &mut ir.source {
-        source.attributes.insert(
-            cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-            hash,
-        );
-    }
     Ok(())
 }
 
 /// The machine-local content digest recorded as the SLDPRT `brep_local_sha256`
-/// attribute.
+/// codec digest.
 ///
 /// A bitwise digest over the decoded B-rep alone: geometry, topology, and face
 /// appearances, with names, colors, tessellations, history, and every native
 /// record excluded. [`crate::writer::retained_partition`] compares it to decide
 /// whether the retained Parasolid partition may be replayed verbatim while the
 /// rest of the document is written. It carries every limitation
-/// [`document_local_sha256`] states, and the `_local_sha256` suffix says so.
+/// [`cadmpeg_ir::hash::document_local_sha256`] states.
 pub(crate) fn brep_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
     // Admit only B-rep arenas so a new design, presentation, or product arena
     // cannot silently change retained-partition eligibility.
@@ -6728,6 +6732,7 @@ mod digest_tests {
             id: AppearanceBindingId::mint(id).unwrap(),
             target: target.into(),
             appearance: AppearanceId::mint(appearance).unwrap(),
+            precedence: None,
             source_entity_id: None,
             object_type: None,
             visible: None,
@@ -6850,24 +6855,6 @@ fn brep_partition_sha256(
         normalized.geometry,
         normalized.model,
     )
-}
-
-/// Machine-local `document_local_sha256` for the SLDPRT write-path edit oracle.
-///
-/// See [`cadmpeg_ir::hash::document_local_sha256`].
-pub(crate) fn document_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    let digest = cadmpeg_ir::hash::document_local_sha256(
-        &ctx,
-        ir,
-        ir.source.as_ref(),
-        "sldprt",
-        "sldprt:file:source-image#0",
-    )?;
-    ctx.finish_session()?;
-    Ok(digest)
 }
 
 fn preserve_source_image(

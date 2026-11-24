@@ -103,10 +103,6 @@ fn support_association() -> SourceObjectAssociation {
         format: cadmpeg_ir::codec_id!("step"),
         geometry_role: Some(SourceGeometryRole::Support),
         object_id: cadmpeg_core::nonblank_literal!("support"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     }
 }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+mod free_analytic;
 mod wire;
 
 use cadmpeg_test_support::{edit, EditableDecodeResult};
@@ -78,13 +79,18 @@ fn encode_regenerates_a_degraded_type_102_as_an_exact_composite_carrier() {
                 }),
             "{version:?} output has no Type 102 entity"
         );
-        assert!(round_trip.ir().geometry.curves.iter().any(|curve| {
-            curve
-                .source_object
-                .as_ref()
-                .and_then(|source| source.name.as_deref())
-                == Some("COMPOSIT")
-        }));
+        assert!(round_trip
+            .ir()
+            .native
+            .namespace("iges")
+            .is_some_and(|namespace| {
+                namespace.arenas()["entities"].iter().any(|record| {
+                    record.field("entity_type").and_then(|value| value.as_i64()) == Some(102)
+                        && record.field("label").is_some_and(|label| {
+                            crate::test_support::native_bytes(&label).starts_with(b"COMPOSIT")
+                        })
+                })
+            }));
         let validation =
             cadmpeg_ir::validate_neutral(round_trip.ir(), round_trip.report().losses.clone())
                 .expect("validate the neutral model");
@@ -731,115 +737,6 @@ fn encode_reduces_exact_procedural_carriers_to_solved_geometry() {
     let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
-}
-
-#[test]
-fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
-    let mut ir = CadIr::empty();
-    ir.geometry.surfaces.extend([
-        Surface {
-            id: SurfaceId::mint("test:model:surface#cylinder").expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                    Point3::new(1.0, 2.0, 3.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    2.0,
-                )
-                .unwrap(),
-            )),
-            source_object: None,
-            native_ref: None,
-        },
-        Surface {
-            id: SurfaceId::mint("test:model:surface#cone").expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                    Point3::new(-1.0, 0.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    1.0,
-                    1.0,
-                    std::f64::consts::FRAC_PI_6,
-                )
-                .unwrap(),
-            )),
-            source_object: None,
-            native_ref: None,
-        },
-        Surface {
-            id: SurfaceId::mint("test:model:surface#sphere").expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                    Point3::new(0.0, 4.0, 0.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    3.0,
-                )
-                .unwrap(),
-            )),
-            source_object: None,
-            native_ref: None,
-        },
-        Surface {
-            id: SurfaceId::mint("test:model:surface#torus").expect("identity grammar"),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-                cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-                    Point3::new(0.0, 0.0, 5.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    4.0,
-                    1.0,
-                )
-                .unwrap(),
-            )),
-            source_object: None,
-            native_ref: None,
-        },
-    ]);
-
-    let error = plan_at(IgesVersion::V5_3, &ir, None)
-        .expect_err("standalone pointer-defined analytic surface must be refused");
-    assert!(
-        error.to_string().contains(
-            "requires B-rep topology for Type 192 through 198 output; no bounded Type 128 domain is available"
-        ),
-        "{error}"
-    );
-}
-
-#[test]
-fn encode_refuses_a_free_analytic_surface_beside_brep_topology() {
-    let decoded = IgesCodec
-        .decode(
-            &mut Cursor::new(explicit_tetrahedron_solid_file()),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let mut decoded = EditableDecodeResult::from(decoded);
-    decoded.ir_mut().geometry.surfaces.push(Surface {
-        id: SurfaceId::mint("test:model:surface#free-sphere").expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-            cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                Point3::new(10.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                1.0,
-            )
-            .unwrap(),
-        )),
-        source_object: None,
-        native_ref: None,
-    });
-
-    let error = plan_at(IgesVersion::V5_3, decoded.ir(), None)
-        .expect_err("free analytic surface must not inherit B-rep eligibility");
-    assert!(
-        error
-            .to_string()
-            .contains("analytic surface test:model:surface#free-sphere requires B-rep topology"),
-        "{error}"
-    );
 }
 
 #[test]

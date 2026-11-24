@@ -14,8 +14,6 @@ keywords = ["cad", "brep", "geometry", "transcoding", "provenance"]
 categories = ["data-structures", "encoding", "graphics"]
 
 [features]
-# Hand-built IR fixtures for tests and doctests.
-examples = []
 # `schema` builds the `JsonSchema` derives and `cadir_json_schema()`. No
 # dependent enables it: schema readers use `CADIR_JSON_SCHEMA` and
 # `DECODE_SIDECAR_JSON_SCHEMA`, the committed `schema/*.json`. The CI
@@ -43,7 +41,6 @@ proc-macro2.workspace = true
 
 [[example]]
 name = "emit_cube"
-required-features = ["examples"]
 
 [lints]
 workspace = true

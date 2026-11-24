@@ -4,11 +4,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::order::on_cycles;
 use super::records::ProcessRecords;
 use super::walk::Walked;
 use crate::design::dimension::{ParamRef, ParameterRef, RefTarget};
 use crate::report::check::Finding;
+use crate::validate::cycles::on_cycles;
 
 pub(super) fn check_bindings(
     records: &ProcessRecords<'_>,
@@ -22,7 +22,7 @@ pub(super) fn check_bindings(
         .iter()
         .map(|parameter| parameter.id.as_str())
         .collect();
-    let mut graph: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    let mut graph: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
     for record in walked {
         let id = record.id;
         for choice in &record.found.choices {
@@ -31,7 +31,8 @@ pub(super) fn check_bindings(
                     super::error(
                         findings,
                         id,
-                        format_args!(
+                        crate::rule!(
+                            "process.choice-names-no-process-parameter",
                             "`Choice` at {} names {parameter}, which is no process parameter",
                             choice.at
                         ),
@@ -42,7 +43,8 @@ pub(super) fn check_bindings(
                 super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!(
+                        "process.choice-names-no-parameter-states-no",
                         "`Choice` at {} names no parameter and states no value",
                         choice.at
                     ),
@@ -56,7 +58,7 @@ pub(super) fn check_bindings(
         for (at, reference) in &record.found.references {
             if expression {
                 if let ParamRef::Process(parameter) = reference {
-                    graph.entry(id).or_default().push(parameter.as_str());
+                    graph.entry(id).or_default().insert(parameter.as_str());
                 }
                 continue;
             }
@@ -66,7 +68,8 @@ pub(super) fn check_bindings(
                         super::error(
                             findings,
                             id,
-                            format_args!(
+                            crate::rule!(
+                                "process.reference-names-no-process-parameter",
                                 "reference at {at} names {}, which is no process parameter",
                                 parameter.as_str()
                             ),
@@ -83,7 +86,8 @@ pub(super) fn check_bindings(
                         super::error(
                             findings,
                             id,
-                            format_args!(
+                            crate::rule!(
+                                "process.reference-names-no-design-parameter",
                                 "reference at {at} names {}, which is no design parameter",
                                 parameter.as_str()
                             ),
@@ -98,7 +102,7 @@ pub(super) fn check_bindings(
                         super::error(
                             findings,
                             id,
-                            format_args!(
+                            crate::rule!("process.reference-names-parameter-no-product-definition", 
                                 "reference at {at} names a parameter of {}, which is no product definition",
                                 definition.as_str()
                             ),
@@ -112,7 +116,10 @@ pub(super) fn check_bindings(
         super::warning(
             findings,
             id,
-            format_args!("process parameter depends on itself through its expression"),
+            crate::rule!(
+                "process.process-parameter-depends-itself-through-expression",
+                "process parameter depends on itself through its expression"
+            ),
         );
     }
 }
