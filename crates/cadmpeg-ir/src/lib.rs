@@ -56,9 +56,6 @@ pub mod document;
 pub mod draft;
 pub mod drawings;
 pub mod eval;
-// `test` keeps fixtures available for this crate's unit tests; dependents that
-// need them in their test graphs still enable the `examples` feature explicitly.
-#[cfg(any(feature = "examples", test))]
 pub mod examples;
 pub mod features;
 pub mod geometry;

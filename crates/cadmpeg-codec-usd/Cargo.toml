@@ -24,7 +24,6 @@ unicode-ident.workspace = true
 
 [dev-dependencies]
 # Test-only IR example documents for writer goldens.
-cadmpeg-ir = { workspace = true, features = ["examples"] }
 cadmpeg-measure = { workspace = true, features = ["test-support"] }
 cadmpeg-test-support = { workspace = true }
 serde_json.workspace = true
