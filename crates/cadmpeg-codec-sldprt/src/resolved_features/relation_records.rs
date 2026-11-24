@@ -98,8 +98,6 @@ struct DeclarationIndex<'a, 'i> {
     relation_offsets: HashMap<&'i str, Vec<u64>>,
     /// Scalars in offset order; equal offsets keep slice order.
     scalars: Vec<&'a FeatureInputScalar>,
-    /// The end of each parameter-class declaration, by its offset.
-    parameter_ends: HashMap<u64, u64>,
 }
 
 impl<'a, 'i> DeclarationIndex<'a, 'i> {
@@ -125,16 +123,10 @@ impl<'a, 'i> DeclarationIndex<'a, 'i> {
         }
         let mut scalars = scalars.iter().collect::<Vec<_>>();
         scalars.sort_by_key(|scalar| scalar.offset);
-        let parameter_ends = classes
-            .iter()
-            .filter(|class| ArchiveParameterClass::from_class_name(&class.name).is_some())
-            .filter_map(|class| Some((class.offset, declaration_end(class)?)))
-            .collect();
         Self {
             intervals,
             relation_offsets,
             scalars,
-            parameter_ends,
         }
     }
 }
@@ -184,7 +176,7 @@ fn relation_declaration_candidates<'a>(
     &'a FeatureInputScalar,
     FeatureInputRelationFamily,
 )> {
-    relation_declaration_candidates_impl(classes, scalars, intervals, false)
+    relation_declaration_candidates_impl(classes, scalars, intervals, false, &HashMap::new())
 }
 
 fn relation_declaration_candidates_impl<'a>(
@@ -192,6 +184,7 @@ fn relation_declaration_candidates_impl<'a>(
     scalars: &'a [FeatureInputScalar],
     intervals: &[(u64, Option<u64>, String)],
     allow_dynamic: bool,
+    token_classes: &HashMap<&str, &str>,
 ) -> Vec<(
     &'a FeatureInputClass,
     &'a FeatureInputScalar,
@@ -200,16 +193,21 @@ fn relation_declaration_candidates_impl<'a>(
     let index = DeclarationIndex::new(classes, scalars, intervals);
     classes
         .iter()
-        .filter_map(|class| relation_declaration_candidate(class, &index, allow_dynamic))
+        .filter_map(|class| {
+            relation_declaration_candidate(class, &index, allow_dynamic, token_classes)
+        })
         .collect()
 }
 
 /// The nearest scalar after `class`, inside its scope, that states the class's
-/// relation.
+/// relation. A scalar whose own token form names another relation class
+/// (`token_classes`, by scalar id) states that relation (§2), so the
+/// declaration does not claim it.
 fn relation_declaration_candidate<'a>(
     class: &'a FeatureInputClass,
     index: &DeclarationIndex<'a, '_>,
     allow_dynamic: bool,
+    token_classes: &HashMap<&str, &str>,
 ) -> Option<(
     &'a FeatureInputClass,
     &'a FeatureInputScalar,
@@ -222,24 +220,6 @@ fn relation_declaration_candidate<'a>(
         RelationScope::Unbounded => None,
         RelationScope::Unstatable => return None,
     };
-    let in_scope = |scalar: &&&FeatureInputScalar| {
-        scope_end.is_none_or(|end| scalar.offset < end)
-            && class_feature.is_none_or(|feature| scalar.feature_ref.as_deref() == Some(feature))
-    };
-    // A relation class declared in place, followed by its object's zero u32
-    // and the parameter class declared in place, states the relation of the
-    // dimension whose name record follows them (§2), whatever its operands.
-    if let Some(&name) = declaration_end(class)
-        .and_then(|end| end.checked_add(RELATION_OBJECT_ZERO))
-        .and_then(|start| index.parameter_ends.get(&start))
-    {
-        let first = index
-            .scalars
-            .partition_point(|scalar| scalar.offset <= name);
-        if let Some(scalar) = index.scalars.get(first).filter(in_scope) {
-            return Some((class, scalar, family));
-        }
-    }
     let first_after = index
         .scalars
         .partition_point(|scalar| scalar.offset <= class.offset);
@@ -249,7 +229,10 @@ fn relation_declaration_candidate<'a>(
         .skip(first_after)
         .take_while(|scalar| scope_end.is_none_or(|end| scalar.offset < end))
         .find(|scalar| {
-            in_scope(scalar)
+            class_feature.is_none_or(|feature| scalar.feature_ref.as_deref() == Some(feature))
+                && token_classes
+                    .get(scalar.id.as_str())
+                    .is_none_or(|named| *named == class.id)
                 && if allow_dynamic {
                     relation_signature_for_declaration(family, scalar)
                 } else {
@@ -269,7 +252,8 @@ pub(super) fn unique_relation_declaration_candidates<'a>(
     &'a FeatureInputScalar,
     FeatureInputRelationFamily,
 )> {
-    let candidates = relation_declaration_candidates_impl(classes, scalars, intervals, false);
+    let candidates =
+        relation_declaration_candidates_impl(classes, scalars, intervals, false, &HashMap::new());
     let mut counts = HashMap::<&str, usize>::new();
     for (_, scalar, _) in &candidates {
         *counts.entry(scalar.id.as_str()).or_default() += 1;
@@ -398,39 +382,48 @@ impl<'l> TokenRelations<'l> {
     }
 
     /// The family and class of the relation instance that the display
-    /// scalar `display` forms, with the driving scalar `driving` after it
-    /// where the dimension drives a parameter: both in one feature with the
-    /// same operand cells and one token form whose parameter-class token is
-    /// two above its relation-class token, where that token names the
-    /// parameter class the lane declares once and a relation class is
-    /// declared directly before that declaration, followed by four zero
-    /// bytes.
+    /// scalar `display` and the driving scalar `driving` after it form: both
+    /// in one feature with the same operand cells and one token form whose
+    /// parameter-class token is two above its relation-class token, where
+    /// that token names the parameter class the lane declares once and a
+    /// relation class is declared directly before that declaration, followed
+    /// by four zero bytes.
     fn relation(
         &mut self,
         display: &FeatureInputScalar,
-        driving: Option<&FeatureInputScalar>,
+        driving: &FeatureInputScalar,
     ) -> Option<(FeatureInputRelationFamily, &'l str)> {
-        if display.role != FeatureInputScalarRole::Display || display.operands.is_empty() {
+        if display.role != FeatureInputScalarRole::Display
+            || driving.role != FeatureInputScalarRole::Driving
+            || display.feature_ref != driving.feature_ref
+            || display.operands.is_empty()
+            || !same_operand_cells(&display.operands, &driving.operands)
+            || self.tokens(driving)? != self.tokens(display)?
+        {
             return None;
         }
-        let (relation_token, parameter_token) = self.tokens(display)?;
+        let (family, class) = self.token_class(display)?;
+        relation_signature_for_declaration(family, display).then_some((family, class))
+    }
+
+    /// The family and class of the relation that the token form before
+    /// `scalar`'s name record names: its parameter-class token is two above
+    /// its relation-class token, that token names the parameter class the
+    /// lane declares once, and a relation class is declared before `scalar`,
+    /// directly before that declaration and followed by four zero bytes.
+    fn token_class(
+        &mut self,
+        scalar: &FeatureInputScalar,
+    ) -> Option<(FeatureInputRelationFamily, &'l str)> {
+        let (relation_token, parameter_token) = self.tokens(scalar)?;
         if relation_token.checked_add(2)? != parameter_token {
             return None;
-        }
-        if let Some(driving) = driving {
-            if driving.role != FeatureInputScalarRole::Driving
-                || display.feature_ref != driving.feature_ref
-                || !same_operand_cells(&display.operands, &driving.operands)
-                || self.tokens(driving)? != (relation_token, parameter_token)
-            {
-                return None;
-            }
         }
         let lane = self.lane;
         let class = match self
             .stated
             .get_or_insert_with(|| stated_parameters(lane, None))
-            .get(display.id.as_str())?
+            .get(scalar.id.as_str())?
         {
             Statement::Parameter(stated) => stated.class(),
             Statement::Assumed(_) | Statement::Contested => return None,
@@ -453,8 +446,7 @@ impl<'l> TokenRelations<'l> {
             })
         })?;
         let family = relation_family(&relation.name)?;
-        (relation.offset < display.offset && relation_signature_for_declaration(family, display))
-            .then_some((family, relation.id.as_str()))
+        (relation.offset < scalar.offset).then_some((family, relation.id.as_str()))
     }
 }
 
@@ -482,8 +474,31 @@ pub(super) fn relation_instances(
         sketch_features.insert(feature.id.as_str());
     }
     let intervals = feature_intervals(histories, lane);
-    let declaration_candidates =
-        relation_declaration_candidates_impl(&lane.classes, &lane.scalars, &intervals, true);
+    let mut token_relations = TokenRelations::new(lane);
+    let token_classes = lane
+        .scalars
+        .iter()
+        .filter(|scalar| {
+            matches!(
+                scalar.role,
+                FeatureInputScalarRole::Display | FeatureInputScalarRole::Driving
+            ) && scalar
+                .feature_ref
+                .as_deref()
+                .is_some_and(|feature| sketch_features.contains(feature))
+        })
+        .filter_map(|scalar| {
+            let (_, class) = token_relations.token_class(scalar)?;
+            Some((scalar.id.as_str(), class))
+        })
+        .collect::<HashMap<_, _>>();
+    let declaration_candidates = relation_declaration_candidates_impl(
+        &lane.classes,
+        &lane.scalars,
+        &intervals,
+        true,
+        &token_classes,
+    );
     let mut candidate_counts = HashMap::<&str, usize>::new();
     for (_, scalar, _) in &declaration_candidates {
         *candidate_counts.entry(scalar.id.as_str()).or_default() += 1;
@@ -511,7 +526,6 @@ pub(super) fn relation_instances(
             .entry(name.id.as_str())
             .or_insert(name.value.as_str());
     }
-    let mut token_relations = TokenRelations::new(lane);
     let mut groups = Vec::<RelationGroup<'_>>::new();
     for (scalar_index, scalar) in lane.scalars.iter().enumerate() {
         let Some(feature_ref) = scalar
@@ -530,11 +544,11 @@ pub(super) fn relation_instances(
             {
                 continue;
             }
-            // A display scalar in the token form, with the driving scalar
-            // after it where one drives the dimension, states the relation
-            // class its tokens name (§2).
-            let next = lane.scalars.get(scalar_index + 1);
-            let token_pair = next
+            // A display and a driving scalar in the token form state the
+            // relation class their tokens name (§2).
+            let token_pair = lane
+                .scalars
+                .get(scalar_index + 1)
                 .filter(|driving| {
                     !candidate_counts.contains_key(driving.id.as_str())
                         && relation_class_offsets
@@ -544,17 +558,7 @@ pub(super) fn relation_instances(
                             )
                             .is_none_or(|offset| *offset >= driving.offset)
                 })
-                .and_then(|driving| token_relations.relation(scalar, Some(driving)))
-                .or_else(|| {
-                    let driven_after = next.is_some_and(|driving| {
-                        driving.role == FeatureInputScalarRole::Driving
-                            && driving.feature_ref == scalar.feature_ref
-                            && same_operand_cells(&scalar.operands, &driving.operands)
-                    });
-                    (!driven_after)
-                        .then(|| token_relations.relation(scalar, None))
-                        .flatten()
-                });
+                .and_then(|driving| token_relations.relation(scalar, driving));
             if let Some((family, class_ref)) = token_pair {
                 groups.push(RelationGroup {
                     feature_ref,
@@ -2091,6 +2095,7 @@ mod relation_records_tests {
                     &scalars,
                     intervals,
                     allow_dynamic,
+                    &std::collections::HashMap::new(),
                 )
                 .into_iter()
                 .map(|(class, scalar, _)| (class.id.clone(), scalar.id.clone()))
@@ -2492,62 +2497,39 @@ mod relation_records_tests {
         );
     }
 
-    /// A display scalar in the token form with no driving scalar after it,
-    /// a driven dimension, states the relation class its tokens name.
+    /// A relation class declared before a dimension whose token form names
+    /// another relation class claims no scalar of that dimension, even where
+    /// its operands fit the declared family.
     #[test]
-    fn a_driven_token_form_dimension_states_its_relation() {
+    fn a_declaration_claims_no_dimension_whose_tokens_name_another_relation() {
         let mut lane = token_form_lane(0x30, 0x32);
-        lane.scalars.pop();
-        let instances = relation_instances(&sketch_history(), &lane).unwrap();
-        let driven = instances
+        let angle = class(lane.scalars[0].offset + 1, "sgAnglDim");
+        lane.classes.push(angle.clone());
+        for scalar in &mut lane.scalars[1..3] {
+            for operand in &mut scalar.operands {
+                operand.kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386);
+            }
+        }
+        let distance = lane
+            .classes
             .iter()
-            .find(|relation| relation.scalar_refs() == [lane.scalars[3].id.clone()])
-            .expect("the driven dimension's relation");
-        assert_eq!(
-            driven.family,
-            FeatureInputRelationFamily::PointPointDistance
-        );
-        assert_eq!(driven.parameter_scalar_ref(), None);
-    }
-
-    /// A relation class declared in place, with its zero u32 and its
-    /// parameter class declared in place, states the relation of the next
-    /// scalar, whose operands match no signature of the family, and a
-    /// display and a driving scalar in the token form after it state the
-    /// relation class their tokens name.
-    #[test]
-    fn an_in_place_declaration_states_the_relation_of_the_scalar_after_it() {
-        let mut lane = token_form_lane(0x30, 0x32);
-        let angle = class(1000, "sgAnglDim");
-        let angle_parameter = FeatureInputClass {
-            id: "sldprt:feature-input:class#lane:1019".into(),
-            offset: 1019,
-            name: "moAngleParameter_c".into(),
-            ..angle.clone()
-        };
-        let mut native = scalar(1050, FeatureInputScalarRole::Native);
-        native.feature_ref = Some("sketch".into());
-        native.operands = lane.scalars[3].operands.clone();
-        native.operands.iter_mut().for_each(|operand| {
-            operand.kind = FeatureInputOperandKind::Native(NativeOperandTag::TAG_8386);
-        });
-        lane.classes.extend([angle.clone(), angle_parameter]);
-        lane.scalars.insert(3, native.clone());
-        lane.scalars
-            .iter_mut()
-            .skip(4)
-            .for_each(|scalar| scalar.offset += 2000);
+            .find(|class| class.name == "sgPntPntDist")
+            .unwrap()
+            .id
+            .clone();
         let instances = relation_instances(&sketch_history(), &lane).unwrap();
-        let angle_relation = instances
-            .iter()
-            .find(|relation| relation.class_ref == angle.id)
-            .expect("the in-place declaration's relation");
-        assert_eq!(angle_relation.family, FeatureInputRelationFamily::Angle);
-        assert_eq!(angle_relation.scalar_refs(), vec![native.id.clone()]);
         assert!(instances
             .iter()
-            .filter(|relation| relation.class_ref != angle.id)
-            .all(|relation| relation.family == FeatureInputRelationFamily::PointPointDistance));
+            .all(|relation| relation.class_ref != angle.id));
+        let dimension = instances
+            .iter()
+            .find(|relation| relation.scalar_refs().contains(&lane.scalars[2].id))
+            .expect("the dimension's relation");
+        assert_eq!(
+            dimension.family,
+            FeatureInputRelationFamily::PointPointDistance
+        );
+        assert_eq!(dimension.class_ref, distance);
     }
 
     #[test]
