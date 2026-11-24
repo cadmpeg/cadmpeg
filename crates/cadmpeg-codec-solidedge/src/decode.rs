@@ -30,11 +30,20 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         let mut root_definition =
             ProductDefinition::root(root_definition(), ExternalDocument::default());
         root_definition.units = match snapshot.stream(settings::CLUSTER_STREAM) {
-            Some(entry) => {
-                let cluster = snapshot.open(ctx, entry)?;
-                let sets = settings::property_sets(ctx, cluster.window());
-                settings::unit_system(&sets, &mut body.losses)
-            }
+            Some(entry) => match snapshot.open(ctx, entry) {
+                Ok(cluster) => {
+                    let sets = settings::property_sets(ctx, cluster.window());
+                    settings::unit_system(&sets, &mut body.losses)
+                }
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                Err(error) => {
+                    body.losses.push(SolidEdgeLossCode::UnitsUnread.note(format!(
+                        "the {} stream could not be read: {error}; the document unit system is not transferred",
+                        settings::CLUSTER_STREAM
+                    )));
+                    None
+                }
+            },
             None => {
                 body.losses
                     .push(SolidEdgeLossCode::UnitsUnread.note(format!(
