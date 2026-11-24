@@ -327,6 +327,35 @@ fn face_without_a_surface_keeps_its_stored_orientation() {
 }
 
 #[test]
+fn body_that_names_an_instance_keeps_its_coordinates_with_a_loss() {
+    let plain = decode_partition(test_support::sphere_partition());
+    assert!(!charged(
+        &plain,
+        crate::loss::SolidEdgeLossCode::BodyPlacementUnread
+    ));
+    assert!(plain.ir().geometry.bodies[0].transform.is_none());
+    let mut partition = test_support::sphere_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
+        .unwrap()
+        .unwrap();
+    let range = records
+        .nodes()
+        .find(|node| node.kind() == cadmpeg_parasolid::records::node_type::BODY)
+        .unwrap()
+        .field_range("ref_instance")
+        .unwrap();
+    partition[range].copy_from_slice(&9u16.to_be_bytes());
+    let result = decode_partition(partition);
+    assert!(charged(
+        &result,
+        crate::loss::SolidEdgeLossCode::BodyPlacementUnread
+    ));
+    assert!(result.ir().geometry.bodies[0].transform.is_none());
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_geometry_valid(result.ir());
+}
+
+#[test]
 fn unreadable_partition_preserves_another_partition() {
     let bytes =
         test_support::with_partitions(&[b"broken".to_vec(), test_support::sphere_partition()]);

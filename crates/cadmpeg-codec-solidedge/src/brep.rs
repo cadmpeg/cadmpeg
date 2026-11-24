@@ -323,6 +323,15 @@ pub(crate) fn project(
                 BodyKind::General
             }
         };
+        // A primary partition holds the body in its own coordinates and
+        // states no instance for it. An instance reference has no read
+        // transform, so the body keeps those coordinates and the placement is
+        // charged.
+        if ptr(body, "ref_instance").is_some() {
+            losses.push(SolidEdgeLossCode::BodyPlacementUnread.note(
+                "a body names an instance whose transform is not read; the body keeps the coordinates of its partition",
+            ));
+        }
         ir.geometry.bodies.push(Body {
             id: body_id(stream, body.index()),
             kind: body_kind,
@@ -340,15 +349,6 @@ pub(crate) fn project(
         {
             let (shells, defect) = chain(&nodes, ptr(region, "shell"), "next");
             chain_losses(defect, "a region's shells", losses);
-            for shell in &shells {
-                selected_shells.insert(*shell, region.index());
-            }
-            regions.push(Region {
-                id: region_id(stream, region.index()),
-                body: body_id(stream, body.index()),
-                shells: shells
-                    .into_iter()
-                    .map(|shell| shell_id(stream, shell))
             let owns_faces = shells.iter().any(|shell| {
                 nodes
                     .get(shell)
@@ -368,6 +368,15 @@ pub(crate) fn project(
             if has_material && !owns_faces && region.char("type") != Some(b'S') {
                 continue;
             }
+            for shell in &shells {
+                selected_shells.insert(*shell, region.index());
+            }
+            regions.push(Region {
+                id: region_id(stream, region.index()),
+                body: body_id(stream, body.index()),
+                shells: shells
+                    .into_iter()
+                    .map(|shell| shell_id(stream, shell))
                     .collect(),
                 native_ref: None,
             });
@@ -391,6 +400,8 @@ pub(crate) fn project(
         ir.geometry.regions.extend(regions);
     }
     let mut face_shells = BTreeMap::new();
+    // The shells of each region that hold faces.
+    let mut region_face_shells: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
     for (shell_index, region) in selected_shells {
         let Some(shell) = nodes.get(&shell_index).copied() else {
             continue;
@@ -400,8 +411,6 @@ pub(crate) fn project(
                 SolidEdgeLossCode::WireTopologyUnsupported
                     .note("free shell edges and vertices remain undecoded"),
             );
-    // The shells of each region that hold faces.
-    let mut region_face_shells: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
         }
         ir.geometry.shells.push(Shell::new(
             shell_id(stream, shell_index),
@@ -409,6 +418,12 @@ pub(crate) fn project(
         ));
         let (shell_faces, defect) = chain(&nodes, ptr(shell, "face"), "next");
         chain_losses(defect, "a shell's faces", losses);
+        if !shell_faces.is_empty() {
+            region_face_shells
+                .entry(region)
+                .or_default()
+                .push(shell_index);
+        }
         for face in shell_faces {
             face_shells.entry(face).or_insert(shell_index);
         }
@@ -418,12 +433,6 @@ pub(crate) fn project(
     // Largest departure of a carrier from the faces it bounds, where it
     // exceeds the document tolerance.
     let mut departures: BTreeMap<CurveId, f64> = BTreeMap::new();
-        if !shell_faces.is_empty() {
-            region_face_shells
-                .entry(region)
-                .or_default()
-                .push(shell_index);
-        }
     if let Some(linear) = linear {
         ir.tolerances.linear = linear;
     }
@@ -902,6 +911,18 @@ pub(crate) fn project(
             native_ref: None,
         });
     }
+    let populated: BTreeSet<&ShellId> = ir.geometry.faces.iter().map(|face| &face.shell).collect();
+    for shells in region_face_shells.values() {
+        if !shells
+            .iter()
+            .any(|shell| populated.contains(&shell_id(stream, *shell)))
+        {
+            losses.push(
+                SolidEdgeLossCode::RegionFacesUntransferred
+                    .note("a region owns faces and none of them is transferred"),
+            );
+        }
+    }
     for (fin, (loop_index, edge)) in &fins {
         let (Some(node), Some(edge_node)) = (nodes.get(fin).copied(), nodes.get(edge).copied())
         else {
@@ -915,18 +936,6 @@ pub(crate) fn project(
             .copied();
         if curve.is_some_and(|curve| curve.char("sense") == Some(b'-')) {
             use_sense = reverse(use_sense);
-    let populated: BTreeSet<&ShellId> = ir.geometry.faces.iter().map(|face| &face.shell).collect();
-    for shells in region_face_shells.values() {
-        if !shells
-            .iter()
-            .any(|shell| populated.contains(&shell_id(stream, *shell)))
-        {
-            losses.push(
-                SolidEdgeLossCode::RegionFacesUntransferred
-                    .note("a region owns faces and none of them is transferred"),
-            );
-        }
-    }
         }
         // The next fin around the edge that a transferred loop uses.
         let mut radial = *fin;

@@ -35,9 +35,9 @@ pub(crate) enum SolidEdgeLossCode {
     FaceSenseUnresolved,
     ChainTruncated,
     VertexUnresolved,
+    CurveConstructionDropped,
     RegionFacesUntransferred,
     BodyPlacementUnread,
-    CurveConstructionDropped,
 }
 
 impl SolidEdgeLossCode {
@@ -124,6 +124,11 @@ impl SolidEdgeLossCode {
                 "topology.chain-truncated",
                 LossTaxonomy::TopologyNotTransferred,
             ),
+            Self::VertexUnresolved => ("vertex.unresolved", LossTaxonomy::SourceTopologyInvalid),
+            Self::CurveConstructionDropped => (
+                "curve.construction-dropped",
+                LossTaxonomy::GeometryNotTransferred,
+            ),
             Self::RegionFacesUntransferred => (
                 "region.faces-untransferred",
                 LossTaxonomy::TopologyNotTransferred,
@@ -131,11 +136,6 @@ impl SolidEdgeLossCode {
             Self::BodyPlacementUnread => (
                 "body.placement-unread",
                 LossTaxonomy::AssemblyPlacementsNotTransferred,
-            ),
-            Self::VertexUnresolved => ("vertex.unresolved", LossTaxonomy::SourceTopologyInvalid),
-            Self::CurveConstructionDropped => (
-                "curve.construction-dropped",
-                LossTaxonomy::GeometryNotTransferred,
             ),
             Self::BodiesPending => ("body.decode-pending", LossTaxonomy::MissingGeometryStream),
         };

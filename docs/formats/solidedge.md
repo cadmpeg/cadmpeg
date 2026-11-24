@@ -82,7 +82,9 @@ owns no face has its boundary in the shell of the neighbouring region, and it
 transfers no neutral region when its body also has a solid region or a region
 that owns a face. A void region that owns a face transfers as its own region,
 which holds those faces. A body that has no region records its shells through
-the BODY `shell` pointer, which heads the chain of the body's shells.
+the BODY `shell` pointer, which heads the chain of the body's shells. A BODY's
+`ref_instance` is null in a primary partition: the partition holds the body in
+its own coordinates.
 
 A swept surface (type 67) is the linear extrusion of its `section` curve
 along its unit `sweep` direction. The surface does not store the extent along
