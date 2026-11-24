@@ -8914,6 +8914,47 @@
         }
       ]
     },
+    "CircularLayout": {
+      "description": "An angular run about `axis` and an optional radial run outward from it.",
+      "type": "object",
+      "properties": {
+        "angular": {
+          "description": "The run about the axis.",
+          "$ref": "#/$defs/PatternRun2"
+        },
+        "axis": {
+          "description": "The axis of the angular run.",
+          "$ref": "#/$defs/Construction3"
+        },
+        "orientation": {
+          "description": "Whether an instance keeps the seed's orientation or turns with the\nlayout.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InstanceOrientation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "radial": {
+          "description": "The run outward from the axis.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PatternRun"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "axis",
+        "angular"
+      ]
+    },
     "CodecId": {
       "description": "A codec id: one or more lower-case ASCII letters and digits.",
       "type": "string",
@@ -9863,6 +9904,101 @@
       "items": {
         "$ref": "#/$defs/PatternStage"
       }
+    },
+    "CompositeStage": {
+      "description": "One stage of a `Composite` layout: the layout of that name, with the same\nmeaning.",
+      "oneOf": [
+        {
+          "description": "A linear layout.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "linear"
+            },
+            "value": {
+              "$ref": "#/$defs/LinearLayout"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A circular layout.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "circular"
+            },
+            "value": {
+              "$ref": "#/$defs/CircularLayout"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A mirror layout.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "mirror"
+            },
+            "value": {
+              "$ref": "#/$defs/MirrorLayout"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A scale layout.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "scale"
+            },
+            "value": {
+              "$ref": "#/$defs/ScaleLayout"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A stage whose meaning is not established.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "native"
+            },
+            "value": {
+              "$ref": "#/$defs/NonBlankString"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        }
+      ]
     },
     "CompoundComponent": {
       "description": "One component and its native construction scalar.",
@@ -45364,6 +45500,42 @@
         }
       ]
     },
+    "LinearLayout": {
+      "description": "One or two runs, each along its own direction.",
+      "type": "object",
+      "properties": {
+        "first": {
+          "description": "The first run.",
+          "$ref": "#/$defs/LinearRun"
+        },
+        "second": {
+          "description": "The second run.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LinearRun"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "seed_only": {
+          "description": "Whether the second run repeats only the seed, not the first run's\ninstances: the instances that then exist are `[i, 0]` and\n`[0, j]`. It occurs only with a `second` run.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Dimension3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "first"
+      ]
+    },
     "LinearPatternDirection": {
       "description": "Complete secondary direction of a two-direction linear pattern.",
       "type": "object",
@@ -49301,6 +49473,31 @@
         "results",
         "native_options",
         "source_settings"
+      ]
+    },
+    "MirrorLayout": {
+      "description": "The seeds reflected across `plane`. Its one instance is the reflection.",
+      "type": "object",
+      "properties": {
+        "plane": {
+          "description": "The mirror plane.",
+          "$ref": "#/$defs/Construction4"
+        },
+        "stitch_tolerance": {
+          "description": "The tolerance with which the mirror stitches the reflection to its\nseed, whatever the seeds are.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Dimension2"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "plane"
       ]
     },
     "MirrorOrientation": {
@@ -56238,39 +56435,7 @@
               "const": "linear"
             },
             "value": {
-              "type": "object",
-              "properties": {
-                "first": {
-                  "description": "The first run.",
-                  "$ref": "#/$defs/LinearRun"
-                },
-                "second": {
-                  "description": "The second run.",
-                  "anyOf": [
-                    {
-                      "$ref": "#/$defs/LinearRun"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "seed_only": {
-                  "description": "Whether the second run repeats only the seed, not the first run's\ninstances: the instances that then exist are `[i, 0]` and\n`[0, j]`. It occurs only with a `second` run.",
-                  "anyOf": [
-                    {
-                      "$ref": "#/$defs/Dimension3"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
-              },
-              "additionalProperties": false,
-              "required": [
-                "first"
-              ]
+              "$ref": "#/$defs/LinearLayout"
             }
           },
           "additionalProperties": false,
@@ -56280,7 +56445,7 @@
           ]
         },
         {
-          "description": "An angular run about `axis` and an optional radial run outward from\nit.",
+          "description": "An angular run about an axis and an optional radial run outward from\nit.",
           "type": "object",
           "properties": {
             "kind": {
@@ -56288,44 +56453,7 @@
               "const": "circular"
             },
             "value": {
-              "type": "object",
-              "properties": {
-                "angular": {
-                  "description": "The run about the axis.",
-                  "$ref": "#/$defs/PatternRun2"
-                },
-                "axis": {
-                  "description": "The axis of the angular run.",
-                  "$ref": "#/$defs/Construction3"
-                },
-                "orientation": {
-                  "description": "Whether an instance keeps the seed's orientation or turns with the\nlayout.",
-                  "anyOf": [
-                    {
-                      "$ref": "#/$defs/InstanceOrientation"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "radial": {
-                  "description": "The run outward from the axis.",
-                  "anyOf": [
-                    {
-                      "$ref": "#/$defs/PatternRun"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
-              },
-              "additionalProperties": false,
-              "required": [
-                "axis",
-                "angular"
-              ]
+              "$ref": "#/$defs/CircularLayout"
             }
           },
           "additionalProperties": false,
@@ -56457,7 +56585,7 @@
           ]
         },
         {
-          "description": "The seeds reflected across `plane`. Its one instance is the\nreflection.",
+          "description": "The seeds reflected across a plane. Its one instance is the\nreflection.",
           "type": "object",
           "properties": {
             "kind": {
@@ -56465,28 +56593,7 @@
               "const": "mirror"
             },
             "value": {
-              "type": "object",
-              "properties": {
-                "plane": {
-                  "description": "The mirror plane.",
-                  "$ref": "#/$defs/Construction4"
-                },
-                "stitch_tolerance": {
-                  "description": "The tolerance with which the mirror stitches the reflection to its\nseed, whatever the seeds are.",
-                  "anyOf": [
-                    {
-                      "$ref": "#/$defs/Dimension2"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
-              },
-              "additionalProperties": false,
-              "required": [
-                "plane"
-              ]
+              "$ref": "#/$defs/MirrorLayout"
             }
           },
           "additionalProperties": false,
@@ -56496,7 +56603,7 @@
           ]
         },
         {
-          "description": "Stages applied in order, each to every instance the earlier stages\nproduced, except that a `Scale` stage after the first splits the\ninstances made so far into `count` consecutive slices of equal length\nand scales every instance of slice j by slice j's factor about that\ninstance's own transformed centre. No stage is a `Composite`.",
+          "description": "Stages applied in order, each to every instance the earlier stages\nproduced, except that a `Scale` stage after the first splits the\ninstances made so far into `count` consecutive slices of equal length\nand scales every instance of slice j by slice j's factor about that\ninstance's own transformed centre.",
           "type": "object",
           "properties": {
             "kind": {
@@ -56506,7 +56613,7 @@
             "value": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/PatternLayout"
+                "$ref": "#/$defs/CompositeStage"
               }
             }
           },
@@ -56517,7 +56624,7 @@
           ]
         },
         {
-          "description": "`count` instances, the seed included: instance i, for i from 0 to\ncount − 1, is the seed scaled uniformly by 1 + i (factor − 1)/(count −\n1) about `center`, so the last is scaled by `factor`.",
+          "description": "Instances of the seed scaled about a point.",
           "type": "object",
           "properties": {
             "kind": {
@@ -56525,27 +56632,7 @@
               "const": "scale"
             },
             "value": {
-              "type": "object",
-              "properties": {
-                "center": {
-                  "description": "The point the instances are scaled about.",
-                  "$ref": "#/$defs/Locus"
-                },
-                "count": {
-                  "description": "The number of instances, the seed included.",
-                  "$ref": "#/$defs/Dimension14"
-                },
-                "factor": {
-                  "description": "The scale of the last instance.",
-                  "$ref": "#/$defs/Dimension10"
-                }
-              },
-              "additionalProperties": false,
-              "required": [
-                "factor",
-                "count",
-                "center"
-              ]
+              "$ref": "#/$defs/ScaleLayout"
             }
           },
           "additionalProperties": false,
@@ -72285,6 +72372,30 @@
           "type": "string",
           "const": "own"
         }
+      ]
+    },
+    "ScaleLayout": {
+      "description": "`count` instances, the seed included: instance i, for i from 0 to count −\n1, is the seed scaled uniformly by 1 + i (factor − 1)/(count − 1) about\n`center`, so the last is scaled by `factor`.",
+      "type": "object",
+      "properties": {
+        "center": {
+          "description": "The point the instances are scaled about.",
+          "$ref": "#/$defs/Locus"
+        },
+        "count": {
+          "description": "The number of instances, the seed included.",
+          "$ref": "#/$defs/Dimension14"
+        },
+        "factor": {
+          "description": "The scale of the last instance.",
+          "$ref": "#/$defs/Dimension10"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "factor",
+        "count",
+        "center"
       ]
     },
     "ScaledCompoundLoftBranch": {

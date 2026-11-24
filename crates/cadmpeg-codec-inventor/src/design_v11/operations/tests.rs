@@ -3,7 +3,7 @@
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 use cadmpeg_ir::design::ops::{
     body as body_ops, dressup as dressup_ops,
-    shared::{Limit, PatternLayout, Spacing, Span},
+    shared::{Limit, LinearLayout, PatternLayout, Spacing, Span},
     sheet_metal::{NormalSide, SheetMetalKind},
 };
 use cadmpeg_ir::design::options::{BodyForm, Boolean, SymmetricMeasure};
@@ -292,11 +292,11 @@ fn rectangular_pattern_keeps_grid_counts_spacing_and_omissions() {
     ) else {
         panic!("pattern");
     };
-    let PatternLayout::Linear {
+    let PatternLayout::Linear(LinearLayout {
         first,
         second: Some(second),
         ..
-    } = &value.layout
+    }) = &value.layout
     else {
         panic!("linear");
     };
