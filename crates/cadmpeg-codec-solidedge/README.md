@@ -8,6 +8,6 @@ Feature history, display attributes, and assembly placements remain pending.
 
 <!-- generated: capability solidedge -->
 
-Support: L3 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#solid-edge-par-psm-and-asm)).
+Support: L2 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#solid-edge-par-psm-and-asm)).
 
 <!-- /generated: capability solidedge -->

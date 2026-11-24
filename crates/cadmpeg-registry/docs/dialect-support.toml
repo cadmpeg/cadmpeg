@@ -1247,7 +1247,7 @@ row, so recovery is admitted without claiming a verified dialect. Both hosts
 charge source.kernel-dialect-unverified from this layer"""
 
 [format.solidedge]
-level = 3
+level = 2
 scored = ["solidedge:cfb"]
 
 [[support]]

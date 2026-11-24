@@ -74,7 +74,7 @@ its result.
 | SolidWorks eDrawings `.eprt` and `.easm`          | L2    |
 | OpenUSD layers                                    | L2    |
 | STEP Part 21                                      | L8    |
-| Solid Edge `.par`, `.psm`, and `.asm`             | L3    |
+| Solid Edge `.par`, `.psm`, and `.asm`             | L2    |
 | Onshape bundle                                    | L0    |
 
 <!-- /generated: ladder-table -->
@@ -735,7 +735,7 @@ See [`formats/solidedge.md`](formats/solidedge.md) and
 
 <!-- generated: dialects solidedge -->
 
-**Ladder: L3.**
+**Ladder: L2.**
 
 | Dialect             | Read     | Write |
 | ------------------- | -------- | ----- |
