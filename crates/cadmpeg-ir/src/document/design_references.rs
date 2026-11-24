@@ -4,7 +4,6 @@
 use super::{ArenaName, Model};
 use crate::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use crate::declared_measures::DeclaredTarget;
-use crate::design::expr::{Expression, ExpressionToken, Neutral, Node};
 use crate::physics::solver::SolverValue;
 use crate::pmi::PmiDefinition;
 use crate::references::{InstanceTarget, ReferenceSelection};
@@ -114,7 +113,7 @@ pub(super) fn first(model: &Model) -> Option<ArenaName> {
 }
 
 /// Whether an attribute targets a design record or a state, or holds a
-/// parameter value or an expression that reads a parameter or a measure.
+/// parameter value.
 fn attribute_reads_design(attribute: &SourceAttribute) -> bool {
     attribute.target.reads_design()
         || matches!(
@@ -124,31 +123,11 @@ fn attribute_reads_design(attribute: &SourceAttribute) -> bool {
                 | AttributeTarget::Sketch(_)
                 | AttributeTarget::Parameter(_)
         )
-        || attribute.values.iter().flatten().any(|value| match value {
-            AttributeValue::Parameter(_) => true,
-            AttributeValue::Expression(expression) => {
-                expression_reads_design(&expression.expression)
-            }
-            _ => false,
-        })
-}
-
-fn expression_reads_design(expression: &Expression) -> bool {
-    match expression {
-        Expression::Neutral(Neutral(root)) => {
-            let mut pending = vec![root];
-            while let Some(node) = pending.pop() {
-                if matches!(node, Node::Reference(_) | Node::Measure(_)) {
-                    return true;
-                }
-                pending.extend(node.operands());
-            }
-            false
-        }
-        Expression::Source { tokens, .. } => tokens
+        || attribute
+            .values
             .iter()
-            .any(|token| matches!(token, ExpressionToken::Reference(_))),
-    }
+            .flatten()
+            .any(|value| matches!(value, AttributeValue::Parameter(_)))
 }
 
 fn pmi_definition_reads_design(definition: &PmiDefinition) -> bool {

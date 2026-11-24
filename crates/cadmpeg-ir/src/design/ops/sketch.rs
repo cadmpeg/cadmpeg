@@ -32,11 +32,12 @@ use crate::design::selection::{OrderedSelection, PrincipalEntity, SetSelection};
 use crate::features::geometry::FinitePoint3;
 use crate::features::FeatureId;
 use crate::geometry::pcurve::PcurveNurbs;
-use crate::geometry::SolvedCurveGeometry;
+use crate::geometry::InlineCurve;
 use crate::scalar::{Angle, FiniteReal, Length, PositiveLength, PositiveReal};
 use crate::sketches::{
     SketchConstraintId, SketchEntityId, SketchId, SpatialSketchEntityId, SpatialSketchId,
 };
+use crate::topology::IncreasingParameterInterval;
 use crate::units::{FinitePoint2, UnitVector2, UnitVector3};
 
 /// A planar sketch: entities in sketch coordinates on a placed plane.
@@ -538,18 +539,27 @@ pub enum PlanarCurve {
 pub enum SpatialCurve {
     /// A point.
     Point(FinitePoint3),
-    /// A curve carrier with its parameter range.
-    Bounded {
-        /// The carrier.
-        carrier: SolvedCurveGeometry,
-        /// The parameter range. `None` is the full curve.
-        #[serde(
-            default,
-            skip_serializing_if = "Option::is_none",
-            deserialize_with = "deserialize_range"
-        )]
-        range: Option<[FiniteReal; 2]>,
-    },
+    /// A curve carrier with the interval of its parameter that the piece
+    /// uses.
+    Bounded(BoundedCurve),
+}
+
+/// A curve carrier and the interval of its own parameter that a piece uses.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct BoundedCurve {
+    /// The carrier.
+    pub carrier: InlineCurve,
+    /// The interval of the carrier's parameter. `None` is the carrier's whole
+    /// domain; a piece the source bounds inside that domain, an arc
+    /// included, states it.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_range"
+    )]
+    pub range: Option<IncreasingParameterInterval>,
 }
 
 /// A spline through its fit points, the point entities with `Fit(0)` to

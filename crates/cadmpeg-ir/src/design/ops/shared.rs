@@ -227,49 +227,10 @@ pub enum SheetCutNormal {
 )]
 pub enum PatternLayout {
     /// One or two runs, each along its own direction.
-    Linear {
-        /// The first run.
-        first: LinearRun,
-        /// The second run.
-        #[serde(
-            default,
-            skip_serializing_if = "Option::is_none",
-            deserialize_with = "deserialize_second"
-        )]
-        second: Option<LinearRun>,
-        /// Whether the second run repeats only the seed, not the first run's
-        /// instances: the instances that then exist are `[i, 0]` and
-        /// `[0, j]`. It occurs only with a `second` run.
-        #[serde(
-            default,
-            skip_serializing_if = "Option::is_none",
-            deserialize_with = "deserialize_seed_only"
-        )]
-        seed_only: Option<Dimension<bool>>,
-    },
-    /// An angular run about `axis` and an optional radial run outward from
+    Linear(LinearLayout),
+    /// An angular run about an axis and an optional radial run outward from
     /// it.
-    Circular {
-        /// The axis of the angular run.
-        axis: Construction<kinds::Axis>,
-        /// The run about the axis.
-        angular: PatternRun<Angle>,
-        /// The run outward from the axis.
-        #[serde(
-            default,
-            skip_serializing_if = "Option::is_none",
-            deserialize_with = "deserialize_radial"
-        )]
-        radial: Option<PatternRun<Length>>,
-        /// Whether an instance keeps the seed's orientation or turns with the
-        /// layout.
-        #[serde(
-            default,
-            skip_serializing_if = "Option::is_none",
-            deserialize_with = "deserialize_orientation"
-        )]
-        orientation: Option<InstanceOrientation>,
-    },
+    Circular(CircularLayout),
     /// Instances along a path, `run` stating their spacing by arc length.
     Path {
         /// The path.
@@ -303,37 +264,17 @@ pub enum PatternLayout {
     Dimensions(Vec<DimensionRun>),
     /// One row per instance, with a value per table dimension.
     Table(DimensionTable),
-    /// The seeds reflected across `plane`. Its one instance is the
+    /// The seeds reflected across a plane. Its one instance is the
     /// reflection.
-    Mirror {
-        /// The mirror plane.
-        plane: Construction<kinds::Plane>,
-        /// The tolerance with which the mirror stitches the reflection to its
-        /// seed, whatever the seeds are.
-        #[serde(
-            default,
-            skip_serializing_if = "Option::is_none",
-            deserialize_with = "deserialize_stitch_tolerance"
-        )]
-        stitch_tolerance: Option<Dimension<Length>>,
-    },
+    Mirror(MirrorLayout),
     /// Stages applied in order, each to every instance the earlier stages
     /// produced, except that a `Scale` stage after the first splits the
     /// instances made so far into `count` consecutive slices of equal length
     /// and scales every instance of slice j by slice j's factor about that
-    /// instance's own transformed centre. No stage is a `Composite`.
-    Composite(Vec<PatternLayout>),
-    /// `count` instances, the seed included: instance i, for i from 0 to
-    /// count − 1, is the seed scaled uniformly by 1 + i (factor − 1)/(count −
-    /// 1) about `center`, so the last is scaled by `factor`.
-    Scale {
-        /// The scale of the last instance.
-        factor: Dimension<PositiveReal>,
-        /// The number of instances, the seed included.
-        count: Dimension<u32>,
-        /// The point the instances are scaled about.
-        center: Locus,
-    },
+    /// instance's own transformed centre.
+    Composite(Vec<CompositeStage>),
+    /// Instances of the seed scaled about a point.
+    Scale(ScaleLayout),
     /// The instance set and indices of another pattern, which its one pick
     /// names: one instance per instance index of that pattern other than the
     /// seed's, with that index, each the seeds rebuilt against that pattern's
@@ -345,6 +286,112 @@ pub enum PatternLayout {
     Chain(ChainLayout),
     /// A layout whose meaning is not established.
     Native(NonBlankString),
+}
+
+/// One stage of a `Composite` layout: the layout of that name, with the same
+/// meaning.
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum CompositeStage {
+    /// A linear layout.
+    Linear(LinearLayout),
+    /// A circular layout.
+    Circular(CircularLayout),
+    /// A mirror layout.
+    Mirror(MirrorLayout),
+    /// A scale layout.
+    Scale(ScaleLayout),
+    /// A stage whose meaning is not established.
+    Native(NonBlankString),
+}
+
+/// One or two runs, each along its own direction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct LinearLayout {
+    /// The first run.
+    pub first: LinearRun,
+    /// The second run.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_second"
+    )]
+    pub second: Option<LinearRun>,
+    /// Whether the second run repeats only the seed, not the first run's
+    /// instances: the instances that then exist are `[i, 0]` and
+    /// `[0, j]`. It occurs only with a `second` run.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_seed_only"
+    )]
+    pub seed_only: Option<Dimension<bool>>,
+}
+
+/// An angular run about `axis` and an optional radial run outward from it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct CircularLayout {
+    /// The axis of the angular run.
+    pub axis: Construction<kinds::Axis>,
+    /// The run about the axis.
+    pub angular: PatternRun<Angle>,
+    /// The run outward from the axis.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_radial"
+    )]
+    pub radial: Option<PatternRun<Length>>,
+    /// Whether an instance keeps the seed's orientation or turns with the
+    /// layout.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_orientation"
+    )]
+    pub orientation: Option<InstanceOrientation>,
+}
+
+/// The seeds reflected across `plane`. Its one instance is the reflection.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct MirrorLayout {
+    /// The mirror plane.
+    pub plane: Construction<kinds::Plane>,
+    /// The tolerance with which the mirror stitches the reflection to its
+    /// seed, whatever the seeds are.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_stitch_tolerance"
+    )]
+    pub stitch_tolerance: Option<Dimension<Length>>,
+}
+
+/// `count` instances, the seed included: instance i, for i from 0 to count −
+/// 1, is the seed scaled uniformly by 1 + i (factor − 1)/(count − 1) about
+/// `center`, so the last is scaled by `factor`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ScaleLayout {
+    /// The scale of the last instance.
+    pub factor: Dimension<PositiveReal>,
+    /// The number of instances, the seed included.
+    pub count: Dimension<u32>,
+    /// The point the instances are scaled about.
+    pub center: Locus,
 }
 
 /// Components placed along a planar path.

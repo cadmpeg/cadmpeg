@@ -47,7 +47,7 @@ struct BoundedSpan {
     start: FinitePoint3,
     end: FinitePoint3,
     parameter_range: [f64; 2],
-    tolerance: Option<cadmpeg_ir::scalar::PositiveReal>,
+    tolerance: Option<cadmpeg_ir::scalar::PositiveLength>,
 }
 
 fn add_bounded_curve(
@@ -645,7 +645,7 @@ pub(super) fn project(
             continue;
         }
         let tolerance = if resolution > 0.0 {
-            let Some(value) = cadmpeg_ir::scalar::PositiveReal::new(resolution) else {
+            let Some(value) = cadmpeg_ir::scalar::PositiveLength::new(resolution) else {
                 push_geometry_loss(
                     &mut losses,
                     entry,

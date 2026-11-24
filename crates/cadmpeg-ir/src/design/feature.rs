@@ -6,7 +6,6 @@
 //! an operation known without its operands, `Native` for one whose meaning is
 //! not established, and `Stored` for a feature defined by stored geometry.
 
-use cadmpeg_core::text::NonBlankString;
 use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -14,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use super::construction::{kinds, Construction};
 use super::dimension::Dimension;
-use super::names::NativeName;
+use super::names::{CodecName, NativeName};
 use super::ops::assembly::{
     AssemblyFeature, ComponentPattern, MirrorComponents, Place, PlaceSet, RigidGroup,
 };
@@ -37,7 +36,7 @@ use super::options::NativeOptions;
 use super::selection::{DefinitionRef, SetSelection};
 use crate::features::FeatureId;
 use crate::ids::{BodyId, ProductDefinitionId};
-use crate::scalar::{FiniteReal, PositiveLength};
+use crate::scalar::{PositiveLength, PositiveReal};
 use crate::sketches::{SketchId, SpatialSketchId};
 use crate::spreadsheets::SpreadsheetId;
 use crate::tessellation::TessellationId;
@@ -304,7 +303,7 @@ pub enum FeatureOperation {
     /// An operation whose meaning is not established.
     Native {
         /// The operation's kind, written `codec:kind`.
-        kind: NonBlankString,
+        kind: CodecName,
         /// Options whose meaning is not established.
         #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
         native_options: NativeOptions,
@@ -395,13 +394,14 @@ pub struct Link {
         deserialize_with = "deserialize_transform"
     )]
     pub transform: Option<Transform>,
-    /// A uniform scale of the copy.
+    /// The uniform factor the source stores as such, applied about the
+    /// source definition's origin before `transform`.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_scale"
     )]
-    pub scale: Option<FiniteReal>,
+    pub scale: Option<PositiveReal>,
     /// Whether the copy follows its source.
     #[serde(
         default,

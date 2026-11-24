@@ -9,8 +9,8 @@ use super::construction::{
 use super::dimension::{Dimension, ParameterRef, RefTarget};
 use super::expr::{Expression, ExpressionToken, Neutral, Node};
 use super::names::{
-    CodecId, GenerationRole, Generator, InstanceIndex, NameKind, NativeName, NativeNameValue,
-    TopoName,
+    CodecId, CodecName, GenerationRole, Generator, InstanceIndex, NameKind, NativeName,
+    NativeNameValue, TopoName,
 };
 use super::options::NativeOption;
 use super::parameter::Deviations;
@@ -107,6 +107,7 @@ impl<T: Keyed + RewriteIdentities, O: MemberOrder> RewriteIdentities for Members
 }
 
 rewrite_scalar!(CodecId);
+rewrite_scalar!(CodecName);
 rewrite_scalar!(super::parameter::Tolerance);
 rewrite_scalar!(super::units::Quantity);
 rewrite_scalar!(NativeName);

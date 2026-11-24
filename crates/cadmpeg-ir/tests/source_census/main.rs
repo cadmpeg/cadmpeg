@@ -285,11 +285,6 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
     ),
     (
         "crates/cadmpeg-ir/src/provenance.rs",
-        "CodecFormat",
-        "keyless",
-    ),
-    (
-        "crates/cadmpeg-ir/src/provenance.rs",
         "SourceOwner",
         "keyless",
     ),

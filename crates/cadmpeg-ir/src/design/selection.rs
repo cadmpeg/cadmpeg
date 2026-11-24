@@ -17,14 +17,14 @@ use serde::{Deserialize, Serialize, Serializer};
 use super::construction::FrameValue;
 use super::dimension::Dimension;
 use super::ids::{ContainerId, PublicationId};
-use super::names::{NameKind, NativeName, TopoName};
+use super::names::{CodecName, NameKind, NativeName, TopoName};
 use super::read::{self, Ceiling};
 use super::refs::{ConfigurationRef, EntityRef, Position};
 use crate::document::Topology;
 use crate::features::geometry::FinitePoint3;
 use crate::features::selections::NativeSelections;
 use crate::features::FeatureId;
-use crate::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
+use crate::geometry::{InlineCurve, InlineSurface};
 use crate::ids::{OccurrenceId, ProductDefinitionId};
 use crate::scalar::{Angle, FiniteReal, Length};
 use crate::sketches::{SketchEntityId, SketchId, SpatialSketchEntityId, SpatialSketchId};
@@ -650,14 +650,14 @@ pub struct Witness {
     )]
     pub frame: Option<FrameValue>,
     /// The chain curves.
-    pub curves: Vec<SolvedCurveGeometry>,
+    pub curves: Vec<InlineCurve>,
     /// A surface.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_surface"
     )]
-    pub surface: Option<SolvedSurfaceGeometry>,
+    pub surface: Option<InlineSurface>,
     /// The face group or body that the source backs up for the pick.
     #[serde(
         default,
@@ -852,7 +852,7 @@ pub enum SelectionRule {
     },
     /// A source rule whose meaning is not established, written
     /// `codec:rule`.
-    Native(NonBlankString),
+    Native(CodecName),
 }
 
 /// How a rule term extends its result.
@@ -896,8 +896,9 @@ pub enum Propagation {
         )]
         gap: Option<Dimension<Length>>,
     },
-    /// A source propagation whose meaning is not established.
-    Native(NonBlankString),
+    /// A source propagation whose meaning is not established, written
+    /// `codec:propagation`.
+    Native(CodecName),
 }
 
 /// The continuity of a connection.
@@ -986,7 +987,7 @@ cadmpeg_core::named_optional_field!(deserialize_propagation, Propagation, "propa
 cadmpeg_core::named_optional_field!(deserialize_resolved_members<O>, Members<Picked, O>, "resolved");
 cadmpeg_core::named_optional_field!(deserialize_resolved_entities, Vec<EntityRef>, "resolved");
 cadmpeg_core::named_optional_field!(deserialize_start, Box<Picked>, "start");
-cadmpeg_core::named_optional_field!(deserialize_surface, SolvedSurfaceGeometry, "surface");
+cadmpeg_core::named_optional_field!(deserialize_surface, InlineSurface, "surface");
 cadmpeg_core::named_optional_field!(deserialize_target, OccurrencePath, "target");
 cadmpeg_core::named_optional_field!(deserialize_within, NativeOwner, "within");
 cadmpeg_core::named_optional_field!(deserialize_witness, Witness, "witness");
