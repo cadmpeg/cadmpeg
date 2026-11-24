@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, LimitScope, ResourceLimit};
+use cadmpeg_core::CodecError;
 
 use crate::design::dimension::{Dimension, ParamRef};
 use crate::design::evaluation::{EvaluationStatus, StateBase};
@@ -140,17 +141,17 @@ fn process_bases_resolve_to_states_with_content() {
     assert_error(&ir, "is an evaluation with no content");
 }
 
-/// The process findings of `ir` under `policy`.
-fn findings_under(ir: &CadIr, policy: &DecodePolicy) -> Vec<Finding> {
+/// The process findings of `ir` under `policy`, or the validation's refusal.
+fn findings_under(ir: &CadIr, policy: &DecodePolicy) -> Result<Vec<Finding>, CodecError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy).unwrap();
-    let report = crate::validate::validate_neutral_for_decode(&ctx, ir, Vec::new()).unwrap();
+    let report = crate::validate::validate_neutral_for_decode(&ctx, ir, Vec::new());
     ctx.finish_session().unwrap();
-    report
+    Ok(report?
         .findings
         .into_iter()
         .filter(|finding| finding.check == Check::Process)
-        .collect()
+        .collect())
 }
 
 #[test]
@@ -180,22 +181,20 @@ fn process_bases_form_a_forest_within_the_reader_ceiling() {
         chained.configuration = Some(design::id("configuration", &key(at)));
         ir.process.states.push(chained);
     }
-    let findings = findings_under(&ir, &policy);
+    let refusal = findings_under(&ir, &policy).unwrap_err();
     assert!(
-        findings
-            .iter()
-            .any(|finding| finding.message.contains(&format!(
-                "chain of state bases is {} deep, past the ceiling of {ceiling}",
-                ceiling + 1
-            ))),
-        "the chain past the ceiling is not refused"
+        matches!(
+            refusal,
+            CodecError::ResourceLimit(ResourceLimit {
+                scope: LimitScope::Session,
+                limit,
+                ..
+            }) if limit == ceiling
+        ),
+        "{refusal:?}"
     );
-    assert!(
-        !findings
-            .iter()
-            .any(|finding| finding.message.contains(&format!("is {ceiling} deep"))),
-        "the chain at the ceiling is refused"
-    );
+    ir.process.states.pop();
+    assert!(findings_under(&ir, &policy).is_ok());
 }
 
 #[test]
