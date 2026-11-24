@@ -1066,8 +1066,6 @@ Y components. Four binary64 limits follow the directions. The payload
 defines an unrestricted plane. `08 e8 1d` followed by the origin uses
 the positive X and Y directions. For each layout, `P(U,V)=origin+U·X+V·Y`.
 
-A sheet class-`2c` extrusion with a class-`14` offset directrix can use a result interval outside the directrix's active interval when its span is no larger than the source interval's span. The result interval stays inside the source spline's distinct-knot domain. A containing class-`30` kind-`21` result and its face ring retain the same directrix identity, signed offset and extrusion direction. The face ring's parameter bounds select the limited extrusion.
-
 A sheet class-`38` ruled surface has two allocation references, one to a
 class-`39` guide jet and one to a profile pcurve. The reference lane starts
 with `82`. Its tail is `05 01 01`, a finite signed binary64 value, a unit

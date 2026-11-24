@@ -418,7 +418,7 @@ where
         }
         let carrier = self.carrier(ir, base, carriers, refusal)?;
         let uv = consolidated_jet_pcurve(&curve, &ConsolidatedCarrierChart::Identity, refusal)?;
-        let trim_chart = trim_bounds.map(|bounds| chart.with_bounds(bounds));
+        let trim_chart = trim_bounds.map(|bounds| chart.expanded_to_include(bounds));
         let chart = trim_chart.as_ref().unwrap_or(chart);
         let knot_domain = [
             curve.sites.first()?.knot.get(),
@@ -426,13 +426,16 @@ where
         ];
         let extended_base = match &carrier {
             Carrier::OffsetTensor(surface, _, distance)
-                if trim_chart.is_some() || chart.extends_source(&offset) =>
+                if trim_chart.is_some()
+                    || offset.maps_result()
+                    || chart.extends_source(&offset) =>
             {
                 let bounds = Carrier::Tensor(surface).bounds()?;
                 Some(Carrier::OffsetTensor(surface, bounds, *distance))
             }
             _ => None,
         };
+        let used_extended_base = std::cell::Cell::new(false);
         let surface = chart.surface(&offset, knot_domain, |t| {
             let p = eval::decode::pcurve_uv(EvaluationAdmission::Standard, &uv, t)
                 .ok()?
@@ -442,8 +445,18 @@ where
                 return Some(point);
             }
             let full = extended_base.as_ref()?;
-            full.evaluate(clamp_chart(full, uv)?)
+            let point = full.evaluate(clamp_chart(full, uv)?)?;
+            used_extended_base.set(true);
+            Some(point)
         })?;
+        if offset.maps_result() || used_extended_base.get() {
+            refusal.push_extrusion_parameter_map(
+                (self.physical)(self.records[directrix].byte_offset())?,
+                offset.from,
+                offset.result,
+                used_extended_base.get(),
+            );
+        }
         Some(Carrier::Extrusion(Box::new(surface)))
     }
 
@@ -881,7 +894,7 @@ where
         let bytes = payload(self.bytes, ring)?;
         let (refs, mut at) = match (ring.family(), *bytes.first()?) {
             (Family::A, 0x08) => (usize::from(*bytes.get(1)?), 2),
-            (_, lead) => (usize::from(lead.checked_sub(0x80)?), 1),
+            (Family::A | Family::B, lead) => (usize::from(lead.checked_sub(0x80)?), 1),
         };
         if refs < 5 || refs % 2 != 1 {
             return None;
@@ -2182,6 +2195,7 @@ mod tests {
     use super::{line_at, ring_tail, RingBounds, RingTail};
 
     mod carriers;
+    mod extrusion_results;
     mod recovery;
     mod rolling_spans;
     mod roster_priority;
