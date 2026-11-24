@@ -14,7 +14,7 @@ use crate::report::{
     check::{Check, Finding},
     Severity,
 };
-use crate::validate::design::expressions::cycles;
+use crate::validate::cycles::cycles;
 
 pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &mut Vec<Finding>) {
     if ir.model.drawings.is_empty() {
