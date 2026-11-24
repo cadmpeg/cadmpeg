@@ -156,7 +156,7 @@ fn options(construction: &DesignThreadConstruction) -> cadmpeg_ir::design::optio
         .into_iter()
         .map(|external| {
             (
-                cadmpeg_core::nonblank_literal!("f3d:external"),
+                cadmpeg_ir::codec_name!("f3d:external"),
                 NativeOption::Bool(Dimension::Literal(external)),
             )
         })

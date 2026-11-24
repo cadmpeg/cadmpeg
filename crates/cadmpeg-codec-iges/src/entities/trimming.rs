@@ -282,7 +282,9 @@ fn create_boundary_vertices(
         candidate.geometry_mut().vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,
-            tolerance: Some(tolerance),
+            tolerance: Some(
+                cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(tolerance),
+            ),
             native_ref: None,
         });
         let mut derivation_endpoints = Vec::new();
@@ -2947,7 +2949,11 @@ pub(super) fn project(
                         start_vertex,
                         end_vertex,
                     )),
-                    tolerance: Some(checked_sewing_tolerance),
+                    tolerance: Some(
+                        cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real(
+                            checked_sewing_tolerance,
+                        ),
+                    ),
                     native_ref: None,
                 });
                 if item
@@ -3145,7 +3151,7 @@ pub(super) fn project(
             surface_id
         };
         let checked_face_tolerance = if face_tolerance > 0.0 {
-            let Some(value) = cadmpeg_ir::scalar::PositiveReal::new(face_tolerance) else {
+            let Some(value) = cadmpeg_ir::scalar::PositiveLength::new(face_tolerance) else {
                 super::push_geometry_loss(
                     &mut losses,
                     entry,

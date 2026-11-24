@@ -1708,7 +1708,7 @@ fn encode_declares_the_largest_topology_tolerance_as_minimum_resolution() {
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     decoded.ir_mut().geometry.vertices[0].tolerance =
-        Some(cadmpeg_ir::scalar::PositiveReal::new(0.25).expect("positive finite tolerance"));
+        Some(cadmpeg_ir::scalar::PositiveLength::new(0.25).expect("positive finite tolerance"));
 
     let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();

@@ -192,7 +192,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id: crate::identity::source_object_id_checked(format_args!(
                         "VisibGeom:{}",
                         row.id
@@ -287,7 +287,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                     }),
                     source_object: Some(SourceObjectAssociation {
                         geometry_role: None,
-                        format: cadmpeg_ir::CodecFormat::Creo,
+                        format: cadmpeg_ir::codec_id!("creo"),
                         object_id: crate::identity::source_object_id_checked(format_args!(
                             "{}{}",
                             namespace.source_prefix(),
@@ -337,7 +337,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                 }),
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id: crate::identity::source_object_id_checked(format_args!(
                         "VisibGeom:{}",
                         row.id

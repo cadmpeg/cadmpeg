@@ -490,7 +490,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
                 continue;
             };
             let Some(endpoint_tolerance) =
-                edge.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get)
+                edge.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get)
             else {
                 continue;
             };
@@ -1199,7 +1199,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
     for edge in &ir.geometry.edges {
         let (Some(curve), Some(tolerance)) = (
             edge.curve(),
-            edge.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get),
+            edge.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get),
         ) else {
             continue;
         };
@@ -1540,10 +1540,11 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                 }) else {
                     continue;
                 };
-                let Some(tolerance) = edge
-                    .tolerance
-                    .map(cadmpeg_ir::scalar::NonNegativeReal::from)
-                else {
+                let Some(tolerance) = edge.tolerance.map(|tolerance| {
+                    cadmpeg_ir::scalar::NonNegativeReal::from(
+                        cadmpeg_ir::scalar::PositiveReal::from_assigned_length(tolerance),
+                    )
+                }) else {
                     continue;
                 };
                 (
@@ -4054,7 +4055,7 @@ fn nurbs_surface_control_bounds(surface: &NurbsSurface) -> Option<([f64; 3], [f6
 
 fn point_outside_nurbs_control_bounds(
     point: Point3,
-    tolerance: cadmpeg_ir::scalar::PositiveReal,
+    tolerance: cadmpeg_ir::scalar::PositiveLength,
     bounds: ([f64; 3], [f64; 3]),
 ) -> bool {
     if !point.is_finite() {
@@ -4506,7 +4507,7 @@ pub(super) fn pcurve_edge_endpoint_contract_with_index(
     let allowance = [edge.tolerance, start_tolerance, end_tolerance]
         .into_iter()
         .flatten()
-        .map(cadmpeg_ir::scalar::PositiveReal::get)
+        .map(cadmpeg_ir::scalar::PositiveLength::get)
         .fold(0.0_f64, f64::max);
     Ok(Some(([start, end], allowance)))
 }
