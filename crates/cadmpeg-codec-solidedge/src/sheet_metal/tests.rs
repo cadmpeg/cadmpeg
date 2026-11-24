@@ -5,7 +5,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::design::dimension::Dimension;
-use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
+use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::sheet_metal::{BendAllowance, NormalSide, SheetMetalKind};
 use cadmpeg_ir::design::options::NativeOption;
 
@@ -225,10 +225,9 @@ fn side_one_is_against_the_normal() {
 fn bad_side_keeps_the_feature_unresolved() {
     let result = base_tab(0.002, 3.0, None);
     assert!(matches!(
-        result.ir().design.features[0].definition.operation,
-        FeatureOperation::Unresolved {
-            family: OperationFamily::SheetMetal
-        }
+        &result.ir().design.features[0].definition.operation,
+        FeatureOperation::Native { native_options, .. }
+            if native_options.keys().any(|key| key.as_str() == "solidedge:profile")
     ));
     assert!(codes(&result).contains(&"sheet-metal.base-tab-unread".to_owned()));
 }
