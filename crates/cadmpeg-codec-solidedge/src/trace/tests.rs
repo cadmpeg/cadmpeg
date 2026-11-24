@@ -247,7 +247,14 @@ fn point_that_does_not_converge_within_the_iteration_limit_is_not_refined() {
     let traced = refine(&ctx, [&lower, &quick], &chart, None, TARGET_MM, 10.0)
         .expect("evaluation")
         .expect("refined");
-    assert!(traced.departure <= TARGET_MM);
+    // The interior points reach both planes; the end points keep their
+    // stated positions.
+    let points = traced.curve.control_points();
+    assert!(points.len() >= 4);
+    assert!(points[1..points.len() - 1]
+        .iter()
+        .all(|point| point.get().x.abs() < EPS_ON_SURFACE_MM
+            && point.get().z.abs() < EPS_ON_SURFACE_MM));
     ctx.finish_session().expect("session");
 }
 
