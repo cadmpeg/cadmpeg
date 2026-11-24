@@ -33,7 +33,7 @@ pub struct CameraState {
 /// Closed set of document GUI state families.
 #[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "value")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum PresentationStateKind {
     /// Persisted camera pose.

@@ -55154,7 +55154,7 @@
           "properties": {
             "kind": {
               "type": "string",
-              "const": "Camera"
+              "const": "camera"
             },
             "value": {
               "$ref": "#/$defs/CameraState"
@@ -55172,7 +55172,7 @@
           "properties": {
             "kind": {
               "type": "string",
-              "const": "Native"
+              "const": "native"
             },
             "value": {
               "type": "string"
