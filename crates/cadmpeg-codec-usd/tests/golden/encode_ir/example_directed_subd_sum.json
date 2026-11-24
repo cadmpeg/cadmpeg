@@ -112,7 +112,7 @@
             "strict_floor": "warning"
           }
         },
-        "message": "the usd write does not represent model arena `subds`: 1 record(s) omitted",
+        "message": "the usd write does not represent model arena `subds`: 1 record(s) omitted: synthetic:v2:subd#directed",
         "severity": "warning"
       },
       {
@@ -124,7 +124,7 @@
             "namespace": "export"
           }
         },
-        "message": "the usd write does not represent model arena `procedural_surfaces`: 1 record(s) omitted",
+        "message": "the usd write does not represent model arena `procedural_surfaces`: 1 record(s) omitted: synthetic:v2:procedural-surface#sum",
         "severity": "warning"
       }
     ],
