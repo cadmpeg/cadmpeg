@@ -186,10 +186,14 @@ fn a_change_with_no_written_edit_left_is_unexplained() {
 /// `ir` with every id that names block `from` naming block `to`, as a write
 /// that moves the block re-lays it.
 fn moved(ir: &CadIr, from: &str, to: &str) -> CadIr {
-    let text = serde_json::to_string(ir)
-        .unwrap()
-        .replace(&format!("#{from}:"), &format!("#{to}:"));
-    serde_json::from_str(&text).unwrap()
+    let replace = |text: &str| text.replace(&format!("#{from}:"), &format!("#{to}:"));
+    crate::test_support::readback::edited_json(
+        ir,
+        &mut |value| {
+            *value = serde_json::from_str(&replace(&value.to_string())).unwrap();
+        },
+        &replace,
+    )
 }
 
 /// The block that holds the feature history: the offset in the id of the
@@ -399,15 +403,25 @@ fn with_string(ir: &CadIr, matches: fn(&str) -> bool, edit: fn(&str) -> String) 
             _ => false,
         }
     }
-    let mut wire = serde_json::to_value(ir).unwrap();
     let homes = ["geometry", "model", "design", "process"];
-    assert!(
-        homes
-            .iter()
-            .any(|home| walk(&mut wire[*home], matches, edit)),
-        "a string to edit"
+    let mut edited = false;
+    let ir = crate::test_support::readback::edited_json(
+        ir,
+        &mut |value| {
+            if edited {
+                return;
+            }
+            edited = match value.as_object() {
+                Some(fields) if homes.iter().any(|home| fields.contains_key(*home)) => homes
+                    .iter()
+                    .any(|home| walk(&mut value[*home], matches, edit)),
+                _ => walk(value, matches, edit),
+            };
+        },
+        &str::to_owned,
     );
-    serde_json::from_value(wire).unwrap()
+    assert!(edited, "a string to edit");
+    ir
 }
 
 /// The differences between FTC-06 and FTC-06 written at another block

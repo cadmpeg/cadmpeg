@@ -603,13 +603,18 @@ fn primitive_placement_composes_body_and_validator_rejects_changed_frame() {
         ]
     );
     assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
-    let mut value = serde_json::to_value(decoded.ir()).unwrap();
-    let features = value["model"]["features"].as_array_mut().unwrap();
-    let feature = features.iter_mut().find(|f| f["name"] == "Box").unwrap();
-    feature["definition"]["value"]["value"]["placement"] =
+    let mut changed = decoded.ir().clone();
+    let feature = changed
+        .model
+        .features
+        .iter_mut()
+        .find(|f| f.name.as_deref() == Some("Box"))
+        .unwrap();
+    let mut value = serde_json::to_value(&*feature).unwrap();
+    value["definition"]["value"]["value"]["placement"] =
         serde_json::to_value(cadmpeg_ir::features::geometry::FeatureRigidPlacement::identity())
             .unwrap();
-    let changed = serde_json::from_value(value).unwrap();
+    *feature = serde_json::from_value(value).unwrap();
     assert!(crate::test_support::validate_native(&changed)
         .iter()
         .any(|f| f.message.contains("primitive placement")));
@@ -877,23 +882,21 @@ fn primitive_placement_validator_refuses_neutral_definition_for_unknown_mode() {
     };
     let known = decode("0");
     let unknown = decode("2");
-    let known_json = serde_json::to_value(known.ir()).unwrap();
-    let mut definition = known_json["model"]["features"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|f| f["name"] == "Box")
-        .unwrap()["definition"]
-        .clone();
+    let box_feature = |ir: &cadmpeg_ir::CadIr| {
+        ir.model
+            .features
+            .iter()
+            .position(|f| f.name.as_deref() == Some("Box"))
+            .unwrap()
+    };
+    let known_feature = &known.ir().model.features[box_feature(known.ir())];
+    let mut definition = serde_json::to_value(known_feature).unwrap()["definition"].clone();
     definition.as_object_mut().unwrap().remove("placement");
-    let mut value = serde_json::to_value(unknown.ir()).unwrap();
-    value["model"]["features"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|f| f["name"] == "Box")
-        .unwrap()["definition"] = definition;
-    let changed = serde_json::from_value(value).unwrap();
+    let mut changed = unknown.ir().clone();
+    let index = box_feature(&changed);
+    let mut value = serde_json::to_value(&changed.model.features[index]).unwrap();
+    value["definition"] = definition;
+    changed.model.features[index] = serde_json::from_value(value).unwrap();
     assert!(crate::test_support::validate_native(&changed)
         .iter()
         .any(|f| f.message.contains("primitive placement")));

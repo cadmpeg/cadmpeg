@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{archive, id, part_bodies, part_studio_bodies, topology, Model};
+use super::{archive, id, part_bodies, part_studio_bodies, topology, Model, OnshapeLossCode};
 use crate::test_support::{fixture, Report};
 use serde_json::{json, Value};
 use std::io::{Cursor, Read, Write};
@@ -119,28 +119,25 @@ fn two_part_studio(x: f64) -> Model {
         &mut report,
     )
     .unwrap();
-    let mut wire = serde_json::to_value(&model.ir).unwrap();
-    let body = wire["geometry"]["bodies"][0]["id"].clone();
+    let mut ir = model.ir.clone();
+    let body = ir.geometry.bodies[0].id.as_str().to_owned();
     // As in a Part Studio's export, the part's name is on its product, not its body.
-    wire["geometry"]["bodies"][0]
-        .as_object_mut()
-        .unwrap()
-        .remove("name");
-    wire["model"]["product_definitions"] = json!([
-        {"id": "synthetic:test:component#first", "kind": "part", "label": "Part 1", "bodies": [body], "bom_properties": {}, "sketches": [], "storage":{"kind":"embedded"}, "occurrences":[], "instance_bodies":[], "representations":[]},
-        {"id": "synthetic:test:component#second", "kind": "part", "label": "Part 2", "bodies": [], "bom_properties": {}, "sketches": [], "storage":{"kind":"embedded"}, "occurrences":[], "instance_bodies":[], "representations":[]},
-    ]);
+    ir.geometry.bodies[0].name = None;
+    ir.model.product_definitions = serde_json::from_value(json!([
+        {"id": "synthetic:test:component#first", "kind": "part", "label": "Part 1", "bodies": [body], "bom_properties": {}, "storage":{"kind":"embedded"}, "occurrences":[], "instance_bodies":[], "representations":[]},
+        {"id": "synthetic:test:component#second", "kind": "part", "label": "Part 2", "bodies": [], "bom_properties": {}, "storage":{"kind":"embedded"}, "occurrences":[], "instance_bodies":[], "representations":[]},
+    ]))
+    .unwrap();
     let placed = |key: u32, definition: &str, x: f64| {
         json!({"id": format!("synthetic:test:occurrence#{key}"),
             "prototype": format!("synthetic:test:component#{definition}"),
             "overrides": [],
             "transform": [[1.0, 0.0, 0.0, x], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]]})
     };
-    wire["model"]["occurrences"] = json!([placed(0, "first", 0.0), placed(1, "second", x)]);
-    Model {
-        ir: cadmpeg_ir::CadIr::from_json(&wire.to_string()).unwrap(),
-        ..model
-    }
+    ir.model.occurrences =
+        serde_json::from_value(json!([placed(0, "first", 0.0), placed(1, "second", x)])).unwrap();
+    ir.finalize();
+    Model { ir, ..model }
 }
 
 #[test]
@@ -222,4 +219,27 @@ fn omitted_feature_has_no_placement_or_suppression_annotation() {
             .exactness()
             .contains_key(&key));
     }
+}
+
+#[test]
+fn sweep_losses_distinguish_support_from_malformed_records_and_budgets() {
+    let mut feature = json!({"featureType":"sweep", "parameters":[
+        {"parameterId":"bodyType","value":"SOLID"},
+        {"parameterId":"operationType","value":"NEW"},
+        {"parameterId":"profiles","queries":[]},
+        {"parameterId":"path","queries":[]}
+    ]});
+    let support = super::mapping_loss_code(&feature, false, true, "unsupported control");
+    assert!(OnshapeLossCode::SweepNotSupported.matches(&support.note("support")));
+    for (budget, valid_suppression, reason) in [
+        (true, true, "region budget exhausted"),
+        (false, false, "malformed suppression"),
+        (false, true, super::sweep::PATH_BUDGET_EXHAUSTED),
+    ] {
+        let code = super::mapping_loss_code(&feature, budget, valid_suppression, reason);
+        assert!(OnshapeLossCode::HistoryNotSupported.matches(&code.note("history")));
+    }
+    feature["parameters"] = json!(null);
+    let malformed = super::mapping_loss_code(&feature, false, true, "malformed parameters");
+    assert!(OnshapeLossCode::HistoryNotSupported.matches(&malformed.note("record")));
 }

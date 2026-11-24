@@ -41,12 +41,19 @@ pub(super) struct Extent<'a> {
     pub(super) records: HashSet<&'a str>,
 }
 
+/// The records one `instance_bodies` entry of the current geometry reaches.
+pub(super) struct Instance<'a> {
+    pub(super) path: &'a OccurrencePath,
+    pub(super) records: HashSet<&'a str>,
+}
+
 /// The resolved states of a document's evaluations and current states.
 pub(super) struct States<'a> {
     ir: &'a CadIr,
     geometry: HashMap<&'a str, Arena>,
     layers: HashMap<&'a str, Layer<'a>>,
     pub(super) extents: Vec<Extent<'a>>,
+    pub(super) instances: Vec<Instance<'a>>,
 }
 
 /// A stored evaluation's chain of deltas, from its own down.
@@ -89,6 +96,7 @@ impl<'a> States<'a> {
             .iter()
             .any(|scope| !scope.current.is_empty());
         let mut extents: Vec<Extent<'a>> = Vec::new();
+        let mut instances: Vec<Instance<'a>> = Vec::new();
         if has_extents {
             let reach = Reach::new(&ir.geometry);
             for scope in &ir.design.scopes {
@@ -101,12 +109,22 @@ impl<'a> States<'a> {
                     });
                 }
             }
+            for definition in &ir.model.product_definitions {
+                for entry in &definition.instance_bodies {
+                    instances.push(Instance {
+                        path: &entry.occurrence,
+                        records: reach
+                            .reached_from(entry.bodies.iter().map(crate::ids::BodyId::as_str)),
+                    });
+                }
+            }
         }
         Self {
             ir,
             geometry: entities(&ir.geometry),
             layers,
             extents,
+            instances,
         }
     }
 

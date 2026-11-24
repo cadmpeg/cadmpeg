@@ -13,7 +13,7 @@ use cadmpeg_core::CodecError;
 
 use super::evaluations::check_path_steps;
 use super::records::{DesignRecords, MemberKey, OfKey, PositionKey};
-use crate::design::evaluation::{Evaluation, StateBase, StateDelta};
+use crate::design::evaluation::{Evaluation, EvaluationStatus, StateBase, StateDelta};
 use crate::design::feature::FeatureOperation;
 use crate::design::names::{NameEntry, NameKind};
 use crate::design::refs::{EntityRef, RecordRef};
@@ -28,6 +28,7 @@ use crate::report::check::{Check, Finding};
 use crate::schema::EntitySchema;
 use crate::topology::ChildLists;
 use crate::transform::Transform;
+use state_topology::{StateKey, StateRules};
 
 macro_rules! topology_arenas {
     ($target:ident) => {
@@ -83,6 +84,15 @@ macro_rules! declare_arenas {
         }
 
         impl Located<'_> {
+            /// Appends a copy of the record to its arena of `into`.
+            fn copy_into(self, into: &mut Topology) {
+                match self.arena {
+                    $(Arena::$arena => into
+                        .$field
+                        .extend(self.topology.$field.get(self.index).cloned()),)*
+                }
+            }
+
             fn visit_references(
                 self,
                 ctx: &DecodeContext<'_>,
@@ -173,6 +183,16 @@ impl ResolvedState<'_> {
         self.records
             .get(id)
             .is_some_and(|located| located.arena == arena)
+    }
+
+    /// The state's records, as a `Topology` of their own.
+    fn topology(&self) -> Topology {
+        let mut topology = Topology::default();
+        for located in self.records.values() {
+            located.copy_into(&mut topology);
+        }
+        topology.finalize();
+        topology
     }
 }
 
@@ -621,6 +641,7 @@ pub(super) fn check_resolved_states(
     }
     let evaluations = &ir.design.evaluations;
     let mut chain = Chain::new(evaluations, evaluations.iter().filter_map(Stored::base));
+    let mut rules = StateRules::new(ctx, ids.native_view());
     for evaluation in evaluations {
         let Some(content) = &evaluation.content else {
             continue;
@@ -643,13 +664,23 @@ pub(super) fn check_resolved_states(
         }
         check_entries(index, &state, id, findings);
         check_closure(ctx, &state, &topology, ids, id, findings)?;
-        state_topology::check_state_topology(
-            ctx,
-            ir.tolerances.linear,
-            &base,
-            &state,
-            &content.delta.records,
+        let base_key = match &content.base {
+            StateBase::Empty => StateKey::Empty,
+            StateBase::Current(position) => {
+                StateKey::Current(evaluation.scope.as_str(), PositionKey::of(position))
+            }
+            StateBase::Evaluation(base) => StateKey::Evaluation(base.as_str()),
+        };
+        rules.check(
+            (base_key, &*base),
+            (
+                chain
+                    .is_first(evaluation)
+                    .then_some(StateKey::Evaluation(id)),
+                &state,
+            ),
             id,
+            evaluation.status == EvaluationStatus::Current,
             findings,
         )?;
         check_stored_bodies(index, evaluation, &state, findings);
@@ -882,6 +913,7 @@ pub(in crate::validate) fn check_process_states<'a>(
         states.iter().filter_map(design_base),
     );
     let mut chain = Chain::new(states, states.iter().filter_map(Stored::base));
+    let mut rules = StateRules::new(ctx, ids.native_view());
     let mut process_findings = Vec::new();
     for state in states {
         let Some(content) = &state.content else {
@@ -895,7 +927,7 @@ pub(in crate::validate) fn check_process_states<'a>(
         }
         let Some(base) = base else { continue };
         let id = state.id.as_str();
-        let mut resolved = Rc::unwrap_or_clone(base);
+        let mut resolved = (*base).clone();
         apply(
             &mut resolved,
             &content.delta,
@@ -903,6 +935,28 @@ pub(in crate::validate) fn check_process_states<'a>(
         );
         check_entries(index, &resolved, id, &mut process_findings);
         check_closure(ctx, &resolved, &topology, ids, id, &mut process_findings)?;
+        let base_key = match &content.base {
+            ProcessBase::State(base) => Some(StateKey::Process(base.as_str())),
+            ProcessBase::Design(StateBase::Empty) => Some(StateKey::Empty),
+            ProcessBase::Design(StateBase::Current(position)) => {
+                scope(state).map(|scope| StateKey::Current(scope, PositionKey::of(position)))
+            }
+            ProcessBase::Design(StateBase::Evaluation(base)) => {
+                Some(StateKey::Evaluation(base.as_str()))
+            }
+        };
+        if let Some(base_key) = base_key {
+            rules.check(
+                (base_key, &*base),
+                (
+                    chain.is_first(state).then_some(StateKey::Process(id)),
+                    &resolved,
+                ),
+                id,
+                state.status == EvaluationStatus::Current,
+                &mut process_findings,
+            )?;
+        }
         chain.keep(state, resolved);
     }
     findings.extend(process_findings.into_iter().map(|finding| Finding {

@@ -6,6 +6,8 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use super::record_finding;
+
+pub(in crate::validate) mod definitions;
 use crate::document::CadIr;
 use crate::products::{JointOperands, OperandContainer, PairedJointKind};
 use crate::report::check::{Check, Finding};
@@ -178,7 +180,7 @@ pub(super) fn check_products(
         record_finding(
             findings,
             Check::ReferentialIntegrity,
-            crate::report::Severity::Error,
+            crate::report::Severity::Warning,
             Some(definition),
             format_args!("product definition places itself"),
         );
@@ -242,6 +244,7 @@ pub(super) fn check_products(
             }
         }
     }
+    definitions::check(ir, findings);
     Ok(())
 }
 
