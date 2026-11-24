@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::picks::{self, Class};
-use super::{body, error, Site};
+use super::{body, boolean_field, error, BooleanField, Site};
 use crate::design::construction::FrameAxis;
 use crate::design::container::Container;
 use crate::design::dimension::Dimension;
@@ -13,7 +13,6 @@ use crate::design::ops::assembly::{
     AssemblyContext, ComponentPattern, MirrorComponents, Place, PlaceSet, RigidGroup,
 };
 use crate::design::ops::body::{ScaleFactors, SplitMode};
-use crate::design::ops::dressup::OffsetResult;
 use crate::design::ops::shared::{
     AxisLimits, Bounds, Joint, JointConnector, JointKind, JointMotion, PathAxisControl,
     PathRollControl,
@@ -548,7 +547,10 @@ pub(super) fn check_assembly_feature(
             format_args!("a definition that states assembly states a body operand of its own, {operand}; assembly.participants states what the feature changes"),
         );
     }
-    if matches!(boolean_of(operation), Some(Boolean::NewBody)) {
+    if matches!(
+        boolean_field(operation),
+        BooleanField::Stated(Boolean::NewBody)
+    ) {
         error(
             findings,
             site.entity,
@@ -733,36 +735,12 @@ fn excluded_operation(operation: &FeatureOperation) -> Option<&'static str> {
     }
 }
 
-/// The `Boolean` that `operation` states for its result.
-fn boolean_of(operation: &FeatureOperation) -> Option<&Boolean> {
-    match operation {
-        FeatureOperation::Extrude(op) => op.output.boolean.as_ref(),
-        FeatureOperation::Revolve(op) => op.output.boolean.as_ref(),
-        FeatureOperation::Sweep(op) => op.output.boolean.as_ref(),
-        FeatureOperation::HelicalSweep(op) => op.output.boolean.as_ref(),
-        FeatureOperation::Primitive(op) => op.output.boolean.as_ref(),
-        FeatureOperation::Loft(op) => op.output.boolean.as_ref(),
-        FeatureOperation::ImplicitSweep(op) => op.output.boolean.as_ref(),
-        FeatureOperation::Rib(op) => op.boolean.as_ref(),
-        FeatureOperation::Thicken(op) => op.boolean.as_ref(),
-        FeatureOperation::BoundaryFill(op) => op.boolean.as_ref(),
-        FeatureOperation::Patch(op) => op.output.boolean.as_ref(),
-        FeatureOperation::Knit(op) => op.output.boolean.as_ref(),
-        FeatureOperation::Extend(op) => op.output.as_ref()?.boolean.as_ref(),
-        FeatureOperation::Offset(op) => match &op.result {
-            OffsetResult::Copy(output) => output.boolean.as_ref(),
-            OffsetResult::Move {} => None,
-        },
-        _ => None,
-    }
-}
-
 /// The field of `operation` that states bodies it changes, where §6.7
 /// requires `None` in an assembly feature.
 fn stated_body_operand(operation: &FeatureOperation) -> Option<&'static str> {
     if matches!(
-        boolean_of(operation),
-        Some(Boolean::Apply {
+        boolean_field(operation),
+        BooleanField::Stated(Boolean::Apply {
             targets: Some(_),
             ..
         })
