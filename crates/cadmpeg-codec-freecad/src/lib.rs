@@ -153,9 +153,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             None,
         ));
     }
-    let derived_census = ir
-        .scope()
-        .design
+    let derived_census = (ir.scope().design && ir.model.omitted_arenas_held())
         .then(|| design::census(&objects, &ir.model.features));
     match derived_census {
         None => {}

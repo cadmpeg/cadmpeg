@@ -643,43 +643,13 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "stored_geometry",
-              "value": {}
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#ExternalPrototype",
-          "name": "ExternalPrototype",
-          "native_ref": "fcstd:native:object#ExternalPrototype",
-          "ordinal": 1,
-          "outputs": [
-            "fcstd:model:body#ExternalPrototype:Shape:ExternalPrototype.Shape.brp:13%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Feature"
-        }
-      ],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -696,7 +666,6 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
@@ -705,14 +674,7 @@
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },

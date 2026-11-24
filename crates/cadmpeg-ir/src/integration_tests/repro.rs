@@ -186,7 +186,7 @@ fn repro_native_feature_closure_keeps_numeric_joins_and_type_rows() {
             .len(),
         1
     );
-    assert_eq!(model_bundle.document.model.features.len(), 1);
+    assert!(model_bundle.document.model.features.is_empty());
     assert!(!serde_json::to_string(&model_bundle)
         .unwrap()
         .contains("PLANTED"));
@@ -371,8 +371,8 @@ fn assembly_boundary_document() -> (CadIr, crate::report::check::Finding) {
     }
     value["geometry"]["faces"][6]["surface"] = surface;
     value["model"]["product_definitions"] = serde_json::json!([
-        {"id":"synthetic:assembly:definition#1", "kind":"part", "bom_properties":{}, "storage":{"kind":"embedded"}, "occurrences":[], "instance_bodies":[], "representations":[], "bodies":[first_body], "sketches":[]},
-        {"id":"synthetic:assembly:definition#2", "kind":"part", "bom_properties":{}, "storage":{"kind":"embedded"}, "occurrences":[], "instance_bodies":[], "representations":[], "bodies":[second_body], "sketches":[]}
+        {"id":"synthetic:assembly:definition#1", "kind":"part", "bom_properties":{}, "storage":{"kind":"embedded"}, "occurrences":[], "instance_bodies":[], "representations":[], "bodies":[first_body]},
+        {"id":"synthetic:assembly:definition#2", "kind":"part", "bom_properties":{}, "storage":{"kind":"embedded"}, "occurrences":[], "instance_bodies":[], "representations":[], "bodies":[second_body]}
     ]);
     value["geometry"]["points"][0]["source_object"] = serde_json::json!({
         "format":"f3d", "object_id":"synthetic:assembly:definition#1",

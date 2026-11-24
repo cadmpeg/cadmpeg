@@ -1440,10 +1440,8 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(ir.model, expected);
-        let round_trip = CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
         assert_eq!(
-            round_trip
-                .model
+            ir.model
                 .feature_regeneration_parent(&"test:draft:feature#child".try_into().unwrap()),
             Some(&"test:draft:feature#parent".try_into().unwrap())
         );

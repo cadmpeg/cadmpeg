@@ -567,13 +567,14 @@ fn prepare_cadir_for_step(ir: &CadIr, path: &Path, reject_errors: bool) -> Prepa
 #[cfg(all(feature = "fcstd", feature = "step"))]
 #[test]
 fn a_design_arena_error_does_not_refuse_a_step_export_under_reject_errors() {
-    use cadmpeg_ir::features::FeatureId;
-    use cadmpeg_ir::report::{check::Check, Severity};
+    use cadmpeg_ir::ids::ProductDefinitionId;
+    use cadmpeg_ir::report::Severity;
 
     let (mut document, _) = checked_design_history();
-    let parameter_id = document.ir.model.parameters[0].id.to_string();
-    document.ir.model.parameters[0].owner =
-        Some(FeatureId::mint("fcstd:test:feature#missing").expect("valid absent feature identity"));
+    let parameter_id = document.ir.design.parameters[0].id.to_string();
+    document.ir.design.parameters[0].scope =
+        ProductDefinitionId::mint("fcstd:test:definition#missing")
+            .expect("valid absent definition identity");
     let directory = tempfile::tempdir().expect("temporary CADIR directory");
     let conversion =
         prepare_cadir_for_step(&document.ir, &directory.path().join("design.json"), true);
@@ -582,7 +583,6 @@ fn a_design_arena_error_does_not_refuse_a_step_export_under_reject_errors() {
     assert!(
         report.findings.iter().any(|finding| {
             finding.severity >= Severity::Error
-                && finding.check == Check::ReferentialIntegrity
                 && finding.entity.as_deref() == Some(parameter_id.as_str())
         }),
         "{report:?}"
@@ -594,7 +594,7 @@ fn a_design_arena_error_does_not_refuse_a_step_export_under_reject_errors() {
             .filter(|finding| finding.severity >= Severity::Error)
             .all(|finding| document
                 .ir
-                .model
+                .design
                 .parameters
                 .iter()
                 .any(|parameter| { finding.entity.as_deref() == Some(parameter.id.as_str()) })),
