@@ -29,13 +29,13 @@ fn placed_point_product() -> CadIr {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
-    ir.geometry.regions.push(cadmpeg_ir::topology::Region {
-        id: region.clone(),
-        body: body.clone(),
-        shells: vec![shell.clone()],
-        native_ref: None,
-    });
+    ir.geometry.regions.push(cadmpeg_ir::topology::Region::new(
+        region.clone(),
+        body.clone(),
+        vec![shell.clone()],
+    ));
     ir.geometry
         .shells
         .push(cadmpeg_ir::topology::Shell::with_members(
@@ -61,7 +61,6 @@ fn placed_point_product() -> CadIr {
     ir.model.product_definitions.push(ProductDefinition {
         sketches: Vec::default(),
 
-        tessellations: Vec::new(),
         id: part.clone(),
         kind: Some(ProductDefinitionKind::Part),
         source_name: Some("Pin".into()),

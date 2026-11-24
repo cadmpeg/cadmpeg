@@ -192,15 +192,11 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id: crate::identity::source_object_id_checked(format_args!(
                         "VisibGeom:{}",
                         row.id
                     ))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,
@@ -287,20 +283,12 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                     }),
                     source_object: Some(SourceObjectAssociation {
                         geometry_role: None,
-                        format: cadmpeg_ir::CodecFormat::Creo,
+                        format: cadmpeg_ir::codec_id!("creo"),
                         object_id: crate::identity::source_object_id_checked(format_args!(
                             "{}{}",
                             namespace.source_prefix(),
                             row.id
                         ))?,
-                        name: None,
-                        color: None,
-                        visible: if namespace.is_visible() {
-                            None
-                        } else {
-                            Some(false)
-                        },
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                     native_ref: None,
@@ -337,15 +325,11 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                 }),
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id: crate::identity::source_object_id_checked(format_args!(
                         "VisibGeom:{}",
                         row.id
                     ))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,

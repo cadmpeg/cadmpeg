@@ -348,7 +348,10 @@ fn bounded_planar_meshes_supply_finite_cap_witnesses() {
             Vec::new(),
         )
         .expect("planar mesh");
-        mesh.faces.push(face.id.clone());
+        mesh.of = cadmpeg_ir::tessellation::Meshed::Body {
+            body: ir.geometry.bodies[0].id.clone(),
+            faces: vec![face.id.clone()],
+        };
         ir.model.tessellations.push(mesh);
     }
     assert!(contradicted_features(&ir).contains(&ir.model.features[0].id));
@@ -380,12 +383,15 @@ fn mesh_work_counts_each_face_and_triangle_vertex() {
         Vec::new(),
     )
     .expect("shared mesh");
-    mesh.faces = ir
-        .geometry
-        .faces
-        .iter()
-        .map(|face| face.id.clone())
-        .collect();
+    mesh.of = cadmpeg_ir::tessellation::Meshed::Body {
+        body: ir.geometry.bodies[0].id.clone(),
+        faces: ir
+            .geometry
+            .faces
+            .iter()
+            .map(|face| face.id.clone())
+            .collect(),
+    };
     ir.model.tessellations.push(mesh);
     assert!(evidence(&ir, &WorkBudget::new(4000), true).is_none());
 }

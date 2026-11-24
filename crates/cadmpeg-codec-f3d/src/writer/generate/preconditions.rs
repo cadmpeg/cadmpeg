@@ -1132,7 +1132,7 @@ pub(super) fn derived_body_kinds(
             .regions
             .iter()
             .filter(|region| region.body == body.id)
-            .flat_map(|region| &region.shells)
+            .flat_map(cadmpeg_ir::topology::Region::stated_shells)
             .collect::<BTreeSet<_>>();
         let face_ids = geometry
             .faces
@@ -1151,7 +1151,7 @@ pub(super) fn derived_body_kinds(
             .faces
             .iter()
             .filter(|face| face_ids.contains(&face.id))
-            .flat_map(|face| &face.loops)
+            .flat_map(|face| face.loops.stated())
             .collect::<BTreeSet<_>>();
         let coedge_ids = geometry
             .loops
@@ -1244,6 +1244,8 @@ pub(super) fn validate_source_less_wire_ownership(
     };
     let shell_ordinal =
         |id: &cadmpeg_ir::ids::ShellId| geometry.shells.iter().position(|shell| shell.id == *id);
+    let lists = geometry.child_lists();
+    let complete_shells = |region| lists.complete_shells(region).ok_or_else(inconsistent);
 
     let mut regions = Vec::new();
     for region in &geometry.regions {
@@ -1252,8 +1254,10 @@ pub(super) fn validate_source_less_wire_ownership(
             .iter()
             .position(|body| body.id == region.body)
             .ok_or_else(inconsistent)?;
-        let siblings = geometry
-            .body_regions(&region.body)
+        let siblings = lists
+            .complete_body_regions(&region.body)
+            .ok_or_else(inconsistent)?
+            .iter()
             .map(|sibling| &sibling.id)
             .collect::<Vec<_>>();
         let position = siblings
@@ -1264,12 +1268,12 @@ pub(super) fn validate_source_less_wire_ownership(
             .get(position + 1)
             .map(|id| region_ordinal(id).ok_or_else(inconsistent))
             .transpose()?;
-        let first_shell = region
-            .shells
+        let region_shells = complete_shells(region)?;
+        let first_shell = region_shells
             .first()
             .and_then(&shell_ordinal)
             .ok_or_else(inconsistent)?;
-        if region.shells.iter().any(|id| {
+        if region_shells.iter().any(|id| {
             !geometry
                 .shells
                 .iter()
@@ -1286,9 +1290,10 @@ pub(super) fn validate_source_less_wire_ownership(
 
     let mut bodies = Vec::new();
     for body in &geometry.bodies {
-        let first_region = geometry
-            .body_regions(&body.id)
-            .next()
+        let first_region = lists
+            .complete_body_regions(&body.id)
+            .ok_or_else(inconsistent)?
+            .first()
             .and_then(|region| region_ordinal(&region.id))
             .ok_or_else(inconsistent)?;
         bodies.push(WireBodyOwnership {
@@ -1308,14 +1313,12 @@ pub(super) fn validate_source_less_wire_ownership(
                     return None;
                 }
                 region
-                    .shells
-                    .iter()
+                    .stated_shells()
                     .position(|id| *id == shell.id)
                     .map(|position| (ordinal, region, position))
             })
             .ok_or_else(inconsistent)?;
-        let next_shell = owner
-            .shells
+        let next_shell = complete_shells(owner)?
             .get(position + 1)
             .map(|id| shell_ordinal(id).ok_or_else(inconsistent))
             .transpose()?;
@@ -1336,12 +1339,12 @@ mod tests {
     use cadmpeg_asm::brep::records::identity::NativeRecordNamespace;
     use cadmpeg_asm::brep::records::{EvaluatedToleranceSlot, TolerantVertexTail};
     use cadmpeg_core::CodecError;
-    use cadmpeg_ir::scalar::PositiveReal;
 
     #[test]
     fn tolerant_vertex_precondition_rejects_unset_with_a_neutral_tolerance() {
         let mut target = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-        target.geometry.vertices[0].tolerance = Some(PositiveReal::new(0.025).unwrap());
+        target.geometry.vertices[0].tolerance =
+            Some(cadmpeg_ir::scalar::PositiveLength::new(0.025).unwrap());
         let native = F3dNative {
             tolerant_vertex_tails: vec![TolerantVertexTail {
                 source_namespace: NativeRecordNamespace::new(crate::ids::ID_FORMAT),

@@ -22,8 +22,8 @@ use cadmpeg_ir::geometry::{
     SolvedSurfaceGeometry, Surface,
 };
 use cadmpeg_ir::ids::{
-    AppearanceBindingId, AppearanceId, EdgeId, LoopId, OccurrenceId, ProductDefinitionId, ShellId,
-    VertexId,
+    AppearanceBindingId, AppearanceId, EdgeId, LayerId, LoopId, OccurrenceId, ProductDefinitionId,
+    ShellId, VertexId,
 };
 use cadmpeg_ir::pmi::zones::ToleranceZoneForm;
 use cadmpeg_ir::pmi::{
@@ -36,8 +36,8 @@ use cadmpeg_ir::products::Storage;
 use cadmpeg_ir::report::export::ExportReport;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{
-    Body, BodyKind, ChildLists, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Shell,
-    Vertex,
+    Body, BodyKind, ChildLists, Coedge, Edge, Face, FaceBoundary, Loop, LoopBoundaryRole, Point,
+    Sense, Shell, Vertex,
 };
 use cadmpeg_ir::CadIr;
 
@@ -485,7 +485,7 @@ impl<'a> Builder<'a> {
             .iter()
             .flat_map(|face| {
                 face.loops
-                    .iter()
+                    .stated()
                     .map(move |loop_id| (loop_id.as_str(), face))
             })
             .collect::<HashMap<_, _>>();
@@ -704,13 +704,19 @@ impl<'a> Builder<'a> {
     }
 
     pub(crate) fn build(&mut self) {
+        self.losses
+            .extend(cadmpeg_ir::codec::write::partial_topology_omitted(
+                "STEP",
+                &self.ir.geometry,
+                "it is written as a shell-based surface model of its stated shells",
+            ));
         let surface_regions = self
             .ir
             .geometry
             .bodies
             .iter()
             .filter(|body| matches!(body.kind, BodyKind::Solid | BodyKind::Sheet))
-            .flat_map(|body| self.children.body_regions(&body.id))
+            .flat_map(|body| self.children.stated_body_regions(&body.id))
             .map(|region| &region.id)
             .collect::<BTreeSet<_>>();
         let mut wire_edges = BTreeSet::new();
@@ -854,8 +860,9 @@ impl<'a> Builder<'a> {
                 | AppearanceTarget::Tessellation(_)
                 | AppearanceTarget::TriangleGroup { .. }
                 | AppearanceTarget::Occurrence(_)
+                | AppearanceTarget::Definition(_)
                 | AppearanceTarget::Record { .. }
-                | AppearanceTarget::Source { .. } => {}
+                | AppearanceTarget::Unresolved => {}
             }
         }
         self.dangling_appearance_bindings
@@ -939,11 +946,11 @@ impl<'a> Builder<'a> {
         let mut face_body: HashMap<&str, &str> = HashMap::new();
         for region in &ir.geometry.regions {
             let body = region.body.as_str();
-            for shell_id in &region.shells {
+            for shell_id in region.stated_shells() {
                 let Some(shell) = self.shells.get(shell_id.as_str()).copied() else {
                     continue;
                 };
-                for face in self.children.shell_faces(&shell.id) {
+                for face in self.children.stated_shell_faces(&shell.id) {
                     face_body.insert(face.id.as_str(), body);
                 }
             }
@@ -1043,8 +1050,9 @@ impl<'a> Builder<'a> {
                 AppearanceTarget::Body(_)
                 | AppearanceTarget::TriangleGroup { .. }
                 | AppearanceTarget::Occurrence(_)
+                | AppearanceTarget::Definition(_)
                 | AppearanceTarget::Record { .. }
-                | AppearanceTarget::Source { .. } => continue,
+                | AppearanceTarget::Unresolved => continue,
             };
             let Some(target) = target else {
                 let target_id = match &binding.target.entity {
@@ -1058,8 +1066,9 @@ impl<'a> Builder<'a> {
                     AppearanceTarget::Body(_)
                     | AppearanceTarget::TriangleGroup { .. }
                     | AppearanceTarget::Occurrence(_)
+                    | AppearanceTarget::Definition(_)
                     | AppearanceTarget::Record { .. }
-                    | AppearanceTarget::Source { .. } => continue,
+                    | AppearanceTarget::Unresolved => continue,
                 };
                 direct_unstyled.insert(target_id);
                 continue;
@@ -1286,7 +1295,23 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_layers(&mut self) {
+        let hidden: HashSet<LayerId> =
+            cadmpeg_ir::presentation::hidden_layers(&self.ir.model.presentation_layers)
+                .into_iter()
+                .cloned()
+                .collect();
         for layer in self.ir.model.presentation_layers.clone() {
+            let layer_hidden = hidden.contains(&layer.id);
+            if layer.parent.is_some() {
+                self.loss(
+                    StepLossCode::LayerHierarchyFlattened,
+                    format!(
+                        "layer '{}' is a sublayer; STEP holds no layer hierarchy, so it is \
+                         written as a top-level layer, hidden where a layer above it is hidden",
+                        layer.name
+                    ),
+                );
+            }
             let mut assigned = Vec::new();
             let mut unsupported = 0usize;
             for item in layer.items {
@@ -1356,7 +1381,9 @@ impl<'a> Builder<'a> {
                         .copied()
                         .into_iter()
                         .collect(),
-                    PresentationItem::Source { .. } => Vec::new(),
+                    PresentationItem::Source { .. } | PresentationItem::PointCloud { .. } => {
+                        Vec::new()
+                    }
                     PresentationItem::Tessellation { tessellation } => self
                         .tessellation_step_refs
                         .get(tessellation)
@@ -1380,7 +1407,7 @@ impl<'a> Builder<'a> {
                 );
             }
             if assigned.is_empty() {
-                if layer.visible == Some(false) {
+                if layer_hidden {
                     self.hidden_presentation_layers_without_items
                         .insert(layer.id.as_str().to_owned());
                 }
@@ -1394,7 +1421,7 @@ impl<'a> Builder<'a> {
                         refs(&assigned)
                     ),
                 );
-                if layer.visible == Some(false) {
+                if layer_hidden {
                     self.hidden_presentation_layer_items.push(assignment);
                 }
             }
@@ -1914,16 +1941,29 @@ impl<'a> Builder<'a> {
             if self.omitted_prototype_bodies.contains(&region.body) {
                 continue;
             }
+            // §3.4: a region that is marked, or that holds a marked shell or
+            // a partial face, is written as its stated shells and never as a
+            // solid.
+            let complete = self.children.complete_shells(region);
+            let partial = complete.is_none();
+            let stated: Vec<ShellId>;
+            let region_shells = match complete {
+                Some(shells) => shells,
+                None => {
+                    stated = region.stated_shells().cloned().collect();
+                    stated.as_slice()
+                }
+            };
             let body_kind = self
                 .bodies
                 .get(region.body.as_str())
                 .map_or(BodyKind::General, |body| body.kind);
-            let has_surface_topology = region.shells.iter().any(|shell_id| {
+            let has_surface_topology = region_shells.iter().any(|shell_id| {
                 self.shells
                     .get(shell_id.as_str())
-                    .is_some_and(|shell| !self.children.shell_faces(&shell.id).is_empty())
+                    .is_some_and(|shell| !self.children.stated_shell_faces(&shell.id).is_empty())
             });
-            let has_wire_topology = region.shells.iter().any(|shell_id| {
+            let has_wire_topology = region_shells.iter().any(|shell_id| {
                 self.shells
                     .get(shell_id.as_str())
                     .is_some_and(|shell| !shell.members.is_empty())
@@ -1932,7 +1972,8 @@ impl<'a> Builder<'a> {
             if body_kind == BodyKind::Wire
                 || (body_kind == BodyKind::General && !has_surface_topology)
             {
-                let wire_written = if let Some(item) = self.emit_wire_region(region) {
+                let wire_written = if let Some(item) = self.emit_wire_region(region, region_shells)
+                {
                     let shape_item = self.place_body_item(&region.body, item, context);
                     items.push(shape_item);
                     self.body_shape_refs
@@ -1955,12 +1996,18 @@ impl<'a> Builder<'a> {
                         .insert(region.id.as_str().to_owned());
                     false
                 };
-                self.emit_region_fallback_geometry(region, context, wire_written, &mut items);
+                self.emit_region_fallback_geometry(
+                    region,
+                    region_shells,
+                    context,
+                    wire_written,
+                    &mut items,
+                );
                 continue;
             }
             let closed = body_kind == BodyKind::Solid;
             if let Some(item) = (!closed && !mixed_wire)
-                .then(|| self.emit_surface_set_region(region))
+                .then(|| self.emit_surface_set_region(region_shells))
                 .flatten()
             {
                 self.surface_set_items.insert(item);
@@ -1982,12 +2029,12 @@ impl<'a> Builder<'a> {
                     .push(item);
                 continue;
             }
-            let Some((outer_id, void_ids)) = region.shells.split_first() else {
+            let Some((outer_id, void_ids)) = region_shells.split_first() else {
                 self.empty_regions.insert(region.id.as_str().to_owned());
                 continue;
             };
-            if closed {
-                self.split_non_manifold_edges(&region.shells);
+            if let (true, Some(shells)) = (closed, complete) {
+                self.split_non_manifold_edges(shells);
             }
             let outer = self.emit_shell(outer_id.as_str(), closed, false);
             if outer.is_none() {
@@ -2017,16 +2064,23 @@ impl<'a> Builder<'a> {
                 }
             }
             let solid = closed
+                && !partial
                 && outer.is_some_and(|(_, shell_closed)| shell_closed)
                 && voids.len() == void_ids.len()
                 && voids.iter().all(|(_, shell_closed)| *shell_closed);
             let mut shell_refs = outer.iter().map(|(shell, _)| *shell).collect::<Vec<_>>();
             shell_refs.extend(voids.iter().map(|(shell, _)| *shell));
             let Some(first_shell) = shell_refs.first().copied() else {
-                self.emit_region_fallback_geometry(region, context, false, &mut items);
+                self.emit_region_fallback_geometry(
+                    region,
+                    region_shells,
+                    context,
+                    false,
+                    &mut items,
+                );
                 continue;
             };
-            if closed && !solid {
+            if closed && !solid && !partial {
                 self.loss(
                     StepLossCode::RegionSolidReducedToSheet,
                     format!("region {} was written as a surface model because its solid shells are incomplete or open", region.id),
@@ -2074,7 +2128,7 @@ impl<'a> Builder<'a> {
                 .or_insert(if solid { item } else { first_shell });
             let mut wire_written = false;
             if mixed_wire {
-                if let Some(item) = self.emit_wire_region(region) {
+                if let Some(item) = self.emit_wire_region(region, region_shells) {
                     let shape_item = self.place_body_item(&region.body, item, context);
                     items.push(shape_item);
                     self.body_shape_refs
@@ -2097,7 +2151,13 @@ impl<'a> Builder<'a> {
                         .insert(region.id.as_str().to_owned());
                 }
             }
-            self.emit_region_fallback_geometry(region, context, wire_written, &mut items);
+            self.emit_region_fallback_geometry(
+                region,
+                region_shells,
+                context,
+                wire_written,
+                &mut items,
+            );
         }
         items
     }
@@ -2105,6 +2165,7 @@ impl<'a> Builder<'a> {
     fn emit_region_fallback_geometry(
         &mut self,
         region: &cadmpeg_ir::topology::Region,
+        shells: &[ShellId],
         context: Ref,
         wire_written: bool,
         items: &mut Vec<Ref>,
@@ -2113,7 +2174,7 @@ impl<'a> Builder<'a> {
         let mut retained = BTreeSet::new();
         let mut missing_edges = BTreeSet::new();
         let mut retained_edges = BTreeSet::new();
-        for shell_id in &region.shells {
+        for shell_id in shells {
             let Some(shell) = self.shells.get(shell_id.as_str()) else {
                 continue;
             };
@@ -2131,9 +2192,9 @@ impl<'a> Builder<'a> {
                     vertices.extend(edge.vertices().cloned());
                 }
             }
-            for face in self.children.shell_faces(&shell.id) {
+            for face in self.children.stated_shell_faces(&shell.id) {
                 let face_id = &face.id;
-                for loop_id in &face.loops {
+                for loop_id in face.loops.stated() {
                     let Some(lp) = self.loops.get(loop_id.as_str()) else {
                         continue;
                     };
@@ -2266,15 +2327,14 @@ impl<'a> Builder<'a> {
     /// rectangular parameter subset. An exact NURBS can be written wider than
     /// its face, and a sub-surface is written by its solved carrier, not a
     /// trim to its ranges, so neither qualifies.
-    fn emit_surface_set_region(&mut self, region: &cadmpeg_ir::topology::Region) -> Option<Ref> {
+    fn emit_surface_set_region(&mut self, shells: &[ShellId]) -> Option<Ref> {
         let children = &self.children;
-        let faces = region
-            .shells
+        let faces = shells
             .iter()
-            .flat_map(|shell| children.shell_faces(shell).iter().copied())
+            .flat_map(|shell| children.stated_shell_faces(shell).iter().copied())
             .collect::<Vec<_>>();
         let whole_bounded = |face: &&Face| {
-            face.loops.is_empty()
+            face.loops.boundary().is_some_and(FaceBoundary::is_empty)
                 && face.sense == Sense::Forward
                 && match self.procedural_surfaces.get(face.surface.as_str()) {
                     Some(procedural) => matches!(
@@ -2308,7 +2368,7 @@ impl<'a> Builder<'a> {
         let members = faces
             .iter()
             .map(|face| {
-                if face.loops.is_empty() {
+                if face.loops.boundary().is_some_and(FaceBoundary::is_empty) {
                     self.emit_surface(face.surface.as_str())
                 } else {
                     self.emit_curve_bounded_member(face)
@@ -2337,7 +2397,7 @@ impl<'a> Builder<'a> {
         let mut curves: HashMap<&str, usize> = HashMap::new();
         let face_loops = faces.iter().enumerate().flat_map(|(index, face)| {
             face.loops
-                .iter()
+                .stated()
                 .filter_map(|id| self.loops.get(id.as_str()))
                 .map(move |face_loop| (index, face_loop))
         });
@@ -2387,11 +2447,14 @@ impl<'a> Builder<'a> {
         else {
             return false;
         };
-        if face.loops.len() != boundaries.len() {
+        let Some(face_loops) = face.loops.boundary() else {
+            return false;
+        };
+        if face_loops.len() != boundaries.len() {
             return false;
         }
         let mut loop_curves = Vec::new();
-        for loop_id in &face.loops {
+        for loop_id in face_loops {
             let Some(face_loop) = self.loops.get(loop_id.as_str()) else {
                 return false;
             };
@@ -2448,7 +2511,7 @@ impl<'a> Builder<'a> {
         let mut points = BTreeSet::new();
         for coedge in face
             .loops
-            .iter()
+            .stated()
             .filter_map(|id| self.loops.get(id.as_str()))
             .flat_map(|face_loop| face_loop.coedges())
         {
@@ -2509,6 +2572,7 @@ impl<'a> Builder<'a> {
         };
         let outer_curves: BTreeSet<String> = face
             .loops
+            .boundary()?
             .iter()
             .filter(|id| face.loop_role(id) == LoopBoundaryRole::Outer)
             .filter_map(|id| self.loops.get(id.as_str()))
@@ -2562,6 +2626,7 @@ impl<'a> Builder<'a> {
         );
         let points: Vec<String> = face
             .loops
+            .boundary()?
             .iter()
             .filter_map(|id| self.loops.get(id.as_str()))
             .flat_map(|face_loop| face_loop.coedges().to_vec())
@@ -2700,13 +2765,8 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_layer_visibility(&mut self) {
-        let hidden_layers = self
-            .ir
-            .model
-            .presentation_layers
-            .iter()
-            .filter(|layer| layer.visible == Some(false))
-            .count();
+        let hidden_layers =
+            cadmpeg_ir::presentation::hidden_layers(&self.ir.model.presentation_layers).len();
         if hidden_layers == 0 {
             return;
         }
@@ -2727,9 +2787,13 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn emit_wire_region(&mut self, region: &cadmpeg_ir::topology::Region) -> Option<Ref> {
+    fn emit_wire_region(
+        &mut self,
+        region: &cadmpeg_ir::topology::Region,
+        region_shells: &[ShellId],
+    ) -> Option<Ref> {
         let mut shells = Vec::new();
-        for shell_id in &region.shells {
+        for shell_id in region_shells {
             if let Some(shell) = self.shells.get(shell_id.as_str()).copied().cloned() {
                 shells.push(shell);
             } else {
@@ -3091,7 +3155,7 @@ impl<'a> Builder<'a> {
                 .map(|index| index.to_string())
                 .collect::<Vec<_>>()
                 .join(",");
-            let linked_body = mesh.body.as_ref().and_then(|body| {
+            let linked_body = mesh.of.body().and_then(|body| {
                 let link = self.body_step_refs.get(body.as_str()).copied()?;
                 let mut kind = self.bodies.get(body.as_str())?.kind;
                 if kind == BodyKind::Solid && !self.advanced_brep_items.contains(&link) {
@@ -3099,7 +3163,7 @@ impl<'a> Builder<'a> {
                 }
                 matches!(kind, BodyKind::Solid | BodyKind::Sheet).then_some((kind, link))
             });
-            if let Some(body) = &mesh.body {
+            if let Some(body) = mesh.of.body() {
                 if linked_body.is_none() {
                     self.loss(
                         StepLossCode::TessellationBodyLinkUnwritable,
@@ -3111,8 +3175,8 @@ impl<'a> Builder<'a> {
                 }
             }
             let mut reduced_fields = Vec::new();
-            if !mesh.faces.is_empty() {
-                reduced_fields.push(format!("{} face ownership link(s)", mesh.faces.len()));
+            if !mesh.of.faces().is_empty() {
+                reduced_fields.push(format!("{} face ownership link(s)", mesh.of.faces().len()));
             }
             if mesh.chordal_deflection().is_some() {
                 reduced_fields.push("chordal deflection".to_string());
@@ -3201,8 +3265,8 @@ impl<'a> Builder<'a> {
             let Some(shell) = self.shells.get(shell.as_str()).copied() else {
                 continue;
             };
-            for face in self.children.shell_faces(&shell.id).to_vec() {
-                for loop_id in &face.loops {
+            for face in self.children.stated_shell_faces(&shell.id).to_vec() {
+                for loop_id in face.loops.stated() {
                     let Some(lp) = self.loops.get(loop_id.as_str()).copied() else {
                         continue;
                     };
@@ -3246,7 +3310,7 @@ impl<'a> Builder<'a> {
         let shell = self.shells.get(shell_id).copied()?;
         let face_ids: Vec<String> = self
             .children
-            .shell_faces(&shell.id)
+            .stated_shell_faces(&shell.id)
             .iter()
             .map(|f| f.id.as_str().to_owned())
             .collect();
@@ -3255,7 +3319,11 @@ impl<'a> Builder<'a> {
         for fid in &face_ids {
             if let Some(r) = self.emit_face(fid, reversed) {
                 face_refs.push(r);
-            } else {
+            } else if !self
+                .faces
+                .get(fid.as_str())
+                .is_some_and(|face| face.loops.is_partial())
+            {
                 let code = match self.faces.get(fid.as_str()).map(|face| &face.loops) {
                     Some(cadmpeg_ir::topology::FaceLoops::Classified { .. }) => {
                         StepLossCode::ShellOmittedOuterFace
@@ -3289,9 +3357,14 @@ impl<'a> Builder<'a> {
 
     fn shell_is_closed(&self, shell: &Shell) -> bool {
         let mut uses: BTreeMap<&str, [usize; 2]> = BTreeMap::new();
-        let shell_faces = self.children.shell_faces(&shell.id);
+        let Some(shell_faces) = self.children.complete_shell_faces(&shell.id) else {
+            return false;
+        };
         for face in shell_faces {
-            for loop_id in &face.loops {
+            let Some(face_loops) = face.loops.boundary() else {
+                return false;
+            };
+            for loop_id in face_loops {
                 let Some(lp) = self.loops.get(loop_id.as_str()) else {
                     return false;
                 };
@@ -3335,6 +3408,9 @@ impl<'a> Builder<'a> {
     /// reverse flips the face `same_sense` and the orientation of every bound.
     fn emit_face(&mut self, face_id: &str, reversed: bool) -> Option<Ref> {
         let face = self.faces.get(face_id).copied()?;
+        if face.loops.is_partial() {
+            return None;
+        }
         let surface_id = face.surface.as_str();
         let same_sense = matches!(face.sense, Sense::Forward) != reversed;
         let bound_flag = if reversed { ".F." } else { ".T." };
@@ -3385,7 +3461,8 @@ impl<'a> Builder<'a> {
         }
         // A seam ring becomes a vertex loop only beside a bound that is
         // written, so the seam rings come after the other loops.
-        let loop_ids: Vec<&LoopId> = face.loops.iter().collect();
+        let face_loops = face.loops.boundary()?;
+        let loop_ids: Vec<&LoopId> = face_loops.iter().collect();
         let seam_ring: Vec<bool> = loop_ids
             .iter()
             .map(|loop_id| self.seam_rings.contains_key(loop_id.as_str()))
@@ -3711,7 +3788,7 @@ impl<'a> Builder<'a> {
         };
         let tolerance = edge
             .tolerance
-            .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
+            .map_or(0.0, cadmpeg_ir::scalar::PositiveLength::get)
             .max(self.ir.tolerances.linear.get());
         if coedge.pcurves.is_empty() {
             return Ok(false);
@@ -4248,7 +4325,7 @@ impl<'a> Builder<'a> {
             if periods == [None, None] {
                 continue;
             }
-            for loop_id in &face.loops {
+            for loop_id in face.loops.stated() {
                 let Some(lp) = self.loops.get(loop_id.as_str()).copied() else {
                     continue;
                 };
@@ -6005,7 +6082,7 @@ impl<'a> Builder<'a> {
         let mut referenced_edges = BTreeSet::new();
         let mut referenced_vertices = BTreeSet::new();
         for region in &self.ir.geometry.regions {
-            for shell_id in &region.shells {
+            for shell_id in region.stated_shells() {
                 if !referenced_shells.insert(shell_id.as_str()) {
                     continue;
                 }
@@ -6021,11 +6098,11 @@ impl<'a> Builder<'a> {
                 }
                 referenced_vertices
                     .extend(shell.free_vertices().map(cadmpeg_ir::ids::VertexId::as_str));
-                for face in self.children.shell_faces(&shell.id) {
+                for face in self.children.stated_shell_faces(&shell.id) {
                     if !referenced_faces.insert(face.id.as_str()) {
                         continue;
                     }
-                    for loop_id in &face.loops {
+                    for loop_id in face.loops.stated() {
                         if !referenced_loops.insert(loop_id.as_str()) {
                             continue;
                         }
@@ -6452,7 +6529,7 @@ impl<'a> Builder<'a> {
                         .faces
                         .iter()
                         .filter_map(|face| face.tolerance)
-                        .map(cadmpeg_ir::scalar::PositiveReal::get)
+                        .map(cadmpeg_ir::scalar::PositiveLength::get)
                         .collect(),
                 ),
             ),
@@ -6464,7 +6541,7 @@ impl<'a> Builder<'a> {
                         .edges
                         .iter()
                         .filter_map(|edge| edge.tolerance)
-                        .map(cadmpeg_ir::scalar::PositiveReal::get)
+                        .map(cadmpeg_ir::scalar::PositiveLength::get)
                         .collect(),
                 ),
             ),
@@ -6476,7 +6553,7 @@ impl<'a> Builder<'a> {
                         .vertices
                         .iter()
                         .filter_map(|vertex| vertex.tolerance)
-                        .map(cadmpeg_ir::scalar::PositiveReal::get)
+                        .map(cadmpeg_ir::scalar::PositiveLength::get)
                         .collect(),
                 ),
             ),
@@ -6748,7 +6825,7 @@ impl<'a> Builder<'a> {
                 surface
                     .source_object
                     .as_ref()
-                    .is_some_and(|source| source.format != cadmpeg_ir::CodecFormat::Step)
+                    .is_some_and(|source| source.format != cadmpeg_ir::codec_id!("step"))
             })
             .count()
             + self
@@ -6760,7 +6837,7 @@ impl<'a> Builder<'a> {
                     curve
                         .source_object
                         .as_ref()
-                        .is_some_and(|source| source.format != cadmpeg_ir::CodecFormat::Step)
+                        .is_some_and(|source| source.format != cadmpeg_ir::codec_id!("step"))
                 })
                 .count()
             + self
@@ -6771,7 +6848,7 @@ impl<'a> Builder<'a> {
                 .filter(|subd| {
                     subd.source_object
                         .as_ref()
-                        .is_some_and(|source| source.format != cadmpeg_ir::CodecFormat::Step)
+                        .is_some_and(|source| source.format != cadmpeg_ir::codec_id!("step"))
                 })
                 .count()
             + self
@@ -6783,7 +6860,7 @@ impl<'a> Builder<'a> {
                     tessellation
                         .source_object
                         .as_ref()
-                        .is_some_and(|source| source.format != cadmpeg_ir::CodecFormat::Step)
+                        .is_some_and(|source| source.format != cadmpeg_ir::codec_id!("step"))
                 })
                 .count();
         let source_object_count = source_object_count
@@ -6796,7 +6873,7 @@ impl<'a> Builder<'a> {
                     point
                         .source_object
                         .as_ref()
-                        .is_some_and(|source| source.format != cadmpeg_ir::CodecFormat::Step)
+                        .is_some_and(|source| source.format != cadmpeg_ir::codec_id!("step"))
                 })
                 .count();
         if source_object_count > 0 {
@@ -7140,6 +7217,8 @@ mod accounting_tests;
 mod construction_tests;
 #[cfg(test)]
 mod non_manifold_tests;
+#[cfg(test)]
+mod partial_tests;
 
 /// A seam ring written as a `VERTEX_LOOP`: its pole, the carriers it leaves
 /// out, and the points of its other poles.

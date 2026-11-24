@@ -7,7 +7,6 @@ use serde_json::Value;
 use super::picks::{self, Class};
 use super::{error, Site};
 use crate::design::container::{Container, OrderedKind};
-use crate::design::dimension::Dimension;
 use crate::design::names::NameKind;
 use crate::design::ops::shared::{Limit, Span};
 use crate::design::options::{
@@ -19,8 +18,7 @@ use crate::scalar::{Angle, Length};
 
 use super::super::records::{DesignRecords, MemberKey};
 
-/// `native_options` and `source_settings` keys have the form `codec:name`,
-/// and no key is in both maps of one record.
+/// No key is in both `native_options` and `source_settings` of one record.
 pub(super) fn check_native_keys(wire: &Value, findings: &mut Vec<Finding>) {
     let mut pending = vec![(wire, "design")];
     while let Some((value, owner)) = pending.pop() {
@@ -35,15 +33,6 @@ pub(super) fn check_native_keys(wire: &Value, findings: &mut Vec<Finding>) {
                 };
                 let native = keys("native_options");
                 let settings = keys("source_settings");
-                for key in native.iter().chain(&settings) {
-                    if !codec_key(key) {
-                        error(
-                            findings,
-                            owner,
-                            format_args!("native key {key:?} does not have the form codec:name"),
-                        );
-                    }
-                }
                 for key in native.iter().filter(|key| settings.contains(key)) {
                     error(
                         findings,
@@ -59,12 +48,6 @@ pub(super) fn check_native_keys(wire: &Value, findings: &mut Vec<Finding>) {
             _ => {}
         }
     }
-}
-
-fn codec_key(key: &str) -> bool {
-    key.split_once(':').is_some_and(|(codec, name)| {
-        !codec.is_empty() && !name.trim().is_empty() && !codec.contains(char::is_whitespace)
-    })
 }
 
 /// A profile holds at least one pick or is `Unread`, and its picks target
@@ -284,15 +267,10 @@ pub(super) fn check_length_span(
             check_limit(site, field, start, false, findings);
             check_limit(site, field, end, false, findings);
         }
-        Span::Symmetric { amount, .. } => {
-            if matches!(amount, Dimension::Literal(value) if value.get() == 0.0) {
-                error(
-                    findings,
-                    site.entity,
-                    format_args!("{field} is a symmetric span of zero"),
-                );
-            }
-        }
+        Span::Symmetric { amount, .. } => site.bound(findings, |values| {
+            (values.get(amount)?.get() == 0.0)
+                .then(|| format!("{field} is a symmetric span of zero"))
+        }),
     }
 }
 
@@ -311,23 +289,16 @@ pub(super) fn check_angle_span(
             check_limit(site, field, end, true, findings);
         }
         Span::Symmetric { amount, measure } => {
-            let Dimension::Literal(value) = amount else {
-                return;
-            };
-            let value = value.get();
             let most = match measure {
                 Some(SymmetricMeasure::PerSide) => std::f64::consts::PI,
                 Some(SymmetricMeasure::Total) | None => std::f64::consts::TAU,
             };
-            if value == 0.0 || value.abs() > most {
-                error(
-                    findings,
-                    site.entity,
-                    format_args!(
-                        "{field} is a symmetric angular span of {value}; a literal amount is nonzero and at most π per side or 2π in total"
-                    ),
-                );
-            }
+            site.bound(findings, |values| {
+                let value = values.get(amount)?.get();
+                (value == 0.0 || value.abs() > most).then(|| {
+                    format!("{field} is a symmetric angular span of {value}; an amount is nonzero and at most π per side or 2π in total")
+                })
+            });
         }
     }
 }
@@ -404,19 +375,12 @@ pub(super) fn check_limit<Q>(
     }
 }
 
-/// Two literal `Offsets` sum to a positive wall.
+/// Two `Offsets` sum to a positive wall.
 pub(super) fn check_thickness(site: Site<'_>, thickness: &Thickness, findings: &mut Vec<Finding>) {
-    if let Thickness::Offsets {
-        outside: Dimension::Literal(outside),
-        inside: Dimension::Literal(inside),
-    } = thickness
-    {
-        if outside.get() + inside.get() <= 0.0 {
-            error(
-                findings,
-                site.entity,
-                format_args!("Thickness::Offsets has outside + inside not above zero"),
-            );
-        }
+    if let Thickness::Offsets { outside, inside } = thickness {
+        site.bound(findings, |values| {
+            (values.get(outside)?.get() + values.get(inside)?.get() <= 0.0)
+                .then(|| "Thickness::Offsets has outside + inside not above zero".to_owned())
+        });
     }
 }

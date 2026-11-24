@@ -50,18 +50,15 @@ fn hole_and_sweep_edits_preserve_the_previous_admitted_shape() {
     });
     let sweep = SweepShape::Solid {
         op: crate::features::sweeps::SolidSweepOperation::NewBody,
-        section: SweepSection::Unresolved(None),
+        section: SweepSection::Unresolved,
         sections: vec![circular],
     };
     assert!(sweep.generated_section().is_none());
     assert_eq!(sweep.additional_section_count(), 1);
     // A sheet result carries sections whose generated arm is uninhabited, so a
     // circular region under one has no spelling in the type or on the wire.
-    let mut sheet = SweepShape::sheet_sections(
-        SweepMode::Surface {},
-        SweepSection::Unresolved(None),
-        Vec::new(),
-    );
+    let mut sheet =
+        SweepShape::sheet_sections(SweepMode::Surface {}, SweepSection::Unresolved, Vec::new());
     assert!(sheet.generated_sections_mut().next().is_none());
     let wire = serde_json::to_value(&sweep).expect("a sweep shape serializes");
     assert_eq!(wire["kind"], "solid");

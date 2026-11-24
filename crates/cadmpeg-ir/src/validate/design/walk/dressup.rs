@@ -4,14 +4,16 @@
 use cadmpeg_core::CodecError;
 
 use crate::design::ops::dressup::{
-    Along, BlendControls, BlendLimit, Chamfer, ChamferSet, ChamferSize, Corner, Decal,
-    DecalPlacement, Dome, Draft, DraftAngle, DraftSet, EdgeSetback, Emboss, FaceSide,
-    FaceThickness, Fillet, FilletSection, FilletSet, FilletSize, Hole, HolePositions, HoleShape,
-    LimitAt, Offset, OffsetResult, OffsetSet, RoundSide, SeriesStage, Setbacks, ShellFeature,
-    StageHole, StationAt, Stations, Thicken, Thread, ThreadLength, ThreadSpec, Transition,
+    Along, BlendControls, BlendLimit, Bore, Chamfer, ChamferSet, ChamferSize, Cone, ConicShape,
+    Corner, Decal, DecalPlacement, Dome, Draft, DraftAngle, DraftSet, EdgeSetback, Emboss,
+    EmbossEffect, FaceSide, FaceThickness, Fillet, FilletProfile, FilletSection, FilletSet,
+    FilletSize, Hole, HoleBottom, HoleHead, HolePositions, HoleShape, LimitAt, Offset,
+    OffsetResult, OffsetSet, RoundSide, SeriesStage, Setbacks, ShellFeature, StageHole,
+    StandardSize, StationAt, Stations, Thicken, Thread, ThreadLength, ThreadSpec, Transition,
     TransitionKind, ValueStation,
 };
 
+use super::super::dimensions::Bound;
 use super::{Collect, Walk};
 
 impl Walk for Along {
@@ -32,9 +34,11 @@ impl Walk for BlendControls {
             keep,
             transitions,
             overflow: _,
-            keep_features: _,
-            round_corners: _,
+            keep_features,
+            round_corners,
         } = self;
+        keep_features.walk(into)?;
+        round_corners.walk(into)?;
         corners.walk(into)?;
         limits.walk(into)?;
         keep.walk(into)?;
@@ -45,8 +49,31 @@ impl Walk for BlendControls {
 
 impl Walk for BlendLimit {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
-        let Self { at, reversed: _ } = self;
+        let Self { at, reversed } = self;
+        reversed.walk(into)?;
         at.walk(into)?;
+        Ok(())
+    }
+}
+
+impl Walk for Bore {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        let Self {
+            diameter,
+            head,
+            taper,
+            bottom,
+            near_chamfer,
+            neck_chamfer,
+            far_chamfer,
+        } = self;
+        diameter.walk(into)?;
+        head.walk(into)?;
+        taper.walk(into)?;
+        bottom.walk(into)?;
+        near_chamfer.walk(into)?;
+        neck_chamfer.walk(into)?;
+        far_chamfer.walk(into)?;
         Ok(())
     }
 }
@@ -73,9 +100,10 @@ impl Walk for ChamferSet {
             edges,
             size,
             reference,
-            flip: _,
+            flip,
             measure: _,
         } = self;
+        flip.walk(into)?;
         edges.walk(into)?;
         size.walk(into)?;
         reference.walk(into)?;
@@ -87,21 +115,58 @@ impl Walk for ChamferSize {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         match self {
             Self::Vertex(f0) => f0.walk(into),
-            Self::Distance(_)
-            | Self::Distances {
-                first: _,
-                second: _,
+            Self::Distance(f0) => f0.walk(into),
+            Self::Distances { first, second } => {
+                first.walk(into)?;
+                second.walk(into)?;
+                Ok(())
             }
-            | Self::DistanceAngle {
-                distance: _,
-                angle: _,
+            Self::DistanceAngle { distance, angle } => {
+                distance.walk(into)?;
+                angle.walk(into)?;
+                Ok(())
             }
-            | Self::WidthAngle { width: _, angle: _ }
-            | Self::HeightAngle {
-                height: _,
-                angle: _,
+            Self::WidthAngle { width, angle } => {
+                width.walk(into)?;
+                angle.walk(into)?;
+                Ok(())
             }
-            | Self::Native(_) => Ok(()),
+            Self::HeightAngle { height, angle } => {
+                height.walk(into)?;
+                angle.walk(into)?;
+                Ok(())
+            }
+            Self::Native(_) => Ok(()),
+        }
+    }
+}
+
+impl Walk for Cone {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        let Self {
+            diameter,
+            depth,
+            angle,
+        } = self;
+        diameter.walk(into)?;
+        depth.walk(into)?;
+        angle.walk(into)?;
+        Ok(())
+    }
+}
+
+impl Walk for ConicShape {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        match self {
+            Self::Rho { rho } => rho.walk(into),
+            Self::BoundaryAndCenter { center } => center.walk(into),
+            Self::CenterAndRho { center, rho } => {
+                center.walk(into)?;
+                rho.walk(into)?;
+                Ok(())
+            }
+            Self::ShoulderRadius(f0) => f0.walk(into),
+            Self::Native(_) => Ok(()),
         }
     }
 }
@@ -120,12 +185,14 @@ impl Walk for Decal {
         let Self {
             image: _,
             faces,
-            chain_faces: _,
-            opacity: _,
+            chain_faces,
+            opacity,
             placement,
             native_options,
             source_settings,
         } = self;
+        chain_faces.walk(into)?;
+        opacity.walk(into)?;
         faces.walk(into)?;
         placement.walk(into)?;
         native_options.walk(into)?;
@@ -138,10 +205,12 @@ impl Walk for DecalPlacement {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         let Self {
             frame,
-            width: _,
-            height: _,
+            width,
+            height,
             mirrored: _,
         } = self;
+        width.walk(into)?;
+        height.walk(into)?;
         frame.walk(into)?;
         Ok(())
     }
@@ -151,14 +220,16 @@ impl Walk for Dome {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         let Self {
             faces,
-            height: _,
-            concave: _,
+            height,
+            concave,
             shape: _,
             direction,
             points,
             native_options,
             source_settings,
         } = self;
+        height.walk(into)?;
+        concave.walk(into)?;
         faces.walk(into)?;
         direction.walk(into)?;
         points.walk(into)?;
@@ -193,13 +264,14 @@ impl Walk for DraftAngle {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         match self {
             Self::Variable(f0) => f0.walk(into),
-            Self::One(_)
-            | Self::Two {
-                first: _,
-                second: _,
+            Self::One(f0) => f0.walk(into),
+            Self::Two { first, second } => {
+                first.walk(into)?;
+                second.walk(into)?;
+                Ok(())
             }
-            | Self::Symmetric(_)
-            | Self::Native(_) => Ok(()),
+            Self::Symmetric(f0) => f0.walk(into),
+            Self::Native(_) => Ok(()),
         }
     }
 }
@@ -220,7 +292,8 @@ impl Walk for DraftSet {
 
 impl Walk for EdgeSetback {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
-        let Self { edge, distance: _ } = self;
+        let Self { edge, distance } = self;
+        distance.walk(into)?;
         edge.walk(into)?;
         Ok(())
     }
@@ -230,7 +303,7 @@ impl Walk for Emboss {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         let Self {
             profile,
-            effect: _,
+            effect,
             face,
             mapping: _,
             direction,
@@ -238,6 +311,7 @@ impl Walk for Emboss {
             native_options,
             source_settings,
         } = self;
+        effect.walk(into)?;
         profile.walk(into)?;
         face.walk(into)?;
         direction.walk(into)?;
@@ -245,6 +319,16 @@ impl Walk for Emboss {
         native_options.walk(into)?;
         source_settings.walk(into)?;
         Ok(())
+    }
+}
+
+impl Walk for EmbossEffect {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        match self {
+            Self::Emboss { depth } => depth.walk(into),
+            Self::Engrave { depth } => depth.walk(into),
+            Self::Scribe | Self::Native(_) => Ok(()),
+        }
     }
 }
 
@@ -259,10 +343,8 @@ impl Walk for FaceSide {
 
 impl Walk for FaceThickness {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
-        let Self {
-            faces,
-            thickness: _,
-        } = self;
+        let Self { faces, thickness } = self;
+        thickness.walk(into)?;
         faces.walk(into)?;
         Ok(())
     }
@@ -284,13 +366,25 @@ impl Walk for Fillet {
     }
 }
 
+impl Walk for FilletProfile {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        match self {
+            Self::Conic(f0) => f0.walk(into),
+            Self::CurvatureContinuous { shape } => shape.walk(into),
+            Self::Circular | Self::Native(_) => Ok(()),
+        }
+    }
+}
+
 impl Walk for FilletSection {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         let Self {
             size,
-            profile: _,
-            weight: _,
+            profile,
+            weight,
         } = self;
+        profile.walk(into)?;
+        weight.walk(into)?;
         size.walk(into)?;
         Ok(())
     }
@@ -317,8 +411,9 @@ impl Walk for FilletSet {
                 section,
                 spine,
                 near,
-                trim: _,
+                trim,
             } => {
+                trim.walk(into)?;
                 first.walk(into)?;
                 second.walk(into)?;
                 section.walk(into)?;
@@ -344,15 +439,14 @@ impl Walk for FilletSize {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         match self {
             Self::Variable(f0) => f0.walk(into),
-            Self::Radius(_)
-            | Self::Chord(_)
-            | Self::Offsets {
-                first: _,
-                second: _,
+            Self::Radius(f0) => f0.walk(into),
+            Self::Chord(f0) => f0.walk(into),
+            Self::Offsets { first, second } => {
+                first.walk(into)?;
+                second.walk(into)?;
+                Ok(())
             }
-            | Self::Held
-            | Self::ByProfile
-            | Self::Native(_) => Ok(()),
+            Self::Held | Self::ByProfile | Self::Native(_) => Ok(()),
         }
     }
 }
@@ -365,13 +459,14 @@ impl Walk for Hole {
             direction,
             shape,
             extent,
-            standard: _,
+            standard,
             thread,
             targets,
             series,
             native_options,
             source_settings,
         } = self;
+        standard.walk(into)?;
         positions.walk(into)?;
         start.walk(into)?;
         direction.walk(into)?;
@@ -383,6 +478,44 @@ impl Walk for Hole {
         native_options.walk(into)?;
         source_settings.walk(into)?;
         Ok(())
+    }
+}
+
+impl Walk for HoleBottom {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        match self {
+            Self::DrillPoint { angle, depth_to: _ } => angle.walk(into),
+            Self::Flat | Self::Trimmed | Self::Native(_) => Ok(()),
+        }
+    }
+}
+
+impl Walk for HoleHead {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        match self {
+            Self::Counterbore { diameter, depth } => {
+                diameter.walk(into)?;
+                depth.walk(into)?;
+                Ok(())
+            }
+            Self::Countersink(f0) => f0.walk(into),
+            Self::Counterdrill {
+                diameter,
+                depth,
+                angle,
+            } => {
+                diameter.walk(into)?;
+                depth.walk(into)?;
+                angle.walk(into)?;
+                Ok(())
+            }
+            Self::Spotface { diameter, depth } => {
+                diameter.walk(into)?;
+                depth.walk(into)?;
+                Ok(())
+            }
+            Self::Plain | Self::Native(_) => Ok(()),
+        }
     }
 }
 
@@ -400,12 +533,16 @@ impl Walk for HoleShape {
         match self {
             Self::Revolved(f0) => f0.walk(into),
             Self::Slot {
-                bore: _,
-                length: _,
+                bore,
+                length,
                 measure: _,
                 direction,
-            } => direction.walk(into),
-            Self::Bore(_) => Ok(()),
+            } => {
+                bore.walk(into)?;
+                length.walk(into)?;
+                direction.walk(into)
+            }
+            Self::Bore(f0) => f0.walk(into),
         }
     }
 }
@@ -448,7 +585,8 @@ impl Walk for OffsetResult {
 
 impl Walk for OffsetSet {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
-        let Self { faces, distance: _ } = self;
+        let Self { faces, distance } = self;
+        distance.walk(into)?;
         faces.walk(into)?;
         Ok(())
     }
@@ -476,7 +614,7 @@ impl Walk for Setbacks {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         match self {
             Self::PerEdge(f0) => f0.walk(into),
-            Self::Uniform(_) => Ok(()),
+            Self::Uniform(f0) => f0.walk(into),
         }
     }
 }
@@ -486,13 +624,14 @@ impl Walk for ShellFeature {
         let Self {
             bodies,
             removed,
-            thickness: _,
+            thickness,
             faces,
             join: _,
             face_meeting: _,
             native_options,
             source_settings,
         } = self;
+        thickness.walk(into)?;
         bodies.walk(into)?;
         removed.walk(into)?;
         faces.walk(into)?;
@@ -508,9 +647,10 @@ impl Walk for StageHole {
             Self::Stated {
                 shape,
                 extent,
-                standard: _,
+                standard,
                 thread,
             } => {
+                standard.walk(into)?;
                 shape.walk(into)?;
                 extent.walk(into)?;
                 thread.walk(into)?;
@@ -521,17 +661,33 @@ impl Walk for StageHole {
     }
 }
 
+impl Walk for StandardSize {
+    fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
+        let Self {
+            standard: _,
+            kind: _,
+            size,
+            class: _,
+        } = self;
+        size.walk(into)?;
+        Ok(())
+    }
+}
+
 impl Walk for StationAt {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         match self {
-            Self::Parameter { along, fraction: _ } => along.walk(into),
+            Self::Parameter { along, fraction } => {
+                fraction.walk(into)?;
+                along.walk(into)
+            }
             Self::Point(f0) => f0.walk(into),
             Self::Native(_) => Ok(()),
         }
     }
 }
 
-impl<Q> Walk for Stations<Q> {
+impl<Q: Bound> Walk for Stations<Q> {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         let Self {
             points,
@@ -548,11 +704,12 @@ impl Walk for Thicken {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         let Self {
             faces,
-            thickness: _,
+            thickness,
             boolean,
             native_options,
             source_settings,
         } = self;
+        thickness.walk(into)?;
         faces.walk(into)?;
         boolean.walk(into)?;
         native_options.walk(into)?;
@@ -582,8 +739,12 @@ impl Walk for Thread {
 impl Walk for ThreadLength {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         match self {
-            Self::ToElement { element, offset: _ } => element.walk(into),
-            Self::Full | Self::Blind(_) | Self::Standard | Self::Native(_) => Ok(()),
+            Self::ToElement { element, offset } => {
+                offset.walk(into)?;
+                element.walk(into)
+            }
+            Self::Blind(f0) => f0.walk(into),
+            Self::Full | Self::Standard | Self::Native(_) => Ok(()),
         }
     }
 }
@@ -591,15 +752,21 @@ impl Walk for ThreadLength {
 impl Walk for ThreadSpec {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         let Self {
-            standard: _,
-            major_diameter: _,
-            minor_diameter: _,
-            pitch_diameter: _,
-            pitch: _,
+            standard,
+            major_diameter,
+            minor_diameter,
+            pitch_diameter,
+            pitch,
             hand: _,
             length,
-            modeled: _,
+            modeled,
         } = self;
+        standard.walk(into)?;
+        major_diameter.walk(into)?;
+        minor_diameter.walk(into)?;
+        pitch_diameter.walk(into)?;
+        pitch.walk(into)?;
+        modeled.walk(into)?;
         length.walk(into)?;
         Ok(())
     }
@@ -624,24 +791,28 @@ impl Walk for TransitionKind {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         match self {
             Self::StopAt(f0) => f0.walk(into),
-            Self::RollingBall { radius: _, against } => against.walk(into),
-            Self::SweptAround { radius: _, against } => against.walk(into),
-            Self::Continue
-            | Self::Intersect
-            | Self::Stop
-            | Self::CornerSphere {
-                radius: _,
-                lengths: _,
+            Self::RollingBall { radius, against } => {
+                radius.walk(into)?;
+                against.walk(into)
             }
-            | Self::Blend
-            | Self::Native(_) => Ok(()),
+            Self::SweptAround { radius, against } => {
+                radius.walk(into)?;
+                against.walk(into)
+            }
+            Self::CornerSphere { radius, lengths } => {
+                radius.walk(into)?;
+                lengths.walk(into)?;
+                Ok(())
+            }
+            Self::Continue | Self::Intersect | Self::Stop | Self::Blend | Self::Native(_) => Ok(()),
         }
     }
 }
 
-impl<Q> Walk for ValueStation<Q> {
+impl<Q: Bound> Walk for ValueStation<Q> {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
-        let Self { at, value: _ } = self;
+        let Self { at, value } = self;
+        value.walk(into)?;
         at.walk(into)?;
         Ok(())
     }

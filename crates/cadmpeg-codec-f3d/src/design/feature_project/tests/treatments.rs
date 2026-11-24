@@ -1257,7 +1257,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             ref interior_constraints,
             reverse_normal: None,
         })) if interior_constraints.is_empty()
-            && continuity.resolved().map(|resolved| resolved.conditions.as_slice())
+            && continuity.as_ref().map(|resolved| resolved.conditions.as_slice())
             == Some(&[cadmpeg_ir::features::surface_inputs::FilledSurfaceBoundaryCondition::Contact {}][..])
             && native == &patch_group.id
             && faces.is_empty()
@@ -1429,7 +1429,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             ref interior_constraints,
             reverse_normal: None,
         })) if interior_constraints.is_empty()
-            && native == &patch_group.id && faces.is_empty() && continuity.resolved().is_none()
+            && native == &patch_group.id && faces.is_empty() && continuity.is_none()
     ));
 
     let mut extra_member = patch_group.clone();
@@ -1516,7 +1516,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             ref continuity,
             merge_result: Some(false),
             ..
-        })) if native == &two_profiles_scope.id && continuity.resolved().is_none()
+        })) if native == &two_profiles_scope.id && continuity.is_none()
     ));
 
     let mut three_profiles_scope = two_profiles_scope.clone();
@@ -1542,7 +1542,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             ref continuity,
             merge_result: Some(false),
             ..
-        })) if continuity.resolved().is_none()
+        })) if continuity.is_none()
     ));
 
     // The earlier scope-envelope generation is fourteen bytes shorter in both
@@ -1667,7 +1667,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             ),
             ref continuity,
             ..
-        })) if continuity.uniform_value()
+        })) if continuity.as_ref().and_then(cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuity::uniform_continuity)
             == Some(cadmpeg_ir::features::surface_inputs::SurfaceContinuity::Contact)
             && native == &patch_group.id
     ));

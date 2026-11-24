@@ -10,8 +10,7 @@ use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 use cadmpeg_ir::index::{ModelIndex, StandardIndex};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::PositiveReal;
-use cadmpeg_ir::units::coincidence_allowance;
+use cadmpeg_ir::units::binding_allowance;
 use cadmpeg_ir::CadIr;
 
 use crate::loss::F3dLossCode;
@@ -115,10 +114,14 @@ pub(super) fn admit(
             let vertex_tolerance = index
                 .vertices(id.as_str(), StandardIndex)
                 .and_then(|vertex| vertex.tolerance)
-                .map(PositiveReal::get);
-            let allowance = coincidence_allowance(
+                .map(cadmpeg_ir::scalar::PositiveLength::get);
+            let allowance = binding_allowance(
                 ir.tolerances.linear,
-                &[edge.tolerance.map(PositiveReal::get), vertex_tolerance, fit],
+                &[
+                    edge.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get),
+                    vertex_tolerance,
+                    fit,
+                ],
             );
             entry.exact_miss |= exact && miss > allowance;
         }
@@ -179,11 +182,13 @@ pub(super) fn admit(
         if miss.incomplete || !miss.exact_miss || miss.maximum > *bound {
             continue;
         }
-        let previous = vertex.tolerance.map_or(0.0, PositiveReal::get);
+        let previous = vertex
+            .tolerance
+            .map_or(0.0, cadmpeg_ir::scalar::PositiveLength::get);
         if miss.maximum <= previous {
             continue;
         }
-        vertex.tolerance = PositiveReal::new(miss.maximum);
+        vertex.tolerance = cadmpeg_ir::scalar::PositiveLength::new(miss.maximum);
         widened.insert(vertex.id.as_str());
         maximum_widening = maximum_widening.max(miss.maximum - previous);
     }

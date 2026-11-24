@@ -562,7 +562,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id: cadmpeg_core::text::NonBlankString::new(format!(
                         "VisibGeom:{}",
                         row.id
@@ -570,10 +570,6 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,
@@ -778,7 +774,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                 geometry,
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id: cadmpeg_core::text::NonBlankString::new(format!(
                         "VisibGeom:{}",
                         row.id
@@ -786,10 +782,6 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,

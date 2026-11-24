@@ -17,10 +17,11 @@ use crate::design::ops::datum::DatumElement;
 use crate::design::refs::{EntityRef, Evaluated, Member, Position};
 use crate::design::selection::{
     Anchor, DatumPart, DefinitionRef, OccurrencePath, PickContext, PickDomain, PickTarget, Picked,
-    Propagation, SelectionRule, StepRef,
+    SelectionRule, StepRef,
 };
 use crate::document::CadIr;
 use crate::ids::ProductDefinitionId;
+use crate::native::view::NativeView;
 use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 
@@ -30,7 +31,7 @@ use super::names::derived_kinds;
 use super::records::{DesignRecords, MemberKey, PositionKey};
 use super::states::{Extent, States};
 use super::walk::{PicksView, SelectionView, TermView};
-use super::{native_text, record_finding, Held, Holder};
+use super::{record_finding, Held, Holder};
 
 /// Where a pick sits: its holder, its selection's anchor, and the definition
 /// it resolves in without a context.
@@ -65,6 +66,7 @@ pub(super) fn check<'a>(
     index: &DesignIndex<'a>,
     matchers: &Matchers<'a>,
     held: &'a [Held<'a>],
+    document: NativeView<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let moved = moved_occurrences(index.records.ir);
@@ -74,7 +76,8 @@ pub(super) fn check<'a>(
             check_anchor(index, site, selection, findings);
             check_rules(selection, site, findings);
             for pick in selection.picks() {
-                check_pick(ctx, index, matchers, site, pick, &moved, findings)?;
+                check_pick(index, matchers, site, pick, &moved, findings);
+                check_witness_body(ctx, document, site.holder.record(), pick, findings)?;
             }
         }
     }
@@ -87,13 +90,12 @@ pub(super) fn check<'a>(
             anchor: &Anchor::Current,
             owner: Some(&publication.scope),
         };
-        check_pick(
+        check_pick(index, matchers, site, &publication.target, &moved, findings);
+        check_witness_body(
             ctx,
-            index,
-            matchers,
-            site,
+            document,
+            publication.id.as_str(),
             &publication.target,
-            &moved,
             findings,
         )?;
     }
@@ -247,9 +249,24 @@ fn check_rules(selection: &SelectionView<'_>, site: Site<'_>, findings: &mut Vec
             SelectionRule::All { .. } if seeded => {
                 record(format_args!("an All rule term has seeds"));
             }
-            SelectionRule::All { .. } => {}
-            _ if !seeded => record(format_args!("a rule term other than All has no seeds")),
+            SelectionRule::Affected if seeded => {
+                record(format_args!("an Affected rule term has seeds"));
+            }
+            SelectionRule::All { .. } | SelectionRule::Affected => {}
+            _ if !seeded => record(format_args!(
+                "a rule term other than All or Affected has no seeds"
+            )),
             _ => {}
+        }
+        if matches!(term.rule, SelectionRule::Affected) {
+            if term.propagation.is_some() {
+                record(format_args!("an Affected rule term states a propagation"));
+            }
+            if !selection.participants {
+                record(format_args!(
+                    "an Affected rule term is outside an assembly context's participants"
+                ));
+            }
         }
         if let SelectionRule::Region { boundary } = term.rule {
             let curves = boundary.as_slice().iter().any(picks_curve);
@@ -260,22 +277,6 @@ fn check_rules(selection: &SelectionView<'_>, site: Site<'_>, findings: &mut Vec
             if curves && !containing {
                 record(format_args!("a Region term whose boundary picks curves has no seed with a Containing domain"),
                 );
-            }
-        }
-        if let SelectionRule::Native(text) = term.rule {
-            if !native_text(text.as_str()) {
-                record(format_args!(
-                    "native selection rule {:?} is not written codec:name",
-                    text.as_str()
-                ));
-            }
-        }
-        if let Some(Propagation::Native(text)) = term.propagation {
-            if !native_text(text.as_str()) {
-                record(format_args!(
-                    "native propagation {:?} is not written codec:name",
-                    text.as_str()
-                ));
             }
         }
     }
@@ -311,16 +312,44 @@ fn picks_curve(pick: &Picked) -> bool {
     }
 }
 
+/// A pick's witness body is closed over its own references, and the rules of
+/// one topology hold on it (part 10, Coincidence).
+fn check_witness_body(
+    ctx: &DecodeContext<'_>,
+    document: NativeView<'_>,
+    at: &str,
+    pick: &Picked,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
+    let Some(body) = pick
+        .witness
+        .as_ref()
+        .and_then(|witness| witness.body.as_deref())
+    else {
+        return Ok(());
+    };
+    let nested =
+        crate::validate::nested_topology_findings(ctx, document, body.clone(), true, true)?;
+    for finding in nested {
+        findings.push(crate::validate::nested_finding(
+            finding,
+            Check::Design,
+            at,
+            "witness body",
+        ));
+    }
+    Ok(())
+}
+
 /// The rules on one pick: its target, its context, and its caches.
 fn check_pick<'a>(
-    ctx: &DecodeContext<'_>,
     index: &DesignIndex<'a>,
     matchers: &Matchers<'a>,
     site: Site<'a>,
     pick: &'a Picked,
     moved: &BTreeSet<&str>,
     findings: &mut Vec<Finding>,
-) -> Result<(), CodecError> {
+) {
     let states = matchers.states();
     let at = site.holder.record();
     if !target_exists(index, &pick.target) {
@@ -393,19 +422,11 @@ fn check_pick<'a>(
             );
         }
     }
-    if let Some(body) = pick
-        .witness
-        .as_ref()
-        .and_then(|witness| witness.body.as_deref())
-    {
-        super::check_closed_topology(ctx, body, at, "witness body", findings)?;
-    }
     if pick.context.is_none() {
         for state in anchored_states(index, states, site) {
             check_in_state(states, matchers, &state, pick, at, findings);
         }
     }
-    Ok(())
 }
 
 /// A stored state a pick resolves in.

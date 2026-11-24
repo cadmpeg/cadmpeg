@@ -2,9 +2,10 @@
 #![allow(clippy::unwrap_used)]
 
 use super::{
-    ChannelAddressing, Strip, Strips, Tessellation, TessellationChannel, TessellationError,
-    TessellationId, TessellationMesh, TessellationTextureAssignment, TessellationTriangleGroup,
-    TessellationWire, TextureCoordinateAddressing, TextureCoordinates,
+    ChannelAddressing, ColorAddressing, MeshColors, Strip, Strips, Tessellation,
+    TessellationChannel, TessellationError, TessellationId, TessellationMesh,
+    TessellationTextureAssignment, TessellationTriangleGroup, TessellationWire,
+    TextureCoordinateAddressing, TextureCoordinates,
 };
 use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::math::{Point3, Vector3};
@@ -819,6 +820,56 @@ fn texture_coordinates_hold_one_value_per_vertex_or_corner_under_unique_names() 
     rejects_wire_field("texture_coordinates", vec![coordinates("st", Vertex, 3)]);
 }
 
+fn colors(addressing: ColorAddressing, count: usize) -> MeshColors {
+    let red = crate::topology::Color::new(1.0, 0.0, 0.0, 1.0).unwrap();
+    MeshColors {
+        addressing,
+        values: vec![red; count],
+    }
+}
+
+/// §8: `colors` holds one value per vertex, per triangle corner, or per
+/// triangle; `Corner` and `Triangle` occur only on a mesh that lists its
+/// triangles.
+#[test]
+fn colors_hold_one_value_per_element_of_their_addressing() {
+    use ColorAddressing::{Corner, Triangle, Vertex};
+    assert!(serde_json::to_value(mesh())
+        .unwrap()
+        .get("colors")
+        .is_none());
+    for valid in [colors(Vertex, 4), colors(Corner, 6), colors(Triangle, 2)] {
+        let value = mesh().with_colors(Some(valid.clone())).unwrap();
+        assert_eq!(value.colors(), Some(&valid));
+        let wire = serde_json::to_value(&value).unwrap();
+        assert_eq!(
+            wire["colors"]["addressing"],
+            serde_json::to_value(valid.addressing).unwrap()
+        );
+        assert_eq!(serde_json::from_value::<Tessellation>(wire).unwrap(), value);
+    }
+    for invalid in [colors(Vertex, 3), colors(Corner, 4), colors(Triangle, 6)] {
+        assert!(mesh().with_colors(Some(invalid)).is_err());
+    }
+    rejects_wire_field("colors", colors(Triangle, 3));
+    rejects_wire_field("colors", serde_json::Value::Null);
+
+    let strips = Tessellation::new(
+        TessellationId::mint("test:mesh:tessellation#strips").expect("valid identity"),
+        TessellationMesh::Strips {
+            strips: Strips::from_spans(square(), &[4]).unwrap(),
+        },
+        Vec::new(),
+    )
+    .unwrap();
+    assert!(strips.clone().with_colors(Some(colors(Vertex, 4))).is_ok());
+    assert!(strips
+        .clone()
+        .with_colors(Some(colors(Triangle, 2)))
+        .is_err());
+    assert!(strips.with_colors(Some(colors(Corner, 6))).is_err());
+}
+
 #[test]
 fn a_tessellation_writes_the_state_it_names_and_refuses_a_null_one() {
     let mut value = mesh();
@@ -865,4 +916,53 @@ fn a_triangle_group_states_its_face_only_when_it_has_one() {
     );
     let back: TessellationTriangleGroup = serde_json::from_value(value).unwrap();
     assert_eq!(back.face, Some(face));
+}
+
+#[test]
+fn a_tessellation_states_what_it_is_under_of() {
+    let unresolved = serde_json::to_value(mesh()).unwrap();
+    assert_eq!(unresolved["of"], serde_json::json!({"kind": "unresolved"}));
+    assert!(unresolved.get("body").is_none() && unresolved.get("faces").is_none());
+
+    let body = mesh().with_of(super::Meshed::Body {
+        body: crate::ids::BodyId::mint("test:mesh:body#0").unwrap(),
+        faces: vec![crate::ids::FaceId::mint("test:mesh:face#0").unwrap()],
+    });
+    let wire = serde_json::to_value(&body).unwrap();
+    assert_eq!(
+        wire["of"],
+        serde_json::json!({"kind": "body", "body": "test:mesh:body#0", "faces": ["test:mesh:face#0"]})
+    );
+    assert_eq!(serde_json::from_value::<Tessellation>(wire).unwrap(), body);
+
+    let definition = mesh().with_of(super::Meshed::Definition {
+        definition: crate::ids::ProductDefinitionId::mint("test:mesh:product#0").unwrap(),
+        name: cadmpeg_core::text::NonBlankString::new("Mesh".to_owned()),
+        color: crate::topology::Color::new(1.0, 0.0, 0.0, 1.0),
+        visible: Some(false),
+    });
+    let wire = serde_json::to_value(&definition).unwrap();
+    assert_eq!(
+        wire["of"],
+        serde_json::json!({
+            "kind": "definition",
+            "definition": "test:mesh:product#0",
+            "name": "Mesh",
+            "color": {"r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0},
+            "visible": false
+        })
+    );
+    assert_eq!(
+        serde_json::from_value::<Tessellation>(wire).unwrap(),
+        definition
+    );
+
+    rejects_wire_field("of", serde_json::json!({"kind": "display"}));
+    rejects_wire_field(
+        "of",
+        serde_json::json!({"kind": "definition", "definition": "test:mesh:product#0", "name": null}),
+    );
+    let mut legacy = serde_json::to_value(mesh()).unwrap();
+    legacy["body"] = serde_json::json!("test:mesh:body#0");
+    assert!(serde_json::from_value::<Tessellation>(legacy).is_err());
 }

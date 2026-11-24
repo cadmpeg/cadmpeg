@@ -43,11 +43,9 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [
         {
@@ -68,15 +66,9 @@
           "relationships": {
             "items": [
               {
-                "native": {
-                  "codec": "step",
-                  "value": {
-                    "kind": "text",
-                    "value": "#8"
-                  }
-                },
                 "target": {
-                  "kind": "unresolved"
+                  "kind": "pmi",
+                  "value": "step:presentation:pmi#8"
                 }
               },
               {
@@ -107,16 +99,12 @@
               }
             ]
           },
-          "runtime_type": "DRAUGHTING_MODEL"
+          "runtime_type": "DRAUGHTING_MODEL",
+          "views": []
         }
       ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [
@@ -164,24 +152,15 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -315,6 +294,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "49213178822fd9269a633a6320446e1b933350f73f2bf5a8f7116f8648788a6a",
     "file_digests": {},
     "retained_records": {},

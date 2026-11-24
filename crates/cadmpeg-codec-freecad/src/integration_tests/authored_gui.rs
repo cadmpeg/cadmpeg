@@ -120,15 +120,15 @@ fn authored_gui_appearance_keeps_fused_measures_and_topology_styles() {
         expected_face_targets
     );
     let [region] = geometry
-        .body_regions(&geometry.bodies[0].id)
+        .stated_body_regions(&geometry.bodies[0].id)
         .collect::<Vec<_>>()[..]
     else {
         panic!("one authored solid region");
     };
-    let [shell_id] = region.shells.as_slice() else {
+    let [shell_id] = region.stated_shells().collect::<Vec<_>>()[..] else {
         panic!("one authored exterior shell");
     };
-    let shell_faces = geometry.shell_faces(shell_id).collect::<Vec<_>>();
+    let shell_faces = geometry.stated_shell_faces(shell_id).collect::<Vec<_>>();
     assert_eq!(shell_faces.len(), expected_face_colors.len());
     for (face_index, face) in shell_faces.iter().enumerate() {
         let target = AppearanceTarget::Face(face.id.clone());

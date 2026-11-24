@@ -20,7 +20,7 @@ use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
 use cadmpeg_ir::examples;
 use cadmpeg_ir::{report::export::WritePath, CadIr};
 use cadmpeg_measure::test_support::round_trip::{measures_agree_with, measures_decide};
-use cadmpeg_test_support::golden::{elide_local_digests, snapshot_text, snapshots_agree};
+use cadmpeg_test_support::golden::{snapshot_text, snapshots_agree};
 use cadmpeg_test_support::roundtrip::{
     mutation_roundtrip, reports_carried_source, semantic_roundtrip, verbatim_replay_holds,
     ExpectedWritePath, MutationOutcome, SemanticOutcome,
@@ -431,17 +431,15 @@ fn indent_block(block: &str) -> String {
 fn decode_snapshot(bytes: &[u8]) -> String {
     match decode_result(bytes) {
         Ok(result) => {
-            let mut result = EditableDecodeResult::from(result);
-            if let Some(source) = result.ir_mut().source.as_mut() {
-                elide_local_digests(&mut source.attributes);
-            }
             let ir = result
                 .ir()
                 .to_canonical_json()
                 .expect("serialize canonical ir");
             let report = serde_json::to_string_pretty(result.report()).expect("serialize report");
-            let fidelity = serde_json::to_string_pretty(result.source_fidelity())
-                .expect("serialize source_fidelity");
+            let fidelity = serde_json::to_string_pretty(
+                &cadmpeg_test_support::golden::fidelity_snapshot(result.source_fidelity()),
+            )
+            .expect("serialize source_fidelity");
             let mut out = String::from("{\n");
             out.push_str("  \"ir\": ");
             out.push_str(&indent_block(&ir));
@@ -885,31 +883,24 @@ fn fixtures_replay_verbatim() {
     assert_eq!(marked, ["container_metadata_only"]);
 }
 
-/// Write path requires a decode baseline.
+/// A document its sidecar reads as edited is patched from the retained
+/// source image, never replayed (§3.4, Paths), and the patched file decodes.
 #[test]
-fn fixtures_without_a_baseline_regenerate_and_report_the_declined_patch() {
+fn fixtures_read_as_edited_are_patched() {
     for &(name, _) in fixtures() {
         let input = read_fixture(name).expect("committed fixture");
         semantic_roundtrip(&F3dCodec, name, &input, |outcome| match outcome {
             SemanticOutcome::Refused { error } => {
-                panic!("fixture `{name}`: a missing baseline must not refuse the write: {error}")
+                panic!("fixture `{name}`: a document read as edited must not refuse the write: {error}")
             }
             SemanticOutcome::Written { report, bytes } => {
                 assert!(
-                    matches!(report.write_path(), WritePath::Synthesized { .. }),
+                    matches!(report.write_path(), WritePath::Patched { .. }),
                     "fixture `{name}`: {}",
                     report.write_path()
                 );
-                assert!(
-                    report.losses.iter().any(|loss| {
-                        loss.code == crate::loss::F3dLossCode::WriterPatchDeclined.kind()
-                            && loss.message.contains("baseline")
-                    }),
-                    "fixture `{name}`: {:#?}",
-                    report.losses
-                );
                 decode_result(bytes).unwrap_or_else(|error| {
-                    panic!("fixture `{name}`: the regenerated file decodes: {error}")
+                    panic!("fixture `{name}`: the patched file decodes: {error}")
                 });
             }
         });

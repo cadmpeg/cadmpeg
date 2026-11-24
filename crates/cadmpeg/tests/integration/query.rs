@@ -1256,7 +1256,7 @@ fn schema_lists_model_arenas_with_element_types() {
     assert!(stdout.starts_with("arena\telement\trequired\n"), "{stdout}");
     assert!(stdout.contains("geometry.faces\tFace\tyes"), "{stdout}");
     assert!(
-        stdout.contains("model.assembly_joints\tAssemblyJoint\tyes"),
+        stdout.contains("model.occurrences\tOccurrence\tyes"),
         "{stdout}"
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -1264,9 +1264,9 @@ fn schema_lists_model_arenas_with_element_types() {
 }
 
 #[test]
-fn schema_projects_feature_fields_with_tagged_union_inventory() {
+fn schema_projects_design_feature_fields() {
     let output = cadmpeg()
-        .args(["query", "schema", "types", "model.features"])
+        .args(["query", "schema", "types", "design.features"])
         .output()
         .unwrap();
     assert!(output.status.success());
@@ -1275,24 +1275,22 @@ fn schema_projects_feature_fields_with_tagged_union_inventory() {
         stdout.starts_with("field\ttype\trequired\tdescription\n"),
         "{stdout}"
     );
-    // The measured trap: the discriminator of a feature's definition is
-    // `.definition.kind`, and the schema view names the tag key.
-    assert!(
-        stdout.contains("definition\tFeatureDefinition (tagged by kind,"),
-        "{stdout}"
-    );
-    assert!(stdout.contains("operation"), "{stdout}");
-    // The other measured trap: an optional field is absent and a list is always written.
-    assert!(stdout.contains("suppressed\tboolean?\tno"), "{stdout}");
-    assert!(stdout.contains("outputs\tarray<BodyId>\tyes"), "{stdout}");
+    assert!(stdout.contains("definition\tFeatureDefinition"), "{stdout}");
+    // An optional field is absent and its type says so.
+    assert!(stdout.contains("name\tstring\tno"), "{stdout}");
     assert!(stdout.contains("id\tFeatureId\tyes"), "{stdout}");
 
-    // Bare shorthand is byte-identical to the dotted name.
-    let bare = cadmpeg()
-        .args(["query", "schema", "types", "features"])
+    // Bare shorthand is byte-identical to the dotted name of a `model` arena.
+    let dotted = cadmpeg()
+        .args(["query", "schema", "types", "model.occurrences"])
         .output()
         .unwrap();
-    assert_eq!(output.stdout, bare.stdout);
+    assert!(dotted.status.success());
+    let bare = cadmpeg()
+        .args(["query", "schema", "types", "occurrences"])
+        .output()
+        .unwrap();
+    assert_eq!(dotted.stdout, bare.stdout);
 }
 
 #[test]
@@ -1669,7 +1667,7 @@ fn a_foreign_ir_version_is_refused() {
 #[cfg(feature = "iges")]
 #[test]
 fn query_projects_export_identity_and_losses_from_a_generated_report() {
-    use cadmpeg_ir::{CodecFormat, SourceGeometryRole, SourceObjectAssociation};
+    use cadmpeg_ir::{SourceGeometryRole, SourceObjectAssociation};
     let dir = tempdir().unwrap();
     let mut ir = unit_cube().unwrap();
     ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
@@ -1679,13 +1677,9 @@ fn query_projects_export_identity_and_losses_from_a_generated_report() {
         ))
         .unwrap(),
         Some(SourceObjectAssociation {
-            format: CodecFormat::Step,
+            format: cadmpeg_ir::codec_id!("step"),
             object_id: cadmpeg_core::nonblank_literal!("orphan"),
             geometry_role: Some(SourceGeometryRole::Support),
-            name: None,
-            color: None,
-            visible: None,
-            layer: None,
             instance_path: Vec::new(),
         }),
     ));

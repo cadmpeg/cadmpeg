@@ -45,6 +45,8 @@ enum Packet {
 struct SourcedPacket {
     packet: Packet,
     source_id: String,
+    /// The native value block that holds the packet.
+    block: String,
 }
 
 impl SourcedPacket {
@@ -101,7 +103,11 @@ pub(crate) fn transfer(
                 continue;
             };
             let source_id = format!("{}:field#{offset:010}:{ordinal:06}", block.id);
-            let packet = SourcedPacket { packet, source_id };
+            let packet = SourcedPacket {
+                packet,
+                source_id,
+                block: block.id.clone(),
+            };
             if in_modeling_scope {
                 packets.push(packet);
             } else {
@@ -297,7 +303,7 @@ fn insert_binding(
         .map_or("", |(_, key)| key);
     let id = format!("catia:appearance:binding#{index}:{key}");
     let id = AppearanceBindingId::mint(id).map_err(cadmpeg_core::CodecError::malformed)?;
-    insert_binding_record(ctx, ir, appearance, target, id)
+    insert_binding_record(ctx, ir, appearance, target, id, None)
 }
 
 fn insert_source_binding(
@@ -320,10 +326,9 @@ fn insert_source_binding(
         ctx,
         ir,
         &appearance,
-        AppearanceTarget::Source {
-            source_id: packet.source_id.clone(),
-        },
+        AppearanceTarget::Unresolved,
         id,
+        Some(packet.block.clone()),
     )
 }
 
@@ -333,6 +338,7 @@ fn insert_binding_record(
     appearance: &AppearanceId,
     target: AppearanceTarget,
     id: AppearanceBindingId,
+    native_ref: Option<String>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     ctx.charge_entities(1, "admit CATIA appearance binding")?;
     let retained_appearance = appearance.clone();
@@ -341,11 +347,12 @@ fn insert_binding_record(
         id,
         target: target.into(),
         appearance: retained_appearance,
+        precedence: None,
         source_entity_id: None,
         object_type: Some(object_type),
         visible: None,
         channels: BTreeMap::new(),
-        native_ref: None,
+        native_ref,
     });
     Ok(())
 }
@@ -422,6 +429,7 @@ mod tests {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
         for index in 0..face_count {
             ir.geometry.faces.push(Face {
@@ -661,17 +669,15 @@ mod tests {
             ir.model
                 .appearance_bindings
                 .iter()
-                .filter(|binding| matches!(binding.target.entity, AppearanceTarget::Source { .. }))
+                .filter(|binding| matches!(binding.target.entity, AppearanceTarget::Unresolved))
                 .count(),
             1
         );
         assert!(ir.model.appearance_bindings.iter().any(|binding| {
             binding.appearance.as_str().contains("143de0ff")
-                && matches!(
-                    &binding.target.entity,
-                    AppearanceTarget::Source { source_id }
-                        if source_id == "values:field#0000000007:000001"
-                )
+                && matches!(binding.target.entity, AppearanceTarget::Unresolved)
+                && binding.source_entity_id.is_none()
+                && binding.native_ref.as_deref() == Some("values")
         }));
         assert!(ir
             .model
@@ -686,6 +692,7 @@ mod tests {
         let packet = SourcedPacket {
             packet: Packet::Rgba([0x14, 0x3d, 0xe0, 0xff]),
             source_id: "catia:outer:value-block#0001:field#0002".into(),
+            block: "catia:outer:value-block#0001".into(),
         };
         let mut ir = model(0);
         crate::test_support::with_service_context(|ctx| {
@@ -703,9 +710,10 @@ mod tests {
             .as_str()
             .starts_with("catia:appearance:source-binding#source-"));
         assert!(matches!(
-            &binding.target.entity,
-            AppearanceTarget::Source { source_id } if source_id == &packet.source_id
+            binding.target.entity,
+            AppearanceTarget::Unresolved
         ));
+        assert_eq!(binding.native_ref.as_deref(), Some(packet.block.as_str()));
     }
 
     #[test]
@@ -770,7 +778,7 @@ mod tests {
             ir.model
                 .appearance_bindings
                 .iter()
-                .filter(|binding| matches!(binding.target.entity, AppearanceTarget::Source { .. }))
+                .filter(|binding| matches!(binding.target.entity, AppearanceTarget::Unresolved))
                 .count(),
             6
         );
@@ -812,7 +820,7 @@ mod tests {
             .model
             .appearance_bindings
             .iter()
-            .all(|binding| matches!(binding.target.entity, AppearanceTarget::Source { .. })));
+            .all(|binding| matches!(binding.target.entity, AppearanceTarget::Unresolved)));
     }
 
     #[test]
@@ -926,7 +934,7 @@ mod tests {
             ir.model
                 .appearance_bindings
                 .iter()
-                .filter(|binding| matches!(binding.target.entity, AppearanceTarget::Source { .. }))
+                .filter(|binding| matches!(binding.target.entity, AppearanceTarget::Unresolved))
                 .count(),
             7
         );
@@ -1073,7 +1081,7 @@ mod tests {
             ir.model
                 .appearance_bindings
                 .iter()
-                .filter(|binding| matches!(binding.target.entity, AppearanceTarget::Source { .. }))
+                .filter(|binding| matches!(binding.target.entity, AppearanceTarget::Unresolved))
                 .count(),
             6
         );
@@ -1118,7 +1126,7 @@ mod tests {
         assert_eq!(ir.model.appearance_bindings.len(), 1);
         assert!(matches!(
             &ir.model.appearance_bindings[0].target.entity,
-            AppearanceTarget::Source { .. }
+            AppearanceTarget::Unresolved
         ));
     }
 
@@ -1159,7 +1167,7 @@ mod tests {
             ir.model
                 .appearance_bindings
                 .iter()
-                .filter(|binding| matches!(binding.target.entity, AppearanceTarget::Source { .. }))
+                .filter(|binding| matches!(binding.target.entity, AppearanceTarget::Unresolved))
                 .count(),
             1
         );
@@ -1213,7 +1221,7 @@ mod tests {
                 .model
                 .appearance_bindings
                 .iter()
-                .filter(|b| matches!(b.target.entity, AppearanceTarget::Source { .. }))
+                .filter(|b| matches!(b.target.entity, AppearanceTarget::Unresolved))
                 .collect::<Vec<_>>();
             assert_eq!(sources.len(), 2);
             assert!(sources

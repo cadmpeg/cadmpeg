@@ -62,9 +62,9 @@ pub(super) fn mesh_options(index: &ModelIndex<'_>, body: &Body) -> cadmpeg_tesse
     };
     let geometry = &index.ir().geometry;
     let faces = geometry
-        .body_regions(&body.id)
-        .flat_map(|region| region.shells.iter())
-        .flat_map(|shell| geometry.shell_faces(shell));
+        .stated_body_regions(&body.id)
+        .flat_map(cadmpeg_ir::topology::Region::stated_shells)
+        .flat_map(|shell| geometry.stated_shell_faces(shell));
     for face in faces {
         if let Some(geometry) = index
             .surfaces(face.surface.as_str(), query)
@@ -74,7 +74,7 @@ pub(super) fn mesh_options(index: &ModelIndex<'_>, body: &Body) -> cadmpeg_tesse
         }
         let edges = face
             .loops
-            .iter()
+            .stated()
             .filter_map(|loop_id| index.loops(loop_id.as_str(), query))
             .flat_map(|loop_| loop_.coedges().iter())
             .filter_map(|coedge| index.coedges(coedge.as_str(), query))
@@ -169,7 +169,13 @@ pub(super) fn mesh(
         });
     match tessellation {
         Ok(tessellation) => (
-            Some((tessellation.with_body(Some(body.id.clone())), ranges)),
+            Some((
+                tessellation.with_of(cadmpeg_ir::tessellation::Meshed::Body {
+                    body: body.id.clone(),
+                    faces: Vec::new(),
+                }),
+                ranges,
+            )),
             unmeshed,
         ),
         Err(reason) => {

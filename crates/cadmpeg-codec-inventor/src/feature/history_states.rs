@@ -755,18 +755,22 @@ fn body_losses(outcome: &super::history_bodies::Outcome) -> Vec<LossNote> {
     notes
 }
 
-/// Findings of the references in an arena of joined features.
+/// Findings of the references in an arena of joined features. `bodies` is
+/// `None` where the document does not hold its history bodies, such as one
+/// read from CADIR JSON; the history-body links are then not checked.
 pub(crate) fn validate(
     records: &[FeatureHistoryState],
     features: &[PmDcFeature],
     carrier: &ActiveCarrierRecord,
-    bodies: &[HistoryBody],
+    bodies: Option<&[HistoryBody]>,
 ) -> Vec<String> {
     let mut findings = Vec::new();
-    let nests = bodies
-        .iter()
-        .map(|body| (body.id.as_str(), body))
-        .collect::<HashMap<_, _>>();
+    let nests = bodies.map(|bodies| {
+        bodies
+            .iter()
+            .map(|body| (body.id.as_str(), body))
+            .collect::<HashMap<_, _>>()
+    });
     let sources = features
         .iter()
         .map(|feature| (feature.id(), feature.header.source_index))
@@ -804,7 +808,7 @@ pub(crate) fn validate(
             ));
         }
         let bound = matches!(record.binding, Binding::Bound);
-        if let Some(link) = &record.history_body {
+        if let (Some(link), Some(nests)) = (&record.history_body, &nests) {
             let expected = match record.kind.as_str() {
                 SPLIT_TAG => record.state_before,
                 BASE_TAG | NATIVE_BASE_KIND => record.state_after.map(|state| state.ordinal),

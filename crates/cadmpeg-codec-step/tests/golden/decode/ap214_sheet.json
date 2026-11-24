@@ -350,7 +350,7 @@
           "appearance": "step:presentation:appearance#40",
           "channels": {},
           "id": "step:presentation:binding#47:0-0",
-          "source_entity_id": "#47",
+          "source_entity_id": "#29",
           "target": {
             "entity": {
               "kind": "face",
@@ -362,7 +362,7 @@
           "appearance": "step:presentation:appearance#60",
           "channels": {},
           "id": "step:presentation:binding#68:0-0",
-          "source_entity_id": "#68",
+          "source_entity_id": "#19",
           "target": {
             "entity": {
               "kind": "edge",
@@ -400,20 +400,13 @@
         }
       ],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -444,24 +437,15 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -592,6 +576,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "386b95e5abf75a121aac57546cae90fda35d7408e38ee7650e3407268d24f2ed",
     "file_digests": {},
     "retained_records": {},

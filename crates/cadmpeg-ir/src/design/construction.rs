@@ -9,7 +9,6 @@
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 
-use cadmpeg_core::text::NonBlankString;
 use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -17,7 +16,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use super::dimension::Dimension;
-use super::names::{CodecId, NativeNameValue};
+use super::names::{CodecId, CodecName, NativeNameValue};
 use super::options::NativeOptions;
 use super::read::{self, Ceiling};
 use super::selection::OrderedSelection;
@@ -385,7 +384,7 @@ pub enum Relation {
     Fold,
     /// A source relation whose meaning is not established, written
     /// `codec:relation`.
-    Native(NonBlankString),
+    Native(CodecName),
 }
 
 /// The value of a construction input.
@@ -541,7 +540,7 @@ pub struct PlaneValue {
 }
 
 /// A right-handed orthonormal frame.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct FrameValue {

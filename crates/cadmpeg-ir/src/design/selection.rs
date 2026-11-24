@@ -17,17 +17,18 @@ use serde::{Deserialize, Serialize, Serializer};
 use super::construction::FrameValue;
 use super::dimension::Dimension;
 use super::ids::{ContainerId, PublicationId};
-use super::names::{NameKind, NativeName, TopoName};
+use super::names::{CodecName, NameKind, NativeName, TopoName};
 use super::read::{self, Ceiling};
 use super::refs::{ConfigurationRef, EntityRef, Position};
 use crate::document::Topology;
 use crate::features::geometry::FinitePoint3;
 use crate::features::selections::NativeSelections;
 use crate::features::FeatureId;
-use crate::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
+use crate::geometry::{InlineCurve, InlineSurface};
 use crate::ids::{OccurrenceId, ProductDefinitionId};
 use crate::scalar::{Angle, FiniteReal, Length};
 use crate::sketches::{SketchEntityId, SketchId, SpatialSketchEntityId, SpatialSketchId};
+use crate::structural_order::StructuralOrd;
 use crate::units::UnitVector3;
 
 /// The order marker of a [`Members`] list.
@@ -247,8 +248,8 @@ pub enum Picks<O: MemberOrder> {
 }
 
 /// One pick of a selection. Its identity key is
-/// `(target, context, native, domain)`; neither the witness nor `resolved`
-/// is part of it.
+/// `(target, context, native, domain)`, and a `Native` pick that carries no
+/// native name adds its witness. `resolved` is never part of it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields, try_from = "PickedWire")]
@@ -275,25 +276,58 @@ pub struct Picked {
 }
 
 /// The identity key of a [`Picked`], `(target, context, native, domain)`, in
-/// the order of §2.5. Neither the witness nor `resolved` is part of it.
+/// the order of §2.5. A `Native` pick that carries no native name adds its
+/// witness, which is then the one statement of what it picks; the witness of
+/// any other pick, and `resolved`, are not part of it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PickKey<'a> {
     target: &'a PickTarget,
     context: Option<&'a PickContext>,
     native: Option<&'a NativeName>,
     domain: Option<PickDomainKey<'a>>,
+    witness: Option<WitnessKey<'a>>,
 }
 
 impl Keyed for Picked {
     type Key<'a> = PickKey<'a>;
 
     fn key(&self) -> PickKey<'_> {
+        let witness = match (&self.target, &self.native) {
+            (PickTarget::Native { .. }, None) => self.witness.as_ref().map(WitnessKey),
+            _ => None,
+        };
         PickKey {
             target: &self.target,
             context: self.context.as_ref(),
             native: self.native.as_ref(),
             domain: self.domain.as_ref().map(PickDomainKey),
+            witness,
         }
+    }
+}
+
+/// A witness in a pick's identity key, compared in the derived structural
+/// order of §2.5.
+#[derive(Debug, Clone, Copy)]
+pub struct WitnessKey<'a>(&'a Witness);
+
+impl PartialEq for WitnessKey<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+
+impl Eq for WitnessKey<'_> {}
+
+impl PartialOrd for WitnessKey<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for WitnessKey<'_> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.structural_cmp(other.0)
     }
 }
 
@@ -617,7 +651,7 @@ pub enum DatumPart {
 
 /// A pick's evaluated geometry as the source cached it: a cache of the pick
 /// in its anchored state.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Witness {
@@ -650,14 +684,14 @@ pub struct Witness {
     )]
     pub frame: Option<FrameValue>,
     /// The chain curves.
-    pub curves: Vec<SolvedCurveGeometry>,
+    pub curves: Vec<InlineCurve>,
     /// A surface.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_surface"
     )]
-    pub surface: Option<SolvedSurfaceGeometry>,
+    pub surface: Option<InlineSurface>,
     /// The face group or body that the source backs up for the pick.
     #[serde(
         default,
@@ -850,9 +884,16 @@ pub enum SelectionRule {
         /// The faces the seeds' faces meet.
         with: Members<Picked, Unordered>,
     },
+    /// Every component instance below the owner's definition that exists in
+    /// the anchored state and whose bodies differ when the operation of the
+    /// selection's feature is applied to that instance alone. It takes no
+    /// seeds and no propagation, and occurs only as a term of an assembly
+    /// feature's participants.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Affected,
     /// A source rule whose meaning is not established, written
     /// `codec:rule`.
-    Native(NonBlankString),
+    Native(CodecName),
 }
 
 /// How a rule term extends its result.
@@ -896,8 +937,9 @@ pub enum Propagation {
         )]
         gap: Option<Dimension<Length>>,
     },
-    /// A source propagation whose meaning is not established.
-    Native(NonBlankString),
+    /// A source propagation whose meaning is not established, written
+    /// `codec:propagation`.
+    Native(CodecName),
 }
 
 /// The continuity of a connection.
@@ -986,7 +1028,7 @@ cadmpeg_core::named_optional_field!(deserialize_propagation, Propagation, "propa
 cadmpeg_core::named_optional_field!(deserialize_resolved_members<O>, Members<Picked, O>, "resolved");
 cadmpeg_core::named_optional_field!(deserialize_resolved_entities, Vec<EntityRef>, "resolved");
 cadmpeg_core::named_optional_field!(deserialize_start, Box<Picked>, "start");
-cadmpeg_core::named_optional_field!(deserialize_surface, SolvedSurfaceGeometry, "surface");
+cadmpeg_core::named_optional_field!(deserialize_surface, InlineSurface, "surface");
 cadmpeg_core::named_optional_field!(deserialize_target, OccurrencePath, "target");
 cadmpeg_core::named_optional_field!(deserialize_within, NativeOwner, "within");
 cadmpeg_core::named_optional_field!(deserialize_witness, Witness, "witness");

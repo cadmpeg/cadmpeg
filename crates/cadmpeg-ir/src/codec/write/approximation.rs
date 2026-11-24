@@ -793,7 +793,7 @@ fn trims_meet_vertices(
             point.position().get(),
             vertex
                 .tolerance
-                .map_or(0.0, crate::scalar::PositiveReal::get),
+                .map_or(0.0, crate::scalar::PositiveLength::get),
         ))
     };
     for face in ir
@@ -802,7 +802,10 @@ fn trims_meet_vertices(
         .iter()
         .filter(|face| &face.surface == surface)
     {
-        for loop_id in &face.loops {
+        let Some(boundary) = face.loops.boundary() else {
+            return false;
+        };
+        for loop_id in boundary {
             let Some(loop_) = index.loops(loop_id.as_str(), StandardIndex) else {
                 return false;
             };
@@ -824,7 +827,8 @@ fn trims_meet_vertices(
                 let allowance = [
                     start_tolerance,
                     end_tolerance,
-                    edge.tolerance.map_or(0.0, crate::scalar::PositiveReal::get),
+                    edge.tolerance
+                        .map_or(0.0, crate::scalar::PositiveLength::get),
                 ]
                 .into_iter()
                 .fold(ir.tolerances.linear.get(), f64::max)
@@ -874,7 +878,7 @@ fn face_domain(ir: &CadIr, index: &ModelIndex<'_>, surface: &SurfaceId) -> Optio
         .iter()
         .filter(|face| &face.surface == surface)
     {
-        for loop_id in &face.loops {
+        for loop_id in face.loops.boundary()? {
             let loop_ = index.loops(loop_id.as_str(), StandardIndex)?;
             for coedge_id in loop_.coedges() {
                 let coedge = index.coedges(coedge_id.as_str(), StandardIndex)?;
@@ -1093,7 +1097,7 @@ fn has_closed_rail(ir: &CadIr, index: &ModelIndex<'_>, surface: &SurfaceId) -> b
         .faces
         .iter()
         .filter(|face| &face.surface == surface)
-        .flat_map(|face| &face.loops)
+        .flat_map(|face| face.loops.stated())
         .filter_map(|loop_id| index.loops(loop_id.as_str(), StandardIndex))
         .flat_map(crate::topology::Loop::coedges)
         .filter_map(|coedge| index.coedges(coedge.as_str(), StandardIndex))
@@ -1123,7 +1127,7 @@ fn spine_blend_face_domain(
         .iter()
         .filter(|face| &face.surface == surface)
     {
-        for loop_id in &face.loops {
+        for loop_id in face.loops.boundary()? {
             let loop_ = index.loops(loop_id.as_str(), StandardIndex)?;
             for coedge_id in loop_.coedges() {
                 let coedge = index.coedges(coedge_id.as_str(), StandardIndex)?;

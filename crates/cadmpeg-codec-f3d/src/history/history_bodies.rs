@@ -1280,7 +1280,12 @@ fn build(
                 return Ok(None);
             };
             let mut scratch = CadIr::empty();
-            cadmpeg_asm::brep::transfer::transfer_into_ir(ctx, &mut scratch, "f3d", brep)?;
+            cadmpeg_asm::brep::transfer::transfer_into_ir(
+                ctx,
+                &mut scratch,
+                cadmpeg_ir::codec_id!("f3d"),
+                brep,
+            )?;
             match extract(ctx, &scratch.geometry, body.as_str())? {
                 Extract::Nest(topology) => Ok(Some(topology)),
                 Extract::Absent | Extract::NotClosed => Ok(None),
@@ -1443,11 +1448,10 @@ fn admit(
         native_ref: None,
     });
     scratch.model.history_bodies.push(body);
-    let report = cadmpeg_ir::validate::validate_neutral_for_decode(ctx, &scratch, Vec::new())?;
-    let valid = !report
-        .findings
-        .iter()
-        .any(|finding| finding.severity == cadmpeg_ir::report::Severity::Error);
+    // A nest is unusable where its topology or its link to the origin
+    // breaks; a finding of another check family does not drop it.
+    let valid =
+        cadmpeg_ir::admit(ctx, &scratch, cadmpeg_ir::DRAFT_CORE_CHECKS, Vec::new())?.is_ok();
     let Some(body) = scratch.model.history_bodies.pop() else {
         return Err(CodecError::malformed("history body admission"));
     };

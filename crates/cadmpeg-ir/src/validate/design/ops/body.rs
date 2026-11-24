@@ -17,7 +17,8 @@ use crate::design::ops::body::{
     TransformBodies, TransformMode, TransformStep, Transformation,
 };
 use crate::design::ops::shared::{
-    InstanceOrientation, JointKind, PatternLayout, PatternRun, RunSides, Spacing, UpToFill,
+    CircularLayout, CompositeStage, InstanceOrientation, JointKind, LinearLayout, PatternLayout,
+    PatternRun, RunSides, ScaleLayout, Spacing, UpToFill,
 };
 use crate::design::options::{BooleanOp, ProjectionDirection};
 use crate::design::selection::{OrderedSelection, PickDomain, PickTarget};
@@ -34,7 +35,7 @@ pub(super) struct RunKind {
     pub(super) up_to: bool,
 }
 
-/// A spacing's literal counts are at least 1, a `List` is nonempty, and
+/// A spacing's counts are at least 1, a `List` is nonempty, and
 /// `Fit` and `UpTo` occur only where the run admits them.
 pub(super) fn check_spacing<Q>(
     site: Site<'_>,
@@ -43,12 +44,11 @@ pub(super) fn check_spacing<Q>(
     kind: RunKind,
     findings: &mut Vec<Finding>,
 ) {
-    if let Some(0) = literal_count(spacing) {
-        error(
-            findings,
-            site.entity,
-            format_args!("{field} has a literal count of 0; a count is at least 1"),
-        );
+    if let Some(count) = spacing_count(spacing) {
+        site.bound(findings, |values| {
+            (values.get(count)? == 0)
+                .then(|| format!("{field} has a count of 0; a count is at least 1"))
+        });
     }
     match spacing {
         Spacing::List(values) if values.is_empty() => error(
@@ -70,19 +70,23 @@ pub(super) fn check_spacing<Q>(
     }
 }
 
-/// The literal count a spacing states.
-fn literal_count<Q>(spacing: &Spacing<Q>) -> Option<u32> {
-    let count = match spacing {
+/// The count a spacing states.
+fn spacing_count<Q>(spacing: &Spacing<Q>) -> Option<&Dimension<u32>> {
+    match spacing {
         Spacing::Pitch { count, .. } | Spacing::Span { count, .. } | Spacing::Fit { count } => {
-            count
+            Some(count)
         }
         Spacing::UpTo {
             fill: UpToFill::Count(count),
             ..
-        } => count,
-        _ => return None,
-    };
-    match count {
+        } => Some(count),
+        _ => None,
+    }
+}
+
+/// The literal count a spacing states.
+fn literal_count<Q>(spacing: &Spacing<Q>) -> Option<u32> {
+    match spacing_count(spacing)? {
         Dimension::Literal(count) => Some(*count),
         _ => None,
     }
@@ -185,7 +189,7 @@ pub(super) fn check_pattern(
     );
     match &pattern.instances {
         PatternInstances::Implicit(overrides) => {
-            if matches!(pattern.layout, PatternLayout::Mirror { .. }) && !overrides.is_empty() {
+            if matches!(pattern.layout, PatternLayout::Mirror(_)) && !overrides.is_empty() {
                 error(
                     findings,
                     site.entity,
@@ -321,25 +325,30 @@ fn check_generated_members(
 /// follower.
 fn coordinates(index: &DesignRecords<'_>, layout: &PatternLayout, follow: bool) -> Option<usize> {
     match layout {
-        PatternLayout::Linear { second, .. } => Some(1 + usize::from(second.is_some())),
-        PatternLayout::Circular { radial, .. } => Some(1 + usize::from(radial.is_some())),
+        PatternLayout::Linear(linear) => Some(1 + usize::from(linear.second.is_some())),
+        PatternLayout::Circular(circular) => Some(1 + usize::from(circular.radial.is_some())),
         PatternLayout::Path { .. }
         | PatternLayout::Chain(_)
         | PatternLayout::Points { .. }
         | PatternLayout::Table(_)
-        | PatternLayout::Mirror { .. } => Some(1),
+        | PatternLayout::Mirror(_)
+        | PatternLayout::Scale(_) => Some(1),
         PatternLayout::Dimensions(runs) => Some(runs.len()),
         PatternLayout::Composite(stages) => stages
             .iter()
             .map(|stage| match stage {
-                PatternLayout::Composite(_) => None,
-                stage => coordinates(index, stage, follow),
+                CompositeStage::Linear(linear) => Some(1 + usize::from(linear.second.is_some())),
+                CompositeStage::Circular(circular) => {
+                    Some(1 + usize::from(circular.radial.is_some()))
+                }
+                CompositeStage::Mirror(_) | CompositeStage::Scale(_) => Some(1),
+                CompositeStage::Native(_) => None,
             })
             .sum(),
         PatternLayout::Follow(followed) if follow => {
             coordinates(index, followed_layout(index, followed)?, false)
         }
-        PatternLayout::Follow(_) | PatternLayout::Scale { .. } | PatternLayout::Native(_) => None,
+        PatternLayout::Follow(_) | PatternLayout::Native(_) => None,
     }
 }
 
@@ -374,10 +383,10 @@ pub(super) fn check_indices(
 ) {
     let seed_only = matches!(
         layout,
-        PatternLayout::Linear {
+        PatternLayout::Linear(LinearLayout {
             seed_only: Some(Dimension::Literal(true)),
             ..
-        }
+        })
     );
     let expected = coordinates(index, layout, true);
     for (at, index) in indices.iter().enumerate() {
@@ -426,62 +435,16 @@ pub(super) fn check_layout(
     bound: Option<&BTreeSet<String>>,
     findings: &mut Vec<Finding>,
 ) {
-    let linear = RunKind {
-        fit: false,
-        up_to: true,
-    };
-    let angular = RunKind {
-        fit: true,
-        up_to: false,
-    };
-    let other = RunKind {
-        fit: false,
-        up_to: false,
-    };
     match layout {
-        PatternLayout::Linear {
-            first,
-            second,
-            seed_only,
-        } => {
-            if seed_only.is_some() && second.is_none() {
-                error(
-                    findings,
-                    site.entity,
-                    format_args!("PatternLayout::Linear.seed_only occurs without second"),
-                );
-            }
-            for run in std::iter::once(first).chain(second) {
-                check_run(
-                    site,
-                    "a linear run",
-                    &run.run,
-                    linear,
-                    false,
-                    bound,
-                    findings,
-                );
-            }
-        }
-        PatternLayout::Circular {
-            angular: run,
-            radial,
-            orientation,
-            ..
-        } => {
-            check_run(site, "a circular run", run, angular, false, bound, findings);
-            if let Some(radial) = radial {
-                check_run(site, "a radial run", radial, other, false, bound, findings);
-            }
-            check_orientation(site, orientation.as_ref(), false, findings);
-        }
+        PatternLayout::Linear(linear) => check_linear(site, linear, bound, findings),
+        PatternLayout::Circular(circular) => check_circular(site, circular, bound, findings),
         PatternLayout::Path {
             path,
             run,
             orientation,
         } => {
             super::options::check_path(site, "PatternLayout::Path.path", path, findings);
-            check_run(site, "a path run", run, angular, true, bound, findings);
+            check_run(site, "a path run", run, ANGULAR_RUN, true, bound, findings);
             check_orientation(site, orientation.as_ref(), true, findings);
         }
         PatternLayout::Dimensions(runs) => {
@@ -500,13 +463,10 @@ pub(super) fn check_layout(
                         format_args!("a Dimensions run has no increment"),
                     );
                 }
-                if matches!(run.count, Dimension::Literal(0)) {
-                    error(
-                        findings,
-                        site.entity,
-                        format_args!("a Dimensions run has a literal count of 0"),
-                    );
-                }
+                site.bound(findings, |values| {
+                    (values.get(&run.count)? == 0)
+                        .then(|| "a Dimensions run has a count of 0".to_owned())
+                });
                 check_increments(site, &run.increments, bound, findings);
             }
         }
@@ -552,28 +512,10 @@ pub(super) fn check_layout(
             }
             let mut made: Option<u64> = Some(1);
             for (at, stage) in stages.iter().enumerate() {
-                // §6.5: "A stage is a linear, circular, or mirror layout or a
-                // scale", or a `CompositeStage::Native` stage; §2.5: "A
-                // `PatternLayout` does not nest a layout".
-                if !matches!(
-                    stage,
-                    PatternLayout::Linear { .. }
-                        | PatternLayout::Circular { .. }
-                        | PatternLayout::Mirror { .. }
-                        | PatternLayout::Scale { .. }
-                        | PatternLayout::Native(_)
-                ) {
-                    error(
-                        findings,
-                        site.entity,
-                        format_args!("a Composite stage is no Linear, Circular, Mirror, Scale, or Native layout"),
-                    );
-                    continue;
-                }
-                if let PatternLayout::Scale {
+                if let CompositeStage::Scale(ScaleLayout {
                     count: Dimension::Literal(count),
                     ..
-                } = stage
+                }) = stage
                 {
                     if at > 0
                         && made.is_some_and(|made| *count == 0 || made % u64::from(*count) != 0)
@@ -586,18 +528,17 @@ pub(super) fn check_layout(
                     }
                 }
                 made = made.zip(instances(stage)).map(|(made, stage)| made * stage);
-                check_layout(index, site, stage, component, bound, findings);
+                match stage {
+                    CompositeStage::Linear(linear) => check_linear(site, linear, bound, findings),
+                    CompositeStage::Circular(circular) => {
+                        check_circular(site, circular, bound, findings);
+                    }
+                    CompositeStage::Scale(scale) => check_scale(site, scale, findings),
+                    CompositeStage::Mirror(_) | CompositeStage::Native(_) => {}
+                }
             }
         }
-        PatternLayout::Scale { count, .. } => {
-            if matches!(count, Dimension::Literal(count) if *count < 2) {
-                error(
-                    findings,
-                    site.entity,
-                    format_args!("a Scale layout's literal count is below 2"),
-                );
-            }
-        }
+        PatternLayout::Scale(scale) => check_scale(site, scale, findings),
         PatternLayout::Follow(followed) => check_follow(index, site, followed, findings),
         PatternLayout::Chain(chain) => {
             if !component {
@@ -620,35 +561,111 @@ pub(super) fn check_layout(
                 }
             }
         }
-        PatternLayout::Points { .. } | PatternLayout::Mirror { .. } | PatternLayout::Native(_) => {}
+        PatternLayout::Points { .. } | PatternLayout::Mirror(_) | PatternLayout::Native(_) => {}
     }
 }
 
-/// The instances a layout makes, where its counts are literal.
-fn instances(layout: &PatternLayout) -> Option<u64> {
+const LINEAR_RUN: RunKind = RunKind {
+    fit: false,
+    up_to: true,
+};
+
+const ANGULAR_RUN: RunKind = RunKind {
+    fit: true,
+    up_to: false,
+};
+
+const RADIAL_RUN: RunKind = RunKind {
+    fit: false,
+    up_to: false,
+};
+
+fn check_linear(
+    site: Site<'_>,
+    layout: &LinearLayout,
+    bound: Option<&BTreeSet<String>>,
+    findings: &mut Vec<Finding>,
+) {
+    if layout.seed_only.is_some() && layout.second.is_none() {
+        error(
+            findings,
+            site.entity,
+            format_args!("PatternLayout::Linear.seed_only occurs without second"),
+        );
+    }
+    for run in std::iter::once(&layout.first).chain(&layout.second) {
+        check_run(
+            site,
+            "a linear run",
+            &run.run,
+            LINEAR_RUN,
+            false,
+            bound,
+            findings,
+        );
+    }
+}
+
+fn check_circular(
+    site: Site<'_>,
+    layout: &CircularLayout,
+    bound: Option<&BTreeSet<String>>,
+    findings: &mut Vec<Finding>,
+) {
+    check_run(
+        site,
+        "a circular run",
+        &layout.angular,
+        ANGULAR_RUN,
+        false,
+        bound,
+        findings,
+    );
+    if let Some(radial) = &layout.radial {
+        check_run(
+            site,
+            "a radial run",
+            radial,
+            RADIAL_RUN,
+            false,
+            bound,
+            findings,
+        );
+    }
+    check_orientation(site, layout.orientation.as_ref(), false, findings);
+}
+
+fn check_scale(site: Site<'_>, layout: &ScaleLayout, findings: &mut Vec<Finding>) {
+    site.bound(findings, |values| {
+        (values.get(&layout.count)? < 2).then(|| "a Scale layout's count is below 2".to_owned())
+    });
+}
+
+/// The instances a stage makes, where its counts are literal.
+fn instances(stage: &CompositeStage) -> Option<u64> {
     let run = |spacing: &Spacing<_>| literal_count(spacing).map(u64::from);
-    match layout {
-        PatternLayout::Linear { first, second, .. } => {
+    match stage {
+        CompositeStage::Linear(LinearLayout { first, second, .. }) => {
             let first = literal_count(&first.run.spacing).map(u64::from)?;
             match second {
                 Some(second) => Some(first * literal_count(&second.run.spacing).map(u64::from)?),
                 None => Some(first),
             }
         }
-        PatternLayout::Circular {
+        CompositeStage::Circular(CircularLayout {
             angular, radial, ..
-        } => {
+        }) => {
             let angular = run(&angular.spacing)?;
             match radial {
                 Some(radial) => Some(angular * literal_count(&radial.spacing).map(u64::from)?),
                 None => Some(angular),
             }
         }
-        PatternLayout::Scale {
+        CompositeStage::Scale(ScaleLayout {
             count: Dimension::Literal(count),
             ..
-        } => Some(u64::from(*count)),
-        _ => None,
+        }) => Some(u64::from(*count)),
+        CompositeStage::Scale(_) | CompositeStage::Mirror(_) | CompositeStage::Native(_) => None,
     }
 }
 
@@ -674,15 +691,11 @@ fn check_run<Q>(
     if let Some(RunSides::Reverse(spacing)) = &run.sides {
         check_spacing(site, field, spacing, kind, findings);
     }
-    if let (Some(Dimension::Literal(seed)), Some(count)) = (&run.seed, literal_count(&run.spacing))
-    {
-        if *seed >= count {
-            error(
-                findings,
-                site.entity,
-                format_args!("{field}'s seed {seed} is not below its count {count}"),
-            );
-        }
+    if let (Some(seed), Some(count)) = (&run.seed, spacing_count(&run.spacing)) {
+        site.bound(findings, |values| {
+            let (seed, count) = (values.get(seed)?, values.get(count)?);
+            (seed >= count).then(|| format!("{field}'s seed {seed} is not below its count {count}"))
+        });
     }
     check_increments(site, &run.increments, bound, findings);
 }
@@ -904,8 +917,9 @@ pub(super) fn check_template_inputs(index: &DesignRecords<'_>, findings: &mut Ve
 }
 
 /// Part 10 (§6.5): "`target` is `None` only with `Join`, `Intersect`, or
-/// `Compound`, or where the definition states `assembly`". In an assembly
-/// feature `target` is `None` (§6.7), which `check_assembly_feature` checks.
+/// `Compound`, or where the definition states `assembly`". Where it states
+/// `assembly`, `target` is `None` (§6.7), which `check_assembly_feature`
+/// checks.
 pub(super) fn check_combine(site: Site<'_>, combine: &Combine, findings: &mut Vec<Finding>) {
     if matches!(combine.op, Some(BooleanOp::Sew)) {
         error(
@@ -938,7 +952,7 @@ pub(super) fn check_combine(site: Site<'_>, combine: &Combine, findings: &mut Ve
                 format_args!("a Compound combine states a target"),
             );
         }
-    } else if !site.in_assembly_feature
+    } else if !site.assembly
         && matches!(
             combine.op,
             Some(BooleanOp::Cut | BooleanOp::Assemble | BooleanOp::UnionTrim | BooleanOp::Sew)
@@ -963,26 +977,58 @@ pub(super) fn check_split(site: Site<'_>, split: &Split, findings: &mut Vec<Find
             kept,
         } => {
             let allowed = |class| picks::is_body(class) || picks::is_face(class);
-            if let Some(class) = picks::refused(targets, allowed) {
-                error(
-                    findings,
-                    site.entity,
-                    format_args!("ByTools.targets picks {class}; it picks bodies or faces"),
-                );
-            }
-            let curves = match tools {
-                SplitTool::Geometry(geometry) => {
-                    let datum = |class| matches!(class, Class::Datum | Class::Principal(_));
-                    if picks::classes(geometry).into_iter().any(datum) {
+            match targets {
+                Some(targets) => {
+                    if let Some(class) = picks::refused(targets, allowed) {
                         error(
                             findings,
                             site.entity,
-                            format_args!("SplitTool::Geometry picks a datum or principal entity, which is SplitTool::Plane"),
+                            format_args!("ByTools.targets picks {class}; it picks bodies or faces"),
                         );
+                    }
+                }
+                None if !site.assembly => error(
+                    findings,
+                    site.entity,
+                    format_args!("ByTools.targets is None in a definition that states no assembly"),
+                ),
+                None => {}
+            }
+            let curves = match tools {
+                SplitTool::Geometry {
+                    tools: geometry, ..
+                } => {
+                    if let Some([alone]) = picks::named(geometry) {
+                        if matches!(picks::class(alone), Class::Datum | Class::Principal(_)) {
+                            error(
+                                findings,
+                                site.entity,
+                                format_args!("SplitTool::Geometry picks one datum or principal entity alone, which is SplitTool::Plane"),
+                            );
+                        }
                     }
                     picks::classes(geometry)
                 }
                 SplitTool::Plane(_) => Vec::new(),
+                SplitTool::Silhouette(_) => {
+                    if method.is_some() {
+                        error(
+                            findings,
+                            site.entity,
+                            format_args!("a Silhouette split states a method"),
+                        );
+                    }
+                    if matches!(kept, Some(Kept::Side { .. } | Kept::Pieces { .. })) {
+                        error(
+                            findings,
+                            site.entity,
+                            format_args!(
+                                "a Silhouette split keeps a side or pieces; it keeps All or Native"
+                            ),
+                        );
+                    }
+                    Vec::new()
+                }
             };
             let curve = |class: &Class| {
                 matches!(
@@ -1099,14 +1145,14 @@ pub(super) fn check_transform_bodies(
     }
     check_transformation(site, &transform.transformation, findings);
     if let Some(TransformMode::Copy { count, divisions }) = &transform.mode {
-        if matches!(count, Dimension::Literal(0))
-            || matches!(divisions, Some(Dimension::Literal(0)))
-        {
-            error(
-                findings,
-                site.entity,
-                format_args!("a literal Copy.count or divisions is 0; it is at least 1"),
-            );
+        site.bound(findings, |values| {
+            (values.get(count)? == 0).then(|| "Copy.count is 0; it is at least 1".to_owned())
+        });
+        if let Some(divisions) = divisions {
+            site.bound(findings, |values| {
+                (values.get(divisions)? == 0)
+                    .then(|| "Copy.divisions is 0; it is at least 1".to_owned())
+            });
         }
         let divided = match divisions {
             Some(Dimension::Literal(divisions)) => *divisions > 1,

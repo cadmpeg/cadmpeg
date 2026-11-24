@@ -31,7 +31,7 @@ use super::index::DesignIndex;
 use super::names::derived_kinds;
 use super::records::MemberKey;
 use super::walk::{ConstructionView, Kind};
-use super::{native_text, Held, Holder};
+use super::{Held, Holder};
 
 /// Checks every construction of the design.
 pub(super) fn check<'a>(index: &DesignIndex<'a>, held: &[Held<'a>], findings: &mut Vec<Finding>) {
@@ -52,6 +52,13 @@ pub(super) fn check<'a>(index: &DesignIndex<'a>, held: &[Held<'a>], findings: &m
         };
         for &construction in &record.constructions {
             check_construction(index, construction, scope, geometry, at, findings);
+            super::caches::constructions::check_construction(
+                &index.records,
+                construction,
+                scope,
+                at,
+                findings,
+            );
         }
     }
     for feature in &index.records.ir.design.features {
@@ -91,6 +98,7 @@ fn check_construction(
     findings: &mut Vec<Finding>,
 ) {
     let kind = construction.kind();
+    let mut built_centroid = false;
     let mut error = |message: std::fmt::Arguments<'_>| super::error(findings, at, message);
     let inputs = construction.inputs();
     let after = construction.after();
@@ -178,14 +186,6 @@ fn check_construction(
                 "a ZAxis subject carries a {relation:?} relation; the whole carries it"
             ));
         }
-        if let Relation::Native(text) = relation {
-            if !native_text(text.as_str()) {
-                error(format_args!(
-                    "native relation {:?} is not written codec:name",
-                    text.as_str()
-                ));
-            }
-        }
         if !value_admitted(
             kind,
             subject,
@@ -261,11 +261,12 @@ fn check_construction(
                 }
             }
             Some(InputReference::Built(built)) => {
-                if matches!(relation, Relation::Fold | Relation::Centroid) {
+                if matches!(relation, Relation::Fold) {
                     error(format_args!(
                         "a nested construction is the reference of a {relation:?} input"
                     ));
                 }
+                built_centroid |= matches!(relation, Relation::Centroid);
                 if subject == Subject::Whole
                     && matches!(relation, Relation::Coincident)
                     && kind != Kind::Frame
@@ -283,6 +284,13 @@ fn check_construction(
     }
     if matches!(kind, Kind::Plane | Kind::Frame) && leading_offset(index, construction) {
         error(format_args!("a plane or frame Coincident with one planar reference begins its steps with a Z translation; it is an Offset input"),
+        );
+    }
+    if built_centroid {
+        super::warning(
+            findings,
+            at,
+            format_args!("a nested construction is the reference of a Centroid input"),
         );
     }
     check_values(construction, geometry, at, findings);

@@ -197,7 +197,7 @@ fn record(
     let (definition, value) = if property(DRIVEN) == Some("true") {
         if let Some(literal) = NonBlankString::new(parameter.expression.clone()) {
             source_settings.insert(
-                cadmpeg_core::nonblank_literal!("f3d:literal"),
+                cadmpeg_ir::codec_name!("f3d:literal"),
                 NativeOption::Text(Dimension::Literal(literal)),
             );
         }
@@ -217,7 +217,7 @@ fn record(
     };
     if let Some(role) = property(ROLE).and_then(|role| NonBlankString::new(role.to_owned())) {
         source_settings.insert(
-            cadmpeg_core::nonblank_literal!("f3d:role"),
+            cadmpeg_ir::codec_name!("f3d:role"),
             NativeOption::Text(Dimension::Literal(role)),
         );
     }

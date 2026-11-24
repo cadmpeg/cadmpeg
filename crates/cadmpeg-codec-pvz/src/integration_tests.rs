@@ -165,7 +165,7 @@ fn every_structure_signature_decodes_the_assembly() {
                 model.appearances.len(),
                 model.appearance_bindings.len(),
             ),
-            (3, 3, 2, 2, 1, 1),
+            (3, 3, 0, 2, 1, 1),
             "{signature}"
         );
         assert!(result.report().geometry_transferred());
@@ -195,10 +195,20 @@ fn the_assembly_maps_to_products_placements_meshes_and_appearances() {
         definitions,
         [
             ("TOP.ASM", vec![]),
-            ("BRACKET.PRT", vec!["pvz:model:body#bracket.ol".to_owned()]),
-            ("PLATE.PRT", vec!["pvz:model:body#plate.ol".to_owned()]),
+            ("BRACKET.PRT", vec![]),
+            ("PLATE.PRT", vec![]),
         ]
     );
+    for (mesh, definition) in model
+        .tessellations
+        .iter()
+        .zip(&model.product_definitions[1..])
+    {
+        assert_eq!(
+            mesh.of,
+            cadmpeg_ir::tessellation::Meshed::definition(definition.id.clone())
+        );
+    }
     assert_eq!(
         model.product_definitions[0]
             .bom_properties
@@ -426,8 +436,8 @@ fn exact_streams_become_solids_that_keep_their_tessellation() {
     for member in ["cube64.ol", "cube32.ol"] {
         let cube = body(member);
         assert_eq!(cube.kind, BodyKind::Solid);
-        assert_eq!(cube.name.as_deref(), Some(member));
-        assert_eq!(geometry.body_regions(&cube.id).count(), 1);
+        assert_eq!(cube.name, None);
+        assert_eq!(geometry.stated_body_regions(&cube.id).count(), 1);
         let faces = geometry
             .faces
             .iter()
@@ -437,17 +447,21 @@ fn exact_streams_become_solids_that_keep_their_tessellation() {
         let meshes: Vec<_> = model
             .tessellations
             .iter()
-            .filter(|mesh| mesh.body.as_ref() == Some(&cube.id))
+            .filter(|mesh| mesh.of.body() == Some(&cube.id))
             .collect();
         assert_eq!(meshes.len(), 1);
         assert_eq!(meshes[0].triangle_count(), 12);
     }
-    assert_eq!(body("plate.ol").kind, BodyKind::General);
-    assert!(geometry.body_regions(&body("plate.ol").id).next().is_none());
-    assert_eq!(geometry.bodies.len(), 3);
-    for definition in &model.product_definitions[1..] {
-        assert_eq!(definition.bodies.len(), 1);
-    }
+    assert_eq!(geometry.bodies.len(), 2);
+    let plate = model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.bodies.is_empty() && definition.occurrences.is_empty())
+        .unwrap();
+    assert!(model
+        .tessellations
+        .iter()
+        .any(|mesh| mesh.of == cadmpeg_ir::tessellation::Meshed::definition(plate.id.clone())));
     let codes = loss_codes(&result);
     assert_eq!(
         codes
@@ -489,14 +503,14 @@ fn closed_and_open_shells_of_one_member_become_a_solid_and_a_sheet() {
     let (solid, sheet) = (of_kind(BodyKind::Solid), of_kind(BodyKind::Sheet));
     assert_eq!(geometry.bodies.len(), 2);
     for body in [solid, sheet] {
-        assert_eq!(body.name.as_deref(), Some("part.ol"));
+        assert_eq!(body.name, None);
     }
     let shells = |body: &cadmpeg_ir::topology::Body| -> usize {
         geometry
             .regions
             .iter()
             .filter(|region| region.body == body.id)
-            .map(|region| region.shells.len())
+            .map(|region| region.stated_shells().count())
             .sum()
     };
     assert_eq!((shells(solid), shells(sheet)), (1, 1));
@@ -509,7 +523,7 @@ fn closed_and_open_shells_of_one_member_become_a_solid_and_a_sheet() {
     let meshes: Vec<_> = model
         .tessellations
         .iter()
-        .map(|mesh| mesh.body.clone())
+        .map(|mesh| mesh.of.body().cloned())
         .collect();
     assert_eq!(meshes, [Some(solid.id.clone())]);
     let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).unwrap();

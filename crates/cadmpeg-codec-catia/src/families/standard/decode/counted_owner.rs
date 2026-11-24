@@ -238,7 +238,7 @@ fn face_vertices(ir: &CadIr) -> Vec<Option<Vec<Point3>>> {
                 }
                 Some(())
             };
-            for loop_id in &face.loops {
+            for loop_id in face.loops.boundary()? {
                 let boundary = loops.get(loop_id.as_str())?;
                 if let cadmpeg_ir::topology::LoopBoundary::Vertex { vertex, .. } =
                     &boundary.boundary

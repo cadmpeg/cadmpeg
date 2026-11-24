@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::design::container::Container;
 use cadmpeg_ir::design::dimension::Dimension;
-use cadmpeg_ir::design::expr::{BinaryOp, Node};
+use cadmpeg_ir::design::expr::{MulOp, Node};
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::ops::sketch::{
     AngleOperands, DefiningRole, DistanceAxis, Planar, PlanarCurve, RadialMeasure, SketchRelation,
@@ -518,11 +518,11 @@ fn a_referenced_parameter_stays_a_user_parameter() {
     ir.design.parameters.push(parameter(
         "twice",
         "Twice",
-        neutral(Node::Binary {
-            op: BinaryOp::Multiply,
-            left: Box::new(reference("gap")),
-            right: Box::new(number(2.0, None)),
-        }),
+        neutral(Node::mul(
+            reference("gap"),
+            MulOp::Multiply,
+            number(2.0, None),
+        )),
         Some(40.0),
     ));
     let operand = |name: &str| {
@@ -974,7 +974,7 @@ fn a_driven_parameter_keeps_the_literal_its_source_record_stores() {
     drive(&mut ir, "gap");
     parameter_mut(&mut ir, "gap")
         .source_settings
-        .insert(cadmpeg_core::nonblank_literal!("f3d:literal"), literal());
+        .insert(cadmpeg_ir::codec_name!("f3d:literal"), literal());
     let (_, decoded, bytes) = write_bytes(&ir);
     let gap = decoded
         .model

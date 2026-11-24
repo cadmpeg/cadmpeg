@@ -247,7 +247,7 @@ fn project_fallback(
             }
             SweepShape::Solid {
                 op,
-                section: circular.map_or(SweepSection::Unresolved(None), SweepSection::Generated),
+                section: circular.map_or(SweepSection::Unresolved, SweepSection::Generated),
                 sections: Vec::new(),
             }
         }
@@ -256,7 +256,7 @@ fn project_fallback(
                 F3dLossCode::FeaturePipeOperationUnresolved,
                 "the Pipe result operation is unresolved",
             );
-            SweepShape::unresolved(None)
+            SweepShape::unresolved()
         }
     };
     if section_unresolved {

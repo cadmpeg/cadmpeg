@@ -123,6 +123,8 @@ pub(super) fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
             let value = serde_json::json!({
                 "decode_digest": payload.decode_digest,
                 "file_digests": payload.file_digests,
+                "content_digest": payload.content_digest,
+                "codec_digests": payload.codec_digests,
                 "unrepresented": class_names(&payload.unrepresented()),
                 "annotations": {
                     "streams": payload.annotations.stream_count(),
