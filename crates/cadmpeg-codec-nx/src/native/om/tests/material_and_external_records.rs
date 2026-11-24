@@ -693,8 +693,12 @@ fn decode_selects_dominant_rmfastload_body() {
     );
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model");
+    // The fixture's FACE records state no loop on a PLANE, so each face is
+    // partial and reported as such, and nothing else is reported.
     assert!(
-        validation.findings.is_empty(),
+        validation.findings.iter().all(|finding| finding.check
+            == cadmpeg_ir::report::check::Check::TopologyPartial
+            && finding.severity == cadmpeg_ir::report::Severity::Warning),
         "findings: {:?}",
         validation.findings
     );
