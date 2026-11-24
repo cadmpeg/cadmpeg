@@ -301,9 +301,9 @@ The optional `driving_parameter` names the design parameter whose value drives t
 
 ## Declared measures
 
-A declared measure names a quantity and its target bodies or product definition. Volume is in cubic millimetres. Solid, wetted and sheet area are in square millimetres. Solid and sheet centroids are in millimetres. `provenance` is required and is `source_declaration`, `validation_property`, or `saved_cache`. `label` retains the source description, and `native_ref` names the source record.
+A declared measure names a quantity and its target bodies or product definition. Volume is in cubic millimetres. Solid, wetted and sheet area are in square millimetres. Solid and sheet centroids are in millimetres. `label` retains the source description, and `native_ref` names the source record. `basis` states whether the value can predate the bodies: `validation`, a value written with the bodies for a reader to check a transfer against (a STEP validation property); `cache`, the source's own last computation, which an edit after it leaves stale (the volume and area a SolidWorks part stores with its mass properties). An absent `basis` states neither.
 
-`source_error` is an optional nonnegative absolute bound on source-value representation error, in the quantity's units. For volume and area variants it bounds the scalar difference. For centroid variants it bounds Euclidean distance in millimetres. A declared comparison adds this bound to the measured numeric error and model uncertainty; an absent bound contributes zero.
+`precision` is an optional nonnegative bound within which the stored value holds the value the source computed, in the quantity's units and, for a centroid, for each coordinate. A declared comparison adds this bound to the measured numeric error and model uncertainty, and for a centroid adds the distance it bounds, `precision` times √3; an absent bound contributes zero.
 
 ## Point clouds
 

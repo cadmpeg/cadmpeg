@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::declared_measures::{
-    DeclaredMeasure, DeclaredMeasureProvenance, DeclaredQuantity, DeclaredTarget,
+    DeclaredMeasure, DeclaredQuantity, DeclaredTarget, MeasureBasis,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::geometry::FinitePoint3;
@@ -169,7 +169,7 @@ pub(super) fn decode(
                 IdentityKey::from(property_id).dash(item_id),
             ));
             let mut measure = DeclaredMeasure::new(id.clone(), target.clone(), quantity)
-                .with_provenance(DeclaredMeasureProvenance::ValidationProperty)
+                .with_basis(MeasureBasis::Validation)
                 .with_native_ref(format!("#{item_id}"));
             if let Some(description) = description {
                 measure = measure.with_label(description.clone());

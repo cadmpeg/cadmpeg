@@ -634,7 +634,7 @@ impl_entity_schema!(crate::physics::RigidBody, RigidBody, id; id, target, kinema
 impl_entity_schema!(crate::physics::Articulation, Articulation, id; id, root, native_ref);
 impl_entity_schema!(crate::physics::PhysicsScene, PhysicsScene, id; id, name, gravity_direction, gravity_magnitude, native_ref);
 impl_entity_schema!(crate::physics::solver::SolverSettings, SolverSettings, id; id, solver, schema, target, values, native_ref);
-impl_entity_schema!(crate::declared_measures::DeclaredMeasure, DeclaredMeasure, id; id, target, quantity, provenance, source_error, label, native_ref);
+impl_entity_schema!(crate::declared_measures::DeclaredMeasure, DeclaredMeasure, id; id, target, quantity, label, basis, precision, native_ref);
 impl_entity_schema!(crate::point_cloud::PointCloud, PointCloud, id; id, definition, name, sensor, positions, normals, colors, channels, native_ref);
 impl_entity_schema!(crate::history_body::HistoryBody, HistoryBody, id; id, produced_by, consumed_by, state, topology);
 impl_entity_schema!(crate::physics::Collider, Collider, id; id, target, shape, enabled, material, native_ref);
