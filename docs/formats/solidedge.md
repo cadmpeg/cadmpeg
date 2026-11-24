@@ -86,6 +86,11 @@ the BODY `shell` pointer, which heads the chain of the body's shells. A BODY's
 `ref_instance` is null in a primary partition: the partition holds the body in
 its own coordinates.
 
+An edge's `halfedge` names one fin of the edge's radial ring, which the fins
+link through `other`. The named fin can lie outside every loop, with null
+`backward`, `forward`, and `loop`. The fins of the ring that lie in a loop
+carry the edge's topology.
+
 A swept surface (type 67) is the linear extrusion of its `section` curve
 along its unit `sweep` direction. The surface does not store the extent along
 the sweep; the face loops bound it. A null `scale` makes the sweep parameter

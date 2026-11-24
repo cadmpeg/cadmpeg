@@ -162,6 +162,8 @@ struct EdgeRead {
     /// Start and end vertex nodes before the carrier's sense applies; `None`
     /// is a vertexless ring edge.
     endpoints: Option<[u32; 2]>,
+    /// The edge's fin that lies in a loop ring.
+    fin: u32,
     /// The carrier node, when the edge names one that resolves.
     curve: Option<u32>,
     /// The edge names a carrier node that does not resolve.
@@ -170,16 +172,30 @@ struct EdgeRead {
 
 type EdgeReads = BTreeMap<u32, Result<EdgeRead, &'static str>>;
 
+/// The fin of an edge that lies in a loop ring, with its predecessor. The
+/// edge names one fin of its radial ring; a fin that belongs to no loop has
+/// no predecessor, so the search continues around the ring through `other`.
+fn loop_fin<'a>(nodes: &Nodes<'a>, start: Node<'a>) -> Option<(Node<'a>, Node<'a>)> {
+    let mut seen = BTreeSet::new();
+    let mut fin = start;
+    while seen.insert(fin.index()) {
+        if let Some(previous) = ptr(fin, "backward").and_then(|index| nodes.get(&index)) {
+            return Some((fin, *previous));
+        }
+        fin = ptr(fin, "other")
+            .and_then(|index| nodes.get(&index))
+            .copied()?;
+    }
+    None
+}
+
 fn read_edge(nodes: &Nodes<'_>, edge: u32) -> Result<EdgeRead, &'static str> {
     let node = *nodes.get(&edge).ok_or("unresolved edge")?;
-    let first = ptr(node, "halfedge")
+    let halfedge = ptr(node, "halfedge")
         .and_then(|index| nodes.get(&index))
         .copied()
         .ok_or("edge has no resolved fin")?;
-    let previous = ptr(first, "backward")
-        .and_then(|index| nodes.get(&index))
-        .copied()
-        .ok_or("edge fin has no resolved predecessor")?;
+    let (first, previous) = loop_fin(nodes, halfedge).ok_or("edge fin has no resolved predecessor")?;
     let endpoints = match (ptr(previous, "vertex"), ptr(first, "vertex")) {
         (Some(start), Some(end)) => {
             let sense = sense(first).ok_or("edge fin has an invalid sense")?;
@@ -201,6 +217,7 @@ fn read_edge(nodes: &Nodes<'_>, edge: u32) -> Result<EdgeRead, &'static str> {
         return Err("vertexless edge has no carrier");
     }
     Ok(EdgeRead {
+        fin: first.index(),
         endpoints,
         curve,
         curve_unresolved: named.is_some() && curve.is_none(),
@@ -643,7 +660,7 @@ pub(crate) fn project(
         else {
             continue;
         };
-        let first = ptr(node, "halfedge").and_then(|index| nodes.get(&index).copied());
+        let first = nodes.get(&read.fin).copied();
         let mut endpoints = read.endpoints;
         let mut carrier = EdgeCarrier::Free;
         if read.curve_unresolved {

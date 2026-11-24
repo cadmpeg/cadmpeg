@@ -494,6 +494,41 @@ fn dangling_face_surface_keeps_the_other_faces() {
     assert_geometry_valid(ir);
 }
 
+#[test]
+fn edge_naming_a_fin_outside_any_loop_reads_through_its_radial_fin() {
+    use cadmpeg_parasolid::records::node_type;
+    let mut partition = test_support::cube_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
+        .unwrap()
+        .unwrap();
+    let edge = records
+        .nodes()
+        .find(|node| node.kind() == node_type::EDGE)
+        .unwrap();
+    let named = edge.pointer("halfedge").unwrap();
+    let range = records
+        .nodes()
+        .find(|node| node.kind() == node_type::FIN && node.index() == named)
+        .unwrap()
+        .field_range("backward")
+        .unwrap();
+    partition[range].copy_from_slice(&1u16.to_be_bytes());
+    let bytes = test_support::with_partitions(&[partition]);
+    let result = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let ir = result.ir();
+    assert_eq!(ir.geometry.faces.len(), 6);
+    assert_eq!(ir.geometry.edges.len(), 12);
+    assert_eq!(ir.geometry.coedges.len(), 24);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::SolidEdgeLossCode::LoopUnreadable.note("").code));
+    assert_geometry_valid(ir);
+}
+
 fn assert_geometry_valid(ir: &cadmpeg_ir::CadIr) {
     let mut geometry = ir.clone();
     geometry.source = None;
