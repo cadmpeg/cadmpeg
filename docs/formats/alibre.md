@@ -122,7 +122,7 @@ The decoder reads one occurrence for each `DESIGNINCLUSION`, in list order:
 
 - The occurrence places the product definition of the component. Two inclusions of one component file place one definition, and the file is decoded once.
 - The transform is the rotation and translation of the operator, in millimetres (§5.2).
-- The occurrence is suppressed when the active configuration lists its inclusion. It is not visible when one of its own members is hidden by the member flag or by the active configuration.
+- The occurrence is suppressed when the active configuration lists its inclusion. It is not visible when one of its own members is hidden by the member flag or by the active configuration. An inclusion with no member of its own states no visibility: the occurrence has none, and not a true value.
 - An anchored inclusion becomes a grounded joint at the occurrence.
 - The occurrence name is the file name of the path, an index starting at 1 for each component, in angle brackets.
 

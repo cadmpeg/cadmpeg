@@ -638,21 +638,19 @@ fn place(
     }
     let transform = transform.ok();
     let configuration = model.active_configuration();
-    let hidden = inclusion
-        .members
-        .iter()
-        .filter(|member| !member.nested)
-        .any(|member| {
-            member.hidden
-                || configuration
-                    .is_some_and(|configuration| configuration.hidden.contains(&member.id))
-        });
+    let own = inclusion.members.iter().filter(|member| !member.nested);
+    let evidence = own.clone().next().is_some();
+    let hidden = own.into_iter().any(|member| {
+        member.hidden
+            || configuration.is_some_and(|configuration| configuration.hidden.contains(&member.id))
+    });
     let file = stem(&inclusion.path);
     let counter = build.ordinals.entry(file.to_ascii_lowercase()).or_insert(1);
     let ordinal = next(counter)?;
     let mut occurrence = Occurrence::new(id.clone(), prototype, transform);
     occurrence.name = Some(format!("{file}<{ordinal}>"));
-    occurrence.visible = Some(!hidden);
+    // An inclusion without a member of its own states no hidden flag.
+    occurrence.visible = evidence.then_some(!hidden);
     occurrence.suppressed =
         configuration.map(|configuration| configuration.suppressed.contains(&inclusion.id));
     build.ir.model.occurrences.push(occurrence);

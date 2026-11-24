@@ -389,6 +389,19 @@ fn a_record_that_does_not_read_is_reported_and_the_rest_decodes() {
 }
 
 #[test]
+fn an_inclusion_without_a_member_states_no_visibility() {
+    let mut memberless = Inc::new("a/asm_box", BOX_GUID);
+    memberless.own = None;
+    let mut hidden = Inc::new("a/asm_box", BOX_GUID);
+    hidden.own = Some(true);
+    let synth = Synth::new(vec![memberless, hidden, Inc::new("a/asm_box", BOX_GUID)]);
+    let result = decode_synth(&synth, &Beside::parts());
+    assert_eq!(named(result.ir(), "asm_box<1>").visible, None);
+    assert_eq!(named(result.ir(), "asm_box<2>").visible, Some(false));
+    assert_eq!(named(result.ir(), "asm_box<3>").visible, Some(true));
+}
+
+#[test]
 fn a_hidden_nested_member_is_reported_once_for_all_inclusions() {
     let mut first = Inc::new("a/asm_box", BOX_GUID);
     first.nested = Some(true);
