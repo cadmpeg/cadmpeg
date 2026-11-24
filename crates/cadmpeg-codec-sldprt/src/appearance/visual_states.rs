@@ -150,7 +150,7 @@ fn faces_of_bodies(geometry: &Topology, bodies: &BTreeSet<BodyId>) -> BTreeSet<F
         .regions
         .iter()
         .filter(|region| bodies.contains(&region.body))
-        .flat_map(|region| &region.shells)
+        .flat_map(cadmpeg_ir::topology::Region::stated_shells)
         .collect();
     geometry
         .faces

@@ -11,7 +11,7 @@ use super::fixtures::{self, feature, id, length, parameter_ref, picked};
 use super::{read_desktop, refuses, to_value};
 use crate::design::construction::SourceMode;
 use crate::design::dimension::Dimension;
-use crate::design::expr::{self, BinaryOp, Expression, ExpressionDialect, Neutral, Node};
+use crate::design::expr::{self, AddOp, Expression, ExpressionDialect, MulOp, Neutral, Node};
 use crate::design::names::{NameTable, TopoName};
 use crate::design::options::{Boolean, BooleanOp, Hand};
 use crate::design::refs::{Evaluated, StateRef};
@@ -19,7 +19,12 @@ use crate::design::selection::{
     Keyed, Members, Ordered, PickDomain, PickKey, PickTarget, Picked, Picks, Unordered, Witness,
 };
 use crate::design::units::{Duration, Unit, UnitFactor, UnitSymbol};
+use crate::features::geometry::FinitePoint3;
+use crate::geometry::analytic::{DegenerateCurve, LineCurve};
+use crate::geometry::{InlineCurve, SolvedCurveGeometry, SolvedSurfaceGeometry};
 use crate::scalar::Length;
+use crate::transform::Transform;
+use crate::units::UnitVector3;
 
 #[test]
 fn the_examples_of_section_2_5() {
@@ -42,15 +47,15 @@ fn the_examples_of_section_2_5() {
 #[test]
 fn a_neutral_expression_is_text_with_side_lists() {
     let reference = parameter_ref(1);
-    let tree = Node::Binary {
-        op: BinaryOp::Add,
-        left: Box::new(Node::Binary {
-            op: BinaryOp::Multiply,
-            left: Box::new(Node::Reference(reference.clone())),
-            right: Box::new(fixtures::number(2.0, Unit::default())),
-        }),
-        right: Box::new(fixtures::number(10.0, fixtures::mm())),
-    };
+    let tree = Node::add(
+        Node::mul(
+            Node::Reference(reference.clone()),
+            MulOp::Multiply,
+            fixtures::number(2.0, Unit::default()),
+        ),
+        AddOp::Add,
+        fixtures::number(10.0, fixtures::mm()),
+    );
     let value = to_value(&Expression::Neutral(Neutral(tree)));
     assert_eq!(value["kind"], json!("neutral"));
     assert_eq!(value["value"]["text"], json!("$0 * 2 + 10[mm]"));
@@ -288,6 +293,34 @@ fn a_witness_body_is_the_document_topology() {
         .geometry
         .procedural_construction()
         .is_some());
+}
+
+/// A witness carrier names no record and has one spelling (§5.6): a leaf
+/// carrier and a placement of one read, and a degenerate curve, a composite
+/// and an opaque carrier do not.
+#[test]
+fn a_witness_carrier_is_an_inline_carrier() {
+    let line = LineCurve::new(FinitePoint3::ZERO, UnitVector3::X_AXIS);
+    let witness = Witness {
+        curves: vec![InlineCurve::Transformed {
+            basis: Box::new(InlineCurve::Line(line)),
+            transform: Transform::default(),
+        }],
+        ..fixtures::witnesses().remove(1)
+    };
+    let value = to_value(&witness);
+    assert_eq!(value["curves"][0]["kind"], json!("transformed"));
+    assert_eq!(value["curves"][0]["basis"]["kind"], json!("line"));
+    let back: Witness = read_desktop(&value.to_string()).unwrap();
+    assert_eq!(back, witness);
+
+    let degenerate = SolvedCurveGeometry::Degenerate(DegenerateCurve::new(FinitePoint3::ZERO));
+    let mut refused = value.clone();
+    refused["curves"] = json!([to_value(&degenerate)]);
+    refuses::<Witness>(&refused.to_string());
+    let mut refused = value;
+    refused["surface"] = to_value(&SolvedSurfaceGeometry::Unknown { record: None });
+    refuses::<Witness>(&refused.to_string());
 }
 
 #[test]

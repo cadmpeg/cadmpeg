@@ -360,7 +360,7 @@ pub struct DialectMatch {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_instance"
     )]
-    instance: Option<String>,
+    instance: Option<NonBlankString>,
     /// How this layer was admitted.
     admission: Admission,
 }
@@ -471,7 +471,7 @@ impl DialectLayers {
         {
             return Err(DialectLayerError::Duplicate(layer));
         }
-        if layer.format() == self.primary.format() && layer.instance().is_none_or(str::is_empty) {
+        if layer.format() == self.primary.format() && layer.instance().is_none() {
             return Err(DialectLayerError::MissingInstance(layer));
         }
         self.extra.push(layer);
@@ -646,9 +646,10 @@ impl DialectMatch {
     }
 
     /// Attaches a report-local layer instance before the match enters a report.
+    /// A blank instance names no instance.
     #[must_use]
     pub fn with_instance(mut self, instance: impl Into<String>) -> Self {
-        self.instance = Some(instance.into());
+        self.instance = NonBlankString::new(instance);
         self
     }
 
@@ -673,7 +674,7 @@ impl DialectMatch {
     /// Returns the report-local layer instance.
     #[must_use]
     pub fn instance(&self) -> Option<&str> {
-        self.instance.as_deref()
+        self.instance.as_ref().map(NonBlankString::as_str)
     }
 
     /// Returns how this layer was admitted.
@@ -1042,6 +1043,16 @@ mod tests {
         assert_eq!(error, super::DialectLayerError::MissingInstance(extra));
     }
 
+    /// "`instance`: `Option<NonBlankString>`" (§2.7): a blank instance names
+    /// no instance, and a document that states one is refused.
+    #[test]
+    fn a_blank_instance_names_no_instance() {
+        assert_eq!(layer("rhino").with_instance(" \t").instance(), None);
+        let mut wire = serde_json::to_value(layer("rhino").with_instance("root")).unwrap();
+        wire["instance"] = serde_json::json!(" ");
+        assert!(serde_json::from_value::<DialectMatch>(wire).is_err());
+    }
+
     #[test]
     fn dialect_layers_deserialization_rejects_an_untagged_extra_in_a_tagged_primary_format() {
         let serialized = serde_json::json!({
@@ -1085,4 +1096,4 @@ mod tests {
 }
 
 // Each optional key below names itself in whatever it refuses.
-crate::named_optional_field!(deserialize_instance, String, "instance");
+crate::named_optional_field!(deserialize_instance, NonBlankString, "instance");

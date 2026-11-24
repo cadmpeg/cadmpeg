@@ -14,7 +14,6 @@ use cadmpeg_ir::ids::{CoedgeId, CurveId, EdgeId, LoopId, PcurveId, PointId, Vert
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::check::Check;
 use cadmpeg_ir::report::Severity;
-use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::topology::{
     Coedge, Edge, EdgeCarrier, EdgeEnds, FaceLoops, Loop, LoopBoundary, LoopRing, PcurveUse, Point,
     Sense, Vertex,
@@ -147,7 +146,7 @@ fn a_vertex_beyond_its_own_allowance_is_raised_with_a_loss_naming_it() {
         .iter_mut()
         .find(|vertex| vertex.id == ends.start)
         .expect("start vertex")
-        .tolerance = Some(PositiveReal::new(0.05).expect("positive"));
+        .tolerance = Some(cadmpeg_ir::scalar::PositiveLength::new(0.05).expect("positive"));
     let (report, decoded) = write(&ir);
     assert!(
         report
@@ -231,7 +230,8 @@ fn an_open_edge_within_its_own_tolerance_takes_its_range() {
         )
         .expect("a straight NURBS"),
     ));
-    ir.geometry.edges[0].tolerance = Some(PositiveReal::new(0.025).expect("positive"));
+    ir.geometry.edges[0].tolerance =
+        Some(cadmpeg_ir::scalar::PositiveLength::new(0.025).expect("positive"));
     let (report, decoded) = write(&ir);
     assert!(
         !charges(&report, &geometry_omitted()),
@@ -760,7 +760,7 @@ fn box_with_point_edge(point: Point3) -> CadIr {
     let coedge = CoedgeId::mint("test:model:coedge#apex").unwrap();
     let apex_loop = LoopId::mint("test:model:loop#apex").unwrap();
     let top = &mut ir.geometry.faces[1];
-    let outer = top.loops.iter().next().unwrap().clone();
+    let outer = top.loops.stated().next().unwrap().clone();
     top.loops = FaceLoops::unspecified(vec![outer, apex_loop.clone()]);
     let top = top.id.clone();
     ir.geometry.points.push(Point::new(
@@ -859,7 +859,8 @@ fn a_vertex_raised_by_one_edge_prevents_false_record_invalid_on_a_sibling_edge()
     let v_id = ir.geometry.vertices[1].id.clone();
     let w_id = ir.geometry.vertices[0].id.clone();
     let x_id = ir.geometry.vertices[2].id.clone();
-    ir.geometry.vertices[0].tolerance = Some(PositiveReal::new(0.6).expect("positive"));
+    ir.geometry.vertices[0].tolerance =
+        Some(cadmpeg_ir::scalar::PositiveLength::new(0.6).expect("positive"));
     ir.geometry.vertices[1].tolerance = None;
     ir.geometry.vertices[2].tolerance = None;
     for (index, coords) in [

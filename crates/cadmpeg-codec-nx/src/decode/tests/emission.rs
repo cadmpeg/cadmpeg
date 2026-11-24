@@ -961,12 +961,12 @@ fn decode_preserves_multiple_shells_in_one_region() {
     assert_eq!(result.ir().geometry.bodies.len(), 1);
     assert_eq!(result.ir().geometry.regions.len(), 1);
     assert_eq!(result.ir().geometry.shells.len(), 2);
-    assert_eq!(result.ir().geometry.regions[0].shells.len(), 2);
+    assert_eq!(result.ir().geometry.regions[0].stated_shells().count(), 2);
     assert_eq!(
         result
             .ir()
             .geometry
-            .body_regions(&result.ir().geometry.bodies[0].id)
+            .stated_body_regions(&result.ir().geometry.bodies[0].id)
             .count(),
         1
     );
@@ -1248,7 +1248,10 @@ fn decode_emits_connected_primitive_brep() {
         cadmpeg_ir::topology::BodyKind::Sheet
     );
     assert_eq!(
-        result.ir().geometry.faces[0].loops,
+        result.ir().geometry.faces[0]
+            .loops
+            .boundary()
+            .expect("a complete face"),
         vec![result.ir().geometry.loops[0].id.clone()]
     );
     assert_eq!(
@@ -1258,19 +1261,19 @@ fn decode_emits_connected_primitive_brep() {
     assert_eq!(
         result.ir().geometry.vertices[0]
             .tolerance
-            .map(cadmpeg_ir::scalar::PositiveReal::get),
+            .map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(0.1)
     );
     assert_eq!(
         result.ir().geometry.edges[0]
             .tolerance
-            .map(cadmpeg_ir::scalar::PositiveReal::get),
+            .map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(0.3)
     );
     assert_eq!(
         result.ir().geometry.faces[0]
             .tolerance
-            .map(cadmpeg_ir::scalar::PositiveReal::get),
+            .map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(0.2)
     );
     assert_eq!(

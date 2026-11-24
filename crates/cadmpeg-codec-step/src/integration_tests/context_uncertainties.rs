@@ -4,7 +4,6 @@
 
 use std::fmt::Write as _;
 
-use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::units::Tolerances;
 use cadmpeg_ir::CadIr;
 
@@ -211,7 +210,9 @@ fn each_part_carries_its_own_context_uncertainty() {
     for vertex in &ir.geometry.vertices {
         assert_tolerance(
             vertex.id.as_str(),
-            vertex.tolerance.map(PositiveReal::get),
+            vertex
+                .tolerance
+                .map(cadmpeg_ir::scalar::PositiveLength::get),
             expected(position(&vertex.id).x),
         );
     }
@@ -219,7 +220,7 @@ fn each_part_carries_its_own_context_uncertainty() {
         let start = &edge.ends.as_ref().expect("bounded edge").start;
         assert_tolerance(
             edge.id.as_str(),
-            edge.tolerance.map(PositiveReal::get),
+            edge.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get),
             expected(position(start).x),
         );
     }
@@ -250,7 +251,7 @@ fn each_part_carries_its_own_context_uncertainty() {
             .clone();
         assert_tolerance(
             face.id.as_str(),
-            face.tolerance.map(PositiveReal::get),
+            face.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get),
             expected(position(&start).x),
         );
     }
@@ -326,7 +327,7 @@ fn an_off_carrier_edge_keeps_the_larger_of_its_bound_and_its_context_uncertainty
         };
         assert_tolerance(
             edge.id.as_str(),
-            edge.tolerance.map(PositiveReal::get),
+            edge.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get),
             expected,
         );
     }
@@ -373,21 +374,23 @@ fn a_context_of_two_uncertainties_reports_the_value_its_body_does_not_carry() {
     for face in &ir.geometry.faces {
         assert_tolerance(
             face.id.as_str(),
-            face.tolerance.map(PositiveReal::get),
+            face.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get),
             coarse,
         );
     }
     for edge in &ir.geometry.edges {
         assert_tolerance(
             edge.id.as_str(),
-            edge.tolerance.map(PositiveReal::get),
+            edge.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get),
             coarse,
         );
     }
     for vertex in &ir.geometry.vertices {
         assert_tolerance(
             vertex.id.as_str(),
-            vertex.tolerance.map(PositiveReal::get),
+            vertex
+                .tolerance
+                .map(cadmpeg_ir::scalar::PositiveLength::get),
             coarse,
         );
     }
@@ -473,21 +476,23 @@ fn kept_and_ambiguity(records: &str, kept: f64) -> String {
     for face in &ir.geometry.faces {
         assert_tolerance(
             face.id.as_str(),
-            face.tolerance.map(PositiveReal::get),
+            face.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get),
             kept,
         );
     }
     for edge in &ir.geometry.edges {
         assert_tolerance(
             edge.id.as_str(),
-            edge.tolerance.map(PositiveReal::get),
+            edge.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get),
             kept,
         );
     }
     for vertex in &ir.geometry.vertices {
         assert_tolerance(
             vertex.id.as_str(),
-            vertex.tolerance.map(PositiveReal::get),
+            vertex
+                .tolerance
+                .map(cadmpeg_ir::scalar::PositiveLength::get),
             kept,
         );
     }
@@ -624,21 +629,23 @@ fn assert_tolerances_by_x(ir: &CadIr, expected: impl Fn(f64) -> f64) {
     for face in &ir.geometry.faces {
         assert_tolerance(
             face.id.as_str(),
-            face.tolerance.map(PositiveReal::get),
+            face.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get),
             expected(face_x(ir, face)),
         );
     }
     for edge in &ir.geometry.edges {
         assert_tolerance(
             edge.id.as_str(),
-            edge.tolerance.map(PositiveReal::get),
+            edge.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get),
             expected(edge_x(ir, &edge.id)),
         );
     }
     for vertex in &ir.geometry.vertices {
         assert_tolerance(
             vertex.id.as_str(),
-            vertex.tolerance.map(PositiveReal::get),
+            vertex
+                .tolerance
+                .map(cadmpeg_ir::scalar::PositiveLength::get),
             expected(vertex_x(ir, &vertex.id)),
         );
     }

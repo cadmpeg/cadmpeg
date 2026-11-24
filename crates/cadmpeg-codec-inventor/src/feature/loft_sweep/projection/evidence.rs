@@ -241,10 +241,11 @@ fn same_point_within(left: Point3, right: Point3, tolerance: f64) -> bool {
 }
 
 fn cap_center(geometry: &Topology, face: &Face, radius: f64) -> Option<Point3> {
-    if face.loops.len() != 1 {
+    let face_loops = face.loops.boundary()?;
+    if face_loops.len() != 1 {
         return None;
     }
-    let id = face.loops.iter().next()?;
+    let id = face_loops.iter().next()?;
     let ring = geometry
         .loops
         .iter()

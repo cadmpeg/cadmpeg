@@ -7,7 +7,6 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::design::expr::Expression;
 use crate::drawings::DrawingId;
 use crate::features::{ConfigurationId, FeatureId, ParameterId};
 use crate::ids::{
@@ -104,16 +103,13 @@ pub enum AttributeValue {
     Boolean(bool),
     /// A link to a local object, by the source's object name.
     Reference(String),
-    /// The design parameter that a property linked to a dimension or a
-    /// measure is.
+    /// The design parameter that a property is where the source states its
+    /// value by an expression.
     Parameter(ParameterId),
     /// A fixed- or variable-length numeric vector value.
     Vector(#[cfg_attr(feature = "schema", schemars(with = "Vec<f64>"))] Vec<FiniteReal>),
     /// An ordered map, repeated keys kept.
     Map(Vec<AttributeMapEntry>),
-    /// An expression the source states on the property that no parameter
-    /// holds.
-    Expression(AttributeExpression),
     /// A link to sub-elements of a local object.
     SubReference {
         /// The source's object name, or `None` for the attribute's own
@@ -158,24 +154,6 @@ pub struct AttributeMapEntry {
     pub key: String,
     /// The entry's value.
     pub value: String,
-}
-
-/// An expression that a source states on a property.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-pub struct AttributeExpression {
-    /// The source's path of the property the expression drives.
-    pub path: String,
-    /// The expression.
-    pub expression: Expression,
-    /// The source's comment on the expression.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_comment"
-    )]
-    pub comment: Option<String>,
 }
 
 /// A typed JSON value.
@@ -325,7 +303,6 @@ mod wire_forms;
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_object, String, "object");
-cadmpeg_core::named_optional_field!(deserialize_comment, String, "comment");
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 
 mod identity_rewrite;

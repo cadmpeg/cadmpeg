@@ -1518,7 +1518,7 @@ fn nist_ctc_01_top_plane_keeps_its_boundary_and_holes() {
         .iter()
         .find(|face| face.id.as_str() == "creo:visibgeom:face#106")
         .expect("top plane");
-    assert_eq!(face.loops.iter().count(), 12);
+    assert_eq!(face.loops.stated().count(), 12);
     let outer = geometry
         .loops
         .iter()
@@ -1546,7 +1546,7 @@ fn nist_ctc_01_end_face_keeps_its_cut_boundaries() {
         .iter()
         .find(|face| face.id.as_str() == "creo:visibgeom:face#254")
         .expect("end plane");
-    assert_eq!(face.loops.iter().count(), 3);
+    assert_eq!(face.loops.stated().count(), 3);
     for face_id in [3741, 3743, 3745, 3765] {
         assert!(geometry
             .faces
@@ -1565,10 +1565,10 @@ fn nist_ctc_01_planar_face_keeps_both_bores() {
         .find(|face| face.id.as_str() == "creo:visibgeom:face#240")
         .expect("planar face between the two bores");
     assert_eq!(face.surface.as_str(), "creo:visibgeom:surface#240");
-    assert_eq!(face.loops.iter().count(), 3);
+    assert_eq!(face.loops.stated().count(), 3);
     let edges: std::collections::BTreeSet<_> = face
         .loops
-        .iter()
+        .stated()
         .flat_map(|loop_id| {
             let lp = geometry
                 .loops
@@ -1659,7 +1659,7 @@ fn nist_ctc_01_cut_caps_keep_disjoint_boundaries() {
             .find(|lp| {
                 faces
                     .iter()
-                    .any(|face| face.loops.iter().any(|id| id == &lp.id))
+                    .any(|face| face.loops.stated().any(|id| id == &lp.id))
                     && lp.coedges().iter().any(|id| {
                         geometry.coedges.iter().any(|coedge| {
                             &coedge.id == id
@@ -1688,7 +1688,7 @@ fn nist_ctc_01_disjoint_planar_regions_keep_their_bores() {
             .filter(|face| {
                 let edge_ids: std::collections::BTreeSet<_> = face
                     .loops
-                    .iter()
+                    .stated()
                     .flat_map(|loop_id| {
                         let lp = geometry
                             .loops
@@ -1714,7 +1714,7 @@ fn nist_ctc_01_disjoint_planar_regions_keep_their_bores() {
             })
             .collect();
         assert_eq!(matching.len(), 1);
-        assert_eq!(matching[0].loops.iter().count(), 2);
+        assert_eq!(matching[0].loops.stated().count(), 2);
     }
 }
 
@@ -1754,11 +1754,11 @@ fn nist_ctc_01_closed_solid_volume_accounts_for_native_blind_cut() {
     assert_eq!(unowned_surface_losses.len(), UNOWNED_SOURCE_FACES.len());
     for face_id in UNOWNED_SOURCE_FACES {
         let face_identity = format!("creo:visibgeom:face#{face_id}");
-        for region in ir.geometry.body_regions(&body.id) {
-            for shell_id in &region.shells {
+        for region in ir.geometry.stated_body_regions(&body.id) {
+            for shell_id in &region.stated_shells().cloned().collect::<Vec<_>>() {
                 assert!(ir
                     .geometry
-                    .shell_faces(shell_id)
+                    .stated_shell_faces(shell_id)
                     .all(|shell_face| shell_face.id.as_str() != face_identity));
             }
         }

@@ -1138,7 +1138,7 @@ fn feature_module(name: &str, module: &str, source: &str) -> Fixture {
 }
 
 const CONTINUITY_STATE: &str = r#"
-        cadmpeg_core::named_optional_field!(deserialize_continuity, Continuity, "continuity");
+        cadmpeg_core::named_optional_field!(deserialize_tolerance, Continuity, "continuity");
         #[derive(Serialize, Deserialize)]
         pub struct Continuity { pub order: u8 }
         #[derive(Serialize, Deserialize)]
@@ -1147,10 +1147,10 @@ const CONTINUITY_STATE: &str = r#"
 
 #[test]
 fn a_newtype_struct_leaves_the_absence_of_its_option_to_its_holders() {
-    let read = r#"#[serde(deserialize_with = "deserialize_continuity")] Option<Continuity>"#;
+    let read = r#"#[serde(deserialize_with = "deserialize_tolerance")] Option<Continuity>"#;
     let offenders = feature_module(
         "newtype-holder",
-        "surface_inputs",
+        "sweeps",
         &CONTINUITY_STATE.replace("FIELDS", read),
     )
     .offenders();
@@ -1158,14 +1158,14 @@ fn a_newtype_struct_leaves_the_absence_of_its_option_to_its_holders() {
 
     let pair = feature_module(
         "newtype-holder-pair",
-        "surface_inputs",
+        "sweeps",
         &CONTINUITY_STATE.replace("FIELDS", &format!("{read}, u8")),
     )
     .offenders();
     assert_eq!(pair.len(), 2, "{pair:#?}");
     assert!(
         pair[0].contains("ContinuityState.<tuple field> reads the absent key as its one spelling of None but states no default")
-            && pair[1].contains("ContinuityState.<tuple field> refuses null, but cadmpeg_ir::features::surface_inputs::ContinuityState states no skip_serializing_if and writes null for None"),
+            && pair[1].contains("ContinuityState.<tuple field> refuses null, but cadmpeg_ir::features::sweeps::ContinuityState states no skip_serializing_if and writes null for None"),
         "{pair:#?}"
     );
 
@@ -1173,20 +1173,20 @@ fn a_newtype_struct_leaves_the_absence_of_its_option_to_its_holders() {
     assert_one_offender(
         &feature_module(
             "newtype-holder-nullable",
-            "surface_inputs",
+            "sweeps",
             &CONTINUITY_STATE.replace("FIELDS", nullable),
         ),
-        "ContinuityState.<tuple field> admits null, but cadmpeg_ir::features::surface_inputs::ContinuityState skips the key for None",
+        "ContinuityState.<tuple field> admits null, but cadmpeg_ir::features::sweeps::ContinuityState skips the key for None",
     );
 }
 
 const SWEEP_SECTION: &str = r#"
-        cadmpeg_core::named_optional_field!(deserialize_section_native, String, "value");
+        cadmpeg_core::named_optional_field!(deserialize_wall_thickness, String, "value");
         #[derive(Deserialize)]
         #[serde(TAGGING)]
         pub enum SweepSection {
             VARIANT
-            Unresolved(#[serde(deserialize_with = "deserialize_section_native")] Option<String>),
+            Unresolved(#[serde(deserialize_with = "deserialize_wall_thickness")] Option<String>),
             Profile(u32),
         }
     "#;

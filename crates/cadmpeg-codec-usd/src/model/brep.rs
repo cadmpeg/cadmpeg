@@ -31,7 +31,6 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, FaceId, LoopId, PcurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::topology::{
     AnchoredVertexUse, BodyKind, Coedge, Edge, EdgeCarrier, Face, FaceLoops, Loop, LoopBoundary,
     LoopRing, PcurveUse, Point, Region, Sense, Shell, Vertex,
@@ -688,7 +687,7 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
         let tolerance = record
             .tolerance
             .filter(|tolerance| *tolerance > brep.tolerance)
-            .and_then(|tolerance| PositiveReal::new(tolerance * scale));
+            .and_then(|tolerance| cadmpeg_ir::scalar::PositiveLength::new(tolerance * scale));
         out.edges.push(Edge {
             id: edge_id.clone(),
             carrier,
@@ -874,12 +873,11 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
         out.shells.push(shell_record);
     }
     for (region, shells) in regions.iter().enumerate() {
-        out.regions.push(Region {
-            id: id::region(key, region),
-            body: crate::ids::body(key),
-            shells: shells.iter().map(|shell| id::shell(key, *shell)).collect(),
-            native_ref: None,
-        });
+        out.regions.push(Region::new(
+            id::region(key, region),
+            crate::ids::body(key),
+            shells.iter().map(|shell| id::shell(key, *shell)).collect(),
+        ));
     }
     Ok(out)
 }

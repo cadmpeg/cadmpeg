@@ -359,7 +359,7 @@ pub(super) fn historical_topology(
         region_shells: topology_some!(relations(brep.regions.iter().map(|region| {
             (
                 region.id.as_str(),
-                region.shells.iter().map(cadmpeg_ir::ids::ShellId::as_str),
+                region.stated_shells().map(cadmpeg_ir::ids::ShellId::as_str),
             )
         }))),
         shell_faces: topology_some!(relations(brep.shells.iter().map(|shell| {
@@ -387,7 +387,7 @@ pub(super) fn historical_topology(
         face_loops: topology_some!(relations(brep.faces.iter().map(|face| {
             (
                 face.id.as_str(),
-                face.loops.iter().map(cadmpeg_ir::ids::LoopId::as_str),
+                face.loops.stated().map(cadmpeg_ir::ids::LoopId::as_str),
             )
         }))),
         loop_coedges: topology_some!(relations(brep.loops.iter().map(|loop_| {

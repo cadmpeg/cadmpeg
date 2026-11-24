@@ -36,8 +36,9 @@ impl Builder<'_> {
         };
         let major = torus.major_radius().get();
         let minor = torus.minor_radius().get();
+        let face_loops = face.loops.boundary()?;
         if minor <= major
-            || face.loops.len() != 2
+            || face_loops.len() != 2
             || self
                 .faces
                 .values()
@@ -55,9 +56,9 @@ impl Builder<'_> {
             .iter()
             .find(|region| region.id == shell.region)?;
         let body = self.bodies.get(region.body.as_str())?;
-        if self.children.shell_faces(&shell.id).len() != 1
+        if self.children.stated_shell_faces(&shell.id).len() != 1
             || body.kind != BodyKind::Solid
-            || region.shells.first() != Some(&shell.id)
+            || self.children.complete_shells(region)?.first() != Some(&shell.id)
         {
             return None;
         }
@@ -84,7 +85,7 @@ impl Builder<'_> {
         let mut vertices = Vec::new();
         for sign in if outer { [-1.0, 1.0] } else { [1.0, -1.0] } {
             let expected = center.translated(axis, sign * height);
-            let vertex = face.loops.iter().find_map(|id| {
+            let vertex = face_loops.iter().find_map(|id| {
                 let LoopBoundary::Vertex { vertex, .. } = &self.loops.get(id.as_str())?.boundary
                 else {
                     return None;

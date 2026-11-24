@@ -325,6 +325,7 @@ fn project_history(
                 }),
             definition: FeatureDefinition {
                 operation: operation(feature.evaluation.definition().operation())?,
+                assembly: None,
                 refine: None,
                 fuzzy_tolerance: None,
             },

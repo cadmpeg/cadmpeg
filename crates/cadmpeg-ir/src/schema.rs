@@ -493,9 +493,8 @@ macro_rules! impl_entity_schema {
     };
 }
 
-impl_entity_schema!(crate::topology::Body, Body, id; id, kind, transform, name, color, visible, native_ref);
-impl_entity_schema!(crate::topology::Region, Region, id; id, body, shells, native_ref);
-impl_entity_schema!(crate::topology::Shell, Shell, id; id, region, members, native_ref);
+impl_entity_schema!(crate::topology::Body, Body, id; id, kind, transform, name, color, visible, unstated, native_ref);
+impl_entity_schema!(crate::topology::Shell, Shell, id; id, region, members, unstated, native_ref);
 impl_entity_schema!(crate::topology::Face, Face, id; id, shell, surface, sense, loops, name, color, tolerance, native_ref);
 impl_entity_schema!(crate::topology::Loop, Loop, id; id, face, boundary, native_ref);
 impl_entity_schema!(crate::topology::Coedge, Coedge, id; id, owner_loop, edge, radial_next, sense, pcurves, use_curve, native_ref);
@@ -626,7 +625,7 @@ impl_entity_schema!(
     crate::presentation::PresentationLayer,
     PresentationLayer,
     id;
-    id, name, description, visible, items
+    id, name, parent, description, visible, items
 );
 impl_entity_schema!(crate::physics::PhysicalMaterial, PhysicalMaterial, id; id, name, density, static_friction, dynamic_friction, restitution, native_ref);
 impl_entity_schema!(crate::physics::MassProperties, MassProperties, id; id, target, mass, density, center_of_mass, inertia, material, native_ref);

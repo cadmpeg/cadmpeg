@@ -91,9 +91,9 @@ impl<'ir> Owners<'ir> {
             let mut faces = BTreeSet::new();
             let mut edges = BTreeSet::new();
             let mut vertices = BTreeSet::new();
-            for face in owners.shell_faces(&shell.id) {
+            for face in owners.stated_shell_faces(&shell.id) {
                 faces.insert(face.id.as_str());
-                for loop_id in &face.loops {
+                for loop_id in face.loops.stated() {
                     let Some(face_loop) = owners.loop_(loop_id.as_str()) else {
                         continue;
                     };
@@ -179,14 +179,21 @@ impl<'ir> Owners<'ir> {
         self.procedural_surfaces.get(id).copied()
     }
 
-    /// The faces whose shell is `shell`, in arena order.
-    pub(crate) fn shell_faces(&self, shell: &ShellId) -> &[&'ir Face] {
-        self.children.shell_faces(shell)
+    /// Every face whose shell is `shell`, in arena order.
+    pub(crate) fn stated_shell_faces(&self, shell: &ShellId) -> &[&'ir Face] {
+        self.children.stated_shell_faces(shell)
     }
 
-    /// The regions whose body is `body`, in arena order.
-    pub(crate) fn body_regions(&self, body: &BodyId) -> &[&'ir Region] {
-        self.children.body_regions(body)
+    /// The shells of each region of `body`, the exterior first, where the
+    /// body states every region, shell, face and loop; `None` under a mark or
+    /// a partial face, where no volume or closure is stated (§5.6, Unstated
+    /// children).
+    pub(crate) fn complete_body_shells(&self, body: &BodyId) -> Option<Vec<&'ir [ShellId]>> {
+        self.children
+            .complete_body_regions(body)?
+            .iter()
+            .map(|region| self.children.complete_shells(region))
+            .collect()
     }
 
     /// The body-local position of a vertex.
@@ -269,7 +276,7 @@ impl<'ir> Owners<'ir> {
             .into_iter()
             .flatten()
             .filter_map(|vertex| self.vertex(vertex)?.tolerance)
-            .map(cadmpeg_ir::scalar::PositiveReal::get)
+            .map(cadmpeg_ir::scalar::PositiveLength::get)
             .reduce(f64::max)
     }
 
@@ -319,7 +326,7 @@ mod tests {
         let mut first_region = ir.geometry.regions[0].clone();
         first_region.id = region;
         first_region.body = first.clone();
-        first_region.shells = vec![shell];
+        first_region.set_shells(vec![shell]);
         ir.geometry.regions.push(first_region);
         let mut first_body = ir.geometry.bodies[0].clone();
         first_body.id = first.clone();
