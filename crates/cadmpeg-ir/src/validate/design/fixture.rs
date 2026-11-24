@@ -207,7 +207,7 @@ pub(in crate::validate) fn document() -> CadIr {
         Evaluated::State(after("fillet")),
         None,
     ));
-    crate::test_support::add_root(&mut ir);
+    crate::examples::add_document_root(&mut ir);
     ir
 }
 

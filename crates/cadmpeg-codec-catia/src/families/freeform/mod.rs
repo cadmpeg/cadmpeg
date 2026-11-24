@@ -4272,6 +4272,7 @@ mod tests {
             Point3::new(7.0, 11.0, 13.0)
         );
         ir.finalize();
+        cadmpeg_ir::examples::add_document_root(&mut ir);
         let validation =
             cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
         assert!(validation.is_ok(), "{:?}", validation.findings);
@@ -4353,6 +4354,7 @@ mod tests {
             assert!((actual.z - expected.z).abs() < 1.0e-12);
         }
         ir.finalize();
+        cadmpeg_ir::examples::add_document_root(&mut ir);
         let validation =
             cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
         assert!(validation.is_ok(), "{:?}", validation.findings);

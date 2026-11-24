@@ -50,7 +50,7 @@ fn subd_round_trip_and_directed_ring_validation() {
         .unwrap(),
         native_ref: None,
     });
-    crate::test_support::add_root(&mut ir);
+    crate::examples::add_document_root(&mut ir);
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .is_ok());

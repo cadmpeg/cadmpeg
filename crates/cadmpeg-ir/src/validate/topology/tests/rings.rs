@@ -247,7 +247,7 @@ fn vertex_loop_is_valid_and_exclusive_with_coedges() {
         .collect();
     ir.geometry.faces[0].loops = crate::topology::FaceLoops::unspecified(face_loops);
     ir.finalize();
-    crate::test_support::add_root(&mut ir);
+    crate::examples::add_document_root(&mut ir);
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.is_ok(), "{:#?}", report.findings);
 }

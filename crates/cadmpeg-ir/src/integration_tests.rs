@@ -66,7 +66,7 @@ fn source_association_is_a_free_carrier_root() {
         }),
         native_ref: None,
     });
-    crate::test_support::add_root(&mut ir);
+    crate::examples::add_document_root(&mut ir);
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.is_ok(), "{:?}", report.findings);
     let parsed = CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap();
@@ -94,7 +94,7 @@ fn ir_strategy() -> impl Strategy<Value = CadIr> {
             ir.geometry.points.push(point(&id));
         }
         ir.finalize();
-        crate::test_support::add_root(&mut ir);
+        crate::examples::add_document_root(&mut ir);
         ir
     })
 }
@@ -286,7 +286,7 @@ proptest! {
         let mut base = CadIr::empty();
         draft.commit_model(&mut base, &cadmpeg_core::decode::test_support::service_decode_context()).unwrap().unwrap();
         base.finalize();
-        crate::test_support::add_root(&mut base);
+        crate::examples::add_document_root(&mut base);
         let report = validate_neutral(&base, Vec::new()).expect("validate the neutral model");
         prop_assert_eq!(
             report.error_count(),

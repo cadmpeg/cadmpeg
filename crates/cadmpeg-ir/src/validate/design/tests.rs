@@ -487,7 +487,7 @@ fn bracket_plane_on_the_timeline_origin() -> CadIr {
         part,
     ];
     ir.model.occurrences.push(occurrence);
-    crate::test_support::add_root(&mut ir);
+    crate::examples::add_document_root(&mut ir);
     ir
 }
 
@@ -725,7 +725,7 @@ fn named_cube() -> CadIr {
             native: None,
         },
     )]));
-    crate::test_support::add_root(&mut ir);
+    crate::examples::add_document_root(&mut ir);
     ir
 }
 

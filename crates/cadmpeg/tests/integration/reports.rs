@@ -296,7 +296,7 @@ fn validate_report_writes_result_to_file() {
     let input = fixture(
         dir.path(),
         "cube.cadir.json",
-        &unit_cube().expect("unit cube fixture is admitted"),
+        &crate::support::rooted_cube(),
     );
     let report = dir.path().join("validate-report.json");
     Command::cargo_bin("cadmpeg")
@@ -396,7 +396,7 @@ fn reporting_commands_accept_o_for_the_report_and_force_to_replace_it() {
     let input = fixture(
         dir.path(),
         "cube.cadir.json",
-        &unit_cube().expect("unit cube fixture is admitted"),
+        &crate::support::rooted_cube(),
     );
     let report = dir.path().join("report.json");
 
@@ -648,7 +648,7 @@ fn the_check_report_carries_the_stale_sidecar_loss() {
     let cadir = fixture(
         dir.path(),
         "cube.cadir.json",
-        &unit_cube().expect("unit cube fixture is admitted"),
+        &crate::support::rooted_cube(),
     );
     fs::write(
         cadmpeg_ir::decode_sidecar_path(&cadir).unwrap(),

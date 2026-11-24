@@ -1289,6 +1289,7 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
             assert_eq!(ir.geometry.faces[0].sense, Sense::Reversed);
             assert_eq!(ir.geometry.faces[1].sense, Sense::Forward);
         }
+        cadmpeg_ir::examples::add_document_root(&mut ir);
         assert_eq!(
             cadmpeg_ir::validate_neutral(&ir, Vec::new())
                 .expect("validate the neutral model")

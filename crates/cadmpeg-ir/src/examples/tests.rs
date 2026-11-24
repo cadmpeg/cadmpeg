@@ -8,7 +8,7 @@ use crate::validate::validate_neutral;
 #[test]
 fn directed_subd_sum_fixture_round_trips_and_validates() {
     let mut ir = directed_subd_sum().unwrap();
-    crate::test_support::add_root(&mut ir);
+    crate::examples::add_document_root(&mut ir);
     let report =
         crate::validate::validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.is_ok(), "{:?}", report.findings);
@@ -104,7 +104,7 @@ fn unit_cube_has_expected_census() {
 #[test]
 fn unit_cube_validates_clean() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    crate::test_support::add_root(&mut ir);
+    crate::examples::add_document_root(&mut ir);
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(
         report.is_ok(),

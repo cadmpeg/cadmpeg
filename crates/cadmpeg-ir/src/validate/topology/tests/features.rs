@@ -524,7 +524,7 @@ fn document_parameters_can_feed_feature_parameters() {
         native_ref: None,
     });
     ir.finalize();
-    crate::test_support::add_root(&mut ir);
+    crate::examples::add_document_root(&mut ir);
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .findings
@@ -755,7 +755,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         .get_mut(&extrude)
         .expect("configured extrude");
     state.dependencies.insert(source);
-    crate::test_support::add_root(&mut ir);
+    crate::examples::add_document_root(&mut ir);
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .is_ok());
@@ -1052,7 +1052,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         .expect("block-instance state")
         .dependencies
         .insert(block);
-    crate::test_support::add_root(&mut ir);
+    crate::examples::add_document_root(&mut ir);
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.is_ok(), "{:#?}", report.findings);
 }
@@ -1213,7 +1213,7 @@ fn reference_images_require_valid_assets_and_plane_placements() {
         native_ref: None,
     });
     ir.finalize();
-    crate::test_support::add_root(&mut ir);
+    crate::examples::add_document_root(&mut ir);
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .is_ok());
@@ -1276,7 +1276,7 @@ fn decals_require_valid_assets_faces_and_opacity() {
         native_ref: None,
     });
     ir.finalize();
-    crate::test_support::add_root(&mut ir);
+    crate::examples::add_document_root(&mut ir);
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .is_ok());
