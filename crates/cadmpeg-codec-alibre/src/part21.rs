@@ -385,7 +385,9 @@ pub(crate) fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Part21, Cod
                 cursor.require(b';', "';' after an instance")?;
                 ctx.charge_entities(1, "admit STEP_DATA instance")?;
                 ctx.charge_entities(
-                    u64::try_from(cursor.parameters).unwrap_or(u64::MAX),
+                    u64::try_from(cursor.parameters).map_err(|_| {
+                        CodecError::malformed("STEP_DATA parameter count does not fit 64 bits")
+                    })?,
                     "admit STEP_DATA parameters",
                 )?;
                 if part

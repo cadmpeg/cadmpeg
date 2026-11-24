@@ -317,10 +317,11 @@ fn model_losses(model: &Assembly) -> Vec<LossNote> {
                 .is_some_and(|name| name != DEFAULT_CONFIGURATION)
         })
         .count();
-    let others = model
-        .configurations
-        .len()
-        .saturating_sub(usize::from(model.active.is_some()));
+    // The active index is a position in the list, so the list is not empty then.
+    let others = match model.active {
+        Some(_) => model.configurations.len() - 1,
+        None => model.configurations.len(),
+    };
     if named > 0 || others > 0 {
         losses.push(AlibreLossCode::AssemblyConfigurationUnmapped.note(format!(
             "{named} occurrence(s) name a configuration of their component other than {DEFAULT_CONFIGURATION}, \
