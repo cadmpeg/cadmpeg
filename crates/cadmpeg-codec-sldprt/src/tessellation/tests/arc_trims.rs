@@ -73,9 +73,9 @@ fn circular_arc_trim_disambiguates_coincident_planar_supports() {
         assign_unique_surface_owners!(&mut ir).unwrap(),
         vec!["synthetic:test:tessellation#arc-trim-mesh"]
     );
-    assert_eq!(ir.model.tessellations[0].faces, vec![target]);
+    assert_eq!(ir.model.tessellations[0].of.faces(), vec![target]);
     assert_eq!(
-        ir.model.tessellations[0].body,
+        ir.model.tessellations[0].of.body().cloned(),
         Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
     );
 }

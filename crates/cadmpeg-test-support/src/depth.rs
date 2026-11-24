@@ -19,11 +19,10 @@
 //! The comparison is exact. Both decodes run in one process over the same
 //! bytes, so a cut that leaves geometry untouched reproduces it bit for bit.
 //! Native namespaces are not compared: a cut may drop the native records that
-//! only design projection derives. Source attributes holding a local digest
-//! are not compared either: they fingerprint the whole document, design arenas
-//! included, as the replay baseline of the source format's own writer. A cut
-//! is sound because the cut marks the bytes it keeps undecoded, and that
-//! writer reports each file that carries them (`export:source.carried`).
+//! only design projection derives. The sidecars, whose content digests cover
+//! the whole document, are not compared either. A cut is sound because the
+//! cut marks the bytes it keeps undecoded, and the source format's own writer
+//! reports each file that carries them (`export:source.carried`).
 //!
 //! A codec without a cut delivers `Full` for the geometry request and passes on
 //! the same terms; [`DepthSummary::cut`] counts the inputs where it did not.
@@ -34,7 +33,6 @@ use std::io::Cursor;
 use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
-use cadmpeg_ir::compare::is_local_digest_attribute;
 use cadmpeg_ir::validate::validate_neutral;
 use cadmpeg_ir::{ArenaName, CadIr};
 use serde_json::Value;
@@ -252,8 +250,8 @@ fn unmarked_cut_classes(bytes: &[u8], full: &DecodeResult, geometry: &DecodeResu
         .collect()
 }
 
-/// The document as JSON without its scope, design and process arenas, native
-/// namespaces, and local-digest source attributes.
+/// The document as JSON without its scope, design and process arenas, and
+/// native namespaces.
 fn outside_design(ir: &CadIr) -> Value {
     let mut value =
         cadmpeg_ir::hash::finite_json::to_json_value(ir).expect("serialize decoded document");
@@ -269,12 +267,6 @@ fn outside_design(ir: &CadIr) -> Value {
                 home.remove(arena.as_str());
             }
         }
-    }
-    if let Some(Value::Object(attributes)) = document
-        .get_mut("source")
-        .and_then(|source| source.get_mut("attributes"))
-    {
-        attributes.retain(|key, _| !is_local_digest_attribute(key));
     }
     value
 }

@@ -71,3 +71,15 @@ Need: A stored one-sided thin extrude over a line with `endParam < startParam`, 
 Conflict: Reversing the parameter interval reverses the profile tangent relative to the stored carrier direction.
 
 Note: The decoder retains its current side mapping until stored wall geometry establishes the source convention. A one-sided thin wall over a line with `endParam < startParam` reports `extrude.thin-not-supported` naming ONSHAPE-007 and the side assumed.
+
+## ONSHAPE-010 — Sweep profile frame
+
+Question: Which frame rule does `profileControl: "NONE"` apply along a curved sweep path, and which value applies when the parameter is omitted?
+
+Known: A sweep stores cross-section queries in `profiles` and path queries in `path`. The `profileControl` enum has values `NONE`, `KEEP_ORIENTATION`, `LOCK_FACES`, and `LOCK_DIRECTION`. The lock controls carry query lists. The plain form stores false `hasTwist` and `hasScale` controls.
+
+Need: Build an asymmetric profile and a path with bends in two planes. Save each profile-control value, then save the plain control with its parameter omitted. Compare the parameter rows and section frames in the final body.
+
+Conflict: Different frame rules can rotate an asymmetric section about the path tangent.
+
+Note: The decoder maps the plain form to a sweep operation.

@@ -9,7 +9,9 @@ use crate::attributes::AttributeValue;
 use crate::design::container::Container;
 use crate::design::edit::unit_factor;
 use crate::design::feature::FeatureOperation;
-use crate::design::parameter::{DesignParameter, ParameterOwner, ParameterValue};
+use crate::design::parameter::{
+    DesignParameter, ParameterDefinition, ParameterOwner, ParameterValue,
+};
 use crate::design::spreadsheet::Spreadsheet;
 use crate::design::units::ValueKind;
 use crate::report::check::Finding;
@@ -44,6 +46,13 @@ pub(super) fn check_parameter_records(index: &DesignRecords<'_>, findings: &mut 
         }
         check_owner(index, parameter, findings);
         check_kind(parameter, findings);
+        if matches!(parameter.definition, ParameterDefinition::Unset) && parameter.value.is_some() {
+            super::error(
+                findings,
+                id,
+                format_args!("an `Unset` parameter states a `value`; it has none"),
+            );
+        }
     }
     if !unnamed.is_empty() {
         let sketch_bound = super::dimensions::sketch_constraint_bindings(index);

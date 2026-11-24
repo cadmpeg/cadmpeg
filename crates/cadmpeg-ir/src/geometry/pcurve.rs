@@ -6,7 +6,7 @@ use super::nurbs::{
     admit_finite_weight, admit_weight, KnotVector, NurbsCurve, NurbsError, PoleValue,
 };
 use super::MAX_GEOMETRY_NESTING;
-use crate::ids::PcurveId;
+use crate::ids::{PcurveId, SurfaceId};
 use crate::math::portable::Portable;
 use crate::math::{Point2, Point3};
 use crate::scalar::{FiniteReal, NonZeroReal, PositiveReal};
@@ -2567,6 +2567,10 @@ impl PcurveInlineForm {
 #[serde(try_from = "PcurveGeneralFormWire")]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PcurveGeneralForm {
+    /// The surface in whose parameter space the pcurve lies, where the source
+    /// states it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub support_surface: Option<SurfaceId>,
     /// Translation in the support native chart.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "schema", schemars(with = "Option<[f64; 2]>"))]
@@ -2593,6 +2597,9 @@ pub struct PcurveGeneralForm {
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct PcurveGeneralFormWire {
+    /// The surface in whose parameter space the pcurve lies.
+    #[serde(default, deserialize_with = "deserialize_support_surface")]
+    support_surface: Option<SurfaceId>,
     /// Translation in the support native chart.
     #[serde(default, deserialize_with = "deserialize_uv_offset")]
     uv_offset: Option<[f64; 2]>,
@@ -2619,6 +2626,7 @@ impl TryFrom<PcurveGeneralFormWire> for PcurveGeneralForm {
             wire.fit_tolerance,
         )?;
         form.uv_offset = wire.uv_offset.map(admit_pcurve_uv_offset).transpose()?;
+        form.support_surface = wire.support_surface;
         Ok(form)
     }
 }
@@ -2632,6 +2640,7 @@ impl PcurveGeneralForm {
         fit_tolerance: Option<FitTolerance>,
     ) -> Self {
         Self {
+            support_surface: None,
             uv_offset: None,
             wrapper_reversed,
             parameter_range,
@@ -2674,6 +2683,7 @@ impl PcurveGeneralForm {
 }
 
 // Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_support_surface, SurfaceId, "support_surface");
 cadmpeg_core::named_optional_field!(deserialize_uv_offset, [f64; 2], "uv_offset");
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 cadmpeg_core::named_optional_field!(deserialize_wrapper_reversed, bool, "wrapper_reversed");

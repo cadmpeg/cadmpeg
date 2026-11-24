@@ -188,7 +188,6 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
         .push(cadmpeg_ir::products::ProductDefinition {
             sketches: Vec::default(),
 
-            tessellations: Vec::new(),
             id: "test:model:product#group"
                 .try_into()
                 .expect("valid identity"),
@@ -649,6 +648,7 @@ fn writer_reports_dangling_appearance_binding() {
         id: binding.try_into().expect("valid identity"),
         target: AppearanceTarget::Body(ir.geometry.bodies[0].id.clone()).into(),
         appearance: appearance.clone(),
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,
@@ -697,6 +697,7 @@ fn writer_reports_appearance_without_base_color() {
         id: binding.try_into().expect("valid identity"),
         target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()).into(),
         appearance: appearance.clone(),
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,
@@ -766,6 +767,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
             id: "test:model:binding#red".try_into().expect("valid identity"),
             target: target.clone().into(),
             appearance: red,
+            precedence: None,
             source_entity_id: None,
             object_type: None,
             visible: None,
@@ -778,6 +780,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
                 .expect("valid identity"),
             target: target.into(),
             appearance: blue,
+            precedence: None,
             source_entity_id: None,
             object_type: None,
             visible: None,
@@ -868,11 +871,11 @@ fn writer_reports_reduced_tessellation_metadata_and_body_links() {
             .expect("valid channel")],
         )
         .expect("valid tessellation")
-        .with_body(Some(
-            cadmpeg_ir::ids::BodyId::mint("test:model:body#test:missing-body")
+        .with_of(cadmpeg_ir::tessellation::Meshed::Body {
+            body: cadmpeg_ir::ids::BodyId::mint("test:model:body#test:missing-body")
                 .expect("identity grammar"),
-        ))
-        .with_faces(vec![ir.geometry.faces[0].id.clone()])
+            faces: vec![ir.geometry.faces[0].id.clone()],
+        })
         .with_chordal_deflection(Some(0.01))
         .unwrap(),
     );
@@ -1179,6 +1182,7 @@ fn ap203e1_reports_hidden_appearance_visibility_loss() {
             .expect("valid identity"),
         target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()).into(),
         appearance,
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: Some(false),
@@ -1215,6 +1219,7 @@ fn ap203e1_reports_hidden_presentation_layer_visibility_loss() {
         description: None,
         visible: Some(false),
         items: vec![PresentationItem::Body { body }.into()],
+        native_ref: None,
     });
     let mut output = Vec::new();
     let report = write_step(
@@ -1388,10 +1393,6 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
         format: cadmpeg_ir::codec_id!("rhino"),
         object_id: cadmpeg_core::text::NonBlankString::new("object-0")
             .expect("nonempty source identity"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     };
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
@@ -1950,14 +1951,17 @@ fn procedural_construction_reduction_is_reported() {
 #[test]
 fn source_native_record_reduction_is_reported() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.native.namespace_mut("f3d").arenas_mut().insert(
-        "asm_histories".into(),
-        vec![cadmpeg_ir::NativeRecord::new(
-            cadmpeg_ir::ids::Identity::new("f3d:test:asm-history#0").expect("valid identity"),
-            Default::default(),
-        )
-        .expect("valid native identity")],
-    );
+    ir.native
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::nonblank_literal!("asm_histories"),
+            vec![cadmpeg_ir::NativeRecord::new(
+                cadmpeg_ir::ids::Identity::new("f3d:test:asm-history#0").expect("valid identity"),
+                Default::default(),
+            )
+            .expect("valid native identity")],
+        );
     ir.finalize();
 
     let mut buf = Vec::new();

@@ -137,7 +137,7 @@ fn nonempty_user_string_presentation_is_refused_before_output() {
         let mut ir = decoded.ir_mut();
         let records = ir
             .native
-            .namespace_mut("rhino")
+            .namespace_mut(cadmpeg_ir::codec_id!("rhino"))
             .arenas_mut()
             .get_mut("object_presentation")
             .expect("decoded object presentation");
@@ -192,7 +192,7 @@ fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
         let mut ir = decoded.ir_mut();
         let records = ir
             .native
-            .namespace_mut("rhino")
+            .namespace_mut(cadmpeg_ir::codec_id!("rhino"))
             .arenas_mut()
             .get_mut("object_presentation")
             .expect("decoded object presentation");
@@ -247,7 +247,7 @@ fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
         let mut ir = decoded.ir_mut();
         let records = ir
             .native
-            .namespace_mut("rhino")
+            .namespace_mut(cadmpeg_ir::codec_id!("rhino"))
             .arenas_mut()
             .get_mut("layers")
             .expect("decoded layer presentation");

@@ -37,10 +37,7 @@ pub(super) fn check_semantic_annotations(
         if refs_valid {
             'groups: for targets in annotation.references.values() {
                 for target in targets {
-                    if !target
-                        .target
-                        .resolves(&records, &named, |id| all_ids.contains(id))
-                    {
+                    if !target.resolves(&records, &named, |id| all_ids.contains(id)) {
                         refs_valid = false;
                         break 'groups;
                     }
@@ -122,7 +119,7 @@ mod tests {
         let mut findings = Vec::new();
         check_semantic_annotations(&ir, &empty, &mut findings);
         assert!(findings.is_empty(), "{findings:?}");
-        ir.native.namespace_mut("test");
+        ir.native.namespace_mut(crate::codec_id!("test"));
         check_semantic_annotations(&ir, &empty, &mut findings);
         assert_eq!(findings.len(), 1);
     }

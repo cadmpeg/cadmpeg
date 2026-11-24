@@ -7,7 +7,6 @@ use cadmpeg_ir::codec::write::{
     target::{ResolvedTarget, ResolvedWrite},
     ArenaCoverage, Consumption, EncodeInput, ExportBody, WritePath,
 };
-use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
 use cadmpeg_ir::{CadIr, SourceFidelity};
 
 use crate::loss::IgesLossCode;
@@ -180,23 +179,16 @@ impl Replay {
 }
 
 fn replay_bytes(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Replay, CodecError> {
-    let Some(source) = ir
-        .source
-        .as_ref()
-        .filter(|source| source.format() == crate::dialect::FORMAT)
-    else {
+    let (Some(_), Some(fidelity)) = (
+        ir.source
+            .as_ref()
+            .filter(|source| source.format() == crate::dialect::FORMAT),
+        fidelity,
+    ) else {
         return Ok(Replay::Declined(DeclineReason::SourceImageUnavailable));
     };
-    let record = fidelity.and_then(|value| value.retained_record(crate::SOURCE_IMAGE_ID));
-    let Some(expected) = source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE) else {
-        return Ok(Replay::declined_for_record(
-            record,
-            format!(
-                "preserved IGES source carries no `{DOCUMENT_LOCAL_DIGEST_ATTRIBUTE}` baseline; byte replay skipped"
-            ),
-        ));
-    };
-    if crate::document_digest(ir)? != *expected {
+    let record = fidelity.retained_record(crate::SOURCE_IMAGE_ID);
+    if fidelity.edited(ir)? {
         return Ok(Replay::declined_for_record(
             record,
             "decoded model no longer matches the preserved IGES source digest; byte replay skipped",

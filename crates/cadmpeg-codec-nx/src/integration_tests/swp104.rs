@@ -21,7 +21,7 @@ fn swp104_native_validator_rejects_a_nonconsecutive_successor() {
     crate::test_support::with_decode_context(|ctx| {
         let mut ir = cadmpeg_ir::CadIr::empty();
         ir.native
-            .namespace_mut("nx")
+            .namespace_mut(cadmpeg_ir::codec_id!("nx"))
             .set_arena(ctx, "feature_swp104_leading_branches", &[&wire])
             .unwrap();
         assert!(crate::NxCodec::validate_native(ctx, &ir, None)
@@ -30,7 +30,7 @@ fn swp104_native_validator_rejects_a_nonconsecutive_successor() {
         wire["successor"]["object_index"] = serde_json::json!(257);
         wire["successor"]["raw_object_index"] = serde_json::json!("f10101");
         ir.native
-            .namespace_mut("nx")
+            .namespace_mut(cadmpeg_ir::codec_id!("nx"))
             .set_arena(ctx, "feature_swp104_leading_branches", &[&wire])
             .unwrap();
         let findings = crate::NxCodec::validate_native(ctx, &ir, None).unwrap();

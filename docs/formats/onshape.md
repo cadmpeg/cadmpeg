@@ -96,11 +96,37 @@ Loop closure follows stored curve endpoints and parameter intervals. Analytic
 intersection and containment of closed boundaries establish hole nesting.
 Directed carrier turns establish loop sense.
 
+A `BTMIndividualSketchRegionQuery-140` whose `queryString` is
+`query = qSketchRegion(id + "<featureId>", <filterInnerLoops>);` selects
+the regions of that sketch named by the query string; its
+`deterministicIds` do not restrict that selection. With `filterInnerLoops`
+equal to `false` the selection is every region of the sketch. With `true`
+it excludes each region fully contained in another region; a region whose
+border has a vertex or edge on the containing region's boundary is not
+contained. A selected region retains the loops directly inside it as hole
+boundaries.
+
 A sketch's optional `plane` object stores its attachment frame. `origin` uses
 metres; `normal` and `x` store its normal and x axis. The axes are orthogonal.
 A referenced planar face and the stored attachment frame are coplanar. The
 stored origin retains tangential translation. The stored x axis retains
 in-plane rotation. The normal carries the attachment sense.
+
+A `sweep` feature stores solid cross-section selections in `profiles` and
+trajectory selections in `path`. `bodyType: "SOLID"` selects a solid result.
+`operationType: "NEW"` creates a body; `ADD` joins the swept volume to the
+merge scope. `profileControl` has values `NONE`, `KEEP_ORIENTATION`,
+`LOCK_FACES`, and `LOCK_DIRECTION`. `lockFaces` and `lockDirectionQuery`
+store query lists. `hasTwist` and `hasScale` enable twist and scale controls.
+`turns`, `angle`, and `pitch` store twist quantities; `scaleFactor` stores
+the scale quantity. `trimEnds` stores a Boolean end-trim control.
+`pathOppositeDirection` reverses path travel; `extendToFullPath` extends
+travel to the full path.
+A sketch-edge path query has `queryType: "SKETCH_ENTITY"`,
+`historyType: "CREATION"`, `entityType: "EDGE"`, one `operationId` with the
+suffix `.wireOp`, and a `sketchEntityId`. The operation prefix identifies
+the source sketch. A `UNION` query stores its ordered operands in
+`subqueries`; nested unions preserve operand order.
 
 Thin extrusions select curves through `wallShape` in the `MODEL` domain.
 Explicit `midplane`, `flipWall` and `oppositeDirection` fields establish wall
@@ -152,7 +178,7 @@ For a string fragment, a nonnegative size counts literal UTF-8 bytes after
 absolute value. Two sizes select two fragments, joined with `.`. Each
 literal fragment enters the string dictionary. A dotted result also enters
 that dictionary. Type names share the string dictionary. Admitted type
-names are `Query`, `EntityType` and `Id`.
+names are `Query`, `QueryType`, `EntityType` and `Id`.
 
 Each completed scalar, array or map enters the value dictionary after its
 children. A reference reuses that stored value and charges its expanded

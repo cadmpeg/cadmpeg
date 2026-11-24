@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{archive, id, part_bodies, part_studio_bodies, topology, Model};
+use super::{archive, id, part_bodies, part_studio_bodies, topology, Model, OnshapeLossCode};
 use crate::test_support::{fixture, Report};
 use serde_json::{json, Value};
 use std::io::{Cursor, Read, Write};
@@ -127,8 +127,8 @@ fn two_part_studio(x: f64) -> Model {
         .unwrap()
         .remove("name");
     wire["model"]["product_definitions"] = json!([
-        {"id": "synthetic:test:component#first", "kind": "part", "label": "Part 1", "bodies": [body], "bom_properties": {}, "sketches": [], "storage":{"kind":"embedded"}, "tessellations":[], "occurrences":[], "instance_bodies":[], "representations":[]},
-        {"id": "synthetic:test:component#second", "kind": "part", "label": "Part 2", "bodies": [], "bom_properties": {}, "sketches": [], "storage":{"kind":"embedded"}, "tessellations":[], "occurrences":[], "instance_bodies":[], "representations":[]},
+        {"id": "synthetic:test:component#first", "kind": "part", "label": "Part 1", "bodies": [body], "bom_properties": {}, "sketches": [], "storage":{"kind":"embedded"}, "occurrences":[], "instance_bodies":[], "representations":[]},
+        {"id": "synthetic:test:component#second", "kind": "part", "label": "Part 2", "bodies": [], "bom_properties": {}, "sketches": [], "storage":{"kind":"embedded"}, "occurrences":[], "instance_bodies":[], "representations":[]},
     ]);
     let placed = |key: u32, definition: &str, x: f64| {
         json!({"id": format!("synthetic:test:occurrence#{key}"),
@@ -222,4 +222,27 @@ fn omitted_feature_has_no_placement_or_suppression_annotation() {
             .exactness()
             .contains_key(&key));
     }
+}
+
+#[test]
+fn sweep_losses_distinguish_support_from_malformed_records_and_budgets() {
+    let mut feature = json!({"featureType":"sweep", "parameters":[
+        {"parameterId":"bodyType","value":"SOLID"},
+        {"parameterId":"operationType","value":"NEW"},
+        {"parameterId":"profiles","queries":[]},
+        {"parameterId":"path","queries":[]}
+    ]});
+    let support = super::mapping_loss_code(&feature, false, true, "unsupported control");
+    assert!(OnshapeLossCode::SweepNotSupported.matches(&support.note("support")));
+    for (budget, valid_suppression, reason) in [
+        (true, true, "region budget exhausted"),
+        (false, false, "malformed suppression"),
+        (false, true, super::sweep::PATH_BUDGET_EXHAUSTED),
+    ] {
+        let code = super::mapping_loss_code(&feature, budget, valid_suppression, reason);
+        assert!(OnshapeLossCode::HistoryNotSupported.matches(&code.note("history")));
+    }
+    feature["parameters"] = json!(null);
+    let malformed = super::mapping_loss_code(&feature, false, true, "malformed parameters");
+    assert!(OnshapeLossCode::HistoryNotSupported.matches(&malformed.note("record")));
 }

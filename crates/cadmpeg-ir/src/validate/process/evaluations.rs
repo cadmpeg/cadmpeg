@@ -11,7 +11,7 @@ use cadmpeg_core::CodecError;
 use super::records::ProcessRecords;
 use crate::design::dimension::Dimension;
 use crate::design::evaluation::{EvaluationStatus, StateBase};
-use crate::design::feature::FeatureOperation;
+use crate::design::feature::{FeatureOperation, OperationFamily};
 use crate::design::ids::MachiningFeatureId;
 use crate::document::CadIr;
 use crate::features::ConfigurationId;
@@ -294,6 +294,28 @@ fn check_state_feature(
             id,
             format_args!("process state names {feature}, which is no feature of its setup's scope"),
         );
+    }
+    if let Some(record) = records.design.features.get(feature) {
+        let configuration = state.configuration.as_ref().map(ConfigurationId::as_str);
+        let removal = matches!(
+            records
+                .design
+                .definition_in(record, configuration)
+                .operation,
+            FeatureOperation::MaterialRemoval
+                | FeatureOperation::Unresolved {
+                    family: OperationFamily::MaterialRemoval,
+                }
+        );
+        if !removal {
+            super::error(
+                findings,
+                id,
+                format_args!(
+                    "process state names {feature}, which is no `MaterialRemoval` feature"
+                ),
+            );
+        }
     }
 }
 

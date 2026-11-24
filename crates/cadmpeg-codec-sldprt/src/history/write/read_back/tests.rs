@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+use cadmpeg_ir::source_fidelity::CodecDigests;
 use std::collections::HashSet;
 
 use cadmpeg_ir::document::CadIr;
@@ -80,7 +81,7 @@ fn judge_settled(
     written: &CadIr,
     settled: &HashSet<FeatureId>,
 ) -> ReadBack {
-    Judge::new(input, &|_| None).judge(
+    Judge::new(input, &CodecDigests::new(), &|_| None).judge(
         claims,
         &UnwrittenEdits::default(),
         (source, &[], &[]),
@@ -528,7 +529,7 @@ fn a_difference_the_unedited_write_has_is_named_by_arena() {
         .unwrap();
     twin.suppressed = Some(!twin.suppressed.unwrap_or(false));
 
-    let read_back = Judge::new(&input, &|_| None).judge(
+    let read_back = Judge::new(&input, &CodecDigests::new(), &|_| None).judge(
         &claims,
         &UnwrittenEdits::default(),
         (&source, &[], &[]),

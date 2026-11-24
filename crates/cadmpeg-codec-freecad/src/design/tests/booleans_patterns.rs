@@ -451,7 +451,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
     stale_census[0].semantic_kind = "native".to_owned();
     corrupted
         .native
-        .namespace_mut("fcstd")
+        .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
         .set_arena(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             "design_census",

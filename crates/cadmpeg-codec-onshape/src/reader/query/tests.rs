@@ -59,3 +59,28 @@ fn compressed_queries_are_bounded_and_truncation_never_panics() {
         assert!(query::resolved(&query).is_err(), "{encoded}");
     }
 }
+
+#[test]
+fn typed_query_unions_preserve_nested_operand_order() {
+    let compact = "%B5$QueryM2S9$queryTypeB9$QueryTypeS5$UNIONSa$subqueriesA2M2S9$queryTypeSd$SKETCH_ENTITYSe$sketchEntityIdS1$zM2S9$queryTypeS5$UNIONSa$subqueriesA1M2S9$queryTypeSd$SKETCH_ENTITYSe$sketchEntityIdS1$a";
+    let source = json!({"queryString":format!("query=qCompressed(1.0,{},id);",serde_json::to_string(compact).unwrap())});
+    let leaves = query::resolved_leaves(&source).unwrap();
+    assert_eq!(
+        leaves
+            .iter()
+            .map(|leaf| leaf["sketchEntityId"].clone())
+            .collect::<Vec<_>>(),
+        vec![json!("z"), json!("a")]
+    );
+}
+
+#[test]
+fn query_unions_require_nonempty_operand_arrays() {
+    for compact in [
+        "%M2S9$queryTypeS5$UNIONSa$subqueriesA0",
+        "%M2S9$queryTypeS5$UNIONSa$subqueriesS1$x",
+    ] {
+        let source = json!({"queryString":format!("query=qCompressed(1.0,{},id);",serde_json::to_string(compact).unwrap())});
+        assert!(query::resolved_leaves(&source).is_err());
+    }
+}

@@ -138,8 +138,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -156,8 +155,7 @@
           "source_name": "Child part",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -300,6 +298,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "92f853a9292782a32f436bbf8e852a895740ce21e1e316e772f3724a1891f73b",
     "file_digests": {},
     "retained_records": {},

@@ -6,6 +6,8 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use super::record_finding;
+
+pub(in crate::validate) mod definitions;
 use crate::document::CadIr;
 use crate::products::{JointOperands, OperandContainer, PairedJointKind};
 use crate::report::check::{Check, Finding};
@@ -94,13 +96,6 @@ pub(super) fn check_products(
             add(sketch.id.as_str(), ());
         }
     });
-    let tessellations: std::collections::BTreeMap<&str, &crate::tessellation::Tessellation> = ir
-        .model
-        .tessellations
-        .iter()
-        .map(|tessellation| (tessellation.id.as_str(), tessellation))
-        .collect();
-    let mut tessellation_owners = std::collections::BTreeMap::new();
     let mut sketch_owners = std::collections::BTreeMap::new();
     for definition in &ir.model.product_definitions {
         for sketch in &definition.sketches {
@@ -114,31 +109,6 @@ pub(super) fn check_products(
                 })
             } else {
                 None
-            };
-            if let Some(message) = message {
-                record_finding(
-                    findings,
-                    Check::ReferentialIntegrity,
-                    crate::report::Severity::Error,
-                    Some(definition.id.as_str()),
-                    format_args!("{message}"),
-                );
-                break;
-            }
-        }
-        for tessellation in &definition.tessellations {
-            let message = match tessellations.get(tessellation.as_str()) {
-                None => Some("invalid product tessellation reference"),
-                Some(found) if found.body.is_some() => {
-                    Some("product tessellation represents a body")
-                }
-                Some(_) => match tessellation_owners.insert(tessellation, &definition.id) {
-                    Some(owner) if owner == &definition.id => {
-                        Some("duplicate product tessellation reference")
-                    }
-                    Some(_) => Some("tessellation has multiple product definitions"),
-                    None => None,
-                },
             };
             if let Some(message) = message {
                 record_finding(
@@ -274,6 +244,7 @@ pub(super) fn check_products(
             }
         }
     }
+    definitions::check(ir, findings);
     Ok(())
 }
 

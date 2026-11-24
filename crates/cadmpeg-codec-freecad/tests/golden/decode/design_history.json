@@ -610,7 +610,7 @@
           "pcurves": [
             {
               "parameter_range": [
-                -0.0,
+                0.0,
                 10.0
               ],
               "pcurve": "fcstd:model:pcurve#Body:Shape:Body.Shape.brp:21%3A2%3A1"
@@ -626,7 +626,7 @@
           "pcurves": [
             {
               "parameter_range": [
-                -0.0,
+                0.0,
                 10.0
               ],
               "pcurve": "fcstd:model:pcurve#Body:Shape:Body.Shape.brp:5%3A2%3A1"
@@ -938,7 +938,7 @@
           "pcurves": [
             {
               "parameter_range": [
-                -0.0,
+                0.0,
                 10.0
               ],
               "pcurve": "fcstd:model:pcurve#Fillet:Shape:Fillet.Shape.brp:20%3A2%3A1"
@@ -954,7 +954,7 @@
           "pcurves": [
             {
               "parameter_range": [
-                -0.0,
+                0.0,
                 10.0
               ],
               "pcurve": "fcstd:model:pcurve#Fillet:Shape:Fillet.Shape.brp:5%3A2%3A1"
@@ -1090,7 +1090,7 @@
           "pcurves": [
             {
               "parameter_range": [
-                -0.0,
+                0.0,
                 10.0
               ],
               "pcurve": "fcstd:model:pcurve#Fillet:Shape:Fillet.Shape.brp:20%3A3%3A1"
@@ -1234,7 +1234,7 @@
           "pcurves": [
             {
               "parameter_range": [
-                -0.0,
+                0.0,
                 10.0
               ],
               "pcurve": "fcstd:model:pcurve#Fillet:Shape:Fillet.Shape.brp:5%3A3%3A1"
@@ -5135,7 +5135,7 @@
           "carrier": {
             "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:9",
             "param_range": [
-              -0.0,
+              0.0,
               10.0
             ]
           },
@@ -5300,7 +5300,7 @@
           "carrier": {
             "curve": "fcstd:model:curve#Body:Shape:Body.Shape.brp:2",
             "param_range": [
-              -0.0,
+              0.0,
               10.0
             ]
           },
@@ -5435,7 +5435,7 @@
           "carrier": {
             "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:8",
             "param_range": [
-              -0.0,
+              0.0,
               10.0
             ]
           },
@@ -5570,7 +5570,7 @@
           "carrier": {
             "curve": "fcstd:model:curve#Fillet:Shape:Fillet.Shape.brp:2",
             "param_range": [
-              -0.0,
+              0.0,
               10.0
             ]
           },
@@ -11395,8 +11395,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -12626,7 +12625,6 @@
       "attributes": {
         "application_domains": "App,PartDesign,Sketcher",
         "document_kind": "part-design",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
         "program_version": "1.1R20260414 (Git shallow)"
       },
@@ -12701,6 +12699,10 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {
+      "fcstd_uncarried_local_sha256": "<elided: digest over tolerantly compared geometry>"
+    },
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "c71da85ee80979f3f210690125da00406b2d49682be765100fc1cfb1d98ea0d7",
     "file_digests": {},
     "retained_records": {},

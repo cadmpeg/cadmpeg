@@ -166,8 +166,7 @@
             "storage": {
               "document": {},
               "kind": "file"
-            },
-            "tessellations": []
+            }
           }
         ],
         "rigid_bodies": [],
@@ -380,6 +379,8 @@
           }
         }
       },
+      "codec_digests": {},
+      "content_digest": "<elided: digest over tolerantly compared geometry>",
       "decode_digest": "da119a8c1456b89486dbb88df9e2ff149f9549a24a9f730cc2107aed22807b06",
       "file_digests": {},
       "retained_records": {

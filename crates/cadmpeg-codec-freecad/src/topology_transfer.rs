@@ -31,7 +31,7 @@ use cadmpeg_ir::ids::{
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal};
 use cadmpeg_ir::scalar::{PositiveLength, PositiveReal};
-use cadmpeg_ir::tessellation::Tessellation;
+use cadmpeg_ir::tessellation::{Meshed, Tessellation};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
@@ -469,10 +469,6 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                 self.source_object.as_str().to_owned(),
             )
             .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
-            name: None,
-            color: None,
-            visible: None,
-            layer: None,
             instance_path: Vec::new(),
         })
     }
@@ -1146,10 +1142,13 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                 .map_err(|error| {
                     CodecError::malformed(format_args!("invalid triangulation: {error}"))
                 })?
-                .with_body(self.current_body.as_ref().map(|body| {
-                    BodyId::mint(body.as_str().to_owned()).map_err(CodecError::malformed)
-                }).transpose()?)
-                .with_faces(faces)
+                .with_of(match self.current_body.as_ref() {
+                    Some(body) => Meshed::Body {
+                        body: BodyId::mint(body.as_str().to_owned()).map_err(CodecError::malformed)?,
+                        faces,
+                    },
+                    None => Meshed::Unresolved,
+                })
                 .with_admitted_chordal_deflection(Some(
                     triangulation
                         .deflection

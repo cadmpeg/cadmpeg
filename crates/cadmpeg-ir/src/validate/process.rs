@@ -7,6 +7,7 @@
 //! parameter's cached value only where a rule asks for its value.
 
 mod bindings;
+mod caches;
 mod evaluations;
 #[cfg(test)]
 mod fixture;
@@ -56,6 +57,7 @@ pub(super) fn check_process(
     )?;
     evaluations::check_resolved_states(ctx, &records, ids, findings)?;
     operations::check_operations(&records, findings);
+    caches::check_caches(&records, findings);
     Ok(())
 }
 

@@ -254,7 +254,7 @@ fn raw_json_values_use_the_same_canonical_native_admission() {
         };
         document
             .native
-            .namespace_mut("future")
+            .namespace_mut(crate::codec_id!("future"))
             .set_arena(&ctx, "records", &[record])
             .expect("raw fields have ordinary JSON semantics");
         let wire = serde_json::to_value(&document).expect("document writes");

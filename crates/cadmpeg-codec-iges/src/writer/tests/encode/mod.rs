@@ -78,13 +78,18 @@ fn encode_regenerates_a_degraded_type_102_as_an_exact_composite_carrier() {
                 }),
             "{version:?} output has no Type 102 entity"
         );
-        assert!(round_trip.ir().geometry.curves.iter().any(|curve| {
-            curve
-                .source_object
-                .as_ref()
-                .and_then(|source| source.name.as_deref())
-                == Some("COMPOSIT")
-        }));
+        assert!(round_trip
+            .ir()
+            .native
+            .namespace("iges")
+            .is_some_and(|namespace| {
+                namespace.arenas()["entities"].iter().any(|record| {
+                    record.field("entity_type").and_then(|value| value.as_i64()) == Some(102)
+                        && record.field("label").is_some_and(|label| {
+                            crate::test_support::native_bytes(&label).starts_with(b"COMPOSIT")
+                        })
+                })
+            }));
         let validation =
             cadmpeg_ir::validate_neutral(round_trip.ir(), round_trip.report().losses.clone())
                 .expect("validate the neutral model");
