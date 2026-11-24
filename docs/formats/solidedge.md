@@ -84,8 +84,11 @@ The parameter increment between successive points is their distance in
 metres times the scale. `chordal_error` is a model-space length; the null
 real denotes an unstated fit bound. The chart polyline approximates the
 exact intersection of the two supports, which is the edge carrier. The
-vertices of an edge lie on that intersection. The chart may stop short of a
-vertex or run past it. Limit records carry a type character and a counted
+polyline can depart from the supports by more than the body's linear
+resolution. Each vertex of an edge lies on that intersection within the
+stated tolerances of the vertex and the edge, and so can lie off the polyline
+by the polyline's departure. The chart may stop short of a vertex or run past
+it. Limit records carry a type character and a counted
 point array. Types `L`, `H`, `T`, and `B` place their terminal point first in
 that array.
 
