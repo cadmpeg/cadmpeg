@@ -2229,6 +2229,7 @@ pub(super) fn resolved_extrude_profile_selection(
             state_id,
             previous_state_id,
             resolved_profiles.as_ref(),
+            None,
         )? {
             resolution
                 .profile_work

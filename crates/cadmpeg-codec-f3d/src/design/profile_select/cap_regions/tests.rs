@@ -1042,7 +1042,7 @@ fn a_far_face_over_material_the_plane_already_held_selects_nothing() {
             profile_work: &work,
             ctx: &ctx,
         };
-        super::cap_profile_selection(&window.sketch, resolution, 2, 1, None).unwrap()
+        super::cap_profile_selection(&window.sketch, resolution, 2, 1, None, None).unwrap()
     };
     // New material on an empty far plane is the selection.
     assert!(select(plane_faces(&[])).is_some());

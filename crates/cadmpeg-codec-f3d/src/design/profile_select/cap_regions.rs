@@ -509,6 +509,7 @@ pub(super) fn cap_profile_selection(
     state_id: i64,
     previous_state_id: i64,
     current: Option<&ResolvedProfileSelection>,
+    end: Option<f64>,
 ) -> Result<Option<ResolvedProfileSelection>, CodecError> {
     let entities = resolution.entities;
     let histories = resolution.histories;
@@ -531,6 +532,7 @@ pub(super) fn cap_profile_selection(
         &frame,
         topology,
         &transition.topology.faces.inserted,
+        end,
         tolerance,
     ) else {
         return Ok(None);
@@ -1319,13 +1321,15 @@ impl<'a> HistoricalTopologyIndex<'a> {
     }
 }
 
-/// The inserted planar faces parallel to the frame at the offset farthest
-/// from its plane, each with every loop resolved. `None` when an inserted
+/// The inserted planar faces parallel to the frame at the height `end`, or at
+/// the offset farthest from its plane when `end` is `None`, each with every
+/// loop resolved. `None` when an inserted
 /// face has no surface binding or several, or its surface several plane rows.
 fn far_caps(
     frame: &PlaneFrame,
     topology: &AsmHistoricalTopology,
     inserted: &[i64],
+    end: Option<f64>,
     tolerance: f64,
 ) -> Option<(f64, Vec<Cap>)> {
     let index = HistoricalTopologyIndex::new(topology);
@@ -1340,10 +1344,13 @@ fn far_caps(
         let cap = face_cap_reading_indexed(frame, &index, *face, tolerance)?;
         caps.push((height, cap));
     }
-    let far = caps
-        .iter()
-        .map(|(height, _)| *height)
-        .max_by(|a, b| a.abs().total_cmp(&b.abs()).then(a.total_cmp(b)))?;
+    let far = match end {
+        Some(end) => end,
+        None => caps
+            .iter()
+            .map(|(height, _)| *height)
+            .max_by(|a, b| a.abs().total_cmp(&b.abs()).then(a.total_cmp(b)))?,
+    };
     let caps: Vec<Cap> = caps
         .into_iter()
         .filter(|(height, _)| (height - far).abs() <= tolerance)
