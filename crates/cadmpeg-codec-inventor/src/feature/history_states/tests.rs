@@ -891,3 +891,40 @@ fn losses_count_unbound_split_and_base_features_and_unread_chains() {
     })
     .is_empty());
 }
+
+#[test]
+fn a_loft_state_is_bound_only_for_a_loft_record_of_the_feature_with_a_state_after_it() {
+    let state = StateRef {
+        ordinal: 1,
+        state_id: 12,
+    };
+    let loft = |feature: &str, kind: &str| {
+        let mut record = blank(5);
+        record.feature = feature.to_owned();
+        record.kind = kind.to_owned();
+        record.state_after = Some(state);
+        record
+    };
+    let bound = loft("a", LOFT_TAG);
+    assert!(loft_state_bound(std::slice::from_ref(&bound), "a"));
+    // Another feature, or a feature without a record.
+    assert!(!loft_state_bound(std::slice::from_ref(&bound), "b"));
+    assert!(!loft_state_bound(&[], "a"));
+    // A record of another kind under the same feature is no loft state.
+    for kind in ["sweep", BASE_TAG, ""] {
+        assert!(!loft_state_bound(&[loft("a", kind)], "a"), "{kind}");
+    }
+    // No tag lists the loft: the record is unbound and holds no state.
+    let mut unlisted = loft("a", LOFT_TAG);
+    unlisted.state_after = None;
+    unlisted.binding = unbound(UnboundReason::NoTag);
+    assert!(!loft_state_bound(&[unlisted], "a"));
+    // A state after the feature does not bind it without a bound record.
+    let mut unbound_record = loft("a", LOFT_TAG);
+    unbound_record.binding = unbound(UnboundReason::NoPredecessor);
+    assert!(!loft_state_bound(&[unbound_record], "a"));
+    // Another record of the feature can still bind it.
+    let mut stray = loft("a", "sweep");
+    stray.binding = unbound(UnboundReason::NoTag);
+    assert!(loft_state_bound(&[stray, bound], "a"));
+}

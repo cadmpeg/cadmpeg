@@ -295,10 +295,31 @@ fn native_loft_refusals_pin_the_operand_result_and_scalar_losses() {
             InventorLossCode::FeatureLoftControlsUnresolved.kind()
         );
     }
-    assert_eq!(
-        NativeReason::ResultTopology.note().code,
-        InventorLossCode::FeatureLoftResultOperandsNative.kind()
-    );
+    for reason in [
+        NativeReason::ResultTopology,
+        NativeReason::ResultStateFailed,
+        NativeReason::ResultStateBounded,
+    ] {
+        assert_eq!(
+            reason.note().code,
+            InventorLossCode::FeatureLoftResultOperandsNative.kind()
+        );
+    }
+    for (reason, detail) in [
+        (
+            NativeReason::ResultStateFailed,
+            "history state of the loft does not decode",
+        ),
+        (
+            NativeReason::ResultStateBounded,
+            "history state of the loft passed the local work cap of state views",
+        ),
+    ] {
+        assert_eq!(
+            reason.note().message,
+            format!("Retained Inventor solid loft natively: {detail}.")
+        );
+    }
     assert_eq!(
         NativeReason::SectionParameters.note().code,
         InventorLossCode::FeatureLoftSectionScalarsNative.kind()

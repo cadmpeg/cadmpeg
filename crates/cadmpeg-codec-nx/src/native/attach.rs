@@ -4245,7 +4245,10 @@ fn attach_feature_operations(
                     WITNESS_VALUE.to_owned(),
                 );
                 annotations
-                    .derived(initial_body_id, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS)
+                    .derived(
+                        initial_body_id,
+                        &format!("source_properties.{NATIVE_PRIMARY_BODY_CLOSURE_WITNESS}"),
+                    )
                     .map_err(cadmpeg_core::CodecError::from)?;
             }
         }

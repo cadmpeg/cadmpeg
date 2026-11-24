@@ -81,7 +81,10 @@ pub(super) fn check(
                     Check::ReferentialIntegrity,
                     Severity::Error,
                     Some(child),
-                    format_args!("composite curve graph contains a cycle"),
+                    crate::rule!(
+                        "topology.composite-curve-graph-contains-cycle",
+                        "composite curve graph contains a cycle"
+                    ),
                 );
                 continue;
             }

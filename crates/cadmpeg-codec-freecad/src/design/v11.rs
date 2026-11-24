@@ -34,6 +34,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use crate::native::{ObjectRecord, PropertyRecord};
 
 mod parameters;
+pub(crate) mod states;
 
 /// Project the decoded design of `ir` into its v11 design layer, a scope of
 /// the root definition `definition`. A record the projection cannot state in

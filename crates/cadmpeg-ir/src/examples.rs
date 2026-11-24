@@ -383,6 +383,52 @@ pub fn unit_cube() -> Result<CadIr, ExampleError> {
     Ok(ir)
 }
 
+/// Adds the root definition that a document holding a model record states
+/// (§8.1), listing the bodies no other definition lists. A document that
+/// states a root keeps it.
+pub fn add_document_root(ir: &mut CadIr) {
+    use crate::products::{ExternalDocument, ProductDefinition};
+    if ir
+        .model
+        .product_definitions
+        .iter()
+        .any(ProductDefinition::is_root)
+    {
+        return;
+    }
+    let listed: std::collections::BTreeSet<&crate::ids::BodyId> = ir
+        .model
+        .product_definitions
+        .iter()
+        .flat_map(|definition| {
+            definition.bodies.iter().chain(
+                definition
+                    .instance_bodies
+                    .iter()
+                    .flat_map(|entry| &entry.bodies),
+            )
+        })
+        .collect();
+    let mut root = ProductDefinition::root(
+        crate::ids::ProductDefinitionId::compose(
+            &crate::identity_namespace!("test", "model", "product-definition"),
+            crate::identity_key!("document"),
+        ),
+        ExternalDocument::default(),
+    );
+    root.bodies = ir
+        .geometry
+        .bodies
+        .iter()
+        .map(|body| body.id.clone())
+        .filter(|body| !listed.contains(body))
+        .collect();
+    ir.model.product_definitions.push(root);
+    ir.model
+        .product_definitions
+        .sort_by(|left, right| left.id.cmp(&right.id));
+}
+
 /// A canonical fixture covering directed `SubD` and a Sum procedural surface.
 pub fn directed_subd_sum() -> Result<CadIr, ExampleError> {
     let mut ir = CadIr::empty();

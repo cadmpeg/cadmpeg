@@ -2661,6 +2661,17 @@ pub(crate) fn project_geometry(
         free_geometry::retain_independent(ir, &shell, &entries, &mut sequences);
     }
 
+    let mut vertex_points = BTreeSet::new();
+    for vertex in &ir.geometry.vertices {
+        vertex_points.insert(&vertex.point);
+    }
+    ir.geometry.points.retain(|point| {
+        !sequences
+            .point(&point.id)
+            .is_some_and(|sequence| analytic_surface_locations.contains(&sequence))
+            || vertex_points.contains(&point.id)
+    });
+
     super::presentation::project(
         ir,
         directory,
@@ -2685,16 +2696,6 @@ pub(crate) fn project_geometry(
     super::annotation::project(ir, directory, parameters, global, ctx)?
         .merge_into(&mut decoded, &mut losses);
 
-    let mut vertex_points = BTreeSet::new();
-    for vertex in &ir.geometry.vertices {
-        vertex_points.insert(&vertex.point);
-    }
-    ir.geometry.points.retain(|point| {
-        !sequences
-            .point(&point.id)
-            .is_some_and(|sequence| analytic_surface_locations.contains(&sequence))
-            || vertex_points.contains(&point.id)
-    });
     Ok(Projection {
         placement_rejections,
         decoded,

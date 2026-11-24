@@ -2,17 +2,25 @@
 //! Reads Solid Edge compound documents.
 //!
 //! <!-- generated: capability solidedge -->
-//! Support: L0 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#solid-edge-par-psm-and-asm)).
+//! Support: L2 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#solid-edge-par-psm-and-asm)).
 //! <!-- /generated: capability solidedge -->
 
+mod brep;
+mod chart;
 mod container;
 mod decode;
 mod dialect;
 mod features;
+mod geometry;
+mod intersection;
+mod isocurve;
 mod layout;
 mod loss;
+mod partition;
 mod psm;
 mod settings;
+mod sp_curve;
+mod trace;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;

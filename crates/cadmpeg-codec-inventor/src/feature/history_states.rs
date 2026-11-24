@@ -7,12 +7,13 @@
 //! its body records and, for each feature source index, the oldest state whose
 //! live naming attributes list it.
 
+use std::cell::{OnceCell, RefCell};
 use std::collections::{BTreeSet, HashMap};
 
 use cadmpeg_asm::history::{
     archived_active_record_count, decode_record_archive, frame_history_chain,
-    insert_only_active_record_count, walk_entity_versions, ChainFraming, DeltaStateView,
-    HistoryChain, RecordArchiveFrames,
+    historical_record_archive, insert_only_active_record_count, walk_entity_versions, ChainFraming,
+    DeltaStateView, HistoryChain, RecordArchiveFrames,
 };
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_asm::sab::{Record, Token};
@@ -38,6 +39,8 @@ pub(crate) const SPLIT_TAG: &str = "split_body";
 pub(crate) const BASE_TAG: &str = "base";
 /// Kind of a base feature whose result body does not join the current model.
 pub(crate) const NATIVE_BASE_KIND: &str = "native:Base";
+/// Source tag of a loft feature.
+pub(crate) const LOFT_TAG: &str = "loft";
 
 /// Schema-44 attribute families that carry source-name pairs.
 const SCHEMA_44_FAMILIES: [&str; 6] = [
@@ -598,6 +601,125 @@ fn bind(
     record
 }
 
+/// A closed chain with its state index. The archive of historical records is
+/// built on first use, because only a nest or an evidence view reads it.
+pub(crate) struct Closed<'a> {
+    /// Views of the states, in stream order.
+    pub(crate) views: Vec<DeltaStateView<'a>>,
+    /// Sorted revision identifiers of the archived records.
+    pub(crate) archived_ids: Vec<i64>,
+    /// Length of the active record table.
+    pub(crate) active_count: i64,
+    /// States of the chain and the first state of each source index.
+    pub(crate) index: StateIndex,
+    frames: RefCell<Option<RecordArchiveFrames>>,
+    archive: OnceCell<Option<HashMap<i64, Record>>>,
+}
+
+impl<'a> Closed<'a> {
+    /// Join a prepared chain to its state index.
+    pub(crate) fn new(chain: Chain<'a>, index: StateIndex) -> Self {
+        let Chain {
+            views,
+            frames,
+            archived_ids,
+            active_count,
+        } = chain;
+        Self {
+            views,
+            archived_ids,
+            active_count,
+            index,
+            frames: RefCell::new(Some(frames)),
+            archive: OnceCell::new(),
+        }
+    }
+
+    /// Whether the archive was built.
+    #[cfg(test)]
+    pub(crate) fn archive_built(&self) -> bool {
+        self.archive.get().is_some()
+    }
+
+    /// Records of every revision, by revision identifier. `None` when the
+    /// archive does not close.
+    pub(crate) fn archive(&self) -> Option<&HashMap<i64, Record>> {
+        self.archive
+            .get_or_init(|| {
+                let frames = self.frames.take()?;
+                historical_record_archive(&self.views, frames)
+            })
+            .as_ref()
+    }
+}
+
+/// The history of the active carrier as it was read.
+pub(crate) enum Read<'a> {
+    /// The carrier has no chain to read: it is not an ASM carrier, its header
+    /// does not parse, or the stream holds no `delta_state` record.
+    Absent,
+    /// The chain was not read.
+    Unread(Unread),
+    /// The chain closed.
+    Closed(Box<Closed<'a>>),
+}
+
+/// Frame the `delta_state` chain of the active carrier.
+pub(crate) fn frame_carrier(
+    ctx: &DecodeContext<'_>,
+    carrier: &crate::kernel::ActiveCarrier<'_>,
+) -> Result<Framing, CodecError> {
+    if carrier.family != crate::kernel::KernelFamily::Asm {
+        return Ok(Framing::Absent);
+    }
+    let Ok(header) = carrier.header.as_ref() else {
+        return Ok(Framing::Absent);
+    };
+    frame_chain(ctx, carrier.bytes.window(), header.width)
+}
+
+/// Read the framed chain of the active carrier and its state index.
+pub(crate) fn read<'a>(
+    ctx: &DecodeContext<'_>,
+    carrier: &crate::kernel::ActiveCarrier<'a>,
+    framed: &'a Framing,
+) -> Result<Read<'a>, CodecError> {
+    let Framing::Framed(chain) = framed else {
+        return Ok(match framed {
+            Framing::Unread(reason) => Read::Unread(*reason),
+            _ => Read::Absent,
+        });
+    };
+    let Ok(header) = carrier.header.as_ref() else {
+        return Ok(Read::Absent);
+    };
+    let chain = match prepare(ctx, chain, carrier.bytes.window(), header.width)? {
+        Prepared::Unread(reason) => return Ok(Read::Unread(reason)),
+        Prepared::Ready(chain) => chain,
+    };
+    Ok(
+        match index_chain(&chain, carrier.schema, MAX_STATE_SCAN_WORK) {
+            Reading::Read(index) => Read::Closed(Box::new(Closed::new(*chain, index))),
+            Reading::Unread(reason) => Read::Unread(reason),
+        },
+    )
+}
+
+/// Whether `records` hold the history-state record of the loft feature
+/// `feature` with a bound state after it. A loft has no body check, so its
+/// binding is `Bound` exactly when a naming tag lists its source index; that
+/// is the strongest binding a loft has. The record also has to be the record
+/// of a loft: a record of another kind under the same feature is not a loft
+/// state.
+pub(crate) fn loft_state_bound(records: &[FeatureHistoryState], feature: &str) -> bool {
+    records.iter().any(|state| {
+        state.feature == feature
+            && state.kind == LOFT_TAG
+            && state.state_after.is_some()
+            && state.binding == Binding::Bound
+    })
+}
+
 /// Records of the active carrier and the losses that the read reports.
 pub(crate) struct Projection {
     /// Joined features; empty when the chain was not read.
@@ -633,40 +755,26 @@ fn schema_assumed(records: &[FeatureHistoryState], index: &StateIndex) -> usize 
         .count()
 }
 
-/// Read the history of the active carrier and join the features to it.
+/// Join the features to the history of the active carrier.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     carrier: &crate::kernel::ActiveCarrier<'_>,
+    history: &Read<'_>,
     inputs: &Inputs<'_>,
 ) -> Result<Projection, CodecError> {
-    if carrier.family != crate::kernel::KernelFamily::Asm {
-        return Ok(Projection::without_records(None));
-    }
-    let Ok(header) = carrier.header.as_ref() else {
-        return Ok(Projection::without_records(None));
+    let closed = match history {
+        Read::Absent => return Ok(Projection::without_records(None)),
+        Read::Unread(reason) => return Ok(Projection::without_records(Some(*reason))),
+        Read::Closed(closed) => closed,
     };
-    let bytes = carrier.bytes.window();
-    let framed = match frame_chain(ctx, bytes, header.width)? {
-        Framing::Framed(chain) => chain,
-        Framing::Absent => return Ok(Projection::without_records(None)),
-        Framing::Unread(reason) => return Ok(Projection::without_records(Some(reason))),
-    };
-    let chain = match prepare(ctx, &framed, bytes, header.width)? {
-        Prepared::Unread(reason) => return Ok(Projection::without_records(Some(reason))),
-        Prepared::Ready(chain) => chain,
-    };
-    let index = match index_chain(&chain, carrier.schema, MAX_STATE_SCAN_WORK) {
-        Reading::Read(index) => index,
-        Reading::Unread(reason) => return Ok(Projection::without_records(Some(reason))),
-    };
-    let mut records = join(&index, inputs);
+    let mut records = join(&closed.index, inputs);
     ctx.charge_entities(
         cadmpeg_core::decode::u64_from_index(records.len()),
         "join Inventor features to history states",
     )?;
-    let schema_assumed = schema_assumed(&records, &index);
+    let schema_assumed = schema_assumed(&records, &closed.index);
     let bodies =
-        super::history_bodies::build(ctx, carrier, *chain, &records, inputs.model_features)?;
+        super::history_bodies::build(ctx, carrier, closed, &records, inputs.model_features)?;
     for (&record, body) in &bodies.links {
         records[record].history_body = Some(body.as_str().to_owned());
     }

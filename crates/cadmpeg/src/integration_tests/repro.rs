@@ -86,6 +86,7 @@ fn repro_cli_nonreproducing_cut_is_written_before_optional_failure() {
     let document = cadmpeg_ir::examples::unit_cube().unwrap();
     std::fs::write(&input, serde_json::to_vec(&document).unwrap()).unwrap();
     let finding = cadmpeg_ir::report::check::Finding {
+        rule: cadmpeg_ir::rule_name!("cadmpeg/test.synthetic-finding-requiring-additional-context"),
         check: Check::GeometricConsistency,
         severity: cadmpeg_ir::report::Severity::Error,
         entity: Some(document.geometry.bodies[0].id.to_string()),
