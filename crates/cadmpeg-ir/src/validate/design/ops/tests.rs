@@ -1629,6 +1629,7 @@ fn an_index_has_the_followed_and_composite_coordinates() {
 }
 
 mod pattern_coordinates;
+mod split_tools;
 
 #[test]
 fn an_assembly_feature_operation_states_no_body_operand() {
@@ -1687,39 +1688,6 @@ fn a_by_tools_split_states_targets_exactly_where_its_definition_states_no_assemb
     assert_finding(&with(split_by_tools(None)), unstated);
     assert_finding(&in_assembly(split_by_tools(targets())), stated);
     assert_no_finding_containing(&in_assembly(split_by_tools(None)), "ByTools.targets");
-}
-
-fn split_by(tools: Vec<Picked>) -> FeatureOperation {
-    let FeatureOperation::Split(mut split) =
-        split_by_tools(Some(named(vec![entity(NameKind::Body, 1)])))
-    else {
-        unreachable!("split_by_tools builds a split");
-    };
-    if let SplitMode::ByTools {
-        tools: SplitTool::Geometry { tools: picks, .. },
-        ..
-    } = &mut split.mode
-    {
-        *picks = named(tools);
-    }
-    FeatureOperation::Split(split)
-}
-
-#[test]
-fn a_geometry_split_tool_is_not_one_datum_pick_alone() {
-    let message = "SplitTool::Geometry picks one datum or principal entity alone";
-    let datum = || {
-        pick(PickTarget::Datum {
-            feature: feature("plane"),
-            part: None,
-        })
-    };
-    assert_finding(&with(split_by(vec![datum()])), message);
-    assert_no_finding_containing(
-        &with(split_by(vec![datum(), entity(NameKind::Face, 2)])),
-        message,
-    );
-    assert_no_finding_containing(&with(split_by(vec![entity(NameKind::Face, 2)])), message);
 }
 
 /// A component pick through the occurrence `key`.

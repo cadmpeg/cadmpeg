@@ -100,13 +100,12 @@ pub(super) fn check_evaluations(
         );
         StateChains::default()
     });
-    if let Some(&deepest) = depths.values().max() {
-        if deepest > max_chain_depth {
-            return Err(crate::validate::state_chain_refusal(
-                max_chain_depth,
-                deepest,
-            ));
-        }
+    if let Some(refusal) = depths
+        .values()
+        .max()
+        .and_then(|&deepest| crate::validate::state_chain_refusal(max_chain_depth, deepest))
+    {
+        return Err(refusal);
     }
     let mut keys = BTreeMap::new();
     for evaluation in &index.ir.design.evaluations {

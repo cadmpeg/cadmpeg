@@ -491,13 +491,10 @@ fn check_chains(
             deepest = deepest.max(depth);
         }
     }
-    if deepest > max_chain_depth {
-        return Err(crate::validate::state_chain_refusal(
-            max_chain_depth,
-            deepest,
-        ));
+    match crate::validate::state_chain_refusal(max_chain_depth, deepest) {
+        Some(refusal) => Err(refusal),
+        None => Ok(()),
     }
-    Ok(())
 }
 
 /// The `Removal` process states whose `feature` names one `MaterialRemoval`
