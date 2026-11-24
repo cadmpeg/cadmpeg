@@ -57,6 +57,7 @@ fn compact_projection_refuses_one_byte_past_its_limit() {
 #[test]
 fn repro_signature_ignores_identity_numbers_and_value_for_hash() {
     let mut finding = Finding {
+        rule: crate::rule_name!("test.edge-synthetic-scope-edge-123-misses"),
         check: Check::GeometricConsistency,
         severity: Severity::Error,
         entity: Some("synthetic:scope:edge#123".into()),
@@ -81,6 +82,7 @@ fn repro_signature_ignores_identity_numbers_and_value_for_hash() {
 #[test]
 fn repro_signature_strips_quoted_names_and_paths() {
     let finding = Finding {
+        rule: crate::rule_name!("test.carrier-planted-name-planted-path-file"),
         check: Check::GeometricConsistency,
         severity: Severity::Error,
         entity: Some("synthetic:scope:edge#1".into()),
@@ -95,6 +97,7 @@ fn repro_signature_strips_quoted_names_and_paths() {
 #[test]
 fn repro_signature_normalizes_hex_ranges_and_decimal_exponents() {
     let finding = Finding {
+        rule: crate::rule_name!("test.offsets-0x10-0x20-differ-1-5e"),
         check: Check::NativeLinks,
         severity: Severity::Error,
         entity: None,
@@ -119,6 +122,7 @@ fn repro_signature_normalizes_hex_ranges_and_decimal_exponents() {
 #[test]
 fn bundle_metadata_context_refuses_a_key_stated_twice() {
     let finding = Finding {
+        rule: crate::rule_name!("test.unresolved-link"),
         check: Check::NativeLinks,
         severity: Severity::Error,
         entity: None,
@@ -164,6 +168,7 @@ fn bundle_metadata_context_refuses_a_key_stated_twice() {
 #[test]
 fn bundle_metadata_reads_an_open_check_name_and_refuses_a_blank_reason() {
     let finding = Finding {
+        rule: crate::rule_name!("test.unresolved-link"),
         check: Check::NativeLinks,
         severity: Severity::Error,
         entity: None,

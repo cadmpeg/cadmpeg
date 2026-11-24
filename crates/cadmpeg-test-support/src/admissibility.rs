@@ -3,7 +3,7 @@
 //!
 //! Tests retain accepted and rejected cases for the full neutral validator
 //! and the full annotation validator with `ArenaOrder` removed. Codec admission
-//! uses the Check subsets defined by each production route.
+//! uses the rule lists defined by each production route.
 
 use cadmpeg_ir::ids::{PointId, ProductDefinitionId, RegionId, ShellId, VertexId};
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, Storage};
@@ -65,8 +65,8 @@ pub fn rejected_missing_region(prefix: &str) -> Result<CadIr, FixtureError> {
     Ok(ir)
 }
 
-/// Two root definitions: rejected by full validation (`Counts`), a check
-/// outside every decoder admission set, so every admission gate accepts it.
+/// Two root definitions: rejected by full validation (`Counts`) under a rule
+/// that no decoder admission route lists, so every admission gate accepts it.
 pub fn rejected_outside_admission(prefix: &str) -> Result<CadIr, FixtureError> {
     let mut ir = CadIr::empty();
     for key in 0..2 {
@@ -154,10 +154,7 @@ mod tests {
                 .findings
                 .iter()
                 .filter(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)
-                .all(
-                    |finding| !cadmpeg_ir::DRAFT_CORE_CHECKS.contains(&finding.check)
-                        && finding.check != Check::Annotations
-                ),
+                .all(|finding| !cadmpeg_ir::RHINO_DRAFT.admits(finding)),
             "{report:?}"
         );
     }

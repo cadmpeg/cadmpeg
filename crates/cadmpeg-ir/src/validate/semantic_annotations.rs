@@ -44,16 +44,68 @@ pub(super) fn check_semantic_annotations(
                 }
             }
         }
+        check_dimension_kind(annotation, findings);
         if !refs_valid {
             record_finding(
                 findings,
                 Check::ReferentialIntegrity,
                 Severity::Error,
                 Some(annotation.id.as_str()),
-                format_args!("invalid semantic annotation reference"),
+                crate::rule!(
+                    "semantic_annotations.invalid-semantic-annotation-reference",
+                    "invalid semantic annotation reference"
+                ),
             );
         }
         check_reference_anchors(annotation, findings);
+    }
+}
+
+/// `reflex` goes with an angle kind, `negated` with a kind that is not an
+/// angle, and `line_directions` with a distance kind (part 10, §8). An
+/// `Other` kind states no category these read.
+fn check_dimension_kind(
+    annotation: &crate::semantic_annotations::SemanticAnnotation,
+    findings: &mut Vec<Finding>,
+) {
+    use crate::semantic_annotations::AnnotationDimensionKind as Kind;
+    let Some(kind) = &annotation.dimension_kind else {
+        return;
+    };
+    if matches!(kind, Kind::Other { .. }) {
+        return;
+    }
+    let angle = matches!(kind, Kind::Angle | Kind::ThreePointAngle);
+    let distance = matches!(
+        kind,
+        Kind::Distance | Kind::HorizontalDistance | Kind::VerticalDistance
+    );
+    let mut report = |ruled: crate::report::check::Ruled<'_>| {
+        record_finding(
+            findings,
+            Check::ReferentialIntegrity,
+            Severity::Error,
+            Some(annotation.id.as_str()),
+            ruled,
+        );
+    };
+    if annotation.reflex.is_some() && !angle {
+        report(crate::rule!(
+            "semantic_annotations.reflex-without-angle-kind",
+            "semantic annotation states `reflex`, but its dimension kind is no angle"
+        ));
+    }
+    if annotation.negated.is_some() && angle {
+        report(crate::rule!(
+            "semantic_annotations.negated-with-angle-kind",
+            "semantic annotation states `negated`, but its dimension kind is an angle"
+        ));
+    }
+    if annotation.line_directions.is_some() && !distance {
+        report(crate::rule!(
+            "semantic_annotations.line-directions-without-distance-kind",
+            "semantic annotation states `line_directions`, but its dimension kind is no distance"
+        ));
     }
 }
 
@@ -71,7 +123,8 @@ fn check_reference_anchors(
             Check::ReferentialIntegrity,
             Severity::Error,
             Some(annotation.id.as_str()),
-            format_args!(
+            crate::rule!(
+                "semantic_annotations.semantic-annotation-states-reference-anchors",
                 "semantic annotation states {count} reference anchors, {admitted} at most"
             ),
         );
@@ -164,6 +217,53 @@ mod tests {
         ir.model.semantic_annotations[0].dimension_kind =
             Some(AnnotationDimensionKind::HorizontalDistance);
         counts(&mut ir, [Vec::new(), Vec::new(), Vec::new(), error()]);
+    }
+
+    #[test]
+    fn reflex_negated_and_line_directions_go_with_their_dimension_kinds() {
+        use crate::semantic_annotations::{
+            AnnotationDimensionKind as Kind, LineDirections, SemanticAnnotationKind,
+        };
+        let ids = crate::index::identities::BorrowedIdentities::build(|add| {
+            add("test:source:unknown#record", ());
+        });
+        let messages = |kind: Kind, reflex: bool, negated: bool, lines: bool| {
+            let mut ir = fixture();
+            ir.model.semantic_annotations.truncate(1);
+            let annotation = &mut ir.model.semantic_annotations[0];
+            annotation.kind = SemanticAnnotationKind::Dimension;
+            annotation.dimension_kind = Some(kind);
+            annotation.reflex = reflex.then_some(true);
+            annotation.negated = negated.then_some(false);
+            annotation.line_directions = lines.then(|| LineDirections {
+                dimension_line: crate::scalar::Angle::new(0.0).unwrap(),
+                extension_lines: crate::scalar::Angle::new(1.5).unwrap(),
+            });
+            let mut findings = Vec::new();
+            check_semantic_annotations(&ir, &ids, &mut findings);
+            findings
+                .into_iter()
+                .map(|finding| finding.message)
+                .collect::<Vec<_>>()
+        };
+        assert!(messages(Kind::Angle, true, false, false).is_empty());
+        assert!(messages(Kind::Radius, false, true, false).is_empty());
+        assert!(messages(Kind::VerticalDistance, false, true, true).is_empty());
+        let other = Kind::Other {
+            native_type: "test".to_owned(),
+        };
+        assert!(messages(other, true, true, true).is_empty());
+        assert_eq!(
+            messages(Kind::Radius, true, false, true),
+            [
+                "semantic annotation states `reflex`, but its dimension kind is no angle",
+                "semantic annotation states `line_directions`, but its dimension kind is no distance",
+            ]
+        );
+        assert_eq!(
+            messages(Kind::ThreePointAngle, false, true, false),
+            ["semantic annotation states `negated`, but its dimension kind is an angle"]
+        );
     }
 
     #[test]

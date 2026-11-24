@@ -23,9 +23,11 @@ fn definition(id: &str, occurrences: &[&str]) -> ProductDefinition {
 }
 
 fn findings(ir: &CadIr) -> Vec<Finding> {
+    let mut ir = ir.clone();
+    crate::examples::add_document_root(&mut ir);
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut findings = Vec::new();
-    super::super::check_products(&ctx, ir, &mut findings).unwrap();
+    super::super::check_products(&ctx, &ir, &mut findings).unwrap();
     findings
 }
 

@@ -9,7 +9,7 @@ use crate::design::edit::{EditError, Literal};
 use crate::design::feature::FeatureOperation;
 use crate::design::parameter::ParameterValue;
 use crate::design::refs::Member;
-use crate::report::check::{Check, Finding};
+use crate::report::check::{Check, Finding, RuleName};
 use crate::report::Severity;
 use crate::CadIr;
 
@@ -98,9 +98,10 @@ fn an_edit_that_adds_an_error_to_a_document_that_holds_one_is_refused() {
     assert_eq!(document, before, "a refused edit changes nothing");
 }
 
-fn finding(check: Check, severity: Severity, entity: Option<&str>, message: &str) -> Finding {
+fn finding(rule: RuleName, severity: Severity, entity: Option<&str>, message: &str) -> Finding {
     Finding {
-        check,
+        check: Check::Design,
+        rule,
         severity,
         message: message.to_owned(),
         entity: entity.map(str::to_owned),
@@ -110,33 +111,33 @@ fn finding(check: Check, severity: Severity, entity: Option<&str>, message: &str
 
 #[test]
 fn added_errors_count_each_rule_on_each_record() {
-    use Check::{Design, ReferentialIntegrity};
     use Severity::{Error, Warning};
+    let stateless = crate::rule_name!("test.stateless-feature-evaluation");
     let held = finding(
-        Design,
+        stateless.clone(),
         Error,
         Some("test:edit:feature#1"),
         "evaluation test:edit:evaluation#4 of a stateless feature",
     );
     let before = vec![held.clone()];
-    let restated = finding(
-        Design,
+    let reworded = finding(
+        stateless.clone(),
         Error,
         Some("test:edit:feature#1"),
-        "evaluation test:edit:evaluation#5 of a stateless feature",
+        "the stateless feature has evaluation test:edit:evaluation#5 at 3.5 mm",
     );
     assert!(
-        added_errors(&before, std::slice::from_ref(&restated)).is_empty(),
-        "the same rule on the same record, naming another record, is not added"
+        added_errors(&before, std::slice::from_ref(&reworded)).is_empty(),
+        "the same rule on the same record is not added, whatever its message says"
     );
-    let second = vec![held.clone(), restated.clone()];
+    let second = vec![held.clone(), reworded.clone()];
     assert_eq!(
         added_errors(&before, &second),
-        vec![restated],
+        vec![reworded],
         "a second finding of the rule on the record is added"
     );
     let elsewhere = finding(
-        Design,
+        stateless.clone(),
         Error,
         Some("test:edit:feature#2"),
         "evaluation test:edit:evaluation#4 of a stateless feature",
@@ -147,7 +148,7 @@ fn added_errors_count_each_rule_on_each_record() {
         "the rule on another record is added"
     );
     let other_rule = finding(
-        ReferentialIntegrity,
+        crate::rule_name!("test.other-rule"),
         Error,
         Some("test:edit:feature#1"),
         "evaluation test:edit:evaluation#4 of a stateless feature",
@@ -155,9 +156,14 @@ fn added_errors_count_each_rule_on_each_record() {
     assert_eq!(
         added_errors(&before, std::slice::from_ref(&other_rule)),
         vec![other_rule],
-        "another check on the record is added"
+        "another rule on the record is added, though its message is the same"
     );
-    let unnamed = finding(Design, Error, None, "a scope holds no root container");
+    let unnamed = finding(
+        crate::rule_name!("test.root-container"),
+        Error,
+        None,
+        "a scope holds no root container",
+    );
     assert!(added_errors(
         std::slice::from_ref(&unnamed),
         std::slice::from_ref(&unnamed)
@@ -167,7 +173,7 @@ fn added_errors_count_each_rule_on_each_record() {
         added_errors(&[], std::slice::from_ref(&unnamed)),
         vec![unnamed]
     );
-    let warning = finding(Design, Warning, Some("test:edit:feature#1"), "a cycle");
+    let warning = finding(stateless, Warning, Some("test:edit:feature#1"), "a cycle");
     assert!(added_errors(&[], &[warning]).is_empty());
     assert!(added_errors(&before, &[]).is_empty());
 }

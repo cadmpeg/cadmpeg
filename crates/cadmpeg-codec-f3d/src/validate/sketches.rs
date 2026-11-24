@@ -254,6 +254,7 @@ pub(super) fn emit_sketch_relation_finding(
     findings.push(Finding {
         related: Vec::new(),
         check: Check::NativeLinks,
+        rule: cadmpeg_ir::rule_name!("f3d/sketches.sketch-relation"),
         severity: Severity::Error,
         message: message.into(),
         entity: Some(entity),

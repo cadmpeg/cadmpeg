@@ -64,6 +64,7 @@ use crate::writer::Entity;
 use crate::{IgesCodec, IgesVersion};
 
 mod closed_edge_range;
+mod design_content;
 mod encode;
 mod extrusion_directrix;
 mod ownership;

@@ -173,6 +173,8 @@ pub(crate) enum CatiaLossCode {
     HistoryRelationDependenciesBounded,
     /// Typed two-definition value chains stay native without a neutral parameter.
     HistoryDefinitionChainsRetained,
+    /// The part's feature history is not read, so its bodies are unproduced.
+    HistoryFeaturesUnread,
     /// Design parameters and `Range` nominals read stored `E7` and `E8` literals
     /// as the values one and zero.
     HistoryParameterLiteralAssumed,
@@ -266,6 +268,7 @@ impl CatiaLossCode {
         Self::HistoryConfigurationRowOrderBounded,
         Self::HistoryRelationDependenciesBounded,
         Self::HistoryDefinitionChainsRetained,
+        Self::HistoryFeaturesUnread,
         Self::HistoryParameterLiteralAssumed,
         Self::DesignParameterReferenceAsText,
         Self::AttributesMaterialsMetadataNotTransferred,
@@ -358,6 +361,7 @@ impl CatiaLossCode {
             Self::HistoryConfigurationRowOrderBounded => "history.configuration-row-order-bounded",
             Self::HistoryRelationDependenciesBounded => "history.relation-dependencies-bounded",
             Self::HistoryDefinitionChainsRetained => "history.definition-chains-retained",
+            Self::HistoryFeaturesUnread => "history.features-unread",
             Self::HistoryParameterLiteralAssumed => "history.parameter-literal-assumed",
             Self::DesignParameterReferenceAsText => "design.parameter-reference-as-text",
             Self::AttributesMaterialsMetadataNotTransferred => {
@@ -478,7 +482,8 @@ impl CatiaLossCode {
             | Self::HistoryLegacyRunsUnresolved
             | Self::HistoryConfigurationRowOrderBounded
             | Self::HistoryRelationDependenciesBounded
-            | Self::HistoryDefinitionChainsRetained => LossTaxonomy::FeatureHistoryRetained,
+            | Self::HistoryDefinitionChainsRetained
+            | Self::HistoryFeaturesUnread => LossTaxonomy::FeatureHistoryRetained,
             Self::TopologyUnselectedBodiesRetained => LossTaxonomy::FeatureHistoryRetained,
             Self::DesignParameterReferenceAsText => LossTaxonomy::ParametricRecordOmitted,
         }
@@ -580,6 +585,7 @@ mod tests {
                 "history.configuration-row-order-bounded",
                 "history.relation-dependencies-bounded",
                 "history.definition-chains-retained",
+                "history.features-unread",
                 "history.parameter-literal-assumed",
                 "design.parameter-reference-as-text",
                 "attributes.materials-metadata-not-transferred",
