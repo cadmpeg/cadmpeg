@@ -88,19 +88,31 @@ pub(super) fn state(
     let used = UsedCarriers::of(ir);
     let mut carriers = Vec::new();
     for curve in &ir.geometry.curves {
-        if let Some(sequence) = sources.sequences.curve(&curve.id) {
+        if let Some(sequence) = sources
+            .sequences
+            .curve(&curve.id)
+            .filter(|_| is_iges_source(curve.source_object.as_ref()))
+        {
             let shown = !used.curves.contains(curve.id.as_str());
             carriers.push((Carrier::Curve(curve.id.clone()), sequence, shown));
         }
     }
     for surface in &ir.geometry.surfaces {
-        if let Some(sequence) = sources.sequences.surface(&surface.id) {
+        if let Some(sequence) = sources
+            .sequences
+            .surface(&surface.id)
+            .filter(|_| is_iges_source(surface.source_object.as_ref()))
+        {
             let shown = !used.surfaces.contains(surface.id.as_str());
             carriers.push((Carrier::Surface(surface.id.clone()), sequence, shown));
         }
     }
     for point in &ir.geometry.points {
-        if let Some(sequence) = sources.sequences.point(&point.id) {
+        if let Some(sequence) = sources
+            .sequences
+            .point(&point.id)
+            .filter(|_| is_iges_source(point.source_object.as_ref()))
+        {
             let shown = !used.points.contains(point.id.as_str());
             carriers.push((Carrier::Point(point.id.clone()), sequence, shown));
         }
@@ -213,6 +225,12 @@ pub(super) fn state(
         });
     }
     Ok(())
+}
+
+/// Whether a carrier carries an IGES source association: one decoded from
+/// its own Directory entry.
+fn is_iges_source(source: Option<&cadmpeg_ir::SourceObjectAssociation>) -> bool {
+    source.is_some_and(|source| source.format == cadmpeg_ir::codec_id!("iges"))
 }
 
 /// The levels an entry is on: its Directory level, or the levels of the
