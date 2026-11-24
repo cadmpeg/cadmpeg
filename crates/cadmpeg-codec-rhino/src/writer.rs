@@ -120,6 +120,40 @@ fn is_support(source: Option<&cadmpeg_ir::SourceObjectAssociation>) -> bool {
         .is_some_and(|source| source.geometry_role == Some(cadmpeg_ir::SourceGeometryRole::Support))
 }
 
+/// Each mesh that displays a body the archive holds as a Brep: a body that
+/// holds a face. 3DM keeps a Brep's display mesh in the Brep's own render
+/// cache, which this writer does not write, so the writer withholds the mesh
+/// rather than write it again as a separate object.
+fn withheld_body_meshes(ir: &CadIr) -> std::collections::BTreeSet<&str> {
+    let geometry = &ir.geometry;
+    let regions = geometry
+        .regions
+        .iter()
+        .map(|region| (region.id.as_str(), region.body.as_str()))
+        .collect::<std::collections::HashMap<_, _>>();
+    let shells = geometry
+        .shells
+        .iter()
+        .map(|shell| (shell.id.as_str(), shell.region.as_str()))
+        .collect::<std::collections::HashMap<_, _>>();
+    let breps = geometry
+        .faces
+        .iter()
+        .filter_map(|face| regions.get(shells.get(face.shell.as_str())?))
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    ir.model
+        .tessellations
+        .iter()
+        .filter(|mesh| {
+            mesh.of
+                .body()
+                .is_some_and(|body| breps.contains(body.as_str()))
+        })
+        .map(|mesh| mesh.id.as_str())
+        .collect()
+}
+
 /// Writes the archive and returns whether its object table holds an object.
 fn write(
     ir: &CadIr,
@@ -204,7 +238,13 @@ fn write_seekable(
             8, *class, payload, id, None, None, None,
         )?)?;
     }
-    for mesh in &ir.model.tessellations {
+    let withheld = withheld_body_meshes(ir);
+    for mesh in ir
+        .model
+        .tessellations
+        .iter()
+        .filter(|mesh| !withheld.contains(mesh.id.as_str()))
+    {
         let payload = mesh_payload(mesh, version)?;
         output.write_all(&mesh_object_record(&payload, mesh.id.as_str())?)?;
     }
@@ -693,7 +733,12 @@ fn prepare_write(
             ))
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
-    for mesh in &model.tessellations {
+    let withheld = withheld_body_meshes(ir);
+    for mesh in model
+        .tessellations
+        .iter()
+        .filter(|mesh| !withheld.contains(mesh.id.as_str()))
+    {
         check_mesh(mesh)?;
     }
     let mut brep_records = tempfile::tempfile()?;

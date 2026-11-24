@@ -465,8 +465,9 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     let ctx = &ctx;
     reject_unsupported_model(ir)?;
     reject_owned_wire_topology(ir)?;
-    validate_analytic_surface_context(ir)?;
+    let unbounded_analytic = validate_analytic_surface_context(ir)?;
     let mut losses = partial_losses;
+    losses.extend(unbounded_analytic.clone());
     losses.extend(procedural_reduction_losses(ir)?);
     losses.extend(reject_unsupported_native(ir)?);
     for body in ir
@@ -560,7 +561,13 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         let mut entities = Vec::new();
         let mut consumed_points = std::collections::BTreeSet::new();
         let mut consumed_curves = BTreeSet::<String>::new();
-        let mut surfaces = ir.geometry.surfaces.iter().collect::<Vec<_>>();
+        let unbounded = unbounded_analytic_surfaces(ir);
+        let mut surfaces = ir
+            .geometry
+            .surfaces
+            .iter()
+            .filter(|surface| !unbounded.contains(surface.id.as_str()))
+            .collect::<Vec<_>>();
         surfaces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
         for surface in surfaces {
             append_surface_entities(
@@ -659,9 +666,13 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     resolve_entity_references(&mut entities)?;
     append_name_properties(&mut entities, &body_presentations)?;
     if entities.is_empty() {
-        return Err(CodecError::NotImplemented(
-            "IGES semantic writer refuses an empty model".into(),
-        ));
+        return Err(CodecError::NotImplemented(match unbounded_analytic {
+            Some(withheld) => format!(
+                "IGES semantic writer refuses an empty model; {}",
+                withheld.message
+            ),
+            None => "IGES semantic writer refuses an empty model".into(),
+        }));
     }
 
     let minimum_resolution = minimum_resolution_for_output(&index)?;
@@ -826,30 +837,58 @@ fn reject_owned_wire_topology(ir: &CadIr) -> Result<(), CodecError> {
     Ok(())
 }
 
-fn validate_analytic_surface_context(ir: &CadIr) -> Result<(), CodecError> {
-    let writes_brep = has_brep_topology(ir);
-    if let Some(surface) = ir.geometry.surfaces.iter().find(|surface| {
-        (matches!(
-            surface.geometry,
-            SurfaceGeometry::Solved(
-                SolvedSurfaceGeometry::Cylinder(_)
-                    | SolvedSurfaceGeometry::Cone(_)
-                    | SolvedSurfaceGeometry::Sphere(_)
-                    | SolvedSurfaceGeometry::Torus(_)
-            )
-        )) && (!writes_brep
-            || !ir
-                .geometry
-                .faces
-                .iter()
-                .any(|face| face.surface == surface.id))
-    }) {
-        return Err(CodecError::NotImplemented(format!(
-            "IGES analytic surface {} requires B-rep topology for Type 192 through 198 output; no bounded Type 128 domain is available",
-            surface.id
-        )));
+fn is_analytic_surface(surface: &Surface) -> bool {
+    matches!(
+        surface.geometry,
+        SurfaceGeometry::Solved(
+            SolvedSurfaceGeometry::Cylinder(_)
+                | SolvedSurfaceGeometry::Cone(_)
+                | SolvedSurfaceGeometry::Sphere(_)
+                | SolvedSurfaceGeometry::Torus(_)
+        )
+    )
+}
+
+/// Each analytic surface no face bounds. Types 192 through 198 have no
+/// bounded form outside a B-rep face, so the writer withholds them.
+fn unbounded_analytic_surfaces(ir: &CadIr) -> BTreeSet<&str> {
+    let bounded = ir
+        .geometry
+        .faces
+        .iter()
+        .map(|face| face.surface.as_str())
+        .collect::<BTreeSet<_>>();
+    ir.geometry
+        .surfaces
+        .iter()
+        .filter(|surface| is_analytic_surface(surface) && !bounded.contains(surface.id.as_str()))
+        .map(|surface| surface.id.as_str())
+        .collect()
+}
+
+/// Refuses an analytic face carrier outside the B-rep path, which has no
+/// bounded Type 128 domain, and names the analytic surfaces on no face that
+/// the writer withholds.
+fn validate_analytic_surface_context(ir: &CadIr) -> Result<Option<LossNote>, CodecError> {
+    let unbounded = unbounded_analytic_surfaces(ir);
+    if !has_brep_topology(ir) {
+        if let Some(surface) = ir.geometry.surfaces.iter().find(|surface| {
+            is_analytic_surface(surface) && !unbounded.contains(surface.id.as_str())
+        }) {
+            return Err(CodecError::NotImplemented(format!(
+                "IGES analytic surface {} requires B-rep topology for Type 192 through 198 output; no bounded Type 128 domain is available",
+                surface.id
+            )));
+        }
     }
-    Ok(())
+    if unbounded.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(IgesLossCode::WriterFreeGeometryOmitted.note(format!(
+        "{} analytic surface record(s) on no face were withheld: Types 192 through 198 have no bounded form outside a B-rep face: {}",
+        unbounded.len(),
+        unbounded.into_iter().collect::<Vec<_>>().join(", ")
+    ))))
 }
 
 impl crate::IgesVersion {
@@ -1745,7 +1784,13 @@ fn brep_entities(
         .collect::<Vec<_>>();
     let mut entities = Vec::new();
     let mut surface_indices = BTreeMap::new();
-    let mut surfaces = ir.geometry.surfaces.iter().collect::<Vec<_>>();
+    let unbounded = unbounded_analytic_surfaces(ir);
+    let mut surfaces = ir
+        .geometry
+        .surfaces
+        .iter()
+        .filter(|surface| !unbounded.contains(surface.id.as_str()))
+        .collect::<Vec<_>>();
     surfaces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     for surface in surfaces {
         if let Some(index) =
@@ -2621,7 +2666,13 @@ fn topology_entities(
         .collect::<std::collections::BTreeSet<_>>();
     let mut entities = Vec::new();
     let mut surface_indices = BTreeMap::new();
-    let mut surfaces = ir.geometry.surfaces.iter().collect::<Vec<_>>();
+    let unbounded = unbounded_analytic_surfaces(ir);
+    let mut surfaces = ir
+        .geometry
+        .surfaces
+        .iter()
+        .filter(|surface| !unbounded.contains(surface.id.as_str()))
+        .collect::<Vec<_>>();
     surfaces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     for surface in surfaces {
         if let Some(index) =

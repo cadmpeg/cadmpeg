@@ -240,3 +240,81 @@ fn design_content_alone_writes_an_empty_archive_and_says_so() {
         ]
     );
 }
+
+#[test]
+fn the_display_mesh_of_a_brep_body_is_withheld_and_named() {
+    let mut ir = super::planar_tetrahedron();
+    let mut mesh = cadmpeg_ir::tessellation::Tessellation::new(
+        cadmpeg_ir::tessellation::TessellationId::mint("cadir:model:tessellation#display")
+            .expect("identity"),
+        cadmpeg_ir::tessellation::TessellationMesh::List {
+            vertices: vec![
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
+            ],
+            triangles: vec![[0, 1, 2]],
+        },
+        Vec::new(),
+    )
+    .expect("mesh");
+    mesh.of = cadmpeg_ir::tessellation::Meshed::Body {
+        body: ir.geometry.bodies[0].id.clone(),
+        faces: Vec::new(),
+    };
+    ir.model.tessellations.push(mesh);
+
+    let plan = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .expect("the body is written without its display mesh");
+    let withheld = crate::loss::RhinoLossCode::WriterBodyMeshWithheld.kind();
+    assert!(
+        plan.report().losses.iter().any(|loss| loss.code == withheld
+            && loss.message.ends_with("cadir:model:tessellation#display")),
+        "{:?}",
+        plan.report().losses
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write");
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the written archive decodes");
+    assert_eq!(decoded.ir().geometry.faces.len(), 4);
+    assert!(decoded.ir().model.tessellations.is_empty());
+}
+
+#[test]
+fn a_carrier_from_another_format_is_written_without_its_source_identity() {
+    let mut ir = super::planar_tetrahedron();
+    ir.geometry.surfaces[0].source_object = Some(cadmpeg_ir::SourceObjectAssociation {
+        format: cadmpeg_ir::codec_id!("iges"),
+        object_id: cadmpeg_core::nonblank_literal!("D7"),
+        geometry_role: Some(cadmpeg_ir::SourceGeometryRole::Independent),
+        instance_path: Vec::new(),
+    });
+
+    let plan = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .expect("the surface is written without its source identity");
+    let omitted = crate::loss::RhinoLossCode::WriterSourceAssociationOmitted.kind();
+    assert!(
+        plan.report().losses.iter().any(|loss| loss.code == omitted
+            && loss
+                .message
+                .starts_with("1 source-object association(s) were not written")),
+        "{:?}",
+        plan.report().losses
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write");
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the written archive decodes");
+    assert_eq!(decoded.ir().geometry.faces.len(), 4);
+}

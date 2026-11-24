@@ -739,7 +739,7 @@ fn encode_reduces_exact_procedural_carriers_to_solved_geometry() {
 }
 
 #[test]
-fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
+fn encode_refuses_a_model_of_free_analytic_surfaces_and_names_them() {
     let mut ir = CadIr::empty();
     ir.geometry.surfaces.extend([
         Surface {
@@ -804,17 +804,24 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
     ]);
 
     let error = plan_at(IgesVersion::V5_3, &ir, None)
-        .expect_err("standalone pointer-defined analytic surface must be refused");
+        .expect_err("a model whose only surfaces are free analytic ones writes no entity");
+    let message = error.to_string();
     assert!(
-        error.to_string().contains(
-            "requires B-rep topology for Type 192 through 198 output; no bounded Type 128 domain is available"
+        message.contains(
+            "refuses an empty model; 4 analytic surface record(s) on no face were withheld"
         ),
-        "{error}"
+        "{message}"
     );
+    for name in ["cylinder", "cone", "sphere", "torus"] {
+        assert!(
+            message.contains(&format!("test:model:surface#{name}")),
+            "{message}"
+        );
+    }
 }
 
 #[test]
-fn encode_refuses_a_free_analytic_surface_beside_brep_topology() {
+fn a_free_analytic_surface_beside_brep_topology_is_withheld_and_named() {
     let decoded = IgesCodec
         .decode(
             &mut Cursor::new(explicit_tetrahedron_solid_file()),
@@ -837,14 +844,31 @@ fn encode_refuses_a_free_analytic_surface_beside_brep_topology() {
         native_ref: None,
     });
 
-    let error = plan_at(IgesVersion::V5_3, decoded.ir(), None)
-        .expect_err("free analytic surface must not inherit B-rep eligibility");
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None)
+        .expect("the solid is written without the free sphere");
     assert!(
-        error
-            .to_string()
-            .contains("analytic surface test:model:surface#free-sphere requires B-rep topology"),
-        "{error}"
+        plan.report().losses.iter().any(|loss| loss
+            .message
+            .starts_with("1 analytic surface record(s) on no face were withheld")
+            && loss.message.ends_with("test:model:surface#free-sphere")),
+        "{:?}",
+        plan.report().losses
     );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write");
+    let written = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the written file decodes");
+    assert_eq!(written.ir().geometry.faces.len(), 4);
+    assert!(!written
+        .ir()
+        .geometry
+        .surfaces
+        .iter()
+        .any(|surface| matches!(
+            surface.geometry.solved(),
+            Some(SolvedSurfaceGeometry::Sphere(_))
+        )));
 }
 
 #[test]
