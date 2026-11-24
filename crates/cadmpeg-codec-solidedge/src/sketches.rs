@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketches (`docs/formats/solidedge.md` §5): the profile a feature consumes,
 //! stated as one planar design sketch on the stored frame with its lines,
-//! circles and arcs. Constraints and dimensions are not read.
+//! circles, arcs and hole positions. Constraints and dimensions are not read.
 //!
 //! A profile that does not read is a loss and the rest of the document still
 //! projects. Stored lengths are metres; the design states millimetres.
@@ -12,9 +12,12 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::construction::{kinds, Construction, FrameValue};
 use cadmpeg_ir::design::evaluation::EvaluationStatus;
+use cadmpeg_ir::design::feature::FeatureOperation;
+use cadmpeg_ir::design::names::CodecName;
 use cadmpeg_ir::design::ops::sketch::{
     EntityDefinition, Planar, PlanarCurve, Sketch, SketchEntity, SketchPlane, SketchSolve,
 };
+use cadmpeg_ir::design::options::{NativeOption, NativeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -24,8 +27,9 @@ use cadmpeg_ir::sketches::{SketchEntityId, SketchId};
 use cadmpeg_ir::units::{FinitePoint2, UnitVector3};
 
 use crate::construction;
+use crate::extents::profile_selection;
 use crate::features::{feature_id, function_span, Kind, Listed};
-use crate::layout::{arc_2d, circle_2d, line_2d, profile, profile_2d};
+use crate::layout::{arc_2d, circle_2d, hole_2d, line_2d, profile, profile_2d};
 use crate::loss::SolidEdgeLossCode;
 use crate::psm::{Cluster, Object, TypeTable};
 
@@ -42,6 +46,8 @@ const LINE_CLASS: &str = "CLSID_JLine2d";
 const CIRCLE_CLASS: &str = "CLSID_JCircle2d";
 const ARC_CLASS: &str = "CLSID_JArc2d";
 const KEYPOINT_CLASS: &str = "CLSID_JKeyPoint2d";
+/// The class of a hole position of a profile (§7.2), stated as a sketch point.
+pub(crate) const HOLE_2D_CLASS: &str = "CLSID_JHole2d";
 
 /// Bytes from the end of a function name to the profile identifier of the
 /// functions that consume a profile of a sketch (§5.3).
@@ -79,7 +85,7 @@ fn profile_offset(function: &str) -> Option<usize> {
     }
 }
 
-fn sketch_id(profile: u32) -> SketchId {
+pub(crate) fn sketch_id(profile: u32) -> SketchId {
     SketchId::compose(
         &cadmpeg_ir::identity_namespace!("solidedge", "model", "sketch"),
         profile,
@@ -149,6 +155,10 @@ fn circle(bytes: &[u8]) -> Option<PlanarCurve> {
     })
 }
 
+fn hole_position(bytes: &[u8]) -> Option<PlanarCurve> {
+    Some(PlanarCurve::Point(point(bytes, hole_2d::X)?))
+}
+
 fn arc(bytes: &[u8]) -> Option<PlanarCurve> {
     Some(PlanarCurve::Arc {
         center: point(bytes, arc_2d::CENTER_X)?,
@@ -182,6 +192,7 @@ fn member(cluster: &Cluster<'_>, types: &TypeTable, id: u32) -> Member {
         LINE_CLASS => line(object.bytes),
         CIRCLE_CLASS => circle(object.bytes),
         ARC_CLASS => arc(object.bytes),
+        HOLE_2D_CLASS => hole_position(object.bytes),
         KEYPOINT_CLASS => return Member::Keypoint,
         _ => return Member::Other,
     };
@@ -413,6 +424,66 @@ pub(crate) fn project(
     ir.design.sketches.extend(sketches);
     ir.design.sketch_entities.extend(entities);
     Ok(())
+}
+
+/// Name the sketches of each feature that no reader typed. A design sketch
+/// is owned by a feature that holds or names it, so a feature that stays
+/// `Unresolved` or `Native` states its sketches as whole-sketch selections in
+/// the native options `profile`, `profile_2`, and so on, and its function as
+/// the native kind. A native feature that already names its sketch is left.
+pub(crate) fn name_untyped_profiles(listed: &[Listed], ir: &mut CadIr) {
+    let design = &mut ir.design;
+    for entry in listed {
+        let Kind::Function(Some(function)) = &entry.kind else {
+            continue;
+        };
+        let id = feature_id(entry.object);
+        let sketches: Vec<SketchId> = design
+            .sketches
+            .iter()
+            .filter(|sketch| sketch.owner == id)
+            .map(|sketch| sketch.id.clone())
+            .collect();
+        if sketches.is_empty() {
+            continue;
+        }
+        let Some(feature) = design.features.iter_mut().find(|f| f.id == id) else {
+            continue;
+        };
+        let mut options = match &feature.definition.operation {
+            FeatureOperation::Unresolved { .. } => NativeOptions::new(),
+            FeatureOperation::Native { native_options, .. }
+                if !native_options
+                    .keys()
+                    .any(|key| key.as_str().ends_with(":profile")) =>
+            {
+                native_options.clone()
+            }
+            _ => continue,
+        };
+        for (index, sketch) in sketches.iter().enumerate() {
+            let name = if index == 0 {
+                "profile".to_owned()
+            } else {
+                format!("profile_{}", index + 1)
+            };
+            let (Some(key), Ok(selection)) = (
+                CodecName::new(&cadmpeg_ir::codec_id!("solidedge"), &name),
+                profile_selection(sketch),
+            ) else {
+                continue;
+            };
+            options.insert(key, NativeOption::OrderedSelection(selection));
+        }
+        let Some(kind) = CodecName::new(&cadmpeg_ir::codec_id!("solidedge"), function) else {
+            continue;
+        };
+        feature.definition.operation = FeatureOperation::Native {
+            kind,
+            native_options: options,
+            source_settings: NativeOptions::new(),
+        };
+    }
 }
 
 #[cfg(test)]
