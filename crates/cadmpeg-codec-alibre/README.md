@@ -10,7 +10,7 @@ it as an occurrence.
 
 <!-- generated: capability alibre -->
 
-Support: L3 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#alibre-design-adprt)).
+Support: L3 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#alibre-design-adprt-and-ad_asm)).
 
 <!-- /generated: capability alibre -->
 

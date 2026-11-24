@@ -3698,6 +3698,7 @@
         {
           "id": "alibre:model:occurrence#106",
           "name": "asm_box<1>",
+          "native_ref": "alibre:model:inclusion#514FEC3B-846C-4702-8A8F-97DCB148F7F5",
           "overrides": [],
           "prototype": "alibre:xref/m0/model:product-definition#root",
           "suppressed": false,
@@ -3726,6 +3727,7 @@
         {
           "id": "alibre:model:occurrence#107",
           "name": "asm_cylinder<1>",
+          "native_ref": "alibre:model:inclusion#A48A34E6-31E9-4AFF-B440-CB6BDE112EC1",
           "overrides": [],
           "prototype": "alibre:xref/m1/model:product-definition#root",
           "suppressed": false,
@@ -3754,6 +3756,7 @@
         {
           "id": "alibre:model:occurrence#108",
           "name": "asm_box<2>",
+          "native_ref": "alibre:model:inclusion#476F3137-D5B6-4FD7-AFD0-84AE8F571972",
           "overrides": [],
           "prototype": "alibre:xref/m0/model:product-definition#root",
           "suppressed": false,
@@ -4325,6 +4328,18 @@
           }
         },
         "message": "streams without a decoder: LIGHT_CONFIGURATION_DATA, PROP_DATA, VERSION, CONSTITUENTS, GLOBAL_PARAMETER_DATA_CACHE; the component references of CONSTITUENTS repeat those of STEP_DATA",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "assembly.member-guid-unmapped",
+            "kind": "object_records_untransferred",
+            "namespace": "alibre"
+          }
+        },
+        "message": "3 inclusion(s) list 3 member(s) that state a GUID (attribute 5 of DESIGNMEMBER); the occurrence carries the GUID of its inclusion only",
         "severity": "warning"
       },
       {
@@ -5415,7 +5430,7 @@
       }
     },
     "codec_digests": {},
-    "content_digest": "045b56aed74e0553006de437fe8c36abedf0e56cd1797cc47891c4ef5ee1bcdf",
+    "content_digest": "d5388429c444eb437086ecbc9634648c576b80bedb5c710d2c55d0dbe53b0089",
     "decode_digest": "46b9ea6bd6a42c2eadd6c9e1826f5e18a157aaa477ac228bafd49ee70c6392e9",
     "file_digests": {},
     "retained_records": {},

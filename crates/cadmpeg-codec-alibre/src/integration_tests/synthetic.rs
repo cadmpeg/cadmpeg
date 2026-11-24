@@ -17,6 +17,17 @@ const BOX_GUID: &str = "58F88938-2D66-43CA-BFF8-892C49CE60A9";
 
 const IDENTITY: [[f64; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
 
+/// The entity that attribute 11 of an inclusion references.
+#[derive(Clone, Copy, PartialEq)]
+enum Profile {
+    /// A `PROFILE` that lists nothing, as every real file has.
+    Empty,
+    /// A `PROFILE` with a value.
+    Filled,
+    /// A `PRODUCT`, which is no profile.
+    Product,
+}
+
 /// One inclusion of a synthetic assembly. Lengths are centimetres.
 #[derive(Clone)]
 struct Inc {
@@ -34,6 +45,10 @@ struct Inc {
     configuration: String,
     /// Attributes after the fifteenth.
     extra: usize,
+    /// What attribute 11 references.
+    profile: Profile,
+    /// Attribute 9; `None` writes null.
+    occurrence_guid: bool,
     anchored: bool,
 }
 
@@ -50,6 +65,8 @@ impl Inc {
             nested: None,
             configuration: "Config<1>".to_owned(),
             extra: 0,
+            profile: Profile::Empty,
+            occurrence_guid: true,
             anchored: false,
         }
     }
@@ -182,11 +199,28 @@ impl Synth {
                 .unwrap();
                 format!("#{operator}")
             };
+            let profile = id();
+            match inc.profile {
+                Profile::Empty => writeln!(out, "#{profile}=PROFILE(());").unwrap(),
+                Profile::Filled => {
+                    let pair = id();
+                    writeln!(out, "#{pair}=STRINGVALUEPAIR('name','x');").unwrap();
+                    writeln!(out, "#{profile}=PROFILE((#{pair}));").unwrap();
+                }
+                Profile::Product => {
+                    writeln!(out, "#{profile}=PRODUCT('q','x','','',());").unwrap();
+                }
+            }
+            let guid = if inc.occurrence_guid {
+                format!("'0000000{at}-0000-4000-8000-0000000000FF'")
+            } else {
+                "$".to_owned()
+            };
             let tail = ",$".repeat(inc.extra);
             let anchored = if inc.anchored { "T" } else { "F" };
             writeln!(
                 out,
-                "#{}=DESIGNINCLUSION((),({}),'{}',#{reference},$,{operator},$,.{anchored}.,$,'0000000{at}-0000-4000-8000-0000000000FF',.F.,#{product},0,$,'{}'{tail});",
+                "#{}=DESIGNINCLUSION((),({}),'{}',#{reference},$,{operator},$,.{anchored}.,$,{guid},.F.,#{profile},0,$,'{}'{tail});",
                 reserved[at],
                 members.join(","),
                 inc.path,
@@ -564,4 +598,70 @@ fn an_assembly_that_includes_its_own_file_is_cut_at_once() {
     let files = Beside::with(vec![("asm_box.AD_PRT".to_owned(), bytes.clone())]);
     let result = decode_with(&bytes, &files);
     assert_eq!(count_loss(&result, AlibreLossCode::AssemblyMemberCycle), 1);
+}
+
+#[test]
+fn the_occurrence_carries_the_guid_of_its_inclusion() {
+    let result = decode_with(
+        super::assembly::ASM_ROTATED,
+        &super::assembly::Files::corpus(),
+    );
+    let guids: Vec<_> = ["asm_box<1>", "asm_cylinder<1>", "asm_box<2>"]
+        .iter()
+        .map(|name| named(result.ir(), name).native_ref.clone())
+        .collect();
+    assert_eq!(
+        guids,
+        [
+            "alibre:model:inclusion#514FEC3B-846C-4702-8A8F-97DCB148F7F5",
+            "alibre:model:inclusion#A48A34E6-31E9-4AFF-B440-CB6BDE112EC1",
+            "alibre:model:inclusion#476F3137-D5B6-4FD7-AFD0-84AE8F571972",
+        ]
+        .map(|guid| Some(guid.to_owned()))
+    );
+    // Nothing the specimen states at the attributes of an inclusion is lost.
+    assert_eq!(
+        count_loss(&result, AlibreLossCode::AssemblyInclusionUnmapped),
+        0
+    );
+}
+
+#[test]
+fn a_member_guid_is_reported_once_for_all_inclusions() {
+    let synth = Synth::new(vec![
+        Inc::new("a/asm_box", BOX_GUID),
+        Inc::new("a/asm_box", BOX_GUID),
+    ]);
+    let result = decode_synth(&synth, &Beside::parts());
+    let losses = losses_of(&result, AlibreLossCode::AssemblyMemberGuidUnmapped);
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert!(
+        losses[0].starts_with("2 inclusion(s) list 2 member(s)"),
+        "{}",
+        losses[0]
+    );
+}
+
+#[test]
+fn a_profile_that_is_not_empty_and_an_entity_that_is_no_profile_are_reported() {
+    let mut filled = Inc::new("a/asm_box", BOX_GUID);
+    filled.profile = Profile::Filled;
+    let mut product = Inc::new("a/asm_box", BOX_GUID);
+    product.profile = Profile::Product;
+    let mut unguided = Inc::new("a/asm_box", BOX_GUID);
+    unguided.occurrence_guid = false;
+    let synth = Synth::new(vec![
+        Inc::new("a/asm_box", BOX_GUID),
+        filled,
+        product,
+        unguided,
+    ]);
+    let result = decode_synth(&synth, &Beside::parts());
+    let losses = losses_of(&result, AlibreLossCode::AssemblyInclusionUnmapped);
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert!(losses[0].starts_with("3 inclusion(s)"), "{}", losses[0]);
+    assert!(
+        named(result.ir(), "asm_box<1>").native_ref.is_some()
+            && named(result.ir(), "asm_box<4>").native_ref.is_none()
+    );
 }

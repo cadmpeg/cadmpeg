@@ -349,6 +349,25 @@ fn model_losses(model: &Assembly) -> Vec<LossNote> {
             first.unmapped
         )));
     }
+    let guided = model
+        .inclusions
+        .iter()
+        .map(|inclusion| {
+            inclusion
+                .members
+                .iter()
+                .filter(|member| member.guid.is_some())
+                .count()
+        })
+        .collect::<Vec<_>>();
+    let members = guided.iter().sum::<usize>();
+    if members > 0 {
+        let inclusions = guided.iter().filter(|count| **count > 0).count();
+        losses.push(AlibreLossCode::AssemblyMemberGuidUnmapped.note(format!(
+            "{inclusions} inclusion(s) list {members} member(s) that state a GUID (attribute 5 of \
+             DESIGNMEMBER); the occurrence carries the GUID of its inclusion only"
+        )));
+    }
     let mut nested = Vec::new();
     let mut total = 0_usize;
     for inclusion in &model.inclusions {
@@ -655,6 +674,12 @@ fn place(
     let ordinal = next(counter)?;
     let mut occurrence = Occurrence::new(id.clone(), prototype, transform);
     occurrence.name = Some(format!("{file}<{ordinal}>"));
+    // The stored GUID tells two occurrences of one component apart in the
+    // source file.
+    occurrence.native_ref = inclusion
+        .guid
+        .as_ref()
+        .map(|guid| format!("alibre:model:inclusion#{guid}"));
     // An inclusion without a member of its own states no hidden flag.
     occurrence.visible = evidence.then_some(!hidden);
     occurrence.suppressed =

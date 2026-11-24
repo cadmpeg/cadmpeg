@@ -3655,6 +3655,7 @@
         {
           "id": "alibre:model:occurrence#108",
           "name": "asm_box<1>",
+          "native_ref": "alibre:model:inclusion#ADFCFA88-55B6-4A31-AC70-EF60F5CC0FA2",
           "overrides": [],
           "prototype": "alibre:xref/m0/model:product-definition#root",
           "suppressed": false,
@@ -3683,6 +3684,7 @@
         {
           "id": "alibre:model:occurrence#109",
           "name": "asm_box<2>",
+          "native_ref": "alibre:model:inclusion#495088AE-A4E4-46BA-B31D-52CB46269DF4",
           "overrides": [],
           "prototype": "alibre:xref/m0/model:product-definition#root",
           "suppressed": false,
@@ -3711,6 +3713,7 @@
         {
           "id": "alibre:model:occurrence#110",
           "name": "asm_cylinder<1>",
+          "native_ref": "alibre:model:inclusion#CE0C2527-288A-4C00-B209-713B0ED80909",
           "overrides": [],
           "prototype": "alibre:xref/m1/model:product-definition#root",
           "suppressed": false,
@@ -3739,6 +3742,7 @@
         {
           "id": "alibre:model:occurrence#111",
           "name": "asm_cylinder<2>",
+          "native_ref": "alibre:model:inclusion#708F8E50-1A92-48CB-A1B4-E5171F3A4535",
           "overrides": [],
           "prototype": "alibre:xref/m1/model:product-definition#root",
           "suppressed": true,
@@ -4311,6 +4315,18 @@
           }
         },
         "message": "streams without a decoder: LIGHT_CONFIGURATION_DATA, PROP_DATA, VERSION, CONSTITUENTS, GLOBAL_PARAMETER_DATA_CACHE; the component references of CONSTITUENTS repeat those of STEP_DATA",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "assembly.member-guid-unmapped",
+            "kind": "object_records_untransferred",
+            "namespace": "alibre"
+          }
+        },
+        "message": "4 inclusion(s) list 4 member(s) that state a GUID (attribute 5 of DESIGNMEMBER); the occurrence carries the GUID of its inclusion only",
         "severity": "warning"
       },
       {
@@ -5401,7 +5417,7 @@
       }
     },
     "codec_digests": {},
-    "content_digest": "46daccffd704afbf740c3fc6dad759172f78794b7f46b64792c1ec9d55309abe",
+    "content_digest": "a7d2fcc976e9cf277f9b036c5bb795acf90a0dc36bf786d477f44dcc6bd3d34d",
     "decode_digest": "8be82feb4cb270363c83a6234fe25f048cb12916fe92cd1876a8f0587b159c28",
     "file_digests": {},
     "retained_records": {},

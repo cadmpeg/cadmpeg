@@ -73,6 +73,8 @@ pub(crate) enum AlibreLossCode {
     AssemblyMemberDocumentMismatch,
     /// An assembly record that the reader needs is missing or does not read, and the decode goes on without it.
     AssemblyRecordUnreadable,
+    /// An inclusion lists members that state a GUID which the occurrence does not carry.
+    AssemblyMemberGuidUnmapped,
 }
 
 impl AlibreLossCode {
@@ -106,6 +108,7 @@ impl AlibreLossCode {
         Self::AssemblyMemberDialectUnverified,
         Self::AssemblyMemberDocumentMismatch,
         Self::AssemblyRecordUnreadable,
+        Self::AssemblyMemberGuidUnmapped,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -138,6 +141,7 @@ impl AlibreLossCode {
             Self::AssemblyMemberDialectUnverified => "assembly.member-dialect-unverified",
             Self::AssemblyMemberDocumentMismatch => "assembly.member-document-mismatch",
             Self::AssemblyRecordUnreadable => "assembly.record-unreadable",
+            Self::AssemblyMemberGuidUnmapped => "assembly.member-guid-unmapped",
         }
     }
 
@@ -169,7 +173,8 @@ impl AlibreLossCode {
             | Self::AssemblyConfigurationUnmapped
             | Self::AssemblyMemberDialectUnverified
             | Self::AssemblyMemberDocumentMismatch
-            | Self::AssemblyRecordUnreadable => Severity::Warning,
+            | Self::AssemblyRecordUnreadable
+            | Self::AssemblyMemberGuidUnmapped => Severity::Warning,
         }
     }
 
@@ -203,7 +208,8 @@ impl AlibreLossCode {
             Self::AssemblyInclusionUnmapped
             | Self::AssemblyNestedStateUnread
             | Self::AssemblyEntitiesUnread
-            | Self::AssemblyRecordUnreadable => LossTaxonomy::ObjectRecordsUntransferred,
+            | Self::AssemblyRecordUnreadable
+            | Self::AssemblyMemberGuidUnmapped => LossTaxonomy::ObjectRecordsUntransferred,
             Self::AssemblyConfigurationUnmapped => LossTaxonomy::MetadataNotTransferred,
         }
     }
@@ -260,6 +266,7 @@ mod tests {
                 "assembly.member-dialect-unverified",
                 "assembly.member-document-mismatch",
                 "assembly.record-unreadable",
+                "assembly.member-guid-unmapped",
             ]
         );
     }

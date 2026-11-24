@@ -3698,6 +3698,7 @@
         {
           "id": "alibre:model:occurrence#104",
           "name": "asm_box<1>",
+          "native_ref": "alibre:model:inclusion#5D0E9423-DD53-4DC1-A153-05891E5704BF",
           "overrides": [],
           "prototype": "alibre:xref/m0/model:product-definition#root",
           "suppressed": false,
@@ -3726,6 +3727,7 @@
         {
           "id": "alibre:model:occurrence#105",
           "name": "asm_cylinder<1>",
+          "native_ref": "alibre:model:inclusion#615DEADA-B1A9-4459-9ACB-07C2D227EEEC",
           "overrides": [],
           "prototype": "alibre:xref/m1/model:product-definition#root",
           "suppressed": false,
@@ -4296,6 +4298,18 @@
           }
         },
         "message": "streams without a decoder: LIGHT_CONFIGURATION_DATA, PROP_DATA, VERSION, CONSTITUENTS, GLOBAL_PARAMETER_DATA_CACHE; the component references of CONSTITUENTS repeat those of STEP_DATA",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "assembly.member-guid-unmapped",
+            "kind": "object_records_untransferred",
+            "namespace": "alibre"
+          }
+        },
+        "message": "2 inclusion(s) list 2 member(s) that state a GUID (attribute 5 of DESIGNMEMBER); the occurrence carries the GUID of its inclusion only",
         "severity": "warning"
       },
       {
@@ -5386,7 +5400,7 @@
       }
     },
     "codec_digests": {},
-    "content_digest": "8fb470a0fa3b1ec6711940858d28e7682ff2799bc6b3022b3300e7ebc1b68cdd",
+    "content_digest": "38d2a43dd52cc4050f6708b2b91bebfe1c99b753aa2bfa9bc4a98da6d8f8416a",
     "decode_digest": "30c1986989047bfb06a16990a47ebcc6add85ae072d668e9955567e65c7be860",
     "file_digests": {},
     "retained_records": {},

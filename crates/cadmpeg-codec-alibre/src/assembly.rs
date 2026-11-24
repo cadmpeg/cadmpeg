@@ -33,6 +33,8 @@ const ASSEMBLY_ACTIVE: usize = 26;
 /// The attribute count of the `DESIGNINCLUSION` entity that the reader maps.
 /// Attributes past it are reported as unmapped.
 const INCLUSION_ARITY: usize = 15;
+/// The attribute of `DESIGNINCLUSION` that holds the GUID of the occurrence.
+const INCLUSION_GUID: usize = 9;
 /// Attributes whose non-default value the occurrence does not carry, with the
 /// value each holds in every specimen.
 const INCLUSION_UNMAPPED: [(usize, Usual); 8] = [
@@ -41,7 +43,7 @@ const INCLUSION_UNMAPPED: [(usize, Usual); 8] = [
     (6, Usual::Null),
     (8, Usual::Null),
     (10, Usual::False),
-    (11, Usual::Reference),
+    (11, Usual::EmptyProfile),
     (12, Usual::Zero),
     (13, Usual::Null),
 ];
@@ -53,18 +55,25 @@ enum Usual {
     Null,
     False,
     Zero,
-    /// A reference, which names a profile record without content here.
-    Reference,
+    /// A reference to a `PROFILE` that lists nothing, as every specimen
+    /// inclusion states. A reference to another entity, or to a profile with
+    /// content, is a value the occurrence does not carry.
+    EmptyProfile,
 }
 
 impl Usual {
-    fn holds(self, value: &Value) -> bool {
+    fn holds(self, value: &Value, part: &Part21) -> bool {
         match self {
             Self::EmptyList => value.as_list().is_some_and(<[Value]>::is_empty),
             Self::Null => *value == Value::Null,
             Self::False => value.as_logical() == Some(false),
             Self::Zero => value.as_int() == Some(0),
-            Self::Reference => value.as_ref().is_some(),
+            Self::EmptyProfile => value
+                .as_ref()
+                .and_then(|id| part.of(id, "PROFILE"))
+                .and_then(|profile| profile.arg(0))
+                .and_then(Value::as_list)
+                .is_some_and(<[Value]>::is_empty),
         }
     }
 }
@@ -162,12 +171,17 @@ pub(crate) struct Member {
     /// Whether the member names a component of a subassembly and not the
     /// inclusion itself.
     pub(crate) nested: bool,
+    /// The GUID of the member (attribute 5), which no occurrence carries.
+    pub(crate) guid: Option<String>,
 }
 
 /// One `DESIGNINCLUSION`: an occurrence of a component file.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Inclusion {
     pub(crate) id: u32,
+    /// The GUID of the occurrence (attribute 9), which the occurrence carries
+    /// as its native reference.
+    pub(crate) guid: Option<String>,
     /// The component path as stored, without extension.
     pub(crate) path: String,
     /// The GUID of the component document.
@@ -262,6 +276,11 @@ fn member(part: &Part21, id: u32) -> Option<Member> {
         id,
         hidden: record.arg(3)?.as_logical()?,
         nested: !matches!(record.arg(6)?, Value::Null),
+        guid: record
+            .arg(5)
+            .and_then(Value::as_str)
+            .filter(|guid| !guid.is_empty())
+            .map(str::to_owned),
     })
 }
 
@@ -279,18 +298,28 @@ fn inclusion(part: &Part21, record: &Instance) -> Option<Inclusion> {
         .filter_map(|id| member(part, *id))
         .collect::<Vec<_>>();
     let unreadable_members = member_ids.len() - members.len();
-    let unmapped = INCLUSION_UNMAPPED
+    let mut unmapped = INCLUSION_UNMAPPED
         .iter()
         .filter(|(index, default)| {
             record
                 .arg(*index)
-                .is_some_and(|value| !default.holds(value))
+                .is_some_and(|value| !default.holds(value, part))
         })
         .map(|(index, _)| *index)
         .chain(INCLUSION_ARITY..record.args.len())
-        .collect();
+        .collect::<Vec<_>>();
+    let guid = record
+        .arg(INCLUSION_GUID)
+        .and_then(Value::as_str)
+        .filter(|guid| !guid.is_empty())
+        .map(str::to_owned);
+    if guid.is_none() {
+        // The occurrence has no reference to carry: the attribute is lost.
+        unmapped.push(INCLUSION_GUID);
+    }
     Some(Inclusion {
         id: record.id,
+        guid,
         path: record.arg(2)?.as_str()?.to_owned(),
         document_id: reference
             .and_then(|reference| reference.arg(3))
