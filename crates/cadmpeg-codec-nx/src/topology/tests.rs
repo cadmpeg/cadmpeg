@@ -1543,6 +1543,7 @@ fn an_unresolved_vertex_loop_is_omitted_and_its_face_is_kept() {
         .find(|face| face.id.as_str() == "nx:s0:face#30")
         .expect("FACE 30 is kept");
     assert!(face.loops.stated().next().is_none(), "{:?}", face.loops);
+    assert!(face.loops.is_partial(), "{:?}", face.loops);
     assert!(model
         .loops
         .iter()

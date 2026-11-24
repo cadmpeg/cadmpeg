@@ -149,11 +149,14 @@ loss_codes! {
     CarrierControlsUnresolved => ("carrier.controls-unresolved", Warning, ObjectRecordsUntransferred),
     /// No gate-passing analytic carrier was found in the Parasolid streams.
     GeometryNotTransferred => ("geometry.not-transferred", Blocking, GeometryNotTransferred),
-    /// A face loop states no resolvable coedge ring and is omitted from its face.
+    /// A face loop states no resolvable coedge ring: it is omitted, and its face
+    /// is stated partial.
     TopologyLoopRingUnresolved => ("topology.loop-ring-unresolved", Warning, TopologyNotTransferred),
-    /// A face's linked loop boundary cannot be admitted and is omitted.
+    /// A face's linked loop boundary cannot be admitted: it is omitted, and the
+    /// face is stated partial.
     TopologyFaceLoopUnresolved => ("topology.face-loop-unresolved", Warning, TopologyNotTransferred),
-    /// A vertex loop whose vertex does not resolve to a POINT is omitted from its face.
+    /// A vertex loop whose vertex does not resolve to a POINT: it is omitted,
+    /// and its face is stated partial.
     TopologyVertexLoopUnresolved => ("topology.vertex-loop-unresolved", Warning, TopologyNotTransferred),
     /// A shell with no admitted face, or a body with no emitted shell, is withheld.
     TopologyShellWithheld => ("topology.shell-withheld", Warning, TopologyNotTransferred),
