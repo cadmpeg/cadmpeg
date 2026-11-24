@@ -1994,7 +1994,13 @@
                   }
                 },
                 "target": {
-                  "kind": "unresolved"
+                  "kind": "drawing",
+                  "value": {
+                    "drawing": "fcstd:model:drawing#View:entity",
+                    "part": {
+                      "kind": "unread"
+                    }
+                  }
                 }
               }
             ]
@@ -2002,7 +2008,8 @@
           "rotation": 0.0,
           "runtime_type": "TechDraw::DrawViewDimension",
           "scale": 1.0,
-          "scale_from": "sheet"
+          "scale_from": "sheet",
+          "views": []
         },
         {
           "assets": [],
@@ -2036,7 +2043,8 @@
           "rotation": 0.0,
           "runtime_type": "TechDraw::DrawViewAnnotation",
           "scale": 1.0,
-          "scale_from": "sheet"
+          "scale_from": "sheet",
+          "views": []
         },
         {
           "assets": [],
@@ -2050,75 +2058,16 @@
             "Scale": "<Float value=\"1.0000000000000000\"/>"
           },
           "projection": "first",
-          "relationships": {
-            "Template": [
-              {
-                "native": {
-                  "codec": "fcstd",
-                  "value": {
-                    "kind": "text",
-                    "value": "Template"
-                  }
-                },
-                "target": {
-                  "kind": "unresolved"
-                }
-              }
-            ],
-            "Views": [
-              {
-                "native": {
-                  "codec": "fcstd",
-                  "value": {
-                    "kind": "text",
-                    "value": "View"
-                  }
-                },
-                "target": {
-                  "kind": "unresolved"
-                }
-              },
-              {
-                "native": {
-                  "codec": "fcstd",
-                  "value": {
-                    "kind": "text",
-                    "value": "Dimension"
-                  }
-                },
-                "target": {
-                  "kind": "unresolved"
-                }
-              },
-              {
-                "native": {
-                  "codec": "fcstd",
-                  "value": {
-                    "kind": "text",
-                    "value": "Note"
-                  }
-                },
-                "target": {
-                  "kind": "unresolved"
-                }
-              },
-              {
-                "native": {
-                  "codec": "fcstd",
-                  "value": {
-                    "kind": "text",
-                    "value": "Symbol"
-                  }
-                },
-                "target": {
-                  "kind": "unresolved"
-                }
-              }
-            ]
-          },
+          "relationships": {},
           "runtime_type": "TechDraw::DrawPage",
           "scale": 1.0,
-          "template": "fcstd:model:drawing#Template:entity"
+          "template": "fcstd:model:drawing#Template:entity",
+          "views": [
+            "fcstd:model:drawing#View:entity",
+            "fcstd:model:drawing#Dimension:entity",
+            "fcstd:model:drawing#Note:entity",
+            "fcstd:model:drawing#Symbol:entity"
+          ]
         },
         {
           "assets": [],
@@ -2152,7 +2101,8 @@
           "rotation": 0.0,
           "runtime_type": "TechDraw::DrawViewSymbol",
           "scale": 1.0,
-          "scale_from": "own"
+          "scale_from": "own",
+          "views": []
         },
         {
           "assets": [
@@ -2228,7 +2178,8 @@
                 "text": "cadmpeg CC0"
               }
             ]
-          }
+          },
+          "views": []
         },
         {
           "assets": [],
@@ -2277,6 +2228,7 @@
           "runtime_type": "TechDraw::DrawViewPart",
           "scale": 1.0,
           "scale_from": "sheet",
+          "views": [],
           "x_direction": [
             1.0,
             0.0,
@@ -2458,7 +2410,13 @@
                   }
                 },
                 "target": {
-                  "kind": "unresolved"
+                  "kind": "drawing",
+                  "value": {
+                    "drawing": "fcstd:model:drawing#View:entity",
+                    "part": {
+                      "kind": "unread"
+                    }
+                  }
                 }
               }
             ]

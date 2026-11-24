@@ -513,7 +513,15 @@ pub(super) fn project_hole(
             "Hole {} reads its carrier normal as an unoriented drill axis because its direction control is unavailable (DR-471).", scope.id
         )));
     }
-    if placements.is_none() {
+    if placements.is_none()
+        && scope.hole_construction().is_some_and(
+            crate::records::feature::hole::DesignHoleConstruction::face_point_unselected,
+        )
+    {
+        losses.push(crate::loss::F3dLossCode::HolePlacementPointUnselected.note(format!(
+            "Hole {} retains its native placement because its face-point carrier and its point-data records lie at different points and no admitted rule selects the entry point (DR-1061).", scope.id
+        )));
+    } else if placements.is_none() {
         losses.push(crate::loss::F3dLossCode::HolePlacementUnproven.note(format!(
             "Hole {} retains its native placement because its carrier and point-data records do not define an admitted placement.", scope.id
         )));

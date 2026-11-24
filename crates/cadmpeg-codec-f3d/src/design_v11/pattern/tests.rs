@@ -126,11 +126,11 @@ fn linear(operation: FeatureOperation) -> (LinearRun, Option<LinearRun>) {
         picks.as_slice()[0].target,
         PickTarget::FeatureResult(FeatureId::mint("f3d:model:feature#seed").unwrap())
     );
-    let PatternLayout::Linear {
+    let PatternLayout::Linear(LinearLayout {
         first,
         second,
         seed_only,
-    } = pattern.layout
+    }) = pattern.layout
     else {
         panic!("linear layout");
     };

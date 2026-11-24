@@ -125,7 +125,7 @@ pub use products::{
 };
 /// Source location attached to a [`report::loss::LossNote`].
 pub use provenance::{
-    AnnotationLocation, AnnotationProvenance, CodecFormat, EmptyStreamName, Exactness, Provenance,
+    AnnotationLocation, AnnotationProvenance, EmptyStreamName, Exactness, Provenance,
     SourceGeometryRole, SourceLocation, SourceObjectAssociation, SourceProvenance,
     StaticStreamName, StreamName,
 };

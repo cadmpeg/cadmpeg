@@ -120,7 +120,7 @@ mod tests {
         let point = FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap();
         for (relation, value, expected) in [
             (
-                Relation::Native(cadmpeg_core::nonblank_literal!("f3d:unknown")),
+                Relation::Native(cadmpeg_ir::codec_name!("f3d:unknown")),
                 None,
                 true,
             ),

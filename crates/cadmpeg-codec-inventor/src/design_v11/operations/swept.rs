@@ -124,7 +124,7 @@ fn source_mode(
     method: cadmpeg_core::text::NonBlankString,
 ) -> cadmpeg_ir::design::construction::SourceMode {
     cadmpeg_ir::design::construction::SourceMode {
-        codec: cadmpeg_core::nonblank_literal!("inventor").into(),
+        codec: cadmpeg_ir::codec_id!("inventor"),
         method: cadmpeg_ir::design::names::NativeNameValue::Text(method),
         native_options: BTreeMap::default(),
         source_settings: BTreeMap::default(),
@@ -285,7 +285,7 @@ fn revolve_span(value: &cadmpeg_ir::features::revolve::RevolveExtent) -> Project
 
 pub(super) fn setting(
     settings: &mut NativeOptions,
-    name: cadmpeg_core::text::NonBlankString,
+    name: cadmpeg_ir::design::names::CodecName,
     value: Option<bool>,
 ) {
     if let Some(value) = value {
@@ -423,7 +423,7 @@ pub(super) fn operation(
                 let mut settings = BTreeMap::default();
                 setting(
                     &mut settings,
-                    cadmpeg_core::nonblank_literal!("inventor:allow_multi_profile_faces"),
+                    cadmpeg_ir::codec_name!("inventor:allow_multi_profile_faces"),
                     *allow_multi_profile_faces,
                 );
                 FeatureOperation::Extrude(Box::new(new::Extrude {
@@ -464,7 +464,7 @@ pub(super) fn operation(
                 let mut settings = BTreeMap::default();
                 setting(
                     &mut settings,
-                    cadmpeg_core::nonblank_literal!("inventor:allow_multi_profile_faces"),
+                    cadmpeg_ir::codec_name!("inventor:allow_multi_profile_faces"),
                     *allow_multi_profile_faces,
                 );
                 FeatureOperation::Revolve(Box::new(new::Revolve {
@@ -554,7 +554,7 @@ pub(super) fn operation(
                 let mut settings = BTreeMap::default();
                 setting(
                     &mut settings,
-                    cadmpeg_core::nonblank_literal!("inventor:allow_multi_profile_faces"),
+                    cadmpeg_ir::codec_name!("inventor:allow_multi_profile_faces"),
                     *allow_multi_profile_faces,
                 );
                 FeatureOperation::Sweep(Box::new(new::Sweep {
@@ -656,7 +656,7 @@ pub(super) fn operation(
                 let mut settings = BTreeMap::default();
                 setting(
                     &mut settings,
-                    cadmpeg_core::nonblank_literal!("inventor:allow_multi_profile_faces"),
+                    cadmpeg_ir::codec_name!("inventor:allow_multi_profile_faces"),
                     *allow_multi_profile_faces,
                 );
                 FeatureOperation::Loft(Box::new(new::Loft {
