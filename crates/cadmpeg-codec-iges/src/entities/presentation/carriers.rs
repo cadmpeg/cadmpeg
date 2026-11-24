@@ -88,32 +88,32 @@ pub(super) fn state(
     let used = UsedCarriers::of(ir);
     let mut carriers = Vec::new();
     for curve in &ir.geometry.curves {
+        let shown = !used.curves.contains(curve.id.as_str());
         if let Some(sequence) = sources
             .sequences
             .curve(&curve.id)
-            .filter(|_| is_iges_source(curve.source_object.as_ref()))
+            .filter(|_| shown || is_iges_source(curve.source_object.as_ref()))
         {
-            let shown = !used.curves.contains(curve.id.as_str());
             carriers.push((Carrier::Curve(curve.id.clone()), sequence, shown));
         }
     }
     for surface in &ir.geometry.surfaces {
+        let shown = !used.surfaces.contains(surface.id.as_str());
         if let Some(sequence) = sources
             .sequences
             .surface(&surface.id)
-            .filter(|_| is_iges_source(surface.source_object.as_ref()))
+            .filter(|_| shown || is_iges_source(surface.source_object.as_ref()))
         {
-            let shown = !used.surfaces.contains(surface.id.as_str());
             carriers.push((Carrier::Surface(surface.id.clone()), sequence, shown));
         }
     }
     for point in &ir.geometry.points {
+        let shown = !used.points.contains(point.id.as_str());
         if let Some(sequence) = sources
             .sequences
             .point(&point.id)
-            .filter(|_| is_iges_source(point.source_object.as_ref()))
+            .filter(|_| shown || is_iges_source(point.source_object.as_ref()))
         {
-            let shown = !used.points.contains(point.id.as_str());
             carriers.push((Carrier::Point(point.id.clone()), sequence, shown));
         }
     }
@@ -228,7 +228,8 @@ pub(super) fn state(
 }
 
 /// Whether a carrier carries an IGES source association: one decoded from
-/// its own Directory entry.
+/// its own Directory entry. A used carrier without one is a part of another
+/// entity, such as a body vertex or a line endpoint.
 fn is_iges_source(source: Option<&cadmpeg_ir::SourceObjectAssociation>) -> bool {
     source.is_some_and(|source| source.format == cadmpeg_ir::codec_id!("iges"))
 }
