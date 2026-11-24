@@ -62,8 +62,7 @@ constants below.
 | Rhino instance                                   | `RHINO_INSTANCE_CHECKS` = core              | `ArenaOrder` excluded; no mid-expansion finalize                                                                                        |
 | CATIA admission                                  | `CATIA_ADMISSION_CHECKS` = core             | finalize first; pending native identities via admit helper                                                                              |
 | IGES projection check                            | full `validate_neutral`                     | refuses nothing: each Error finding is one `iges/projection.invalid` loss, and the decode returns the document                         |
-| SLDPRT export precondition (`writer` input)      | full `validate_neutral`                     | keep-full: refusal depends on non-core Checks (`Counts`, …); `SLDPRT_EXPORT_PRECONDITION_CHECKS` is the documented draft/topology floor |
-| SLDPRT writer postcondition (after bake/prepare) | full `validate_neutral`                     | postcondition on the writer's own transform; not replaced                                                                               |
+| SLDPRT written document                          | full `validate_neutral`                     | refuses nothing: each Error finding is a `record.invalid` loss, and the part is written                                                 |
 
 Codecs not listed run no decode/export admission gate; their documents are
 checked only at the application boundary (`validate_neutral` + fidelity +
@@ -72,10 +71,9 @@ native validators).
 ## Routes and dialects
 
 No route differs per dialect. A route is selected by the pipeline stage that
-reaches it — draft candidate, mid-expansion instance, admission after
-finalize, export precondition, writer postcondition — and every one of the six
-gates above runs the same check set for every dialect of its format. There is
-no per-dialect row here because there is no per-dialect route.
+reaches it, and every gate above runs the same check set for every dialect of
+its format. There is no per-dialect row here because there is no per-dialect
+route.
 
 What is dialect-keyed is the evidence each classification rests on. Fixture
 coverage is per row in [`dialect-support.toml`](../crates/cadmpeg-registry/docs/dialect-support.toml), and it
@@ -91,14 +89,6 @@ is uneven:
   measures either route.
 - **CATIA admission.** Every declared `catia:` row carries a fixture, so this
   is the one route measured across its format's whole declared space.
-- **SLDPRT export precondition and postcondition.** All twenty fixtures land
-  on `sldprt:unknown`. Neither `sldprt:sw-version-pre-12000` nor
-  `sldprt:sw-version-12000-plus` has one, so the keep-full classification has
-  never been measured against a document that classified onto a declared row.
-
-Narrowing a keep-full route to a `Check` subset is a claim about the documents
-that route sees. Read the row above first: on SLDPRT the current evidence
-covers one row.
 
 ## Native passthrough arenas
 
