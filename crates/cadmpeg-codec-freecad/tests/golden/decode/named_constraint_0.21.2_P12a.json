@@ -6089,7 +6089,7 @@
                 "settings": ""
               },
               "kind": {
-                "kind": "Camera",
+                "kind": "camera",
                 "value": {
                   "properties": {
                     "settings": ""

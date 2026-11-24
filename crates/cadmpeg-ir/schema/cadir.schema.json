@@ -4392,14 +4392,7 @@
         },
         "unstated": {
           "description": "Marks a body a region of which the document does not state (§5.6,\nUnstated children).",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Unstated"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/Unstated"
         },
         "visible": {
           "description": "Whether the source document displays the body. `None` when the source\nformat does not record body visibility.",
@@ -21383,14 +21376,7 @@
             },
             "outer": {
               "description": "The outer loop, where it is stated.",
-              "anyOf": [
-                {
-                  "$ref": "#/$defs/LoopId"
-                },
-                {
-                  "type": "null"
-                }
-              ]
+              "$ref": "#/$defs/LoopId"
             }
           },
           "additionalProperties": false,
@@ -55314,7 +55300,7 @@
           "properties": {
             "kind": {
               "type": "string",
-              "const": "Camera"
+              "const": "camera"
             },
             "value": {
               "$ref": "#/$defs/CameraState"
@@ -55332,7 +55318,7 @@
           "properties": {
             "kind": {
               "type": "string",
-              "const": "Native"
+              "const": "native"
             },
             "value": {
               "type": "string"
@@ -61313,14 +61299,7 @@
         },
         "unstated": {
           "description": "Marks a region a shell of which the document does not state (§5.6,\nUnstated children).",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/RegionUnstated"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/RegionUnstated"
         }
       },
       "additionalProperties": false,
@@ -68235,14 +68214,7 @@
         },
         "unstated": {
           "description": "Marks a shell a face, wire edge, free vertex, or cage of which the\ndocument does not state (§5.6, Unstated children).",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Unstated"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/Unstated"
         }
       },
       "additionalProperties": false,
