@@ -13,6 +13,11 @@ use cadmpeg_core::CodecError;
 
 /// Deepest list nesting the reader admits.
 const MAX_DEPTH: usize = 16;
+/// Most octets of one string parameter.
+const MAX_STRING_OCTETS: usize = 32_767;
+/// Most parameters, list elements and typed parameters counted together, in
+/// one entity instance.
+const MAX_INSTANCE_PARAMETERS: usize = 65_536;
 
 /// One parameter of an entity instance.
 #[derive(Debug, Clone, PartialEq)]
@@ -61,7 +66,8 @@ impl Value {
     pub(crate) fn as_real(&self) -> Option<f64> {
         match self {
             Self::Real(value) => Some(*value),
-            Self::Int(value) => i32::try_from(*value).ok().map(f64::from),
+            // The text of the integer parses to its nearest real, with no cast.
+            Self::Int(value) => value.to_string().parse().ok(),
             _ => None,
         }
     }
@@ -128,6 +134,8 @@ impl Part21 {
 struct Cursor<'a> {
     bytes: &'a [u8],
     at: usize,
+    /// The parameters read since the last instance began.
+    parameters: usize,
 }
 
 impl<'a> Cursor<'a> {
@@ -197,6 +205,11 @@ impl<'a> Cursor<'a> {
                     }
                 }
                 Some(byte) => {
+                    if out.len() >= MAX_STRING_OCTETS {
+                        return Err(CodecError::malformed(format_args!(
+                            "STEP_DATA string exceeds {MAX_STRING_OCTETS} octets (MAX_STRING_OCTETS)"
+                        )));
+                    }
                     out.push(byte);
                     self.bump();
                 }
@@ -232,6 +245,12 @@ impl<'a> Cursor<'a> {
     fn value(&mut self, depth: usize) -> Result<Value, CodecError> {
         if depth > MAX_DEPTH {
             return Err(CodecError::malformed("STEP_DATA nests lists too deeply"));
+        }
+        self.parameters += 1;
+        if self.parameters > MAX_INSTANCE_PARAMETERS {
+            return Err(CodecError::malformed(format_args!(
+                "STEP_DATA instance holds more than {MAX_INSTANCE_PARAMETERS} parameters (MAX_INSTANCE_PARAMETERS)"
+            )));
         }
         self.skip_space();
         match self.peek() {
@@ -313,7 +332,11 @@ fn header_schemas(header: &[u8]) -> Vec<String> {
     let Some(at) = find(header, b"FILE_SCHEMA", 0) else {
         return Vec::new();
     };
-    let mut cursor = Cursor { bytes: header, at };
+    let mut cursor = Cursor {
+        bytes: header,
+        at,
+        parameters: 0,
+    };
     let mut names = Vec::new();
     cursor.at += b"FILE_SCHEMA".len();
     while let Some(byte) = cursor.peek() {
@@ -342,6 +365,7 @@ pub(crate) fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Part21, Cod
     let mut cursor = Cursor {
         bytes,
         at: data + b"DATA;".len(),
+        parameters: 0,
     };
     loop {
         cursor.skip_space();
@@ -356,9 +380,14 @@ pub(crate) fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Part21, Cod
                 cursor.skip_space();
                 let name = cursor.word().to_owned();
                 cursor.require(b'(', "the arguments of an instance")?;
+                cursor.parameters = 0;
                 let args = cursor.list(0)?;
                 cursor.require(b';', "';' after an instance")?;
                 ctx.charge_entities(1, "admit STEP_DATA instance")?;
+                ctx.charge_entities(
+                    u64::try_from(cursor.parameters).unwrap_or(u64::MAX),
+                    "admit STEP_DATA parameters",
+                )?;
                 if part
                     .instances
                     .insert(id, Instance { id, name, args })
@@ -372,6 +401,14 @@ pub(crate) fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Part21, Cod
             _ => break,
         }
     }
+    // A stream cut at an instance boundary has no ENDSEC and is refused, not
+    // taken for a complete section.
+    if cursor.word() != "ENDSEC" {
+        return Err(CodecError::malformed(
+            "STEP_DATA ends without the ENDSEC of the DATA section",
+        ));
+    }
+    cursor.require(b';', "';' after ENDSEC")?;
     Ok(part)
 }
 
@@ -416,9 +453,43 @@ mod tests {
     #[test]
     fn refuses_a_repeated_instance_and_deep_nesting() {
         with_ctx(|ctx| {
-            assert!(parse(ctx, b"DATA;#1=A();#1=A();").is_err());
+            assert!(parse(ctx, b"DATA;#1=A();#1=A();ENDSEC;").is_err());
             let deep = format!("DATA;#1=A({}{});", "(".repeat(40), ")".repeat(40));
             assert!(parse(ctx, deep.as_bytes()).is_err());
         });
+    }
+
+    #[test]
+    fn refuses_a_section_without_endsec() {
+        with_ctx(|ctx| {
+            assert!(parse(ctx, b"DATA;#1=A();").is_err());
+            assert!(parse(ctx, b"DATA;#1=A();#2=B();ENDSEC").is_err());
+            assert!(parse(ctx, b"DATA;#1=A();\nENDSEC;\n").is_ok());
+        });
+    }
+
+    #[test]
+    fn bounds_the_parameters_of_an_instance_and_the_octets_of_a_string() {
+        with_ctx(|ctx| {
+            let many = format!(
+                "DATA;#1=A({});ENDSEC;",
+                vec!["1"; MAX_INSTANCE_PARAMETERS + 1].join(",")
+            );
+            assert!(parse(ctx, many.as_bytes()).is_err());
+            let fits = format!(
+                "DATA;#1=A({});ENDSEC;",
+                vec!["1"; MAX_INSTANCE_PARAMETERS - 1].join(",")
+            );
+            assert!(parse(ctx, fits.as_bytes()).is_ok());
+            let long = format!("DATA;#1=A('{}');ENDSEC;", "x".repeat(MAX_STRING_OCTETS + 1));
+            assert!(parse(ctx, long.as_bytes()).is_err());
+            let exact = format!("DATA;#1=A('{}');ENDSEC;", "x".repeat(MAX_STRING_OCTETS));
+            assert!(parse(ctx, exact.as_bytes()).is_ok());
+        });
+    }
+
+    #[test]
+    fn an_integer_beyond_i32_reads_as_a_real() {
+        assert_eq!(Value::Int(10_000_000_000).as_real(), Some(1e10));
     }
 }
