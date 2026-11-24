@@ -87,8 +87,9 @@ use sheet_metal_forms::{
     SheetMetalRelief, SheetMetalThicknessSide, SheetMetalTransition,
 };
 use surface_inputs::{
-    CurveProjectionDirection, FilledSurfaceContinuityState, RuledSurfaceCorner, RuledSurfaceMode,
-    SurfaceBoundary, SurfaceExtension, SurfaceProjectionMode, TrimRegion, WrapMode,
+    deserialize_continuity, CurveProjectionDirection, FilledSurfaceContinuity, RuledSurfaceCorner,
+    RuledSurfaceMode, SurfaceBoundary, SurfaceExtension, SurfaceProjectionMode, TrimRegion,
+    WrapMode,
 };
 use sweeps::{
     CoilConstruction, FaceMaker, HelicalSweepConstruction, HelixConstructionStyle, HelixShape,
@@ -1695,10 +1696,11 @@ pub enum FeatureOperation {
         support_faces: FaceSelection,
         /// Uniform, component-specific, or unresolved boundary continuity.
         #[serde(
-            default = "FilledSurfaceContinuityState::unresolved",
-            skip_serializing_if = "FilledSurfaceContinuityState::is_unresolved"
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_continuity"
         )]
-        continuity: FilledSurfaceContinuityState,
+        continuity: Option<FilledSurfaceContinuity>,
         /// Whether the generated patch is merged into adjacent surface bodies,
         /// when resolved.
         #[serde(

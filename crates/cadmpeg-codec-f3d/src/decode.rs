@@ -1188,7 +1188,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 SurfaceBoundary::Edges(edges) => edge_selection_is_resolved(edges),
                 SurfaceBoundary::Path(path) => loft_path_is_resolved(path),
             };
-            let continuity_is_resolved = !continuity.is_unresolved();
+            let continuity_is_resolved = continuity.is_some();
             let needs_support = |continuity| {
                 matches!(
                     continuity,

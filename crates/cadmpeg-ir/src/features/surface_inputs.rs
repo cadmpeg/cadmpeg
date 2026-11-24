@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 cadmpeg_core::named_optional_field!(
-    deserialize_continuity,
+    pub(super) deserialize_continuity,
     FilledSurfaceContinuity,
     "continuity"
 );
@@ -170,6 +170,24 @@ pub struct FilledSurfaceContinuity {
 }
 
 impl FilledSurfaceContinuity {
+    /// Creates one condition for the complete boundary.
+    #[must_use]
+    pub fn one(continuity: SurfaceContinuity) -> Self {
+        Self {
+            conditions: NonEmptyMembers::one(continuity.into()),
+        }
+    }
+
+    /// Returns the continuity order when every component has the same order.
+    #[must_use]
+    pub fn uniform_continuity(&self) -> Option<SurfaceContinuity> {
+        let mut conditions = self.conditions.iter();
+        let first = conditions.next()?.continuity();
+        conditions
+            .all(|condition| condition.continuity() == first)
+            .then_some(first)
+    }
+
     /// Returns the aggregate condition when every component uses one value.
     #[must_use]
     pub fn uniform(&self) -> Option<FilledSurfaceBoundaryCondition> {
@@ -178,63 +196,6 @@ impl FilledSurfaceContinuity {
         components
             .all(|continuity| continuity == &first)
             .then_some(first)
-    }
-}
-
-/// Optional filled-surface continuity.
-///
-/// The wire carries the component conditions and nothing else, so an aggregate
-/// condition that disagrees with them is unrepresentable.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(transparent)]
-pub struct FilledSurfaceContinuityState(
-    #[serde(deserialize_with = "deserialize_continuity")]
-    #[cfg_attr(feature = "schema", schemars(with = "FilledSurfaceContinuity"))]
-    pub(super) Option<FilledSurfaceContinuity>,
-);
-
-impl FilledSurfaceContinuityState {
-    /// Creates an unresolved continuity state.
-    #[must_use]
-    pub const fn unresolved() -> Self {
-        Self(None)
-    }
-
-    /// Creates one condition for the complete boundary.
-    #[must_use]
-    pub fn uniform(continuity: SurfaceContinuity) -> Self {
-        Self(Some(FilledSurfaceContinuity {
-            conditions: NonEmptyMembers::one(continuity.into()),
-        }))
-    }
-
-    /// Creates component-specific conditions.
-    #[must_use]
-    pub const fn per_boundary(conditions: NonEmptyMembers<FilledSurfaceBoundaryCondition>) -> Self {
-        Self(Some(FilledSurfaceContinuity { conditions }))
-    }
-
-    /// Returns the resolved continuity form.
-    #[must_use]
-    pub const fn resolved(&self) -> Option<&FilledSurfaceContinuity> {
-        self.0.as_ref()
-    }
-
-    /// Returns the continuity order when every component has the same order.
-    #[must_use]
-    pub fn uniform_value(&self) -> Option<SurfaceContinuity> {
-        let mut conditions = self.0.as_ref()?.conditions.iter();
-        let first = conditions.next()?.continuity();
-        conditions
-            .all(|condition| condition.continuity() == first)
-            .then_some(first)
-    }
-
-    /// Whether no continuity condition was resolved.
-    #[must_use]
-    pub const fn is_unresolved(&self) -> bool {
-        self.0.is_none()
     }
 }
 
