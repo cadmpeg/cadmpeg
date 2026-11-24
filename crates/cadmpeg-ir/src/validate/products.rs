@@ -194,11 +194,11 @@ pub(super) fn check_products(
         record_finding(
             findings,
             Check::ReferentialIntegrity,
-            crate::report::Severity::Warning,
+            crate::report::Severity::Error,
             Some(definition),
             crate::rule!(
                 "products.product-definition-places-itself",
-                "product definition places itself"
+                "product definition is the prototype of an occurrence it owns, directly or transitively"
             ),
         );
     }
