@@ -137,3 +137,31 @@ fn a_through_path_resolves_from_the_setups_scope() {
         "occurrence path step test:design:occurrence#nested is not an occurrence",
     );
 }
+
+/// A path step's `configuration` follows the `ConfigurationRef` rule for the
+/// step's prototype (§5.8).
+#[test]
+fn a_path_steps_configuration_is_one_of_its_prototype() {
+    use crate::design::dimension::{ParamRef, ParameterRef};
+    use crate::design::refs::ConfigurationRef;
+    let configured = |configuration: ConfigurationRef| {
+        let mut reference = width_through("pin");
+        if let ParamRef::Design(ParameterRef {
+            through: Some(path),
+            ..
+        }) = &mut reference
+        {
+            path.0[0].configuration = Some(configuration);
+        }
+        let mut ir = document();
+        place_pin(&mut ir);
+        ir.process.operations[2].technology.stepdown = Some(Dimension::Parameter(reference));
+        ir
+    };
+    let named = cadmpeg_core::text::NonBlankString::new("light").unwrap();
+    assert_no_process_finding(&configured(ConfigurationRef::Named(named)));
+    assert_error(
+        &configured(ConfigurationRef::Local(design::id("configuration", "base"))),
+        "names no configuration of the prototype's scope",
+    );
+}

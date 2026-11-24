@@ -18,7 +18,9 @@ use crate::features::ConfigurationId;
 use crate::index::ModelIndex;
 use crate::process::state::{ProcessBase, ProcessState, ProcessStateOf};
 use crate::report::check::Finding;
-use crate::validate::design::evaluations::{check_position, state_chains};
+use crate::validate::design::evaluations::{
+    check_position, check_resulting_position, state_chains,
+};
 use crate::validate::design::records::{MemberKey, PositionKey};
 
 pub(super) fn check_evaluations(
@@ -385,6 +387,7 @@ fn check_base(
             let position = PositionKey::of(position);
             let exists = super::as_process(findings, |findings| {
                 check_position(records.design, position, id, findings)
+                    && check_resulting_position(records.design, position, id, findings)
             });
             if !exists {
                 return;

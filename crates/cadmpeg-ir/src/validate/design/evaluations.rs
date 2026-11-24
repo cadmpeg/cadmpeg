@@ -5,10 +5,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::parameters;
 use super::records::{DesignRecords, MemberKey, OfKey, PositionKey};
+use super::selections::check_path;
 use crate::design::container::Container;
 use crate::design::dimension::Dimension;
 use crate::design::evaluation::{EvaluationStatus, StateBase};
-use crate::design::feature::{Feature, FeatureOperation};
+use crate::design::feature::{Feature, FeatureOperation, OperationFamily};
 use crate::design::refs::Position;
 use crate::design::selection::{OccurrencePath, StepRef};
 use crate::features::ConfigurationId;
@@ -36,6 +37,18 @@ pub(in crate::validate) fn check_position(
             }
             ordered
         }
+        PositionKey::After(MemberKey::Container(id))
+            if matches!(index.containers.get(id), Some(Container::Unordered { .. })) =>
+        {
+            super::error(
+                findings,
+                entity,
+                format_args!(
+                    "{position} names unordered container {id}, whose members have their own results; it names no state"
+                ),
+            );
+            false
+        }
         PositionKey::After(member) => {
             let ordered_root = matches!(
                 member,
@@ -57,6 +70,95 @@ pub(in crate::validate) fn check_position(
             listed
         }
     }
+}
+
+/// The feature `position` is after, where it is a feature member of an
+/// unordered container: `After(m)` is then `m`'s own result (§5.3).
+fn unordered_feature<'a>(
+    index: &DesignRecords<'a>,
+    position: PositionKey<'a>,
+) -> Option<&'a Feature> {
+    let PositionKey::After(MemberKey::Feature(id)) = position else {
+        return None;
+    };
+    match index.container_of(position) {
+        Some(Container::Unordered { .. }) => index.features.get(id).copied(),
+        _ => None,
+    }
+}
+
+/// Whether a feature member of an unordered container has a result of its
+/// own in `configuration` (§5.3): it has none where it is stateless there or
+/// its operation there places or connects occurrences. `None` where that
+/// operation is `Native`, which states nothing to decide it.
+fn has_own_result(
+    index: &DesignRecords<'_>,
+    feature: &Feature,
+    configuration: Option<&str>,
+) -> Option<bool> {
+    let operation = &index.definition_in(feature, configuration).operation;
+    if matches!(operation, FeatureOperation::Native { .. }) {
+        return None;
+    }
+    if is_stateless(index, feature, configuration) {
+        return Some(false);
+    }
+    let places = matches!(
+        operation,
+        FeatureOperation::Place(_)
+            | FeatureOperation::PlaceSet(_)
+            | FeatureOperation::Joint(_)
+            | FeatureOperation::RigidGroup(_)
+            | FeatureOperation::ComponentPattern(_)
+            | FeatureOperation::MirrorComponents(_)
+            | FeatureOperation::Unresolved {
+                family: OperationFamily::Place
+                    | OperationFamily::PlaceSet
+                    | OperationFamily::Joint
+                    | OperationFamily::RigidGroup
+                    | OperationFamily::ComponentPattern
+                    | OperationFamily::MirrorComponents
+            }
+    );
+    Some(!places)
+}
+
+/// A `Pinned` anchor or a `StateBase::Current` is at no `After(m)` for a
+/// feature `m` of an unordered container that has no result of its own in
+/// any configuration of its scope (§5.3). Returns whether it is not.
+pub(in crate::validate) fn check_resulting_position(
+    index: &DesignRecords<'_>,
+    position: PositionKey<'_>,
+    entity: &str,
+    findings: &mut Vec<Finding>,
+) -> bool {
+    let Some(feature) = unordered_feature(index, position) else {
+        return true;
+    };
+    let id = feature.id.as_str();
+    let configurations: Vec<Option<&str>> = match index
+        .scope_of(MemberKey::Feature(id))
+        .and_then(|scope| index.scope_configurations.get(scope))
+    {
+        Some(configurations) => configurations
+            .iter()
+            .map(|configuration| Some(configuration.id.as_str()))
+            .collect(),
+        None => vec![None],
+    };
+    let resultless = configurations
+        .into_iter()
+        .all(|configuration| has_own_result(index, feature, configuration) == Some(false));
+    if resultless {
+        super::error(
+            findings,
+            entity,
+            format_args!(
+                "{position} is after {id}, a member of an unordered container with no result of its own in any configuration of its scope; it names no state"
+            ),
+        );
+    }
+    !resultless
 }
 
 /// Whether `position` is `After(Container(c))` for an ordered container `c`.
@@ -190,6 +292,22 @@ pub(super) fn check_evaluations(
                 Some(feature)
             }
         };
+        if let OfKey::State(position) = of {
+            let resultless = unordered_feature(index, position).filter(|feature| {
+                !is_stateless(index, feature, configuration)
+                    && has_own_result(index, feature, configuration) == Some(false)
+            });
+            if let Some(member) = resultless {
+                super::error(
+                    findings,
+                    id,
+                    format_args!(
+                        "evaluation evaluates {position}, but {} has no result of its own in the evaluation's configuration",
+                        member.id.as_str()
+                    ),
+                );
+            }
+        }
         if let Some(feature) = feature.and_then(|feature| index.features.get(feature)) {
             if is_stateless(index, feature, configuration) {
                 super::error(
@@ -239,7 +357,9 @@ pub(super) fn check_evaluations(
             StateBase::Empty => {}
             StateBase::Current(position) => {
                 let position = PositionKey::of(position);
-                if check_position(index, position, id, findings) {
+                if check_position(index, position, id, findings)
+                    && check_resulting_position(index, position, id, findings)
+                {
                     if matches!(position, PositionKey::After(MemberKey::Container(_)))
                         && !index.at_unstated_rollback(position)
                     {
@@ -462,6 +582,7 @@ fn listed_bodies(definition: &ProductDefinition) -> impl Iterator<Item = &crate:
 
 pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
     let ir = index.ir;
+    let moved = super::selections::moved_occurrences(ir);
     let bodies: BTreeSet<&str> = ir
         .geometry
         .bodies
@@ -491,8 +612,12 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
             .map(crate::ids::BodyId::as_str)
             .collect();
         let mut posed: BTreeMap<&OccurrencePath, usize> = BTreeMap::new();
+        let active = scope
+            .active_configuration
+            .as_ref()
+            .map(ConfigurationId::as_str);
         for current in &scope.current {
-            check_current_position(index, &current.at, entity, findings);
+            check_current_position(index, &current.at, entity, active, findings);
             for body in &current.bodies {
                 *listed.entry(body.as_str()).or_default() += 1;
                 if !bodies.contains(body.as_str()) {
@@ -508,7 +633,7 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
             }
             for path in current.poses.keys() {
                 *posed.entry(path).or_default() += 1;
-                check_path_steps(index, path, entity, "pose", findings);
+                check_path(index, Some(entity), path, &moved, entity, findings);
             }
         }
         for body in &scope.unproduced {
@@ -573,16 +698,30 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
 /// A current state names an existing position, and one inside an ordered
 /// container is at that container's rollback position: spelled through its
 /// member where the rollback is stated, and as `After(Container(c))` where
-/// it is not (§5.3).
+/// it is not (§5.3). In an unordered container it is after a member that
+/// has a result of its own in the active configuration.
 fn check_current_position(
     index: &DesignRecords<'_>,
     at: &Position,
     entity: &str,
+    active: Option<&str>,
     findings: &mut Vec<Finding>,
 ) {
     let at = PositionKey::of(at);
     if !check_position(index, at, entity, findings) {
         return;
+    }
+    if let Some(member) = unordered_feature(index, at) {
+        if has_own_result(index, member, active) == Some(false) {
+            super::error(
+                findings,
+                entity,
+                format_args!(
+                    "current state is at {at}, but {} has no result of its own in the active configuration",
+                    member.id.as_str()
+                ),
+            );
+        }
     }
     if matches!(at, PositionKey::After(MemberKey::Container(_))) {
         if !index.at_unstated_rollback(at) {

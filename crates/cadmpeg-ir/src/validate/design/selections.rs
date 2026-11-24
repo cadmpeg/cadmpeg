@@ -25,6 +25,8 @@ use crate::native::view::NativeView;
 use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 
+use super::configurations::check_configuration_ref;
+use super::evaluations::check_resulting_position;
 use super::index::{DesignIndex, StateAt};
 use super::matching::Matchers;
 use super::names::derived_kinds;
@@ -106,14 +108,15 @@ pub(super) fn check<'a>(
             .flat_map(|content| content.delta.instance_bodies.keys())
         {
             let at = evaluation.id.as_str();
-            if path.0.iter().any(|step| step.configuration.is_some()) {
-                super::error(
-                    findings,
-                    at,
-                    format_args!("an instance-body path states a step configuration"),
-                );
-            }
-            check_path(&index.records, None, path, &moved, at, findings);
+            check_unconfigured(path, at, "an instance-body path", findings);
+            check_path(
+                &index.records,
+                Some(evaluation.scope.as_str()),
+                path,
+                &moved,
+                at,
+                findings,
+            );
         }
     }
     Ok(())
@@ -140,7 +143,9 @@ fn check_anchor<'a>(
             }
         }
         Anchor::Pinned(position) => {
-            if !position_resolves(index, position) {
+            if position_resolves(index, position) {
+                check_resulting_position(&index.records, PositionKey::of(position), at, findings);
+            } else {
                 super::error(
                     findings,
                     at,
@@ -160,9 +165,6 @@ fn check_anchor<'a>(
                 Anchor::Input | Anchor::Current | Anchor::Native(_) => true,
                 Anchor::Pinned(Position::After(Member::Feature(other))) => {
                     other.as_str() != feature && members.contains(&Member::Feature(other.clone()))
-                }
-                Anchor::Pinned(Position::After(member @ Member::Container(_))) => {
-                    members.contains(member)
                 }
                 Anchor::Pinned(_) => false,
             };
@@ -187,8 +189,8 @@ fn check_anchor<'a>(
     }
 }
 
-/// Whether a position names existing members, and `Start` an ordered
-/// container.
+/// Whether a position names existing members, and `Start` and
+/// `After(Container(c))` an ordered container.
 fn position_resolves(index: &DesignIndex<'_>, position: &Position) -> bool {
     match position {
         Position::Start(container) => matches!(
@@ -198,9 +200,10 @@ fn position_resolves(index: &DesignIndex<'_>, position: &Position) -> bool {
         Position::After(Member::Feature(feature)) => {
             index.place(MemberKey::Feature(feature.as_str())).is_some()
         }
-        Position::After(Member::Container(container)) => {
-            index.records.containers.contains_key(container.as_str())
-        }
+        Position::After(Member::Container(container)) => matches!(
+            index.records.containers.get(container.as_str()),
+            Some(crate::design::container::Container::Ordered { .. })
+        ),
     }
 }
 
@@ -717,6 +720,15 @@ fn check_definition(
     at: &str,
     findings: &mut Vec<Finding>,
 ) {
+    if let Some(configuration) = &definition.configuration {
+        check_configuration_ref(
+            &index.records,
+            configuration,
+            Some(definition.definition.as_str()),
+            at,
+            findings,
+        );
+    }
     if !index
         .records
         .definitions
@@ -745,10 +757,29 @@ pub(in crate::validate) fn moved_occurrences(ir: &CadIr) -> BTreeSet<&str> {
         .collect()
 }
 
+/// A path that states no step configuration: a nested override's, an
+/// instance-body entry's, a representation member's, or an instance
+/// target's (§5.8).
+pub(in crate::validate) fn check_unconfigured(
+    path: &OccurrencePath,
+    at: &str,
+    what: &str,
+    findings: &mut Vec<Finding>,
+) {
+    if path.0.iter().any(|step| step.configuration.is_some()) {
+        super::error(
+            findings,
+            at,
+            format_args!("{what} states a step configuration"),
+        );
+    }
+}
+
 /// An occurrence path resolves step by step from its root definition: each
 /// `Occurrence` step names an occurrence placed in the previous step's
 /// prototype, or in the root for the first step; every step after a
-/// `Native` step is `Native`.
+/// `Native` step is `Native`. A step's `configuration` follows the
+/// `ConfigurationRef` rule for that step's prototype.
 pub(in crate::validate) fn check_path(
     records: &DesignRecords<'_>,
     root: Option<&str>,
@@ -757,9 +788,6 @@ pub(in crate::validate) fn check_path(
     at: &str,
     findings: &mut Vec<Finding>,
 ) {
-    let mut record = |message: std::fmt::Arguments<'_>| {
-        super::error(findings, at, message);
-    };
     let mut native = false;
     let mut previous = root;
     for step in &path.0 {
@@ -770,30 +798,49 @@ pub(in crate::validate) fn check_path(
                 continue;
             }
             StepRef::Occurrence(_) if native => {
-                record(format_args!(
-                    "an occurrence path names an occurrence after a Native step"
-                ));
+                super::error(
+                    findings,
+                    at,
+                    format_args!("an occurrence path names an occurrence after a Native step"),
+                );
                 return;
             }
             StepRef::Occurrence(occurrence) => occurrence,
         };
-        let Some(record_) = records.occurrences.get(occurrence.as_str()) else {
-            record(format_args!(
-                "an occurrence path names occurrence {}, which does not exist",
-                occurrence.as_str()
-            ));
+        let Some(placed) = records.occurrences.get(occurrence.as_str()) else {
+            super::error(
+                findings,
+                at,
+                format_args!(
+                    "an occurrence path names occurrence {}, which does not exist",
+                    occurrence.as_str()
+                ),
+            );
             return;
         };
         if let (Some(expected), false) = (previous, moved.contains(occurrence.as_str())) {
             let placed_in = records.occurrence_owner(occurrence.as_str());
             if placed_in.is_some_and(|placed_in| placed_in != expected) {
-                record(format_args!(
+                super::error(
+                    findings,
+                    at,
+                    format_args!(
                     "occurrence path step {} is not an occurrence of the previous step's prototype",
                     occurrence.as_str()
-                ));
+                ),
+                );
                 return;
             }
         }
-        previous = Some(record_.prototype.as_str());
+        if let Some(configuration) = &step.configuration {
+            check_configuration_ref(
+                records,
+                configuration,
+                Some(placed.prototype.as_str()),
+                at,
+                findings,
+            );
+        }
+        previous = Some(placed.prototype.as_str());
     }
 }

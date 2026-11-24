@@ -11,8 +11,8 @@ use std::rc::Rc;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
-use super::evaluations::check_path_steps;
 use super::records::{DesignRecords, MemberKey, OfKey, PositionKey};
+use super::selections::{check_path, moved_occurrences};
 use crate::design::evaluation::{Evaluation, EvaluationStatus, StateBase, StateDelta};
 use crate::design::feature::FeatureOperation;
 use crate::design::names::{NameEntry, NameKind};
@@ -662,7 +662,7 @@ pub(super) fn check_resolved_states(
                 );
             }
         }
-        check_entries(index, &state, id, findings);
+        check_entries(index, &state, Some(evaluation.scope.as_str()), id, findings);
         check_closure(ctx, &state, &topology, ids, id, findings)?;
         let base_key = match &content.base {
             StateBase::Empty => StateKey::Empty,
@@ -713,13 +713,16 @@ fn check_current_names(
 }
 
 /// The resolved state's name, owner, member, instance-body, and pose entries
-/// name what the state holds.
+/// name what the state holds; instance-body and pose paths resolve from
+/// `root`, the definition of the state's scope.
 fn check_entries(
     index: &DesignRecords<'_>,
     state: &ResolvedState<'_>,
+    root: Option<&str>,
     evaluation: &str,
     findings: &mut Vec<Finding>,
 ) {
+    let moved = moved_occurrences(index.ir);
     for entity in state.names.keys() {
         let (arena, id) = Arena::of_entity(entity);
         if !state.holds(arena, id) {
@@ -776,7 +779,7 @@ fn check_entries(
         }
     }
     for (path, bodies) in &state.instance_bodies {
-        check_path_steps(index, path, evaluation, "instance-body", findings);
+        check_path(index, root, path, &moved, evaluation, findings);
         for body in *bodies {
             if !state.holds(Arena::Body, body.as_str()) {
                 super::error(
@@ -791,7 +794,7 @@ fn check_entries(
         }
     }
     for path in state.poses.keys() {
-        check_path_steps(index, path, evaluation, "pose", findings);
+        check_path(index, root, path, &moved, evaluation, findings);
     }
 }
 
@@ -933,7 +936,7 @@ pub(in crate::validate) fn check_process_states<'a>(
             &content.delta,
             Some((id, &mut process_findings)),
         );
-        check_entries(index, &resolved, id, &mut process_findings);
+        check_entries(index, &resolved, scope(state), id, &mut process_findings);
         check_closure(ctx, &resolved, &topology, ids, id, &mut process_findings)?;
         let base_key = match &content.base {
             ProcessBase::State(base) => Some(StateKey::Process(base.as_str())),
