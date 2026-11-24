@@ -6018,7 +6018,7 @@
       "properties": {
         "carrier": {
           "description": "The carrier.",
-          "$ref": "#/$defs/SolvedCurveGeometry"
+          "$ref": "#/$defs/InlineCurve"
         },
         "range": {
           "description": "The interval of the carrier's parameter. `None` is the carrier's whole\ndomain; a piece the source bounds inside that domain, an arc\nincluded, states it.",
@@ -39350,6 +39350,494 @@
       "required": [
         "parameter",
         "step"
+      ]
+    },
+    "InlineCurve": {
+      "description": "A curve carrier held outside a `Topology`: a leaf carrier, or an inline\nplacement of one. It names no record.",
+      "oneOf": [
+        {
+          "description": "Infinite line.",
+          "type": "object",
+          "properties": {
+            "direction": {
+              "description": "Line direction.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "kind": {
+              "type": "string",
+              "const": "line"
+            },
+            "origin": {
+              "description": "Line origin.",
+              "$ref": "#/$defs/Point3"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "origin",
+            "direction"
+          ]
+        },
+        {
+          "description": "Full circle.",
+          "type": "object",
+          "properties": {
+            "axis": {
+              "description": "Frame axis direction.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "center": {
+              "description": "Circle center.",
+              "$ref": "#/$defs/Point3"
+            },
+            "kind": {
+              "type": "string",
+              "const": "circle"
+            },
+            "radius": {
+              "description": "Circle radius.",
+              "type": "number",
+              "format": "double"
+            },
+            "ref_direction": {
+              "description": "Frame reference direction, perpendicular to `axis`.",
+              "$ref": "#/$defs/Vector3"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "center",
+            "axis",
+            "ref_direction",
+            "radius"
+          ]
+        },
+        {
+          "description": "Ellipse.",
+          "type": "object",
+          "properties": {
+            "axis": {
+              "description": "Frame axis direction.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "center": {
+              "description": "Ellipse center.",
+              "$ref": "#/$defs/Point3"
+            },
+            "kind": {
+              "type": "string",
+              "const": "ellipse"
+            },
+            "major_direction": {
+              "description": "Major-axis direction, perpendicular to `axis`.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "major_radius": {
+              "description": "Major semiaxis radius.",
+              "type": "number",
+              "format": "double"
+            },
+            "minor_radius": {
+              "description": "Minor semiaxis radius.",
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "center",
+            "axis",
+            "major_direction",
+            "major_radius",
+            "minor_radius"
+          ]
+        },
+        {
+          "description": "Parabola in STEP conic form.",
+          "type": "object",
+          "properties": {
+            "axis": {
+              "description": "Frame axis direction.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "focal_distance": {
+              "description": "Distance from the vertex to the focus.",
+              "type": "number",
+              "format": "double"
+            },
+            "kind": {
+              "type": "string",
+              "const": "parabola"
+            },
+            "major_direction": {
+              "description": "Major-axis direction, perpendicular to `axis`.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "vertex": {
+              "description": "Parabola vertex.",
+              "$ref": "#/$defs/Point3"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "vertex",
+            "axis",
+            "major_direction",
+            "focal_distance"
+          ]
+        },
+        {
+          "description": "Hyperbola in STEP conic form.",
+          "type": "object",
+          "properties": {
+            "axis": {
+              "description": "Frame axis direction.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "center": {
+              "description": "Hyperbola center.",
+              "$ref": "#/$defs/Point3"
+            },
+            "kind": {
+              "type": "string",
+              "const": "hyperbola"
+            },
+            "major_direction": {
+              "description": "Major-axis direction, perpendicular to `axis`.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "major_radius": {
+              "description": "Transverse semiaxis radius.",
+              "type": "number",
+              "format": "double"
+            },
+            "minor_radius": {
+              "description": "Conjugate semiaxis radius.",
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "center",
+            "axis",
+            "major_direction",
+            "major_radius",
+            "minor_radius"
+          ]
+        },
+        {
+          "description": "Free-form NURBS curve.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "nurbs"
+            }
+          },
+          "$ref": "#/$defs/NurbsCurve",
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "Source-native polyline with an explicit chordal error bound.",
+          "type": "object",
+          "properties": {
+            "chordal_deflection": {
+              "description": "Maximum chordal deviation recorded by the source.",
+              "type": "number",
+              "format": "double"
+            },
+            "kind": {
+              "type": "string",
+              "const": "polyline"
+            },
+            "samples": {
+              "description": "The polyline's sample rows.",
+              "$ref": "#/$defs/PolylineSamples"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "samples",
+            "chordal_deflection"
+          ]
+        },
+        {
+          "description": "Exact affine placement of an inline basis curve.",
+          "type": "object",
+          "properties": {
+            "basis": {
+              "description": "Unplaced basis geometry with unchanged parameterization.",
+              "$ref": "#/$defs/InlineCurve"
+            },
+            "kind": {
+              "type": "string",
+              "const": "transformed"
+            },
+            "transform": {
+              "description": "Affine map from basis coordinates to model coordinates.",
+              "$ref": "#/$defs/Transform"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "basis",
+            "transform"
+          ]
+        }
+      ]
+    },
+    "InlineSurface": {
+      "description": "A surface carrier held outside a `Topology`: a leaf carrier, or an inline\nplacement of one. It names no record.",
+      "oneOf": [
+        {
+          "description": "Infinite plane.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "plane"
+            },
+            "normal": {
+              "description": "Plane normal.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "origin": {
+              "description": "Plane origin.",
+              "$ref": "#/$defs/Point3"
+            },
+            "u_axis": {
+              "description": "First in-plane axis, perpendicular to `normal`.",
+              "$ref": "#/$defs/Vector3"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "origin",
+            "normal",
+            "u_axis"
+          ]
+        },
+        {
+          "description": "Right circular cylinder.",
+          "type": "object",
+          "properties": {
+            "axis": {
+              "description": "Frame axis direction.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "kind": {
+              "type": "string",
+              "const": "cylinder"
+            },
+            "origin": {
+              "description": "Cylinder frame origin.",
+              "$ref": "#/$defs/Point3"
+            },
+            "radius": {
+              "description": "Cylinder radius.",
+              "type": "number",
+              "format": "double"
+            },
+            "ref_direction": {
+              "description": "Frame reference direction, perpendicular to `axis`.",
+              "$ref": "#/$defs/Vector3"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "origin",
+            "axis",
+            "ref_direction",
+            "radius"
+          ]
+        },
+        {
+          "description": "Right elliptical cone.",
+          "type": "object",
+          "properties": {
+            "axis": {
+              "description": "Frame axis direction.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "half_angle": {
+              "description": "Half angle of the cone, in radians.",
+              "type": "number",
+              "format": "double"
+            },
+            "kind": {
+              "type": "string",
+              "const": "cone"
+            },
+            "origin": {
+              "description": "Cone frame origin.",
+              "$ref": "#/$defs/Point3"
+            },
+            "radius": {
+              "description": "Cross-section radius at the origin.",
+              "type": "number",
+              "format": "double"
+            },
+            "ratio": {
+              "description": "Ratio of the minor to the major cross-section radius.",
+              "type": "number",
+              "format": "double"
+            },
+            "ref_direction": {
+              "description": "Frame reference direction, perpendicular to `axis`.",
+              "$ref": "#/$defs/Vector3"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "origin",
+            "axis",
+            "ref_direction",
+            "radius",
+            "ratio",
+            "half_angle"
+          ]
+        },
+        {
+          "description": "Sphere.",
+          "type": "object",
+          "properties": {
+            "axis": {
+              "description": "Frame axis direction.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "center": {
+              "description": "Sphere center.",
+              "$ref": "#/$defs/Point3"
+            },
+            "kind": {
+              "type": "string",
+              "const": "sphere"
+            },
+            "radius": {
+              "description": "Signed sphere radius.",
+              "type": "number",
+              "format": "double"
+            },
+            "ref_direction": {
+              "description": "Frame reference direction, perpendicular to `axis`.",
+              "$ref": "#/$defs/Vector3"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "center",
+            "axis",
+            "ref_direction",
+            "radius"
+          ]
+        },
+        {
+          "description": "Torus.",
+          "type": "object",
+          "properties": {
+            "axis": {
+              "description": "Frame axis direction.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "center": {
+              "description": "Torus center.",
+              "$ref": "#/$defs/Point3"
+            },
+            "kind": {
+              "type": "string",
+              "const": "torus"
+            },
+            "major_radius": {
+              "description": "Distance from the center to the tube center.",
+              "type": "number",
+              "format": "double"
+            },
+            "minor_radius": {
+              "description": "Signed tube radius.",
+              "type": "number",
+              "format": "double"
+            },
+            "ref_direction": {
+              "description": "Frame reference direction, perpendicular to `axis`.",
+              "$ref": "#/$defs/Vector3"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "center",
+            "axis",
+            "ref_direction",
+            "major_radius",
+            "minor_radius"
+          ]
+        },
+        {
+          "description": "Free-form NURBS surface.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "nurbs"
+            }
+          },
+          "$ref": "#/$defs/NurbsSurface",
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "Source-native polygonal surface with an explicit chordal error bound.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "polygonal"
+            }
+          },
+          "$ref": "#/$defs/PolygonalSurface",
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "Exact affine placement of an inline basis surface.",
+          "type": "object",
+          "properties": {
+            "basis": {
+              "description": "Unplaced basis geometry with unchanged parameterization.",
+              "$ref": "#/$defs/InlineSurface"
+            },
+            "kind": {
+              "type": "string",
+              "const": "transformed"
+            },
+            "transform": {
+              "description": "Affine map from basis coordinates to model coordinates.",
+              "$ref": "#/$defs/Transform"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "basis",
+            "transform"
+          ]
+        }
       ]
     },
     "InnerWireTaper": {
@@ -99704,7 +100192,7 @@
           "description": "The chain curves.",
           "type": "array",
           "items": {
-            "$ref": "#/$defs/SolvedCurveGeometry"
+            "$ref": "#/$defs/InlineCurve"
           }
         },
         "direction": {
@@ -99756,7 +100244,7 @@
           "description": "A surface.",
           "anyOf": [
             {
-              "$ref": "#/$defs/SolvedSurfaceGeometry"
+              "$ref": "#/$defs/InlineSurface"
             },
             {
               "type": "null"
