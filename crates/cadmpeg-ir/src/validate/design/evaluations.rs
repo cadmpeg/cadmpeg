@@ -11,7 +11,7 @@ use crate::design::dimension::Dimension;
 use crate::design::evaluation::{EvaluationStatus, StateBase};
 use crate::design::feature::{Feature, FeatureOperation, OperationFamily};
 use crate::design::refs::Position;
-use crate::design::selection::{OccurrencePath, StepRef};
+use crate::design::selection::OccurrencePath;
 use crate::features::ConfigurationId;
 use crate::products::{ProductDefinition, Storage};
 use crate::report::check::Finding;
@@ -544,30 +544,6 @@ pub(super) fn is_stateless(
         .definition_in(feature, configuration)
         .operation
         .cannot_change_state()
-}
-
-/// Every `Occurrence` step of the path names an occurrence of the model.
-pub(super) fn check_path_steps(
-    index: &DesignRecords<'_>,
-    path: &OccurrencePath,
-    entity: &str,
-    what: &str,
-    findings: &mut Vec<Finding>,
-) {
-    for step in &path.0 {
-        if let StepRef::Occurrence(occurrence) = &step.occurrence {
-            if !index.occurrences.contains_key(occurrence.as_str()) {
-                super::error(
-                    findings,
-                    entity,
-                    format_args!(
-                        "{what} path names {}, which is no occurrence of the model",
-                        occurrence.as_str()
-                    ),
-                );
-            }
-        }
-    }
 }
 
 /// The bodies a definition lists in `bodies` and in its `instance_bodies`.
