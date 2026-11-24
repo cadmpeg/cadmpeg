@@ -250,6 +250,8 @@ pub(crate) enum InventorLossCode {
     FeatureDerivedSourceNative,
     /// Derived result-body operands retain unresolved current-model body joins.
     FeatureDerivedResultNative,
+    /// Stored-body Base results absent from the current model retain a history state that does not decode or passed its work cap.
+    FeatureBaseResultStateNative,
     /// Derived-part tagging has no neutral construction rule.
     FeatureDerivedTaggingNative,
     /// Tagging selection effects remain native.
@@ -465,6 +467,7 @@ impl InventorLossCode {
         Self::FeatureStateUnresolved,
         Self::FeatureDerivedSourceNative,
         Self::FeatureDerivedResultNative,
+        Self::FeatureBaseResultStateNative,
         Self::FeatureDerivedTaggingNative,
         Self::FeatureTaggingNative,
         Self::FeatureCompositeOperandsNative,
@@ -662,6 +665,7 @@ impl InventorLossCode {
             Self::FeatureStateUnresolved => "feature.state-unresolved",
             Self::FeatureDerivedSourceNative => "feature.derived-source-native",
             Self::FeatureDerivedResultNative => "feature.derived-result-native",
+            Self::FeatureBaseResultStateNative => "feature.base-result-state-native",
             Self::FeatureDerivedTaggingNative => "feature.derived-tagging-native",
             Self::FeatureTaggingNative => "feature.tagging-native",
             Self::FeatureCompositeOperandsNative => "feature.composite-operands-native",
@@ -848,6 +852,7 @@ impl InventorLossCode {
             | Self::FeatureStateUnresolved
             | Self::FeatureDerivedSourceNative
             | Self::FeatureDerivedResultNative
+            | Self::FeatureBaseResultStateNative
             | Self::FeatureDerivedTaggingNative
             | Self::FeatureCompositeOperandsNative
             | Self::FeatureCoilOperandsNative
@@ -1029,6 +1034,7 @@ mod tests {
                 "feature.state-unresolved",
                 "feature.derived-source-native",
                 "feature.derived-result-native",
+                "feature.base-result-state-native",
                 "feature.derived-tagging-native",
                 "feature.tagging-native",
                 "feature.composite-operands-native",

@@ -8,6 +8,7 @@ use cadmpeg_ir::features::evaluation::{FeatureResultMembers, FeatureResultTopolo
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 
+use super::history_views::{ResultStates, StateModel};
 use super::{
     FeatureFamily, FeatureInventory, PmDcFeature, PmDcFeatureProperty, PmDcFeaturePropertyKind,
     PmDcKernelEntityLink,
@@ -176,6 +177,46 @@ pub(crate) fn surface_reference(property: &PmDcFeatureProperty) -> Option<PmDcRe
     }
 }
 
+/// Whether `link` selects the active carrier record from the Base result
+/// wrapper `wrapper`. The body key then names a body of that carrier.
+fn carrier_link(
+    wrapper: &PmDcFeatureProperty,
+    link: &PmDcKernelEntityLink,
+    carrier_token: &str,
+    carrier_ordinal: u32,
+) -> bool {
+    let Some(reference) = surface_reference(wrapper) else {
+        return false;
+    };
+    reference.index() != 0
+        && !reference.qualified()
+        && link.header_value == 0
+        && link.state == 0
+        && link.selection_source == wrapper.header.source_index
+        && link.identity.segment_token.as_str() == carrier_token
+        && link.body.qualified()
+        && link.body.record_ordinal() == Some(carrier_ordinal)
+}
+
+/// Bodies of the final model that carry the key of `link`.
+fn keyed_bodies<'a>(
+    link: &PmDcKernelEntityLink,
+    carrier_token: &str,
+    carrier_ordinal: u32,
+    keys: &'a [BodyNativeKey],
+) -> impl Iterator<Item = &'a BodyNativeKey> {
+    let source = format!("B{carrier_token}:record:{carrier_ordinal}");
+    let entity = u64::from(link.entity_id);
+    keys.iter().filter(move |key| {
+        key.source_brep.as_deref() == Some(source.as_str()) && key.asm_body_key == Some(entity)
+    })
+}
+
+/// Body key of the result that `link` selects.
+pub(crate) fn result_key(link: &PmDcKernelEntityLink) -> i64 {
+    i64::from(link.entity_id)
+}
+
 pub(crate) fn current_body<'a>(
     wrapper: &PmDcFeatureProperty,
     link: &PmDcKernelEntityLink,
@@ -183,23 +224,83 @@ pub(crate) fn current_body<'a>(
     carrier_ordinal: u32,
     keys: &'a [BodyNativeKey],
 ) -> Option<&'a BodyNativeKey> {
-    let reference = surface_reference(wrapper)?;
-    if reference.index() == 0
-        || reference.qualified()
-        || link.header_value != 0
-        || link.state != 0
-        || link.selection_source != wrapper.header.source_index
-        || link.identity.segment_token.as_str() != carrier_token
-        || !link.body.qualified()
-        || link.body.record_ordinal()? != carrier_ordinal
-    {
+    if !carrier_link(wrapper, link, carrier_token, carrier_ordinal) {
         return None;
     }
-    let source = format!("B{carrier_token}:record:{carrier_ordinal}");
-    one(keys.iter().filter(|key| {
-        key.source_brep.as_deref() == Some(source.as_str())
-            && key.asm_body_key == Some(u64::from(link.entity_id))
-    }))
+    one(keyed_bodies(link, carrier_token, carrier_ordinal, keys))
+}
+
+/// Whether the result of a Base feature can only be a body of a history
+/// state: the link selects the active carrier record and no body of the final
+/// model has its key.
+pub(crate) fn history_candidate(
+    wrapper: &PmDcFeatureProperty,
+    link: &PmDcKernelEntityLink,
+    carrier_token: &str,
+    carrier_ordinal: u32,
+    keys: &[BodyNativeKey],
+) -> bool {
+    carrier_link(wrapper, link, carrier_token, carrier_ordinal)
+        && keyed_bodies(link, carrier_token, carrier_ordinal, keys)
+            .next()
+            .is_none()
+}
+
+/// What the history state of a Base feature shows of its result body.
+enum StateBody {
+    /// The state holds the result body, and the state before it does not.
+    Held,
+    /// No state introduces the key.
+    Absent,
+    /// The state does not decode, or does not hold a body with the key.
+    Failed,
+    /// The views of the part passed their work cap.
+    Bounded,
+}
+
+/// Read the state that first lists `source_index` for the result key of
+/// `link` (spec section 13.4).
+fn state_body(
+    ctx: &DecodeContext<'_>,
+    states: Option<&dyn ResultStates>,
+    source_index: u32,
+    link: &PmDcKernelEntityLink,
+) -> Result<StateBody, CodecError> {
+    let Some(states) = states else {
+        return Ok(StateBody::Absent);
+    };
+    if !states.introduces(source_index, result_key(link)) {
+        return Ok(StateBody::Absent);
+    }
+    let state = states.after(ctx, source_index)?;
+    let model = match &*state {
+        StateModel::Model(model) => model,
+        StateModel::Unavailable => return Ok(StateBody::Absent),
+        StateModel::Failed => return Ok(StateBody::Failed),
+        StateModel::Bounded => return Ok(StateBody::Bounded),
+    };
+    let keys: Vec<BodyNativeKey> = model
+        .native
+        .namespace("inventor")
+        .map_or(Ok(Vec::new()), |namespace| {
+            namespace.arena_as_for_decode(ctx, "body_native_keys")
+        })?;
+    let key = u64::from(link.entity_id);
+    let held = one(keys
+        .iter()
+        .filter(|candidate| candidate.asm_body_key == Some(key)))
+    .is_some_and(|candidate| {
+        model
+            .geometry
+            .bodies
+            .iter()
+            .any(|body| body.id == candidate.body)
+    });
+    Ok(if held {
+        StateBody::Held
+    } else {
+        StateBody::Failed
+    })
 }
 
 pub(crate) fn unique_link_header(
@@ -293,15 +394,33 @@ pub(crate) struct Projection {
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
+/// Records that the Base projection reads.
+#[derive(Clone, Copy)]
+pub(crate) struct Inputs<'a> {
+    pub(crate) document: &'a RseInventory<'a>,
+    pub(crate) inventory: &'a FeatureInventory,
+    pub(crate) design: &'a DesignInventory,
+    pub(crate) transforms: &'a [crate::sketch::PmDcTransform],
+    /// Body keys of the final model.
+    pub(crate) keys: &'a [BodyNativeKey],
+    /// Views of history states, for a result that the final model no longer
+    /// holds.
+    pub(crate) states: Option<&'a dyn ResultStates>,
+}
+
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
-    document: &RseInventory<'_>,
-    inventory: &FeatureInventory,
-    design: &DesignInventory,
-    transforms: &[crate::sketch::PmDcTransform],
-    keys: &[BodyNativeKey],
+    inputs: &Inputs<'_>,
     ir: &mut cadmpeg_ir::CadIr,
 ) -> Result<Projection, CodecError> {
+    let Inputs {
+        document,
+        inventory,
+        design,
+        transforms,
+        keys,
+        states,
+    } = *inputs;
     let crate::kernel::ActiveCarrierState::Selected(carrier) = &document.active_carrier else {
         return Ok(Projection::default());
     };
@@ -492,27 +611,56 @@ pub(crate) fn project(
         else {
             continue;
         };
-        let Some(body) = current_body(
+        match current_body(
             output,
             link,
             carrier.segment_token.as_str(),
             carrier.record_ordinal,
             keys,
-        ) else {
-            if derived.is_some() {
-                projection.losses.push(crate::loss::InventorLossCode::FeatureDerivedResultNative.note(
-                    "Derived result-body operand (slot 1) has an unresolved current-model body join; the feature remains native.",
-                ));
+        ) {
+            Some(body) => {
+                if !ir
+                    .geometry
+                    .bodies
+                    .iter()
+                    .any(|candidate| candidate.id == body.body)
+                {
+                    continue;
+                }
             }
-            continue;
-        };
-        if !ir
-            .geometry
-            .bodies
-            .iter()
-            .any(|candidate| candidate.id == body.body)
-        {
-            continue;
+            None => {
+                if derived.is_some() {
+                    projection.losses.push(crate::loss::InventorLossCode::FeatureDerivedResultNative.note(
+                        "Derived result-body operand (slot 1) has an unresolved current-model body join; the feature remains native.",
+                    ));
+                    continue;
+                }
+                if !history_candidate(
+                    output,
+                    link,
+                    carrier.segment_token.as_str(),
+                    carrier.record_ordinal,
+                    keys,
+                ) {
+                    continue;
+                }
+                match state_body(ctx, states, source.header.source_index, link)? {
+                    StateBody::Held => {}
+                    StateBody::Absent => continue,
+                    StateBody::Failed => {
+                        projection.losses.push(crate::loss::InventorLossCode::FeatureBaseResultStateNative.note(
+                            "Base result body is absent from the current model and its history state does not decode to a body with the result key; the feature remains native.",
+                        ));
+                        continue;
+                    }
+                    StateBody::Bounded => {
+                        projection.losses.push(crate::loss::InventorLossCode::FeatureBaseResultStateNative.note(
+                            "Base result body is absent from the current model and its history state passed the local work cap of state views; the feature remains native.",
+                        ));
+                        continue;
+                    }
+                }
+            }
         }
         let Some(body_id) = cadmpeg_core::text::NonBlankString::new(output.id()) else {
             continue;
