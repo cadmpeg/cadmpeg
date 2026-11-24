@@ -228,6 +228,12 @@ fn check_construction(
             error(format_args!("a ParameterRatio value is not on an AtParameter input that picks one edge or curve"),
             );
         }
+        check_ratio_spelling(
+            index,
+            input.value.as_ref(),
+            input.reference.as_ref(),
+            &mut error,
+        );
         match &input.reference {
             Some(InputReference::Picks(selection)) => {
                 if let Picks::Named(picks) = &selection.picks {
@@ -391,12 +397,124 @@ fn parameter_ratio_admitted(
                 Picks::Unread => true,
                 Picks::Rule { .. } => false,
             },
-            Some(InputReference::Built(built)) => matches!(
-                built.as_ref(),
-                crate::design::construction::AnyConstruction::Curve(_)
-            ),
-            None => false,
+            Some(InputReference::Built(_)) | None => false,
         }
+}
+
+/// A `ParameterRatio` value is no literal 0 or 1, and picks no curve the
+/// document states as a line, a circle, or a circular arc, whose spelling is
+/// `Ratio`; a datum axis, a principal axis, and an `InfiniteLine` have no
+/// ends and take neither a `Ratio` nor a `ParameterRatio` (§5.9).
+fn check_ratio_spelling(
+    index: &DesignIndex<'_>,
+    value: Option<&ScalarDimension>,
+    reference: Option<&InputReference>,
+    error: &mut impl FnMut(std::fmt::Arguments<'_>),
+) {
+    let parameter_ratio = match value {
+        Some(ScalarDimension::ParameterRatio(ratio)) => Some(ratio),
+        Some(ScalarDimension::Ratio(_)) => None,
+        _ => return,
+    };
+    if let Some(Dimension::Literal(ratio)) = parameter_ratio {
+        if ratio.get() == 0.0 || ratio.get() == 1.0 {
+            error(format_args!(
+                "a ParameterRatio value is a literal {}, an end of the curve",
+                ratio.get()
+            ));
+        }
+    }
+    let Some(InputReference::Picks(selection)) = reference else {
+        return;
+    };
+    let Picks::Named(picks) = &selection.picks else {
+        return;
+    };
+    for pick in picks.as_slice() {
+        match stated_curve(index, pick) {
+            StatedCurve::Endless => error(format_args!(
+                "a Ratio or ParameterRatio value picks a datum axis, a principal axis, or an infinite line, which has no ends"
+            )),
+            StatedCurve::Conic if parameter_ratio.is_some() => error(format_args!(
+                "a ParameterRatio value picks a curve the document states as a line, a circle, or an arc; it is a Ratio"
+            )),
+            StatedCurve::Conic | StatedCurve::Other => {}
+        }
+    }
+}
+
+/// What the document states a picked curve to be, where a ratio along it
+/// reads that.
+enum StatedCurve {
+    /// A line with no ends: a datum axis, a principal axis, or an
+    /// `InfiniteLine` sketch entity.
+    Endless,
+    /// A sketch entity stated as a bounded line, a circle, or a circular arc.
+    Conic,
+    /// Any other pick, or one whose curve is not stated.
+    Other,
+}
+
+fn stated_curve(index: &DesignIndex<'_>, pick: &Picked) -> StatedCurve {
+    match &pick.target {
+        PickTarget::Principal { entity, .. }
+        | PickTarget::Datum {
+            part: Some(DatumPart::Principal(entity)),
+            ..
+        } if matches!(
+            entity,
+            PrincipalEntity::XAxis | PrincipalEntity::YAxis | PrincipalEntity::ZAxis
+        ) =>
+        {
+            StatedCurve::Endless
+        }
+        PickTarget::Datum {
+            feature,
+            part: None,
+        } => match datum_element(index, feature.as_str()) {
+            DatumFeature::Datum(DatumElement::Axis(_)) => StatedCurve::Endless,
+            _ => StatedCurve::Other,
+        },
+        PickTarget::SketchEntity(entity) => {
+            match index
+                .sketch_entities
+                .get(entity.as_str())
+                .and_then(|entity| solved_curve(&entity.definition))
+            {
+                Some(PlanarCurve::InfiniteLine { .. }) => StatedCurve::Endless,
+                Some(
+                    PlanarCurve::Line { .. } | PlanarCurve::Circle { .. } | PlanarCurve::Arc { .. },
+                ) => StatedCurve::Conic,
+                _ => StatedCurve::Other,
+            }
+        }
+        PickTarget::SpatialSketchEntity(entity) => {
+            match index
+                .spatial_sketch_entities
+                .get(entity.as_str())
+                .and_then(|entity| solved_curve(&entity.definition))
+            {
+                Some(SpatialCurve::Bounded(bounded)) => match &bounded.carrier {
+                    crate::geometry::InlineCurve::Circle(_) => StatedCurve::Conic,
+                    crate::geometry::InlineCurve::Line(_) if bounded.range.is_some() => {
+                        StatedCurve::Conic
+                    }
+                    _ => StatedCurve::Other,
+                },
+                _ => StatedCurve::Other,
+            }
+        }
+        _ => StatedCurve::Other,
+    }
+}
+
+/// A sketch entity's curve: a free entity's own, a defined one's solved
+/// cache.
+fn solved_curve<S: SketchSpace>(definition: &EntityDefinition<S>) -> Option<&S::Curve> {
+    match definition {
+        EntityDefinition::Free(curve) => Some(curve),
+        EntityDefinition::Defined { solved, .. } => solved.as_ref(),
+    }
 }
 
 /// The number of picks each relation's reference holds.

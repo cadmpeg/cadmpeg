@@ -318,19 +318,90 @@ fn a_parameter_ratio_does_not_pick_a_sketch_point() {
 
 #[test]
 fn a_parameter_ratio_picks_a_sketch_curve_or_an_edge() {
-    assert_clean(&ratio_on_sketch_entity(&json!({"kind": "line", "value": {
-        "start": {"u": 0.0, "v": 0.0},
-        "end": {"u": 1.0, "v": 0.0}
-    }})));
-    assert_clean(&ratio_on_sketch_entity(&json!({"kind": "arc", "value": {
-        "center": {"u": 0.0, "v": 0.0},
-        "radius": 1.0,
-        "start": 0.0,
-        "end": 1.0
-    }})));
+    assert_clean(&ratio_on_sketch_entity(
+        &json!({"kind": "ellipse", "value": {
+            "center": {"u": 0.0, "v": 0.0},
+            "major": [1.0, 0.0],
+            "radii": [2.0, 1.0]
+        }}),
+    ));
     assert_clean(&ratio_on(
         json!({"target": {"kind": "entity", "value": generated("edge", "a")}}),
     ));
+}
+
+const RATIO_SPELLED: &str =
+    "a ParameterRatio value picks a curve the document states as a line, a circle, or an arc";
+
+#[test]
+fn a_parameter_ratio_of_a_line_circle_or_arc_is_a_ratio() {
+    for curve in [
+        json!({"kind": "line", "value": {"start": {"u": 0.0, "v": 0.0}, "end": {"u": 1.0, "v": 0.0}}}),
+        json!({"kind": "circle", "value": {"center": {"u": 0.0, "v": 0.0}, "radius": 1.0}}),
+        json!({"kind": "arc", "value": {
+            "center": {"u": 0.0, "v": 0.0},
+            "radius": 1.0,
+            "start": 0.0,
+            "end": 1.0
+        }}),
+    ] {
+        assert_finding(
+            &ratio_on_sketch_entity(&curve),
+            Check::Design,
+            Severity::Error,
+            RATIO_SPELLED,
+        );
+    }
+}
+
+#[test]
+fn a_parameter_ratio_is_no_literal_end() {
+    let edge = json!({"target": {"kind": "entity", "value": generated("edge", "a")}});
+    for end in [0.0, 1.0] {
+        let ir = plane_b_with(input(
+            "at_parameter",
+            Some(named(input_anchor(), vec![edge.clone()])),
+            Some(json!({"kind": "parameter_ratio", "value": literal(end)})),
+        ));
+        assert_finding(
+            &ir,
+            Check::Design,
+            Severity::Error,
+            "a ParameterRatio value is a literal",
+        );
+    }
+}
+
+#[test]
+fn an_endless_line_takes_no_ratio() {
+    const ENDLESS: &str = "which has no ends";
+    assert_finding(
+        &ratio_on(datum_pick("a")),
+        Check::Design,
+        Severity::Error,
+        ENDLESS,
+    );
+    assert_finding(
+        &ratio_on(principal("y_axis")),
+        Check::Design,
+        Severity::Error,
+        ENDLESS,
+    );
+    assert_finding(
+        &ratio_on_sketch_entity(&json!({"kind": "infinite_line", "value": {
+            "through": {"u": 0.0, "v": 0.0},
+            "direction": [1.0, 0.0]
+        }})),
+        Check::Design,
+        Severity::Error,
+        ENDLESS,
+    );
+    let ratio = plane_b_with(input(
+        "midway",
+        Some(named(input_anchor(), vec![principal("z_axis")])),
+        Some(json!({"kind": "ratio", "value": literal(0.5)})),
+    ));
+    assert_finding(&ratio, Check::Design, Severity::Error, ENDLESS);
 }
 
 /// The named unit cube with a linear pattern `p` of `run` after `b`, the
