@@ -134,6 +134,7 @@ fn a_partial_face_states_no_area_and_its_body_no_volume() {
             .map(crate::value::Unavailable::reason),
         Some(crate::reason::UnavailableReason::BoundaryPartialFace)
     );
+    let report = measure(&cube, &Selection::default());
     let [body] = report.bodies().as_slice() else {
         panic!("one body row");
     };
