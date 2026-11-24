@@ -313,7 +313,7 @@
         },
         "instance": {
           "description": "Instance of this format layer inside the containing document.\n\n`None` when the layer occurs once or has no report-local identity. This\nis not source-declared evidence and therefore does not belong in\n[`Self::declared`].",
-          "type": "string"
+          "$ref": "#/$defs/NonBlankString"
         }
       },
       "additionalProperties": false,
@@ -820,6 +820,10 @@
         "code",
         "kind"
       ]
+    },
+    "NonBlankString": {
+      "type": "string",
+      "pattern": "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]"
     },
     "NonEmptyMap": {
       "type": "object",
