@@ -478,6 +478,7 @@ impl PlannedConversion {
             self.prepared.selection.format,
             &self.prepared.destination,
             &self.prepared.document.origin,
+            &self.prepared.document.ir,
         )
     }
 }
@@ -548,6 +549,7 @@ pub(crate) fn emit_export_plan(
     format: Format,
     destination: &ResolvedDestination,
     origin: &LoadOrigin,
+    ir: &cadmpeg_ir::CadIr,
 ) -> AnyResult<ExportEmission> {
     let needs_sidecar = format == Format::Cadir
         && matches!(
@@ -557,7 +559,7 @@ pub(crate) fn emit_export_plan(
     if let ResolvedDestination::File(path) = destination {
         let (report, cadir_sha256) = artifact_store::write_plan_atomic(path, plan)?;
         let sidecar = if format == Format::Cadir {
-            artifact_store::persist_decode_sidecar(path, &cadir_sha256, origin)?
+            artifact_store::persist_decode_sidecar(path, &cadir_sha256, origin, ir)?
         } else {
             SidecarPersistOutcome::Absent
         };

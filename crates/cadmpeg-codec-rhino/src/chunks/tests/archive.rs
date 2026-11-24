@@ -820,10 +820,16 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
     let face = &geometry.faces[0];
     let loop_record = &geometry.loops[0];
     assert_eq!(region.body, body.id);
-    assert_eq!(region.shells, vec![shell.id.clone()]);
+    assert_eq!(
+        region.stated_shells().cloned().collect::<Vec<_>>(),
+        vec![shell.id.clone()]
+    );
     assert_eq!(shell.region, region.id);
     assert_eq!(face.shell, shell.id);
-    assert_eq!(face.loops, vec![loop_record.id.clone()]);
+    assert_eq!(
+        face.loops.boundary().expect("a complete face"),
+        vec![loop_record.id.clone()]
+    );
     assert_eq!(loop_record.face, face.id);
     assert!(geometry
         .coedges

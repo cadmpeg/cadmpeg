@@ -35,18 +35,6 @@ pub(super) fn print_source_diff(source: &cadmpeg_ir::SourceDiff) -> Result<()> {
             render_attribute(change.right.as_deref())
         );
     }
-    if source.local_digests.is_empty() {
-        return Ok(());
-    }
-    println!("  machine-local digests (informational, not a difference):");
-    for change in &source.local_digests {
-        println!(
-            "    {}: {} → {}",
-            change.key,
-            render_attribute(change.left.as_deref()),
-            render_attribute(change.right.as_deref())
-        );
-    }
     Ok(())
 }
 

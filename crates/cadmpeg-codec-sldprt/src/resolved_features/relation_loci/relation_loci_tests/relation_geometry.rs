@@ -20,7 +20,7 @@ use crate::resolved_features::transforms::tests::marker;
 use crate::resolved_features::transforms::ProfileAxis;
 use crate::resolved_features::transforms::{marker_entities, MarkerEntityFilter};
 use crate::resolved_features::typed_relations::binary_relation_matches_evaluated_geometry;
-use crate::resolved_features::typed_relations::marker_relation_is_inactive;
+use crate::resolved_features::typed_relations::marker_relation_contradicts_geometry;
 use crate::resolved_features::typed_relations::typed_marker_relation_definition_in_sketch;
 use crate::resolved_features::typed_relations::unique_axis_aligned_linked_loci;
 use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
@@ -422,7 +422,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
         definition,
         SketchConstraintDefinitionInput::CoincidentLoci { .. }
     ));
-    assert!(marker_relation_is_inactive(
+    assert!(marker_relation_contradicts_geometry(
         &coincident,
         &definition,
         &[first.clone(), second.clone(), line.clone(), arc.clone()],

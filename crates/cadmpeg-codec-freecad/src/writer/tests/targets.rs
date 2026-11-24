@@ -6,12 +6,12 @@ use cadmpeg_test_support::wire;
 
 use crate::native::DocumentFacts;
 use crate::test_support::test_archive::{archive, rewrite_schema_version, CORE_DESIGN_PRODUCT};
+use crate::writer::target::UNCARRIED_DIGEST;
 use crate::FcstdCodec;
 use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput};
-use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
 use std::io::Cursor;
 use std::sync::LazyLock;
@@ -88,10 +88,13 @@ fn schema_two_archive() -> Vec<u8> {
     )
 }
 
-fn inherit(ir: &CadIr) -> Result<cadmpeg_ir::codec::write::ExportPlan, CodecError> {
+fn inherit(
+    ir: &CadIr,
+    fidelity: Option<&cadmpeg_ir::SourceFidelity>,
+) -> Result<cadmpeg_ir::codec::write::ExportPlan, CodecError> {
     Encoder::plan(
         &FcstdCodec,
-        EncodeInput::new(ir, None),
+        EncodeInput::new(ir, fidelity),
         TargetRequest::Inherit,
     )
 }
@@ -118,7 +121,8 @@ fn entry_payloads(archive: &[u8]) -> std::collections::BTreeMap<String, Vec<u8>>
 #[test]
 fn inherit_preserves_a_schema_four_source_entry_for_entry() {
     let decoded = &*CORE_DESIGN;
-    let plan = inherit(decoded.ir()).expect("schema 4 is preserved");
+    let plan =
+        inherit(decoded.ir(), Some(decoded.source_fidelity())).expect("schema 4 is preserved");
 
     assert!(matches!(
         plan.report().write_path(),
@@ -172,7 +176,8 @@ fn inherit_preserves_a_schema_two_source_outside_the_catalog() {
         "schema 2 is preserved, never synthesized"
     );
 
-    let plan = inherit(decoded.ir()).expect("schema 2 is preserved");
+    let plan =
+        inherit(decoded.ir(), Some(decoded.source_fidelity())).expect("schema 2 is preserved");
     assert_eq!(
         wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
             plan.report(),
@@ -225,7 +230,8 @@ fn inherit_preserves_an_unknown_schema_declaration_exactly() {
         "04"
     );
 
-    let plan = inherit(decoded.ir()).expect("the retained residual dialect is preservable");
+    let plan = inherit(decoded.ir(), Some(decoded.source_fidelity()))
+        .expect("the retained residual dialect is preservable");
     assert_eq!(
         wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
             plan.report(),
@@ -265,7 +271,7 @@ fn inherit_refuses_a_schema_two_source_with_no_usable_baseline() {
         .expect("decode schema 2");
     let (mut ir, _, _) = decoded.into_parts();
     ir.native
-        .namespace_mut("fcstd")
+        .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
         .set_arena::<DocumentFacts>(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             "document",
@@ -273,7 +279,7 @@ fn inherit_refuses_a_schema_two_source_with_no_usable_baseline() {
         )
         .expect("drop the document record");
 
-    let error = inherit(&ir).expect_err("a schema-2 source with no baseline is refused");
+    let error = inherit(&ir, None).expect_err("a schema-2 source with no baseline is refused");
     let CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
@@ -374,7 +380,7 @@ fn inherit_refuses_a_source_that_records_no_dialect() {
         .unwrap(),
     );
 
-    let error = inherit(&ir).expect_err("a source with no recorded dialect is refused");
+    let error = inherit(&ir, None).expect_err("a source with no recorded dialect is refused");
     let CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
@@ -428,7 +434,7 @@ fn every_preserved_write_re_decodes_as_the_dialect_the_report_named() {
         let decoded = FcstdCodec
             .decode(&mut Cursor::new(source.to_vec()), &DecodeOptions::default())
             .unwrap_or_else(|error| panic!("{label} source must decode, got {error}"));
-        let plan = inherit(decoded.ir())
+        let plan = inherit(decoded.ir(), Some(decoded.source_fidelity()))
             .unwrap_or_else(|error| panic!("{label} is preserved, got {error}"));
         let claimed = wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
             plan.report(),
@@ -523,28 +529,34 @@ fn decode_at(depth: DecodeDepth) -> cadmpeg_ir::DecodeResult {
         .expect("decode source")
 }
 
-fn recorded_digest(ir: &CadIr) -> Option<&String> {
-    ir.source
-        .as_ref()
-        .and_then(|source| source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE))
+fn recorded_digest(
+    decoded: &cadmpeg_ir::DecodeResult,
+) -> Option<&cadmpeg_ir::hash::digest::Sha256Digest> {
+    decoded
+        .source_fidelity()
+        .codec_digests
+        .get(UNCARRIED_DIGEST)
 }
 
 #[test]
 fn only_a_full_decode_records_the_digest() {
     let full = &*CORE_DESIGN;
     assert_eq!(full.ir().scope(), DecodeDepth::Full.scope());
-    assert!(recorded_digest(full.ir()).is_some());
+    assert!(recorded_digest(full).is_some());
     for depth in [DecodeDepth::Geometry, DecodeDepth::Container] {
         let decoded = decode_at(depth);
         assert_eq!(decoded.ir().scope(), depth.scope());
-        assert_eq!(recorded_digest(decoded.ir()), None, "{depth}");
+        assert_eq!(recorded_digest(&decoded), None, "{depth}");
     }
 }
 
 /// Writes `ir` through `Inherit` and returns the report and the file.
-fn patched(ir: &CadIr) -> (cadmpeg_ir::report::export::ExportReport, Vec<u8>) {
+fn patched(
+    ir: &CadIr,
+    fidelity: Option<&cadmpeg_ir::SourceFidelity>,
+) -> (cadmpeg_ir::report::export::ExportReport, Vec<u8>) {
     let mut bytes = Vec::new();
-    let report = inherit(ir)
+    let report = inherit(ir, fidelity)
         .expect("the retained document patches")
         .write_to(&mut bytes)
         .expect("the patch writes");
@@ -572,7 +584,7 @@ fn export_losses(
 /// and reports `export:edit.unverified`, edited or not.
 #[test]
 fn a_geometry_document_is_patched_and_its_edits_reported_unverified() {
-    let (full_report, full_bytes) = patched(CORE_DESIGN.ir());
+    let (full_report, full_bytes) = patched(CORE_DESIGN.ir(), Some(CORE_DESIGN.source_fidelity()));
     assert_eq!(export_losses(&full_report), []);
     let decoded = decode_at(DecodeDepth::Geometry);
     let mut edited = decoded.ir().clone();
@@ -586,7 +598,7 @@ fn a_geometry_document_is_patched_and_its_edits_reported_unverified() {
             "yes".to_owned(),
         );
     for ir in [decoded.ir(), &edited] {
-        let (report, bytes) = patched(ir);
+        let (report, bytes) = patched(ir, Some(decoded.source_fidelity()));
         assert_eq!(bytes, full_bytes);
         assert_eq!(
             export_losses(&report),
@@ -600,26 +612,22 @@ fn a_geometry_document_is_patched_and_its_edits_reported_unverified() {
 #[test]
 fn a_container_document_is_an_unsupported_target() {
     let decoded = decode_at(DecodeDepth::Container);
-    let error = inherit(decoded.ir()).expect_err("no entry is retained");
+    let error =
+        inherit(decoded.ir(), Some(decoded.source_fidelity())).expect_err("no entry is retained");
     let CodecError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
     };
     assert_eq!(refusal.format(), "fcstd");
 }
 
-/// A `Full` document that lost its digest cannot prove that it is unedited:
+/// A `Full` document whose sidecar lost its digest cannot prove that it is unedited:
 /// it is patched and reported as a document below `Full` is.
 #[test]
 fn a_full_document_without_its_digest_is_patched_and_reported_unverified() {
-    let (_, unedited) = patched(CORE_DESIGN.ir());
-    let mut stripped = CORE_DESIGN.ir().clone();
-    stripped
-        .source
-        .as_mut()
-        .expect("the fixture records a source")
-        .attributes
-        .remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
-    let (report, bytes) = patched(&stripped);
+    let (_, unedited) = patched(CORE_DESIGN.ir(), Some(CORE_DESIGN.source_fidelity()));
+    let mut stripped = CORE_DESIGN.source_fidelity().clone();
+    assert!(stripped.codec_digests.remove(UNCARRIED_DIGEST).is_some());
+    let (report, bytes) = patched(CORE_DESIGN.ir(), Some(&stripped));
     assert_eq!(
         bytes, unedited,
         "the stripped document patches as the unedited one"
@@ -636,7 +644,7 @@ fn a_full_document_without_its_digest_is_patched_and_reported_unverified() {
 fn a_neutral_edit_is_refused_and_the_unedited_document_still_writes() {
     let decoded = &*CORE_DESIGN;
     let mut control = Vec::new();
-    inherit(decoded.ir())
+    inherit(decoded.ir(), Some(decoded.source_fidelity()))
         .expect("an unedited document is preserved")
         .write_to(&mut control)
         .expect("write control");
@@ -655,7 +663,9 @@ fn a_neutral_edit_is_refused_and_the_unedited_document_still_writes() {
         "{} renamed",
         body.name.as_deref().unwrap_or("body")
     ));
-    let Err(CodecError::NotImplemented(message)) = inherit(&edited) else {
+    let Err(CodecError::NotImplemented(message)) =
+        inherit(&edited, Some(decoded.source_fidelity()))
+    else {
         panic!("a neutral edit must be refused");
     };
     assert!(
@@ -664,7 +674,7 @@ fn a_neutral_edit_is_refused_and_the_unedited_document_still_writes() {
     );
 
     let mut rewritten = Vec::new();
-    inherit(decoded.ir())
+    inherit(decoded.ir(), Some(decoded.source_fidelity()))
         .expect("the unedited document is still preserved")
         .write_to(&mut rewritten)
         .expect("write unedited");

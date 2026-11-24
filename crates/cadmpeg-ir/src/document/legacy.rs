@@ -10,6 +10,25 @@ const WIRE_10_CHANGES: &str = "wire 11 writes each enum value's variant under `k
      holds the topology arenas under `geometry` instead of `model`, records `scope` instead of \
      `decode_depth`, and writes `design` and `process`";
 
+/// The refusal of a `model` member that names an arena the wire omits,
+/// given the reader's refusal `message`. Earlier builds of wire 11 wrote these
+/// arenas.
+pub(super) fn omitted_arena_refusal(message: &str) -> Option<String> {
+    // The model reader lists its members from `assets`, the first arena of the
+    // `model` home; a record nested in the model lists its own.
+    let arena = super::ArenaName::WIRE_OMITTED.iter().find(|arena| {
+        message.contains(&format!(
+            "unknown field `{}`, expected one of `assets`",
+            arena.key()
+        ))
+    })?;
+    Some(format!(
+        "{message}; `model.{}` is a design arena that an earlier build of wire {IR_VERSION} \
+         wrote and the current wire omits; decode the source file again",
+        arena.key()
+    ))
+}
+
 /// The refusal of a document whose `ir_version` is not [`IR_VERSION`].
 pub(super) fn unsupported_version(version: Option<&str>) -> String {
     match version {
@@ -222,5 +241,24 @@ mod tests {
             "{error}"
         );
         assert!(!error.contains("wire 11"), "{error}");
+    }
+
+    #[test]
+    fn omitted_arena_refusal_names_the_arena() {
+        let mut document: serde_json::Value = serde_json::from_str(
+            &crate::examples::unit_cube()
+                .unwrap()
+                .to_canonical_json()
+                .unwrap(),
+        )
+        .unwrap();
+        document["model"]["parameters"] = serde_json::json!([]);
+        let error = CadIr::from_json(&document.to_string())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("`model.parameters` is a design arena"),
+            "{error}"
+        );
     }
 }

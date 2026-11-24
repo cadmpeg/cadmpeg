@@ -1003,10 +1003,6 @@ fn generated_source_less_reports_auxiliary_geometry_and_source_identity_it_drops
         format: cadmpeg_ir::codec_id!("step"),
         object_id: cadmpeg_core::text::NonBlankString::new("object-1")
             .expect("nonempty source identity"),
-        name: Some("exact carrier".into()),
-        color: None,
-        visible: Some(true),
-        layer: None,
         instance_path: Vec::new(),
     };
 
@@ -1579,13 +1575,12 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
-    source_less.geometry.regions.push(Region {
-        id: region.clone(),
-        body,
-        shells: vec![shell.clone()],
-        native_ref: None,
-    });
+    source_less
+        .geometry
+        .regions
+        .push(Region::new(region.clone(), body, vec![shell.clone()]));
     source_less
         .geometry
         .shells

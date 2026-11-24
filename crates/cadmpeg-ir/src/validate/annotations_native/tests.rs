@@ -13,14 +13,14 @@ fn model_entity_wins_when_native_id_collides() {
     let id = ir.geometry.points[0].id.as_str().to_owned();
     let mut namespace = NativeNamespace::default();
     namespace.arenas_mut().insert(
-        "records".into(),
+        cadmpeg_core::nonblank_literal!("records"),
         vec![NativeRecord::new(
             crate::ids::Identity::new(id.clone()).expect("valid identity"),
             Map::from_iter([("native_only".into(), Value::Bool(true))]),
         )
         .expect("valid native identity")],
     );
-    ir.native.0.insert("collision".into(), namespace);
+    ir.native.0.insert(crate::codec_id!("collision"), namespace);
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let all_ids = super::BorrowedIdentities::build(|add| add(id.as_str(), ()));
     let mut builder = crate::AnnotationBuilder::new();
@@ -69,14 +69,17 @@ fn annotation_keys_and_field_paths_are_checked() {
 #[test]
 fn native_topology_link_must_resolve() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    ir.native.namespace_mut("f3d").arenas_mut().insert(
-        "sketch_curve_links".into(),
-        vec![NativeRecord::new(
-            crate::ids::Identity::new("native:test:link#0").expect("valid identity"),
-            serde_json::from_value(serde_json::json!({"links": ["missing"]})).unwrap(),
-        )
-        .expect("valid native identity")],
-    );
+    ir.native
+        .namespace_mut(crate::codec_id!("f3d"))
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::nonblank_literal!("sketch_curve_links"),
+            vec![NativeRecord::new(
+                crate::ids::Identity::new("native:test:link#0").expect("valid identity"),
+                serde_json::from_value(serde_json::json!({"links": ["missing"]})).unwrap(),
+            )
+            .expect("valid native identity")],
+        );
     ir.native.finalize();
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
@@ -89,7 +92,7 @@ fn native_topology_link_must_resolve() {
 fn parameter_native_ref_must_resolve() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     // The document holds the native namespace that the links name.
-    ir.native.namespace_mut("native");
+    ir.native.namespace_mut(crate::codec_id!("native"));
     let id = crate::features::ParameterId::mint("synthetic:test:parameter#native-ref")
         .expect("identity grammar");
     ir.model
@@ -231,23 +234,26 @@ fn native_annotation_paths_report_only_unresolvable_paths() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let id = "test:native:record#payload";
     let mut ir = crate::CadIr::empty();
-    ir.native.namespace_mut("test").arenas_mut().insert(
-        "records".into(),
-        vec![NativeRecord::new(
-            crate::ids::Identity::new(id).unwrap(),
-            Map::from_iter([
-                (
-                    "payload".into(),
-                    Value::Array((0..3).map(Value::from).collect()),
-                ),
-                (
-                    "nested".into(),
-                    serde_json::json!({"null": null, "rows": [{"value": true}]}),
-                ),
-            ]),
-        )
-        .unwrap()],
-    );
+    ir.native
+        .namespace_mut(crate::codec_id!("test"))
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::nonblank_literal!("records"),
+            vec![NativeRecord::new(
+                crate::ids::Identity::new(id).unwrap(),
+                Map::from_iter([
+                    (
+                        "payload".into(),
+                        Value::Array((0..3).map(Value::from).collect()),
+                    ),
+                    (
+                        "nested".into(),
+                        serde_json::json!({"null": null, "rows": [{"value": true}]}),
+                    ),
+                ]),
+            )
+            .unwrap()],
+        );
     let mut builder = crate::AnnotationBuilder::new();
     for path in [
         "id",
@@ -289,16 +295,19 @@ fn many_native_annotation_paths_parse_their_record_once() {
     const FIELDS: usize = 1 << 14;
     let id = "test:native:record#wide";
     let mut ir = crate::CadIr::empty();
-    ir.native.namespace_mut("test").arenas_mut().insert(
-        "records".into(),
-        vec![NativeRecord::new(
-            crate::ids::Identity::new(id).unwrap(),
-            (0..FIELDS)
-                .map(|index| (format!("field{index:05}"), Value::from(index)))
-                .collect(),
-        )
-        .unwrap()],
-    );
+    ir.native
+        .namespace_mut(crate::codec_id!("test"))
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::nonblank_literal!("records"),
+            vec![NativeRecord::new(
+                crate::ids::Identity::new(id).unwrap(),
+                (0..FIELDS)
+                    .map(|index| (format!("field{index:05}"), Value::from(index)))
+                    .collect(),
+            )
+            .unwrap()],
+        );
     let mut builder = crate::AnnotationBuilder::new();
     for index in 0..FIELDS {
         builder.derived(id, &format!("field{index:05}")).unwrap();

@@ -20,11 +20,12 @@ use crate::design::parameter::{
 };
 use crate::design::refs::ConfigurationRef;
 use crate::design::scope::DesignScope;
-use crate::design::selection::{Anchor, OccurrencePath, StepRef};
+use crate::design::selection::Anchor;
 use crate::design::units::{Quantity, ValueKind};
 use crate::ids::ProductDefinitionId;
 use crate::products::Storage;
 use crate::report::check::Finding;
+use crate::validate::products::definitions::{check_representation_name, last_prototype};
 
 /// What holds a set of overrides.
 #[derive(Clone, Copy)]
@@ -484,14 +485,6 @@ fn check_arrangement(
     }
 }
 
-/// The prototype of a path's last occurrence.
-fn last_prototype<'a>(index: &DesignRecords<'a>, path: &OccurrencePath) -> Option<&'a str> {
-    match &path.0.last()?.occurrence {
-        StepRef::Occurrence(occurrence) => index.prototype(occurrence.as_str()),
-        StepRef::Native(_) => None,
-    }
-}
-
 fn check_overrides(
     index: &DesignRecords<'_>,
     holder: &str,
@@ -680,9 +673,21 @@ fn check_occurrence_override(
             .or_else(|| index.prototype(occurrence));
         check_configuration_ref(index, configuration, prototype, holder, findings);
     }
+    if let Some(name) = &value.representation {
+        let prototype = value
+            .prototype
+            .as_ref()
+            .map(ProductDefinitionId::as_str)
+            .or_else(|| index.prototype(occurrence));
+        check_representation_name(index, prototype, name.as_str(), holder, findings);
+    }
     let mut paths = BTreeSet::new();
     for nested in &value.nested {
         check_path_steps(index, &nested.path, holder, "nested override", findings);
+        if let Some(name) = &nested.representation {
+            let prototype = last_prototype(index, &nested.path);
+            check_representation_name(index, prototype, name.as_str(), holder, findings);
+        }
         if !paths.insert(&nested.path) {
             super::error(
                 findings,

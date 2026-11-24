@@ -91,9 +91,9 @@ pub(super) fn repair(
     let mut roles = Vec::new();
     let mut constraint = ir.geometry.edges.len();
     for (face_index, face) in ir.geometry.faces.iter().enumerate() {
-        if face.loops.len() < 2 {
+        let Some(face_loops) = face.loops.boundary().filter(|loops| loops.len() >= 2) else {
             continue;
-        }
+        };
         let Some(surface) = surfaces.get(&face.surface) else {
             continue;
         };
@@ -101,7 +101,7 @@ pub(super) fn repair(
             continue;
         };
         let mut rows = Vec::new();
-        for id in &face.loops {
+        for id in face_loops {
             let Some(&boundary) = loops.get(id) else {
                 continue;
             };

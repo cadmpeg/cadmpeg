@@ -11,7 +11,7 @@ use cadmpeg_core::CodecError;
 use super::records::ProcessRecords;
 use crate::design::dimension::Dimension;
 use crate::design::evaluation::{EvaluationStatus, StateBase};
-use crate::design::feature::FeatureOperation;
+use crate::design::feature::{FeatureOperation, OperationFamily};
 use crate::design::ids::MachiningFeatureId;
 use crate::document::CadIr;
 use crate::features::ConfigurationId;
@@ -25,12 +25,13 @@ pub(super) fn check_evaluations(
     records: &ProcessRecords<'_>,
     max_chain_depth: u64,
     findings: &mut Vec<Finding>,
-) {
+) -> Result<(), CodecError> {
     check_configuration_states(records, findings);
     check_toolpaths(records, findings);
     check_states(records, findings);
-    check_chains(records, max_chain_depth, findings);
+    check_chains(records, max_chain_depth, findings)?;
     check_material_removal(records, findings);
+    Ok(())
 }
 
 /// Whether `configuration` names a configuration of `scope`. A configuration
@@ -294,6 +295,28 @@ fn check_state_feature(
             format_args!("process state names {feature}, which is no feature of its setup's scope"),
         );
     }
+    if let Some(record) = records.design.features.get(feature) {
+        let configuration = state.configuration.as_ref().map(ConfigurationId::as_str);
+        let removal = matches!(
+            records
+                .design
+                .definition_in(record, configuration)
+                .operation,
+            FeatureOperation::MaterialRemoval
+                | FeatureOperation::Unresolved {
+                    family: OperationFamily::MaterialRemoval,
+                }
+        );
+        if !removal {
+            super::error(
+                findings,
+                id,
+                format_args!(
+                    "process state names {feature}, which is no `MaterialRemoval` feature"
+                ),
+            );
+        }
+    }
 }
 
 fn check_base(
@@ -398,9 +421,14 @@ fn check_base(
     }
 }
 
-/// Process bases form a forest, and no chain of bases, counted through the
-/// evaluations it rests on, is deeper than a reader admits (§2.5, §7.9).
-fn check_chains(records: &ProcessRecords<'_>, max_chain_depth: u64, findings: &mut Vec<Finding>) {
+/// Process bases form a forest (§7.9). A chain of bases, counted through the
+/// evaluations it rests on, longer than the caller's ceiling refuses the
+/// session (§2.5).
+fn check_chains(
+    records: &ProcessRecords<'_>,
+    max_chain_depth: u64,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
     #[derive(Clone, Copy)]
     enum Mark {
         OnChain,
@@ -473,6 +501,7 @@ fn check_chains(records: &ProcessRecords<'_>, max_chain_depth: u64, findings: &m
             marks.insert(id, Mark::Depth(depth));
         }
     }
+    let mut deepest = 0;
     for (id, mark) in marks {
         if cyclic.contains(id) {
             super::error(
@@ -481,16 +510,12 @@ fn check_chains(records: &ProcessRecords<'_>, max_chain_depth: u64, findings: &m
                 format_args!("process state is its own ancestor through its state bases; bases form a forest"),
             );
         } else if let Mark::Depth(depth) = mark {
-            if depth > max_chain_depth {
-                super::error(
-                    findings,
-                    id,
-                    format_args!(
-                        "process state's chain of state bases is {depth} deep, past the ceiling of {max_chain_depth} a reader admits"
-                    ),
-                );
-            }
+            deepest = deepest.max(depth);
         }
+    }
+    match crate::validate::state_chain_refusal(max_chain_depth, deepest) {
+        Some(refusal) => Err(refusal),
+        None => Ok(()),
     }
 }
 
