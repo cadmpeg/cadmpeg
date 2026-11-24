@@ -239,3 +239,34 @@ fn unreadable_edge_adds_a_loss_and_states_an_unread_edge() {
     assert!(matches!(flange(&result, 0).edges.picks, Picks::Unread));
     assert!(codes(&result).contains(&"sheet-metal.flange-field-unread".to_owned()));
 }
+
+#[test]
+fn values_bound_to_document_variables_follow_the_rule() {
+    // §10.3: a value that has a relation follows the document variable. With
+    // a rule stated, the feature leaves those fields `None` (the rule's value)
+    // and states only the values set on the flange.
+    let records: Vec<(u32, f64)> = (2..=13).map(|index| (index, 0.001)).collect();
+    let rule = || vec![("CustomPropertyVariableInfo", variable_table(12, &records))];
+    let spec = FlangeSpec {
+        relief_type: 51.0,
+        relief_width: 0.0015,
+        relief_length: 0.003,
+        ..FlangeSpec::default()
+    };
+    let bound = decode_with(std::slice::from_ref(&spec), &rule());
+    let found = flange(&bound, 0);
+    assert!(found.bend.radius.is_none());
+    let relief = found.bend.relief.as_ref().unwrap();
+    assert!(relief.width.is_none());
+    assert!(relief.depth.is_none());
+
+    let own = decode_with(
+        &[FlangeSpec {
+            radius: 0.002,
+            radius_bound: false,
+            ..spec
+        }],
+        &rule(),
+    );
+    assert!((millimetres(flange(&own, 0).bend.radius.as_ref()) - 2.0).abs() <= EPS_VALUE);
+}
