@@ -7,11 +7,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_container::compound::CompoundSnapshot;
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::container::{Container, OrderedKind};
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ids::ContainerId;
+use cadmpeg_ir::design::names::CodecName;
 use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::document::CadIr;
@@ -277,7 +277,7 @@ fn operation(kind: &Kind) -> Option<(FeatureOperation, Option<String>)> {
         Kind::Group | Kind::Folder => return None,
     };
     let native = FeatureOperation::Native {
-        kind: NonBlankString::new(format!("solidedge:{name}"))?,
+        kind: CodecName::new(&cadmpeg_ir::codec_id!("solidedge"), name)?,
         native_options: BTreeMap::new(),
         source_settings: BTreeMap::new(),
     };
@@ -327,6 +327,7 @@ fn timeline(listed: &[Listed], losses: &mut Vec<LossNote>) -> Option<Vec<Feature
             suppressed: None,
             definition: FeatureDefinition {
                 operation,
+                assembly: None,
                 refine: None,
                 fuzzy_tolerance: None,
             },
