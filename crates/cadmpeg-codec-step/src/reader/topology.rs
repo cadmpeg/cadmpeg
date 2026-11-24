@@ -1260,12 +1260,7 @@ fn build_wire_set(
         curves: Vec::new(),
         surfaces: Vec::new(),
         shells: vec![shell_value],
-        region: Region {
-            id: region.clone(),
-            body: body.clone(),
-            shells: vec![shell],
-            native_ref: None,
-        },
+        region: Region::new(region.clone(), body.clone(), vec![shell]),
         body: Body {
             id: body.clone(),
             kind: BodyKind::Wire,
@@ -1274,6 +1269,7 @@ fn build_wire_set(
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         },
     });
     let mut built = match staged {
@@ -1544,12 +1540,7 @@ fn build_shell_wire_set(
         curves: Vec::new(),
         surfaces: Vec::new(),
         shells: vec![shell_value],
-        region: Region {
-            id: region.clone(),
-            body: body.clone(),
-            shells: vec![shell],
-            native_ref: None,
-        },
+        region: Region::new(region.clone(), body.clone(), vec![shell]),
         body: Body {
             id: body.clone(),
             kind: BodyKind::Wire,
@@ -1558,6 +1549,7 @@ fn build_shell_wire_set(
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         },
     });
     let mut built = match staged {
@@ -1750,12 +1742,11 @@ fn build_geometric_set(
         faces,
         curves: Vec::new(),
         surfaces: Vec::new(),
-        region: Region {
-            id: region.clone(),
-            body: body.clone(),
-            shells: shells.iter().map(|shell| shell.id.clone()).collect(),
-            native_ref: None,
-        },
+        region: Region::new(
+            region.clone(),
+            body.clone(),
+            shells.iter().map(|shell| shell.id.clone()).collect(),
+        ),
         shells,
         body: Body {
             id: body,
@@ -1765,6 +1756,7 @@ fn build_geometric_set(
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         },
     });
     match staged {
@@ -3062,12 +3054,7 @@ fn build_one(
     let mut faces = Vec::new();
     let mut surfaces = Vec::new();
     let mut shells = Vec::new();
-    let mut region = Region {
-        id: rid.clone(),
-        body: bid.clone(),
-        shells: Vec::new(),
-        native_ref: None,
-    };
+    let mut region = Region::new(rid.clone(), bid.clone(), Vec::new());
     let body = Body {
         id: bid,
         kind: if solid {
@@ -3080,6 +3067,7 @@ fn build_one(
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     };
     let mut used_v = BTreeSet::<(u64, u64)>::new();
     let mut used_e = BTreeSet::<(u64, u64)>::new();
@@ -3820,7 +3808,7 @@ fn build_one(
                 faces[first_face + face_index].shell = component_shell.clone();
             }
             shells.push(Shell::new(component_shell.clone(), rid.clone()));
-            region.shells.push(component_shell);
+            region.push_shell(component_shell);
         }
         typed.insert(shell_step);
     }

@@ -741,16 +741,24 @@ fn carried_errors_follow_native_format_and_complete_coverage() {
     let mut ir = CadIr::empty();
     let f3d_id = "f3d:test:asm-history#0";
     let nx_id = "nx:test:record#0";
-    for (namespace, arena, id) in [("f3d", "asm_histories", f3d_id), ("nx", "records", nx_id)] {
-        ir.native.namespace_mut(namespace).arenas_mut().insert(
-            arena.into(),
-            vec![crate::NativeRecord::new(
-                crate::ids::Identity::new(id).expect("valid native identity"),
-                serde_json::Map::default(),
-            )
-            .expect("valid native record")],
+    let record = |id: &str| {
+        vec![crate::NativeRecord::new(
+            crate::ids::Identity::new(id).expect("valid native identity"),
+            serde_json::Map::default(),
+        )
+        .expect("valid native record")]
+    };
+    ir.native
+        .namespace_mut(crate::codec_id!("f3d"))
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::nonblank_literal!("asm_histories"),
+            record(f3d_id),
         );
-    }
+    ir.native
+        .namespace_mut(crate::codec_id!("nx"))
+        .arenas_mut()
+        .insert(cadmpeg_core::nonblank_literal!("records"), record(nx_id));
     ir.finalize();
     let report = validation_report(vec![
         finding(Some(f3d_id), "invalid native record", Severity::Error),

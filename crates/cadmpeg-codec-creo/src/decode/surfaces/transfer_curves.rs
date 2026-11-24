@@ -570,10 +570,6 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,
@@ -786,10 +782,6 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,

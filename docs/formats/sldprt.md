@@ -3576,3 +3576,26 @@ The placement is relative to the assembly model that contains the `swReference`.
 ### 11.5 Virtual components
 
 A virtual component (`swIsVirtualComponent="YES"`) has its document stored in the assembly document that places it. The document of a virtual component model has a file stem `<name>^<assembly>`, where `<assembly>` is the stem of the assembly document that holds the section. Its section is `VirtualComp/<name>-sldprt`, where `<name>` matches without ASCII case. The section holds a complete part document of the container of §1, with the partition of each of that document's configurations. The Parasolid streams of the section belong only to the virtual component's document. A virtual component of a sub-assembly is stored in the sub-assembly's document.
+
+## 12. Codec digests
+
+The `SourceFidelity.codec_digests` of a SLDPRT decode (CADIR §3.1, Rule B) holds the SHA-256 digests below. Each digest covers the canonical JSON of the records its row names, as the decode states them. A key that ends in `_local_sha256` covers values computed with floating-point functions. The other keys cover values the file stores.
+
+| Key | Records |
+| --- | --- |
+| `brep_local_sha256` | The B-rep: geometry, topology, and face appearances, without names, colors, tessellations, history, and native records. |
+| `sldprt_configuration_feature_states_local_sha256` | The feature states of each configuration. |
+| `sldprt_configuration_parameter_values_local_sha256` | The parameter values of each configuration. |
+| `sldprt_native_configuration_sha256` | The configurations of the native feature histories. |
+| `sldprt_native_history_sha256` | The native feature histories. |
+| `sldprt_native_parameter_sha256` | The parameters of the native feature histories. |
+| `sldprt_native_sketch_sha256` | The native feature-input lanes. |
+| `sldprt_neutral_configuration_local_sha256` | The configurations. |
+| `sldprt_neutral_feature_local_sha256` | The features. |
+| `sldprt_neutral_parameter_local_sha256` | The parameters. |
+| `sldprt_neutral_sketch_constraint_local_sha256` | The sketch constraints. |
+| `sldprt_neutral_sketch_local_sha256` | The sketches, sketch entities, sketch constraints, spatial sketches, and spatial sketch entities. |
+| `sldprt_pmi_local_sha256` | The PMI annotations. |
+| `sldprt_swobjects_local_sha256` | The metadata attributes and the materials of the `swObjects` stream. |
+| `sldprt_swobjects_material_local_sha256` | The materials of the `swObjects` stream. |
+| `sldprt_swobjects_metadata_identity_local_sha256` | The ids and names of the metadata attributes of the `swObjects` stream. |

@@ -1454,7 +1454,7 @@ fn configuration_solid(
         .regions
         .iter()
         .filter(|region| bodies.contains(&region.body))
-        .flat_map(|region| &region.shells)
+        .flat_map(cadmpeg_ir::topology::Region::stated_shells)
         .collect::<HashSet<_>>();
     let faces = geometry
         .faces
@@ -1519,7 +1519,7 @@ fn configuration_surface_carriers(
     let mut shells = HashSet::new();
     for region in &ir.geometry.regions {
         if bodies.contains(&region.body) {
-            for id in &region.shells {
+            for id in region.stated_shells() {
                 shells.insert(id);
             }
         }

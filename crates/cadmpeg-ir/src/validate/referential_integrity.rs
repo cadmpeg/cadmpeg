@@ -145,7 +145,6 @@ mod tests {
             .push(crate::products::ProductDefinition {
                 sketches: Vec::default(),
 
-                tessellations: Vec::new(),
                 id: owner.try_into().unwrap(),
                 kind: Some(crate::products::ProductDefinitionKind::Part),
                 source_name: Some("test:model:name#plain".into()),

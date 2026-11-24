@@ -59,8 +59,7 @@
           "source_object": {
             "format": "rhino",
             "instance_path": [],
-            "object_id": "00000000-0000-0000-0000-000000000000",
-            "visible": true
+            "object_id": "00000000-0000-0000-0000-000000000000"
           }
         }
       ],
@@ -106,8 +105,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -307,6 +305,8 @@
       },
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "7688554bedf615049090b55756a5b3edbcbde615fa1ea34b8cb1641ff5ae94f3",
     "file_digests": {},
     "retained_records": {

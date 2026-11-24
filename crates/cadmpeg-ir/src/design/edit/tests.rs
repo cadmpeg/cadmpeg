@@ -112,6 +112,7 @@ fn operation(key: u32, operation: FeatureOperation) -> Feature {
         suppressed: None,
         definition: FeatureDefinition {
             operation,
+            assembly: None,
             refine: None,
             fuzzy_tolerance: None,
         },
@@ -219,6 +220,7 @@ fn evaluation(
 
 fn body(key: u32) -> Body {
     Body {
+        unstated: None,
         id: id("body", key),
         kind: BodyKind::Solid,
         transform: None,
@@ -1542,12 +1544,10 @@ fn grouped() -> CadIr {
         .collect();
     document.geometry = crate::document::Topology::default();
     document.geometry.bodies = (1..=3).map(body).collect();
-    document.geometry.regions.push(Region {
-        id: id("region", 2),
-        body: id("body", 2),
-        shells: Vec::new(),
-        native_ref: None,
-    });
+    document
+        .geometry
+        .regions
+        .push(Region::new(id("region", 2), id("body", 2), Vec::new()));
     document.model.product_definitions = vec![product_definition(&[1, 2, 3])];
     document.design.names =
         BTreeMap::from([(EntityRef::Body(id("body", 2)), native_name("two"))]).into();
@@ -1584,6 +1584,7 @@ fn removing_an_unordered_member_removes_its_own_result() {
     document.model.presentation_layers = vec![crate::presentation::PresentationLayer {
         id: id("layer", 1),
         name: "Layer".to_owned(),
+        parent: None,
         description: None,
         visible: None,
         items: [1, 2]
@@ -1596,6 +1597,7 @@ fn removing_an_unordered_member_removes_its_own_result() {
                 )
             })
             .collect(),
+        native_ref: None,
     }];
     let resolved = document.resolved(&id("evaluation", 5)).unwrap();
 
@@ -1693,12 +1695,10 @@ fn configured() -> CadIr {
     scope.current[0].bodies = vec![id("body", 1)];
     document.geometry.bodies.push(body(1));
     document.geometry.bodies.push(body(9));
-    document.geometry.regions.push(Region {
-        id: id("region", 1),
-        body: id("body", 1),
-        shells: Vec::new(),
-        native_ref: None,
-    });
+    document
+        .geometry
+        .regions
+        .push(Region::new(id("region", 1), id("body", 1), Vec::new()));
     document
         .model
         .product_definitions

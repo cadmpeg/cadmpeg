@@ -207,11 +207,11 @@ fn presentation_pipeline_binds_materials_face_colors_tessellation_and_pmi() {
     let display = decode(sldprt_with_body_and_display_list(&triangle_body()));
     assert!(!display.ir().model.tessellations.is_empty());
     assert_eq!(
-        display.ir().model.tessellations[0].faces,
+        display.ir().model.tessellations[0].of.faces(),
         [display.ir().geometry.faces[0].id.clone()]
     );
     assert_eq!(
-        display.ir().model.tessellations[0].body.as_ref(),
+        display.ir().model.tessellations[0].of.body(),
         Some(&display.ir().geometry.bodies[0].id)
     );
     let tessellation_exactness = &display.source_fidelity().annotations.exactness()
@@ -247,8 +247,7 @@ fn presentation_pipeline_binds_materials_face_colors_tessellation_and_pmi() {
 fn tessellation_geometry_does_not_choose_between_coincident_faces() {
     let decoded = decode(sldprt_with_body_and_display_list(&triangle_body()));
     let mut decoded = decoded;
-    decoded.ir_mut().model.tessellations[0].body = None;
-    decoded.ir_mut().model.tessellations[0].faces.clear();
+    decoded.ir_mut().model.tessellations[0].of = cadmpeg_ir::tessellation::Meshed::Unresolved;
     let mut coincident = decoded.ir().geometry.faces[0].clone();
     coincident.id =
         cadmpeg_ir::ids::FaceId::mint("sldprt:brep:face#coincident").expect("identity grammar");
@@ -266,8 +265,8 @@ fn tessellation_geometry_does_not_choose_between_coincident_faces() {
     )
     .unwrap();
 
-    assert!(decoded.ir().model.tessellations[0].body.is_none());
-    assert!(decoded.ir().model.tessellations[0].faces.is_empty());
+    assert!(decoded.ir().model.tessellations[0].of.body().is_none());
+    assert!(decoded.ir().model.tessellations[0].of.faces().is_empty());
 }
 
 #[test]
@@ -305,8 +304,8 @@ fn authored_with_retained_native_envelope_writer_pipeline_round_trips_a_cube_and
         .unwrap();
     let second = decode(bytes);
     assert_eq!(
-        crate::decode::document_local_sha256(first.ir()).unwrap(),
-        crate::decode::document_local_sha256(second.ir()).unwrap()
+        crate::test_support::document_local_sha256(first.ir()).unwrap(),
+        crate::test_support::document_local_sha256(second.ir()).unwrap()
     );
     semantic_writer_omits_subds_and_names_them();
 }
@@ -648,8 +647,8 @@ fn metadata_fallback_transfers_display_meshes_without_geometry() {
     assert!(!result.report().geometry_transferred());
     assert!(!result.ir().model.tessellations.is_empty());
     for mesh in &result.ir().model.tessellations {
-        assert!(mesh.body.is_none());
-        assert!(mesh.faces.is_empty());
+        assert!(mesh.of.body().is_none());
+        assert!(mesh.of.faces().is_empty());
         assert!(mesh.vertex_count() > 0);
     }
     assert!(result

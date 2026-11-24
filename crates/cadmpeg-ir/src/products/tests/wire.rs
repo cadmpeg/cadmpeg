@@ -40,7 +40,6 @@ fn definition() -> Value {
         },
         "storage": {"kind": "file", "document": {"document_id": "uid-1"}},
         "bodies": ["test:model:body#0"],
-        "tessellations": ["test:model:tessellation#0"],
         "occurrences": ["test:model:occurrence#0"],
         "instance_bodies": [{
             "occurrence": path("test:model:occurrence#0"),
@@ -80,7 +79,6 @@ fn a_definition_reads_back_with_every_field_stated() {
         "bom_properties": {},
         "storage": {"kind": "embedded"},
         "bodies": [],
-        "tessellations": [],
         "occurrences": [],
         "instance_bodies": [],
         "representations": []
@@ -107,7 +105,6 @@ fn an_unstated_definition_field_has_one_spelling() {
     for key in [
         "storage",
         "bodies",
-        "tessellations",
         "occurrences",
         "instance_bodies",
         "representations",

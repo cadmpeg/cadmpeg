@@ -87,7 +87,7 @@ use sheet_metal_forms::{
     SheetMetalRelief, SheetMetalThicknessSide, SheetMetalTransition,
 };
 use surface_inputs::{
-    CurveProjectionDirection, FilledSurfaceContinuityState, RuledSurfaceCorner, RuledSurfaceMode,
+    CurveProjectionDirection, FilledSurfaceContinuity, RuledSurfaceCorner, RuledSurfaceMode,
     SurfaceBoundary, SurfaceExtension, SurfaceProjectionMode, TrimRegion, WrapMode,
 };
 use sweeps::{
@@ -1628,10 +1628,11 @@ pub enum FeatureOperation {
         support_faces: FaceSelection,
         /// Uniform, component-specific, or unresolved boundary continuity.
         #[serde(
-            default = "FilledSurfaceContinuityState::unresolved",
-            skip_serializing_if = "FilledSurfaceContinuityState::is_unresolved"
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_continuity"
         )]
-        continuity: FilledSurfaceContinuityState,
+        continuity: Option<FilledSurfaceContinuity>,
         /// Whether the generated patch is merged into adjacent surface bodies,
         /// when resolved.
         #[serde(
@@ -2325,6 +2326,11 @@ impl From<SketchFeatureBindingWire> for SketchFeatureBinding {
 }
 
 cadmpeg_core::named_optional_field!(deserialize_filled_surface_weight, PositiveReal, "weight");
+cadmpeg_core::named_optional_field!(
+    deserialize_continuity,
+    FilledSurfaceContinuity,
+    "continuity"
+);
 
 selection_field_deserializer!(deserialize_selection_native, "native");
 selection_field_deserializer!(deserialize_selection_local_id, "local_id");

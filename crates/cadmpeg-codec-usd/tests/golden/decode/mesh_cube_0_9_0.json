@@ -22,19 +22,7 @@
     },
     "fragment": false,
     "geometry": {
-      "bodies": [
-        {
-          "color": {
-            "a": 1.0,
-            "b": 0.10000000149011612,
-            "g": 0.20000000298023224,
-            "r": 0.800000011920929
-          },
-          "id": "usd:stage:body#/Cube/Box",
-          "kind": "general",
-          "name": "Box"
-        }
-      ],
+      "bodies": [],
       "coedges": [],
       "curves": [],
       "edges": [],
@@ -138,13 +126,10 @@
           "source_name": "Cube",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
-          "bodies": [
-            "usd:stage:body#/Cube/Box"
-          ],
+          "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Cube/Box",
           "instance_bodies": [],
@@ -155,8 +140,7 @@
           "source_name": "Box",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -170,8 +154,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -179,9 +162,7 @@
       "solver_settings": [],
       "tessellations": [
         {
-          "body": "usd:stage:body#/Cube/Box",
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "usd:stage:tessellation#/Cube/Box",
           "mesh": {
@@ -519,6 +500,16 @@
               }
             ]
           },
+          "of": {
+            "color": {
+              "a": 1.0,
+              "b": 0.10000000149011612,
+              "g": 0.20000000298023224,
+              "r": 0.800000011920929
+            },
+            "definition": "usd:stage:definition#/Cube/Box",
+            "kind": "definition"
+          },
           "texture_assignments": [],
           "texture_coordinates": [
             {
@@ -761,6 +752,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "4a9814b6e92b4b2ef4d333c4659de02b99ca7c908f3d7a34a8a7be9ff8da778b",
     "file_digests": {},
     "retained_records": {},

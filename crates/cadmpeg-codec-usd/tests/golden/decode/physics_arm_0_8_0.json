@@ -22,23 +22,7 @@
     },
     "fragment": false,
     "geometry": {
-      "bodies": [
-        {
-          "id": "usd:stage:body#/Arm/Base/Geom",
-          "kind": "general",
-          "name": "Geom"
-        },
-        {
-          "id": "usd:stage:body#/Arm/Slider/Geom",
-          "kind": "general",
-          "name": "Geom"
-        },
-        {
-          "id": "usd:stage:body#/Arm/Upper/Geom",
-          "kind": "general",
-          "name": "Geom"
-        }
-      ],
+      "bodies": [],
       "coedges": [],
       "curves": [],
       "edges": [],
@@ -83,8 +67,8 @@
           },
           "target": {
             "entity": {
-              "body": "usd:stage:body#/Arm/Base/Geom",
-              "kind": "body"
+              "definition": "usd:stage:definition#/Arm/Base/Geom",
+              "kind": "definition"
             }
           }
         },
@@ -98,8 +82,8 @@
           },
           "target": {
             "entity": {
-              "body": "usd:stage:body#/Arm/Slider/Geom",
-              "kind": "body"
+              "definition": "usd:stage:definition#/Arm/Slider/Geom",
+              "kind": "definition"
             }
           }
         },
@@ -113,8 +97,8 @@
           },
           "target": {
             "entity": {
-              "body": "usd:stage:body#/Arm/Upper/Geom",
-              "kind": "body"
+              "definition": "usd:stage:definition#/Arm/Upper/Geom",
+              "kind": "definition"
             }
           }
         }
@@ -416,8 +400,7 @@
           "source_name": "Arm",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -433,13 +416,10 @@
           "source_name": "Base",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
-          "bodies": [
-            "usd:stage:body#/Arm/Base/Geom"
-          ],
+          "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Arm/Base/Geom",
           "instance_bodies": [],
@@ -450,8 +430,7 @@
           "source_name": "Geom",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -467,13 +446,10 @@
           "source_name": "Slider",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
-          "bodies": [
-            "usd:stage:body#/Arm/Slider/Geom"
-          ],
+          "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Arm/Slider/Geom",
           "instance_bodies": [],
@@ -484,8 +460,7 @@
           "source_name": "Geom",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -501,13 +476,10 @@
           "source_name": "Upper",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
-          "bodies": [
-            "usd:stage:body#/Arm/Upper/Geom"
-          ],
+          "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Arm/Upper/Geom",
           "instance_bodies": [],
@@ -518,8 +490,7 @@
           "source_name": "Geom",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -533,8 +504,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [
@@ -582,9 +552,7 @@
       "solver_settings": [],
       "tessellations": [
         {
-          "body": "usd:stage:body#/Arm/Base/Geom",
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "usd:stage:tessellation#/Arm/Base/Geom",
           "mesh": {
@@ -634,14 +602,16 @@
               }
             ]
           },
+          "of": {
+            "definition": "usd:stage:definition#/Arm/Base/Geom",
+            "kind": "definition"
+          },
           "texture_assignments": [],
           "texture_coordinates": [],
           "triangle_groups": []
         },
         {
-          "body": "usd:stage:body#/Arm/Slider/Geom",
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "usd:stage:tessellation#/Arm/Slider/Geom",
           "mesh": {
@@ -691,14 +661,16 @@
               }
             ]
           },
+          "of": {
+            "definition": "usd:stage:definition#/Arm/Slider/Geom",
+            "kind": "definition"
+          },
           "texture_assignments": [],
           "texture_coordinates": [],
           "triangle_groups": []
         },
         {
-          "body": "usd:stage:body#/Arm/Upper/Geom",
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "usd:stage:tessellation#/Arm/Upper/Geom",
           "mesh": {
@@ -747,6 +719,10 @@
                 "z": 100.0
               }
             ]
+          },
+          "of": {
+            "definition": "usd:stage:definition#/Arm/Upper/Geom",
+            "kind": "definition"
           },
           "texture_assignments": [],
           "texture_coordinates": [],
@@ -839,6 +815,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "518c694e8d9aad605943b67240eade1c9587de82d4de608d1f13507b26e58391",
     "file_digests": {},
     "retained_records": {},

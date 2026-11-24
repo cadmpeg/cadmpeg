@@ -25,7 +25,7 @@ use cadmpeg_ir::geometry::sampled::{GeometryLayoutError, PolylineCurve};
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{CoedgeId, CurveId, PointId, ShellId, SurfaceId, VertexId};
+use cadmpeg_ir::ids::{BodyId, CoedgeId, CurveId, PointId, ShellId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::native::NativeNamespace;
 use cadmpeg_ir::report::{
@@ -34,8 +34,8 @@ use cadmpeg_ir::report::{
 };
 use cadmpeg_ir::scalar::{FiniteReal, Length};
 use cadmpeg_ir::topology::{
-    BodyKind, Coedge, Color, Edge, IncreasingParameterInterval, Loop, LoopBoundaryRole, PcurveUse,
-    Region, Sense,
+    BodyKind, Coedge, Color, Edge, FaceBoundary, IncreasingParameterInterval, Loop,
+    LoopBoundaryRole, PcurveUse, Region, Sense,
 };
 use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::CadIr;
@@ -680,7 +680,7 @@ fn reject_owned_wire_topology(ir: &CadIr) -> Result<(), CodecError> {
         .iter()
         .filter(|body| body.kind == BodyKind::Wire)
     {
-        let regions = ir.geometry.body_regions(&body.id).collect::<Vec<_>>();
+        let regions = complete_regions(ir, &body.id)?;
         if regions.is_empty() {
             return Err(CodecError::malformed(format_args!(
                 "IGES wire body {} has no region",
@@ -691,13 +691,14 @@ fn reject_owned_wire_topology(ir: &CadIr) -> Result<(), CodecError> {
         let mut edge_ids = BTreeSet::new();
         let mut vertex_owners = BTreeMap::new();
         for region in regions {
-            if region.shells.is_empty() {
+            let region_shells = complete_shells(ir, region)?;
+            if region_shells.is_empty() {
                 return Err(CodecError::malformed(format_args!(
                     "IGES wire region {} has no shell",
                     region.id
                 )));
             }
-            for shell_id in &region.shells {
+            for shell_id in region_shells {
                 let shell = ir
                     .geometry
                     .shells
@@ -916,15 +917,51 @@ fn ensure_version_support(
     Ok(())
 }
 
-fn solid_shell_roles(region: &Region) -> Result<(&ShellId, &[ShellId]), CodecError> {
-    let (exterior, voids) = region.shells.split_first().ok_or_else(|| {
+/// The shells of `region` where the document states everything it holds.
+/// The IGES B-rep and trimmed-sheet paths hold no partial region.
+fn complete_shells<'r>(ir: &CadIr, region: &'r Region) -> Result<&'r [ShellId], CodecError> {
+    ir.geometry.complete_shells(region).ok_or_else(|| {
+        CodecError::NotImplemented(format!(
+            "IGES writer does not write region {}, which does not state every shell or face",
+            region.id
+        ))
+    })
+}
+
+/// The regions of `body` where the body states every region.
+fn complete_regions<'r>(ir: &'r CadIr, body: &BodyId) -> Result<Vec<&'r Region>, CodecError> {
+    ir.geometry
+        .complete_body_regions(body)
+        .map(Iterator::collect)
+        .ok_or_else(|| {
+            CodecError::NotImplemented(format!(
+                "IGES writer does not write body {body}, which does not state every region"
+            ))
+        })
+}
+
+/// The loops of `face` where it states every loop.
+fn face_boundary(face: &cadmpeg_ir::topology::Face) -> Result<FaceBoundary<'_>, CodecError> {
+    face.loops.boundary().ok_or_else(|| {
+        CodecError::NotImplemented(format!(
+            "IGES writer does not write face {}, which does not state every loop",
+            face.id
+        ))
+    })
+}
+
+fn solid_shell_roles<'r>(
+    region: &Region,
+    shells: &'r [ShellId],
+) -> Result<(&'r ShellId, &'r [ShellId]), CodecError> {
+    let (exterior, voids) = shells.split_first().ok_or_else(|| {
         CodecError::malformed(format_args!(
             "IGES solid region {} has no exterior shell",
             region.id
         ))
     })?;
     let mut distinct = std::collections::BTreeSet::new();
-    for shell_id in &region.shells {
+    for shell_id in shells {
         if !distinct.insert(shell_id.as_str()) {
             return Err(CodecError::malformed(format_args!(
                 "IGES solid region {} repeats shell {}",
@@ -952,7 +989,7 @@ fn has_brep_topology(ir: &CadIr) -> bool {
         return true;
     }
     if ir.geometry.faces.iter().any(|face| {
-        face.loops.iter().any(|loop_id| {
+        face.loops.stated().any(|loop_id| {
             ir.geometry
                 .loops
                 .iter()
@@ -976,8 +1013,8 @@ fn has_brep_topology(ir: &CadIr) -> bool {
             return false;
         }
         ir.geometry
-            .body_regions(&body.id)
-            .any(|region| region.shells.len() != 1)
+            .stated_body_regions(&body.id)
+            .any(|region| region.stated_shells().count() != 1)
     }) {
         return true;
     }
@@ -1224,14 +1261,15 @@ fn validate_brep_topology<'a>(
                 body.kind, body.id
             )));
         }
-        let regions = ir.geometry.body_regions(&body.id).collect::<Vec<_>>();
+        let regions = complete_regions(ir, &body.id)?;
         let [region] = regions[..] else {
             return Err(CodecError::NotImplemented(format!(
                 "IGES B-rep writer requires one region per body ({})",
                 body.id
             )));
         };
-        if region.shells.is_empty() {
+        let region_shells = complete_shells(ir, region)?;
+        if region_shells.is_empty() {
             return Err(CodecError::malformed(format_args!(
                 "IGES region {} is not a nonempty region of body {}",
                 region.id, body.id
@@ -1239,9 +1277,9 @@ fn validate_brep_topology<'a>(
         }
         if body.kind == BodyKind::Solid {
             // discarded-value: a solid region must state an exterior shell; ? states the refusal and the split has no reader here
-            let _ = solid_shell_roles(region)?;
+            let _ = solid_shell_roles(region, region_shells)?;
         }
-        if body.kind == BodyKind::Sheet && region.shells.len() != 1 {
+        if body.kind == BodyKind::Sheet && region_shells.len() != 1 {
             return Err(CodecError::NotImplemented(format!(
                 "IGES B-rep writer requires one shell for a sheet body ({})",
                 body.id
@@ -1253,7 +1291,7 @@ fn validate_brep_topology<'a>(
                 region.id
             )));
         }
-        for shell_id in &region.shells {
+        for shell_id in region_shells {
             let shell = index
                 .shells
                 .get(shell_id.as_str())
@@ -1264,7 +1302,10 @@ fn validate_brep_topology<'a>(
                         region.id, shell_id
                     ))
                 })?;
-            let shell_faces = ir.geometry.shell_faces(&shell.id).collect::<Vec<_>>();
+            let shell_faces = ir
+                .geometry
+                .stated_shell_faces(&shell.id)
+                .collect::<Vec<_>>();
             if shell.region != region.id || shell_faces.is_empty() {
                 return Err(CodecError::malformed(format_args!(
                     "IGES shell {} is not a nonempty shell of region {}",
@@ -1284,7 +1325,8 @@ fn validate_brep_topology<'a>(
                 )));
             }
             for face in shell_faces {
-                if face.loops.is_empty() {
+                let boundary = face_boundary(face)?;
+                if boundary.is_empty() {
                     return Err(CodecError::malformed(format_args!(
                         "IGES face {} is not a nonempty face of shell {}",
                         face.id, shell.id
@@ -1332,7 +1374,7 @@ fn validate_brep_topology<'a>(
                 if matches!(
                     surface.geometry,
                     SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
-                ) && face.loops.iter().any(|loop_id| {
+                ) && boundary.iter().any(|loop_id| {
                     let Some(loop_) = index.loops.get(loop_id.as_str()).copied() else {
                         return false;
                     };
@@ -1356,7 +1398,7 @@ fn validate_brep_topology<'a>(
                         face.id
                     )));
                 }
-                for loop_id in &face.loops {
+                for loop_id in boundary {
                     let loop_ = index.loops.get(loop_id.as_str()).copied().ok_or_else(|| {
                         CodecError::malformed(format_args!(
                             "IGES face {} references missing loop {}",
@@ -1532,7 +1574,8 @@ fn validate_brep_topology<'a>(
         .iter()
         .filter(|shell| {
             ir.geometry.regions.iter().any(|region| {
-                supported_body_ids.contains(&region.body) && region.shells.contains(&shell.id)
+                supported_body_ids.contains(&region.body)
+                    && region.stated_shells().any(|listed| listed == &shell.id)
             })
         })
         .count();
@@ -1862,8 +1905,7 @@ fn brep_entities(
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("IGES body {body_id} has no region"))
             })?;
-        let shells = region
-            .shells
+        let shells = complete_shells(ir, region)?
             .iter()
             .map(|shell_id| {
                 index.shells.get(shell_id.as_str()).copied().ok_or_else(|| {
@@ -1880,9 +1922,9 @@ fn brep_entities(
         let mut body_loop_ids = Vec::new();
         let mut body_face_ids = Vec::new();
         for shell in &shells {
-            for face in ir.geometry.shell_faces(&shell.id) {
+            for face in ir.geometry.stated_shell_faces(&shell.id) {
                 body_face_ids.push(face.id.clone());
-                for loop_id in &face.loops {
+                for loop_id in face_boundary(face)? {
                     let loop_ = topology
                         .loops
                         .get(loop_id.as_str())
@@ -2181,7 +2223,10 @@ fn brep_entities(
 
         let mut shell_indices = BTreeMap::new();
         for shell in &shells {
-            let shell_faces = ir.geometry.shell_faces(&shell.id).collect::<Vec<_>>();
+            let shell_faces = ir
+                .geometry
+                .stated_shell_faces(&shell.id)
+                .collect::<Vec<_>>();
             let mut parameters = shell_faces.len().to_string();
             for face in shell_faces {
                 write!(
@@ -2212,7 +2257,8 @@ fn brep_entities(
             shell_indices.insert(shell.id.as_str(), index);
         }
         if body.kind == BodyKind::Solid {
-            let (exterior_shell, void_shells) = solid_shell_roles(region)?;
+            let (exterior_shell, void_shells) =
+                solid_shell_roles(region, complete_shells(ir, region)?)?;
             let mut parameters = format!(
                 "{},1,{}",
                 reference_marker(shell_indices[exterior_shell.as_str()]),
@@ -2359,8 +2405,8 @@ fn ignored_carrier_geometry(ir: &CadIr) -> Result<IgnoredCarrierGeometry, CodecE
         if !is_decoder_free_geometry_body(body) {
             continue;
         }
-        for region in ir.geometry.body_regions(&body.id) {
-            for shell_id in &region.shells {
+        for region in ir.geometry.stated_body_regions(&body.id) {
+            for shell_id in region.stated_shells() {
                 let Some(shell) = ir
                     .geometry
                     .shells
@@ -2887,7 +2933,7 @@ fn validate_trimmed_sheet_topology<'a>(
         if is_decoder_free_geometry_body(body) {
             continue;
         }
-        let regions = ir.geometry.body_regions(&body.id).collect::<Vec<_>>();
+        let regions = complete_regions(ir, &body.id)?;
         let ([region], BodyKind::Sheet, false) = (
             &regions[..],
             body.kind,
@@ -2899,13 +2945,12 @@ fn validate_trimmed_sheet_topology<'a>(
                 body.id
             )));
         };
-        if region.shells.len() != 1 {
+        let [shell_id] = complete_shells(ir, region)? else {
             return Err(CodecError::malformed(format_args!(
                 "IGES region {} is not owned by body {} with one shell",
                 region.id, body.id
             )));
-        }
-        let shell_id = &region.shells[0];
+        };
         let shell = index
             .shells
             .get(shell_id.as_str())
@@ -2916,7 +2961,10 @@ fn validate_trimmed_sheet_topology<'a>(
                     region.id, shell_id
                 ))
             })?;
-        let shell_faces = ir.geometry.shell_faces(&shell.id).collect::<Vec<_>>();
+        let shell_faces = ir
+            .geometry
+            .stated_shell_faces(&shell.id)
+            .collect::<Vec<_>>();
         let ([face], true) = (
             &shell_faces[..],
             shell.region == region.id && shell.members.is_empty(),
@@ -3227,7 +3275,7 @@ fn face_loop_order<'a>(
     face: &cadmpeg_ir::topology::Face,
 ) -> Result<Vec<&'a Loop>, CodecError> {
     let mut loops = Vec::new();
-    for loop_id in &face.loops {
+    for loop_id in face_boundary(face)? {
         let loop_ = index.loops.get(loop_id.as_str()).copied().ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "IGES face {} references missing loop {}",
@@ -4642,13 +4690,13 @@ fn same_point_with_tolerance(left: Point3, right: Point3, explicit_tolerance: f6
 fn topology_edge_explicit_tolerance(records: &impl ModelRecords, edge: &Edge) -> f64 {
     let mut tolerance = edge
         .tolerance
-        .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get);
+        .map_or(0.0, cadmpeg_ir::scalar::PositiveLength::get);
     for vertex_id in edge.vertices() {
         if let Some(vertex) = records.vertex(vertex_id.as_str()) {
             tolerance = tolerance.max(
                 vertex
                     .tolerance
-                    .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get),
+                    .map_or(0.0, cadmpeg_ir::scalar::PositiveLength::get),
             );
         }
     }
@@ -4668,7 +4716,7 @@ fn generated_minimum_resolution(index: &TopologyIndex<'_>) -> Result<f64, CodecE
                 .iter()
                 .filter_map(|vertex| vertex.tolerance),
         )
-        .map(cadmpeg_ir::scalar::PositiveReal::get)
+        .map(cadmpeg_ir::scalar::PositiveLength::get)
         .map(effective_topology_tolerance)
         .fold(cadmpeg_ir::units::COINCIDENCE_TOLERANCE, f64::max);
     let endpoint_scale = generated_endpoint_coordinate_scale(index)?;
@@ -7029,7 +7077,7 @@ fn closed_edge_full_period(
 fn edge_topology_tolerance(records: &impl ModelRecords, edge: &Edge) -> Result<f64, CodecError> {
     let mut tolerance = edge
         .tolerance
-        .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get);
+        .map_or(0.0, cadmpeg_ir::scalar::PositiveLength::get);
     for vertex_id in edge.vertices() {
         let vertex = records.vertex(vertex_id.as_str()).ok_or_else(|| {
             CodecError::malformed(format_args!(
@@ -7040,7 +7088,7 @@ fn edge_topology_tolerance(records: &impl ModelRecords, edge: &Edge) -> Result<f
         tolerance = tolerance.max(
             vertex
                 .tolerance
-                .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get),
+                .map_or(0.0, cadmpeg_ir::scalar::PositiveLength::get),
         );
     }
     Ok(tolerance)

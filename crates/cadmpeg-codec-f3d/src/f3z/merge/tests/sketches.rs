@@ -20,8 +20,7 @@ fn component(sketch: &Sketch) -> ProductDefinition {
         "id": "test:model:product#component",
         "kind": "part",
         "bom_properties": {}, "storage": {"kind": "embedded"}, "occurrences": [], "instance_bodies": [], "representations": [],
-        "bodies": [],
-        "tessellations": []
+        "bodies": []
     }))
     .unwrap();
     definition.sketches = vec![sketch.id.clone()];

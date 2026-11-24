@@ -61,10 +61,6 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
             format: cadmpeg_ir::codec_id!("creo"),
             object_id: cadmpeg_core::text::NonBlankString::new(format!("VisibGeom:{native_id}"))
                 .expect("nonempty source identity"),
-            name: None,
-            color: None,
-            visible: None,
-            layer: None,
             instance_path: Vec::new(),
         }),
         native_ref: None,
@@ -135,10 +131,6 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
         format: cadmpeg_ir::codec_id!("creo"),
         object_id: cadmpeg_core::text::NonBlankString::new(format!("VisibGeom:{native_id}"))
             .expect("nonempty source identity"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     };
     let curves = vec![

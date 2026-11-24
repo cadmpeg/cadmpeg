@@ -13,9 +13,10 @@
 
 mod assembly;
 mod body;
+mod bounds;
 mod dressup;
 mod options;
-mod picks;
+pub(in crate::validate) mod picks;
 mod sheet_metal;
 mod sketches;
 mod surface;
@@ -42,8 +43,12 @@ pub(super) struct Site<'a> {
     feature: &'a str,
     /// The scope the feature belongs to, where its containers reach one.
     scope: Option<&'a str>,
-    /// Whether the operation is the operation of an `AssemblyFeature`.
-    in_assembly_feature: bool,
+    /// Whether the definition that holds the operation states `assembly`.
+    assembly: bool,
+    /// The design records, which give a bound dimension its cached values.
+    index: Option<&'a DesignRecords<'a>>,
+    /// The definition that holds the operation.
+    definition: Option<&'a FeatureDefinition>,
 }
 
 /// Check the sketches and every stated operation of `index` against the
@@ -54,32 +59,42 @@ pub(super) fn check_operations(index: &DesignRecords<'_>, findings: &mut Vec<Fin
     options::check_native_keys(&wire, findings);
     for (site, definition) in definitions(index) {
         check_operation(index, site, &definition.operation, findings);
+        if let Some(context) = &definition.assembly {
+            assembly::check_assembly_feature(index, site, &definition.operation, context, findings);
+        }
     }
     for feature in &index.ir.design.features {
         check_feature(index, feature, findings);
     }
     body::check_template_inputs(index, findings);
     assembly::check_occurrence_creators(index, findings);
+    assembly::check_spans(index, findings);
     sheet_metal::check_rules(index, findings);
 }
 
 /// Every feature definition the design states, with where it is stated:
 /// each feature's own, and each definition override of a configuration or
 /// an arrangement.
-fn definitions<'a>(index: &DesignRecords<'a>) -> Vec<(Site<'a>, &'a FeatureDefinition)> {
+fn definitions<'a>(index: &'a DesignRecords<'a>) -> Vec<(Site<'a>, &'a FeatureDefinition)> {
     let design = &index.ir.design;
-    let site = |entity: &'a str, feature: &'a str| Site {
+    let site = |entity: &'a str, feature: &'a str, definition: &'a FeatureDefinition| Site {
         entity,
         feature,
         scope: index.scope_of(MemberKey::Feature(feature)),
-        in_assembly_feature: false,
+        assembly: definition.assembly.is_some(),
+        index: Some(index),
+        definition: Some(definition),
     };
     let mut out: Vec<(Site<'a>, &'a FeatureDefinition)> = design
         .features
         .iter()
         .map(|feature| {
             (
-                site(feature.id.as_str(), feature.id.as_str()),
+                site(
+                    feature.id.as_str(),
+                    feature.id.as_str(),
+                    &feature.definition,
+                ),
                 &feature.definition,
             )
         })
@@ -97,7 +112,7 @@ fn definitions<'a>(index: &DesignRecords<'a>) -> Vec<(Site<'a>, &'a FeatureDefin
     for (holder, overrides) in overrides {
         for (feature, state) in &overrides.features {
             if let Some(definition) = &state.definition {
-                out.push((site(holder, feature.as_str()), definition));
+                out.push((site(holder, feature.as_str(), definition), definition));
             }
         }
     }
@@ -177,16 +192,6 @@ fn check_operation(
         FeatureOperation::MirrorComponents(mirror) => {
             assembly::check_mirror(index, site, mirror, findings);
         }
-        FeatureOperation::AssemblyFeature(feature) => {
-            assembly::check_assembly_feature(site, feature, findings);
-            if !matches!(*feature.operation, FeatureOperation::AssemblyFeature(_)) {
-                let nested = Site {
-                    in_assembly_feature: true,
-                    ..site
-                };
-                check_operation(index, nested, &feature.operation, findings);
-            }
-        }
         FeatureOperation::Sketch(_)
         | FeatureOperation::SpatialSketch(_)
         | FeatureOperation::Spreadsheet(_)
@@ -219,6 +224,7 @@ fn check_feature(index: &DesignRecords<'_>, feature: &Feature, findings: &mut Ve
     }
     assembly::check_component(index, feature, findings);
     assembly::check_driven_by(index, feature, findings);
+    assembly::check_driven_definition(index, feature, findings);
 }
 
 fn error(findings: &mut Vec<Finding>, entity: &str, message: std::fmt::Arguments<'_>) {

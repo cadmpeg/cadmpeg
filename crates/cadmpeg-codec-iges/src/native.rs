@@ -2261,7 +2261,7 @@ pub(crate) fn store_physical_cards(
         .map(|(index, line)| NativeCard { index, line })
         .collect::<Vec<_>>();
     ir.native
-        .namespace_mut("iges")
+        .namespace_mut(cadmpeg_ir::codec_id!("iges"))
         .set_arena_from(ctx, "cards", cards)?;
     Ok(NativeStoreResult {
         occurrence_expansion: ProductOccurrenceExpansion {
@@ -5769,7 +5769,7 @@ pub(crate) fn store(
         ));
     };
     ctx.charge_entities(native_entity_count, "iges_native_entities")?;
-    let namespace = ir.native.namespace_mut("iges");
+    let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("iges"));
     namespace.set_arena_from(ctx, "cards", cards)?;
     namespace.set_arena_from(ctx, "entities", entities)?;
     namespace.set_arena_from(ctx, "directions", directions)?;

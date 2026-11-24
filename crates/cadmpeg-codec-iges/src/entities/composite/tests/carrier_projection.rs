@@ -785,7 +785,7 @@ fn decode_projects_mixed_degree_composite_pcurve() {
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#D11")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
-    assert_eq!(face.loops.len(), 1);
+    assert_eq!(face.loops.stated().count(), 1);
     assert_eq!(result.ir().geometry.pcurves.len(), 1);
     let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } =
         &result.ir().geometry.pcurves[0].geometry

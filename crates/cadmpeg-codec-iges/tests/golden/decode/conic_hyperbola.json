@@ -67,8 +67,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -281,7 +280,6 @@
     "source": {
       "attributes": {
         "author": "author",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "drafting_standard": "0",
         "iges_version_flag": "11",
         "model_scale": "1",
@@ -402,6 +400,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "0a71c8da95f7da210aa68f675c78bfc8ca53b44f6b320bcff81547a9f6d39ee9",
     "file_digests": {},
     "retained_records": {

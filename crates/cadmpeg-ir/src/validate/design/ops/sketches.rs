@@ -19,7 +19,7 @@ use crate::design::ops::sketch::{
     SketchSpace, Spatial, SpatialCurve, TextLayout, TextVerticalBox,
 };
 use crate::design::selection::{PickTarget, PrincipalEntity};
-use crate::geometry::SolvedCurveGeometry;
+use crate::geometry::InlineCurve;
 use crate::math::Vector3;
 use crate::report::check::Finding;
 
@@ -147,19 +147,19 @@ impl Space for Spatial {
         };
         let bounded = curve.range.is_some();
         match &curve.carrier {
-            SolvedCurveGeometry::Line(_) if bounded => Shape::Line,
-            SolvedCurveGeometry::Line(_) => Shape::InfiniteLine,
-            SolvedCurveGeometry::Circle(_) if bounded => Shape::Arc,
-            SolvedCurveGeometry::Circle(_) => Shape::Circle,
-            SolvedCurveGeometry::Ellipse(_) => Shape::Ellipse(bounded),
-            SolvedCurveGeometry::Parabola(_) => Shape::Parabola(bounded),
-            SolvedCurveGeometry::Hyperbola(_) => Shape::Hyperbola(bounded),
-            SolvedCurveGeometry::Nurbs(nurbs) => Shape::Nurbs {
+            InlineCurve::Line(_) if bounded => Shape::Line,
+            InlineCurve::Line(_) => Shape::InfiniteLine,
+            InlineCurve::Circle(_) if bounded => Shape::Arc,
+            InlineCurve::Circle(_) => Shape::Circle,
+            InlineCurve::Ellipse(_) => Shape::Ellipse(bounded),
+            InlineCurve::Parabola(_) => Shape::Parabola(bounded),
+            InlineCurve::Hyperbola(_) => Shape::Hyperbola(bounded),
+            InlineCurve::Nurbs(nurbs) => Shape::Nurbs {
                 rational: nurbs.weights().is_some(),
                 poles: nurbs.control_points().len(),
                 knots: nurbs.knots().len(),
             },
-            _ => Shape::Other,
+            InlineCurve::Polyline(_) | InlineCurve::Transformed { .. } => Shape::Other,
         }
     }
 
@@ -941,6 +941,25 @@ fn check_constraint<S: Space>(
         id,
     };
     check_relation(&ops, &constraint.relation, findings);
+    if let SketchRelation::Distance {
+        along: Some(DistanceAxis::Aligned),
+        value,
+        ..
+    } = &constraint.relation
+    {
+        let site = Site {
+            entity: id,
+            feature: id,
+            scope: sketches.owner_scope(index, sketch),
+            assembly: false,
+            index: Some(index),
+            definition: None,
+        };
+        site.bound(findings, |values| {
+            (values.get(value)?.get() < 0.0)
+                .then(|| "an Aligned Distance has a negative value".to_owned())
+        });
+    }
     let value_binds = match &constraint.relation {
         SketchRelation::Distance { value, .. }
         | SketchRelation::Radial { value, .. }
@@ -1102,9 +1121,7 @@ fn check_relation<S: Space>(
             }
         }
         SketchRelation::Fixed { of } => ops.operand(of, findings),
-        SketchRelation::Distance {
-            a, b, along, value, ..
-        } => {
+        SketchRelation::Distance { a, b, along, .. } => {
             ops.operand(a, findings);
             ops.operand(b, findings);
             match along {
@@ -1112,15 +1129,7 @@ fn check_relation<S: Space>(
                     ops.planar_only(findings, "DistanceAxis::Horizontal or Vertical");
                 }
                 Some(DistanceAxis::Along(operand)) => ops.operand(operand, findings),
-                Some(DistanceAxis::Aligned) => {
-                    if matches!(value, Dimension::Literal(value) if value.get() < 0.0) {
-                        ops.refuse(
-                            findings,
-                            format_args!("an Aligned Distance has a negative value"),
-                        );
-                    }
-                }
-                None => {}
+                Some(DistanceAxis::Aligned) | None => {}
             }
         }
         SketchRelation::Angle {
@@ -1312,7 +1321,9 @@ fn check_pattern<S: Space>(
         entity: ops.id,
         feature: ops.id,
         scope: None,
-        in_assembly_feature: false,
+        assembly: false,
+        index: None,
+        definition: None,
     };
     let seeds: BTreeSet<&str> = pattern.seeds.iter().map(|s| S::entity(s)).collect();
     for seed in &pattern.seeds {

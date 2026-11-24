@@ -244,7 +244,7 @@
               "ref_direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -518,7 +518,7 @@
             "kind": "line",
             "origin": {
               "u": 6.283185307179586,
-              "v": -0.0
+              "v": 0.0
             }
           },
           "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:4%3A2%3A1",
@@ -541,7 +541,7 @@
             "kind": "line",
             "origin": {
               "u": 0.0,
-              "v": -0.0
+              "v": 0.0
             }
           },
           "id": "fcstd:model:pcurve#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:4%3A2%3A2",
@@ -591,7 +591,7 @@
               "v": 0.0
             },
             "y_axis": {
-              "u": -0.0,
+              "u": 0.0,
               "v": 1.0
             }
           },
@@ -733,7 +733,7 @@
               "ref_direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -763,7 +763,7 @@
               "ref_direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -792,7 +792,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -853,8 +853,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -1004,7 +1003,6 @@
       "attributes": {
         "application_domains": "App,Part",
         "document_kind": "part",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
         "program_version": "1.1R20260414 (Git shallow)"
       },
@@ -1079,6 +1077,10 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {
+      "fcstd_uncarried_local_sha256": "<elided: digest over tolerantly compared geometry>"
+    },
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "86ecddcee6d677370343c2f5a9682e57ca58db5808775b0e8812bdbe844dbe1e",
     "file_digests": {},
     "retained_records": {},

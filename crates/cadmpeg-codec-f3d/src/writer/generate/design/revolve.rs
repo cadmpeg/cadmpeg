@@ -476,9 +476,9 @@ impl<'a> Faces<'a> {
             .map(|surface| (&surface.id, surface))
             .collect::<HashMap<_, _>>();
         let mut shapes = Vec::new();
-        for region in children.body_regions(body) {
-            for shell in &region.shells {
-                for face in children.shell_faces(shell) {
+        for region in children.stated_body_regions(body) {
+            for shell in region.stated_shells() {
+                for face in children.stated_shell_faces(shell) {
                     let sign = match face.sense {
                         Sense::Forward => 1.0,
                         Sense::Reversed => -1.0,

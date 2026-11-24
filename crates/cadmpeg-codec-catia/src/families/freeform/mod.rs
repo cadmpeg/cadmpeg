@@ -1288,15 +1288,13 @@ fn attach_standalone_wires(
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     admission.charge()?;
     let region_shells = vec![shell_owner_id];
-    ir.geometry.regions.push(Region {
-        id: region_id,
-        body: region_body_id,
-        shells: region_shells,
-        native_ref: None,
-    });
+    ir.geometry
+        .regions
+        .push(Region::new(region_id, region_body_id, region_shells));
     admission.charge()?;
     ir.geometry.shells.push(shell);
     Ok(true)
@@ -2128,12 +2126,11 @@ fn attach_closed_two_edge_face(
         .shells
         .push(Shell::new(shell_id.clone(), region_id.clone()));
     admission.charge()?;
-    ir.geometry.regions.push(Region {
-        id: region_id.clone(),
-        body: body_id.clone(),
-        shells: vec![shell_id],
-        native_ref: None,
-    });
+    ir.geometry.regions.push(Region::new(
+        region_id.clone(),
+        body_id.clone(),
+        vec![shell_id],
+    ));
     admission.charge()?;
     ir.geometry.bodies.push(Body {
         id: body_id,
@@ -2143,6 +2140,7 @@ fn attach_closed_two_edge_face(
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     refusal.push_two_edge_binding_inferred(owner_pos, desired_forward.is_some());
     if fitted_surface {
@@ -3199,7 +3197,7 @@ fn append_resolved_consolidated_surface_curves(
                         ]
                         .into_iter()
                         .flatten()
-                        .map(cadmpeg_ir::scalar::PositiveReal::get)
+                        .map(cadmpeg_ir::scalar::PositiveLength::get)
                         .fold(cadmpeg_ir::units::COINCIDENCE_TOLERANCE, f64::max);
                         let mut coedges = Vec::new();
                         for (side, surface) in standard_surfaces.iter().enumerate() {

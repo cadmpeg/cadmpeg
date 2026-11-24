@@ -380,7 +380,9 @@ fn base_native_validation_rejects_ambiguous_or_invalid_result_identity() {
                 .feature_result_topologies
                 .push(ir.model.feature_result_topologies[0].clone());
         } else {
-            let namespace = changed.native.namespace_mut("inventor");
+            let namespace = changed
+                .native
+                .namespace_mut(cadmpeg_ir::codec_id!("inventor"));
             let arena_name = match change {
                 3 => "segment_meta",
                 4 => "pm_dc_feature_properties",

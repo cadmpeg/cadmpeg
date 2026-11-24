@@ -1343,7 +1343,7 @@
             "value": {
               "kind": "plane",
               "normal": {
-                "x": -0.0,
+                "x": 0.0,
                 "y": 1.0,
                 "z": 0.0
               },
@@ -1476,8 +1476,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -2147,7 +2146,7 @@
           {
             "id": "creo:surface:outline_plane#143:2",
             "normal": [
-              -0.0,
+              0.0,
               1.0,
               0.0
             ],
@@ -2433,7 +2432,7 @@
             "classification": "simple",
             "id": "creo:surface:plane_local_system#160:2",
             "normal": [
-              -0.0,
+              0.0,
               1.0,
               0.0
             ],
@@ -2453,7 +2452,7 @@
               0.0,
               1.0,
               0.0,
-              -0.0,
+              0.0,
               0.0,
               0.0,
               0.0
@@ -4976,6 +4975,8 @@
         }
       }
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "675ef957208bdaf491a9d684ed7a30b65d179ebb2add906aef3ff846a015b59d",
     "file_digests": {},
     "retained_records": {

@@ -5,7 +5,6 @@
 use cadmpeg_ir::geometry::analytic::LineCurve;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::topology::{BodyKind, Sense};
 
 use crate::select::Selection;
@@ -44,7 +43,7 @@ fn edges_missing_a_vertex_within_their_summed_tolerances_close_the_loop() {
             .iter_mut()
             .find(|edge| edge.id == sides[side].0)
             .expect("edge");
-        edge.tolerance = PositiveReal::new(tolerance);
+        edge.tolerance = cadmpeg_ir::scalar::PositiveLength::new(tolerance);
         let curve_id = edge.carrier.curve().cloned().expect("curve");
         let curve = ir
             .geometry

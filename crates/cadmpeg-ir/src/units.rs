@@ -220,8 +220,11 @@ macro_rules! vector_wire {
         where
             [f64; N]: Serialize,
         {
+            /// Writes negative zero as zero (§2.5).
             fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-                self.0.serialize(serializer)
+                self.0
+                    .map(|component| component + 0.0)
+                    .serialize(serializer)
             }
         }
         impl<'de, const N: usize> Deserialize<'de> for $name<N>
@@ -229,7 +232,7 @@ macro_rules! vector_wire {
             [f64; N]: Deserialize<'de>,
         {
             fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-                Self::new(<[f64; N]>::deserialize(deserializer)?)
+                Self::new(<[f64; N]>::deserialize(deserializer)?.map(|component| component + 0.0))
                     .ok_or_else(|| serde::de::Error::custom($error))
             }
         }
@@ -1337,6 +1340,28 @@ mod tests {
     }
 
     #[test]
+    fn coordinates_write_and_read_one_zero() {
+        use crate::math::{Point2, Point3};
+
+        let coordinates = FiniteVector::new([-0.0, 1.0]).expect("finite coordinates");
+        assert_eq!(serde_json::to_string(&coordinates).unwrap(), "[0.0,1.0]");
+        let read: FiniteVector<2> = serde_json::from_str("[-0.0,-0]").unwrap();
+        assert_eq!(read.get().map(f64::to_bits), [0, 0]);
+        assert_eq!(
+            serde_json::to_string(&Vector3::new(-0.0, 1.0, -0.0)).unwrap(),
+            r#"{"x":0.0,"y":1.0,"z":0.0}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&Point3::new(-0.0, -0.0, 2.5)).unwrap(),
+            r#"{"x":0.0,"y":0.0,"z":2.5}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&Point2::new(-0.0, -1.0)).unwrap(),
+            r#"{"u":0.0,"v":-1.0}"#
+        );
+    }
+
+    #[test]
     fn nonzero_unit_normalization_keeps_charted_bits_for_subnormals() {
         use crate::features::geometry::FiniteVector3;
 
@@ -1543,8 +1568,14 @@ mod tests {
             let admitted = NonNegativeReal::new(value).expect("nonnegative");
             let wire = serde_json::to_string(&admitted).expect("serialize");
             let decoded: NonNegativeReal = serde_json::from_str(&wire).expect("deserialize");
-            assert_eq!(decoded.get().to_bits(), value.to_bits());
+            assert_eq!(decoded.get().to_bits(), (value + 0.0).to_bits());
         }
+        let zero: NonNegativeReal = serde_json::from_str("-0.0").expect("a zero");
+        assert_eq!(zero.get().to_bits(), 0);
+        assert_eq!(
+            serde_json::to_string(&FiniteReal::new(-0.0).expect("finite")).expect("serialize"),
+            "0.0"
+        );
         assert!(serde_json::from_str::<PositiveReal>("0").is_err());
         assert!(serde_json::from_str::<NonNegativeReal>("-1").is_err());
     }

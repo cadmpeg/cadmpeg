@@ -5862,14 +5862,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "cache": {
           "description": "Solved-cache fit contract, absent when the record stated none.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LegacyCache"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/LegacyCache"
         },
         "kind": {
           "type": "string",
@@ -5916,14 +5909,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "cache": {
           "description": "Solved-cache fit contract, absent when the record stated none.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LegacyCache"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/LegacyCache"
         },
         "kind": {
           "type": "string",
@@ -5970,14 +5956,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "cache": {
           "description": "Solved-cache fit contract, absent when the record stated none.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LegacyCache"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/LegacyCache"
         },
         "kind": {
           "type": "string",
@@ -6024,14 +6003,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "cache": {
           "description": "Solved-cache fit contract, absent when the record stated none.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LegacyCache"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/LegacyCache"
         },
         "kind": {
           "type": "string",
@@ -6078,14 +6050,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "cache": {
           "description": "Solved-cache fit contract, absent when the record stated none.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LegacyCache"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/LegacyCache"
         },
         "kind": {
           "type": "string",
@@ -6571,14 +6536,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "first_scale": {
           "description": "First optional scale block.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/CompoundLoftScale"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/CompoundLoftScale"
         },
         "kind": {
           "type": "string",
@@ -7171,10 +7129,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "version_value": {
           "description": "Version-gated ASM long when present.",
-          "type": [
-            "integer",
-            "null"
-          ],
+          "type": "integer",
           "format": "int64"
         }
       },
@@ -7633,14 +7588,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "cache": {
           "description": "Solved-cache fit contract this layout states itself.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LegacyCache"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/LegacyCache"
         },
         "extension": {
           "description": "Native ASM extension integer following the ranges.",
@@ -7885,14 +7833,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "support": {
           "description": "Exact BS3 support and fit tolerance, when serialized.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/G2BlendFullSupport"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/G2BlendFullSupport"
         }
       },
       "additionalProperties": false,
@@ -7916,14 +7857,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "extension": {
           "description": "Optional intervening native token.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LoftBridgeToken"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/LoftBridgeToken"
         },
         "kind": {
           "type": "string",
@@ -7931,14 +7865,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "pcurve": {
           "description": "Tertiary BS2 pcurve, absent for `nullbs`.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PcurveGeometry"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/PcurveGeometry"
         },
         "tolerance": {
           "description": "Native fit tolerance.",
@@ -8246,25 +8173,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "properties": {
     "pcurve": {
       "description": "UV curve on `surface`, absent for the native `nullbs` sentinel.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/SupportPcurve"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "$ref": "#/$defs/SupportPcurve"
     },
     "surface": {
       "description": "Supporting surface, absent for the native `null_surface` sentinel.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/SurfaceId"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "$ref": "#/$defs/SurfaceId"
     }
   },
   "additionalProperties": false
@@ -8514,10 +8427,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "endpoints": {
           "description": "Optional parameter endpoints following the curve in a revision-gated encoding.",
-          "type": [
-            "array",
-            "null"
-          ],
+          "type": "array",
           "items": {
             "type": [
               "number",
@@ -8704,10 +8614,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
     },
     "parameter_ranges": {
       "description": "Legacy U and V parameter intervals; absent from modern layouts.",
-      "type": [
-        "array",
-        "null"
-      ],
+      "type": "array",
       "items": {
         "type": "array",
         "items": {
@@ -8970,10 +8877,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "tertiary": {
           "description": "Optional flag admitted by the later legacy layout.",
-          "type": [
-            "boolean",
-            "null"
-          ]
+          "type": "boolean"
         }
       },
       "additionalProperties": false,
@@ -9101,22 +9005,12 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "asm_extension": {
           "description": "ASM extension integer when the stream version carries it.",
-          "type": [
-            "integer",
-            "null"
-          ],
+          "type": "integer",
           "format": "int64"
         },
         "direction": {
           "description": "Optional direction selected by the second native flag.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Vector3"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/Vector3"
         },
         "first_flag": {
           "description": "First native constraint flag.",
@@ -9128,14 +9022,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "pcurve": {
           "description": "UV curve on the support, absent for `nullbs`.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PcurveGeometry"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/PcurveGeometry"
         },
         "subdata": {
           "description": "Native constraint table.",
@@ -9156,14 +9043,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "surface": {
           "description": "Constraint support surface, absent for the native `null_surface`\nsentinel.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/SurfaceId"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/SurfaceId"
         },
         "type_code": {
           "description": "Native member type discriminator.",
@@ -9186,22 +9066,12 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "asm_extension": {
           "description": "ASM extension integer when the stream version carries it.",
-          "type": [
-            "integer",
-            "null"
-          ],
+          "type": "integer",
           "format": "int64"
         },
         "direction": {
           "description": "Optional direction selected by the second native flag.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Vector3"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/Vector3"
         },
         "kind": {
           "type": "string",
@@ -9209,25 +9079,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "pcurve": {
           "description": "First UV curve slot, absent for `nullbs`.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PcurveGeometry"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/PcurveGeometry"
         },
         "secondary_pcurve": {
           "description": "Second UV curve slot, absent for `nullbs`.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PcurveGeometry"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/PcurveGeometry"
         },
         "subdata": {
           "description": "Native constraint table.",
@@ -9265,14 +9121,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
     },
     "path": {
       "description": "Primary path curve and its optional endpoints, absent for `null_curve`.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/LoftPathCurve"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "$ref": "#/$defs/LoftPathCurve"
     }
   },
   "additionalProperties": false,
@@ -9296,10 +9145,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
     },
     "endpoints": {
       "description": "Optional parameter endpoints following the curve in a revision-gated encoding.",
-      "type": [
-        "array",
-        "null"
-      ],
+      "type": "array",
       "items": {
         "type": [
           "number",
@@ -9332,14 +9178,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
     },
     "direction": {
       "description": "Optional direction selected by the second native flag.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/Vector3"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "$ref": "#/$defs/Vector3"
     },
     "first_flag": {
       "description": "First native constraint flag.",
@@ -9347,14 +9186,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
     },
     "pcurve": {
       "description": "Nullable parameter curve on the support.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/PcurveGeometry"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "$ref": "#/$defs/PcurveGeometry"
     },
     "subdata": {
       "description": "Native constraint table.",
@@ -9614,10 +9446,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
     },
     "extra": {
       "description": "Trailing scalar pair stored by the revision-gated row encoding.",
-      "type": [
-        "array",
-        "null"
-      ],
+      "type": "array",
       "items": {
         "type": "number",
         "format": "double"
@@ -9912,14 +9741,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "properties": {
     "cache_fit_tolerance": {
       "description": "Fit tolerance of the source approximation cache, in model length units.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/FitTolerance"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "$ref": "#/$defs/FitTolerance"
     },
     "normal_reversed": {
       "description": "Whether the carrier's oriented normal is opposite `Pu × Pv`.",
@@ -9991,14 +9813,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "cache": {
           "description": "Solved-cache fit contract this layout states itself.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LegacyCache"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/LegacyCache"
         },
         "flags": {
           "description": "Conditional flag sequence in its positional wire form.",
@@ -10077,14 +9892,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "support": {
           "description": "Support surface within which the offset is measured.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/SurfaceId"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/SurfaceId"
         }
       },
       "additionalProperties": false,
@@ -10110,10 +9918,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
     },
     "second_flag": {
       "description": "Optional later-revision terminating flag.",
-      "type": [
-        "boolean",
-        "null"
-      ]
+      "type": "boolean"
     }
   },
   "additionalProperties": false,
@@ -10968,14 +10773,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "cache": {
           "description": "Solved-cache fit contract this construction states itself.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LegacyCache"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/LegacyCache"
         },
         "kind": {
           "type": "string",
@@ -10999,14 +10797,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "cache": {
           "description": "Solved-cache fit contract this construction states itself.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LegacyCache"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/LegacyCache"
         },
         "context": {
           "description": "Shared support surfaces, UV curves, interval, and discontinuities.",
@@ -11027,14 +10818,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "version": {
           "description": "Version-stamped serializer form, absent for the legacy layout.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LawCurveVersionForm"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/LawCurveVersionForm"
         }
       },
       "required": [
@@ -11051,14 +10835,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "cache": {
           "description": "Solved-cache fit contract this construction states itself.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LegacyCache"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/LegacyCache"
         },
         "components": {
           "description": "Component curves in construction order.",
@@ -11112,14 +10889,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "cache": {
           "description": "Solved-cache fit contract this construction states itself.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LegacyCache"
-            },
-            {
-              "type": "null"
-            }
-          ],
+          "$ref": "#/$defs/LegacyCache",
           "default": null
         },
         "center": {
@@ -11161,14 +10931,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "cache": {
           "description": "Solved-cache fit contract this construction states itself.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LegacyCache"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/LegacyCache"
         },
         "context": {
           "description": "Shared surfaces, UV curves, interval, and discontinuity metadata.",
@@ -11195,14 +10958,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "cache": {
           "description": "Solved-cache fit contract this construction states itself.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LegacyCache"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/LegacyCache"
         },
         "construction": {
           "description": "Distinct supports and finite endpoint bounds.",
@@ -11214,14 +10970,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "parameterization": {
           "description": "Atomic neutral parameterization established by validated support charts.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/TolerantIntersectionParameterization"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/TolerantIntersectionParameterization"
         }
       },
       "required": [
@@ -11532,14 +11281,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "range": {
           "description": "Retained parameter range, with its distance law when variable.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/CurveOffsetRange"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/CurveOffsetRange"
         },
         "side": {
           "description": "Exclusive plane-normal or explicit-direction carrier.",
@@ -11577,10 +11319,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "self_intersect": {
           "description": "Whether the source classifies the result as self-intersecting.",
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": "boolean",
           "default": null
         },
         "source": {
@@ -11602,14 +11341,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "cache": {
           "description": "Solved-cache fit contract this construction states itself.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LegacyCache"
-            },
-            {
-              "type": "null"
-            }
-          ],
+          "$ref": "#/$defs/LegacyCache",
           "default": null
         },
         "context": {
@@ -11649,14 +11381,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "cache": {
           "description": "Solved-cache fit contract this construction states itself.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LegacyCache"
-            },
-            {
-              "type": "null"
-            }
-          ],
+          "$ref": "#/$defs/LegacyCache",
           "default": null
         },
         "kind": {
@@ -11701,14 +11426,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "cache": {
           "description": "Solved-cache fit contract this construction states itself.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LegacyCache"
-            },
-            {
-              "type": "null"
-            }
-          ],
+          "$ref": "#/$defs/LegacyCache",
           "default": null
         },
         "kind": {
@@ -11771,14 +11489,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "blend_surface": {
           "description": "The blend surface this curve is the spine of, when known.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/SurfaceId"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/SurfaceId"
         },
         "kind": {
           "type": "string",
@@ -11795,14 +11506,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "cache": {
           "description": "Solved-cache fit contract this construction states itself.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LegacyCache"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/LegacyCache"
         },
         "kind": {
           "type": "string",
@@ -11810,21 +11514,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "native_kind": {
           "description": "Source construction-family discriminator, when known.",
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": "string"
         },
         "record": {
           "description": "Reference to the preserved raw source record, when retained.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/UnknownId"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/UnknownId"
         }
       },
       "required": [
@@ -11866,14 +11560,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "cache": {
           "description": "Solved-cache fit contract this construction states itself.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LegacyCache"
-            },
-            {
-              "type": "null"
-            }
-          ],
+          "$ref": "#/$defs/LegacyCache",
           "default": null
         },
         "components": {
@@ -11948,14 +11635,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "pcurve": {
           "description": "UV curve on the support, absent for `nullbs`.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PcurveGeometry"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/PcurveGeometry"
         },
         "reference": {
           "description": "Reference curve on the support.",
@@ -12056,14 +11736,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "cache": {
           "description": "Solved-cache fit contract this construction states itself.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LegacyCache"
-            },
-            {
-              "type": "null"
-            }
-          ],
+          "$ref": "#/$defs/LegacyCache",
           "default": null
         },
         "construction": {
@@ -12105,14 +11778,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "cache": {
           "description": "Solved-cache fit contract this construction states itself.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LegacyCache"
-            },
-            {
-              "type": "null"
-            }
-          ],
+          "$ref": "#/$defs/LegacyCache",
           "default": null
         },
         "construction": {
@@ -12136,14 +11802,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "cache": {
           "description": "Solved-cache fit contract this construction states itself.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LegacyCache"
-            },
-            {
-              "type": "null"
-            }
-          ],
+          "$ref": "#/$defs/LegacyCache",
           "default": null
         },
         "construction": {
@@ -12186,14 +11845,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "cache": {
           "description": "Solved-cache fit contract this construction states itself.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LegacyCache"
-            },
-            {
-              "type": "null"
-            }
-          ],
+          "$ref": "#/$defs/LegacyCache",
           "default": null
         },
         "construction": {
@@ -12217,14 +11869,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "cache": {
           "description": "Solved-cache fit contract this construction states itself.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LegacyCache"
-            },
-            {
-              "type": "null"
-            }
-          ],
+          "$ref": "#/$defs/LegacyCache",
           "default": null
         },
         "construction": {
@@ -12320,21 +11965,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "native_position": {
           "description": "Native model-space position following the sweep direction, when carried.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Point3"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/Point3"
         },
         "parameter_interval": {
           "description": "Native source directrix parameter interval, when carried by the\nsource. The neutral surface-carrier interval is in\n`ProceduralSurface::record_bounds`.",
-          "type": [
-            "array",
-            "null"
-          ],
+          "type": "array",
           "items": {
             "type": "number",
             "format": "double"
@@ -12391,10 +12026,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "angular_parameter_interval": {
           "description": "Surface-parameter interval that maps affinely to\n`angular_interval`. Absence means the surface parameter is already\nthe revolution angle in radians.",
-          "type": [
-            "array",
-            "null"
-          ],
+          "type": "array",
           "items": {
             "type": "number",
             "format": "double"
@@ -12424,10 +12056,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "parameter_interval": {
           "description": "Native source directrix parameter start and end values, when\ncarried by the source representation. The neutral surface-carrier\ninterval is in `ProceduralSurface::record_bounds`.",
-          "type": [
-            "array",
-            "null"
-          ],
+          "type": "array",
           "items": {
             "type": "number",
             "format": "double"
@@ -12524,14 +12153,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "native": {
           "description": "Native sweep construction, when the source carries one.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/SweepSurfaceConstruction"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/SweepSurfaceConstruction"
         },
         "profile": {
           "description": "Curve swept along the spine.",
@@ -12631,18 +12253,12 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "u_sense": {
           "description": "Native U parameter-direction sense enum, when carried.",
-          "type": [
-            "integer",
-            "null"
-          ],
+          "type": "integer",
           "format": "int64"
         },
         "v_sense": {
           "description": "Native V parameter-direction sense enum, when carried.",
-          "type": [
-            "integer",
-            "null"
-          ],
+          "type": "integer",
           "format": "int64"
         }
       },
@@ -12661,14 +12277,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "cache": {
           "description": "Solved-cache fit contract this construction states itself.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LegacyCache"
-            },
-            {
-              "type": "null"
-            }
-          ],
+          "$ref": "#/$defs/LegacyCache",
           "default": null
         },
         "kind": {
@@ -12696,17 +12305,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "u_sense": {
           "description": "Whether the trimmed surface U direction agrees with the support.",
-          "type": [
-            "boolean",
-            "null"
-          ]
+          "type": "boolean"
         },
         "v_sense": {
           "description": "Whether the trimmed surface V direction agrees with the support.",
-          "type": [
-            "boolean",
-            "null"
-          ]
+          "type": "boolean"
         }
       },
       "additionalProperties": false,
@@ -12754,10 +12357,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "self_intersect": {
           "description": "Whether the source classifies the result as self-intersecting.",
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": "boolean",
           "default": null
         },
         "support": {
@@ -12835,14 +12435,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "cache": {
           "description": "Solved-cache fit contract this construction states itself.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LegacyCache"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/LegacyCache"
         },
         "first": {
           "description": "First bounding curve of the ruled surface.",
@@ -12885,14 +12478,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "spine": {
           "description": "Spine curve, when the source resolves one.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/CurveId"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/CurveId"
         },
         "supports": {
           "description": "Blend support sides.",
@@ -12955,14 +12541,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "cache": {
           "description": "Solved-cache fit contract this construction states itself.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LegacyCache"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/LegacyCache"
         },
         "kind": {
           "type": "string",
@@ -12970,14 +12549,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "record": {
           "description": "Reference to the preserved raw source record, when retained.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/UnknownId"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/UnknownId"
         }
       },
       "required": [
@@ -13954,14 +13526,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
     },
     "third": {
       "description": "Third side present only for `sss_blend_spl_sur`.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/RollingBallThirdSide"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "$ref": "#/$defs/RollingBallThirdSide"
     },
     "u_range": {
       "description": "Native optional U interval endpoints.",
@@ -14219,25 +13784,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "properties": {
     "curve": {
       "description": "Side curve and bounds, absent for `null_curve`.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/RollingBallSupportCurve"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "$ref": "#/$defs/RollingBallSupportCurve"
     },
     "extension": {
       "description": "Native extension integer and nullable tertiary pcurve.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/RollingBallSideExtension"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "$ref": "#/$defs/RollingBallSideExtension"
     },
     "location": {
       "description": "Native model-space side location.",
@@ -14245,25 +13796,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
     },
     "pcurve": {
       "description": "Primary BS2 pcurve, absent for `nullbs`.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/PcurveGeometry"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "$ref": "#/$defs/PcurveGeometry"
     },
     "secondary_pcurve": {
       "description": "ASM secondary BS2 pcurve, absent for `nullbs`.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/PcurveGeometry"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "$ref": "#/$defs/PcurveGeometry"
     },
     "support_kind": {
       "description": "Geometry role selected by the support-side discriminator.",
@@ -14271,14 +13808,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
     },
     "surface": {
       "description": "Primary support surface and bounds, absent for `null_surface`.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/RollingBallSupportSurface"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "$ref": "#/$defs/RollingBallSupportSurface"
     }
   },
   "additionalProperties": false,
@@ -14298,14 +13828,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "properties": {
     "pcurve": {
       "description": "Tertiary BS2 pcurve, absent for `nullbs`.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/PcurveGeometry"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "$ref": "#/$defs/PcurveGeometry"
     },
     "value": {
       "description": "Native integer introducing the clause.",
@@ -14421,25 +13944,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
     },
     "pcurve": {
       "description": "Primary BS2 pcurve, absent for `nullbs`.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/PcurveGeometry"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "$ref": "#/$defs/PcurveGeometry"
     },
     "secondary_pcurve": {
       "description": "ASM secondary BS2 pcurve, absent for `nullbs`.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/PcurveGeometry"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "$ref": "#/$defs/PcurveGeometry"
     },
     "surface": {
       "description": "Third support surface.",
@@ -14447,14 +13956,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
     },
     "tertiary_pcurve": {
       "description": "ASM tertiary BS2 pcurve, absent for `nullbs`.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/PcurveGeometry"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "$ref": "#/$defs/PcurveGeometry"
     }
   },
   "additionalProperties": false,
@@ -14485,14 +13987,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "first_scale": {
           "description": "Optional first scale block.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/CompoundLoftScale"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/CompoundLoftScale"
         },
         "kind": {
           "type": "string",
@@ -14534,14 +14029,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "scale": {
           "description": "Optional scale block.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/CompoundLoftScale"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/CompoundLoftScale"
         },
         "singularity": {
           "description": "Native singularity enum.",
@@ -15246,10 +14734,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "self_intersect": {
           "description": "Whether the source classifies the complete curve as self-intersecting.",
-          "type": [
-            "boolean",
-            "null"
-          ]
+          "type": "boolean"
         }
       },
       "additionalProperties": false,
@@ -15331,14 +14816,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "record": {
           "description": "Retained native record containing the curve carrier.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/UnknownId"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/UnknownId"
         }
       },
       "additionalProperties": false,
@@ -15605,14 +15083,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "record": {
           "description": "Link to the preserved raw record, when the decoder kept the bytes.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/UnknownId"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/UnknownId"
         }
       },
       "additionalProperties": false,
@@ -15709,14 +15180,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "cache": {
           "description": "Solved-cache fit contract this layout states itself.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/LegacyCache"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/LegacyCache"
         },
         "discontinuities": {
           "description": "Three ordered discontinuity arrays.",
@@ -15755,14 +15219,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "second_pcurve": {
           "description": "Nullable second pcurve slot.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PcurveGeometry"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/PcurveGeometry"
         },
         "supports": {
           "description": "Two ordered support slots.",
@@ -15944,14 +15401,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
     },
     "parameter_range": {
       "description": "Directed pcurve interval corresponding to the solved interval.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/DirectedParameterRange"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "$ref": "#/$defs/DirectedParameterRange"
     }
   },
   "additionalProperties": false,
@@ -16029,14 +15479,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "tail": {
           "description": "Cache-first fields, when this is not the prefix-first layout.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/SurfaceCurveCacheFirst"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/SurfaceCurveCacheFirst"
         }
       },
       "additionalProperties": false,
@@ -16059,14 +15502,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "tail": {
           "description": "Cache-first fields, when this is not the prefix-first layout.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/SurfaceCurveCacheFirst"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/SurfaceCurveCacheFirst"
         }
       },
       "additionalProperties": false,
@@ -16089,14 +15525,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "tail": {
           "description": "Cache-first fields with the parametric-only second flag.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/SurfaceCurveCacheFirst2"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/SurfaceCurveCacheFirst2"
         }
       },
       "additionalProperties": false,
@@ -16119,14 +15548,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "tail": {
           "description": "Cache-first fields, when this is not the prefix-first layout.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/SurfaceCurveCacheFirst"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/SurfaceCurveCacheFirst"
         }
       },
       "additionalProperties": false,
@@ -16421,10 +15843,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "profile_frame": {
           "description": "Optional explicit profile frame.",
-          "type": [
-            "array",
-            "null"
-          ],
+          "type": "array",
           "maxItems": 2,
           "minItems": 2,
           "prefixItems": [
@@ -16556,10 +15975,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "profile_frame": {
           "description": "Optional explicit profile frame.",
-          "type": [
-            "array",
-            "null"
-          ],
+          "type": "array",
           "maxItems": 2,
           "minItems": 2,
           "prefixItems": [
@@ -16619,14 +16035,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "properties": {
         "auxiliary_curve": {
           "description": "Optional auxiliary curve.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/CurveId"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/CurveId"
         },
         "directions": {
           "description": "Three ordered sweep frame directions.",
@@ -16643,10 +16052,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "legacy_flag": {
           "description": "Legacy pre-219 trailing boolean when present.",
-          "type": [
-            "boolean",
-            "null"
-          ]
+          "type": "boolean"
         },
         "mode": {
           "description": "Native explicit-layout integer.",
@@ -16674,10 +16080,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "profile_frame": {
           "description": "Optional explicit profile frame.",
-          "type": [
-            "array",
-            "null"
-          ],
+          "type": "array",
           "maxItems": 2,
           "minItems": 2,
           "prefixItems": [
@@ -16816,10 +16219,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "profile_frame": {
           "description": "Optional explicit profile frame.",
-          "type": [
-            "array",
-            "null"
-          ],
+          "type": "array",
           "maxItems": 2,
           "minItems": 2,
           "prefixItems": [
@@ -16900,10 +16300,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "separator": {
           "description": "Optional native separator boolean.",
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": "boolean",
           "default": null
         },
         "values": {
@@ -17409,14 +16806,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
     },
     "cross_section": {
       "description": "Cross-section clause following the complete radius-law sequence.\nAbsence denotes an elided default circular section; an explicit\ncircular clause remains distinct.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/VariableBlendCrossSection"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "$ref": "#/$defs/VariableBlendCrossSection"
     },
     "discontinuities": {
       "description": "Six ordered ASM discontinuity arrays closing the shared tail.",
@@ -17443,25 +16833,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
     },
     "post_curve": {
       "description": "Native post-shape BS3 curve, absent for `nullbs`.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/CurveId"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "$ref": "#/$defs/CurveId"
     },
     "post_pcurve": {
       "description": "Native post-shape BS2 pcurve, absent for `nullbs`.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/PcurveGeometry"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "$ref": "#/$defs/PcurveGeometry"
     },
     "post_range": {
       "description": "Native optional post-shape interval endpoints.",
@@ -17490,14 +16866,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
     },
     "secondary_curve": {
       "description": "Secondary curve and its bounds, absent for `null_curve`.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/RollingBallSupportCurve"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "$ref": "#/$defs/RollingBallSupportCurve"
     },
     "shape_length": {
       "description": "Achieved fit tolerance for the surface cache, in document units.",
@@ -17570,10 +16939,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
     },
     "v_lower": {
       "description": "Second interval: a lower bound with an unbounded-above marker,\nencoded as `(T lo, F)` and decoding to `[Some(lo), None]`. The `F`\nupper-bound marker is an interval bound, not a standalone Boolean.",
-      "type": [
-        "number",
-        "null"
-      ],
+      "type": "number",
       "format": "double"
     }
   },
@@ -17676,14 +17042,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "radius": {
           "description": "Rounding-radius law; absent when the clause stores `no_radius`.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/VariableBlendValue"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/VariableBlendValue"
         }
       },
       "additionalProperties": false,
@@ -18497,14 +17856,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "pcurve": {
           "description": "Native BS2 pcurve, absent for `nullbs`.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PcurveGeometry"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/PcurveGeometry"
         },
         "sense": {
           "description": "Native sense flag, a logical on the wire.",
@@ -18615,14 +17967,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
     },
     "revision": {
       "description": "Positive serializer-revision integer selecting the revision-gated\nlayout; absent from the pre-revision layout.",
-      "anyOf": [
-        {
-          "$ref": "#/$defs/PositiveI64"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "$ref": "#/$defs/PositiveI64"
     }
   },
   "additionalProperties": false,
@@ -18799,10 +18144,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
         },
         "separator": {
           "description": "Optional native separator boolean.",
-          "type": [
-            "boolean",
-            "null"
-          ],
+          "type": "boolean",
           "default": null
         },
         "values": {

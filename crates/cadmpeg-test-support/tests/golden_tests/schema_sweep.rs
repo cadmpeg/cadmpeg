@@ -169,9 +169,9 @@ fn seed_documents() -> Vec<(&'static str, Value)> {
                         "item_size": 8,
                         "kind": 1,
                     }],
-                    "faces": [],
                     "feature_edges": [],
                     "id": "test:sweep:tessellation#0",
+                    "of": {"kind": "unresolved"},
                     "mesh": {
                         "kind": "shaded_list",
                         "triangles": [[0, 1, 2]],

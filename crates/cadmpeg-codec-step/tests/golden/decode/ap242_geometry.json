@@ -262,7 +262,6 @@
           "source_object": {
             "format": "step",
             "instance_path": [],
-            "name": "two segments",
             "object_id": "#49"
           }
         },
@@ -753,7 +752,7 @@
           "appearance": "step:presentation:appearance#30",
           "channels": {},
           "id": "step:presentation:binding#37:0-0",
-          "source_entity_id": "#37",
+          "source_entity_id": "#8",
           "target": {
             "entity": {
               "kind": "curve",
@@ -765,7 +764,7 @@
           "appearance": "step:presentation:appearance#30",
           "channels": {},
           "id": "step:presentation:binding#38:0-0",
-          "source_entity_id": "#38",
+          "source_entity_id": "#11",
           "target": {
             "entity": {
               "kind": "surface",
@@ -777,7 +776,7 @@
           "appearance": "step:presentation:appearance#30",
           "channels": {},
           "id": "step:presentation:binding#39:0-0",
-          "source_entity_id": "#39",
+          "source_entity_id": "#3",
           "target": {
             "entity": {
               "kind": "point",
@@ -789,7 +788,7 @@
           "appearance": "step:presentation:appearance#30",
           "channels": {},
           "id": "step:presentation:binding#47:0-0",
-          "source_entity_id": "#47",
+          "source_entity_id": "#3",
           "target": {
             "entity": {
               "kind": "point",
@@ -801,7 +800,7 @@
           "appearance": "step:presentation:appearance#30",
           "channels": {},
           "id": "step:presentation:binding#47:1-0",
-          "source_entity_id": "#47",
+          "source_entity_id": "#8",
           "target": {
             "entity": {
               "kind": "curve",
@@ -813,7 +812,7 @@
           "appearance": "step:presentation:appearance#30",
           "channels": {},
           "id": "step:presentation:binding#49:0-0",
-          "source_entity_id": "#49",
+          "source_entity_id": "#48",
           "target": {
             "entity": {
               "kind": "curve",
@@ -825,13 +824,10 @@
           "appearance": "step:presentation:appearance#30",
           "channels": {},
           "id": "step:presentation:binding#50:0-0",
-          "source_entity_id": "#50",
+          "source_entity_id": "#6",
           "target": {
             "entity": {
-              "kind": "source",
-              "value": {
-                "source_id": "#6"
-              }
+              "kind": "unresolved"
             }
           }
         }
@@ -853,7 +849,24 @@
       ],
       "articulations": [],
       "assets": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "step:data:attribute#curve.48",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "step:data:curve#48"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "two segments"
+            }
+          ]
+        }
+      ],
       "colliders": [],
       "declared_measures": [],
       "drawings": [],
@@ -876,8 +889,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -1077,6 +1089,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "d00e6c96b2f9b1819d8cd432746ac3b96bdebbc3f19d491e2604aa4439ffbc0a",
     "file_digests": {},
     "retained_records": {

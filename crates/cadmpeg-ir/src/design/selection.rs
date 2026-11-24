@@ -24,7 +24,7 @@ use crate::document::Topology;
 use crate::features::geometry::FinitePoint3;
 use crate::features::selections::NativeSelections;
 use crate::features::FeatureId;
-use crate::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
+use crate::geometry::{InlineCurve, InlineSurface};
 use crate::ids::{OccurrenceId, ProductDefinitionId};
 use crate::scalar::{Angle, FiniteReal, Length};
 use crate::sketches::{SketchEntityId, SketchId, SpatialSketchEntityId, SpatialSketchId};
@@ -650,14 +650,14 @@ pub struct Witness {
     )]
     pub frame: Option<FrameValue>,
     /// The chain curves.
-    pub curves: Vec<SolvedCurveGeometry>,
+    pub curves: Vec<InlineCurve>,
     /// A surface.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_surface"
     )]
-    pub surface: Option<SolvedSurfaceGeometry>,
+    pub surface: Option<InlineSurface>,
     /// The face group or body that the source backs up for the pick.
     #[serde(
         default,
@@ -850,6 +850,13 @@ pub enum SelectionRule {
         /// The faces the seeds' faces meet.
         with: Members<Picked, Unordered>,
     },
+    /// Every component instance below the owner's definition that exists in
+    /// the anchored state and whose bodies differ when the operation of the
+    /// selection's feature is applied to that instance alone. It takes no
+    /// seeds and no propagation, and occurs only as a term of an assembly
+    /// feature's participants.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Affected,
     /// A source rule whose meaning is not established, written
     /// `codec:rule`.
     Native(CodecName),
@@ -987,7 +994,7 @@ cadmpeg_core::named_optional_field!(deserialize_propagation, Propagation, "propa
 cadmpeg_core::named_optional_field!(deserialize_resolved_members<O>, Members<Picked, O>, "resolved");
 cadmpeg_core::named_optional_field!(deserialize_resolved_entities, Vec<EntityRef>, "resolved");
 cadmpeg_core::named_optional_field!(deserialize_start, Box<Picked>, "start");
-cadmpeg_core::named_optional_field!(deserialize_surface, SolvedSurfaceGeometry, "surface");
+cadmpeg_core::named_optional_field!(deserialize_surface, InlineSurface, "surface");
 cadmpeg_core::named_optional_field!(deserialize_target, OccurrencePath, "target");
 cadmpeg_core::named_optional_field!(deserialize_within, NativeOwner, "within");
 cadmpeg_core::named_optional_field!(deserialize_witness, Witness, "witness");

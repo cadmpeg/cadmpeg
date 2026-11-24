@@ -162,8 +162,8 @@
             "kind": "solved",
             "value": {
               "axis": {
-                "x": -0.0,
-                "y": -0.0,
+                "x": 0.0,
+                "y": 0.0,
                 "z": -1.0
               },
               "center": {
@@ -828,8 +828,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -1800,6 +1799,8 @@
         }
       }
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "31685c6d94ac735e3f43009ccf5fe311b61e6424b9236ebec16360208ded42ce",
     "file_digests": {},
     "retained_records": {

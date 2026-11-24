@@ -22,13 +22,7 @@
     },
     "fragment": false,
     "geometry": {
-      "bodies": [
-        {
-          "id": "usd:stage:body#/Arm/Base/Geom",
-          "kind": "general",
-          "name": "Geom"
-        }
-      ],
+      "bodies": [],
       "coedges": [],
       "curves": [],
       "edges": [],
@@ -73,8 +67,8 @@
           },
           "target": {
             "entity": {
-              "body": "usd:stage:body#/Arm/Base/Geom",
-              "kind": "body"
+              "definition": "usd:stage:definition#/Arm/Base/Geom",
+              "kind": "definition"
             }
           }
         }
@@ -262,8 +256,7 @@
           "source_name": "Arm",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -279,13 +272,10 @@
           "source_name": "Base",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
-          "bodies": [
-            "usd:stage:body#/Arm/Base/Geom"
-          ],
+          "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Arm/Base/Geom",
           "instance_bodies": [],
@@ -296,8 +286,7 @@
           "source_name": "Geom",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -311,8 +300,7 @@
           "source_name": "Finger",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -326,8 +314,7 @@
           "source_name": "Link",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -341,8 +328,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [
@@ -742,9 +728,7 @@
       ],
       "tessellations": [
         {
-          "body": "usd:stage:body#/Arm/Base/Geom",
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "usd:stage:tessellation#/Arm/Base/Geom",
           "mesh": {
@@ -793,6 +777,10 @@
                 "z": 20.0
               }
             ]
+          },
+          "of": {
+            "definition": "usd:stage:definition#/Arm/Base/Geom",
+            "kind": "definition"
           },
           "texture_assignments": [],
           "texture_coordinates": [],
@@ -885,6 +873,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "2a82e58460d62a6ac2195c74425958c272d75af48b413420046099039d79a6e3",
     "file_digests": {},
     "retained_records": {},

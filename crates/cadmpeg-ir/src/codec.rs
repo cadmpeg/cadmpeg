@@ -36,25 +36,35 @@ use serde::{Deserialize, Serialize};
 
 /// The stable registry format namespace of one codec, as a typed value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FormatId(&'static str);
+pub struct FormatId(cadmpeg_core::text::StaticCodecId);
 
 impl FormatId {
-    /// Builds the format id for a registry namespace word.
+    /// Builds the format id for a registry namespace word, which is a codec
+    /// id (§2.2). In a constant, text of another form fails compilation.
     #[must_use]
     pub const fn new(namespace: &'static str) -> Self {
-        Self(namespace)
+        match cadmpeg_core::text::StaticCodecId::new(namespace) {
+            Some(id) => Self(id),
+            None => panic!("a format id is a codec id"),
+        }
     }
 
     /// The registry namespace word.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
-        self.0
+        self.0.as_str()
+    }
+
+    /// The registry namespace word as a codec id.
+    #[must_use]
+    pub const fn codec(self) -> crate::design::names::CodecId {
+        crate::design::names::CodecId::from_static(self.0)
     }
 }
 
 impl fmt::Display for FormatId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.pad(self.0)
+        f.pad(self.0.as_str())
     }
 }
 
@@ -230,7 +240,8 @@ impl DecodeResult {
     ) -> Result<Self, DecodeFailure> {
         let mut result = DecodeResult::new(decoded, format, ctx.depth(), ctx.policy())?;
         result.keep_first_of_repeated_ids();
-        result.record_omitted_arenas_baseline(ctx)?;
+        result.record_content_digest(ctx.policy())?;
+        result.record_omitted_arenas_baseline(ctx);
         if result.report().format() != format.as_str() {
             return Err(CodecError::WrongFormat(format!(
                 "codec {:?} decoded a {:?} document",
@@ -303,10 +314,10 @@ impl DecodeResult {
                     FormatIdentity::classified(dialects.clone())
                 }
                 FormatIdentity::Unclassified { format } => {
-                    FormatIdentity::unclassified(format.to_owned())
+                    FormatIdentity::unclassified(format.clone())
                 }
             },
-            None => FormatIdentity::unclassified(format.as_str().to_owned()),
+            None => FormatIdentity::unclassified(format.codec()),
         };
         ir.finalize();
         match crate::design::normalize::normalize(&mut ir, policy) {
@@ -336,24 +347,12 @@ impl DecodeResult {
     }
 
     /// Records the digest of the arenas the CADIR wire omits as the
-    /// document returns, where the decoder stamped a
-    /// [`crate::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE`] for its writer to
-    /// compare.
-    fn record_omitted_arenas_baseline(
-        &mut self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<(), CodecError> {
-        let stamped = self.ir.source.as_ref().is_some_and(|source| {
-            source
-                .attributes
-                .contains_key(crate::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE)
-        });
-        if !stamped {
-            return Ok(());
+    /// document returns, beside the content digest, which covers the wire
+    /// form alone. Where it cannot be taken, the content digest decides alone.
+    fn record_omitted_arenas_baseline(&mut self, ctx: &DecodeContext<'_>) {
+        if let Ok(digest) = crate::hash::omitted_arenas_local_sha256(ctx, &self.ir) {
+            self.ir.model.record_omitted_arenas_baseline(digest);
         }
-        let digest = crate::hash::omitted_arenas_local_sha256(ctx, &self.ir)?;
-        self.ir.model.record_omitted_arenas_baseline(digest);
-        Ok(())
     }
 
     /// Keeps one copy of each id a decoder emitted more than once in one
@@ -374,6 +373,33 @@ impl DecodeResult {
                 repeated.dropped
             )));
         }
+    }
+
+    /// Records the SHA-256 of the canonical JSON of the document the decode
+    /// returns as the sidecar's `content_digest` (§3.1, Rule B). The digest
+    /// walks the document in a session of its own under `policy`, the
+    /// decode's, so a ceiling it meets refuses no part of the decode. A
+    /// document with no canonical JSON keeps the digest of no bytes, which no
+    /// document has, so every writer reads it as edited, and a
+    /// `decode/content-digest.unavailable` Warning says why (interim, inventory
+    /// gap 20261124-ERR1-C-I7-1).
+    fn record_content_digest(&mut self, policy: &DecodePolicy) -> Result<(), CodecError> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (digest_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+        match crate::hash::content_digest(&digest_ctx, &self.ir).map_err(CodecError::from) {
+            Ok(digest) => self.source_fidelity.content_digest = digest,
+            Err(error) => {
+                self.source_fidelity.content_digest =
+                    crate::hash::digest::Sha256Digest::digest(&[]);
+                self.report
+                    .losses
+                    .push(DecodeLossCode::ContentDigestUnavailable.note(format!(
+                        "the decode wrapper took no content digest of the document ({error}), \
+                         so a writer reads the document as edited and replays no source file"
+                    )));
+            }
+        }
+        Ok(())
     }
 
     /// Borrow the finalized IR.

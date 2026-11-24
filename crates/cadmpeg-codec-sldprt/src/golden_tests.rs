@@ -17,9 +17,7 @@ use cadmpeg_ir::features::extents::{ExtrudeExtent, LinearTermination};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::export::WritePath;
 use cadmpeg_measure::test_support::round_trip::{measures_agree_with, measures_decide};
-use cadmpeg_test_support::golden::{
-    elide_local_digests, snapshot_text, snapshots_agree, Branch, Harness,
-};
+use cadmpeg_test_support::golden::{snapshot_text, snapshots_agree, Branch, Harness};
 use cadmpeg_test_support::roundtrip::{
     mutation_roundtrip, reports_carried_source, semantic_roundtrip, verbatim_replay_holds,
     ExpectedWritePath, MutationOutcome, SemanticOutcome,
@@ -61,25 +59,18 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 /// fidelity. A decode error is frozen too: refusing a document is
 /// contract-relevant behavior, so this never panics on codec output.
 fn decode_snapshot(bytes: &[u8]) -> String {
-    let value =
-        match SldprtCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
-            Ok(result) => {
-                let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
-                if let Some(source) = result.ir_mut().source.as_mut() {
-                    // The `native` lane digests cover retained source bytes and
-                    // stay pinned; a `_local_sha256` digest covers decoded
-                    // content, so a platform's libm moves it.
-                    elide_local_digests(&mut source.attributes);
-                }
-                serde_json::json!({
-                    "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
-                    "report": serde_json::to_value(result.report()).expect("serialize report"),
-                    "source_fidelity": serde_json::to_value(result.source_fidelity())
-                        .expect("serialize source_fidelity"),
-                })
-            }
-            Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
-        };
+    let value = match SldprtCodec
+        .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+    {
+        Ok(result) => {
+            serde_json::json!({
+                "ir": serde_json::to_value(result.ir()).expect("serialize ir"),
+                "report": serde_json::to_value(result.report()).expect("serialize report"),
+                "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.source_fidelity()),
+            })
+        }
+        Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
+    };
     snapshot_text(&value)
 }
 

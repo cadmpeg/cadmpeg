@@ -36,7 +36,7 @@
             "value": {
               "axis": {
                 "x": 0.0,
-                "y": -0.0,
+                "y": 0.0,
                 "z": 1.0
               },
               "center": {
@@ -114,7 +114,7 @@
             "value": {
               "axis": {
                 "x": 0.0,
-                "y": -0.0,
+                "y": 0.0,
                 "z": 1.0
               },
               "center": {
@@ -145,7 +145,7 @@
             "value": {
               "axis": {
                 "x": 0.0,
-                "y": -0.0,
+                "y": 0.0,
                 "z": 1.0
               },
               "center": {
@@ -176,7 +176,7 @@
             "value": {
               "axis": {
                 "x": 0.0,
-                "y": -0.0,
+                "y": 0.0,
                 "z": 1.0
               },
               "center": {
@@ -215,7 +215,7 @@
               "major_direction": {
                 "x": 0.7838216658808489,
                 "y": 0.6209859870365603,
-                "z": -0.0
+                "z": 0.0
               },
               "vertex": {
                 "x": 60.0,
@@ -659,8 +659,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -835,7 +834,6 @@
       "attributes": {
         "application_domains": "App,Sketcher",
         "document_kind": "application-document",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
         "program_version": "1.1R20260414 (Git shallow)"
       },
@@ -910,6 +908,10 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {
+      "fcstd_uncarried_local_sha256": "<elided: digest over tolerantly compared geometry>"
+    },
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "517b5fd0c7ea35aea9d43a22dea1ffd0a50200c54c2c61aea856a0ca5d5b9751",
     "file_digests": {},
     "retained_records": {},

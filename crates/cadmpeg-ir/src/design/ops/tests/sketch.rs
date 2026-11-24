@@ -33,7 +33,7 @@ use crate::design::selection::PrincipalEntity;
 use crate::document::{CadIr, Design};
 use crate::features::geometry::FinitePoint3;
 use crate::geometry::analytic::LineCurve;
-use crate::geometry::SolvedCurveGeometry;
+use crate::geometry::InlineCurve;
 use crate::sketches::{
     SketchConstraintId, SketchEntityId, SketchId, SpatialSketchEntityId, SpatialSketchId,
 };
@@ -190,8 +190,8 @@ fn spatial_sketches() -> Vec<SpatialSketch> {
     ]
 }
 
-fn line_carrier() -> SolvedCurveGeometry {
-    SolvedCurveGeometry::Line(LineCurve::new(FinitePoint3::ZERO, UnitVector3::X_AXIS))
+fn line_carrier() -> InlineCurve {
+    InlineCurve::Line(LineCurve::new(FinitePoint3::ZERO, UnitVector3::X_AXIS))
 }
 
 fn spatial_curves() -> Vec<SpatialCurve> {
