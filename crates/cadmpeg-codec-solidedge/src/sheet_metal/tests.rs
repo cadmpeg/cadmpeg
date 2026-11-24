@@ -89,7 +89,7 @@ fn base_tab(thickness: f64, side: f64, table: Option<Vec<u8>>) -> DecodeResult {
 fn length_option(options: &cadmpeg_ir::design::options::NativeOptions, name: &str) -> f64 {
     match options
         .iter()
-        .find(|(key, _)| key.as_str() == name)
+        .find(|(key, _)| key.as_str() == format!("solidedge:{name}").as_str())
         .unwrap()
         .1
     {
@@ -136,7 +136,7 @@ fn twelve_records_state_a_rule() {
     let method = rule
         .source_settings
         .iter()
-        .find(|(key, _)| key.as_str() == "bend_method")
+        .find(|(key, _)| key.as_str() == "solidedge:bend_method")
         .unwrap()
         .1;
     assert_eq!(method, &NativeOption::Integer(Dimension::Literal(0)));
