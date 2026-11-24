@@ -157,9 +157,8 @@ pub use subd::{
 };
 pub use unknown::{NativeUnknownRecord, UnknownRecord};
 pub use validate::admit::{
-    admit, admit_with_additional_native_identities, admit_with_annotations, filter_checks,
-    CATIA_ADMISSION_CHECKS, DRAFT_CORE_CHECKS, RHINO_DRAFT_CHECKS, RHINO_INSTANCE_CHECKS,
-    SLDPRT_EXPORT_PRECONDITION_CHECKS,
+    admit, admit_with_additional_native_identities, admit_with_annotations, Admission,
+    CATIA_ADMISSION, DRAFT_CORE, RHINO_DRAFT, RHINO_INSTANCE,
 };
 pub use validate::{validate_neutral, validate_neutral_with_source_fidelity};
 

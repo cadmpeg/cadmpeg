@@ -140,7 +140,6 @@ fn append_oriented_wire_curve(
             "oriented_support_model_curve_construction",
             Exactness::Derived,
         )?;
-        annotations.derived(&construction_id, "curve")?;
         annotations.derived(&construction_id, "definition")?;
         let mut definition = definition;
         let cached =
@@ -595,7 +594,7 @@ fn transfer_closed_wire_loops(
                     "standalone_wire_edge",
                     Exactness::Derived,
                 )?;
-                annotations.derived(&edge_id, "curve")?;
+                annotations.derived(&edge_id, "carrier.curve")?;
                 annotations.derived(&edge_id, "ends.start")?;
                 annotations.derived(&edge_id, "ends.end")?;
                 admission.charge()?;
@@ -611,7 +610,7 @@ fn transfer_closed_wire_loops(
                     native_ref: None,
                 });
                 if param_range.is_some() {
-                    annotations.derived(&edge_id, "param_range")?;
+                    annotations.derived(&edge_id, "carrier.param_range")?;
                 }
                 edge_ids.push(edge_id);
                 counts.edges += 1;
@@ -985,7 +984,6 @@ pub(in crate::families) fn try_decode_zero_entity(
             admitted!(annotate(&mut annotations, &curve_id, "zero_entity_a9_03", u64_from_index(support.pos), role, Exactness::Derived));
             admitted!(annotations.derived(&curve_id, "geometry").map_err(cadmpeg_core::CodecError::from));
             admitted!(annotate(&mut annotations, &construction_id, "zero_entity_a9_03", u64_from_index(support.pos), role, Exactness::Derived));
-            admitted!(annotations.derived(&construction_id, "curve").map_err(cadmpeg_core::CodecError::from));
             admitted!(annotations.derived(&construction_id, "definition").map_err(cadmpeg_core::CodecError::from));
             admitted!(admission.charge());
             ir.geometry.curves.push(Curve {

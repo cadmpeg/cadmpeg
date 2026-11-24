@@ -34,7 +34,11 @@ pub(super) fn check_presentation(ids: &ModelIndex<'_>, findings: &mut Vec<Findin
                 Check::ReferentialIntegrity,
                 Severity::Error,
                 Some(document.id.as_str()),
-                format_args!("{}", "invalid document presentation state"),
+                crate::rule!(
+                    "presentation.invalid-document-presentation-state",
+                    "{}",
+                    "invalid document presentation state"
+                ),
             );
         }
     }
@@ -55,7 +59,11 @@ pub(super) fn check_presentation(ids: &ModelIndex<'_>, findings: &mut Vec<Findin
                 Check::ReferentialIntegrity,
                 Severity::Error,
                 Some(view.id.as_str()),
-                format_args!("{}", "invalid view presentation reference"),
+                crate::rule!(
+                    "presentation.invalid-view-presentation-reference",
+                    "{}",
+                    "invalid view presentation reference"
+                ),
             );
         }
     }
@@ -99,7 +107,11 @@ pub(super) fn check_presentation(ids: &ModelIndex<'_>, findings: &mut Vec<Findin
                 Check::ReferentialIntegrity,
                 Severity::Error,
                 Some(layer.id.as_str()),
-                format_args!("{}", "unresolved presentation-layer parent"),
+                crate::rule!(
+                    "presentation.unresolved-presentation-layer-parent",
+                    "{}",
+                    "unresolved presentation-layer parent"
+                ),
             );
         }
         for item in &layer.items {
@@ -144,7 +156,11 @@ pub(super) fn check_presentation(ids: &ModelIndex<'_>, findings: &mut Vec<Findin
                     Check::Presentation,
                     crate::report::Severity::Error,
                     Some(layer.id.as_str()),
-                    format_args!("{}", "unresolved presentation-layer item"),
+                    crate::rule!(
+                        "presentation.unresolved-presentation-layer-item",
+                        "{}",
+                        "unresolved presentation-layer item"
+                    ),
                 );
             }
         }

@@ -4519,8 +4519,7 @@ fn build_geometry_ir(
         annotation_builder.field_exactness(id.as_str(), "color", Exactness::Derived)?;
     }
     for id in assigned_tessellations {
-        annotation_builder.field_exactness(id.as_str(), "body", Exactness::Derived)?;
-        annotation_builder.field_exactness(id.as_str(), "faces", Exactness::Derived)?;
+        annotation_builder.field_exactness(id.as_str(), "of", Exactness::Derived)?;
     }
     let mut annotations = annotation_builder.build();
     for source_block in &mut scan.blocks {
