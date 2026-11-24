@@ -624,3 +624,71 @@ fn a_profile_curve_on_an_unbounded_carrier_states_its_range() {
     };
     assert!(!ranged(placed, None));
 }
+
+/// Part 10: `InPlane.plane` picks a plane, `ThroughLine.line` a line, and
+/// `NormalToSurface.surfaces` faces.
+#[test]
+fn a_tool_axis_control_picks_entities_of_its_kind() {
+    use crate::design::names::{NameKind, TopoName};
+    use crate::design::selection::{PickTarget, Picked};
+    let picking = |kind: NameKind| {
+        let mut selection = workpiece_selection(Some(0));
+        selection.selection.picks = Picks::Named(
+            Members::new(vec![Picked {
+                target: PickTarget::Entity(TopoName::Generated {
+                    kind,
+                    feature: design::feature("extrude"),
+                    role: None,
+                    generator: None,
+                    index: Some(1),
+                }),
+                context: None,
+                native: None,
+                domain: None,
+                witness: None,
+                resolved: None,
+            }])
+            .unwrap(),
+        );
+        selection
+    };
+    let messages = |control: ToolAxisControl| {
+        let mut ir = document();
+        ir.process.operations[2].tool_axis = Some(control);
+        process_findings(&ir)
+            .into_iter()
+            .map(|finding| finding.message)
+            .filter(|message| message.contains("; it picks a"))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        messages(ToolAxisControl::InPlane {
+            plane: picking(NameKind::Edge)
+        }),
+        ["`in_plane.plane` picks an edge; it picks a plane"]
+    );
+    assert!(messages(ToolAxisControl::InPlane {
+        plane: picking(NameKind::Face)
+    })
+    .is_empty());
+    assert_eq!(
+        messages(ToolAxisControl::ThroughLine {
+            line: picking(NameKind::Face)
+        }),
+        ["`through_line.line` picks a face; it picks a line"]
+    );
+    assert!(messages(ToolAxisControl::ThroughLine {
+        line: picking(NameKind::Edge)
+    })
+    .is_empty());
+    assert_eq!(
+        messages(ToolAxisControl::NormalToSurface {
+            surfaces: picking(NameKind::Vertex)
+        }),
+        ["`normal_to_surface.surfaces` picks a vertex; it picks a face"]
+    );
+    assert!(messages(ToolAxisControl::AlongRuling {
+        surfaces: picking(NameKind::Face)
+    })
+    .is_empty());
+}
