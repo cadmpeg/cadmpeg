@@ -327,6 +327,7 @@ pub enum Unstated {
 #[serde(deny_unknown_fields)]
 pub enum RegionUnstated {
     /// `shells` holds the exterior first; a void is not stated.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
     Voids,
     /// The exterior is not stated; `shells` is empty.
     Exterior {
