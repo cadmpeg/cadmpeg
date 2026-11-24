@@ -92,7 +92,7 @@ fn contour_flange_states_its_profile_radius_and_extent_option() {
     let (_, option) = sheet
         .native_options
         .iter()
-        .find(|(key, _)| key.as_str() == "extent_distance")
+        .find(|(key, _)| key.as_str() == "solidedge:extent_distance")
         .unwrap();
     let NativeOption::Length(Dimension::Literal(distance)) = option else {
         panic!("expected a literal length");

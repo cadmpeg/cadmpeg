@@ -47,7 +47,7 @@ fn a_close_corner_stays_native_and_keeps_its_stored_fields() {
     let get = |name: &str| {
         native_options
             .iter()
-            .find(|(key, _)| key.as_str() == name)
+            .find(|(key, _)| key.as_str() == format!("solidedge:{name}").as_str())
             .map(|(_, value)| value)
     };
     assert!(matches!(

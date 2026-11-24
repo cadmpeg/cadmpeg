@@ -49,7 +49,7 @@ fn hem(result: &DecodeResult) -> (&Hem, &NativeOptions) {
 fn option<'a>(options: &'a NativeOptions, name: &str) -> Option<&'a NativeOption> {
     options
         .iter()
-        .find(|(key, _)| key.as_str() == name)
+        .find(|(key, _)| key.as_str() == format!("solidedge:{name}").as_str())
         .map(|(_, value)| value)
 }
 
