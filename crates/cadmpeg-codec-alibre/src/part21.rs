@@ -169,7 +169,7 @@ impl<'a> Cursor<'a> {
         std::str::from_utf8(&self.bytes[start..self.at]).unwrap_or("")
     }
 
-    fn expect(&mut self, byte: u8, what: &str) -> Result<(), CodecError> {
+    fn require(&mut self, byte: u8, what: &str) -> Result<(), CodecError> {
         self.skip_space();
         if self.peek() == Some(byte) {
             self.bump();
@@ -246,7 +246,7 @@ impl<'a> Cursor<'a> {
             Some(b'.') => {
                 self.bump();
                 let word = self.word().to_owned();
-                self.expect(b'.', "the closing dot of an enumeration")?;
+                self.require(b'.', "the closing dot of an enumeration")?;
                 Ok(Value::Enum(word))
             }
             Some(b'#') => {
@@ -263,7 +263,7 @@ impl<'a> Cursor<'a> {
             Some(byte) if byte.is_ascii_digit() || matches!(byte, b'-' | b'+') => self.number(),
             Some(byte) if byte.is_ascii_alphabetic() => {
                 let name = self.word().to_owned();
-                self.expect(b'(', "the arguments of a typed parameter")?;
+                self.require(b'(', "the arguments of a typed parameter")?;
                 Ok(Value::Typed(name, self.list(depth)?))
             }
             _ => Err(CodecError::malformed(format_args!(
@@ -352,12 +352,12 @@ pub(crate) fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Part21, Cod
                     .word()
                     .parse::<u32>()
                     .map_err(|_| CodecError::malformed("STEP_DATA instance has no number"))?;
-                cursor.expect(b'=', "'=' after an instance number")?;
+                cursor.require(b'=', "'=' after an instance number")?;
                 cursor.skip_space();
                 let name = cursor.word().to_owned();
-                cursor.expect(b'(', "the arguments of an instance")?;
+                cursor.require(b'(', "the arguments of an instance")?;
                 let args = cursor.list(0)?;
-                cursor.expect(b';', "';' after an instance")?;
+                cursor.require(b';', "';' after an instance")?;
                 ctx.charge_entities(1, "admit STEP_DATA instance")?;
                 if part
                     .instances

@@ -8,8 +8,8 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::construction::{
-    kinds, AxisValue, Construction, ConstructionInput, FrameValue, InputReference, InputRole,
-    PlaneValue, Relation, ScalarDimension, Subject,
+    kinds, AxisValue, Construction, ConstructionInput, ConstructionKind, FrameValue,
+    InputReference, InputRole, PlaneValue, Relation, ScalarDimension, Subject,
 };
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
@@ -206,7 +206,7 @@ impl Projection<'_> {
             plane: SketchPlane::Placed(Box::new(Construction::<kinds::Frame> {
                 inputs: vec![Self::input(Relation::Coincident, reference, None)],
                 resolved: Some(frame_value(&sketch.frame)?),
-                ..Construction::default()
+                ..empty_construction()
             })),
             solve: SketchSolve {
                 state: None,
@@ -319,7 +319,7 @@ impl Projection<'_> {
             Operation::Origin(position) => {
                 datum(DatumElement::Points(vec![Construction::<kinds::Point> {
                     resolved: Some(point3(*position)?),
-                    ..Construction::default()
+                    ..empty_construction()
                 }]))
             }
             Operation::Axis { origin, direction } => {
@@ -328,13 +328,13 @@ impl Projection<'_> {
                         origin: point3(*origin)?,
                         direction: unit3(*direction)?,
                     }),
-                    ..Construction::default()
+                    ..empty_construction()
                 }))
             }
             Operation::Plane { frame } => {
                 datum(DatumElement::Plane(Construction::<kinds::Plane> {
                     resolved: Some(plane_value(frame)?),
-                    ..Construction::default()
+                    ..empty_construction()
                 }))
             }
             Operation::OffsetPlane {
@@ -348,7 +348,7 @@ impl Projection<'_> {
                     Some(ScalarDimension::Length(self.dimension(*offset))),
                 )],
                 resolved: Some(plane_value(frame)?),
-                ..Construction::default()
+                ..empty_construction()
             })),
             Operation::Sketch(_) => FeatureOperation::Sketch(
                 self.sketches
@@ -403,7 +403,7 @@ impl Projection<'_> {
                             origin: point3(*axis_origin)?,
                             direction: unit3(*axis_direction)?,
                         }),
-                        ..Construction::default()
+                        ..empty_construction()
                     }),
                     span: Some(Span::Between {
                         start: Box::new(Limit::AtOrigin),
@@ -733,7 +733,7 @@ pub(crate) fn project(
         kind: OrderedKind::Timeline,
         members,
         folders: Vec::new(),
-        rollback: Rollback::End,
+        rollback: Some(Rollback::End),
         placement: None,
     });
     ir.design.scopes.push(DesignScope {
@@ -757,4 +757,17 @@ pub(crate) fn project(
     ir.design.sketch_constraints.sort_by(|a, b| a.id.cmp(&b.id));
     ir.design.parameters.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(())
+}
+
+/// A construction with no inputs, steps, selector, mode or values, for the
+/// struct-update syntax: the records fill in the fields they state.
+fn empty_construction<K: ConstructionKind>() -> Construction<K> {
+    Construction {
+        inputs: Vec::new(),
+        after: Vec::new(),
+        solution: None,
+        mode: None,
+        resolved: None,
+        resolved_in: BTreeMap::new(),
+    }
 }
