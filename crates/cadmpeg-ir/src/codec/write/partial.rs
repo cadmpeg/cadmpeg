@@ -228,7 +228,11 @@ fn remove_unreferenced(
         left_out.insert(id.clone());
         for target in outgoing.get(id.as_str()).into_iter().flatten() {
             if let Some(count) = uses.get_mut(target) {
-                *count = count.saturating_sub(1);
+                *count = count.checked_sub(1).ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "{target} is referenced by fewer records than are left out"
+                    ))
+                })?;
             }
             pending.push(target.clone());
         }
