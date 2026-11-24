@@ -150,7 +150,7 @@ fn owned_source_session_replaces_native_unknown_identity_floor() {
             .namespace_mut(crate::design::names::CodecId::new(format).expect("a codec id"))
             .arenas_mut()
             .insert(
-                "unknowns".into(),
+                cadmpeg_core::nonblank_literal!("unknowns"),
                 vec![
                     crate::NativeRecord::new(id.try_into().unwrap(), serde_json::Map::new())
                         .unwrap(),
@@ -285,7 +285,7 @@ fn speculative_session_append_extends_native_cache_and_preserves_rejected_positi
             .namespace_mut(crate::design::names::CodecId::new(format).expect("a codec id"))
             .arenas_mut()
             .insert(
-                arena.into(),
+                cadmpeg_core::text::NonBlankString::new(arena).expect("an arena name"),
                 vec![crate::NativeRecord::new(
                     identity.try_into().unwrap(),
                     serde_json::Map::new(),

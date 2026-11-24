@@ -2394,13 +2394,13 @@ fn extend_native(
         .copied()
         .chain(std::iter::once("unknowns"))
     {
-        let Some(records) = source.arenas_mut().remove(name) else {
+        let Some((key, records)) = source.arenas_mut().remove_entry(name) else {
             continue;
         };
         if records.is_empty() {
             continue;
         }
-        let arena = target.arenas_mut().entry(name.to_string()).or_default();
+        let arena = target.arenas_mut().entry(key).or_default();
 
         for record in records {
             arena.push(rescope_record(ctx, &record, name, occurrence)?);

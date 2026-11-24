@@ -463,7 +463,7 @@ fn add_source_typed_targets(
         cadmpeg_ir::native::arena_from(ctx, native_targets.into_iter().map(Ok::<_, CodecError>))?;
     let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("step"));
     let arenas = namespace.arenas_mut();
-    let arena_key = String::from("drawing_targets");
+    let arena_key = cadmpeg_core::nonblank_literal!("drawing_targets");
 
     let target_arena = arenas.entry(arena_key).or_default();
 

@@ -336,7 +336,7 @@ fn occurrence_merge_rewrites_only_member_native_record_text() {
         .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .arenas_mut()
         .insert(
-            "operands".into(),
+            cadmpeg_core::nonblank_literal!("operands"),
             vec![NativeRecord::new(id.try_into().unwrap(), serde_json::Map::new()).unwrap()],
         );
     let targets = super::super::native_record_targets(&native, "member");

@@ -169,13 +169,13 @@ fn elided_native(native: &cadmpeg_ir::Native) -> serde_json::Value {
         let mut namespace_digests = serde_json::Map::new();
         let mut namespace_values = serde_json::Map::new();
         for (arena, records) in namespace.arenas() {
-            namespace_counts.insert(arena.clone(), serde_json::json!(records.len()));
+            namespace_counts.insert(arena.to_string(), serde_json::json!(records.len()));
             if matches!(arena.as_str(), "attachments" | "product_nodes") && !records.is_empty() {
-                namespace_values.insert(arena.clone(), serde_json::json!(records));
+                namespace_values.insert(arena.to_string(), serde_json::json!(records));
                 continue;
             }
             namespace_digests.insert(
-                arena.clone(),
+                arena.to_string(),
                 serde_json::json!(cadmpeg_ir::hash::canonical_json_sha256(
                     &cadmpeg_core::decode::test_support::service_decode_context(),
                     records
@@ -528,7 +528,7 @@ mod native_elision {
             .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
             .arenas_mut()
             .insert(
-                "objects".to_owned(),
+                cadmpeg_core::nonblank_literal!("objects"),
                 vec![named_record("fcstd:native:object#Box", name)],
             );
         native
@@ -542,7 +542,7 @@ mod native_elision {
             .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
             .arenas_mut()
             .insert(
-                "properties".to_owned(),
+                cadmpeg_core::nonblank_literal!("properties"),
                 vec![named_record("fcstd:native:property#Length", property_name)],
             );
         native
@@ -568,7 +568,7 @@ mod native_elision {
                     .collect::<Vec<_>>();
                 ids.sort_unstable();
                 arenas.insert(
-                    arena.clone(),
+                    arena.to_string(),
                     serde_json::json!({ "count": records.len(), "ids": ids }),
                 );
             }
@@ -655,7 +655,10 @@ mod native_elision {
             native
                 .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
                 .arenas_mut()
-                .insert(arena.to_owned(), vec![record]);
+                .insert(
+                    cadmpeg_core::text::NonBlankString::new(arena).unwrap(),
+                    vec![record],
+                );
             let before = elided_native(&native);
             assert!(before["__arena_sha256"]["fcstd"][arena].is_null());
             assert_eq!(before["__arena_counts"]["fcstd"][arena], 1);
