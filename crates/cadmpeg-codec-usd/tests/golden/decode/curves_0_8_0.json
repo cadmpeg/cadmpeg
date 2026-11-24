@@ -1039,8 +1039,7 @@
           "source_name": "Curves",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -1057,8 +1056,7 @@
           "source_name": "Arc",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -1075,8 +1073,7 @@
           "source_name": "Bezier",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -1093,8 +1090,7 @@
           "source_name": "CatmullRom",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -1111,8 +1107,7 @@
           "source_name": "Loop",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -1129,8 +1124,7 @@
           "source_name": "Polyline",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -1147,8 +1141,7 @@
           "source_name": "Splines",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -1163,8 +1156,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -1290,6 +1282,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "6827a940fc37362489679ab059abf75d62f72133f4fbbb4407419d8c6cc29a73",
     "file_digests": {},
     "retained_records": {},

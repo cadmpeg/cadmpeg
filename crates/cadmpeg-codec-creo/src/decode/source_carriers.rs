@@ -1158,6 +1158,7 @@ mod tests {
                     color: None,
                     visible: None,
                     native_ref: None,
+                    unstated: None,
                 },
             )
         }

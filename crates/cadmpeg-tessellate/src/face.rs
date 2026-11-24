@@ -318,7 +318,13 @@ fn layout<'ir>(
     let mut traced_loops = Vec::new();
     let mut declared_outer = None;
     let mut poles: Vec<(Uv, Option<Point3>)> = Vec::new();
-    for loop_id in &face.loops {
+    let boundary = face.loops.boundary().ok_or_else(|| {
+        Refusal::new(format!(
+            "the face {} does not state every loop, so its extent is not stated",
+            face.id
+        ))
+    })?;
+    for loop_id in boundary {
         let loop_ = index
             .loops(loop_id.as_str(), StandardIndex)
             .ok_or_else(|| Refusal::new(format!("the loop {loop_id} is not in the model")))?;

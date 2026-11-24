@@ -187,6 +187,7 @@ pub(super) fn profile(
         .get("deterministicIds")
         .and_then(Value::as_array)
         .is_some_and(|a| !a.is_empty())
+        && !whole_sketch_region_query(query)
     {
         return Err("deterministic sketch-region subsets are not supported yet".into());
     }
@@ -199,9 +200,6 @@ pub(super) fn profile(
         )
     ) {
         return Err("the sketch query is not supported yet".into());
-    }
-    if super::boolean_field(query, "filterInnerLoops")? {
-        return Err("filtered inner sketch regions are not supported yet".into());
     }
     let sketch_id = id("sketch", text(query, "featureId")?);
     if !model.sketches.iter().any(|s| s.id.as_str() == sketch_id) {
@@ -216,55 +214,95 @@ pub(super) fn profile(
     }) {
         return Err("the selected sketch contains unresolved geometry".into());
     }
+    if super::boolean_field(query, "filterInnerLoops")? {
+        if query.get("btType").and_then(Value::as_str) != Some("BTMIndividualSketchRegionQuery-140")
+        {
+            return Err("filtered inner sketch regions are not supported yet".into());
+        }
+        return super::regions::filtered_profile(&sketch_id, model, inputs);
+    }
     Ok(json!({"kind": "sketch", "value": sketch_id}))
 }
+/// A sketch-region query whose query string selects every region of its sketch. Its
+/// `deterministicIds` are the regions that string resolved to at the last regeneration, so the
+/// string, not the list, is the selection.
+fn whole_sketch_region_query(query: &Value) -> bool {
+    let (Some("BTMIndividualSketchRegionQuery-140"), Some(sketch), Some(string)) = (
+        query.get("btType").and_then(Value::as_str),
+        query.get("featureId").and_then(Value::as_str),
+        query.get("queryString").and_then(Value::as_str),
+    ) else {
+        return false;
+    };
+    let inner = match query.get("filterInnerLoops").and_then(Value::as_bool) {
+        Some(true) => "true",
+        Some(false) | None => "false",
+    };
+    let expected = format!("query = qSketchRegion(id + \"{sketch}\", {inner});");
+    string.split_whitespace().eq(expected.split_whitespace())
+}
 fn sketch_entities(queries: &[Value], model: &Model, entity_type: &str) -> Mapping<Value> {
+    sketch_entities_in_order(queries, model, entity_type, false)
+}
+
+pub(super) fn sketch_entities_in_order(
+    queries: &[Value],
+    model: &Model,
+    entity_type: &str,
+    source_order: bool,
+) -> Mapping<Value> {
     let mut selected = std::collections::BTreeSet::new();
+    let mut ordered = Vec::new();
     let mut selected_sketch = None;
     for source in queries {
-        let query = super::query::resolved(source)?;
-        if text(&query, "queryType")? != "SKETCH_ENTITY"
-            || text(&query, "historyType")? != "CREATION"
-            || text(&query, "entityType")? != entity_type
-        {
-            return Err("this sketch entity selection is not supported yet".into());
-        }
-        let [operation] = rows(&query, "operationId")? else {
-            return Err("a sketch entity needs one source operation".into());
-        };
-        let native = operation
-            .as_str()
-            .and_then(|s| s.strip_suffix(".wireOp"))
-            .ok_or("the source sketch operation is not supported yet")?;
-        let sketch = id("sketch", native);
-        if selected_sketch.as_ref().is_some_and(|id| id != &sketch) {
-            return Err("selections from multiple sketches are not supported yet".into());
-        }
-        let entity_id = id(
-            "entity",
-            &format!("{native}/{}", text(&query, "sketchEntityId")?),
-        );
-        let entity = model
-            .sketch_entities
-            .iter()
-            .find(|e| e.id().as_str() == entity_id)
-            .ok_or("the selected sketch entity has no solved geometry")?;
-        if entity_type == "VERTEX" {
-            let wire = serde_json::to_value(entity)
-                .map_err(|_| "the selected sketch entity is unreadable")?;
-            if wire.pointer("/geometry/kind").and_then(Value::as_str) != Some("point") {
-                return Err(
-                    "hole locations on sketch curve endpoints are not supported yet".into(),
-                );
+        for query in super::query::resolved_leaves(source)? {
+            if text(&query, "queryType")? != "SKETCH_ENTITY"
+                || text(&query, "historyType")? != "CREATION"
+                || text(&query, "entityType")? != entity_type
+            {
+                return Err("this sketch entity selection is not supported yet".into());
             }
-        }
-        selected_sketch = Some(sketch);
-        if !selected.insert(entity_id) {
-            return Err("the sketch selection repeats an entity".into());
+            let [operation] = rows(&query, "operationId")? else {
+                return Err("a sketch entity needs one source operation".into());
+            };
+            let native = operation
+                .as_str()
+                .and_then(|s| s.strip_suffix(".wireOp"))
+                .ok_or("the source sketch operation is not supported yet")?;
+            let sketch = id("sketch", native);
+            if selected_sketch.as_ref().is_some_and(|id| id != &sketch) {
+                return Err("selections from multiple sketches are not supported yet".into());
+            }
+            let entity_id = id(
+                "entity",
+                &format!("{native}/{}", text(&query, "sketchEntityId")?),
+            );
+            let entity = model
+                .sketch_entities
+                .iter()
+                .find(|e| e.id().as_str() == entity_id)
+                .ok_or("the selected sketch entity has no solved geometry")?;
+            if entity_type == "VERTEX" {
+                let wire = serde_json::to_value(entity)
+                    .map_err(|_| "the selected sketch entity is unreadable")?;
+                if wire.pointer("/geometry/kind").and_then(Value::as_str) != Some("point") {
+                    return Err(
+                        "hole locations on sketch curve endpoints are not supported yet".into(),
+                    );
+                }
+            }
+            selected_sketch = Some(sketch);
+            if !selected.insert(entity_id.clone()) {
+                return Err("the sketch selection repeats an entity".into());
+            }
+            ordered.push(entity_id);
         }
     }
+    if !source_order {
+        ordered = selected.into_iter().collect();
+    }
     Ok(
-        json!({"kind":"sketch_entities","value":{"sketch":selected_sketch.ok_or("the sketch selection is empty")?,"entities":selected}}),
+        json!({"kind":"sketch_entities","value":{"sketch":selected_sketch.ok_or("the sketch selection is empty")?,"entities":ordered}}),
     )
 }
 fn sketch_axis(feature: &Value, model: &Model) -> Mapping<Value> {
@@ -340,7 +378,7 @@ fn sketch_axis(feature: &Value, model: &Model) -> Mapping<Value> {
         "reference":{"kind":"sketch_curves","value":{"sketch":sketch_id,"curves":[entity_id]}}}))
 }
 
-fn operation(feature: &Value) -> Mapping<&'static str> {
+pub(super) fn operation(feature: &Value) -> Mapping<&'static str> {
     match value(feature, "operationType") {
         Some("NEW") => Ok("new_body"),
         Some("ADD") => Ok("join"),
@@ -405,6 +443,8 @@ pub(super) fn report_evaluated_variables(
             ("angle", Ok("revolve")) => {
                 value(feature, "revolveType") == Some("FULL") || enabled(feature, "fullRevolve")?
             }
+            ("turns" | "angle" | "pitch", Ok("sweep")) => !enabled(feature, "hasTwist")?,
+            ("scaleFactor", Ok("sweep")) => !enabled(feature, "hasScale")?,
             _ => false,
         };
         let driven = unused
@@ -494,11 +534,32 @@ pub(super) fn dependencies(
                 matches!(key, "entities" | "axis")
                     || key == "booleanScope" && value(source, "operationType") != Some("NEW")
             }
+            Some("sweep") => {
+                matches!(key, "profiles" | "path")
+                    || key == "booleanScope" && value(source, "operationType") != Some("NEW")
+            }
             Some("fillet" | "chamfer") => key == "entities",
             Some("hole") => key == "scope" || key == hole_profile,
             _ => false,
         };
         if !consumed {
+            continue;
+        }
+        if operation == Some("sweep") && key == "path" {
+            for source in rows(parameter, "queries")? {
+                for query in super::query::resolved_leaves(source)? {
+                    for operation in rows(&query, "operationId")? {
+                        let native = operation
+                            .as_str()
+                            .and_then(|operation| operation.strip_suffix(".wireOp"))
+                            .ok_or("the sweep path producer is unresolved")?;
+                        let feature = reference(native)?;
+                        if !result.contains(&feature) {
+                            result.push(feature);
+                        }
+                    }
+                }
+            }
             continue;
         }
         for source in rows(parameter, "queries")? {
@@ -533,9 +594,8 @@ pub(super) fn dependencies(
                 }
             }
             let historical = match (operation, key) {
-                (Some("extrude" | "revolve"), "booleanScope") | (Some("hole"), "scope") => {
-                    Some(topology::OperandKind::Body)
-                }
+                (Some("extrude" | "revolve" | "sweep"), "booleanScope")
+                | (Some("hole"), "scope") => Some(topology::OperandKind::Body),
                 (Some("sketch"), "sketchPlane") | (Some("extrude"), "endBoundEntityFace") => {
                     Some(topology::OperandKind::Face)
                 }
@@ -616,10 +676,14 @@ pub(super) fn map(
     report: &mut Report,
     unresolved: &BTreeSet<String>,
 ) -> Mapping<Value> {
-    let mut keys = std::collections::BTreeSet::new();
-    for parameter in rows(feature, "parameters")? {
-        if !keys.insert(text(parameter, "parameterId")?) {
-            return Err("feature parameter keys repeat".into());
+    if feature.get("featureType").and_then(Value::as_str) == Some("sweep") {
+        super::sweep::validate_record(feature)?;
+    } else {
+        let mut keys = std::collections::BTreeSet::new();
+        for parameter in rows(feature, "parameters")? {
+            if !keys.insert(text(parameter, "parameterId")?) {
+                return Err("feature parameter keys repeat".into());
+            }
         }
     }
     for key in [
@@ -785,6 +849,7 @@ pub(super) fn map(
             );
             Ok(definition)
         }
+        "sweep" => super::sweep::map(feature, model, inputs),
         "revolve" => {
             if value(feature, "bodyType") != Some("SOLID") {
                 return Err("non-solid revolves are not supported yet".into());
@@ -1091,3 +1156,6 @@ fn specification(
     }
     Ok(threaded)
 }
+
+#[cfg(test)]
+mod tests;

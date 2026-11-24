@@ -449,7 +449,7 @@ fn attach_records(
         },
         losses,
     )?;
-    for (tessellation, source_offset) in display_jt_tessellations {
+    for (tessellation, source_offset, color) in display_jt_tessellations {
         annotations.note(
             tessellation.id.as_str(),
             &annotation_stream,
@@ -457,6 +457,15 @@ fn attach_records(
             Some("DISPLAY_JT_TESSELLATION"),
         );
         annotations.exactness(tessellation.id.as_str(), Exactness::Derived);
+        if let Some(color) = color {
+            attach_display_jt_color(
+                ir,
+                annotations,
+                &annotation_stream,
+                (tessellation.id.as_str(), source_offset),
+                color,
+            )?;
+        }
         ir.model.tessellations.push(tessellation);
     }
     NATIVE_CATALOGUE.note_phase(NotePhase::GroupA, model, annotations);
@@ -559,7 +568,7 @@ fn attach_records(
     ir.model
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
-    let namespace = ir.native.namespace_mut("nx");
+    let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("nx"));
     NATIVE_CATALOGUE
         .emit_all(ctx, model, namespace)
         .map_err(CodecError::from)?;
@@ -746,6 +755,7 @@ fn attach_rm_appearances(
             id: binding_id,
             target: AppearanceTarget::Unresolved.into(),
             appearance: appearance_id,
+            precedence: None,
             source_entity_id: Some(binding.source_id),
             object_type: Some("RMFastLoad object ID".into()),
             visible: None,
@@ -753,6 +763,69 @@ fn attach_rm_appearances(
             native_ref: None,
         });
     }
+    Ok(())
+}
+
+/// States the material colour that a Display-JT shape path gives its mesh as
+/// an appearance bound to the mesh's tessellation.
+fn attach_display_jt_color(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    annotation_stream: &cadmpeg_ir::annotations::StreamHandle,
+    (tessellation, source_offset): (&str, u64),
+    color: Color,
+) -> Result<(), CodecError> {
+    let key = tessellation
+        .split_once('#')
+        .map(|(_, key)| key)
+        .ok_or_else(|| CodecError::malformed("NX Display-JT tessellation id has no key"))?;
+    let id = AppearanceId::mint(format!("nx:display-jt:appearance#{key}"))
+        .map_err(|error| CodecError::malformed(format_args!("display-jt appearance: {error}")))?;
+    let binding_id = AppearanceBindingId::mint(format!("nx:display-jt:appearance_binding#{key}"))
+        .map_err(|error| {
+        CodecError::malformed(format_args!("display-jt appearance binding: {error}"))
+    })?;
+    for (record, fields) in [
+        (id.as_str(), &["base_color"][..]),
+        (binding_id.as_str(), &["target", "appearance"][..]),
+    ] {
+        annotations.note(
+            record,
+            annotation_stream,
+            source_offset,
+            Some("DISPLAY_JT_MATERIAL"),
+        );
+        for field in fields {
+            annotations
+                .derived(record, field)
+                .map_err(cadmpeg_core::CodecError::from)?;
+        }
+    }
+    ir.model.appearances.push(Appearance {
+        id: id.clone(),
+        name: None,
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: Some(color),
+        properties: BTreeMap::new(),
+        textures: Vec::new(),
+        native_ref: None,
+    });
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: binding_id,
+        target: AppearanceTarget::Tessellation(tessellation.to_owned()).into(),
+        appearance: id,
+        precedence: None,
+        source_entity_id: None,
+        object_type: None,
+        visible: None,
+        channels: BTreeMap::new(),
+        native_ref: None,
+    });
     Ok(())
 }
 

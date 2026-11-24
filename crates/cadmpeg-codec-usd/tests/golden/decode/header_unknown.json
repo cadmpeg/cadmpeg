@@ -105,8 +105,7 @@
           "source_name": "Future",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -121,8 +120,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -235,6 +233,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "ede15471caad818dd99aaeb2e96dc374841726e219d53c464d57c0b3a0ba459e",
     "file_digests": {},
     "retained_records": {},

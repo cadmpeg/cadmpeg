@@ -242,6 +242,7 @@ fn every_design_root_type_has_a_schema() {
     generates::<configuration::Arrangement>(&mut generator);
     generates::<configuration::ArrangementKind>(&mut generator);
     generates::<configuration::ArrangementAppearance>(&mut generator);
+    generates::<configuration::InstanceAppearance>(&mut generator);
     generates::<configuration::ArrangementMove>(&mut generator);
     generates::<configuration::NestedArrangement>(&mut generator);
     generates::<configuration::ArrangementRef>(&mut generator);

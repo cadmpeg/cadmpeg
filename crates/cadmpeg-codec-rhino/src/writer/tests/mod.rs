@@ -163,13 +163,11 @@ fn polygon_sheet(points: &[Point3]) -> CadIr {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
-    ir.geometry.regions.push(Region {
-        id: region.clone(),
-        body,
-        shells: vec![shell.clone()],
-        native_ref: None,
-    });
+    ir.geometry
+        .regions
+        .push(Region::new(region.clone(), body, vec![shell.clone()]));
     ir.geometry.shells.push(Shell::new(shell.clone(), region));
     ir.geometry.faces.push(Face {
         id: face.clone(),
@@ -309,7 +307,7 @@ fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
         .collect::<Vec<_>>();
     let face_loops = ir.geometry.faces[0]
         .loops
-        .iter()
+        .stated()
         .cloned()
         .chain(std::iter::once(loop_id.clone()))
         .collect();
@@ -463,13 +461,11 @@ fn adjacent_quad_sheet() -> CadIr {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
-    ir.geometry.regions.push(Region {
-        id: region.clone(),
-        body,
-        shells: vec![shell.clone()],
-        native_ref: None,
-    });
+    ir.geometry
+        .regions
+        .push(Region::new(region.clone(), body, vec![shell.clone()]));
     ir.geometry.shells.push(Shell::new(shell.clone(), region));
     for index in 0..2 {
         ir.geometry.faces.push(Face {
@@ -683,13 +679,11 @@ fn planar_tetrahedron() -> CadIr {
         color: None,
         visible: Some(true),
         native_ref: None,
+        unstated: None,
     });
-    ir.geometry.regions.push(Region {
-        id: region.clone(),
-        body,
-        shells: vec![shell.clone()],
-        native_ref: None,
-    });
+    ir.geometry
+        .regions
+        .push(Region::new(region.clone(), body, vec![shell.clone()]));
     ir.geometry.shells.push(Shell::new(shell.clone(), region));
     for index in 0..4 {
         ir.geometry.points.push(Point::new(

@@ -99,7 +99,7 @@ impl Drop for F3dNativeMut<'_> {
         self.native
             .store(
                 &cadmpeg_core::decode::test_support::service_decode_context(),
-                self.ir.native.namespace_mut("f3d"),
+                self.ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")),
             )
             .unwrap();
     }

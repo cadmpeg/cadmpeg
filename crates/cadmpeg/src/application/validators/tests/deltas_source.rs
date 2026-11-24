@@ -76,7 +76,7 @@ fn loaded_cadir_compares_native_metadata_with_its_rebound_sidecar() {
         .all(|finding| finding.check != Check::NativeLinks));
 
     let mut edited = restored.ir;
-    let namespace = edited.native.namespace_mut("nx");
+    let namespace = edited.native.namespace_mut(cadmpeg_ir::codec_id!("nx"));
     let mut schemas = namespace
         .arena_as::<serde_json::Value>("parasolid_deltas_schemas")
         .unwrap();

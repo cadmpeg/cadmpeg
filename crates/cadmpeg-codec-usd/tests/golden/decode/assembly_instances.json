@@ -22,18 +22,7 @@
     },
     "fragment": false,
     "geometry": {
-      "bodies": [
-        {
-          "id": "usd:stage:body#/Assembly/Plate/Large",
-          "kind": "general",
-          "name": "Large"
-        },
-        {
-          "id": "usd:stage:body#prototype0/Shank",
-          "kind": "general",
-          "name": "Shank"
-        }
-      ],
+      "bodies": [],
       "coedges": [],
       "curves": [],
       "edges": [],
@@ -255,8 +244,7 @@
           "source_name": "Assembly",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -273,13 +261,10 @@
           "source_name": "Plate",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
-          "bodies": [
-            "usd:stage:body#/Assembly/Plate/Large"
-          ],
+          "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Assembly/Plate/Large",
           "instance_bodies": [],
@@ -291,8 +276,7 @@
           "source_name": "Large",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -309,13 +293,10 @@
           "source_name": "Bolt",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
-          "bodies": [
-            "usd:stage:body#prototype0/Shank"
-          ],
+          "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#prototype0/Shank",
           "instance_bodies": [],
@@ -327,8 +308,7 @@
           "source_name": "Shank",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -343,8 +323,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -359,9 +338,7 @@
       "spreadsheets": [],
       "tessellations": [
         {
-          "body": "usd:stage:body#/Assembly/Plate/Large",
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "usd:stage:tessellation#/Assembly/Plate/Large",
           "mesh": {
@@ -401,14 +378,16 @@
               }
             ]
           },
+          "of": {
+            "definition": "usd:stage:definition#/Assembly/Plate/Large",
+            "kind": "definition"
+          },
           "texture_assignments": [],
           "texture_coordinates": [],
           "triangle_groups": []
         },
         {
-          "body": "usd:stage:body#prototype0/Shank",
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "usd:stage:tessellation#prototype0/Shank",
           "mesh": {
@@ -447,6 +426,10 @@
                 "z": 0.0
               }
             ]
+          },
+          "of": {
+            "definition": "usd:stage:definition#prototype0/Shank",
+            "kind": "definition"
           },
           "texture_assignments": [],
           "texture_coordinates": [],
@@ -552,6 +535,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "290acf6c4862cff2f2c9c38fc0335774c8e8c7e4caf98c54b03382f9207b6b5f",
     "file_digests": {},
     "retained_records": {},

@@ -40,7 +40,6 @@
           "source_object": {
             "format": "fcstd",
             "instance_path": [],
-            "name": "Points",
             "object_id": "fcstd:native:object#PointCloud"
           }
         },
@@ -54,7 +53,6 @@
           "source_object": {
             "format": "fcstd",
             "instance_path": [],
-            "name": "Points",
             "object_id": "fcstd:native:object#PointCloud"
           }
         },
@@ -68,7 +66,6 @@
           "source_object": {
             "format": "fcstd",
             "instance_path": [],
-            "name": "Points",
             "object_id": "fcstd:native:object#PointCloud"
           }
         }
@@ -118,10 +115,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": [
-            "fcstd:native:property#Mesh:Mesh:mesh"
-          ]
+          }
         }
       ],
       "rigid_bodies": [],
@@ -137,7 +131,6 @@
       "tessellations": [
         {
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "fcstd:native:property#Mesh:Mesh:mesh",
           "mesh": {
@@ -177,10 +170,13 @@
               }
             ]
           },
+          "of": {
+            "definition": "fcstd:model:product_definition#document:root",
+            "kind": "definition"
+          },
           "source_object": {
             "format": "fcstd",
             "instance_path": [],
-            "name": "Mesh",
             "object_id": "fcstd:native:object#Mesh"
           },
           "texture_assignments": [],
@@ -449,7 +445,6 @@
       "attributes": {
         "application_domains": "App,Fem,Mesh,Path,Points",
         "document_kind": "application-document",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
         "program_version": "1.1R20260414 (Git shallow)"
       },
@@ -524,6 +519,10 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {
+      "fcstd_uncarried_local_sha256": "<elided: digest over tolerantly compared geometry>"
+    },
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "410af2e9ed55011039ee065b20e7614037482d382e75e173d78c9a008522de75",
     "file_digests": {},
     "retained_records": {},

@@ -1280,7 +1280,12 @@ fn build(
                 return Ok(None);
             };
             let mut scratch = CadIr::empty();
-            cadmpeg_asm::brep::transfer::transfer_into_ir(ctx, &mut scratch, "f3d", brep)?;
+            cadmpeg_asm::brep::transfer::transfer_into_ir(
+                ctx,
+                &mut scratch,
+                cadmpeg_ir::codec_id!("f3d"),
+                brep,
+            )?;
             match extract(ctx, &scratch.geometry, body.as_str())? {
                 Extract::Nest(topology) => Ok(Some(topology)),
                 Extract::Absent | Extract::NotClosed => Ok(None),

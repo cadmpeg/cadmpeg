@@ -1014,7 +1014,7 @@ fn generated_source_less_writes_multi_region_wire_body() {
         round_trip
             .ir()
             .geometry
-            .body_regions(&round_trip.ir().geometry.bodies[0].id)
+            .stated_body_regions(&round_trip.ir().geometry.bodies[0].id)
             .count(),
         2
     );
@@ -1062,7 +1062,7 @@ fn generated_source_less_writes_multi_shell_wire_region() {
     let region_id = source_less.geometry.regions[0].id.clone();
     let shell_id = second.geometry.shells[0].id.clone();
     second.geometry.shells[0].region = region_id;
-    source_less.geometry.regions[0].shells.push(shell_id);
+    source_less.geometry.regions[0].push_shell(shell_id);
     source_less
         .geometry
         .shells
@@ -1094,7 +1094,10 @@ fn generated_source_less_writes_multi_shell_wire_region() {
         .expect("source-less multi-shell wire round trip");
     assert_eq!(round_trip.ir().geometry.bodies.len(), 1);
     assert_eq!(round_trip.ir().geometry.regions.len(), 1);
-    assert_eq!(round_trip.ir().geometry.regions[0].shells.len(), 2);
+    assert_eq!(
+        round_trip.ir().geometry.regions[0].stated_shells().count(),
+        2
+    );
     assert_eq!(round_trip.ir().geometry.shells.len(), 2);
     assert!(round_trip
         .ir()

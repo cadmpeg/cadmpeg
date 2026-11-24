@@ -61,7 +61,7 @@ fn timestamp_patch_keeps_identity_after_native_storage_sorts_records() {
     let mut unordered = target.clone();
     unordered
         .native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .arenas_mut()
         .get_mut("creation_timestamps")
         .unwrap()

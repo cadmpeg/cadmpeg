@@ -444,7 +444,7 @@ fn failed_existing_native_admission_leaves_both_destinations_unchanged() {
         .expect("test context");
     let mut ir = CadIr::empty();
     ir.native
-        .namespace_mut("synthetic")
+        .namespace_mut(crate::codec_id!("synthetic"))
         .set_arena(
             &crate::native::test_ctx(),
             "unknowns",

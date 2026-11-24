@@ -565,8 +565,7 @@ impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
         if nominal_size
             .value()
             .ok_or("nominal_size_text must encode a positive size")?
-            .to_bits()
-            != value.nominal_size.to_bits()
+            != value.nominal_size
         {
             return Err("nominal_size must match nominal_size_text".into());
         }
