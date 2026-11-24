@@ -121,6 +121,9 @@ fn membership_spans_embedded_and_file_definitions_and_stops_at_scope_boundaries(
     ir.design.features[0].component = Some(id("definition", "part"));
     ir.design.features[1].component = Some(id("definition", "child"));
     assert_no_design_finding(&ir);
+    // A definition stored as a file ends the span (§5.1).
+    ir.design.scopes[0].unproduced.clear();
+    assert_no_design_finding(&ir);
 }
 
 #[test]
