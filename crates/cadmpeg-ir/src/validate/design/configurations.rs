@@ -233,7 +233,7 @@ fn check_scope(index: &DesignRecords<'_>, scope: &DesignScope, findings: &mut Ve
 
 /// A `ConfigurationRef::Local` names a configuration of the prototype's
 /// scope; `Named` occurs only where that scope is absent or lacks the name.
-pub(in crate::validate) fn check_configuration_ref(
+pub(super) fn check_configuration_ref(
     index: &DesignRecords<'_>,
     configuration: &ConfigurationRef,
     prototype: Option<&str>,
