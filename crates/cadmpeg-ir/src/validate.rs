@@ -63,7 +63,7 @@ use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
 use topology::graphs::{
     check_child_list_reciprocity, check_closed_edges, check_coedge_pairing, check_partial_topology,
-    check_shell_connectivity, check_wire_topology,
+    check_shell_connectivity, check_solid_edge_uses, check_wire_topology,
 };
 use topology::procedural_owners::check_procedural_owners;
 use topology::{
@@ -183,6 +183,7 @@ fn check_topology_rules(
     check_child_list_reciprocity(ir, findings);
     check_closed_edges(ir, findings);
     check_shell_connectivity(ir, findings);
+    check_solid_edge_uses(ir, findings);
     check_partial_topology(ir, findings);
     check_wire_topology(ir, findings);
     if reach.ir.fragment {

@@ -570,6 +570,93 @@ pub(in crate::validate) fn check_shell_connectivity(ir: &CadIr, findings: &mut V
     }
 }
 
+/// Every edge that a face of a `Solid` body uses is used at least twice by
+/// the faces of that body, unless the edge has no curve or a degenerate one
+/// (Warning; part 10, Topology and model records). A body that holds a
+/// partial face or a marked region or shell, or is marked itself, is not
+/// read.
+pub(in crate::validate) fn check_solid_edge_uses(ir: &CadIr, findings: &mut Vec<Finding>) {
+    use crate::geometry::{CurveGeometry, SolvedCurveGeometry};
+    use crate::topology::{BodyKind, EdgeCarrier};
+    let geometry = &ir.geometry;
+    let child_lists = geometry.child_lists();
+    let loop_faces: std::collections::HashMap<&str, &str> = geometry
+        .loops
+        .iter()
+        .map(|loop_| (loop_.id.as_str(), loop_.face.as_str()))
+        .collect();
+    let edges: std::collections::HashMap<&str, &crate::topology::Edge> = geometry
+        .edges
+        .iter()
+        .map(|edge| (edge.id.as_str(), edge))
+        .collect();
+    let degenerate: std::collections::HashSet<&str> = geometry
+        .curves
+        .iter()
+        .filter(|curve| {
+            matches!(
+                curve.geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(_))
+            )
+        })
+        .map(|curve| curve.id.as_str())
+        .collect();
+    for body in geometry
+        .bodies
+        .iter()
+        .filter(|body| body.kind == BodyKind::Solid)
+    {
+        let Some(regions) = child_lists.complete_body_regions(&body.id) else {
+            continue;
+        };
+        let mut faces = std::collections::HashSet::new();
+        let complete = regions.iter().all(|region| {
+            child_lists.complete_shells(region).is_some_and(|shells| {
+                shells.iter().all(|shell| {
+                    child_lists
+                        .complete_shell_faces(shell)
+                        .is_some_and(|shell_faces| {
+                            shell_faces.iter().all(|face| {
+                                faces.insert(face.id.as_str());
+                                !face.loops.is_partial()
+                            })
+                        })
+                })
+            })
+        });
+        if !complete {
+            continue;
+        }
+        let mut uses: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+        for coedge in &geometry.coedges {
+            if loop_faces
+                .get(coedge.owner_loop.as_str())
+                .is_some_and(|face| faces.contains(face))
+            {
+                *uses.entry(coedge.edge.as_str()).or_default() += 1;
+            }
+        }
+        for (edge, count) in uses {
+            let curved = edges.get(edge).is_some_and(|record| match &record.carrier {
+                EdgeCarrier::Curve(curve) | EdgeCarrier::Bounded(curve, _) => {
+                    !degenerate.contains(curve.as_str())
+                }
+                EdgeCarrier::Free | EdgeCarrier::Endpoints(_) => false,
+            });
+            if count == 1 && curved {
+                super::super::record_related_finding(
+                    findings,
+                    Check::ShellTopology,
+                    Severity::Warning,
+                    edge,
+                    &[body.id.as_str()],
+                    format_args!("edge is used once by the faces of solid body {}; a solid's faces use each of its edges at least twice", body.id.as_str()),
+                );
+            }
+        }
+    }
+}
+
 /// A partial face and a marked region, shell, or body are reported at
 /// Warning (part 10, Topology and model records).
 pub(in crate::validate) fn check_partial_topology(ir: &CadIr, findings: &mut Vec<Finding>) {

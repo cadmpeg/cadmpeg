@@ -290,3 +290,55 @@ fn spring_support_reference_findings_name_the_construction() {
             && finding.message == format!("references missing surface `{missing}`")
     }));
 }
+
+/// Part 10: every edge a face of a `Solid` body uses is used at least twice
+/// by that body's faces (Warning). Re-pointing one coedge of an edge at a
+/// copy of the edge leaves the edge and its copy each used once.
+#[test]
+fn a_solid_uses_each_curved_edge_at_least_twice() {
+    const FRAGMENT: &str = "is used once by the faces of solid body";
+    let warnings = |ir: &crate::CadIr| {
+        validate_neutral(ir, Vec::new())
+            .expect("validate the neutral model")
+            .findings
+            .into_iter()
+            .filter(|finding| finding.message.contains(FRAGMENT))
+            .map(|finding| (finding.severity, finding.entity))
+            .collect::<Vec<_>>()
+    };
+    let cube = unit_cube().expect("valid unit cube fixture");
+    assert!(warnings(&cube).is_empty());
+
+    let mut ir = cube;
+    let first = ir.geometry.coedges[0].clone();
+    let partner = first.radial_next.clone();
+    let mut copy = ir
+        .geometry
+        .edges
+        .iter()
+        .find(|edge| edge.id == first.edge)
+        .cloned()
+        .unwrap();
+    copy.id = EdgeId::mint("test:model:edge#copy").expect("valid identity");
+    ir.geometry.edges.push(copy);
+    for coedge in &mut ir.geometry.coedges {
+        if coedge.id == first.id {
+            coedge.edge = EdgeId::mint("test:model:edge#copy").unwrap();
+            coedge.radial_next = first.id.clone();
+        } else if coedge.id == partner {
+            coedge.radial_next = partner.clone();
+        }
+    }
+    ir.finalize();
+    let found = warnings(&ir);
+    assert_eq!(found.len(), 2, "{found:?}");
+    for edge in [first.edge.as_str(), "test:model:edge#copy"] {
+        assert!(
+            found.contains(&(crate::report::Severity::Warning, Some(edge.to_owned()))),
+            "{found:?}"
+        );
+    }
+
+    ir.geometry.bodies[0].kind = crate::topology::BodyKind::Sheet;
+    assert!(warnings(&ir).is_empty());
+}
