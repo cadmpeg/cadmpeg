@@ -261,7 +261,7 @@ pub(crate) fn bind_sweep_operations(
                     // sections it already holds.
                     let (section, sections) = std::mem::replace(
                         shape,
-                        cadmpeg_ir::features::sweeps::SweepShape::unresolved(None),
+                        cadmpeg_ir::features::sweeps::SweepShape::unresolved(),
                     )
                     .into_sections();
                     *shape = cadmpeg_ir::features::sweeps::SweepShape::solid_sections(

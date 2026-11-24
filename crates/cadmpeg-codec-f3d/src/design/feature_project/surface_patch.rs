@@ -99,10 +99,11 @@ pub(super) fn project_surface_patch(
                     ctx,
                 )?),
                 support_faces: FaceSelection::Faces(Vec::new()),
-                continuity:
-                    cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuityState::uniform(
+                continuity: Some(
+                    cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuity::one(
                         cadmpeg_ir::features::surface_inputs::SurfaceContinuity::Contact,
                     ),
+                ),
                 merge_result: Some(false),
                 interior_constraints: Vec::new(),
                 reverse_normal,
@@ -194,12 +195,10 @@ pub(super) fn project_surface_patch(
             continuity: cadmpeg_ir::features::selections::NonEmptyMembers::try_from(
                 surface_patch_boundary_conditions(scope),
             )
-            .map_or_else(
-                |_| {
-                    cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuityState::unresolved()
-                },
-                cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuityState::per_boundary,
-            ),
+            .ok()
+            .map(|conditions| {
+                cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuity { conditions }
+            }),
             merge_result: Some(false),
             interior_constraints,
             reverse_normal,

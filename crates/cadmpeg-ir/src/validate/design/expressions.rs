@@ -264,10 +264,14 @@ pub(super) fn measures<R>(root: &Node<R>) -> Vec<&Measure> {
     while let Some(node) = pending.pop() {
         match node {
             Node::Measure(measure) => found.push(&**measure),
-            Node::Unary { operand, .. } => pending.push(operand),
-            Node::Binary { left, right, .. } => pending.extend([&**left, &**right]),
-            Node::Call { args, .. } => pending.extend(args),
-            Node::If(branches) => pending.extend(branches.iter()),
+            Node::Unary { .. }
+            | Node::Binary { .. }
+            | Node::Sum { .. }
+            | Node::Product { .. }
+            | Node::All(_)
+            | Node::Any(_)
+            | Node::Call { .. }
+            | Node::If { .. } => pending.extend(node.operands()),
             Node::Number { .. }
             | Node::Constant(_)
             | Node::Boolean(_)
@@ -662,7 +666,9 @@ fn check_cycles(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
 
 /// The strongly connected components of `graph` that hold a cycle, each
 /// sorted, by Kosaraju's two passes, each walked without recursion.
-pub(super) fn cycles<'a>(graph: &BTreeMap<&'a str, BTreeSet<&'a str>>) -> Vec<Vec<&'a str>> {
+pub(in crate::validate) fn cycles<'a>(
+    graph: &BTreeMap<&'a str, BTreeSet<&'a str>>,
+) -> Vec<Vec<&'a str>> {
     let mut order = Vec::with_capacity(graph.len());
     let mut visited = BTreeSet::new();
     for &start in graph.keys() {

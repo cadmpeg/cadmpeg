@@ -70,7 +70,7 @@ fn solved_frame_keeps_origin_axes_and_native_construction() {
     assert!(construction.mode.is_none());
     for (key, expected) in [("f3d:reference:0", "11"), ("f3d:parameter:d8", "2.5 mm")] {
         assert_eq!(
-            datum.native_options[&NonBlankString::new(key.to_owned()).unwrap()],
+            datum.native_options[key],
             NativeOption::Text(Dimension::Literal(
                 NonBlankString::new(expected.to_owned()).unwrap()
             ))

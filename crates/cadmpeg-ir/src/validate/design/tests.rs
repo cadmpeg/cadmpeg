@@ -46,6 +46,7 @@ fn feature(name: &str, operation: Value) -> Feature {
         suppressed: None,
         definition: FeatureDefinition {
             operation: from(operation),
+            assembly: None,
             refine: None,
             fuzzy_tolerance: None,
         },
@@ -324,8 +325,6 @@ fn rule_terms_are_checked() {
     let explicit = json!({"rule": {"kind": "explicit"}, "seeds": [datum_pick("a")]});
     let seeded_all =
         json!({"rule": {"kind": "all", "value": {"kind": "face"}}, "seeds": [datum_pick("a")]});
-    let native =
-        json!({"rule": {"kind": "native", "value": "nocodec"}, "seeds": [datum_pick("a")]});
     for (terms, check, text) in [
         (vec![explicit.clone()], Check::Design, "is Named"),
         (
@@ -334,11 +333,6 @@ fn rule_terms_are_checked() {
             "equal propagation",
         ),
         (vec![seeded_all], Check::Design, "All rule term has seeds"),
-        (
-            vec![native.clone(), native],
-            Check::Design,
-            "not written codec:name",
-        ),
     ] {
         let mut features = planes();
         features[1] = feature(

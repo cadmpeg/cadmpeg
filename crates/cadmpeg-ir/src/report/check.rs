@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Validation checks, findings, and reports.
 
+use cadmpeg_core::text::NonBlankString;
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -51,6 +52,9 @@ pub enum Check {
     WireTopology,
     /// A face-bearing shell is disconnected through shared edges or vertices.
     ShellTopology,
+    /// A face does not state every loop, or a region, shell, or body does
+    /// not state every child (§5.6, Unstated children).
+    TopologyPartial,
     /// A surface, curve, pcurve, or point carrier is orphan: no topology or
     /// retained construction data reaches it.
     CarrierReachability,
@@ -134,35 +138,47 @@ pub enum Check {
     Process,
 }
 
+impl Check {
+    /// The check's wire name, the open name a finding's signature states
+    /// (§2.7).
+    #[must_use]
+    pub fn wire_name(self) -> NonBlankString {
+        match self {
+            Self::FragmentSkipped => cadmpeg_core::nonblank_literal!("fragment_skipped"),
+            Self::Identity => cadmpeg_core::nonblank_literal!("identity"),
+            Self::Pmi => cadmpeg_core::nonblank_literal!("pmi"),
+            Self::Presentation => cadmpeg_core::nonblank_literal!("presentation"),
+            Self::ArenaOrder => cadmpeg_core::nonblank_literal!("arena_order"),
+            Self::ReferentialIntegrity => cadmpeg_core::nonblank_literal!("referential_integrity"),
+            Self::CoedgePairing => cadmpeg_core::nonblank_literal!("coedge_pairing"),
+            Self::WireTopology => cadmpeg_core::nonblank_literal!("wire_topology"),
+            Self::ShellTopology => cadmpeg_core::nonblank_literal!("shell_topology"),
+            Self::TopologyPartial => cadmpeg_core::nonblank_literal!("topology_partial"),
+            Self::CarrierReachability => cadmpeg_core::nonblank_literal!("carrier_reachability"),
+            Self::Annotations => cadmpeg_core::nonblank_literal!("annotations"),
+            Self::NativeLinks => cadmpeg_core::nonblank_literal!("native_links"),
+            Self::ParameterDomain => cadmpeg_core::nonblank_literal!("parameter_domain"),
+            Self::Tolerances => cadmpeg_core::nonblank_literal!("tolerances"),
+            Self::PayloadIntegrity => cadmpeg_core::nonblank_literal!("payload_integrity"),
+            Self::Tessellation => cadmpeg_core::nonblank_literal!("tessellation"),
+            Self::GeometricConsistency => cadmpeg_core::nonblank_literal!("geometric_consistency"),
+            Self::Counts => cadmpeg_core::nonblank_literal!("counts"),
+            Self::RingOrder => cadmpeg_core::nonblank_literal!("ring_order"),
+            Self::PcurveOrder => cadmpeg_core::nonblank_literal!("pcurve_order"),
+            Self::Orientation => cadmpeg_core::nonblank_literal!("orientation"),
+            Self::MeasurementIncomplete => {
+                cadmpeg_core::nonblank_literal!("measurement_incomplete")
+            }
+            Self::DeclaredMeasure => cadmpeg_core::nonblank_literal!("declared_measure"),
+            Self::Design => cadmpeg_core::nonblank_literal!("design"),
+            Self::Process => cadmpeg_core::nonblank_literal!("process"),
+        }
+    }
+}
+
 impl fmt::Display for Check {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::FragmentSkipped => "fragment_skipped",
-            Self::Identity => "identity",
-            Self::Pmi => "pmi",
-            Self::Presentation => "presentation",
-            Self::ArenaOrder => "arena_order",
-            Self::ReferentialIntegrity => "referential_integrity",
-            Self::CoedgePairing => "coedge_pairing",
-            Self::WireTopology => "wire_topology",
-            Self::ShellTopology => "shell_topology",
-            Self::CarrierReachability => "carrier_reachability",
-            Self::Annotations => "annotations",
-            Self::NativeLinks => "native_links",
-            Self::ParameterDomain => "parameter_domain",
-            Self::Tolerances => "tolerances",
-            Self::PayloadIntegrity => "payload_integrity",
-            Self::Tessellation => "tessellation",
-            Self::GeometricConsistency => "geometric_consistency",
-            Self::Counts => "counts",
-            Self::RingOrder => "ring_order",
-            Self::PcurveOrder => "pcurve_order",
-            Self::Orientation => "orientation",
-            Self::MeasurementIncomplete => "measurement_incomplete",
-            Self::DeclaredMeasure => "declared_measure",
-            Self::Design => "design",
-            Self::Process => "process",
-        })
+        f.write_str(self.wire_name().as_str())
     }
 }
 

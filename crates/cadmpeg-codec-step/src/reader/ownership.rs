@@ -4,7 +4,7 @@
 use super::{collect_references, source_numeric_id, ValueExt};
 use crate::parse::Exchange;
 use cadmpeg_core::{decode::DecodeContext, CodecError};
-use cadmpeg_ir::{CadIr, CodecFormat, SourceGeometryRole, SourceObjectAssociation};
+use cadmpeg_ir::{CadIr, SourceGeometryRole, SourceObjectAssociation};
 use std::collections::BTreeSet;
 
 pub(super) fn mark_supports(
@@ -68,7 +68,7 @@ pub(super) fn mark_supports(
             let object_id = cadmpeg_core::text::NonBlankString::new(format!("#{id}"))
                 .ok_or_else(|| CodecError::malformed("STEP source support identity is blank"))?;
             *source = Some(SourceObjectAssociation {
-                format: CodecFormat::Step,
+                format: cadmpeg_ir::codec_id!("step"),
                 geometry_role: Some(role),
                 object_id,
                 name: None,

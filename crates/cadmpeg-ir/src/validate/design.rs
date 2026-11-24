@@ -18,7 +18,7 @@ mod constructions;
 mod containers;
 mod dimensions;
 pub(super) mod evaluations;
-mod expressions;
+pub(super) mod expressions;
 mod fit;
 #[cfg(test)]
 pub(super) mod fixture;
@@ -61,12 +61,6 @@ use super::record_finding;
 use index::DesignIndex;
 use records::MemberKey;
 use walk::{Collect, ConstructionView, SelectionView, Walk};
-
-/// Whether native text has the form `codec:name`.
-fn native_text(text: &str) -> bool {
-    text.split_once(':')
-        .is_some_and(|(codec, name)| !codec.is_empty() && !name.is_empty())
-}
 
 /// Checks that a `Topology` is closed over its own references: every
 /// reference of its records names a record of it.

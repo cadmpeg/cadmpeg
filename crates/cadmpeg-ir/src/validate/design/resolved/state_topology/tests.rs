@@ -116,7 +116,7 @@ fn a_delta_lists_children_whose_parent_is_its_lister() {
     let mut ir = document();
     let mut face = ir.geometry.faces[0].clone();
     let stolen = loop_of(&ir, 1).id;
-    let mut loops = face.loops.to_vec();
+    let mut loops = face.loops.boundary().expect("a complete face").to_vec();
     loops.push(stolen.clone());
     face.loops = FaceLoops::unspecified(loops);
     let face_id = face.id.as_str().to_owned();
@@ -187,7 +187,8 @@ fn a_delta_lists_children_whose_parent_is_its_lister() {
 fn a_delta_lists_each_shell_and_shell_member_once_and_by_its_region() {
     let mut ir = document();
     let mut region = ir.geometry.regions[0].clone();
-    let shell = region.shells.remove(0);
+    let shell = region.stated_shells().next().expect("a shell").clone();
+    region.retain_stated_shells(|listed| listed != &shell);
     let region_id = region.id.as_str().to_owned();
     delta(&mut ir).regions.push(region);
     assert_finding(

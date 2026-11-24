@@ -744,10 +744,7 @@ fn attach_rm_appearances(
             .map_err(cadmpeg_core::CodecError::from)?;
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: binding_id,
-            target: AppearanceTarget::Source {
-                source_id: binding.source_id.clone(),
-            }
-            .into(),
+            target: AppearanceTarget::Unresolved.into(),
             appearance: appearance_id,
             source_entity_id: Some(binding.source_id),
             object_type: Some("RMFastLoad object ID".into()),

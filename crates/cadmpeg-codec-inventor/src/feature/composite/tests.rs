@@ -244,6 +244,7 @@ impl Fixture {
                 color: None,
                 visible: None,
                 native_ref: None,
+                unstated: None,
             });
         }
         ir.model.features.push(

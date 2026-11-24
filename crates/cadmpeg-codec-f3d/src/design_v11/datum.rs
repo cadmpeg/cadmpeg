@@ -9,6 +9,7 @@ use cadmpeg_ir::design::construction::{
 };
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
+use cadmpeg_ir::design::names::CodecName;
 use cadmpeg_ir::design::ops::datum::{Datum, DatumElement};
 use cadmpeg_ir::design::options::{NativeOption, NativeOptions};
 use cadmpeg_ir::design::selection::{Anchor, Picks, Selection};
@@ -38,7 +39,7 @@ pub(super) fn project(feature: &Feature, losses: &mut Vec<LossNote>) -> Option<F
         .iter()
         .filter_map(|(key, value)| {
             Some((
-                NonBlankString::new(format!("f3d:{key}"))?,
+                CodecName::new(&cadmpeg_ir::codec_id!("f3d"), key.as_str())?,
                 NativeOption::Text(Dimension::Literal(NonBlankString::new(value.clone())?)),
             ))
         })

@@ -5,11 +5,15 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use crate::design::names::NativeName;
 use crate::design::refs::{EntityRef, StateRef};
 use crate::design::selection::OccurrencePath;
+use crate::drawings::{Drawing, DrawingId};
 use crate::features::FeatureId;
-use crate::ids::{OccurrenceId, ProductDefinitionId};
+use crate::ids::{OccurrenceId, PmiId, ProductDefinitionId};
+use crate::semantic_annotations::SemanticAnnotationId;
 
 /// A model-class target that can name an instance: an entity, the placed
 /// instance whose prototype holds it, and the state whose geometry holds it.
@@ -143,6 +147,22 @@ pub enum ReferenceTarget {
     Entity(InstanceTarget<ReferenceEntity>),
     /// A feature, such as the result a drawing view shows.
     Feature(FeatureId),
+    /// A drawing record, as a whole or in part.
+    Drawing {
+        /// The drawing record.
+        drawing: DrawingId,
+        /// The part of the record; `None` names the record as a whole.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_part"
+        )]
+        part: Option<DrawingPart>,
+    },
+    /// A semantic annotation.
+    Annotation(SemanticAnnotationId),
+    /// A PMI annotation.
+    Pmi(PmiId),
     /// An object of a document that was not read.
     External {
         /// The document.
@@ -150,9 +170,28 @@ pub enum ReferenceTarget {
         /// The object's token in that document.
         object: String,
     },
-    /// A target the decoder cannot resolve to an object the document holds.
+    /// A target the decoder did not resolve, or one that no other arm names
+    /// (a mesh, a record kept only as native).
     #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Unresolved,
+}
+
+/// The part of a drawing record that a reference names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum DrawingPart {
+    /// The curve at this index of the record's `curves`.
+    Curve(u32),
+    /// A part the decoder did not resolve to a curve, such as a view
+    /// vertex; the source's string stays in the reference's `native`.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Unread,
 }
 
 impl ReferenceTarget {
@@ -161,23 +200,79 @@ impl ReferenceTarget {
         match self {
             Self::Entity(target) => target.reads_design(),
             Self::Feature(_) => true,
-            Self::Null | Self::External { .. } | Self::Unresolved => false,
+            Self::Null
+            | Self::Drawing { .. }
+            | Self::Annotation(_)
+            | Self::Pmi(_)
+            | Self::External { .. }
+            | Self::Unresolved => false,
         }
     }
 
     /// Whether every record the target names is in the document: an entity
-    /// by `contains`, which looks a model-class identity up, and a feature
-    /// in `records`.
+    /// by `contains`, which looks a model-class identity up, a feature in
+    /// `records`, and a drawing record (with the curve its part indexes), a
+    /// semantic annotation, or a PMI annotation in `targets`.
     pub(crate) fn resolves(
         &self,
         records: &crate::document::design_records::DesignRecords<'_>,
+        targets: &ReferenceRecords<'_>,
         contains: impl Fn(&str) -> bool,
     ) -> bool {
         match self {
             Self::Entity(target) => contains(target.entity.id()),
             Self::Feature(feature) => records.holds_feature(feature),
+            Self::Drawing { drawing, part } => {
+                targets
+                    .drawings
+                    .get(drawing.as_str())
+                    .is_some_and(|record| match part {
+                        Some(DrawingPart::Curve(index)) => {
+                            usize::try_from(*index).is_ok_and(|index| index < record.curves.len())
+                        }
+                        Some(DrawingPart::Unread) | None => true,
+                    })
+            }
+            Self::Annotation(annotation) => targets.annotations.contains(annotation.as_str()),
+            Self::Pmi(pmi) => targets.pmi.contains(pmi.as_str()),
             Self::Null | Self::External { .. } | Self::Unresolved => true,
         }
+    }
+}
+
+/// The model-class records, other than entities, that a reference can name:
+/// drawing records, semantic annotations, and PMI annotations, by id.
+pub(crate) struct ReferenceRecords<'a> {
+    drawings: BTreeMap<&'a str, &'a Drawing>,
+    annotations: BTreeSet<&'a str>,
+    pmi: BTreeSet<&'a str>,
+}
+
+impl<'a> ReferenceRecords<'a> {
+    /// The records of `model`.
+    pub(crate) fn of(model: &'a crate::document::Model) -> Self {
+        Self {
+            drawings: model
+                .drawings
+                .iter()
+                .map(|drawing| (drawing.id.as_str(), drawing))
+                .collect(),
+            annotations: model
+                .semantic_annotations
+                .iter()
+                .map(|annotation| annotation.id.as_str())
+                .collect(),
+            pmi: model
+                .pmi
+                .iter()
+                .map(|annotation| annotation.id.as_str())
+                .collect(),
+        }
+    }
+
+    /// The drawing record `id` names.
+    pub(crate) fn drawing(&self, id: &DrawingId) -> Option<&'a Drawing> {
+        self.drawings.get(id.as_str()).copied()
     }
 }
 
@@ -214,6 +309,7 @@ impl ReferenceEntity {
 cadmpeg_core::named_optional_field!(deserialize_path, OccurrencePath, "path");
 cadmpeg_core::named_optional_field!(deserialize_state, StateRef, "state");
 cadmpeg_core::named_optional_field!(deserialize_native, NativeName, "native");
+cadmpeg_core::named_optional_field!(deserialize_part, DrawingPart, "part");
 
 #[cfg(test)]
 mod tests;

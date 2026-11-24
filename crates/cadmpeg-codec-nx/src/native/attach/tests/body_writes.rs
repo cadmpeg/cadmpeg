@@ -302,6 +302,7 @@ fn group_partition_witness_projects_every_write_of_the_bound_body_identity() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     };
 
     let writes = [write_a, write_b];

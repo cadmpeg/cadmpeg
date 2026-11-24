@@ -323,13 +323,17 @@ impl SourceUnitCarriers {
         Ok(())
     }
 
-    fn scale_tolerance(&self, tolerance: &mut Option<PositiveReal>) -> Result<(), CodecError> {
+    fn scale_tolerance(
+        &self,
+        tolerance: &mut Option<cadmpeg_ir::scalar::PositiveLength>,
+    ) -> Result<(), CodecError> {
         if let (Some(scale), Some(current)) = (self.length_scale_mm, tolerance) {
-            *current = PositiveReal::new(current.get() * scale.get()).ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "scaled topology tolerance must be positive and finite".into(),
-                )
-            })?;
+            *current = cadmpeg_ir::scalar::PositiveLength::new(current.get() * scale.get())
+                .ok_or_else(|| {
+                    CodecError::NotImplemented(
+                        "scaled topology tolerance must be positive and finite".into(),
+                    )
+                })?;
         }
         Ok(())
     }
@@ -1154,6 +1158,7 @@ mod tests {
                     color: None,
                     visible: None,
                     native_ref: None,
+                    unstated: None,
                 },
             )
         }
@@ -1480,7 +1485,7 @@ mod tests {
             id: cadmpeg_ir::ids::EdgeId::mint("creo:visibgeom:edge#1").expect("identity grammar"),
             carrier: EdgeCarrier::new(Some(curve_id), Some([0.0, 2.0])).expect("bounded line"),
             ends: Some(cadmpeg_ir::topology::EdgeEnds::new(vertex.clone(), vertex)),
-            tolerance: PositiveReal::new(0.1),
+            tolerance: cadmpeg_ir::scalar::PositiveLength::new(0.1),
             native_ref: None,
         };
         crate::decode::with_service_context(|ctx| source_carriers.admit_edge(ctx, &mut ir, edge))
@@ -1496,7 +1501,9 @@ mod tests {
             Some([0.0, 2.0])
         );
         assert_eq!(
-            ir.geometry.edges[0].tolerance.map(PositiveReal::get),
+            ir.geometry.edges[0]
+                .tolerance
+                .map(cadmpeg_ir::scalar::PositiveLength::get),
             Some(2.54)
         );
     }
@@ -1620,7 +1627,7 @@ mod tests {
                             .expect("identity grammar"),
                         point: cadmpeg_ir::ids::PointId::mint("creo:visibgeom:point#1")
                             .expect("identity grammar"),
-                        tolerance: PositiveReal::new(0.5),
+                        tolerance: cadmpeg_ir::scalar::PositiveLength::new(0.5),
                         native_ref: None,
                     },
                 )
@@ -1639,7 +1646,7 @@ mod tests {
                         loops: FaceLoops::unspecified(Vec::new()),
                         name: None,
                         color: None,
-                        tolerance: PositiveReal::new(0.25),
+                        tolerance: cadmpeg_ir::scalar::PositiveLength::new(0.25),
                         native_ref: None,
                     },
                 )
@@ -1669,11 +1676,15 @@ mod tests {
                 )
                 .expect("coedge admission");
             assert_eq!(
-                ir.geometry.vertices[0].tolerance.map(PositiveReal::get),
+                ir.geometry.vertices[0]
+                    .tolerance
+                    .map(cadmpeg_ir::scalar::PositiveLength::get),
                 Some(12.7)
             );
             assert_eq!(
-                ir.geometry.faces[0].tolerance.map(PositiveReal::get),
+                ir.geometry.faces[0]
+                    .tolerance
+                    .map(cadmpeg_ir::scalar::PositiveLength::get),
                 Some(6.35)
             );
             assert_eq!(
@@ -1699,7 +1710,7 @@ mod tests {
                             .expect("identity grammar"),
                         point: cadmpeg_ir::ids::PointId::mint("creo:visibgeom:point#1")
                             .expect("identity grammar"),
-                        tolerance: PositiveReal::new(f64::MAX),
+                        tolerance: cadmpeg_ir::scalar::PositiveLength::new(f64::MAX),
                         native_ref: None,
                     },
                 )
