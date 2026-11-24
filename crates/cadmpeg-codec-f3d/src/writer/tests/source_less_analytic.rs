@@ -700,13 +700,28 @@ fn generated_source_less_f3d_drops_subds() {
             &[],
         )
         .unwrap();
-    source_less.geometry.subds.push(cadmpeg_ir::SubdSurface {
-        id: cadmpeg_ir::ids::SubdId::mint("test:f3d:subd#0").expect("identity grammar"),
-        scheme: cadmpeg_ir::SubdScheme::CatmullClark,
-        source_object: None,
-        cage: cadmpeg_ir::subd::SubdCage::default(),
-        native_ref: None,
-    });
+    let body = cadmpeg_ir::ids::BodyId::mint("test:f3d:body#cage").expect("identity grammar");
+    source_less.geometry.push_cage_object(
+        cadmpeg_ir::SubdSurface {
+            id: cadmpeg_ir::ids::SubdId::mint("test:f3d:subd#0").expect("identity grammar"),
+            scheme: cadmpeg_ir::SubdScheme::CatmullClark,
+            source_object: None,
+            cage: cadmpeg_ir::subd::SubdCage::default(),
+            native_ref: None,
+        },
+        body.clone(),
+        cadmpeg_ir::ids::RegionId::mint("test:f3d:region#cage").expect("identity grammar"),
+        cadmpeg_ir::ids::ShellId::mint("test:f3d:shell#cage").expect("identity grammar"),
+    );
+    // The cage body belongs to the root like any other body.
+    source_less
+        .model
+        .product_definitions
+        .iter_mut()
+        .find(|definition| !definition.bodies.is_empty())
+        .expect("a definition owns the decoded body")
+        .bodies
+        .push(body);
 
     crate::test_support::assert_written_with_loss(
         &source_less,

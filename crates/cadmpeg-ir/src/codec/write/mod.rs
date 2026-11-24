@@ -26,6 +26,8 @@ use cadmpeg_core::target::TargetCatalog;
 use cadmpeg_core::CodecError;
 
 pub mod approximation;
+mod cages;
+pub use cages::{remove_cage_bodies, without_cage_bodies};
 pub mod capacity;
 mod carried;
 mod coverage;

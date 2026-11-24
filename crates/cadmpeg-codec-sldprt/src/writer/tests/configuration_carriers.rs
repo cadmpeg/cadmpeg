@@ -1186,17 +1186,31 @@ pub(crate) fn semantic_writer_omits_subds_and_names_them() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    decoded
-        .ir_mut()
-        .geometry
-        .subds
-        .push(cadmpeg_ir::SubdSurface {
-            id: cadmpeg_ir::ids::SubdId::mint("test:sldprt:subd#0").expect("identity grammar"),
-            scheme: cadmpeg_ir::SubdScheme::CatmullClark,
-            source_object: None,
-            cage: cadmpeg_ir::subd::SubdCage::default(),
-            native_ref: None,
-        });
+    {
+        let mut ir = decoded.ir_mut();
+        let body =
+            cadmpeg_ir::ids::BodyId::mint("test:sldprt:body#cage").expect("identity grammar");
+        ir.geometry.push_cage_object(
+            cadmpeg_ir::SubdSurface {
+                id: cadmpeg_ir::ids::SubdId::mint("test:sldprt:subd#0").expect("identity grammar"),
+                scheme: cadmpeg_ir::SubdScheme::CatmullClark,
+                source_object: None,
+                cage: cadmpeg_ir::subd::SubdCage::default(),
+                native_ref: None,
+            },
+            body.clone(),
+            cadmpeg_ir::ids::RegionId::mint("test:sldprt:region#cage").expect("identity grammar"),
+            cadmpeg_ir::ids::ShellId::mint("test:sldprt:shell#cage").expect("identity grammar"),
+        );
+        // The cage body belongs to the part like any other body.
+        ir.model
+            .product_definitions
+            .iter_mut()
+            .find(|definition| !definition.bodies.is_empty())
+            .expect("a definition owns the decoded body")
+            .bodies
+            .push(body);
+    }
 
     let report = SldprtCodec
         .plan(

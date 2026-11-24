@@ -221,6 +221,9 @@ pub(super) fn unwritable_content(
     retained: bool,
     digests: &CodecDigests,
 ) -> Result<Vec<LossNote>, CodecError> {
+    // The SLDPRT form holds no cage, so a cage body is not written either
+    // (§5.6); `WriterSubdOmitted` below names the cage.
+    cadmpeg_ir::codec::write::remove_cage_bodies(ir);
     let mut losses = Vec::new();
     let mut named = Vec::new();
     for face in &mut ir.geometry.faces {

@@ -109,6 +109,10 @@ pub(crate) fn write_step_outcome(
     opts: &StepWriteOptions,
     recovered_edges: HashSet<EdgeId>,
 ) -> Result<StepWriteOutcome, cadmpeg_core::CodecError> {
+    // STEP holds no cage, so a cage body is not written as an empty shell
+    // either (§5.6); the cage's `geometry.subd-omitted` loss names it.
+    let cageless = cadmpeg_ir::codec::write::without_cage_bodies(ir);
+    let ir = cageless.as_ref().unwrap_or(ir);
     let definitions = ir
         .model
         .product_definitions

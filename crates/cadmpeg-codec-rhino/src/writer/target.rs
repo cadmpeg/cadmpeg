@@ -74,8 +74,12 @@ pub(crate) fn plan(
         return Err(target.unavailable(OFF_CATALOG_SOURCE_REASON));
     };
     let version = RhinoArchiveVersion::ALL[index];
-    let (complete, partial_losses) = partial_free(input.ir)?;
-    let ir = complete.as_ref().unwrap_or(input.ir);
+    // The writer writes no cage, so it writes no cage body (§5.6); the
+    // `subds` coverage charges the cage.
+    let cageless = cadmpeg_ir::codec::write::without_cage_bodies(input.ir);
+    let source = cageless.as_ref().unwrap_or(input.ir);
+    let (complete, partial_losses) = partial_free(source)?;
+    let ir = complete.as_ref().unwrap_or(source);
     let mut bytes = Vec::new();
     let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(ir)?;
     let wrote_object = super::write(&recovered.document, version, &mut bytes)?;

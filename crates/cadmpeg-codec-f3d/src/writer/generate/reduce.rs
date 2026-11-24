@@ -393,6 +393,8 @@ impl<'a> Reduction<'a> {
             return;
         }
         let ir = self.ir.to_mut();
+        // A cage's body is not written without its cage (§5.6).
+        cadmpeg_ir::codec::write::remove_cage_bodies(ir);
         let subds = std::mem::take(&mut ir.geometry.subds);
         let assets = std::mem::take(&mut ir.model.assets);
         let tessellations = std::mem::take(&mut ir.model.tessellations);
