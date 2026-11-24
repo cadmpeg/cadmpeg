@@ -1197,7 +1197,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 )
             };
             let support_is_required = continuity
-                .resolved()
+                .as_ref()
                 .is_some_and(|continuity| {
                     continuity
                         .conditions
