@@ -763,9 +763,10 @@ mod tests {
     fn pinned_native() -> Native {
         let mut native = Native::default();
         let namespace = native.namespace_mut(crate::codec_id!("pin"));
-        namespace
-            .arenas_mut()
-            .insert("records".into(), vec![pinned_record()]);
+        namespace.arenas_mut().insert(
+            cadmpeg_core::nonblank_literal!("records"),
+            vec![pinned_record()],
+        );
         native
     }
 
@@ -873,7 +874,7 @@ mod tests {
         ir.native = pinned_native();
         let namespace = ir.native.namespace_mut(crate::codec_id!("pin"));
         namespace.arenas_mut().insert(
-            "unknowns".into(),
+            cadmpeg_core::nonblank_literal!("unknowns"),
             vec![
                 pinned_unknown("pin:test:source-image#0", &[]),
                 pinned_unknown(
@@ -893,7 +894,7 @@ mod tests {
             .namespace_mut(crate::codec_id!("pin"))
             .arenas_mut()
             .insert(
-                "unknowns".into(),
+                cadmpeg_core::nonblank_literal!("unknowns"),
                 vec![NativeRecord::new(
                     crate::ids::Identity::new("pin:model:record#0").expect("valid identity"),
                     fields,
@@ -1214,7 +1215,7 @@ mod tests {
             .unwrap();
         let namespace = ir.native.namespace_mut(crate::codec_id!("other"));
         namespace.arenas_mut().insert(
-            "records".into(),
+            cadmpeg_core::nonblank_literal!("records"),
             vec![NativeRecord::new(
                 crate::ids::Identity::new("other:test:record#0").expect("valid identity"),
                 serde_json::Map::new(),
@@ -1436,7 +1437,8 @@ mod tests {
         }
         ir.native
             .namespace_mut(crate::codec_id!("test"))
-            .set_arena_records("items", records);
+            .set_arena_records("items", records)
+            .unwrap();
         ir.set_native_unknowns(&ctx, "test", &[]).unwrap();
         ir.finalize();
         let digest_fast =

@@ -2463,7 +2463,7 @@ impl CadIr {
         self.native
             .namespace_mut(codec)
             .arenas_mut()
-            .insert("unknowns".to_owned(), records);
+            .insert(cadmpeg_core::nonblank_literal!("unknowns"), records);
         Ok(())
     }
 

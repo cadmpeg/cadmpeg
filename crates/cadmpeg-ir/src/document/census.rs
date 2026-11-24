@@ -47,12 +47,12 @@ mod tests {
         ir.native
             .namespace_mut(crate::codec_id!("future"))
             .arenas_mut()
-            .insert("empty".into(), Vec::new());
+            .insert(cadmpeg_core::nonblank_literal!("empty"), Vec::new());
         ir.native
             .namespace_mut(crate::codec_id!("future"))
             .arenas_mut()
             .insert(
-                "records".into(),
+                cadmpeg_core::nonblank_literal!("records"),
                 vec![crate::native::NativeRecord::new(
                     crate::ids::Identity::new("test:native:record#counted").unwrap(),
                     serde_json::Map::new(),

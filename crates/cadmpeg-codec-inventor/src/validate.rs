@@ -150,7 +150,7 @@ pub(crate) fn validate_native(
     let actual_arenas = namespace
         .arenas()
         .keys()
-        .map(String::as_str)
+        .map(cadmpeg_core::text::NonBlankString::as_str)
         .collect::<HashSet<_>>();
     let expected_arenas = ARENAS.iter().copied().collect::<HashSet<_>>();
     let allowed_arenas = ARENAS

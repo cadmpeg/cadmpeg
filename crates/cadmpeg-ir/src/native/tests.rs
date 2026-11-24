@@ -24,6 +24,28 @@ fn a_native_namespace_is_named_by_a_codec_id() {
 }
 
 #[test]
+fn a_native_arena_is_named_by_a_non_blank_string() {
+    let read =
+        serde_json::from_str::<crate::native::NativeNamespace>(r#"{"records": []}"#).unwrap();
+    assert_eq!(read.arenas()["records"].len(), 0);
+    for blank in ["", " ", "\u{3000}"] {
+        let text = serde_json::json!({ blank: [] }).to_string();
+        assert!(serde_json::from_str::<crate::native::NativeNamespace>(&text).is_err());
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+        let mut namespace = crate::native::NativeNamespace::default();
+        assert!(matches!(
+            namespace.set_arena::<NativeRecord>(&ctx, blank, &[]),
+            Err(crate::native::NativeConvertError::BlankArena(_))
+        ));
+        assert!(matches!(
+            namespace.set_arena_records(blank, Vec::new()),
+            Err(crate::native::NativeConvertError::BlankArena(_))
+        ));
+        assert!(namespace.arenas().is_empty());
+    }
+}
+
+#[test]
 fn native_record_text_refuses_the_retained_limit() {
     use std::cell::Cell;
 
@@ -251,12 +273,12 @@ fn native_loss_counts_carry_a_nonempty_arena_population() {
     native
         .namespace_mut(crate::codec_id!("future"))
         .arenas_mut()
-        .insert("empty".into(), Vec::new());
+        .insert(cadmpeg_core::nonblank_literal!("empty"), Vec::new());
     native
         .namespace_mut(crate::codec_id!("future"))
         .arenas_mut()
         .insert(
-            "records".into(),
+            cadmpeg_core::nonblank_literal!("records"),
             vec![NativeRecord::new(
                 crate::ids::Identity::new("test:native:record#counted").expect("valid identity"),
                 serde_json::Map::new(),
@@ -361,7 +383,10 @@ fn deeply_nested_native_values_survive_every_stored_record_reader() {
         .native
         .namespace_mut(crate::codec_id!("future"))
         .arenas_mut()
-        .insert("records".into(), vec![constructed]);
+        .insert(
+            cadmpeg_core::nonblank_literal!("records"),
+            vec![constructed],
+        );
     let wire = serde_json::to_value(&document).unwrap();
     let admitted = serde_json::from_value::<crate::CadIr>(wire).unwrap();
     let record = &admitted.native.namespace("future").unwrap().arenas()["records"][0];
@@ -589,7 +614,7 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
         .namespace_mut(crate::codec_id!("f3d"))
         .arenas_mut()
         .insert(
-            "act_guids".into(),
+            cadmpeg_core::nonblank_literal!("act_guids"),
             vec![NativeRecord::new(
                 crate::ids::Identity::new("f3d:test:act-guid#0").expect("valid identity"),
                 serde_json::Map::new(),
@@ -601,7 +626,7 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
         .namespace_mut(crate::codec_id!("sldprt"))
         .arenas_mut()
         .insert(
-            "configurations".into(),
+            cadmpeg_core::nonblank_literal!("configurations"),
             vec![NativeRecord::new(
                 crate::ids::Identity::new("sldprt:test:configuration#0").expect("valid identity"),
                 serde_json::Map::new(),
@@ -892,7 +917,7 @@ fn native_finalization_sorts_changed_arenas_and_preserves_identity_ties() {
     let mut native = super::Native(BTreeMap::from([(
         crate::codec_id!("test"),
         super::NativeNamespace {
-            arenas: BTreeMap::from([("records".into(), records)]),
+            arenas: BTreeMap::from([(cadmpeg_core::nonblank_literal!("records"), records)]),
         },
     )]));
     native.finalize();

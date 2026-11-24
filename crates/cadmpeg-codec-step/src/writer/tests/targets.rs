@@ -76,7 +76,7 @@ fn planning_reports_unrepresentable_content_under_strict_write_options() {
         .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .arenas_mut()
         .insert(
-            "asm_histories".into(),
+            cadmpeg_core::nonblank_literal!("asm_histories"),
             vec![cadmpeg_ir::NativeRecord::new(
                 cadmpeg_ir::ids::Identity::new("f3d:test:asm-history#0").expect("valid identity"),
                 serde_json::Map::default(),

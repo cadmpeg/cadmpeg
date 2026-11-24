@@ -1043,7 +1043,7 @@ static COVERED_ARENAS: LazyLock<BTreeSet<String>> = LazyLock::new(|| {
         if let Some(namespace) = result.ir().native.namespace("nx") {
             for (arena, records) in namespace.arenas() {
                 if !records.is_empty() {
-                    covered.insert(arena.clone());
+                    covered.insert(arena.to_string());
                 }
             }
         }

@@ -164,7 +164,7 @@ impl AdmittedState {
                 }
             }
             if !dependencies.is_empty() {
-                let arena = "unknowns".to_owned();
+                let arena = cadmpeg_core::nonblank_literal!("unknowns");
                 let namespace = crate::native::namespace_codec(format)?;
                 let mut arenas = crate::native::NativeNamespace::default();
                 arenas.arenas_mut().insert(arena, dependencies);

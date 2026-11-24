@@ -126,7 +126,7 @@ fn step_ir_with_unrepresentable_native_content() -> CadIr {
         .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .arenas_mut()
         .insert(
-            "asm_histories".into(),
+            cadmpeg_core::nonblank_literal!("asm_histories"),
             vec![cadmpeg_ir::NativeRecord::new(
                 cadmpeg_ir::ids::Identity::new("f3d:test:asm-history#0").expect("valid identity"),
                 serde_json::Map::default(),

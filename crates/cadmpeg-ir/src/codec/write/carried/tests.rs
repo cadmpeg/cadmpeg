@@ -25,7 +25,7 @@ fn insert_native(ir: &mut CadIr, format: &str, ids: &[&str]) {
         .namespace_mut(crate::design::names::CodecId::new(format).expect("a codec id"))
         .arenas_mut()
         .insert(
-            "asm_histories".into(),
+            cadmpeg_core::nonblank_literal!("asm_histories"),
             ids.iter()
                 .map(|id| {
                     NativeRecord::new(
