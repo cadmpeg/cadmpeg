@@ -974,7 +974,7 @@ fn a_driven_parameter_keeps_the_literal_its_source_record_stores() {
     drive(&mut ir, "gap");
     parameter_mut(&mut ir, "gap")
         .source_settings
-        .insert(cadmpeg_core::nonblank_literal!("f3d:literal"), literal());
+        .insert(cadmpeg_ir::codec_name!("f3d:literal"), literal());
     let (_, decoded, bytes) = write_bytes(&ir);
     let gap = decoded
         .model

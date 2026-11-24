@@ -2248,7 +2248,7 @@ impl FormFacts {
                     entry.as_ref().is_some_and(|entry| {
                         scan.has_entry(entry)
                             && cage.source_object.as_ref().is_some_and(|source| {
-                                source.format == cadmpeg_ir::CodecFormat::F3d
+                                source.format == cadmpeg_ir::codec_id!("f3d")
                                     && source.object_id.as_str() == entry
                             })
                     })
@@ -2450,7 +2450,7 @@ fn retain_serializer_candidate(
             entry.as_ref().is_some_and(|entry| {
                 scan.has_entry(entry)
                     && cage.source_object.as_ref().is_some_and(|source| {
-                        source.format == cadmpeg_ir::CodecFormat::F3d
+                        source.format == cadmpeg_ir::codec_id!("f3d")
                             && source.object_id.as_str() == entry
                     })
             })

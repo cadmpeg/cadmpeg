@@ -9,7 +9,7 @@ use cadmpeg_ir::design::container::{Container, Folder, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::names::{
-    CodecId, NameEntry, NameKind, NativeName, NativeNameValue, TopoName,
+    CodecName, NameEntry, NameKind, NativeName, NativeNameValue, TopoName,
 };
 use cadmpeg_ir::design::ops::datum::DatumElement;
 use cadmpeg_ir::design::refs::{EntityRef, Member, Position};
@@ -356,7 +356,7 @@ fn identified_triangle(face: &[u32], body: u32) -> Vec<u8> {
 
 fn native_name(values: &[i64]) -> NativeName {
     NativeName {
-        codec: CodecId::from(cadmpeg_core::nonblank_literal!("sldprt")),
+        codec: cadmpeg_ir::codec_id!("sldprt"),
         value: NativeNameValue::Integers(values.to_vec()),
     }
 }
@@ -444,7 +444,7 @@ fn face_names_state_the_role_and_index_their_class_stores() {
     };
     let other = |code: &str| {
         Some(GenerationRole::Other(
-            cadmpeg_core::text::NonBlankString::new(code).unwrap(),
+            CodecName::try_from(code.to_owned()).unwrap(),
         ))
     };
     for (face, role, index) in [

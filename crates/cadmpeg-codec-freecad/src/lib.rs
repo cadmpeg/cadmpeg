@@ -997,10 +997,23 @@ impl CodecBackend for FcstdCodec {
             let joint_records = joint::transfer(ctx, &graph.objects, &graph.properties)?;
             namespace.set_arena(ctx, "joints", &joint_records)?;
             let drawings = drawing::transfer(ctx, &graph.objects, &graph.properties)?;
-            drawing::transfer_neutral(ctx, &mut ir.model, &drawings, &graph.properties)?;
-            namespace.set_arena(ctx, "drawings", &drawings)?;
             let annotations = annotation::transfer(ctx, &graph.objects, &graph.properties)?;
-            annotation::transfer_neutral(ctx, &mut ir.model, &annotations, &graph.properties)?;
+            let link_targets = drawing::LinkTargets::new(&drawings, &annotations)?;
+            drawing::transfer_neutral(
+                ctx,
+                &mut ir.model,
+                &drawings,
+                &graph.properties,
+                &link_targets,
+            )?;
+            namespace.set_arena(ctx, "drawings", &drawings)?;
+            annotation::transfer_neutral(
+                ctx,
+                &mut ir.model,
+                &annotations,
+                &graph.properties,
+                &link_targets,
+            )?;
             drawing::content::enrich(
                 ctx,
                 &mut ir.model,

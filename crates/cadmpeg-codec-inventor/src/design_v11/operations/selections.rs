@@ -28,7 +28,7 @@ pub(super) fn picked(target: PickTarget) -> Picked {
 pub(super) fn named(text: &str, within: Option<NativeOwner>) -> Projected<Picked> {
     let mut pick = picked(PickTarget::Native { within });
     pick.native = Some(NativeName {
-        codec: cadmpeg_core::nonblank_literal!("inventor").into(),
+        codec: cadmpeg_ir::codec_id!("inventor"),
         value: NativeNameValue::Text(
             NonBlankString::new(text).ok_or("a native selection is blank")?,
         ),
@@ -122,7 +122,7 @@ fn source_pick(id: &str) -> Projected<Picked> {
         .ok_or("a historical selection has no source selector")?;
     let mut pick = picked(PickTarget::Native { within: None });
     pick.native = Some(NativeName {
-        codec: cadmpeg_core::nonblank_literal!("inventor").into(),
+        codec: cadmpeg_ir::codec_id!("inventor"),
         value: NativeNameValue::Integers(vec![i64::from(selector)]),
     });
     Ok(pick)

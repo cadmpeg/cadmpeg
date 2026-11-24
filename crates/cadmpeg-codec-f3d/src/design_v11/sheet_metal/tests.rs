@@ -66,6 +66,7 @@ fn fixture(ctx: &DecodeContext<'_>, rule_thickness: Option<f64>) -> CadIr {
             operation: FeatureOperation::Unresolved {
                 family: OperationFamily::SheetMetal,
             },
+            assembly: None,
             refine: None,
             fuzzy_tolerance: None,
         },
