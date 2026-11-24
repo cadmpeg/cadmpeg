@@ -1,16 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Radial-ring, child-list, wire ownership and shell connectivity checks.
 
+use std::collections::BTreeSet;
+
 use cadmpeg_core::CodecError;
 
 use crate::document::CadIr;
+use crate::geometry::SurfaceGeometry;
 use crate::index::identities::BorrowedIdentities;
 use crate::report::{
     check::{Check, Finding},
     Severity,
 };
 use crate::topology::RegionUnstated;
-use crate::validate::record_finding;
+use crate::validate::{record_finding, record_related_finding};
 
 #[derive(Clone, Copy)]
 enum RadialStatus {
@@ -697,6 +700,81 @@ pub(in crate::validate) fn check_solid_edge_uses(ir: &CadIr, findings: &mut Vec<
                     edge,
                     &[body.id.as_str()],
                     crate::rule!("topology.edge-used-once-faces-solid-body", "edge is used once by the faces of solid body {}; a solid's faces use each of its edges at least twice", body.id.as_str()),
+                );
+            }
+        }
+    }
+}
+
+/// A face with no loops is the only face of its shell, and its surface is no
+/// plane, cylinder, or cone, and no placed surface whose basis, through every
+/// placement, is one (part 10, Topology and model records; §5.6). The rule
+/// does not fire on a marked shell, or on a shell or region that holds a
+/// partial face or a marked shell. A procedural surface is read through its
+/// construction, which this rule does not evaluate.
+pub(in crate::validate) fn check_loopless_faces(ir: &CadIr, findings: &mut Vec<Finding>) {
+    let geometry = &ir.geometry;
+    let child_lists = geometry.child_lists();
+    let partial_regions: BTreeSet<&str> = geometry
+        .shells
+        .iter()
+        .filter(|shell| {
+            shell.unstated.is_some()
+                || child_lists
+                    .stated_shell_faces(&shell.id)
+                    .iter()
+                    .any(|face| face.loops.is_partial())
+        })
+        .map(|shell| shell.region.as_str())
+        .collect();
+    let surfaces = BorrowedIdentities::build(|add| {
+        for surface in &geometry.surfaces {
+            add(surface.id.as_str(), surface);
+        }
+    });
+    for shell in &geometry.shells {
+        if partial_regions.contains(shell.region.as_str()) {
+            continue;
+        }
+        let Some(faces) = child_lists.complete_shell_faces(&shell.id) else {
+            continue;
+        };
+        for face in faces.iter().filter(|face| {
+            face.loops
+                .boundary()
+                .is_some_and(crate::topology::FaceBoundary::is_empty)
+        }) {
+            if faces.len() > 1 {
+                record_related_finding(
+                    findings,
+                    Check::ShellTopology,
+                    Severity::Error,
+                    face.id.as_str(),
+                    &[shell.id.as_str()],
+                    crate::rule!(
+                        "topology.loopless-face-shares-shell",
+                        "a face with no loops shares its shell with {} other face(s); it is the only face of its shell",
+                        faces.len() - 1
+                    ),
+                );
+            }
+            let kind =
+                surfaces
+                    .get(face.surface.as_str())
+                    .and_then(|surface| match &surface.geometry {
+                        SurfaceGeometry::Solved(solved) => solved.plane_cylinder_or_cone(),
+                        SurfaceGeometry::Procedural { .. } => None,
+                    });
+            if let Some(kind) = kind {
+                record_finding(
+                    findings,
+                    Check::ShellTopology,
+                    Severity::Error,
+                    Some(face.id.as_str()),
+                    crate::rule!(
+                        "topology.loopless-face-bounded-surface",
+                        "a face with no loops lies on a {kind}, which a face bounds with a loop"
+                    ),
                 );
             }
         }

@@ -196,3 +196,112 @@ fn a_region_mark_names_each_shell_once_and_none_its_shells_name() {
     ir.geometry.regions[0].set_shells(vec![shell]);
     assert_eq!(repeated(&ir), 1);
 }
+
+/// One body whose shells hold faces with no loops: each face is named, put in
+/// the shell its index names, and lies on a surface of its own of `kind`.
+fn loopless_model(faces: &[(&str, usize, &str)], shell_count: usize) -> crate::CadIr {
+    use crate::geometry::analytic::{PlaneSurface, SphereSurface};
+    use crate::geometry::{PlacedSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+    use crate::ids::{FaceId, RegionId, ShellId, SurfaceId};
+    use crate::math::{Point3, Vector3};
+    use crate::topology::{Face, FaceLoops, Sense, Shell};
+    let mut ir = crate::CadIr::empty();
+    let shell_id = |index: usize| ShellId::mint(format!("test:model:shell#{index}")).unwrap();
+    for (face, shell, kind) in faces {
+        let surface = SurfaceId::mint(format!("test:model:surface#{face}")).unwrap();
+        let (z, x) = (Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0));
+        let sphere = || {
+            SolvedSurfaceGeometry::Sphere(
+                SphereSurface::try_new(Point3::new(0.0, 0.0, 0.0), z, x, 1.0).unwrap(),
+            )
+        };
+        let plane = || {
+            SolvedSurfaceGeometry::Plane(
+                PlaneSurface::try_new(Point3::new(0.0, 0.0, 0.0), z, x).unwrap(),
+            )
+        };
+        let placed = |basis: SolvedSurfaceGeometry| {
+            SolvedSurfaceGeometry::Transformed(
+                PlacedSurface::try_new(Box::new(basis), crate::transform::Transform::identity())
+                    .unwrap(),
+            )
+        };
+        let geometry = match *kind {
+            "sphere" => sphere(),
+            "plane" => plane(),
+            "placed sphere" => placed(sphere()),
+            "placed plane" => placed(placed(plane())),
+            other => unreachable!("{other}"),
+        };
+        ir.geometry.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: SurfaceGeometry::Solved(geometry),
+            source_object: None,
+            native_ref: None,
+        });
+        ir.geometry.faces.push(Face {
+            id: FaceId::mint(format!("test:model:face#{face}")).unwrap(),
+            shell: shell_id(*shell),
+            surface,
+            sense: Sense::Forward,
+            loops: FaceLoops::unspecified(Vec::new()),
+            name: None,
+            color: None,
+            tolerance: None,
+            native_ref: None,
+        });
+    }
+    for index in 0..shell_count {
+        ir.geometry.shells.push(Shell::new(
+            shell_id(index),
+            RegionId::mint("test:model:region#0").unwrap(),
+        ));
+    }
+    ir
+}
+
+fn loopless_findings(ir: &crate::CadIr) -> Vec<(String, String)> {
+    let mut findings = Vec::new();
+    super::check_loopless_faces(ir, &mut findings);
+    findings
+        .into_iter()
+        .map(|finding| {
+            assert_eq!(finding.check, Check::ShellTopology);
+            assert_eq!(finding.severity, Severity::Error);
+            (finding.entity.unwrap(), finding.message)
+        })
+        .collect()
+}
+
+#[test]
+fn a_face_with_no_loops_is_the_only_face_of_its_shell_on_an_unbounded_surface() {
+    let ir = loopless_model(&[("a", 0, "sphere"), ("b", 0, "sphere")], 1);
+    let found = loopless_findings(&ir);
+    assert_eq!(found.len(), 2, "{found:?}");
+    assert!(found
+        .iter()
+        .all(|(_, message)| message.ends_with("it is the only face of its shell")));
+    let ir = loopless_model(&[("a", 0, "plane"), ("b", 1, "placed plane")], 2);
+    assert_eq!(
+        loopless_findings(&ir),
+        [
+            (
+                "test:model:face#a".to_owned(),
+                "a face with no loops lies on a plane, which a face bounds with a loop".to_owned()
+            ),
+            (
+                "test:model:face#b".to_owned(),
+                "a face with no loops lies on a plane, which a face bounds with a loop".to_owned()
+            ),
+        ]
+    );
+}
+
+#[test]
+fn a_lone_face_with_no_loops_on_a_closed_surface_breaks_no_rule() {
+    let ir = loopless_model(&[("a", 0, "sphere"), ("b", 1, "placed sphere")], 2);
+    assert!(loopless_findings(&ir).is_empty());
+    let mut ir = loopless_model(&[("a", 0, "sphere"), ("b", 0, "plane")], 1);
+    ir.geometry.shells[0].unstated = Some(crate::topology::Unstated::Members);
+    assert!(loopless_findings(&ir).is_empty());
+}

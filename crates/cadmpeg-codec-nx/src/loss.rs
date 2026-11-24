@@ -158,6 +158,9 @@ loss_codes! {
     /// A vertex loop whose vertex does not resolve to a POINT: it is omitted,
     /// and its face is stated partial.
     TopologyVertexLoopUnresolved => ("topology.vertex-loop-unresolved", Warning, TopologyNotTransferred),
+    /// A face states no loop on a plane, cylinder, or cone, which no face
+    /// covers whole: its boundary is unstated, and the face is stated partial.
+    TopologyFaceBoundaryUnstated => ("topology.face-boundary-unstated", Warning, TopologyNotTransferred),
     /// A shell with no admitted face, or a body with no emitted shell, is withheld.
     TopologyShellWithheld => ("topology.shell-withheld", Warning, TopologyNotTransferred),
     /// A semantic annotation order is past the stated annotation order width.
@@ -277,6 +280,7 @@ mod tests {
                 "topology.loop-ring-unresolved",
                 "topology.face-loop-unresolved",
                 "topology.vertex-loop-unresolved",
+                "topology.face-boundary-unstated",
                 "topology.shell-withheld",
                 "annotation.semantic-order-unstatable",
                 "source.scan-bounded",

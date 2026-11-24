@@ -568,6 +568,19 @@ fn topology_accepts_cached_last_face_and_implicit_region_identity() {
         "nx:s0:region#12"
     );
     assert_eq!(result.ir().geometry.faces.len(), 2);
+    let face = result
+        .ir()
+        .geometry
+        .faces
+        .iter()
+        .find(|face| face.id.as_str() == "nx:s0:face#20")
+        .expect("FACE 20 is kept");
+    assert!(face.loops.is_partial(), "{:?}", face.loops);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == NxLossCode::TopologyFaceBoundaryUnstated.kind()));
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
