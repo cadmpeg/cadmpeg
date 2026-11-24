@@ -519,3 +519,48 @@ fn leading_source_placement_places_with_the_three_property_attribute_block() {
             .is_none());
     }
 }
+
+#[test]
+fn leading_source_placement_admits_control_one_with_a_local_matrix() {
+    use crate::layout::legacy_attributed_external_placement_attributes as attributes;
+    use crate::layout::legacy_attributed_external_placement_members as members;
+    use crate::layout::legacy_attributed_external_placement_prefix as prefix;
+
+    let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
+    let local = [
+        [1.0, 0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    for (source, local, control, length) in [
+        (None, Some(local), 1_u16, 681),
+        (Some(super::super::IDENTITY_ROWS), Some(local), 1, 809),
+    ] {
+        let mut frame =
+            crate::test_support::legacy_attributed_external_placement(role, true, local);
+        frame[prefix::LEN + attributes::LEN..][..2].copy_from_slice(&control.to_le_bytes());
+        let mut leading = vec![u8::from(source.is_none())];
+        if let Some(source) = source {
+            leading.extend(source.into_iter().flatten().flat_map(f64::to_le_bytes));
+        }
+        let at = prefix::LEN + attributes::LEN + members::METADATA_GUID_LENGTH;
+        frame.splice(at..at, leading);
+        assert_eq!(frame.len(), length);
+        let placement = super::super::occurrence_placement(&frame, None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(placement.transform, local);
+        assert_eq!(placement.owner.unwrap().target, 7);
+        assert_eq!(placement.link_names, [role]);
+        for end in 0..frame.len() {
+            assert!(super::super::occurrence_placement(&frame[..end], None)
+                .unwrap()
+                .is_none());
+        }
+        frame.push(0);
+        assert!(super::super::occurrence_placement(&frame, None)
+            .unwrap()
+            .is_none());
+    }
+}

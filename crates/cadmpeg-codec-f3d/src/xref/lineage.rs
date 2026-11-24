@@ -18,7 +18,7 @@ use crate::records::xref::RequiredXrefText;
 /// Archive members by `(lineage URN, version URN)`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct LineageMembers {
-    members: BTreeMap<(String, String), Vec<String>>,
+    members: BTreeMap<(String, String), Vec<RequiredXrefText>>,
     /// Every entry name of the archive.
     entries: BTreeSet<String>,
 }
@@ -31,17 +31,21 @@ impl LineageMembers {
         entries: impl Iterator<Item = &'a str>,
         is_member: impl Fn(&str) -> bool,
     ) -> Self {
-        let mut members = BTreeMap::<(String, String), Vec<String>>::new();
+        let mut members = BTreeMap::<(String, String), Vec<RequiredXrefText>>::new();
         for (path, identity) in identities {
             let (Some(lineage), Some(version)) = (&identity.document_id, &identity.version) else {
                 continue;
             };
-            if is_member(path) {
-                members
-                    .entry((lineage.as_str().to_owned(), version.as_str().to_owned()))
-                    .or_default()
-                    .push(path.clone());
+            if !is_member(path) {
+                continue;
             }
+            let Ok(name) = RequiredXrefText::try_from(path.clone()) else {
+                continue;
+            };
+            members
+                .entry((lineage.as_str().to_owned(), version.as_str().to_owned()))
+                .or_default()
+                .push(name);
         }
         Self {
             members,
@@ -54,16 +58,11 @@ impl LineageMembers {
         self.entries.contains(path)
     }
 
-    /// The only member stating both URNs.
-    fn unique(&self, lineage: &str, version: &str) -> Option<&str> {
-        match self
-            .members
-            .get(&(lineage.to_owned(), version.to_owned()))?
-            .as_slice()
-        {
-            [member] => Some(member),
-            _ => None,
-        }
+    /// The members stating both URNs.
+    fn candidates(&self, lineage: &str, version: &str) -> &[RequiredXrefText] {
+        self.members
+            .get(&(lineage.to_owned(), version.to_owned()))
+            .map_or(&[], Vec::as_slice)
     }
 }
 
@@ -71,12 +70,14 @@ impl LineageMembers {
 /// whose identity pair equals that of exactly one archive member, to that
 /// member, and charge one loss per resolved path. A path that is an archive
 /// member, a reference without identity, and a reference without exactly one
-/// match keep their path.
+/// match keep their path. A reference whose pair more than one member states
+/// charges one loss that names the candidate count.
 pub(super) fn resolve(table: &mut XrefTable, index: &LineageMembers) {
     let mut resolved = BTreeMap::<String, RequiredXrefText>::new();
+    let mut ambiguous = BTreeMap::<String, usize>::new();
     for reference in &table.references {
         let path = reference.relative_path.as_str();
-        if resolved.contains_key(path) || index.lists(path) {
+        if resolved.contains_key(path) || ambiguous.contains_key(path) || index.lists(path) {
             continue;
         }
         let Some(identity) = table.documents.get(path) else {
@@ -85,12 +86,20 @@ pub(super) fn resolve(table: &mut XrefTable, index: &LineageMembers) {
         let (Some(lineage), Some(version)) = (&identity.document_id, &identity.version) else {
             continue;
         };
-        let Some(member) = index.unique(lineage.as_str(), version.as_str()) else {
-            continue;
-        };
-        if let Ok(text) = RequiredXrefText::try_from(member.to_owned()) {
-            resolved.insert(path.to_owned(), text);
+        match index.candidates(lineage.as_str(), version.as_str()) {
+            [] => {}
+            [member] => {
+                resolved.insert(path.to_owned(), member.clone());
+            }
+            candidates => {
+                ambiguous.insert(path.to_owned(), candidates.len());
+            }
         }
+    }
+    for (path, count) in &ambiguous {
+        table.identity_losses.push(F3dLossCode::XrefLineageAmbiguous.note(format!(
+            "reference {path}: {count} archive members state its lineage and version URN; the reference keeps its path"
+        )));
     }
     for (path, member) in &resolved {
         let member = member.as_str();

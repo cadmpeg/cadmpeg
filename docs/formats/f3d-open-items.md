@@ -4217,7 +4217,7 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Question.** Which archive member does a manifest reference name when the member's design object states the reference's lineage URN and a different version URN?
 
-**Known.** `f3d.md` §1.5 resolves a reference without `RedirectionsStream.dat` only to the one member that states both the reference's `LineageUrn` and its `URL`. A reference whose pair has no such member keeps its target path.
+**Known.** `f3d.md` §1.5 resolves a reference without `RedirectionsStream.dat` only to the one member that states both the reference's `LineageUrn` and its `URL`. A reference whose pair has no such member, or has more than one, keeps its target path.
 
 **Need.** A bundle whose referencing member stores an earlier version URN than the version URN that the design object of the referenced member states, with the `RedirectionsStream.dat` of a Fusion-written archive of the same designs for comparison.
 

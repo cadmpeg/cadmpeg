@@ -265,7 +265,7 @@ pub(super) fn classify_members<'a>(
     let lineage = std::sync::Arc::new(LineageMembers::new(
         identities,
         scan.entries.iter().map(|entry| entry.name.as_str()),
-        |path| crate::container::is_f3d_name(path) && scan.has_entry(path),
+        |path| crate::container::is_f3d_name(path) && scan.lists_entry(path),
     ));
     let mut members = BTreeMap::new();
     let primary = scan.kind.dialect().clone();

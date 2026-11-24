@@ -716,6 +716,8 @@ fn f3z_reference_without_unique_lineage_match_keeps_the_path() {
         assert_eq!(loss_count(&decoded, "xref.redirection-from-lineage"), 0);
         assert_eq!(loss_count(&decoded, "xref.member-missing"), 1);
         assert_eq!(decoded.ir().geometry.bodies.len(), 0);
+        let ambiguous = usize::from(objects.len() == 2 && objects[0].1 == objects[1].1);
+        assert_eq!(loss_count(&decoded, "xref.lineage-ambiguous"), ambiguous);
         let references = &f3d_native(decoded.ir()).xref_references;
         assert_eq!(
             references[0].relative_path.as_str(),
@@ -789,27 +791,36 @@ fn f3z_lineage_match_counts_archive_members_only() {
 /// `archive` with a `RedirectionsStream.dat` entry whose deflate payload is
 /// invalid.
 fn with_unreadable_redirections(archive: &[u8]) -> Vec<u8> {
+    with_unreadable_entry(archive, "RedirectionsStream.dat")
+}
+
+/// `archive` with the entry `name` replaced by an entry whose deflate payload
+/// is invalid. The entry is the first in the archive.
+fn with_unreadable_entry(archive: &[u8], name: &str) -> Vec<u8> {
     use std::io::Read;
     let mut source = zip::ZipArchive::new(Cursor::new(archive.to_vec())).unwrap();
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let deflated = crate::zip_write::file_options(zip::CompressionMethod::Deflated);
+    zip.start_file(name, deflated).unwrap();
+    zip.write_all(&[b'x'; 64]).unwrap();
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
     for index in 0..source.len() {
         let mut entry = source.by_index(index).unwrap();
-        let name = entry.name().unwrap().into_owned();
+        let entry_name = entry.name().unwrap().into_owned();
+        if entry_name == name {
+            continue;
+        }
         let mut bytes = Vec::new();
         entry.read_to_end(&mut bytes).unwrap();
-        zip.start_file(name, stored).unwrap();
+        zip.start_file(entry_name, stored).unwrap();
         zip.write_all(&bytes).unwrap();
     }
-    let deflated = crate::zip_write::file_options(zip::CompressionMethod::Deflated);
-    zip.start_file("RedirectionsStream.dat", deflated).unwrap();
-    zip.write_all(&[b'x'; 64]).unwrap();
     let mut bytes = zip.finish().unwrap().into_inner();
-    let name = b"RedirectionsStream.dat";
-    let at = bytes.windows(name.len()).position(|w| w == name).unwrap();
-    let extra = usize::from(u16::from_le_bytes([bytes[at - 2], bytes[at - 1]]));
+    let local_header = 30;
+    let extra = usize::from(u16::from_le_bytes([bytes[28], bytes[29]]));
+    assert_eq!(&bytes[local_header..][..name.len()], name.as_bytes());
     // Block type 3 is reserved.
-    bytes[at + name.len() + extra] = 0x07;
+    bytes[local_header + name.len() + extra] = 0x07;
     bytes
 }
 
@@ -839,6 +850,47 @@ fn f3z_unreadable_redirections_entry_does_not_resolve_by_lineage() {
     )
     .unwrap();
     assert_eq!(loss_count(&decoded, "xref.redirection-from-lineage"), 0);
+    let references = &f3d_native(decoded.ir()).xref_references;
+    assert_eq!(
+        references[0].relative_path.as_str(),
+        "cache/original-child.f3d"
+    );
+}
+
+#[test]
+fn f3z_lineage_candidate_with_an_unreadable_payload_keeps_the_ambiguity() {
+    // Two listed members state the pair. One payload fails to inflate, so the
+    // archive has two candidates and the reference keeps its path.
+    let root = api_export_build_placed(
+        true,
+        None,
+        None,
+        false,
+        "cache/original-child.f3d",
+        lineage_placement(),
+    );
+    let child = include_bytes!("../../tests/golden/fixtures/generated_unit_cube.f3d");
+    let description = serde_json::json!({"designDescription":{"designGraphs":[{"designObjects":[
+        {"relativePath":"child.f3d","lineage":CHILD_LINEAGE,"about":CHILD_VERSION},
+        {"relativePath":"other.f3d","lineage":CHILD_LINEAGE,"about":CHILD_VERSION}
+    ]}]}});
+    let bytes = f3z_archive_with_design_description(
+        "root.f3d",
+        &[
+            ("root.f3d", &root),
+            ("child.f3d", child),
+            ("other.f3d", child),
+        ],
+        &serde_json::to_vec(&description).unwrap(),
+    );
+    let bytes = with_unreadable_entry(&bytes, "other.f3d");
+    let decoded = crate::test_support::archive_session::decode(
+        &mut Cursor::new(bytes),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(loss_count(&decoded, "xref.redirection-from-lineage"), 0);
+    assert_eq!(loss_count(&decoded, "xref.lineage-ambiguous"), 1);
     let references = &f3d_native(decoded.ir()).xref_references;
     assert_eq!(
         references[0].relative_path.as_str(),
