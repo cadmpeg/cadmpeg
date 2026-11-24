@@ -358,6 +358,11 @@ impl<'a> ContainerScan<'a> {
         self.working_bytes
     }
 
+    /// Whether the archive lists `name`, whether or not its payload is readable.
+    pub(crate) fn lists_entry(&self, name: &str) -> bool {
+        self.entries.iter().any(|entry| entry.name == name)
+    }
+
     pub(crate) fn has_entry(&self, name: &str) -> bool {
         self.inflated_entries.contains_key(name) || self.deferred_members.contains_key(name)
     }

@@ -7,7 +7,7 @@
 //! URN of every member, so a reference resolves to the member whose pair
 //! equals the reference's pair.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::products::ExternalDocument;
 
@@ -19,13 +19,16 @@ use crate::records::xref::RequiredXrefText;
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct LineageMembers {
     members: BTreeMap<(String, String), Vec<String>>,
+    /// Every entry name of the archive.
+    entries: BTreeSet<String>,
 }
 
 impl LineageMembers {
     /// Index the members of `identities` that satisfy `is_member` and state
-    /// both URNs.
-    pub(crate) fn new(
+    /// both URNs. `entries` lists every entry name of the archive.
+    pub(crate) fn new<'a>(
         identities: &BTreeMap<String, ExternalDocument>,
+        entries: impl Iterator<Item = &'a str>,
         is_member: impl Fn(&str) -> bool,
     ) -> Self {
         let mut members = BTreeMap::<(String, String), Vec<String>>::new();
@@ -40,7 +43,15 @@ impl LineageMembers {
                     .push(path.clone());
             }
         }
-        Self { members }
+        Self {
+            members,
+            entries: entries.map(str::to_owned).collect(),
+        }
+    }
+
+    /// Whether the archive has an entry named `path`.
+    fn lists(&self, path: &str) -> bool {
+        self.entries.contains(path)
     }
 
     /// The only member stating both URNs.
@@ -56,14 +67,16 @@ impl LineageMembers {
     }
 }
 
-/// Resolve each reference path of `table` that names exactly one archive
-/// member by identity, and charge one loss per resolved path. A reference
-/// without identity or without exactly one match keeps its path.
+/// Resolve each reference path of `table` that names no archive member, and
+/// whose identity pair equals that of exactly one archive member, to that
+/// member, and charge one loss per resolved path. A path that is an archive
+/// member, a reference without identity, and a reference without exactly one
+/// match keep their path.
 pub(super) fn resolve(table: &mut XrefTable, index: &LineageMembers) {
-    let mut resolved = BTreeMap::<String, String>::new();
+    let mut resolved = BTreeMap::<String, RequiredXrefText>::new();
     for reference in &table.references {
         let path = reference.relative_path.as_str();
-        if resolved.contains_key(path) {
+        if resolved.contains_key(path) || index.lists(path) {
             continue;
         }
         let Some(identity) = table.documents.get(path) else {
@@ -72,23 +85,25 @@ pub(super) fn resolve(table: &mut XrefTable, index: &LineageMembers) {
         let (Some(lineage), Some(version)) = (&identity.document_id, &identity.version) else {
             continue;
         };
-        if let Some(member) = index.unique(lineage.as_str(), version.as_str()) {
-            resolved.insert(path.to_owned(), member.to_owned());
+        let Some(member) = index.unique(lineage.as_str(), version.as_str()) else {
+            continue;
+        };
+        if let Ok(text) = RequiredXrefText::try_from(member.to_owned()) {
+            resolved.insert(path.to_owned(), text);
         }
     }
     for (path, member) in &resolved {
+        let member = member.as_str();
         table.identity_losses.push(F3dLossCode::XrefRedirectionFromLineage.note(format!(
             "reference {path}: resolved to archive member {member} by lineage and version URN; the document has no RedirectionsStream.dat"
         )));
         if let Some(identity) = table.documents.remove(path) {
-            table.documents.entry(member.clone()).or_insert(identity);
+            table.documents.entry(member.to_owned()).or_insert(identity);
         }
     }
     for reference in &mut table.references {
         if let Some(member) = resolved.get(reference.relative_path.as_str()) {
-            if let Ok(member) = RequiredXrefText::try_from(member.clone()) {
-                reference.relative_path = member;
-            }
+            reference.relative_path = member.clone();
         }
     }
 }

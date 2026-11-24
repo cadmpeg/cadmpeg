@@ -291,8 +291,12 @@ fn reference_data(
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => {
             let mut table = api_export::decode(ctx, scan)?;
-            if let (Some(table), Some(index)) = (&mut table, &scan.lineage_members) {
-                lineage::resolve(table, index);
+            // Only an absent table is replaced by identity; a listed but
+            // unreadable table keeps the manifest paths.
+            if !scan.lists_entry(REDIRECTIONS_ENTRY) {
+                if let (Some(table), Some(index)) = (&mut table, &scan.lineage_members) {
+                    lineage::resolve(table, index);
+                }
             }
             return Ok(table);
         }

@@ -262,9 +262,11 @@ pub(super) fn classify_members<'a>(
     identities: &BTreeMap<String, cadmpeg_ir::products::ExternalDocument>,
     with_metadata: bool,
 ) -> Result<ArchiveSession, CodecError> {
-    let lineage = std::sync::Arc::new(LineageMembers::new(identities, |path| {
-        crate::container::is_f3d_name(path) && scan.has_entry(path)
-    }));
+    let lineage = std::sync::Arc::new(LineageMembers::new(
+        identities,
+        scan.entries.iter().map(|entry| entry.name.as_str()),
+        |path| crate::container::is_f3d_name(path) && scan.has_entry(path),
+    ));
     let mut members = BTreeMap::new();
     let primary = scan.kind.dialect().clone();
     let mut layers = DialectLayers::of(primary);
