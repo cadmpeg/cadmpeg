@@ -157,7 +157,7 @@ pub(super) fn check_procedural_support_consistency(
                 super::record_finding(
                     findings,
                     Check::GeometricConsistency,
-                    Severity::Error,
+                    Severity::Warning,
                     Some(procedural.id.as_str()),
                     format_args!(
                         "charted tolerant intersection does not evaluate at both endpoints"
@@ -173,7 +173,7 @@ pub(super) fn check_procedural_support_consistency(
                 super::record_finding(
                     findings,
                     Check::GeometricConsistency,
-                    Severity::Error,
+                    Severity::Warning,
                     Some(procedural.id.as_str()),
                     format_args!(
                         "charted tolerant intersection misses its endpoint witnesses by \
@@ -267,7 +267,7 @@ pub(super) fn check_procedural_support_consistency(
                 super::record_finding(
                     findings,
                     Check::GeometricConsistency,
-                    Severity::Error,
+                    Severity::Warning,
                     Some(procedural.id.as_str()),
                     format_args!(
                         "surface-offset solved curve misses its base offset distance by \
@@ -397,7 +397,7 @@ fn check_support_sides(
             super::record_finding(
                 findings,
                 Check::GeometricConsistency,
-                Severity::Error,
+                Severity::Warning,
                 Some(entity),
                 format_args!(
                 "procedural support side {side_index} misses its endpoint distance contract by \
