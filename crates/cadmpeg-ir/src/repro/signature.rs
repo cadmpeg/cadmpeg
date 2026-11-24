@@ -41,10 +41,7 @@ impl NumberBand {
     fn around(value: FiniteReal) -> Self {
         let center = value.get();
         let radius = center.abs() * NUMBER_BAND_FRACTION;
-        let bound = |bound: f64| {
-            FiniteReal::new(bound.clamp(-f64::MAX, f64::MAX))
-                .expect("a bound clamped to the float range is finite")
-        };
+        let bound = |bound: f64| FiniteReal::new(bound.clamp(-f64::MAX, f64::MAX)).unwrap_or(value);
         Self {
             value,
             lower: bound(center - radius),
@@ -130,8 +127,7 @@ impl Signature {
             signature_version,
             stage,
             codec,
-            check: NonBlankString::new(finding.check.to_string())
-                .expect("every check has a nonblank wire name"),
+            check: finding.check.wire_name(),
             severity: finding.severity,
             entity_kind,
             message,
