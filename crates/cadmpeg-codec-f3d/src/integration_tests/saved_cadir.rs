@@ -105,8 +105,10 @@ fn a_saved_design_writes_an_edited_dimension_as_its_decode_does() {
     history.expression = "3 mm".into();
     history.value = Some(HistoryValue::Length(Length::new(3.0).expect("length")));
 
-    let (from_saved, _) = write(&read, &decoded);
-    assert_eq!(from_saved, write(&held, &decoded).0);
+    let (from_saved, report) = write(&read, &decoded);
+    let (from_held, held_report) = write(&held, &decoded);
+    assert_eq!(from_saved, from_held);
+    assert_eq!(report.losses, held_report.losses);
     let written = decode(&from_saved);
     let d1 = written
         .ir()
@@ -165,11 +167,8 @@ fn a_design_edit_the_history_cannot_state_is_named() {
     let (_, report) = write(&read, &decoded);
     let comment = format!("design.parameters[{id}].comment");
     assert!(
-        report
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains(&comment)),
+        report.notes.iter().any(|note| note.contains(&comment)),
         "{:?}",
-        report.losses
+        report.notes
     );
 }

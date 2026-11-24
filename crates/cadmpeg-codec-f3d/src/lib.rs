@@ -256,6 +256,15 @@ impl EncoderBackend for F3dCodec {
     ) -> Result<ExportBody, CodecError> {
         writer::target::plan(input, &target)
     }
+
+    fn restore(
+        &self,
+        input: EncodeInput<'_>,
+        target: &ResolvedWrite<'_>,
+        notes: &mut Vec<String>,
+    ) -> Result<Option<CadIr>, CodecError> {
+        writer::saved::restore(input, target, notes)
+    }
 }
 
 #[cfg(test)]

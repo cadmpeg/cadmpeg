@@ -101,14 +101,11 @@ fn write(
                 &mut bytes,
             )?
         }
-        Some(value) => SldprtCodec::write_semantic(
+        Some(_) => SldprtCodec::write_semantic(
             input.ir,
             &Annotations::default(),
             digests,
             &[],
-            value
-                .retained_record(crate::SOURCE_IMAGE_ID)
-                .and_then(|record| record.data()),
             SemanticFidelity::NotConsumed,
             &mut bytes,
         )?,
@@ -117,7 +114,6 @@ fn write(
             &Annotations::default(),
             digests,
             &[],
-            None,
             if replay_eligible {
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing)
             } else {
