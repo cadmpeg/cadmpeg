@@ -679,6 +679,7 @@ mod partial_decode;
 mod partition_sketches;
 
 mod configuration_states;
+mod solidworks_2026_sketch;
 
 fn face_table_bytes() -> Vec<u8> {
     let mut out = descriptor(4, 8, 1, &3_u32.to_le_bytes());

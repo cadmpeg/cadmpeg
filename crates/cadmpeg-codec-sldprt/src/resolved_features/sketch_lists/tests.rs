@@ -670,7 +670,7 @@ fn geometry_locus_arcs_and_circles_keep_point_record_readings_with_a_loss() {
                 counterclockwise: true,
             })
         );
-        let loss = point_record_index_basis_loss(&sample.payload, offset).unwrap();
+        let loss = point_record_index_basis_loss(&sample.payload, offset, None).unwrap();
         assert_eq!(
             loss.code,
             SldprtLossCode::SketchPointRecordIndexBasisAssumed.kind()
@@ -695,7 +695,7 @@ fn geometry_locus_arcs_and_circles_keep_point_record_readings_with_a_loss() {
             radius: Length::new(10.0).unwrap()
         })
     );
-    assert!(point_record_index_basis_loss(&sample.payload, sample.line).is_none());
+    assert!(point_record_index_basis_loss(&sample.payload, sample.line, None).is_none());
 }
 
 #[test]
@@ -710,14 +710,14 @@ fn current_prefix_92_byte_selector_four_geometry_locus_line_uses_object_indices(
     );
     assert!(curve_stays_unresolved(&sample.payload, sample.line));
     assert!(geometry(&sample, sample.line).is_none());
-    assert!(point_record_index_basis_loss(&sample.payload, sample.line).is_none());
+    assert!(point_record_index_basis_loss(&sample.payload, sample.line, None).is_none());
     sample.payload.truncate(sample.line + 92);
     assert_eq!(
         curve_form(&sample.payload, sample.line),
         Some(CurveForm::Line { start: 1, end: 2 })
     );
     assert_eq!(
-        point_record_index_basis_loss(&sample.payload, sample.line)
+        point_record_index_basis_loss(&sample.payload, sample.line, None)
             .unwrap()
             .code,
         SldprtLossCode::SketchPointRecordIndexBasisAssumed.kind()
@@ -756,7 +756,7 @@ fn geometry_locus_lines_rejected_by_object_index_gate_keep_point_record_readings
             })
         );
         assert_eq!(
-            point_record_index_basis_loss(&sample.payload, sample.line)
+            point_record_index_basis_loss(&sample.payload, sample.line, None)
                 .unwrap()
                 .code,
             SldprtLossCode::SketchPointRecordIndexBasisAssumed.kind()
@@ -787,7 +787,7 @@ fn geometry_locus_lines_of_other_sizes_selectors_and_prefixes_keep_their_reading
                 end: Point2::new(0.0, 10.0),
             })
         );
-        assert!(point_record_index_basis_loss(&sample.payload, sample.line).is_some());
+        assert!(point_record_index_basis_loss(&sample.payload, sample.line, None).is_some());
     }
 }
 

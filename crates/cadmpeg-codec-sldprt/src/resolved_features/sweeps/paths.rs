@@ -178,7 +178,7 @@ pub(super) fn spatial(
             point3_at(payload, point + xyz::COORDINATES)
         };
         let assumed = match sketch {
-            Some(_) => point_record_index_basis_loss(payload, offset)
+            Some(_) => point_record_index_basis_loss(payload, offset, None)
                 .is_some()
                 .then_some(Assumption::IndexBasis),
             None => identifier_trailer_line(payload, offset).then_some(Assumption::Roster),
