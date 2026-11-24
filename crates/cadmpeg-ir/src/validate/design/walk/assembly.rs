@@ -4,22 +4,18 @@
 use cadmpeg_core::CodecError;
 
 use crate::design::ops::assembly::{
-    AssemblyFeature, ComponentPattern, MirrorComponents, Place, PlaceSet, RigidGroup,
+    AssemblyContext, ComponentPattern, MirrorComponents, Place, PlaceSet, RigidGroup,
 };
 
 use super::{Collect, Walk};
 
-impl Walk for AssemblyFeature {
+impl Walk for AssemblyContext {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
-        let _depth = into.enter("AssemblyFeature")?;
-        let Self {
-            participants,
-            effect: _,
-            operation,
-        } = self;
-        participants.walk(into)?;
-        operation.walk(into)?;
-        Ok(())
+        let Self { participants } = self;
+        into.in_participants = true;
+        let walked = participants.walk(into);
+        into.in_participants = false;
+        walked
     }
 }
 

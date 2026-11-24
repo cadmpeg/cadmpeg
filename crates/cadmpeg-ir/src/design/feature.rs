@@ -15,7 +15,7 @@ use super::construction::{kinds, Construction};
 use super::dimension::Dimension;
 use super::names::{CodecName, NativeName};
 use super::ops::assembly::{
-    AssemblyFeature, ComponentPattern, MirrorComponents, Place, PlaceSet, RigidGroup,
+    AssemblyContext, ComponentPattern, MirrorComponents, Place, PlaceSet, RigidGroup,
 };
 use super::ops::body::{
     Combine, DeleteBodies, DeleteFaces, Extract, Flex, Graft, MoveFaces, Pattern, ReplaceFaces,
@@ -100,14 +100,23 @@ pub struct Feature {
     pub native_ref: Option<String>,
 }
 
-/// A feature's one operation and the cleanup the source states for its
-/// result. On the wire it has no wrapper level.
+/// A feature's one operation, the assembly context it runs in, and the
+/// cleanup the source states for its result. On the wire it has no wrapper
+/// level.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct FeatureDefinition {
     /// The operation.
     pub operation: FeatureOperation,
+    /// The participants of an assembly feature, which runs its operation in
+    /// an assembly over them. `None` on every other feature.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_assembly"
+    )]
+    pub assembly: Option<AssemblyContext>,
     /// Whether redundant splitter boundaries are removed from the result.
     #[serde(
         default,
@@ -273,8 +282,6 @@ pub enum FeatureOperation {
     ComponentPattern(Box<ComponentPattern>),
     /// Components mirrored across a plane (§6.7).
     MirrorComponents(Box<MirrorComponents>),
-    /// An operation run in the assembly over its participants (§6.7).
-    AssemblyFeature(Box<AssemblyFeature>),
     /// A design feature whose removed volume is the volume a manufacturing
     /// operation machines.
     #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
@@ -548,12 +555,11 @@ pub enum OperationFamily {
     ComponentPattern,
     /// A mirror of components.
     MirrorComponents,
-    /// An assembly feature.
-    AssemblyFeature,
     /// A material removal.
     MaterialRemoval,
 }
 
+cadmpeg_core::named_optional_field!(deserialize_assembly<T>, T, "assembly");
 cadmpeg_core::named_optional_field!(deserialize_associative<T>, T, "associative");
 cadmpeg_core::named_optional_field!(deserialize_bodies<T>, T, "bodies");
 cadmpeg_core::named_optional_field!(deserialize_component<T>, T, "component");

@@ -49,7 +49,7 @@ fn a_silhouette_split_is_a_split_along_its_direction() {
     else {
         panic!("a silhouette tool");
     };
-    let targets: &SetSelection = targets;
+    let targets: &SetSelection = targets.as_ref().expect("targets");
     assert_eq!(
         native_value(targets),
         Some(&NativeNameValue::Text(NonBlankString::new(GROUP).unwrap()))
@@ -96,7 +96,7 @@ fn a_silhouette_split_keeps_its_body_modes_native() {
         let SplitMode::ByTools { targets, kept, .. } = split.mode else {
             panic!("by tools");
         };
-        (targets.picks, kept)
+        (targets.expect("targets").picks, kept)
     };
     let group = || BodySelection::Native(GROUP.to_owned());
     assert_eq!(
