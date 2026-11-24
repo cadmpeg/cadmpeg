@@ -860,6 +860,7 @@ impl<'a> Builder<'a> {
                 | AppearanceTarget::Tessellation(_)
                 | AppearanceTarget::TriangleGroup { .. }
                 | AppearanceTarget::Occurrence(_)
+                | AppearanceTarget::Definition(_)
                 | AppearanceTarget::Record { .. }
                 | AppearanceTarget::Unresolved => {}
             }
@@ -1049,6 +1050,7 @@ impl<'a> Builder<'a> {
                 AppearanceTarget::Body(_)
                 | AppearanceTarget::TriangleGroup { .. }
                 | AppearanceTarget::Occurrence(_)
+                | AppearanceTarget::Definition(_)
                 | AppearanceTarget::Record { .. }
                 | AppearanceTarget::Unresolved => continue,
             };
@@ -1064,6 +1066,7 @@ impl<'a> Builder<'a> {
                     AppearanceTarget::Body(_)
                     | AppearanceTarget::TriangleGroup { .. }
                     | AppearanceTarget::Occurrence(_)
+                    | AppearanceTarget::Definition(_)
                     | AppearanceTarget::Record { .. }
                     | AppearanceTarget::Unresolved => continue,
                 };

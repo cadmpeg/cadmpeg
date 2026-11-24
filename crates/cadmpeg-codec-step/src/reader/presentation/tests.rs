@@ -1648,6 +1648,7 @@ pub(crate) fn face_appearance_binding_styles_the_advanced_face() {
         target: AppearanceTarget::Face(face).into(),
         appearance: AppearanceId::mint("test:model:appearance#black".to_string())
             .expect("identity grammar"),
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,
@@ -1700,6 +1701,7 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
         target: AppearanceTarget::Vertex(vertex).into(),
         appearance: AppearanceId::mint("test:model:appearance#vertex".to_string())
             .expect("identity grammar"),
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,
@@ -1914,6 +1916,7 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
         target: AppearanceTarget::Face(face).into(),
         appearance: AppearanceId::mint("test:model:appearance#black".to_string())
             .expect("identity grammar"),
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,

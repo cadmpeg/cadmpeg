@@ -93,6 +93,7 @@ fn edge_and_vertex_appearance_bindings_have_counted_export_loss() {
             id: "test:model:appearance-binding#other".try_into().unwrap(),
             target: target.into(),
             appearance: appearance.id.clone(),
+            precedence: None,
             source_entity_id: None,
             object_type: None,
             visible: None,
