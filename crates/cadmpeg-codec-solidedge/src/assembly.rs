@@ -274,8 +274,9 @@ fn unicode_path(bytes: &[u8], at: usize) -> Option<(NonBlankString, usize)> {
     }
     let start = base.checked_add(file_moniker_extension::LEN)?;
     let end = start.checked_add(count)?;
-    let mut units = Vec::with_capacity(count / 2);
-    for pair in bytes.get(start..end)?.chunks_exact(2) {
+    let raw = bytes.get(start..end)?;
+    let mut units = Vec::with_capacity(raw.len() / 2);
+    for pair in raw.chunks_exact(2) {
         units.push(View::u16_le_at(pair, 0)?);
     }
     while units.last() == Some(&0) {
