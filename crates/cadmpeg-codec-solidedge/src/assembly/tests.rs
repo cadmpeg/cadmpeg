@@ -396,3 +396,16 @@ fn relative_moniker_states_its_long_path() {
         Some("long name.par")
     );
 }
+
+#[test]
+fn a_path_count_past_the_stream_reads_no_path() {
+    // A moniker extension that claims a 2 GiB path in a 32-byte stream.
+    use crate::layout::file_moniker_extension;
+    let count: u32 = 0x8000_0000;
+    let mut bytes = 0xDEAD_u16.to_le_bytes().to_vec();
+    bytes.resize(2 + file_moniker_extension::LEN, 0);
+    let base = 2;
+    bytes[base + file_moniker_extension::SIZE..][..4].copy_from_slice(&(count + 6).to_le_bytes());
+    bytes[base + file_moniker_extension::PATH_BYTES..][..4].copy_from_slice(&count.to_le_bytes());
+    assert!(super::unicode_path(&bytes, 0).is_none());
+}
