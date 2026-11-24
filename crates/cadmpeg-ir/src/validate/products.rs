@@ -180,9 +180,9 @@ pub(super) fn check_products(
         record_finding(
             findings,
             Check::ReferentialIntegrity,
-            crate::report::Severity::Warning,
+            crate::report::Severity::Error,
             Some(definition),
-            format_args!("product definition places itself"),
+            format_args!("product definition is the prototype of an occurrence it owns, directly or transitively"),
         );
     }
     for joint in &ir.model.assembly_joints {

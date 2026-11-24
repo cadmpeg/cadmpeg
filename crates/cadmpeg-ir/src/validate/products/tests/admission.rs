@@ -175,7 +175,7 @@ fn a_definition_does_not_place_itself() {
             ),
             (
                 Some("test:model:product#root".into()),
-                "product definition places itself".into()
+                "product definition is the prototype of an occurrence it owns, directly or transitively".into()
             )
         ]
     );
@@ -192,12 +192,12 @@ fn a_definition_does_not_place_itself() {
         messages(&ir),
         [(
             Some("test:model:product#part".into()),
-            "product definition places itself".into()
+            "product definition is the prototype of an occurrence it owns, directly or transitively".into()
         )]
     );
     assert!(findings(&ir)
         .iter()
-        .all(|finding| finding.severity == crate::report::Severity::Warning));
+        .all(|finding| finding.severity == crate::report::Severity::Error));
 }
 
 #[test]
