@@ -325,8 +325,8 @@ fn a_loft_keeps_its_spline_faces_as_cached_carriers() {
 
 /// The distinct vertex positions of an IR, in millimetres, rounded to a
 /// nanometre and in order.
-fn corner_points(ir: &cadmpeg_ir::CadIr) -> Vec<[i64; 3]> {
-    let mut corners: Vec<[i64; 3]> = ir
+fn corner_points(ir: &cadmpeg_ir::CadIr) -> Vec<[f64; 3]> {
+    let mut corners: Vec<[f64; 3]> = ir
         .geometry
         .vertices
         .iter()
@@ -338,10 +338,16 @@ fn corner_points(ir: &cadmpeg_ir::CadIr) -> Vec<[i64; 3]> {
                 .find(|point| point.id == vertex.point)
                 .expect("vertex point");
             let at = point.position();
-            [at.x, at.y, at.z].map(|coordinate| (coordinate * 1.0e6).round() as i64)
+            [at.x, at.y, at.z].map(|coordinate| (coordinate * 1.0e6).round())
         })
         .collect();
-    corners.sort_unstable();
+    corners.sort_by(|a, b| {
+        a.iter()
+            .zip(b)
+            .map(|(a, b)| a.total_cmp(b))
+            .find(|order| order.is_ne())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     corners.dedup();
     corners
 }
