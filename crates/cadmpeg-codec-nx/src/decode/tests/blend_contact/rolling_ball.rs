@@ -526,7 +526,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                     .expect("identity grammar"),
             )),
             tolerance: Some(
-                cadmpeg_ir::scalar::PositiveReal::new(EPS_TOPOLOGY_TOLERANCE)
+                cadmpeg_ir::scalar::PositiveLength::new(EPS_TOPOLOGY_TOLERANCE)
                     .expect("positive finite tolerance"),
             ),
             native_ref: None,

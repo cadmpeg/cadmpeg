@@ -64,6 +64,8 @@ pub(super) struct Collect<'a, 'c> {
     pub(super) constructions: Vec<ConstructionView<'a>>,
     /// The expressions held inside feature operations and sheet-metal rules.
     pub(super) expressions: Vec<(ExpressionPlace<'a>, &'a Expression)>,
+    /// Whether the walk is inside an assembly context's participants.
+    in_participants: bool,
 }
 
 impl<'a, 'c> Collect<'a, 'c> {
@@ -73,6 +75,7 @@ impl<'a, 'c> Collect<'a, 'c> {
             selections: Vec::new(),
             constructions: Vec::new(),
             expressions: Vec::new(),
+            in_participants: false,
         }
     }
 
@@ -96,6 +99,8 @@ pub(super) struct SelectionView<'a> {
     pub(super) at: &'a Anchor,
     /// The picks, or the rule that gives them.
     pub(super) picks: PicksView<'a>,
+    /// Whether the selection is one of an assembly context's participants.
+    pub(super) participants: bool,
 }
 
 /// The members of a selection, with the order marker erased.
@@ -169,6 +174,7 @@ pub(super) fn rule_picks(rule: &SelectionRule) -> impl Iterator<Item = &Picked> 
         | SelectionRule::Of { .. }
         | SelectionRule::LoopEdges
         | SelectionRule::Boundary
+        | SelectionRule::Affected
         | SelectionRule::Native(_) => (None, &[]),
     };
     one.into_iter().chain(many)
@@ -353,7 +359,11 @@ impl<O: MemberOrder> Walk for Selection<O> {
                 resolved: resolved.as_ref().map(Members::as_slice),
             },
         };
-        into.selections.push(SelectionView { at, picks });
+        into.selections.push(SelectionView {
+            at,
+            picks,
+            participants: into.in_participants,
+        });
         Ok(())
     }
 }

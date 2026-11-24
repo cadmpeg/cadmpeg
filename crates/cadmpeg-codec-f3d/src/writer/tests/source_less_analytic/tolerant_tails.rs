@@ -37,10 +37,12 @@ fn tolerant_edge_and_vertex_tails_round_trip_all_trailing_forms() {
                 &[],
             )
             .unwrap();
-        source_less.geometry.vertices[0].tolerance =
-            Some(cadmpeg_ir::scalar::PositiveReal::new(0.025).expect("positive finite tolerance"));
-        source_less.geometry.edges[0].tolerance =
-            Some(cadmpeg_ir::scalar::PositiveReal::new(0.035).expect("positive finite tolerance"));
+        source_less.geometry.vertices[0].tolerance = Some(
+            cadmpeg_ir::scalar::PositiveLength::new(0.025).expect("positive finite tolerance"),
+        );
+        source_less.geometry.edges[0].tolerance = Some(
+            cadmpeg_ir::scalar::PositiveLength::new(0.035).expect("positive finite tolerance"),
+        );
         let tolerant_vertex = source_less.geometry.vertices[0].id.clone();
         let tolerant_edge = source_less.geometry.edges[0].id.clone();
         {

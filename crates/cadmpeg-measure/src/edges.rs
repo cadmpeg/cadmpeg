@@ -94,10 +94,10 @@ pub(crate) fn measure_edge<'ir>(
         owners
             .vertex(vertex)
             .and_then(|vertex| vertex.tolerance)
-            .map(cadmpeg_ir::scalar::PositiveReal::get)
+            .map(cadmpeg_ir::scalar::PositiveLength::get)
     };
     let local = [
-        edge.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get),
+        edge.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get),
         edge.start()
             .and_then(|vertex| vertex_tolerance(vertex.as_str())),
         edge.end()

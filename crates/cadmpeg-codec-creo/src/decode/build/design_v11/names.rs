@@ -28,7 +28,7 @@ const FEATURE: &str = "creo:model:feature#";
 
 pub(super) fn native(id: u32) -> NativeName {
     NativeName {
-        codec: cadmpeg_core::nonblank_literal!("creo").into(),
+        codec: cadmpeg_ir::codec_id!("creo"),
         value: NativeNameValue::Integers(vec![i64::from(id)]),
     }
 }

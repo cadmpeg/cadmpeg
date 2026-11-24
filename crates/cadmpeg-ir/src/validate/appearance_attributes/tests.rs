@@ -3,19 +3,10 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::{ContentScope, ResourceLimits};
-use serde_json::json;
+use cadmpeg_core::decode::ContentScope;
 
 use crate::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
-use crate::attributes::{AttributeExpression, AttributeTarget, AttributeValue, SourceAttribute};
-use crate::design::dimension::{ParameterRef, RefTarget};
-use crate::design::expr::{
-    parse, BinaryOp, Constant, Expression, ExpressionDialect, ExpressionToken, Measure,
-    MeasureKind, MeasureTarget, Neutral, Node,
-};
-use crate::design::parameter::{DesignParameter, ParameterDefinition};
-use crate::design::selection::OrderedSelection;
-use crate::design::units::{Quantity, ValueKind};
+use crate::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use crate::examples::unit_cube;
 use crate::features::ParameterId;
 use crate::ids::{AppearanceId, AttributeId};
@@ -241,6 +232,39 @@ fn a_record_target_names_an_arena_and_an_id_of_it() {
 }
 
 #[test]
+fn an_unresolved_binding_states_what_the_decoder_read_and_no_instance() {
+    let findings = |edit: &dyn Fn(&mut AppearanceBinding)| {
+        let mut ir = unit_cube().unwrap();
+        ir.model.appearances.push(appearance());
+        let mut assigned = binding(AppearanceTarget::Unresolved);
+        assigned.source_entity_id = Some("#7".into());
+        edit(&mut assigned);
+        ir.model.appearance_bindings.push(assigned);
+        design_findings(&ir, BINDING)
+    };
+    assert!(findings(&|_| {}).is_empty());
+    assert_eq!(
+        findings(&|binding| binding.source_entity_id = None),
+        ["an unresolved target states neither source_entity_id nor native_ref"]
+    );
+    assert_eq!(
+        findings(&|binding| binding.source_entity_id = Some(" ".into())),
+        ["source_entity_id is blank"]
+    );
+    assert_eq!(
+        findings(&|binding| {
+            binding.target.state = Some(crate::design::refs::StateRef {
+                configuration: None,
+                of: crate::design::refs::Evaluated::Tool(
+                    crate::features::FeatureId::mint("test:design:feature#1").unwrap(),
+                ),
+            });
+        }),
+        ["an unresolved target states a path or a state"]
+    );
+}
+
+#[test]
 fn native_refs_of_appearances_bindings_and_attributes_resolve() {
     let mut ir = unit_cube().unwrap();
     ir.native.namespace_mut("native");
@@ -263,226 +287,6 @@ fn native_refs_of_appearances_bindings_and_attributes_resolve() {
             [format!("native_ref `{target}` does not resolve")]
         );
     }
-}
-
-fn parameter(id: &ParameterId) -> crate::features::parameters::DesignParameter {
-    crate::features::parameters::DesignParameter {
-        product_definition: None,
-        id: id.clone(),
-        owner: None,
-        ordinal: 0,
-        name: "Mass".into(),
-        expression: "1".into(),
-        display: None,
-        value: None,
-        dependencies: crate::features::selections::DistinctMembers::default(),
-        properties: BTreeMap::new(),
-        pmi: None,
-        native_ref: None,
-    }
-}
-
-fn reference(id: &ParameterId) -> ParameterRef {
-    ParameterRef {
-        target: RefTarget::Parameter(id.clone()),
-        through: None,
-    }
-}
-
-fn expression_value(expression: Expression) -> Vec<Option<AttributeValue>> {
-    vec![Some(AttributeValue::Expression(AttributeExpression {
-        path: "Length".into(),
-        expression,
-        comment: None,
-    }))]
-}
-
-fn binary(op: BinaryOp, left: Node<ParameterRef>, right: Node<ParameterRef>) -> Node<ParameterRef> {
-    Node::Binary {
-        op,
-        left: Box::new(left),
-        right: Box::new(right),
-    }
-}
-
-fn measure(anchor: &serde_json::Value) -> Node<ParameterRef> {
-    let selection = json!({
-        "at": anchor,
-        "picks": {"kind": "named", "value": [{"target": {"kind": "entity", "value": {
-            "kind": "generated", "value": {"kind": "face", "feature": "test:design:feature#1"}
-        }}}]}
-    });
-    let selection: OrderedSelection =
-        crate::design::read::from_str(&selection.to_string(), &ResourceLimits::desktop()).unwrap();
-    Node::Measure(Box::new(Measure {
-        kind: MeasureKind::Area,
-        of: MeasureTarget::Selection(selection),
-        cached: None,
-    }))
-}
-
-#[test]
-fn an_attribute_expression_meets_the_expression_rules() {
-    let mass = ParameterId::mint("test:design:parameter#mass").unwrap();
-    let neutral = |node| expression_value(Expression::Neutral(Neutral(node)));
-    let findings = |values| {
-        let mut ir = unit_cube().unwrap();
-        ir.model.parameters.push(parameter(&mass));
-        ir.model
-            .attributes
-            .push(attribute(AttributeTarget::Document, values));
-        design_findings(&ir, ATTRIBUTE)
-    };
-    let text = || Node::Text("a".into());
-    let none = Vec::<String>::new();
-
-    assert_eq!(findings(neutral(Node::Reference(reference(&mass)))), none);
-    let absent = ParameterId::mint("test:design:parameter#absent").unwrap();
-    assert_eq!(
-        findings(neutral(Node::Reference(reference(&absent)))),
-        ["references missing parameter `test:design:parameter#absent`"]
-    );
-    assert_eq!(
-        findings(neutral(Node::Reference(ParameterRef {
-            target: RefTarget::External {
-                definition: "test:model:definition#external".try_into().unwrap(),
-                name: cadmpeg_core::text::NonBlankString::new("D1").unwrap(),
-            },
-            through: None,
-        }))),
-        ["references missing product definition `test:model:definition#external`"]
-    );
-    assert_eq!(findings(neutral(text())), none);
-    assert_eq!(
-        findings(neutral(binary(BinaryOp::Equal, text(), text()))),
-        none
-    );
-    assert_eq!(
-        findings(neutral(Node::If(Box::new([
-            Node::Boolean(true),
-            text(),
-            text()
-        ])))),
-        none
-    );
-    assert_eq!(
-        findings(neutral(binary(
-            BinaryOp::Add,
-            text(),
-            Node::Constant(Constant::Pi)
-        ))),
-        ["expression text is not a comparison's operand, a branch, or the root"]
-    );
-    assert_eq!(
-        findings(neutral(Node::LawParameter)),
-        ["expression holds the law parameter outside a law"]
-    );
-    assert_eq!(
-        findings(neutral(measure(&json!({"kind": "current"})))),
-        none
-    );
-    assert_eq!(
-        findings(neutral(measure(&json!({"kind": "input"})))),
-        ["expression measure is not anchored `pinned` or `current`"]
-    );
-    assert_eq!(
-        findings(expression_value(Expression::Source {
-            dialect: ExpressionDialect::FreeCad,
-            tokens: vec![ExpressionToken::Reference(reference(&mass))],
-        })),
-        ["expression source text holds no text token"]
-    );
-    assert_eq!(
-        findings(expression_value(Expression::Source {
-            dialect: ExpressionDialect::FreeCad,
-            tokens: vec![
-                ExpressionToken::Text("2 * ".into()),
-                ExpressionToken::Reference(reference(&absent)),
-            ],
-        })),
-        ["references missing parameter `test:design:parameter#absent`"]
-    );
-}
-
-fn design_parameter(key: &str, kind: ValueKind) -> DesignParameter {
-    DesignParameter {
-        id: ParameterId::mint(format!("test:design:parameter#{key}")).unwrap(),
-        scope: "test:model:product-definition#part".try_into().unwrap(),
-        owner: None,
-        name: Some(cadmpeg_core::text::NonBlankString::new(key).unwrap()),
-        kind,
-        unit: None,
-        definition: ParameterDefinition::Driven,
-        value: None,
-        display: None,
-        tolerance: None,
-        decimals: None,
-        comment: None,
-        native_options: BTreeMap::new(),
-        source_settings: BTreeMap::new(),
-        native_ref: None,
-    }
-}
-
-#[test]
-fn an_attribute_expression_type_checks() {
-    let mass = ParameterId::mint("test:design:parameter#mass").unwrap();
-    let length = design_parameter("length", ValueKind::Quantity(Quantity::LENGTH));
-    let flag = design_parameter("flag", ValueKind::Boolean);
-    let refs = [reference(&mass), reference(&length.id), reference(&flag.id)];
-    let findings = |text: &str| {
-        let mut ir = unit_cube().unwrap();
-        ir.model.parameters.push(parameter(&mass));
-        ir.design.parameters.extend([length.clone(), flag.clone()]);
-        let node = parse(text, &refs, &[]).unwrap();
-        ir.model.attributes.push(attribute(
-            AttributeTarget::Document,
-            expression_value(Expression::Neutral(Neutral(node))),
-        ));
-        design_findings(&ir, ATTRIBUTE)
-    };
-    let refused = |reason: &str| [format!("expression does not type-check: {reason}")];
-
-    for admitted in [
-        "atan2(1[mm], 2[mm])",
-        "min(1[mm], $1, 3[mm])",
-        "if($2, 1[mm], $1)",
-        "if(1[mm] < 2[mm], \"a\", \"b\")",
-        "$0 + 1[deg]",
-        "$1 * $1 + 1[mm]^2",
-        "sin(30[deg]) == 0.5",
-        "not $2 and true",
-    ] {
-        assert_eq!(findings(admitted), Vec::<String>::new(), "{admitted}");
-    }
-    assert_eq!(findings("atan2(pi)"), refused("atan2 takes two arguments"));
-    assert_eq!(
-        findings("sin(1[deg], 2[deg])"),
-        refused("sin takes one argument")
-    );
-    assert_eq!(
-        findings("min(1[mm])"),
-        refused("min takes at least two arguments")
-    );
-    assert_eq!(
-        findings("if(true, 1[mm], 1[deg])"),
-        refused("if takes operands of one quantity")
-    );
-    assert_eq!(
-        findings("if(false, 1[mm], $1 * $1)"),
-        refused("if takes operands of one quantity")
-    );
-    assert_eq!(findings("true + 1"), refused("+ and - takes a number"));
-    assert_eq!(findings("$2 + 1"), refused("+ and - takes a number"));
-    assert_eq!(
-        findings("$1 + 1[deg]"),
-        refused("+ and - takes operands of one quantity")
-    );
-    assert_eq!(
-        findings("1[mm]^(1 + 1)"),
-        refused("a dimensioned base takes a literal exponent")
-    );
-    assert_eq!(findings("if(1, 2, 3)"), refused("if takes a Boolean"));
 }
 
 #[test]
@@ -510,18 +314,9 @@ fn an_attribute_on_a_design_record_or_reading_a_parameter_needs_the_design_class
     assert_eq!(
         scoped(
             AttributeTarget::Document,
-            expression_value(Expression::Neutral(Neutral(Node::Reference(reference(
-                &mass
-            )))))
+            vec![Some(AttributeValue::Parameter(mass))]
         ),
         violation
-    );
-    assert_eq!(
-        scoped(
-            AttributeTarget::Document,
-            expression_value(Expression::Neutral(Neutral(Node::Constant(Constant::Pi))))
-        ),
-        Ok(())
     );
     assert_eq!(scoped(AttributeTarget::Document, vec![None]), Ok(()));
 }

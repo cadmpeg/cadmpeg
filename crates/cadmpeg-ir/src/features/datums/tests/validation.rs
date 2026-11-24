@@ -21,7 +21,7 @@ fn consumer(pick: Picked) -> crate::features::Feature {
             origin: Some(origin()),
             direction: Some(direction()),
             source_settings: std::collections::BTreeMap::from([(
-                cadmpeg_core::nonblank_literal!("test:selection"),
+                crate::codec_name!("test:selection"),
                 NativeOption::Selection(Selection {
                     at: Anchor::Input,
                     picks: Picks::Named(Members::new(vec![pick]).unwrap()),
@@ -136,7 +136,7 @@ fn datum_axis_bound_dimensions_resolve_within_the_consuming_definition() {
         let mut owner = feature(
             DatumAxisDraft {
                 native_options: std::collections::BTreeMap::from([(
-                    cadmpeg_core::nonblank_literal!("test:length"),
+                    crate::codec_name!("test:length"),
                     NativeOption::Length(Dimension::Parameter(parameter.clone())),
                 )]),
                 ..Default::default()
@@ -305,8 +305,8 @@ fn datum_axis_unresolved_point_part_keeps_its_cardinality_uncertainty() {
 
 #[test]
 fn datum_axis_option_keys_have_one_classification_and_distinct_literals_survive() {
-    let key = cadmpeg_core::nonblank_literal!("test:model:parameter#one");
-    let other = cadmpeg_core::nonblank_literal!("test:placed:parameter#one");
+    let key = crate::codec_name!("test:model:parameter#one");
+    let other = crate::codec_name!("test:placed:parameter#one");
     for equal_values in [false, true] {
         let draft = DatumAxisDraft {
             native_options: std::collections::BTreeMap::from([(

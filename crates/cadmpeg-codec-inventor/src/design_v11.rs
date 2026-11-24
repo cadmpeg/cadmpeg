@@ -64,7 +64,7 @@ pub(crate) fn project(
     sheet_metal::project(ctx, ir, features, parameters, losses)?;
     operations::project(ctx, ir, losses)?;
     sheet_metal::attachments::project(ir, features)?;
-    losses.extend(sheet_metal::feature_reliefs(ir, features, parameters)?);
+    losses.extend(sheet_metal::feature_reliefs(ir, features, parameters));
     place_current_bodies(ir)?;
     Ok(())
 }
@@ -325,6 +325,7 @@ fn project_history(
                 }),
             definition: FeatureDefinition {
                 operation: operation(feature.evaluation.definition().operation())?,
+                assembly: None,
                 refine: None,
                 fuzzy_tolerance: None,
             },
@@ -409,10 +410,10 @@ fn native(kind: &str) -> Result<FeatureOperation, CodecError> {
 
 fn native_with_options(
     kind: &str,
-    native_options: BTreeMap<NonBlankString, cadmpeg_ir::design::options::NativeOption>,
+    native_options: cadmpeg_ir::design::options::NativeOptions,
 ) -> Result<FeatureOperation, CodecError> {
     Ok(FeatureOperation::Native {
-        kind: NonBlankString::new(format!("inventor:{kind}"))
+        kind: cadmpeg_ir::design::names::CodecName::new(&cadmpeg_ir::codec_id!("inventor"), kind)
             .ok_or_else(|| CodecError::malformed("Inventor v11 operation kind is blank"))?,
         native_options,
         source_settings: BTreeMap::default(),
@@ -575,7 +576,7 @@ fn operation(operation: &LegacyOperation) -> Result<FeatureOperation, CodecError
             return native_with_options(
                 kind.as_str(),
                 BTreeMap::from([(
-                    cadmpeg_core::nonblank_literal!("inventor:parameters"),
+                    cadmpeg_ir::codec_name!("inventor:parameters"),
                     cadmpeg_ir::design::options::NativeOption::Text(Dimension::Literal(text)),
                 )]),
             );
