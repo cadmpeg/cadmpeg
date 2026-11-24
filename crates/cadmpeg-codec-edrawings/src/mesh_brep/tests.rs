@@ -994,7 +994,8 @@ fn collapsing_a_digon_pairs_the_coedges_across_it() {
     assert_eq!(set.collapse_digons().unwrap(), 1);
     assert!(set.rings[0].is_empty());
     assert!(!set.runs[0].live && !set.runs[1].live);
-    assert_eq!((set.runs[2].partner, set.runs[3].partner), (3, 2));
+    assert_eq!(3, set.runs[2].partner);
+    assert_eq!(2, set.runs[3].partner);
     assert_eq!(set.runs[4].partner, 4);
     // An open edge across one side leaves the other side open.
     let mut set = RunSet {
