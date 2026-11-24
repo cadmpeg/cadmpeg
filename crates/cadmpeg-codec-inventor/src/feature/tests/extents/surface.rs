@@ -278,9 +278,10 @@ fn from_to_surface_extrusion_orders_tilted_faces_along_the_travel() {
     assert!(from_to_tilted((1.0, tilt), (4.0, tilt)).is_some());
     // The end plane lies behind the start plane along the travel direction.
     assert!(from_to_tilted((4.0, tilt), (1.0, tilt)).is_none());
-    // Planes that are not parallel order by the plane origins.
+    // Planes that are not parallel meet the travel line in an order that
+    // depends on the profile point, so both orders of origins stay native.
     let other = [0.0, 0.8, 0.6];
-    assert!(from_to_tilted((1.0, tilt), (4.0, other)).is_some());
+    assert!(from_to_tilted((1.0, tilt), (4.0, other)).is_none());
     assert!(from_to_tilted((4.0, tilt), (1.0, other)).is_none());
     // The travel direction lies in the face planes.
     assert!(from_to_tilted((1.0, [0.0, 0.0, 1.0]), (4.0, [0.0, 0.0, 1.0])).is_none());
