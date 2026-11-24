@@ -1271,7 +1271,7 @@ fn is_text(text: &str) -> bool {
 }
 
 /// The units a `SolidWorks` literal may carry, longest suffix first.
-pub(super) const LITERAL_UNITS: [(&str, UnitSymbol); 11] = [
+pub(crate) const LITERAL_UNITS: [(&str, UnitSymbol); 11] = [
     ("deg", UnitSymbol::Deg),
     ("rad", UnitSymbol::Rad),
     ("mm", UnitSymbol::Mm),
