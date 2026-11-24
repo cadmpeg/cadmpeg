@@ -586,3 +586,32 @@ fn a_path_run_with_unread_sides_reaches_its_seed() {
         refused,
     );
 }
+
+/// Part 10: `Picked.resolved` occurs only where the anchored state is
+/// stored. `b`'s input is anchored `Input`, the state after `a`, which no
+/// current state and no evaluation stores.
+#[test]
+fn a_pick_states_resolved_only_where_its_anchored_state_is_stored() {
+    const UNSTORED: &str =
+        "a pick states `resolved`, but the document stores no state at its anchor";
+    let resolved = |resolved: Option<Value>| {
+        let mut pick = datum_pick("a");
+        if let Some(resolved) = resolved {
+            pick["resolved"] = resolved;
+        }
+        plane_b_with(input(
+            "offset",
+            Some(named(input_anchor(), vec![pick])),
+            Some(length(1.0)),
+        ))
+    };
+    assert_no_finding(&resolved(None), UNSTORED);
+    assert_finding(
+        &resolved(Some(
+            json!([{"kind": "face", "value": "test:model:face#gone"}]),
+        )),
+        Check::Design,
+        Severity::Error,
+        UNSTORED,
+    );
+}

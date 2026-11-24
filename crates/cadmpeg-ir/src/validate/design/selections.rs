@@ -426,10 +426,47 @@ fn check_pick<'a>(
         }
     }
     if pick.context.is_none() {
-        for state in anchored_states(index, states, site) {
+        let stored = anchored_states(index, states, site);
+        if stored.is_empty() && pick.resolved.is_some() && names_unstored_state(index, site) {
+            super::error(
+                findings,
+                at,
+                format_args!(
+                    "a pick states `resolved`, but the document stores no state at its anchor"
+                ),
+            );
+        }
+        for state in stored {
             check_in_state(states, matchers, &state, pick, at, findings);
         }
     }
+}
+
+/// Whether the anchor of a pick with no context names a state of its scope
+/// that the document does not store (§5.8): a position with no current
+/// state there and no evaluation with content of it, or `Current` in a scope
+/// with no current state and no unproduced body. `false` where the anchor
+/// is `Native` or names no position the document states.
+fn names_unstored_state(index: &DesignIndex<'_>, site: Site<'_>) -> bool {
+    let Some(scope) = site.owner.map(ProductDefinitionId::as_str) else {
+        return false;
+    };
+    let position = match site.anchor {
+        Anchor::Native(_) => return false,
+        Anchor::Current => {
+            return index
+                .records
+                .scopes
+                .get(scope)
+                .is_some_and(|scope| scope.current.is_empty() && scope.unproduced.is_empty());
+        }
+        Anchor::Pinned(position) => Some(PositionKey::of(position)),
+        Anchor::Input => site
+            .holder
+            .feature()
+            .and_then(|feature| index.entering(feature)),
+    };
+    position.is_some_and(|position| index.rollback_position(position).is_some())
 }
 
 /// A stored state a pick resolves in.
