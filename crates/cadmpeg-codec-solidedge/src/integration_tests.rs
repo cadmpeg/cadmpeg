@@ -199,6 +199,99 @@ fn one_body_with_two_solid_regions_stays_one_body() {
     assert_geometry_valid(ir);
 }
 
+fn decode_partition(partition: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
+    let bytes = test_support::with_partitions(&[partition]);
+    SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap()
+}
+
+fn charged(result: &cadmpeg_ir::codec::DecodeResult, code: crate::loss::SolidEdgeLossCode) -> bool {
+    result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == code.note("").code)
+}
+
+#[test]
+fn void_region_that_owns_a_face_transfers_as_its_own_region() {
+    let result = decode_partition(test_support::solid_with_cavity_partition());
+    let ir = result.ir();
+    assert_eq!(ir.geometry.bodies.len(), 1);
+    // The solid region and the cavity region; the exterior void region owns
+    // no face and transfers no region.
+    assert_eq!(ir.geometry.regions.len(), 2);
+    assert_eq!(ir.geometry.shells.len(), 2);
+    assert_eq!(ir.geometry.faces.len(), 2);
+    for region in &ir.geometry.regions {
+        assert_eq!(region.body, ir.geometry.bodies[0].id);
+        assert_eq!(region.shells.len(), 1);
+    }
+    for shell in &ir.geometry.shells {
+        assert!(ir
+            .geometry
+            .regions
+            .iter()
+            .any(|region| region.id == shell.region && region.shells.contains(&shell.id)));
+    }
+    for face in &ir.geometry.faces {
+        assert!(ir
+            .geometry
+            .shells
+            .iter()
+            .any(|shell| shell.id == face.shell));
+    }
+    assert!(!charged(
+        &result,
+        crate::loss::SolidEdgeLossCode::RegionFacesUntransferred
+    ));
+    assert_geometry_valid(ir);
+}
+
+#[test]
+fn exterior_void_region_with_a_faceless_shell_transfers_no_region() {
+    let result = decode_partition(test_support::solid_regions_with_void_shell_partition());
+    let ir = result.ir();
+    assert_eq!(ir.geometry.regions.len(), 2);
+    assert_eq!(ir.geometry.shells.len(), 2);
+    assert_eq!(ir.geometry.faces.len(), 2);
+    assert!(!charged(
+        &result,
+        crate::loss::SolidEdgeLossCode::RegionFacesUntransferred
+    ));
+    assert_geometry_valid(ir);
+}
+
+#[test]
+fn region_whose_faces_cannot_be_transferred_charges_a_loss() {
+    let mut partition = test_support::solid_with_cavity_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
+        .unwrap()
+        .unwrap();
+    let range = records
+        .nodes()
+        .find(|node| {
+            node.kind() == cadmpeg_parasolid::records::node_type::FACE && node.index() == 7
+        })
+        .unwrap()
+        .field_range("sense")
+        .unwrap();
+    partition[range].copy_from_slice(b"?");
+    let result = decode_partition(partition);
+    let ir = result.ir();
+    assert_eq!(ir.geometry.faces.len(), 1);
+    assert!(charged(
+        &result,
+        crate::loss::SolidEdgeLossCode::FaceSenseUnresolved
+    ));
+    assert!(charged(
+        &result,
+        crate::loss::SolidEdgeLossCode::RegionFacesUntransferred
+    ));
+    assert_geometry_valid(ir);
+}
+
 #[test]
 fn unreadable_partition_preserves_another_partition() {
     let bytes =

@@ -332,12 +332,12 @@ pub(crate) fn project(
             visible: None,
             native_ref: None,
         });
-        let mut regions = Vec::new();
-        for region in nodes.values().copied().filter(|node| {
-            node.kind() == kind::REGION
-                && ptr(*node, "body") == Some(body.index())
-                && node.char("type") == Some(b'S')
-        }) {
+        let mut candidates = Vec::new();
+        for region in nodes
+            .values()
+            .copied()
+            .filter(|node| node.kind() == kind::REGION && ptr(*node, "body") == Some(body.index()))
+        {
             let (shells, defect) = chain(&nodes, ptr(region, "shell"), "next");
             chain_losses(defect, "a region's shells", losses);
             for shell in &shells {
@@ -349,6 +349,25 @@ pub(crate) fn project(
                 shells: shells
                     .into_iter()
                     .map(|shell| shell_id(stream, shell))
+            let owns_faces = shells.iter().any(|shell| {
+                nodes
+                    .get(shell)
+                    .and_then(|shell| ptr(*shell, "face"))
+                    .is_some_and(|face| nodes.contains_key(&face))
+            });
+            candidates.push((region, shells, owns_faces));
+        }
+        // A void region that owns no face has its boundary in the shell of a
+        // neighbouring region and transfers no region of its own when the body
+        // also has a solid region or a region that owns a face.
+        let has_material = candidates
+            .iter()
+            .any(|(region, _, owns_faces)| *owns_faces || region.char("type") == Some(b'S'));
+        let mut regions = Vec::new();
+        for (region, shells, owns_faces) in candidates {
+            if has_material && !owns_faces && region.char("type") != Some(b'S') {
+                continue;
+            }
                     .collect(),
                 native_ref: None,
             });
@@ -381,6 +400,8 @@ pub(crate) fn project(
                 SolidEdgeLossCode::WireTopologyUnsupported
                     .note("free shell edges and vertices remain undecoded"),
             );
+    // The shells of each region that hold faces.
+    let mut region_face_shells: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
         }
         ir.geometry.shells.push(Shell::new(
             shell_id(stream, shell_index),
@@ -397,6 +418,12 @@ pub(crate) fn project(
     // Largest departure of a carrier from the faces it bounds, where it
     // exceeds the document tolerance.
     let mut departures: BTreeMap<CurveId, f64> = BTreeMap::new();
+        if !shell_faces.is_empty() {
+            region_face_shells
+                .entry(region)
+                .or_default()
+                .push(shell_index);
+        }
     if let Some(linear) = linear {
         ir.tolerances.linear = linear;
     }
@@ -884,6 +911,18 @@ pub(crate) fn project(
             .copied();
         if curve.is_some_and(|curve| curve.char("sense") == Some(b'-')) {
             use_sense = reverse(use_sense);
+    let populated: BTreeSet<&ShellId> = ir.geometry.faces.iter().map(|face| &face.shell).collect();
+    for shells in region_face_shells.values() {
+        if !shells
+            .iter()
+            .any(|shell| populated.contains(&shell_id(stream, *shell)))
+        {
+            losses.push(
+                SolidEdgeLossCode::RegionFacesUntransferred
+                    .note("a region owns faces and none of them is transferred"),
+            );
+        }
+    }
         }
         // The next fin around the edge that a transferred loop uses.
         let mut radial = *fin;

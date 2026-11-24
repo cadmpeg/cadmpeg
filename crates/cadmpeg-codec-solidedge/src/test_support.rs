@@ -208,6 +208,26 @@ pub(crate) fn sphere_partition() -> Vec<u8> {
 /// One solid body holding two solid regions and the void region, each solid
 /// region owning one shell with one face on the shared sphere surface.
 pub(crate) fn two_solid_regions_partition() -> Vec<u8> {
+    shell_regions_partition(b'S', false)
+}
+
+/// One solid body holding a solid region with one face and a void region with
+/// one cavity shell and one face, besides the exterior void region that owns
+/// no shell.
+pub(crate) fn solid_with_cavity_partition() -> Vec<u8> {
+    shell_regions_partition(b'V', false)
+}
+
+/// The two solid regions of [`two_solid_regions_partition`], with a shell that
+/// holds no face under the exterior void region.
+pub(crate) fn solid_regions_with_void_shell_partition() -> Vec<u8> {
+    shell_regions_partition(b'S', true)
+}
+
+/// A body with a region of type `S` owning shell 3 and a region of type
+/// `second` owning shell 6, each shell with one face, then the exterior void
+/// region, which owns shell 11 without a face when `exterior_shell` is set.
+fn shell_regions_partition(second: u8, exterior_shell: bool) -> Vec<u8> {
     let sphere = sphere_partition();
     let records = cadmpeg_parasolid::records::PrimaryRecords::read(&sphere)
         .unwrap()
@@ -237,6 +257,11 @@ pub(crate) fn two_solid_regions_partition() -> Vec<u8> {
         bytes.push(b'+');
         pointers(&mut bytes, &[1; 5]);
     }
+    if exterior_shell {
+        node(&mut bytes, 13, 11);
+        integer(&mut bytes, 0);
+        pointers(&mut bytes, &[1, 2, 1, 1, 1, 1, 10, 1]);
+    }
     node(&mut bytes, 53, 5);
     integer(&mut bytes, 0);
     pointers(&mut bytes, &[1, 2, 1, 1, 1]);
@@ -246,8 +271,8 @@ pub(crate) fn two_solid_regions_partition() -> Vec<u8> {
     }
     for (region, next, previous, shell, kind) in [
         (8u16, 9u16, 1u16, 3u16, b'S'),
-        (9, 10, 8, 6, b'S'),
-        (10, 1, 9, 1, b'V'),
+        (9, 10, 8, 6, second),
+        (10, 1, 9, if exterior_shell { 11 } else { 1 }, b'V'),
     ] {
         node(&mut bytes, 19, region);
         integer(&mut bytes, 0);

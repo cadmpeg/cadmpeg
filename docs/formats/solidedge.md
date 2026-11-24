@@ -74,6 +74,16 @@ Direction vectors are dimensionless. A line's distance
 parameter has the model-space length unit. A body's `res_linear` field is
 its positive linear resolution in metres.
 
+A REGION node has a `type` character, `S` for a solid region or `V` for a
+void region, a `body` pointer, and a `shell` pointer that heads the region's
+shells, chained through `SHELL.next`. A SHELL names its `region`, and its
+`face` pointer heads its faces, chained through `FACE.next`. A void region that
+owns no face has its boundary in the shell of the neighbouring region, and it
+transfers no neutral region when its body also has a solid region or a region
+that owns a face. A void region that owns a face transfers as its own region,
+which holds those faces. A body that has no region records its shells through
+the BODY `shell` pointer, which heads the chain of the body's shells.
+
 A swept surface (type 67) is the linear extrusion of its `section` curve
 along its unit `sweep` direction. The surface does not store the extent along
 the sweep; the face loops bound it. A null `scale` makes the sweep parameter
