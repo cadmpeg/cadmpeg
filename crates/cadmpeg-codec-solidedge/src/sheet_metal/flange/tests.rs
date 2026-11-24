@@ -168,7 +168,7 @@ fn radius_without_a_relation_overrides_the_rule() {
     let options = &sheet_metal(&result, 0).native_options;
     assert_eq!(options.len(), 1);
     let (key, value) = options.iter().next().unwrap();
-    assert_eq!(key.as_str(), "bend_radius_overrides_rule");
+    assert_eq!(key.as_str(), "solidedge:bend_radius_overrides_rule");
     assert_eq!(value, &NativeOption::Bool(Dimension::Literal(true)));
 }
 
