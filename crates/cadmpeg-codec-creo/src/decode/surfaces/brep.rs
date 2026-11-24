@@ -3384,15 +3384,15 @@ pub(in super::super) fn transfer_native_brep(
                 color: None,
                 visible: None,
                 native_ref: None,
+                unstated: None,
             },
         )?;
         ctx.charge_entities(1, "admit Creo model regions")?;
-        ir.geometry.regions.push(Region {
-            id: crate::identity::copy_checked_id(region_id.as_str())?,
-            body: body_id,
-            shells: shell_ids,
-            native_ref: None,
-        });
+        ir.geometry.regions.push(Region::new(
+            crate::identity::copy_checked_id(region_id.as_str())?,
+            body_id,
+            shell_ids,
+        ));
         for face_key in faces {
             let native_loops = &eligible_regions[face_key];
             let BrepFaceReferences {

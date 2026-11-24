@@ -124,12 +124,11 @@ pub(super) fn edgeless_doc() -> CadIr {
         ShellId::mint("test:model:shell#sh0").expect("identity grammar"),
         RegionId::mint("test:model:region#l0").expect("identity grammar"),
     ));
-    ir.geometry.regions.push(Region {
-        id: RegionId::mint("test:model:region#l0").expect("identity grammar"),
-        body: BodyId::mint("test:model:body#b0").expect("identity grammar"),
-        shells: vec![ShellId::mint("test:model:shell#sh0").expect("identity grammar")],
-        native_ref: None,
-    });
+    ir.geometry.regions.push(Region::new(
+        RegionId::mint("test:model:region#l0").expect("identity grammar"),
+        BodyId::mint("test:model:body#b0").expect("identity grammar"),
+        vec![ShellId::mint("test:model:shell#sh0").expect("identity grammar")],
+    ));
     ir.geometry.bodies.push(Body {
         id: BodyId::mint("test:model:body#b0").expect("identity grammar"),
         kind: cadmpeg_ir::topology::BodyKind::Solid,
@@ -138,6 +137,7 @@ pub(super) fn edgeless_doc() -> CadIr {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     ir
 }
@@ -505,7 +505,7 @@ fn writer_reports_occurrence_whose_owner_has_no_local_product() {
 #[test]
 fn writer_reports_region_without_shells() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.geometry.regions[0].shells.clear();
+    ir.geometry.regions[0].set_shells(Vec::new());
 
     let report = write_step(
         &ir,
@@ -527,12 +527,9 @@ fn writer_names_only_the_region_without_shells_beside_a_bounded_region() {
     let body = ir.geometry.bodies[0].id.clone();
     let shells = Vec::new();
     let bounded = ir.geometry.regions[0].id.clone();
-    ir.geometry.regions.push(Region {
-        id: lost.clone(),
-        body,
-        shells,
-        native_ref: None,
-    });
+    ir.geometry
+        .regions
+        .push(Region::new(lost.clone(), body, shells));
 
     let report = write_step(
         &ir,
@@ -602,11 +599,10 @@ fn writer_reports_wire_region_without_connected_edges() {
 fn writer_reports_wire_region_with_missing_shell_record() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.geometry.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
-    ir.geometry.regions[0].shells =
-        vec![
-            cadmpeg_ir::ids::ShellId::mint("test:model:shell#missing-shell")
-                .expect("identity grammar"),
-        ];
+    ir.geometry.regions[0].set_shells(vec![cadmpeg_ir::ids::ShellId::mint(
+        "test:model:shell#missing-shell",
+    )
+    .expect("identity grammar")]);
 
     let report = write_step(
         &ir,
@@ -922,7 +918,7 @@ fn writer_reports_each_enclosing_topology_reduction() {
     let mut inner_loop = unit_cube().expect("unit cube fixture is admitted");
     let outer = inner_loop.geometry.faces[0]
         .loops
-        .iter()
+        .stated()
         .next()
         .expect("cube face boundary")
         .clone();
@@ -974,7 +970,7 @@ fn writer_reports_each_enclosing_topology_reduction() {
     }));
 
     let mut missing_void = unit_cube().expect("unit cube fixture is admitted");
-    missing_void.geometry.regions[0].shells.push(
+    missing_void.geometry.regions[0].push_shell(
         cadmpeg_ir::ids::ShellId::mint("step:data:shell#missing-void").expect("identity grammar"),
     );
     let report = write_step(

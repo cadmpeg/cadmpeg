@@ -3430,8 +3430,10 @@ fn cylindrical_bore_face_spans(topology: &HoleTopology<'_>) -> Vec<BoreFaceSpan>
         let origin = cylinder_surface.origin().get();
         let axis = FeatureDirection3::from(*cylinder_surface.frame().axis());
         let radius = cylinder_surface.radius().get();
-        let mut stations = face
-            .loops
+        let Some(face_loops) = face.loops.boundary() else {
+            continue;
+        };
+        let mut stations = face_loops
             .iter()
             .filter_map(|loop_id| loops.get(loop_id))
             .flat_map(|loop_| {

@@ -961,12 +961,12 @@ fn decode_preserves_multiple_shells_in_one_region() {
     assert_eq!(result.ir().geometry.bodies.len(), 1);
     assert_eq!(result.ir().geometry.regions.len(), 1);
     assert_eq!(result.ir().geometry.shells.len(), 2);
-    assert_eq!(result.ir().geometry.regions[0].shells.len(), 2);
+    assert_eq!(result.ir().geometry.regions[0].stated_shells().count(), 2);
     assert_eq!(
         result
             .ir()
             .geometry
-            .body_regions(&result.ir().geometry.bodies[0].id)
+            .stated_body_regions(&result.ir().geometry.bodies[0].id)
             .count(),
         1
     );
@@ -1248,7 +1248,10 @@ fn decode_emits_connected_primitive_brep() {
         cadmpeg_ir::topology::BodyKind::Sheet
     );
     assert_eq!(
-        result.ir().geometry.faces[0].loops,
+        result.ir().geometry.faces[0]
+            .loops
+            .boundary()
+            .expect("a complete face"),
         vec![result.ir().geometry.loops[0].id.clone()]
     );
     assert_eq!(

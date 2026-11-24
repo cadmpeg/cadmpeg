@@ -409,7 +409,7 @@ fn free_points_and_vertices_on_brep_and_trimmed_sheet_paths_have_export_losses()
                 .geometry
                 .shells
                 .iter_mut()
-                .find(|shell| shell.id == region.shells[0])
+                .find(|shell| shell.id == region.stated_shells().cloned().collect::<Vec<_>>()[0])
                 .unwrap();
             let mut vertices = shell.free_vertices().cloned().collect::<Vec<_>>();
             vertices.push(vertex.id);

@@ -59,6 +59,7 @@ fn active_body_selection_accepts_a_complete_singleton_membership() {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         },
         Body {
             id: second.clone(),
@@ -68,6 +69,7 @@ fn active_body_selection_accepts_a_complete_singleton_membership() {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         },
     ]);
     ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(

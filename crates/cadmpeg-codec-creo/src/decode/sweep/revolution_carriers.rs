@@ -481,6 +481,6 @@ pub(in crate::decode) fn native_solid_contains_feature(
             };
             body.kind == cadmpeg_ir::topology::BodyKind::Solid
                 && body.id.as_str().starts_with("creo:visibgeom:body#")
-                && region.shells.contains(&shell.id)
+                && region.stated_shells().any(|listed| listed == &shell.id)
         })
 }

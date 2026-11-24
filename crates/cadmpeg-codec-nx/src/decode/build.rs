@@ -2310,12 +2310,11 @@ fn finalize_point_topology(
     ));
 
     let region_shells = vec![shell_id];
-    ir.geometry.regions.push(Region {
-        id: region_id.clone(),
-        body: body_id.clone(),
-        shells: region_shells,
-        native_ref: None,
-    });
+    ir.geometry.regions.push(Region::new(
+        region_id.clone(),
+        body_id.clone(),
+        region_shells,
+    ));
 
     ir.geometry.bodies.push(Body {
         id: body_id,
@@ -2325,6 +2324,7 @@ fn finalize_point_topology(
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     Ok(())
 }

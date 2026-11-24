@@ -241,7 +241,7 @@
               "ref_direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -271,7 +271,7 @@
               "ref_direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -421,7 +421,7 @@
               "ref_direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -451,7 +451,7 @@
               "ref_direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -696,7 +696,7 @@
               "major_direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "major_radius": 12.0,
               "minor_radius": 5.0
@@ -4433,7 +4433,7 @@
               "v": 0.0
             },
             "kind": "ellipse",
-            "major_angle": -0.0,
+            "major_angle": 0.0,
             "major_radius": 12.0,
             "minor_radius": 5.0
           },

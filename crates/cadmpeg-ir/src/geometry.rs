@@ -277,7 +277,6 @@ pub enum SurfaceGeometry {
             skip_serializing_if = "Option::is_none",
             deserialize_with = "deserialize_surface_geometry_cache"
         )]
-        #[cfg_attr(feature = "schema", schemars(skip))]
         cache: Option<SolvedSurfaceGeometry>,
     },
     /// A carrier whose shape is established without a construction.
@@ -586,7 +585,6 @@ pub enum CurveGeometry {
             skip_serializing_if = "Option::is_none",
             deserialize_with = "deserialize_curve_geometry_cache"
         )]
-        #[cfg_attr(feature = "schema", schemars(skip))]
         cache: Option<SolvedCurveGeometry>,
     },
     /// A carrier whose shape is established without a construction.

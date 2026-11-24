@@ -132,6 +132,7 @@ fn insert_free_vertex_shell(
         .unwrap();
     draft
         .insert(Body {
+            unstated: None,
             id: BodyId::mint(body_id).expect("valid identity"),
             kind: BodyKind::Wire,
             transform: None,
@@ -142,12 +143,11 @@ fn insert_free_vertex_shell(
         })
         .unwrap();
     draft
-        .insert(Region {
-            id: RegionId::mint(region_id).expect("valid identity"),
-            body: BodyId::mint(body_id).expect("valid identity"),
-            shells: vec![ShellId::mint(shell_id).expect("valid identity")],
-            native_ref: None,
-        })
+        .insert(Region::new(
+            RegionId::mint(region_id).expect("valid identity"),
+            BodyId::mint(body_id).expect("valid identity"),
+            vec![ShellId::mint(shell_id).expect("valid identity")],
+        ))
         .unwrap();
     draft
         .insert(Shell::with_free_vertex(

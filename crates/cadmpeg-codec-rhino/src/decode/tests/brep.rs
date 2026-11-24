@@ -76,6 +76,7 @@ fn fallback_discards_topology_and_unknown_record_self_link() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     staged = staged.free_carrier_fallback("C2 failure");
     assert_eq!(staged.kind, BrepTransferKind::FreeCarrierFallback);

@@ -819,6 +819,7 @@ impl Builder<'_, '_, '_, '_> {
             color,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
     }
 
@@ -1265,12 +1266,11 @@ impl Builder<'_, '_, '_, '_> {
         let region = crate::ids::region(key);
         let shell = Shell::with_members(crate::ids::shell(key), region.clone(), edges, Vec::new());
         self.ir.geometry.shells.push(shell);
-        self.ir.geometry.regions.push(Region {
-            id: region.clone(),
-            body: crate::ids::body(key),
-            shells: vec![crate::ids::shell(key)],
-            native_ref: None,
-        });
+        self.ir.geometry.regions.push(Region::new(
+            region.clone(),
+            crate::ids::body(key),
+            vec![crate::ids::shell(key)],
+        ));
         self.body(prim, key, BodyKind::Wire);
         self.transferred = true;
         self.admit("usd_curves")?;
@@ -1374,12 +1374,11 @@ impl Builder<'_, '_, '_, '_> {
         });
         let shell_record = Shell::new(shell.clone(), region.clone());
         self.ir.geometry.shells.push(shell_record);
-        self.ir.geometry.regions.push(Region {
-            id: region.clone(),
-            body: crate::ids::body(key),
-            shells: vec![shell],
-            native_ref: None,
-        });
+        self.ir.geometry.regions.push(Region::new(
+            region.clone(),
+            crate::ids::body(key),
+            vec![shell],
+        ));
         self.body(prim, key, BodyKind::Sheet);
         self.material(prim, key, AppearanceTarget::Face(face))?;
         self.transferred = true;

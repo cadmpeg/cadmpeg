@@ -427,7 +427,7 @@ fn exact_streams_become_solids_that_keep_their_tessellation() {
         let cube = body(member);
         assert_eq!(cube.kind, BodyKind::Solid);
         assert_eq!(cube.name.as_deref(), Some(member));
-        assert_eq!(geometry.body_regions(&cube.id).count(), 1);
+        assert_eq!(geometry.stated_body_regions(&cube.id).count(), 1);
         let faces = geometry
             .faces
             .iter()
@@ -443,7 +443,10 @@ fn exact_streams_become_solids_that_keep_their_tessellation() {
         assert_eq!(meshes[0].triangle_count(), 12);
     }
     assert_eq!(body("plate.ol").kind, BodyKind::General);
-    assert!(geometry.body_regions(&body("plate.ol").id).next().is_none());
+    assert!(geometry
+        .stated_body_regions(&body("plate.ol").id)
+        .next()
+        .is_none());
     assert_eq!(geometry.bodies.len(), 3);
     for definition in &model.product_definitions[1..] {
         assert_eq!(definition.bodies.len(), 1);
@@ -496,7 +499,7 @@ fn closed_and_open_shells_of_one_member_become_a_solid_and_a_sheet() {
             .regions
             .iter()
             .filter(|region| region.body == body.id)
-            .map(|region| region.shells.len())
+            .map(|region| region.stated_shells().count())
             .sum()
     };
     assert_eq!((shells(solid), shells(sheet)), (1, 1));

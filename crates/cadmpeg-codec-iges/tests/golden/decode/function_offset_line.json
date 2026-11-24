@@ -193,7 +193,7 @@
                 "basis": "parameter",
                 "coordinate": 2,
                 "function": "iges:model:curve#D3",
-                "function_parameter_offset": -0.0,
+                "function_parameter_offset": 0.0,
                 "function_parameter_scale": 0.1,
                 "kind": "coordinate"
               },
