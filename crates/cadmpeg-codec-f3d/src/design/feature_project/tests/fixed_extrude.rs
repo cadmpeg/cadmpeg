@@ -675,3 +675,82 @@ fn zero_first_side_uses_the_reversed_second_side_magnitude() {
         ));
     }
 }
+
+#[test]
+fn two_sided_ends_are_signed_along_the_profile_normal() {
+    use cadmpeg_ir::features::extents::{ExtrudeDirection, ExtrudeStart};
+    let scope = fixed_extrude(
+        DesignExtrudeExtent::TwoSidedDistance,
+        DesignFixedExtrudeParameters::default(),
+    );
+    let parameter = |kind: &str, value| {
+        crate::design::decode::parameters::parse_design_parameter_record(
+            &crate::design::test_support::parameter_record(
+                Some(44),
+                "value",
+                kind,
+                Some("mm"),
+                "d1",
+                value,
+            ),
+        )
+        .unwrap()
+    };
+    let placement = placement();
+    let project = |along: f64, against: f64| {
+        let along = parameter("AlongDistance", along);
+        let against = parameter("AgainstDistance", against);
+        crate::test_support::with_decode_context(|ctx| {
+            project_extrude(
+                ctx,
+                &scope,
+                &[(0, &along), (1, &against)],
+                &[],
+                &[],
+                std::slice::from_ref(&placement),
+                &[],
+            )
+        })
+        .unwrap()
+    };
+    // The first side ends at `AlongDistance` and the second at its negated
+    // `AgainstDistance`. Ends on both sides of the profile plane are two sides.
+    for (along, against, direction) in [
+        (4.4, 3.7, ExtrudeDirection::ProfileNormal {}),
+        (-4.4, -3.7, ExtrudeDirection::ReversedProfileNormal {}),
+    ] {
+        assert!(matches!(
+            project(along, against),
+            Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
+                direction: actual,
+                start: ExtrudeStart::ProfilePlane {},
+                extent: ExtrudeExtent::TwoSided { first, second },
+                ..
+            })) if actual == direction
+                && matches!(first.termination, LinearTermination::Blind { length } if length.get() == 44.0)
+                && matches!(second.termination, LinearTermination::Blind { length } if length.get() == 37.0)
+        ));
+    }
+    // Ends on one side of the profile plane bound a one-sided solid that starts at
+    // the nearer end.
+    for (along, against, direction, start) in [
+        (-4.4, 3.7, ExtrudeDirection::ReversedProfileNormal {}, -37.0),
+        (4.4, -3.7, ExtrudeDirection::ProfileNormal {}, 37.0),
+        (-3.7, 4.4, ExtrudeDirection::ReversedProfileNormal {}, -37.0),
+    ] {
+        assert!(matches!(
+            project(along, against),
+            Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
+                direction: actual,
+                start: ExtrudeStart::OffsetProfilePlane { offset },
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide { termination: LinearTermination::Blind { length }, .. }
+                },
+                ..
+            })) if actual == direction
+                && (offset.get() - start).abs() < 1.0e-9
+                && (length.get() - 7.0).abs() < 1.0e-9
+        ));
+    }
+    assert!(project(4.4, -4.4).is_none());
+}

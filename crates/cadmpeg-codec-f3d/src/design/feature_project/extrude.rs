@@ -580,6 +580,7 @@ pub(super) fn project_extrude(
             Some(Some(_)),
         )
     );
+    let mut side_interval_start: Option<Length> = None;
     let (shape, reverse_direction) = match (or_none!(prologue.extent()), along, against) {
         (DesignExtrudeExtent::OneSidedDistance, Some((Some(along), along_direction)), None)
             if (matches!(along_direction, AlongDirection::PrologueReversal)
@@ -608,16 +609,42 @@ pub(super) fn project_extrude(
             let blind = |length: NonZeroLength| LinearTermination::Blind {
                 length: NonZeroLength::from(length.abs()),
             };
+            // The first side ends at `AlongDistance` and the second at the negated
+            // `AgainstDistance`, both signed along the profile normal.
             match (along, against) {
-                (Some(along), Some(against)) => (
-                    ExtentShape::TwoSided {
-                        first: blind(along),
-                        second: blind(against),
-                    },
-                    along.get() < 0.0,
-                ),
+                (Some(along), Some(against)) => {
+                    let (first_end, second_end) = (along.get(), -against.get());
+                    if first_end * second_end < 0.0 {
+                        (
+                            ExtentShape::TwoSided {
+                                first: blind(along),
+                                second: blind(against),
+                            },
+                            first_end < 0.0,
+                        )
+                    } else {
+                        // Both ends lie on one side of the profile plane: the solid
+                        // spans the interval between them.
+                        let near = first_end.abs().min(second_end.abs());
+                        let far = first_end.abs().max(second_end.abs());
+                        let (Some(offset), Some(thickness)) = (
+                            Length::new(near.copysign(first_end)),
+                            Length::new(far - near)
+                                .and_then(|length| NonZeroLength::try_from(length).ok()),
+                        ) else {
+                            return Ok(None);
+                        };
+                        side_interval_start = Some(offset);
+                        (
+                            ExtentShape::OneSided(LinearTermination::Blind { length: thickness }),
+                            first_end < 0.0,
+                        )
+                    }
+                }
                 (Some(along), None) => (ExtentShape::OneSided(blind(along)), along.get() < 0.0),
-                (None, Some(against)) => (ExtentShape::OneSided(blind(against)), true),
+                (None, Some(against)) => {
+                    (ExtentShape::OneSided(blind(against)), against.get() > 0.0)
+                }
                 (None, None) => return Ok(None),
             }
         }
@@ -861,6 +888,13 @@ pub(super) fn project_extrude(
         }
         _ => return Ok(None),
     };
+    let start = match side_interval_start {
+        Some(offset) if matches!(start, ExtrudeStart::ProfilePlane {}) => {
+            ExtrudeStart::OffsetProfilePlane { offset }
+        }
+        Some(_) => return Ok(None),
+        None => start,
+    };
     let direction = if reverse_direction {
         ExtrudeDirection::ReversedProfileNormal {}
     } else {
@@ -907,6 +941,9 @@ pub(super) fn project_extrude(
     // A side-two draft requires a two-sided extent. Other extents have no neutral
     // field for it, so return None.
     if second_draft.is_some() && !matches!(shape, ExtentShape::TwoSided { .. }) {
+        return Ok(None);
+    }
+    if side_interval_start.is_some() && draft.is_some() {
         return Ok(None);
     }
     let extent = match shape {
