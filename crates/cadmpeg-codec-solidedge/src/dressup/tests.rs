@@ -57,6 +57,15 @@ fn unresolved(result: &DecodeResult, family: OperationFamily) -> bool {
     operation(result) == &FeatureOperation::Unresolved { family }
 }
 
+/// Whether the feature stays untyped and names its sketch natively.
+fn names_profile(result: &DecodeResult) -> bool {
+    matches!(
+        operation(result),
+        FeatureOperation::Native { native_options, .. }
+            if native_options.keys().any(|key| key.as_str() == "solidedge:profile")
+    )
+}
+
 fn props(kind: u32, diameter: f64) -> HoleProps {
     HoleProps {
         kind,
@@ -317,14 +326,14 @@ fn two_positions_state_two_points_in_profile_order() {
 #[test]
 fn profile_without_hole_positions_stays_unresolved() {
     let result = hole_with(props(0, 0.004), 16.0, 1.0, &[], &[]);
-    assert!(unresolved(&result, OperationFamily::Hole));
+    assert!(names_profile(&result));
     assert!(codes(&result).contains(&"feature.dressup-unread".to_owned()));
 }
 
 #[test]
 fn unknown_hole_type_stays_unresolved_and_names_the_feature() {
     let result = hole_with(props(9, 0.004), 16.0, 1.0, &[[0.0, 0.0]], &[]);
-    assert!(unresolved(&result, OperationFamily::Hole));
+    assert!(names_profile(&result));
     let notes: Vec<_> = result
         .report()
         .losses
@@ -353,7 +362,7 @@ fn dimension_with_p_148_reads() {
 fn dimension_whose_repeated_target_differs_does_not_read() {
     let depth = (264, Dress::Value(Slot::DimBroken(0.008)));
     let result = hole_with(props(0, 0.004), 13.0, 1.0, &[[0.0, 0.0]], &[depth]);
-    assert!(unresolved(&result, OperationFamily::Hole));
+    assert!(names_profile(&result));
     assert!(codes(&result).contains(&"feature.dressup-unread".to_owned()));
 }
 
