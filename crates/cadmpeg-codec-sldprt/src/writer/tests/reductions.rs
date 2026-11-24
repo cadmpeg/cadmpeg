@@ -480,13 +480,8 @@ fn a_retained_partition_keeps_a_body_on_a_torus_the_compact_records_cannot_hold(
             cadmpeg_ir::geometry::SolvedSurfaceGeometry::Torus(_)
         )
     ));
-    let (mut ir, _, fidelity) = decoded.into_parts();
-    ir.source
-        .as_mut()
-        .unwrap()
-        .attributes
-        .remove(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE)
-        .unwrap();
+    let (ir, _, mut fidelity) = decoded.into_parts();
+    fidelity.content_digest = cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]);
     let plan = SldprtCodec
         .plan(
             EncodeInput::new(&ir, Some(&fidelity)),
@@ -523,13 +518,8 @@ fn a_faceless_part_keeps_its_swift_annotations() {
     };
     let expected = annotations(decoded.ir());
     assert_eq!(expected.len(), 1);
-    let (mut ir, _, fidelity) = decoded.into_parts();
-    ir.source
-        .as_mut()
-        .unwrap()
-        .attributes
-        .remove(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE)
-        .unwrap();
+    let (ir, _, mut fidelity) = decoded.into_parts();
+    fidelity.content_digest = cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]);
     let plan = SldprtCodec
         .plan(
             EncodeInput::new(&ir, Some(&fidelity)),

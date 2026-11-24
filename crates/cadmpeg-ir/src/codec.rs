@@ -240,6 +240,7 @@ impl DecodeResult {
     ) -> Result<Self, DecodeFailure> {
         let mut result = DecodeResult::new(decoded, format, ctx.depth(), ctx.policy())?;
         result.keep_first_of_repeated_ids();
+        result.record_content_digest(ctx.policy())?;
         if result.report().format() != format.as_str() {
             return Err(CodecError::WrongFormat(format!(
                 "codec {:?} decoded a {:?} document",
@@ -362,6 +363,33 @@ impl DecodeResult {
                 repeated.dropped
             )));
         }
+    }
+
+    /// Records the SHA-256 of the canonical JSON of the document the decode
+    /// returns as the sidecar's `content_digest` (§3.1, Rule B). The digest
+    /// walks the document in a session of its own under `policy`, the
+    /// decode's, so a ceiling it meets refuses no part of the decode. A
+    /// document with no canonical JSON keeps the digest of no bytes, which no
+    /// document has, so every writer reads it as edited, and a
+    /// `decode/content-digest.unavailable` Warning says why (interim, inventory
+    /// gap 20261124-ERR1-C-I7-1).
+    fn record_content_digest(&mut self, policy: &DecodePolicy) -> Result<(), CodecError> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (digest_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+        match crate::hash::content_digest(&digest_ctx, &self.ir).map_err(CodecError::from) {
+            Ok(digest) => self.source_fidelity.content_digest = digest,
+            Err(error) => {
+                self.source_fidelity.content_digest =
+                    crate::hash::digest::Sha256Digest::digest(&[]);
+                self.report
+                    .losses
+                    .push(DecodeLossCode::ContentDigestUnavailable.note(format!(
+                        "the decode wrapper took no content digest of the document ({error}), \
+                         so a writer reads the document as edited and replays no source file"
+                    )));
+            }
+        }
+        Ok(())
     }
 
     /// Borrow the finalized IR.

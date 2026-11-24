@@ -775,6 +775,8 @@
       },
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "b7a33834673ad07a44203f8fc26dc49e97b78d3a5594d58351569843b7ef180a",
     "file_digests": {},
     "retained_records": {

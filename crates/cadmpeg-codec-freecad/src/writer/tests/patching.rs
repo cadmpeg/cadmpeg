@@ -157,10 +157,13 @@ fn writes_typed_property_edits_and_preserves_other_entries() {
 
     let mut encoded = Vec::new();
     let report = FcstdCodec
-        .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+        .plan(
+            EncodeInput::new(&edited, Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("encode edit");
-    assert!(report.losses.is_empty());
+    assert!(report.losses.is_empty(), "{:#?}", report.losses);
     let round_trip = FcstdCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("decode output");

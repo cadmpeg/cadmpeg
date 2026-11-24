@@ -2770,6 +2770,8 @@
         }
       }
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "40dc97b0fcbca54526ee0fdd2edfc1c87e16e583526b822cc23722dbdbef60e0",
     "file_digests": {},
     "retained_records": {},

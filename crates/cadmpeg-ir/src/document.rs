@@ -2658,13 +2658,6 @@ impl CadIr {
 }
 
 /// Source-container metadata preserved for reporting.
-///
-/// Attribute keys ending in [`crate::compare::LOCAL_DIGEST_SUFFIX`] hold
-/// machine-local digests over decoded content for the write-path edit oracle.
-/// Not portable across platforms; not tolerance-aware. Digests over retained
-/// source bytes must not use that suffix. See
-/// [`crate::hash::document_local_sha256`] and
-/// [`crate::compare::is_local_digest_attribute`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -2693,13 +2686,6 @@ impl SourceMeta {
             identity: FormatIdentity::classified(dialects),
             attributes,
         }
-    }
-
-    pub(crate) fn normalized_digest_copy(&self) -> Self {
-        let mut copy = self.clone();
-        copy.attributes
-            .remove(crate::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
-        copy
     }
 
     /// The complete source identity: format plus classified layers, if any.

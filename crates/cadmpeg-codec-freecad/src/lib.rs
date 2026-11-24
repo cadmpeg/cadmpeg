@@ -1309,15 +1309,11 @@ impl CodecBackend for FcstdCodec {
         // without one and reports the edits unverified, so the serialization and
         // hash are not paid there.
         if ctx.depth() == DecodeDepth::Full {
-            let document_digest = writer::target::document_local_sha256(ctx, &ir)?;
-            if let Some(source) = &mut ir.source {
-                source.attributes.insert(
-                    cadmpeg_core::nonblank_const!(
-                        cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE
-                    ),
-                    document_digest,
-                );
-            }
+            let digest = writer::target::uncarried_digest(ctx, &ir)?;
+            source_fidelity.codec_digests.insert(
+                cadmpeg_core::nonblank_const!(writer::target::UNCARRIED_DIGEST),
+                digest,
+            );
         }
         Ok(Decoded {
             ir,

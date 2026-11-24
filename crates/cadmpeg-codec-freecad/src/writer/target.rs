@@ -15,7 +15,8 @@ use cadmpeg_ir::codec::write::{
     EncodeInput, ExportBody, PatchConsumption, WritePath,
 };
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
+use cadmpeg_ir::hash::digest::Sha256Digest;
+use cadmpeg_ir::SourceFidelity;
 
 use super::write;
 use crate::native::DocumentFacts;
@@ -94,7 +95,7 @@ pub(crate) fn plan(
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
     let resolution = resolve(input.ir, resolved)?;
-    let baseline = admit_unedited(input.ir)?;
+    let baseline = admit_unedited(input.ir, input.fidelity)?;
     finish(&resolution, input.fidelity, baseline)
 }
 
@@ -103,27 +104,34 @@ pub(crate) fn plan(
 /// unsupported object and extension edits.
 const CARRIED_NATIVE_ARENAS: &[&str] = &["entries", "extensions", "objects", "properties"];
 
-/// The `document_local_sha256` an `FCStd` write compares.
+/// The codec digest (§3.1, Rule B) under which a `Full` decode records
+/// [`uncarried_digest`] and an `FCStd` write compares it.
+pub(crate) const UNCARRIED_DIGEST: &str = "fcstd_uncarried_local_sha256";
+
+/// The digest an `FCStd` write compares to find edits it cannot write.
 ///
 /// Covers every neutral arena, the source metadata, and every native record
 /// except [`CARRIED_NATIVE_ARENAS`]. Outside those arenas the writer reads only
 /// the source dialect and the `document` record, to select and name the
 /// retained graph, so a change to anything this digest covers does not reach
 /// the output.
-pub(crate) fn document_local_sha256(
+pub(crate) fn uncarried_digest(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
-) -> Result<String, CodecError> {
+) -> Result<Sha256Digest, CodecError> {
     // FCStd retains no whole-file source image, so no unknown record is
     // excluded as one.
-    cadmpeg_ir::hash::document_local_sha256_without_carried(
+    let digest = cadmpeg_ir::hash::document_local_sha256_without_carried(
         ctx,
         ir,
         ir.source.as_ref(),
         "fcstd",
         "",
         CARRIED_NATIVE_ARENAS,
-    )
+    )?;
+    Sha256Digest::try_from(digest).map_err(|_| {
+        CodecError::Malformed("the FCStd uncarried digest is no SHA-256 digest".into())
+    })
 }
 
 /// What [`admit_unedited`] could establish about edits since decode.
@@ -131,7 +139,7 @@ pub(crate) fn document_local_sha256(
 enum Baseline {
     /// The digest matches: nothing outside [`CARRIED_NATIVE_ARENAS`] changed.
     Unedited,
-    /// The document records no digest, so its edits are not known.
+    /// The sidecar records no digest, so the document's edits are not known.
     Unrecorded,
 }
 
@@ -139,13 +147,10 @@ enum Baseline {
 ///
 /// The writer patches retained records and regenerates no `Document.xml`, so
 /// a neutral edit has no serializer here and would otherwise be dropped. A
-/// document that records no digest (every decode below `Full`) is admitted as
-/// [`Baseline::Unrecorded`].
-fn admit_unedited(ir: &CadIr) -> Result<Baseline, CodecError> {
-    let Some(expected) = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE))
+/// document whose sidecar records no digest (no sidecar, or every decode
+/// below `Full`) is admitted as [`Baseline::Unrecorded`].
+fn admit_unedited(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Baseline, CodecError> {
+    let Some(expected) = fidelity.and_then(|fidelity| fidelity.codec_digests.get(UNCARRIED_DIGEST))
     else {
         return Ok(Baseline::Unrecorded);
     };
@@ -155,7 +160,7 @@ fn admit_unedited(ir: &CadIr) -> Result<Baseline, CodecError> {
         &arena,
         &cadmpeg_core::decode::DecodePolicy::default(),
     )?;
-    let current = document_local_sha256(&ctx, ir)?;
+    let current = uncarried_digest(&ctx, ir)?;
     ctx.finish_session()?;
     if current != *expected {
         return Err(CodecError::NotImplemented(
@@ -186,7 +191,7 @@ fn finish(
     let mut losses = carried_source_losses(fidelity, &write_path);
     if baseline == Baseline::Unrecorded {
         losses.push(edit_unverified(format!(
-            "the FCStd source records no `{DOCUMENT_LOCAL_DIGEST_ATTRIBUTE}` baseline, so edits \
+            "the FCStd decode sidecar records no `{UNCARRIED_DIGEST}` codec digest, so edits \
              since decode are not known; the file patches the retained Document.xml with the \
              carried native records and holds no other edit"
         )));
