@@ -108,6 +108,7 @@ fn feature(id: &str, family: OperationFamily) -> Feature {
         suppressed: None,
         definition: FeatureDefinition {
             operation: FeatureOperation::Unresolved { family },
+            assembly: None,
             refine: None,
             fuzzy_tolerance: None,
         },

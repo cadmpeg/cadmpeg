@@ -3,7 +3,7 @@
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 use cadmpeg_ir::design::ops::{
     body as body_ops, dressup as dressup_ops,
-    shared::{Limit, PatternLayout, Spacing, Span},
+    shared::{Limit, LinearLayout, PatternLayout, Spacing, Span},
     sheet_metal::{NormalSide, SheetMetalKind},
 };
 use cadmpeg_ir::design::options::{BodyForm, Boolean, SymmetricMeasure};
@@ -292,11 +292,11 @@ fn rectangular_pattern_keeps_grid_counts_spacing_and_omissions() {
     ) else {
         panic!("pattern");
     };
-    let PatternLayout::Linear {
+    let PatternLayout::Linear(LinearLayout {
         first,
         second: Some(second),
         ..
-    } = &value.layout
+    }) = &value.layout
     else {
         panic!("linear");
     };
@@ -469,7 +469,7 @@ fn unsupported_operands_keep_the_full_native_operation_and_pin_loss() {
             panic!("native");
         };
         let NativeOption::Text(Dimension::Literal(text)) =
-            &native_options[&cadmpeg_core::nonblank_literal!("inventor:legacy_operation")]
+            &native_options["inventor:legacy_operation"]
         else {
             panic!("retained");
         };
@@ -658,11 +658,36 @@ fn split_face_and_surface_trim_keep_every_selection() {
     assert!(matches!(
         value.mode,
         body_ops::SplitMode::ByTools {
-            tools: body_ops::SplitTool::Geometry(_),
+            tools: body_ops::SplitTool::Geometry { extend: None, .. },
             kept: None,
             ..
         }
     ));
+}
+
+/// §6.5: a split body's tool extension is `extend` on its `Geometry` tool,
+/// `Extended` with no law where the source stores one Boolean.
+#[test]
+fn split_body_faces_keep_their_tool_extension() {
+    for (stored, extend) in [
+        (true, body_ops::ToolExtension::Extended { method: None }),
+        (false, body_ops::ToolExtension::Off),
+    ] {
+        let FeatureOperation::Split(value) = project_value(
+            "split_body",
+            json!({"targets":native_selection(),"tool":{"kind":"faces","value":native_selection()},"extend_tool":stored}),
+        ) else {
+            panic!("split body");
+        };
+        let body_ops::SplitMode::ByTools {
+            tools: body_ops::SplitTool::Geometry { extend: found, .. },
+            ..
+        } = value.mode
+        else {
+            panic!("geometry tool");
+        };
+        assert_eq!(found, Some(extend));
+    }
 }
 
 #[test]

@@ -5778,7 +5778,7 @@ pub(crate) fn transfer_text_curves(
             });
         let association = SourceObjectAssociation {
             geometry_role: None,
-            format: cadmpeg_ir::CodecFormat::Fcstd,
+            format: cadmpeg_ir::codec_id!("fcstd"),
             object_id: cadmpeg_core::text::NonBlankString::new(object_id.to_owned())
                 .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
             name: None,
@@ -6032,7 +6032,7 @@ pub(crate) fn transfer_text_surfaces(
             });
         let association = SourceObjectAssociation {
             geometry_role: None,
-            format: cadmpeg_ir::CodecFormat::Fcstd,
+            format: cadmpeg_ir::codec_id!("fcstd"),
             object_id: cadmpeg_core::text::NonBlankString::new(object_id.to_owned())
                 .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
             name: None,

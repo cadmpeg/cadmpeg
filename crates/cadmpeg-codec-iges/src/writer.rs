@@ -4642,13 +4642,13 @@ fn same_point_with_tolerance(left: Point3, right: Point3, explicit_tolerance: f6
 fn topology_edge_explicit_tolerance(records: &impl ModelRecords, edge: &Edge) -> f64 {
     let mut tolerance = edge
         .tolerance
-        .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get);
+        .map_or(0.0, cadmpeg_ir::scalar::PositiveLength::get);
     for vertex_id in edge.vertices() {
         if let Some(vertex) = records.vertex(vertex_id.as_str()) {
             tolerance = tolerance.max(
                 vertex
                     .tolerance
-                    .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get),
+                    .map_or(0.0, cadmpeg_ir::scalar::PositiveLength::get),
             );
         }
     }
@@ -4668,7 +4668,7 @@ fn generated_minimum_resolution(index: &TopologyIndex<'_>) -> Result<f64, CodecE
                 .iter()
                 .filter_map(|vertex| vertex.tolerance),
         )
-        .map(cadmpeg_ir::scalar::PositiveReal::get)
+        .map(cadmpeg_ir::scalar::PositiveLength::get)
         .map(effective_topology_tolerance)
         .fold(cadmpeg_ir::units::COINCIDENCE_TOLERANCE, f64::max);
     let endpoint_scale = generated_endpoint_coordinate_scale(index)?;
@@ -5136,7 +5136,7 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
         let object_id = crate::entities::geometry::SourceObjectId::new(sequence).text();
         if !ir.geometry.curves.iter().any(|curve| {
             curve.source_object.as_ref().is_some_and(|source| {
-                source.format == cadmpeg_ir::CodecFormat::Iges
+                source.format == cadmpeg_ir::codec_id!("iges")
                     && source.object_id.as_str() == object_id
             })
         }) {
@@ -5197,7 +5197,7 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
         let object_id = crate::entities::geometry::SourceObjectId::new(sequence).text();
         if !ir.geometry.surfaces.iter().any(|surface| {
             surface.source_object.as_ref().is_some_and(|source| {
-                source.format == cadmpeg_ir::CodecFormat::Iges
+                source.format == cadmpeg_ir::codec_id!("iges")
                     && source.object_id.as_str() == object_id
             })
         }) {
@@ -7029,7 +7029,7 @@ fn closed_edge_full_period(
 fn edge_topology_tolerance(records: &impl ModelRecords, edge: &Edge) -> Result<f64, CodecError> {
     let mut tolerance = edge
         .tolerance
-        .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get);
+        .map_or(0.0, cadmpeg_ir::scalar::PositiveLength::get);
     for vertex_id in edge.vertices() {
         let vertex = records.vertex(vertex_id.as_str()).ok_or_else(|| {
             CodecError::malformed(format_args!(
@@ -7040,7 +7040,7 @@ fn edge_topology_tolerance(records: &impl ModelRecords, edge: &Edge) -> Result<f
         tolerance = tolerance.max(
             vertex
                 .tolerance
-                .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get),
+                .map_or(0.0, cadmpeg_ir::scalar::PositiveLength::get),
         );
     }
     Ok(tolerance)

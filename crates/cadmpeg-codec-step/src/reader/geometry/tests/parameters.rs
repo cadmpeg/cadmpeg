@@ -1369,7 +1369,7 @@ fn infer_edge_parameter_ranges_gives_an_off_carrier_edge_its_admission_bound() {
 #[test]
 fn infer_edge_parameter_ranges_keeps_a_wider_stated_tolerance() {
     let mut ir = off_carrier_edge_ir(2.5e-3);
-    let stated = cadmpeg_ir::scalar::PositiveReal::new(1.0e-2).expect("positive");
+    let stated = cadmpeg_ir::scalar::PositiveLength::new(1.0e-2).expect("positive");
     ir.geometry.edges[0].tolerance = Some(stated);
     let mut losses = Vec::new();
     crate::test_support::with_service_context(b"", |_, ctx| {

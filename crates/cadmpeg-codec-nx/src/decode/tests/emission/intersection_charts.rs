@@ -46,7 +46,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         ir.geometry.edges[0].set_curve(None).unwrap();
         ir.geometry.edges[0].set_param_range(None);
         ir.geometry.edges[0].tolerance =
-            Some(cadmpeg_ir::scalar::PositiveReal::new(0.01).expect("positive finite tolerance"));
+            Some(cadmpeg_ir::scalar::PositiveLength::new(0.01).expect("positive finite tolerance"));
         let mut edges = std::collections::BTreeMap::new();
         edges.insert(8, edge_id.clone());
         let mut incident_coedges = ir
@@ -195,7 +195,7 @@ fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
         ir.geometry.edges[0].set_curve(None).unwrap();
         ir.geometry.edges[0].set_param_range(None);
         ir.geometry.edges[0].tolerance =
-            Some(cadmpeg_ir::scalar::PositiveReal::new(0.01).expect("positive finite tolerance"));
+            Some(cadmpeg_ir::scalar::PositiveLength::new(0.01).expect("positive finite tolerance"));
         let edges = std::collections::BTreeMap::from([(8, edge_id.clone())]);
         let mut stream = partnered_trimmed_topology_partition_stream();
         let edge = stream
@@ -596,7 +596,7 @@ fn cylinder_plane_transfer_fixture(
             VertexId::mint("test:model:entity#synthetic:end").expect("identity grammar"),
         )),
         tolerance: Some(
-            cadmpeg_ir::scalar::PositiveReal::new(edge_tolerance)
+            cadmpeg_ir::scalar::PositiveLength::new(edge_tolerance)
                 .expect("positive finite tolerance"),
         ),
         native_ref: None,
@@ -967,7 +967,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
                     .expect("identity grammar"),
             )),
             tolerance: Some(
-                cadmpeg_ir::scalar::PositiveReal::new(EPS_TOPOLOGY_TOLERANCE)
+                cadmpeg_ir::scalar::PositiveLength::new(EPS_TOPOLOGY_TOLERANCE)
                     .expect("positive finite tolerance"),
             ),
             native_ref: None,
@@ -1119,7 +1119,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                 id: vertex_ids[0].clone(),
                 point: point_ids[0].clone(),
                 tolerance: Some(
-                    cadmpeg_ir::scalar::PositiveReal::new(EPS_TOPOLOGY_TOLERANCE)
+                    cadmpeg_ir::scalar::PositiveLength::new(EPS_TOPOLOGY_TOLERANCE)
                         .expect("positive finite tolerance"),
                 ),
                 native_ref: None,
@@ -1128,7 +1128,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                 id: vertex_ids[1].clone(),
                 point: point_ids[1].clone(),
                 tolerance: Some(
-                    cadmpeg_ir::scalar::PositiveReal::new(EPS_TOPOLOGY_TOLERANCE)
+                    cadmpeg_ir::scalar::PositiveLength::new(EPS_TOPOLOGY_TOLERANCE)
                         .expect("positive finite tolerance"),
                 ),
                 native_ref: None,
@@ -1143,7 +1143,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                 vertex_ids[1].clone(),
             )),
             tolerance: Some(
-                cadmpeg_ir::scalar::PositiveReal::new(EPS_TOPOLOGY_TOLERANCE)
+                cadmpeg_ir::scalar::PositiveLength::new(EPS_TOPOLOGY_TOLERANCE)
                     .expect("positive finite tolerance"),
             ),
             native_ref: None,
@@ -1346,7 +1346,7 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
                 vertices[1].clone(),
             )),
             tolerance: Some(
-                cadmpeg_ir::scalar::PositiveReal::new(EPS_TOPOLOGY_TOLERANCE)
+                cadmpeg_ir::scalar::PositiveLength::new(EPS_TOPOLOGY_TOLERANCE)
                     .expect("positive finite tolerance"),
             ),
             native_ref: None,

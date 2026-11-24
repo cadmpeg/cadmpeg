@@ -1326,6 +1326,7 @@ fn writer_round_trips_presentation_layer_visibility() {
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#hidden").expect("identity grammar"),
         name: "hidden layer".into(),
+        parent: None,
         description: Some("layer visibility".into()),
         visible: Some(false),
         items: vec![PresentationItem::Body { body }.into()],
@@ -1368,6 +1369,7 @@ fn writer_round_trips_empty_presentation_layer_label() {
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#unnamed").expect("identity grammar"),
         name: String::new(),
+        parent: None,
         description: Some("unnamed layer".into()),
         visible: Some(false),
         items: vec![PresentationItem::Body { body }.into()],

@@ -94,11 +94,21 @@ pub(crate) fn transfer(
     Ok(records)
 }
 
+pub(crate) fn neutral_annotation_id(object: &str) -> Result<SemanticAnnotationId, CodecError> {
+    SemanticAnnotationId::mint(crate::native::model_id(
+        "semantic-annotation",
+        object,
+        "content",
+    ))
+    .map_err(CodecError::malformed)
+}
+
 pub(crate) fn transfer_neutral(
     ctx: &DecodeContext<'_>,
     model: &mut Model,
     records: &[SemanticAnnotationRecord],
     properties: &[PropertyRecord],
+    link_targets: &crate::drawing::LinkTargets,
 ) -> Result<(), CodecError> {
     for (order, record) in records.iter().enumerate() {
         let schema = annotation_schema(record.kind);
@@ -113,7 +123,10 @@ pub(crate) fn transfer_neutral(
         for (role, targets) in &record.references {
             let mut selections = Vec::new();
             for link in targets {
-                selections.extend(crate::drawing::link_references(link.as_ref())?);
+                selections.extend(crate::drawing::link_references(
+                    link.as_ref(),
+                    link_targets,
+                )?);
             }
             references.insert(role.to_owned(), selections);
         }
@@ -139,12 +152,7 @@ pub(crate) fn transfer_neutral(
             parameters: cadmpeg_core::text::named_entries(&record.object, parameters)?,
             assets,
             ..SemanticAnnotation::new(
-                SemanticAnnotationId::mint(crate::native::model_id(
-                    "semantic-annotation",
-                    &record.object,
-                    "content",
-                ))
-                .map_err(CodecError::malformed)?,
+                neutral_annotation_id(&record.object)?,
                 record.object.clone(),
                 schema.kind.clone(),
                 record.kind.as_str().to_owned(),
@@ -1454,9 +1462,24 @@ pub(crate) mod tests {
             .find(|drawing| drawing.object.ends_with("#View"))
             .expect("neutral view");
         assert_eq!(
-            semantic_note.references["View"][0].native_text(),
-            Some(crate::native::id_key(&neutral_view.object))
+            semantic_note.references["View"],
+            [cadmpeg_ir::ReferenceSelection::new(
+                cadmpeg_ir::ReferenceTarget::Drawing {
+                    drawing: neutral_view.id.clone(),
+                    part: None,
+                }
+            )]
         );
+        assert_eq!(
+            neutral_dimension.relationships["BaseView"],
+            [cadmpeg_ir::ReferenceSelection::new(
+                cadmpeg_ir::ReferenceTarget::Drawing {
+                    drawing: neutral_view.id.clone(),
+                    part: None,
+                }
+            )]
+        );
+        assert!(neutral_dimension.base_view.is_none());
         assert!(crate::test_support::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());
     }

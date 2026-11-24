@@ -849,7 +849,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
         };
         let tolerance = edge
             .tolerance
-            .map(cadmpeg_ir::scalar::PositiveReal::get)
+            .map(cadmpeg_ir::scalar::PositiveLength::get)
             .filter(|tolerance| *tolerance > self.brep.tolerance);
         self.brep.edges.push(EdgeRecord {
             tolerance,

@@ -179,7 +179,10 @@ pub(in crate::design::ops) fn curve() -> Construction<kinds::Curve> {
 }
 
 pub(in crate::design::ops) fn native_options() -> NativeOptions {
-    NativeOptions::from([(text("codec:option"), NativeOption::Bool(lit(true)))])
+    NativeOptions::from([(
+        crate::codec_name!("codec:option"),
+        NativeOption::Bool(lit(true)),
+    )])
 }
 
 pub(in crate::design::ops) fn sheet_output() -> SheetOutput {

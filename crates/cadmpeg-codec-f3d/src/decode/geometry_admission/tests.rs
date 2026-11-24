@@ -137,7 +137,7 @@ fn straddling_exact_cubic_endpoints_widen_the_shared_vertex_tolerance() {
     crate::test_support::with_decode_context(|ctx| {
         let mut ir = exact_curve(0.5);
         let mut expected = ir.clone();
-        expected.geometry.vertices[1].tolerance = cadmpeg_ir::scalar::PositiveReal::new(0.5);
+        expected.geometry.vertices[1].tolerance = cadmpeg_ir::scalar::PositiveLength::new(0.5);
         let mut losses = Vec::new();
         assert!(!geometry_is_valid(ctx, &ir));
         let mut annotations = vec![cadmpeg_asm::brep::annotations::AnnotationRecord {
@@ -185,7 +185,7 @@ fn matching_cache_and_explicit_endpoint_tolerance_are_preserved() {
         for offset in [0.0, 0.5] {
             let mut ir = exact_curve(offset);
             if offset != 0.0 {
-                ir.geometry.vertices[1].tolerance = cadmpeg_ir::scalar::PositiveReal::new(0.75);
+                ir.geometry.vertices[1].tolerance = cadmpeg_ir::scalar::PositiveLength::new(0.75);
             }
             let expected = ir.clone();
             let mut losses = Vec::new();

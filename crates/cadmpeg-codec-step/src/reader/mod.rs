@@ -1105,7 +1105,7 @@ fn step_source_id(id: u64) -> cadmpeg_core::text::NonBlankString {
 fn step_source_association(id: u64, name: Option<String>) -> SourceObjectAssociation {
     SourceObjectAssociation {
         geometry_role: None,
-        format: cadmpeg_ir::codec_format!(crate::dialect::FORMAT),
+        format: cadmpeg_ir::codec_id!(crate::dialect::FORMAT),
         object_id: step_source_id(id),
         name,
         color: None,

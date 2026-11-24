@@ -23,7 +23,7 @@ use crate::design::ops::sketch::{
 };
 use crate::design::refs::EntityRef;
 use crate::design::selection::{DatumPart, PickTarget, Picked, Picks, PrincipalEntity};
-use crate::geometry::SolvedCurveGeometry;
+use crate::geometry::{InlineCurve, SolvedCurveGeometry};
 
 use super::constructions::{datum_element, DatumFeature};
 use super::index::DesignIndex;
@@ -432,7 +432,13 @@ fn planar_straight(curve: Option<&PlanarCurve>) -> bool {
 fn spatial_straight(curve: Option<&SpatialCurve>) -> bool {
     match curve {
         None | Some(SpatialCurve::Point(_)) => false,
-        Some(SpatialCurve::Bounded { carrier, .. }) => !curved(carrier),
+        Some(SpatialCurve::Bounded(bounded)) => !matches!(
+            bounded.carrier,
+            InlineCurve::Circle(_)
+                | InlineCurve::Ellipse(_)
+                | InlineCurve::Parabola(_)
+                | InlineCurve::Hyperbola(_)
+        ),
     }
 }
 

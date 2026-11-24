@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rewrite the identities owned by these fields.
 
-use super::{
-    AttributeExpression, AttributeJson, AttributeMapEntry, AttributeTarget, AttributeValue,
-    SourceAttribute,
-};
+use super::{AttributeJson, AttributeMapEntry, AttributeTarget, AttributeValue, SourceAttribute};
 use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -154,14 +151,12 @@ rewrite_enum!(AttributeValue, []; {
     Parameter(field0),
     Vector(field0),
     Map(field0),
-    Expression(field0),
     SubReference {object, subelements},
     ExternalReference {document, object, subelements},
     EmptyReference,
     Json(field0),
 });
 rewrite_record!(AttributeMapEntry, []; {key, value});
-rewrite_record!(AttributeExpression, []; {path, expression, comment});
 rewrite_enum!(AttributeJson, []; {
     Null,
     Boolean(field0),

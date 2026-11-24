@@ -4,7 +4,8 @@
 use serde_json::json;
 
 use super::{
-    construction, id, native_options, point3, real, refuses, selection, to_value, unread, Report,
+    construction, id, native_options, point3, positive_real, refuses, selection, to_value, unread,
+    Report,
 };
 use crate::design::construction::{kinds, AxisValue, FrameValue, PlaneValue};
 use crate::design::feature::{Link, LinkState};
@@ -25,7 +26,7 @@ fn links() -> Vec<Link> {
                 configuration: None,
             }),
             transform: Some(Transform::identity()),
-            scale: Some(real(2.0)),
+            scale: Some(positive_real(2.0)),
             associative: Some(true),
             state: Some(LinkState::OutOfDate),
             native_ref: Some("nx:extract_parms#3".to_owned()),
