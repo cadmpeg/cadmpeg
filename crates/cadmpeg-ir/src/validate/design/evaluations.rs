@@ -12,7 +12,6 @@ use crate::design::feature::{Feature, FeatureOperation};
 use crate::design::refs::Position;
 use crate::design::selection::{OccurrencePath, StepRef};
 use crate::features::ConfigurationId;
-use crate::products::{ProductDefinition, Storage};
 use crate::report::check::Finding;
 
 /// A position names an existing member of a container, an ordered container
@@ -197,19 +196,6 @@ pub(super) fn check_evaluations(
                     id,
                     format_args!(
                         "feature {} is stateless in the evaluation's configuration and has no evaluation there",
-                        feature.id.as_str()
-                    ),
-                );
-            } else if matches!(of, OfKey::Tool(_))
-                && super::ops::builds_tool_body(
-                    &index.definition_in(feature, configuration).operation,
-                ) == Some(false)
-            {
-                super::error(
-                    findings,
-                    id,
-                    format_args!(
-                        "evaluation evaluates the tool body of {}, whose operation in the evaluation's configuration builds none",
                         feature.id.as_str()
                     ),
                 );
@@ -450,16 +436,6 @@ pub(super) fn check_path_steps(
     }
 }
 
-/// The bodies a definition lists in `bodies` and in its `instance_bodies`.
-fn listed_bodies(definition: &ProductDefinition) -> impl Iterator<Item = &crate::ids::BodyId> {
-    definition.bodies.iter().chain(
-        definition
-            .instance_bodies
-            .iter()
-            .flat_map(|entry| &entry.bodies),
-    )
-}
-
 pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
     let ir = index.ir;
     let bodies: BTreeSet<&str> = ir
@@ -472,22 +448,17 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
     for scope in &ir.design.scopes {
         let entity = scope.definition.as_str();
         let spanned = index.spanned_definitions(entity);
-        let spanned: Vec<&ProductDefinition> = spanned
-            .iter()
-            .filter_map(|definition| index.definitions.get(definition).copied())
-            .collect();
         let owned: BTreeSet<&str> = spanned
             .iter()
-            .flat_map(|definition| listed_bodies(definition))
-            .map(crate::ids::BodyId::as_str)
-            .collect();
-        // §5.1 stops the span at a definition stored as a file.
-        let required: BTreeSet<&str> = spanned
-            .iter()
-            .filter(|definition| {
-                definition.id.as_str() == entity || matches!(definition.storage, Storage::Embedded)
+            .filter_map(|definition| index.definitions.get(definition))
+            .flat_map(|definition| {
+                definition.bodies.iter().chain(
+                    definition
+                        .instance_bodies
+                        .iter()
+                        .flat_map(|entry| &entry.bodies),
+                )
             })
-            .flat_map(|definition| listed_bodies(definition))
             .map(crate::ids::BodyId::as_str)
             .collect();
         let mut posed: BTreeMap<&OccurrencePath, usize> = BTreeMap::new();
@@ -534,26 +505,30 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
                 );
             }
         }
-        let here: BTreeSet<&str> = scope
-            .current
-            .iter()
-            .flat_map(|current| &current.bodies)
-            .chain(&scope.unproduced)
-            .map(crate::ids::BodyId::as_str)
-            .collect();
-        for body in required.difference(&here) {
-            super::error(
-                findings,
-                body,
-                format_args!("body of a definition scope {entity} spans belongs to no current state or unproduced set of that scope"),
-            );
-        }
         for count in posed.into_values() {
             if count > 1 {
                 super::error(
                     findings,
                     entity,
                     format_args!("an instance path has a pose in {count} current states of the scope; it has one in at most one"),
+                );
+            }
+        }
+    }
+    // A body of a scoped definition is listed by some scope, not
+    // necessarily its own.
+    for scope in &ir.design.scopes {
+        let entity = scope.definition.as_str();
+        let own = index
+            .definitions
+            .get(entity)
+            .map_or(&[][..], |definition| &definition.bodies[..]);
+        for body in own.iter().map(crate::ids::BodyId::as_str) {
+            if !listed.contains_key(body) {
+                super::error(
+                    findings,
+                    body,
+                    format_args!("body of scoped definition {entity} belongs to no current state or unproduced set"),
                 );
             }
         }

@@ -62,10 +62,9 @@ use semantic_annotations::check_semantic_annotations;
 use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
 use topology::graphs::{
-    check_child_list_reciprocity, check_closed_edges, check_coedge_pairing, check_loopless_faces,
-    check_partial_topology, check_shell_connectivity, check_wire_topology,
+    check_child_list_reciprocity, check_closed_edges, check_coedge_pairing, check_partial_topology,
+    check_shell_connectivity, check_wire_topology,
 };
-use topology::procedural_owners::check_procedural_owners;
 use topology::{
     check_references, check_subdivision_schemes, check_tolerances, check_topology_tolerances,
 };
@@ -162,9 +161,9 @@ fn validate_model_with_index<'ir>(
     })
 }
 
-/// The rules of part 10 that read the records of one `Topology`: procedural
-/// records' owners, radial rings, child lists, edges with no vertex, shell
-/// connectivity, faces with no loops, partial records, wire members, carrier reachability, parameter domains, the
+/// The rules of part 10 that read the records of one `Topology`: radial
+/// rings, child lists, edges with no vertex, shell connectivity, partial
+/// records, wire members, carrier reachability, parameter domains, the
 /// coincidence of an edge's curve, a coedge's use curve, and a coedge's
 /// pcurves with the vertices, topology tolerances, and subdivision schemes.
 /// `index` holds the topology as the geometry of its document; `reach` is
@@ -178,12 +177,10 @@ fn check_topology_rules(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let ir = index.ir();
-    check_procedural_owners(ir, findings);
     check_coedge_pairing(ir, findings)?;
     check_child_list_reciprocity(ir, findings);
     check_closed_edges(ir, findings);
     check_shell_connectivity(ir, findings);
-    check_loopless_faces(ir, findings);
     check_partial_topology(ir, findings);
     check_wire_topology(ir, findings);
     if reach.ir.fragment {
