@@ -1,4 +1,4 @@
-use super::{departure, refine};
+use super::{departure, refine, MAX_TRACE_POINTS};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::geometry::analytic::{CylinderSurface, PlaneSurface};
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
@@ -209,5 +209,83 @@ fn parallel_supports_do_not_trace() {
             .expect("evaluation")
             .is_none()
     );
+    ctx.finish_session().expect("session");
+}
+
+/// Two planes through the origin whose normals differ by `angle` radians, and
+/// a straight chart of three segments `offset` from their intersection line.
+fn tilted_planes(angle: f64) -> [SolvedSurfaceGeometry; 2] {
+    let tilted = SolvedSurfaceGeometry::Plane(
+        PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(-angle.sin(), 0.0, angle.cos()),
+            Vector3::new(angle.cos(), 0.0, angle.sin()),
+        )
+        .expect("plane"),
+    );
+    [plane(0.0), tilted]
+}
+
+fn line_chart(offset: f64) -> NurbsCurve {
+    let points = (0..=3).map(|step| Point3::new(offset, f64::from(step), 0.0));
+    let knots = vec![0.0, 0.0, 1.0, 2.0, 3.0, 3.0];
+    NurbsCurve::from_lanes(1, knots, points.collect(), None, false).expect("chart")
+}
+
+#[test]
+fn point_that_does_not_converge_within_the_iteration_limit_is_not_refined() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena);
+    let chart = line_chart(0.5);
+    // Alternating projection between nearly parallel planes closes the
+    // distance to their line too slowly for the limit.
+    let [lower, slow] = tilted_planes(0.01);
+    assert!(refine(&ctx, [&lower, &slow], &chart, None, TARGET_MM, 10.0)
+        .expect("evaluation")
+        .is_none());
+    let [lower, quick] = tilted_planes(1.0);
+    let traced = refine(&ctx, [&lower, &quick], &chart, None, TARGET_MM, 10.0)
+        .expect("evaluation")
+        .expect("refined");
+    assert!(traced.departure <= TARGET_MM);
+    ctx.finish_session().expect("session");
+}
+
+#[test]
+fn chart_already_at_the_point_limit_is_not_subdivided() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena);
+    let (plane, cylinder) = (plane(0.0), cylinder());
+    // The chord midpoints of this many segments lie about 1.7e-8 mm off the
+    // supports, which the tight target rejects.
+    let count = u32::try_from(MAX_TRACE_POINTS + 1_000).expect("count");
+    let dense = chart(count, 0.0, 0.0);
+    let target = 1.0e-9;
+    let traced = refine(&ctx, [&plane, &cylinder], &dense, None, target, REACH_MM)
+        .expect("evaluation")
+        .expect("refined");
+    assert_eq!(
+        traced.curve.control_points().len(),
+        dense.control_points().len()
+    );
+    assert!(traced.departure > target);
+    ctx.finish_session().expect("session");
+}
+
+#[test]
+fn refinement_stops_at_the_point_limit_and_states_the_departure() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena);
+    let (plane, cylinder) = (plane(0.0), cylinder());
+    let coarse = chart(8, 0.0, 0.0);
+    // The target needs millions of points.
+    let target = 1.0e-12;
+    let traced = refine(&ctx, [&plane, &cylinder], &coarse, None, target, REACH_MM)
+        .expect("evaluation")
+        .expect("refined");
+    let points = traced.curve.control_points().len();
+    assert!(points <= MAX_TRACE_POINTS);
+    assert!(points > MAX_TRACE_POINTS / 2);
+    assert!(traced.departure > target);
     ctx.finish_session().expect("session");
 }

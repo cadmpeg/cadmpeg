@@ -20,8 +20,10 @@ use crate::geometry::{self, Nodes};
 /// off the intersection.
 const MAX_SNAP_ITERATIONS: usize = 64;
 
-/// Points one refined chart may hold. A chart that reaches the limit keeps the
-/// segments it has, and the stated departure covers the rest.
+/// Points one refined chart may hold, counting the points of the segments not
+/// yet refined. A chart that reaches the limit keeps the segments it has, and
+/// the stated departure covers the rest. A chart that holds the limit before
+/// refinement is not subdivided.
 const MAX_TRACE_POINTS: usize = 16_384;
 
 /// Midpoint bisections applied to one chart segment.
@@ -283,7 +285,8 @@ pub(crate) fn refine(
             } else if !inside {
                 return Ok(None);
             } else if depth >= MAX_TRACE_DEPTH
-                || refined_points.len() + pending.len() + 2 >= MAX_TRACE_POINTS
+                || refined_points.len() + pending.len() + (snapped.len() - 1 - index) + 2
+                    >= MAX_TRACE_POINTS
             {
                 departure = departure.max(distance);
             } else {
