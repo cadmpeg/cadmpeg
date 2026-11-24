@@ -40,7 +40,7 @@ This document uses ASD-STE100 Simplified Technical English.
 
 **Question.** What do the logical and integer attributes of the operation and end-condition entities state?
 
-**Known.** `BLINDENDCONDITION` attribute 2 is a logical that is false for an extrusion on the sketch normal. `BLINDANGLEENDCONDITION` attribute 0 and `THROUGHALLENDCONDITION` attribute 2 are logicals. `EXTRUDESKETCHOPERATION` stores the integer 0 at attribute 1 and the integer 2 at attribute 7, and a logical at attribute 9. `HOLEOPERATION` stores the integer 1 at attribute 1 and two logicals after the shape. `SIMPLEHOLE` stores the integer list `(0)` at attribute 0 and integers and logicals after the end condition. `BLOCKPRIMITIVE` ends with a logical. `DESIGNSKETCH` stores integers at attributes 4 to 6 and 8 and a list of text numbers at attribute 8.
+**Known.** `BLINDENDCONDITION` attribute 2 is a logical that is false for an extrusion on the sketch normal. `BLINDANGLEENDCONDITION` attribute 0 and `THROUGHALLENDCONDITION` attribute 2 are logicals. `EXTRUDESKETCHOPERATION` stores the integer 0 at attribute 1 and the integer 2 at attribute 7, and a logical at attribute 9. `HOLEOPERATION` stores the integer 1 at attribute 1 and two logicals after the shape. `SIMPLEHOLE` stores the integer list `(0)` at attribute 0 and integers and logicals after the end condition. `BLOCKPRIMITIVE` ends with a logical. `DESIGNSKETCH` stores integers at attributes 4 to 6, an integer list such as `(0,4)` at attribute 7, a list of text numbers at attribute 8, and a null at attribute 9. `DESIGNSTATE` holds nine attributes, for example `DESIGNSTATE('Origin',0,#207,.T.,$,#192,#219,$,$)`. The decoder reads the name (0), the index (1), and the operation (2). Attribute 3 is a logical that is true in every committed state, 4 and 7 are null, 5 references a `PRODUCTVERSION` record, 6 references the `DESIGNPARTSTATECONTEXT`, and 8 references a `PRODUCTVERSION` record in the states of sketches and modeling features and is null in the others. The meaning of the logical at 3 and of the references at 4 to 8 is unknown, and the decoder reads none of them.
 
 **Need.** One save of each operation with a single control changed (reversed extrusion direction, symmetric extrusion, extrusion to a face, hole direction, construction geometry in a sketch), with the changed attribute compared.
 
@@ -48,7 +48,7 @@ This document uses ASD-STE100 Simplified Technical English.
 
 **Question.** How does a `TOPOLOGYSIGNATURE` select edges and faces of the body?
 
-**Known.** An `OPERATIONTARGETPROXY` of a fillet or of a sketch on a face references a `TOPOLOGYSIGNATURE` whose attribute 0 is a short text of the form `#<n>`. The text names no edge or face by an index of the `SAB_DATA` records. The decoder keeps the text as the native selection text of an unread selection.
+**Known.** An `OPERATIONTARGETPROXY` of a fillet or of a sketch on a face references a `TOPOLOGYSIGNATURE` whose attribute 0 is a short text of the form `#<n>`. The text names no edge or face by an index of the `SAB_DATA` records. The decoder keeps the text as the native selection text of an unread selection, and reports `alibre/history.edge-selection-unresolved` for a fillet and `alibre/history.face-selection-unresolved` for a sketch on a face.
 
 **Need.** A fillet on two different edges of one body, and sketches on two different faces, with the signature texts compared against the edge and face order of the body.
 

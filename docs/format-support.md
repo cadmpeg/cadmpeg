@@ -621,17 +621,19 @@ These gaps remain:
 
 <!-- /generated: dialects alibre -->
 
-The codec detects a part from the streams `SAB_DATA` and `STEP_DATA`, frames the ACIS binary stream with the identifier table and the extended entity base (`alibre.md` §2), and decodes it through the shared ASM/ACIS decoders into a connected B-rep with analytic and B-spline carriers in millimetres. A part becomes one body under one root product definition.
+The codec detects a part from the streams `SAB_DATA` and `STEP_DATA`, frames the ACIS binary stream with the identifier table and the extended entity base (`alibre.md` §2), and decodes it through the shared ASM/ACIS decoders into a connected B-rep with analytic and B-spline carriers in millimetres. A part becomes one body under one root product definition. The feature history of `STEP_DATA` transfers as design records: one scope with a timeline, a feature for each state, sketches with their entities and constraints, and parameters. These design records are a partial extra above L3, which the B-rep sets. They cover the origin, axes, planes, offset planes, sketches, extrusions, revolutions, fillets, holes, and lofts. A `STEP_DATA` stream that does not read keeps the body and reports `alibre/history.stream-unread`.
 
 These gaps remain:
 
 - Faces of a lofted solid keep the solved B-spline cache as carrier, and their edges have no typed 3D curve (ALB-01, `alibre/geometry.procedural-surface-untyped`).
-- The feature model of `STEP_DATA` and every other stream do not transfer (ALB-02, ALB-03, `alibre/source.streams-undecoded`).
+- Feature families without a decoded record, the loft settings, the selection of edges and faces by topology signature, and the logicals of the operation entities stay unread (ALB-02, ALB-06, ALB-07, ALB-08, `alibre/history.operation-unmapped`, `alibre/history.edge-selection-unresolved`, `alibre/history.face-selection-unresolved`).
+- Every stream other than `SAB_DATA` and `STEP_DATA` does not transfer (ALB-03, `alibre/source.streams-undecoded`).
 - Assemblies and sheet-metal parts are not claimed (ALB-04).
 
 ### Read profile
 - **Container and versions: Partial.** The codec admits the compound file, requires the two body streams, and classifies the ACIS save format on the kernel layer.
 - **Geometry: Partial.** Planes, cylinders, cones, tori, and B-spline carriers decode with exact topology. Procedural constructions stay unknown.
+- **Design: Partial.** The feature history of the supported operations decodes into the design layer. Selections of edges and faces stay unread.
 
 ### Write and round trip
 - **Native write: None.**

@@ -94,7 +94,7 @@ The y axis of a placement is the cross product of the z axis and the x axis. A `
 
 ### 4.2 States and operations
 
-`DESIGNPARTSTATECONTEXT` attribute 0 lists the `DESIGNSTATE` entities in feature order, and attribute 1 references the last state. A `DESIGNSTATE` holds the name (0), the index (1), the operation entity (2), and a logical (3). The index is 0 for the states of the origin, the principal axes, the principal planes, and sketches. A state of a modeling feature or a user datum holds its 1-based position among such states.
+`DESIGNPARTSTATECONTEXT` attribute 0 lists the `DESIGNSTATE` entities in feature order, and attribute 1 references the last state. A `DESIGNSTATE` holds nine attributes: the name (0), the index (1), the operation entity (2), a logical (3), and attributes 4 to 8, whose meaning ALB-06 records as unknown. The decoder reads attributes 0 to 2. The index is 0 for the states of the origin, the principal axes, the principal planes, and sketches. A state of a modeling feature or a user datum holds its 1-based position among such states. The decoder does not read the index: the feature order is the order of the state list.
 
 | Operation entity | Attributes |
 |---|---|
@@ -105,7 +105,7 @@ The y axis of a placement is the cross product of the z axis and the x axis. A `
 | `EXTRUDESKETCHOPERATION` | 0: list of `DESIGNDIMENSION`; 2: `DESIGNSKETCH`; 3: `BLINDENDCONDITION`. |
 | `REVOLVESKETCHOPERATION` | 0: list of `DESIGNDIMENSION`; 2: `DESIGNSKETCH`; 3: `OPERATIONTARGETPROXY` of a `DESIGNPRIMARYAXIS`; 7: `AXIS1_PLACEMENT` of the revolution axis; 8: `BLINDANGLEENDCONDITION`. |
 | `FILLETOPERATION` | 1: list of `OPERATIONTARGETPROXY`; 2: radius `DOUBLEPARAMETER`. |
-| `HOLEOPERATION` | 2: `DESIGNSKETCH` of the hole centres; 3: `SIMPLEHOLE`. |
+| `HOLEOPERATION` | 2: `DESIGNSKETCH` whose point primitives are the hole centres; 3: `SIMPLEHOLE`. |
 | `LOFTOPERATION` | 2: ordered list of the `DESIGNSKETCH` entities of the sections. |
 
 `OFFSETPLANEPRODUCER` holds an `OPERATIONTARGETPROXY` of the base plane (0) and the offset `DOUBLEPARAMETER` (1). The plane of an associated plane lies at the offset along the normal of the base plane. `OPERATIONTARGETPROXY` attribute 1 references the target: a `DESIGNPRIMARYPLANE`, a `DESIGNASSOCIATEDPLANE`, a `DESIGNPRIMARYAXIS`, or a `TOPOLOGYSIGNATURE`.
@@ -150,4 +150,4 @@ An extrusion starts on the sketch plane and ends at the depth along the sketch n
 
 ### 4.6 Decode
 
-The decoder reads one feature for each state in state order and maps it to the design layer of the IR: the origin, axes, and planes to datums, an associated plane to an offset plane, a sketch to a placed sketch with its line, circle, and point entities, and the extrusion, revolution, fillet, hole, and loft to their operations. A parameter is a design parameter in millimetres or radians, and an operation refers to it by dimension. The decoder converts centimetres to millimetres. The decode reports `alibre/history.edge-selection-unresolved` for a topology signature, `alibre/history.direction-flag-assumed` for the logical of a blind end condition, and the other `alibre/history.*` codes for records that no feature maps. The remaining entities of the document profile are in `alibre/history.presentation-unmapped`.
+The decoder reads one feature for each state in state order and maps it to the design layer of the IR: the origin, axes, and planes to datums, an associated plane to an offset plane, a sketch to a placed sketch with its line, circle, and point entities, and the extrusion, revolution, fillet, hole, and loft to their operations. A parameter is a design parameter in millimetres or radians, and an operation refers to it by dimension. The decoder converts centimetres to millimetres. A hole takes every point primitive of its sketch as a centre. A parameter GUID is the source setting `alibre:guid` of the design parameter. The decode reports `alibre/history.edge-selection-unresolved` for the topology signatures of a fillet, `alibre/history.face-selection-unresolved` for a sketch on a face, `alibre/history.dimension-annotation-unmapped` for the dimension list of an extrusion or revolution, `alibre/history.direction-flag-assumed` for the logical of a blind end condition, and the other `alibre/history.*` codes for records that no feature maps. The remaining entities of the document profile are in `alibre/history.presentation-unmapped`. A `STEP_DATA` stream that does not read as Part 21 or as a feature history, or whose history does not project, leaves the body intact and reports `alibre/history.stream-unread`; a resource limit still refuses the decode.
