@@ -399,9 +399,35 @@ pub(super) fn indexed_operands(
     })
 }
 
+/// The sketches, by record key, that hold a record which is not a construction
+/// line and has no neutral entity: a native line, a block instance, an arc
+/// whose end is off its circle or an entity whose id cannot be minted. The
+/// neutral curves of such a sketch do not bound its profile.
+pub(crate) fn incomplete_sketches<'a>(
+    raw: &'a [crate::sketch::PmDcSketchEntity],
+    neutral: &[cadmpeg_ir::sketches::SketchEntity],
+) -> HashSet<(&'a str, u32)> {
+    let projected = neutral
+        .iter()
+        .filter_map(|entity| entity.native_ref.as_deref())
+        .collect::<HashSet<_>>();
+    raw.iter()
+        .filter(|entity| {
+            !crate::sketch::marks_construction(entity) && !projected.contains(entity.id().as_str())
+        })
+        .filter_map(|entity| {
+            Some((
+                entity.identity.segment_token.as_str(),
+                entity.sketch.index().checked_sub(1)?,
+            ))
+        })
+        .collect()
+}
+
 /// The model-space corners of the bounding boxes of the non-construction
 /// curves of the profile sketch. Every point of the profile lies inside the
-/// hull of these corners. `None` when the sketch is unplaced or holds a curve
+/// hull of these corners. `None` when the sketch is unplaced, holds a record
+/// without a neutral entity (see [`incomplete_sketches`]), or holds a curve
 /// kind whose box this function does not evaluate (points, lines, circles and
 /// arcs).
 fn profile_corners(
@@ -418,6 +444,10 @@ fn profile_corners(
         .sketches
         .get(&(token, participant.record_ordinal()?))?
         .as_ref()?;
+    let sketch_key = (token, participant.record_ordinal()?);
+    if index.incomplete_sketches.contains(&sketch_key) {
+        return None;
+    }
     let neutral = index.sketch_ids.get(sketch.id().as_str())?;
     let (origin, normal, u_axis) =
         crate::sketch::project_placement(sketch, &index.transforms, &index.directions)?
@@ -458,8 +488,8 @@ fn profile_corners(
 /// line through every profile point meets the start plane before the end
 /// plane by more than [`EPS_FACE_GAP`]. The distance between the two meeting
 /// points is affine in the profile point, so the corners of the profile
-/// curve boxes bound it. Parallel planes have a point-independent gap and need
-/// no profile point.
+/// curve boxes bound it. Without profile corners, parallel planes are ordered
+/// at the start plane origin, where their point-independent gap is exact.
 fn surface_extent(
     start: &ExtrudeStart,
     extent: &ExtrudeExtent,
@@ -502,13 +532,12 @@ fn surface_extent(
                 return false;
             }
             let parallel = from_normal.dot(to_normal).abs() >= 1.0 - EPS_PLANE_PARALLEL;
-            let points = if parallel {
-                vec![Vector3::new(from_origin.x, from_origin.y, from_origin.z)]
-            } else {
-                match profile_corners() {
-                    Some(corners) if !corners.is_empty() => corners,
-                    _ => return false,
+            let points = match profile_corners() {
+                Some(corners) if !corners.is_empty() => corners,
+                _ if parallel => {
+                    vec![Vector3::new(from_origin.x, from_origin.y, from_origin.z)]
                 }
+                _ => return false,
             };
             // Travel from the point to each plane; the planes are met in the
             // order start, end when the end distance exceeds the start distance.
@@ -634,6 +663,7 @@ pub(crate) struct ValidationRecords<'a> {
     pub(crate) directions: &'a [crate::sketch::PmDcDirection],
     pub(crate) transforms: &'a [crate::sketch::PmDcTransform],
     pub(crate) planes: &'a [super::PmDcWorkPlane],
+    pub(crate) sketch_entities: &'a [crate::sketch::PmDcSketchEntity],
     pub(crate) entity_links: &'a [super::PmDcEntityStyleLink],
     pub(crate) kernel_links: &'a [super::PmDcKernelEntityLink],
     pub(crate) model: &'a cadmpeg_ir::document::Model,
@@ -705,6 +735,10 @@ impl<'a> ValidationIndex<'a> {
                 .iter()
                 .map(|entity| (entity.id().as_str(), entity))
                 .collect(),
+            incomplete_sketches: incomplete_sketches(
+                records.sketch_entities,
+                &records.model.sketch_entities,
+            ),
             entity_style_links: records
                 .entity_links
                 .iter()

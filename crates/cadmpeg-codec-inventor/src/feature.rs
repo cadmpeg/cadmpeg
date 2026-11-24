@@ -2188,6 +2188,8 @@ pub(crate) struct ProjectionIndex<'a> {
     sketch_ids: HashMap<&'a str, cadmpeg_ir::sketches::SketchId>,
     sketches_by_id: HashMap<&'a str, &'a Sketch>,
     neutral_entities: HashMap<&'a str, &'a cadmpeg_ir::sketches::SketchEntity>,
+    /// Sketches with a record that has no neutral entity.
+    incomplete_sketches: HashSet<(&'a str, u32)>,
     directions: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcDirection>>,
     transforms: HashMap<(&'a str, u32), Option<&'a crate::sketch::PmDcTransform>>,
     entity_style_links: HashSet<(&'a str, u32)>,
@@ -2394,6 +2396,7 @@ pub(crate) fn project(
             .iter()
             .map(|entity| (entity.id().as_str(), entity))
             .collect(),
+        incomplete_sketches: extrusion::incomplete_sketches(&sketch.entities, sketch_entities),
         directions: unique_directions,
         transforms: unique_transforms,
         entity_style_links: {
@@ -5623,6 +5626,7 @@ pub(crate) mod tests {
                 .map(|sketch| (sketch.id.as_str(), sketch))
                 .collect(),
             neutral_entities: std::collections::HashMap::new(),
+            incomplete_sketches: std::collections::HashSet::new(),
             directions: directions
                 .iter()
                 .map(|record| {

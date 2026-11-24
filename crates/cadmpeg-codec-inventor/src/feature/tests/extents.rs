@@ -102,7 +102,7 @@ fn configured_extent_extrusion(
 
 /// An extent fixture whose consumed sketch is placed by `matrix`, in
 /// centimetres. The sketch direction record and the feature direction record
-/// are the same +z direction unless the slots say otherwise.
+/// are the sketch normal, +z for the identity, unless the slots say otherwise.
 fn placed_extent_extrusion(
     extent: u16,
     symmetric: bool,
@@ -257,9 +257,13 @@ fn build_extent_extrusion(
         configuration: None,
         visible: None,
         placement: SketchPlacement::try_resolved(
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 0.0),
+            Point3::new(
+                matrix[0][3] * 10.0,
+                matrix[1][3] * 10.0,
+                matrix[2][3] * 10.0,
+            ),
+            Vector3::new(matrix[0][2], matrix[1][2], matrix[2][2]),
+            Vector3::new(matrix[0][0], matrix[1][0], matrix[2][0]),
         )
         .expect("valid test fixture"),
         profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
@@ -272,11 +276,9 @@ fn build_extent_extrusion(
             entity_flags: 0,
             parameter: cadmpeg_ir::scalar::FiniteReal::ZERO,
             extension: None,
-            direction: [
-                cadmpeg_ir::scalar::FiniteReal::ZERO,
-                cadmpeg_ir::scalar::FiniteReal::ZERO,
-                cadmpeg_ir::scalar::FiniteReal::ONE,
-            ],
+            // The sketch normal: the third column of the placement matrix, +z
+            // for the identity.
+            direction: reals([matrix[0][2], matrix[1][2], matrix[2][2]]),
         },
         crate::record_identity::RecordTypeId::try_from(
             "40df52ced011d0d20008ccbc0663dc09".to_owned(),
@@ -637,6 +639,7 @@ fn build_extent_extrusion(
                 directions: &directions,
                 transforms: std::slice::from_ref(&transform),
                 planes: &planes,
+                sketch_entities: &[],
                 entity_links: std::slice::from_ref(&link),
                 kernel_links: &[],
                 model: &model,
