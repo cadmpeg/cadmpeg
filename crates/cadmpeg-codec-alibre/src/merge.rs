@@ -163,7 +163,7 @@ pub(crate) fn merge_component(
         .model
         .extend_rewritten(child_ir.model, &mut rewrite)?;
     if let Some(mut namespace) = child_ir.native.0.remove("alibre") {
-        let target = parent.native.namespace_mut("alibre");
+        let target = parent.native.namespace_mut(cadmpeg_ir::codec_id!("alibre"));
         for (name, records) in std::mem::take(namespace.arenas_mut()) {
             let arena = target.arenas_mut().entry(name).or_default();
             for record in &records {
