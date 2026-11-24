@@ -120,10 +120,10 @@ The fourth column stores the origin in metres; the last row is `[0, 0, 0, 1]`.
 The rotation is right-handed and orthonormal.
 A sketch placed on a planar face stores its attachment frame in the same
 `sketchMatrix` when the feature has no `plane` object. The matrix origin lies
-on the face surface plane and the matrix normal is parallel to the surface
-normal. The origin retains tangential translation, the x axis retains in-plane
-rotation and the normal carries the attachment sense. The matrix maps each
-solved `position2d` of the sketch to a point inside the face.
+on the face surface plane and the matrix normal is collinear with the surface
+normal; the matrix stores the sign of the normal. The origin retains
+tangential translation, the x axis retains in-plane rotation and the normal
+carries the attachment sense.
 
 A `cPlane` feature with `cplaneType` equal to `OFFSET` selects its support
 through `entities`. A single default plane or created datum plane defines

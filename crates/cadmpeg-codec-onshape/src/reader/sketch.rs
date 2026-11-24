@@ -2,6 +2,8 @@
 const SPLINE_DOMAIN_TOLERANCE: f64 = 1e-9;
 const POINT_U_TOLERANCE: f64 = 1e-6;
 const POINT_V_TOLERANCE: f64 = 1e-6;
+const EPS_FRAME_X_IN_PLANE: f64 = 64.0 * f64::EPSILON;
+const EPS_FRAME_ROUNDOFF: f64 = 64.0 * f64::EPSILON;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::Model;
@@ -167,7 +169,7 @@ fn stored_frame(feature: &Value) -> Mapping<Value> {
         1.0,
     )?)?;
     let dot: f64 = x.into_iter().zip(normal).map(|(a, b)| a * b).sum();
-    if dot.abs() > 64.0 * f64::EPSILON {
+    if dot.abs() > EPS_FRAME_X_IN_PLANE {
         return Err("the stored sketch x axis is not in its plane".into());
     }
     Ok(
@@ -190,7 +192,7 @@ fn attachment_frame(feature: &Value, support: &Value) -> Mapping<Value> {
         .chain(support_origin)
         .map(f64::abs)
         .fold(1.0_f64, f64::max);
-    let roundoff = 64.0 * f64::EPSILON;
+    let roundoff = EPS_FRAME_ROUNDOFF;
     if (dot(normal, support_normal).abs() - 1.0).abs() > roundoff
         || dot(topology::sub(origin, support_origin), support_normal).abs() > roundoff * scale
     {

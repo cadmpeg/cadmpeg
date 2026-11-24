@@ -112,6 +112,6 @@ Note: A face-supported offset plane retains its feature as Native with `plane.no
 
 Question: Does the sign of the `sketchMatrix` normal of a face sketch follow the rollback face `orientation` value?
 
-Known: The matrix normal is parallel or anti-parallel to the `PLANE` surface normal.
+Known: The `sketchMatrix` normal sign and the face `orientation` value are both stored.
 
 Need: Place sketches on faces whose `orientation` is `false` and on faces whose surface normal points into the solid. Compare the matrix normal with the surface normal and the orientation value.
