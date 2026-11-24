@@ -2394,7 +2394,7 @@ mod tests {
             serde_json::from_str(crate::CADIR_JSON_SCHEMA).expect("the schema is JSON");
         for record in ["Face", "Edge", "Vertex"] {
             assert_eq!(
-                schema["$defs"][record]["properties"]["tolerance"]["anyOf"][0]["$ref"],
+                schema["$defs"][record]["properties"]["tolerance"]["$ref"],
                 "#/$defs/PositiveLength",
                 "{record}.tolerance"
             );
