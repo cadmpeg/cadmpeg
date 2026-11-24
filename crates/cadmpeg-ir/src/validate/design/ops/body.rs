@@ -1006,13 +1006,14 @@ pub(super) fn check_split(site: Site<'_>, split: &Split, findings: &mut Vec<Find
                 SplitTool::Geometry {
                     tools: geometry, ..
                 } => {
-                    let datum = |class| matches!(class, Class::Datum | Class::Principal(_));
-                    if picks::classes(geometry).into_iter().any(datum) {
-                        error(
-                            findings,
-                            site.entity,
-                            format_args!("SplitTool::Geometry picks a datum or principal entity, which is SplitTool::Plane"),
-                        );
+                    if let Some([alone]) = picks::named(geometry) {
+                        if matches!(picks::class(alone), Class::Datum | Class::Principal(_)) {
+                            error(
+                                findings,
+                                site.entity,
+                                format_args!("SplitTool::Geometry picks one datum or principal entity alone, which is SplitTool::Plane"),
+                            );
+                        }
                     }
                     picks::classes(geometry)
                 }
