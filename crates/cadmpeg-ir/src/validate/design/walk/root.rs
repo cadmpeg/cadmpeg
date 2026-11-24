@@ -421,7 +421,7 @@ impl Walk for ParameterDefinition {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         match self {
             Self::Expression(f0) => f0.walk(into),
-            Self::Driven | Self::Assigned(_) => Ok(()),
+            Self::Driven | Self::Assigned(_) | Self::Unset => Ok(()),
         }
     }
 }

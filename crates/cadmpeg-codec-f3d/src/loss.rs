@@ -569,6 +569,8 @@ pub(crate) enum F3dLossCode {
     HoleExtentUnproven,
     /// A Hole carrier and its point-data records do not define an admitted placement.
     HolePlacementUnproven,
+    /// A face-point Hole carrier and its point-data records place the Hole at different points, and no admitted rule selects one.
+    HolePlacementPointUnselected,
     FeaturePointDirectionInputsUnrepresented,
     HoleReferenceDimensionsNative,
     HoleParametersIndependentAssumed,
@@ -1791,6 +1793,7 @@ impl F3dLossCode {
         Self::ModifyUnprojected,
         Self::HoleExtentUnproven,
         Self::HolePlacementUnproven,
+        Self::HolePlacementPointUnselected,
         Self::FeaturePointDirectionInputsUnrepresented,
         Self::HoleReferenceDimensionsNative,
         Self::HoleParametersIndependentAssumed,
@@ -2849,6 +2852,7 @@ impl F3dLossCode {
             Self::FeatureScopeEnvelopeSuperseded => "feature.scope-envelope-superseded",
             Self::HoleExtentUnproven => "feature.hole-extent-unproven",
             Self::HolePlacementUnproven => "feature.hole-placement-unproven",
+            Self::HolePlacementPointUnselected => "feature.hole-placement-point-unselected",
             Self::FeaturePointDirectionInputsUnrepresented => {
                 "feature.point-direction-inputs-unrepresented"
             }
@@ -3913,6 +3917,7 @@ impl F3dLossCode {
             | Self::BaseFlangeSideAssumed
             | Self::HoleExtentUnproven
             | Self::HolePlacementUnproven
+            | Self::HolePlacementPointUnselected
             | Self::FeaturePointDirectionInputsUnrepresented
             | Self::HoleReferenceDimensionsNative
             | Self::HoleParametersIndependentAssumed
@@ -4712,6 +4717,7 @@ impl F3dLossCode {
             | Self::SphereDiameterSourceAssumed
             | Self::HoleExtentUnproven
             | Self::HolePlacementUnproven
+            | Self::HolePlacementPointUnselected
             | Self::FeaturePointDirectionInputsUnrepresented
             | Self::HoleReferenceDimensionsNative
             | Self::HoleParametersIndependentAssumed
@@ -5664,6 +5670,7 @@ mod tests {
                 "feature.modify-unprojected",
                 "feature.hole-extent-unproven",
                 "feature.hole-placement-unproven",
+                "feature.hole-placement-point-unselected",
                 "feature.point-direction-inputs-unrepresented",
                 "feature.hole-reference-dimensions-native",
                 "feature.hole-parameters-independent-assumed",

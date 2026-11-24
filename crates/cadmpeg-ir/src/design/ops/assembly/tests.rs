@@ -187,14 +187,14 @@ fn frame_construction() -> Construction<kinds::Frame> {
 
 fn options() -> NativeOptions {
     NativeOptions::from([(
-        text("f3d:joint_mode"),
+        crate::codec_name!("f3d:joint_mode"),
         NativeOption::Text(literal(text("as_built"))),
     )])
 }
 
 fn settings() -> NativeOptions {
     NativeOptions::from([(
-        text("f3d:item_kind"),
+        crate::codec_name!("f3d:item_kind"),
         NativeOption::Text(literal(text("insert"))),
     )])
 }
@@ -1094,7 +1094,7 @@ fn assembly_features() -> Vec<AssemblyFeature> {
             participants: unread(),
             effect: None,
             operation: Box::new(FeatureOperation::Native {
-                kind: text("creo:assem_cut"),
+                kind: crate::codec_name!("creo:assem_cut"),
                 native_options: options(),
                 source_settings: NativeOptions::new(),
             }),

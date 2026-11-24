@@ -8,7 +8,7 @@ use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLa
 use cadmpeg_ir::geometry::sampled::PolygonalSurface;
 use cadmpeg_ir::geometry::{PlacedSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::{CodecFormat, SourceObjectAssociation};
+use cadmpeg_ir::SourceObjectAssociation;
 
 fn carrier_model() -> cadmpeg_ir::CadIr {
     let mut ir = cadmpeg_ir::CadIr::empty();
@@ -37,7 +37,7 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
         geometry: SurfaceGeometry::Solved(placed),
         source_object: Some(SourceObjectAssociation {
             geometry_role: None,
-            format: CodecFormat::Sldprt,
+            format: cadmpeg_ir::codec_id!("sldprt"),
             object_id: cadmpeg_core::text::NonBlankString::new("carrier").unwrap(),
             name: Some("Retained surface".into()),
             color: None,

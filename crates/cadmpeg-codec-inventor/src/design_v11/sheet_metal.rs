@@ -159,7 +159,7 @@ pub(super) fn project(
         }
         if let Some(active) = &active {
             rule.source_settings.insert(
-                cadmpeg_core::nonblank_literal!("inventor:unfold_rule"),
+                cadmpeg_ir::codec_name!("inventor:unfold_rule"),
                 cadmpeg_ir::design::options::NativeOption::Text(Dimension::Literal(
                     cadmpeg_core::text::NonBlankString::new(active.id.clone()).ok_or_else(
                         || CodecError::malformed("Inventor unfold rule identity is blank"),
@@ -324,7 +324,7 @@ pub(super) fn feature_reliefs(
     ir: &mut CadIr,
     inventory: &FeatureInventory,
     parameters: &[crate::design::PmDcParameter],
-) -> Result<Vec<LossNote>, CodecError> {
+) -> Vec<LossNote> {
     use crate::feature::sheet_metal::{operands, SheetMetalProperty};
     use cadmpeg_ir::design::feature::FeatureOperation;
     use cadmpeg_ir::design::ops::sheet_metal::SheetMetalKind;
@@ -447,12 +447,13 @@ pub(super) fn feature_reliefs(
             depth: positive(*depth),
         });
         for (key, reference) in [
-            ("inventor:minimum_remnant", minimum_remnant),
-            ("inventor:seam_gap", seam_gap),
+            (
+                cadmpeg_ir::codec_name!("inventor:minimum_remnant"),
+                minimum_remnant,
+            ),
+            (cadmpeg_ir::codec_name!("inventor:seam_gap"), seam_gap),
         ] {
             if let Some((id, _)) = length(*reference) {
-                let key = cadmpeg_core::text::NonBlankString::new(key)
-                    .ok_or_else(|| CodecError::malformed("Inventor relief key is blank"))?;
                 operation.native_options.insert(
                     key,
                     cadmpeg_ir::design::options::NativeOption::Length(Dimension::Parameter(id)),
@@ -460,5 +461,5 @@ pub(super) fn feature_reliefs(
             }
         }
     }
-    Ok(losses)
+    losses
 }

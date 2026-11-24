@@ -1000,7 +1000,7 @@ fn generated_source_less_reports_auxiliary_geometry_and_source_identity_it_drops
         .unwrap();
     let association = SourceObjectAssociation {
         geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Step,
+        format: cadmpeg_ir::codec_id!("step"),
         object_id: cadmpeg_core::text::NonBlankString::new("object-1")
             .expect("nonempty source identity"),
         name: Some("exact carrier".into()),

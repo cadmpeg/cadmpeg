@@ -2094,7 +2094,7 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
                 geometry: geometry.clone(),
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id: crate::identity::source_object_id_checked(format_args!(
                         "VisibGeom:{curve_id}"
                     ))?,

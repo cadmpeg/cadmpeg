@@ -1389,6 +1389,7 @@ fn body_layers_and_visibility_cover_every_region_shape_item() {
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#body").expect("identity grammar"),
         name: "all body regions".into(),
+        parent: None,
         description: None,
         visible: None,
         items: vec![PresentationItem::Body { body }.into()],
@@ -1722,6 +1723,7 @@ fn point_presentation_layer_writes_the_cartesian_point_carrier() {
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#point".to_string()).expect("identity grammar"),
         name: "point layer".to_string(),
+        parent: None,
         description: Some("standalone points".to_string()),
         visible: None,
         items: vec![PresentationItem::Point { point }.into()],
@@ -1804,6 +1806,7 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#mixed").expect("identity grammar"),
         name: "mixed layer".into(),
+        parent: None,
         description: None,
         visible: None,
         items: vec![
