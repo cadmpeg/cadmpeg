@@ -18,7 +18,7 @@ mod extrude;
 mod names;
 mod operation;
 mod order;
-mod parameters;
+pub(crate) mod parameters;
 mod profile_check;
 mod revolve;
 mod sketch;
