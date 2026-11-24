@@ -9,6 +9,7 @@
 
 use std::collections::BTreeSet;
 
+pub(super) mod constructions;
 mod placements;
 mod sketches;
 
