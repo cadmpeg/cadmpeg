@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{chain, Outline, Point, Ring, Segment};
+use super::{chain, charge, profile_cost, Outline, Point, Ring, Segment, WORK_LIMIT};
 
 fn polygon(corners: &[Point]) -> Vec<Segment> {
     corners
@@ -126,4 +126,16 @@ fn a_distant_profile_does_not_overlap_the_footprint() {
     let face = outline(square([0.0, 0.0], [20.0, 10.0]), vec![]);
     assert!(!face.overlaps(&square([30.0, 0.0], [31.0, 1.0])).unwrap());
     assert!(face.overlaps(&square([-5.0, -5.0], [30.0, 30.0])).unwrap());
+}
+
+#[test]
+fn profile_work_is_charged_to_the_shared_budget() {
+    let mut work = WORK_LIMIT;
+    charge(&mut work, profile_cost(700)).unwrap();
+    assert_eq!(work, WORK_LIMIT - 2 * 700 * 700);
+    // A second charge from the same budget runs out before a profile of this size would.
+    charge(&mut work, profile_cost(700)).unwrap_err();
+    let mut fresh = WORK_LIMIT;
+    charge(&mut fresh, profile_cost(1_100)).unwrap_err();
+    charge(&mut fresh, profile_cost(usize::MAX)).unwrap_err();
 }

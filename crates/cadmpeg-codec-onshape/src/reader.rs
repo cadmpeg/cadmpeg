@@ -108,7 +108,10 @@ fn mapping_loss_code(
     valid_suppression: bool,
     reason: &str,
 ) -> OnshapeLossCode {
-    if !region_budget_exhausted
+    if features::is_custom(feature) {
+        // A namespaced feature keeps its own reason whatever its feature type.
+        OnshapeLossCode::HistoryNotSupported
+    } else if !region_budget_exhausted
         && feature.get("featureType").and_then(Value::as_str) == Some("extrude")
         && features::value(feature, "bodyType") == Some("THIN")
     {
@@ -636,10 +639,7 @@ fn studio(
             }
         };
         let feature_id = id("feature", native);
-        let name = feature
-            .get("name")
-            .and_then(Value::as_str)
-            .unwrap_or(native);
+        let name = text(feature, "name").unwrap_or(native);
         let suppressed = suppression(feature);
         let bindings: Vec<_> =
             if feature.get("featureType").and_then(Value::as_str) == Some("assignVariable") {

@@ -137,6 +137,14 @@ pub(super) fn queries<'a>(feature: &'a Value, key: &str) -> Mapping<&'a [Value]>
     }
 }
 
+/// A feature from a `FeatureScript` namespace rather than a built-in feature.
+pub(super) fn is_custom(feature: &Value) -> bool {
+    feature
+        .get("namespace")
+        .and_then(Value::as_str)
+        .is_some_and(|s| !s.is_empty())
+}
+
 fn present_scope(feature: &Value, key: &str) -> Mapping<bool> {
     if rows(feature, "parameters")?
         .iter()
@@ -719,11 +727,7 @@ pub(super) fn map(
     ] {
         enabled(feature, key)?;
     }
-    if feature
-        .get("namespace")
-        .and_then(Value::as_str)
-        .is_some_and(|s| !s.is_empty())
-    {
+    if is_custom(feature) {
         // The bundle keeps input selections in bodydetails and only a final STEP export.
         // Neither proves the complete shape at this feature's output.
         let name = text(feature, "name").or_else(|_| text(feature, "featureId"))?;
@@ -834,6 +838,11 @@ pub(super) fn map(
                     json!({"kind": "to_face", "face": face})
                 }
                 Some("UP_TO_NEXT") => {
+                    if scoped.is_some() {
+                        return Err("UP_TO_NEXT with a booleanScope selection is not proved: \
+                             no stored data shows how the scope limits the next face"
+                            .into());
+                    }
                     let state = scoped.map_or_else(|| inputs.load(ordinal, feature), Ok)?;
                     let face = state.next_face(feature, &profile, model)?;
                     state.require_planes(&face)?;

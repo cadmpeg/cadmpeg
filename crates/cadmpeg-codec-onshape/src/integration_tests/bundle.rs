@@ -183,17 +183,27 @@ fn custom_features_name_the_missing_frozen_shape_even_with_rollback_details() {
 }
 
 #[test]
-fn custom_feature_stop_uses_its_id_when_the_name_is_absent() {
-    let bytes = changed(&fixture("unsupported"), |path, value| {
-        if path.ends_with("features.json") {
-            value["features"][2].as_object_mut().unwrap().remove("name");
-        }
-    });
-    let (_, report) = read(&bytes).unwrap();
-    assert!(report.losses().iter().any(|l| l
-        .detail
-        .contains("custom FeatureScript feature Custom feature")
-        && l.detail.ends_with("; subject: Custom feature")));
+fn custom_feature_stop_uses_its_id_when_the_name_is_absent_or_blank() {
+    for name in [None, Some(""), Some(" \t ")] {
+        let bytes = changed(&fixture("unsupported"), |path, value| {
+            if path.ends_with("features.json") {
+                let feature = value["features"][2].as_object_mut().unwrap();
+                match name {
+                    Some(name) => feature.insert("name".into(), json!(name)),
+                    None => feature.remove("name"),
+                };
+            }
+        });
+        let (_, report) = read(&bytes).unwrap();
+        assert!(
+            report.losses().iter().any(|l| l
+                .detail
+                .contains("custom FeatureScript feature Custom feature")
+                && l.detail.ends_with("; subject: Custom feature")),
+            "{name:?}: {:?}",
+            report.losses()
+        );
+    }
 }
 
 #[test]
@@ -709,6 +719,114 @@ fn up_to_next_takes_a_slanted_planar_end_over_the_complete_profile() {
         "{:?}",
         report.losses()
     );
+    let wire = timeline(&model);
+    let extrude = &wire["model"]["features"][2];
+    let termination = &extrude["definition"]["value"]["value"]["extent"]["side"]["termination"];
+    assert_eq!(termination["kind"], "to_face");
+    assert_eq!(termination["face"]["value"]["faces"], json!(["high2"]));
+    assert!(extrude["dependencies"]
+        .as_array()
+        .unwrap()
+        .contains(&wire["model"]["features"][1]["id"]));
+}
+
+/// The `UP_TO_NEXT` bundle with a second body in the rollback state.
+fn up_to_next_with_body(kind: &str, consumed: bool, low: [f64; 3], high: [f64; 3]) -> Vec<u8> {
+    changed(&up_to_next("REMOVE", None), |path, value| {
+        if path.ends_with("bodydetails/2.json") {
+            let (edges, faces) = box_body(low, high, "other");
+            let mut body = json!({"id": "other", "type": kind, "edges": edges, "faces": faces, "vertices": []});
+            if consumed {
+                body["consumedByComposite"] = json!(true);
+            }
+            value["bodies"].as_array_mut().unwrap().push(body);
+        }
+    })
+}
+
+fn stopped_with(bytes: &[u8], reason: &str) {
+    let (model, report) = read(bytes).unwrap();
+    assert_eq!(kinds(&model), ["sketch", "extrude", "native"]);
+    assert!(
+        report.losses().iter().any(|loss| {
+            loss.code.as_deref() == Some("onshape/history.not-supported")
+                && loss.detail.contains(reason)
+        }),
+        "{reason}: {:?}",
+        report.losses()
+    );
+}
+
+#[test]
+fn up_to_next_ends_only_on_live_solid_bodies() {
+    let (low, high) = ([0.005, 0.002, 0.0005], [0.008, 0.004, 0.001]);
+    // A live sheet in front of the covering face could block; no stored data decides.
+    stopped_with(
+        &up_to_next_with_body("SHEET", false, low, high),
+        "a live non-solid body face lies before the covering face",
+    );
+    stopped_with(
+        &up_to_next_with_body("SOLID", false, low, high),
+        "exact coverage and first intersection",
+    );
+    // A body consumed by a composite is not a live part.
+    for kind in ["SHEET", "SOLID"] {
+        let (model, report) = read(&up_to_next_with_body(kind, true, low, high)).unwrap();
+        assert_eq!(
+            kinds(&model),
+            ["sketch", "extrude", "extrude"],
+            "{kind}: {:?}",
+            report.losses()
+        );
+    }
+}
+
+#[test]
+fn up_to_next_intersect_and_scoped_forms_stay_native() {
+    stopped_with(
+        &up_to_next("INTERSECT", None),
+        "the stored operation does not select an existing target body",
+    );
+    for operation in ["ADD", "REMOVE"] {
+        let bytes = changed(&up_to_next(operation, None), |path, value| {
+            if path.ends_with("features.json") {
+                value["features"][2]["parameters"].as_array_mut().unwrap().push(
+                    json!({"parameterId": "booleanScope", "queries": [{"btType": "BTMIndividualQuery-138", "deterministicIds": ["body"]}]}),
+                );
+            }
+        });
+        stopped_with(
+            &bytes,
+            "UP_TO_NEXT with a booleanScope selection is not proved",
+        );
+    }
+}
+
+#[test]
+fn a_profile_over_the_work_limit_stays_native() {
+    // A convex polygon whose quadratic ordering and convexity work exceeds the budget.
+    let sides = 1_100u32;
+    let point = |i: u32| {
+        let angle = std::f64::consts::TAU * f64::from(i % sides) / f64::from(sides);
+        [0.01 * angle.cos(), 0.01 * angle.sin()]
+    };
+    let bytes = changed(&up_to_next("REMOVE", None), |path, value| {
+        if path.ends_with("features.json") {
+            let entities: Vec<Value> = (0..sides)
+                .map(|i| {
+                    let (a, b) = (point(i), point(i + 1));
+                    let length = (b[0] - a[0]).hypot(b[1] - a[1]);
+                    json!({"btType": "BTMSketchCurveSegment-155", "entityId": format!("line{i}"),
+                        "startPointId": format!("line{i}.start"), "endPointId": format!("line{i}.end"),
+                        "startParam": 0, "endParam": length,
+                        "geometry": {"btType": "BTCurveGeometryLine-117", "pntX": a[0], "pntY": a[1],
+                            "dirX": (b[0] - a[0]) / length, "dirY": (b[1] - a[1]) / length}})
+                })
+                .collect();
+            value["features"][0]["entities"] = json!(entities);
+        }
+    });
+    stopped_with(&bytes, "the exact extent work budget is exhausted");
 }
 
 #[test]

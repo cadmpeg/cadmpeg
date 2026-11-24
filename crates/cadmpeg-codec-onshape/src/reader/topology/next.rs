@@ -15,6 +15,20 @@ const WORK_LIMIT: usize = 1_000_000;
 type Point = [f64; 2];
 type Segment = (Point, Point);
 
+/// Takes `cost` units from the one work budget of a proof.
+fn charge(work: &mut usize, cost: Option<usize>) -> Mapping<()> {
+    let cost = cost.ok_or("the exact extent work count exceeds the limit")?;
+    *work = work
+        .checked_sub(cost)
+        .ok_or("the exact extent work budget is exhausted")?;
+    Ok(())
+}
+
+/// Work of the quadratic profile checks: chain ordering and convexity.
+fn profile_cost(corners: usize) -> Option<usize> {
+    corners.checked_mul(corners)?.checked_mul(2)
+}
+
 fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
     a.into_iter().zip(b).map(|(a, b)| a * b).sum()
 }
@@ -379,7 +393,12 @@ struct Profile {
     normal: [f64; 3],
 }
 
-fn read_profile(feature: &Value, profile: &Value, model: &Model) -> Mapping<Profile> {
+fn read_profile(
+    feature: &Value,
+    profile: &Value,
+    model: &Model,
+    work: &mut usize,
+) -> Mapping<Profile> {
     if text(profile, "kind")? != "sketch" {
         return Err("needs one closed source sketch boundary".into());
     }
@@ -424,6 +443,7 @@ fn read_profile(feature: &Value, profile: &Value, model: &Model) -> Mapping<Prof
         };
         segments.push((local("start")?, local("end")?));
     }
+    charge(work, profile_cost(segments.len()))?;
     let order = chain(&segments)?;
     let ring = Ring::new(&segments, &order)?;
     let lift = |[u, v]: Point| along(along(origin, u, x), v, y);
@@ -657,18 +677,24 @@ pub(super) fn prove(
 ) -> Mapping<Value> {
     if !matches!(
         features::value(feature, "operationType"),
-        Some("ADD" | "REMOVE" | "INTERSECT")
+        Some("ADD" | "REMOVE")
     ) {
         return Err("the stored operation does not select an existing target body".into());
     }
-    let profile = read_profile(feature, profile, model)?;
+    let mut work = WORK_LIMIT;
+    let profile = read_profile(feature, profile, model, &mut work)?;
     convex(&profile.corners, &profile.ends, profile.normal)?;
     let reach = bounds(&profile.ring.0);
     let tolerance =
         ROUNDOFF_FACTOR * f64::EPSILON * reach.iter().map(|v| v.abs()).fold(1.0_f64, f64::max);
-    let mut work = WORK_LIMIT;
     let mut faces = Vec::new();
+    let mut sheets = Vec::new();
     for (id, face) in &state.faces {
+        let sheet = !state.solid_faces.contains(id);
+        if sheet && !state.other_faces.contains(id) {
+            // The body is consumed by a composite and is not a live part.
+            continue;
+        }
         let face = read_face(id, face, state, &profile, &mut work)?;
         if face.bounds[1] < reach[0] - tolerance
             || face.bounds[0] > reach[1] + tolerance
@@ -682,17 +708,21 @@ pub(super) fn prove(
                 continue;
             }
         }
-        faces.push(face);
+        if sheet {
+            // The next face ends on a part; a live body of another type is not a part.
+            sheets.push(face);
+        } else {
+            faces.push(face);
+        }
     }
-    let comparisons = faces
-        .len()
-        .checked_mul(faces.len())
-        .and_then(|n| n.checked_mul(profile.ring.0.len()))
-        .and_then(|n| n.checked_mul(2))
-        .ok_or("the exact extent work count exceeds the limit")?;
-    work = work
-        .checked_sub(comparisons)
-        .ok_or("the exact extent work budget is exhausted")?;
+    charge(
+        &mut work,
+        faces
+            .len()
+            .checked_mul(faces.len())
+            .and_then(|n| n.checked_mul(profile.ring.0.len()))
+            .and_then(|n| n.checked_mul(2)),
+    )?;
     for candidate in &faces {
         let (Some(time), Some(outline)) = (candidate.time, &candidate.outline) else {
             continue;
@@ -700,19 +730,25 @@ pub(super) fn prove(
         if time.range(&profile.ring)[0] <= tolerance || !outline.covers(&profile.ring)? {
             continue;
         }
+        let blocks = |other: &Face| match other.time {
+            Some(other_time) => {
+                other_time.range(&profile.ring)[1] > tolerance
+                    && other_time.minus(time).range(&profile.ring)[0] < -tolerance
+            }
+            None => other.parallel_side[0] < -tolerance && other.parallel_side[1] > tolerance,
+        };
+        for other in &sheets {
+            charge(&mut work, Some(1))?;
+            if blocks(other) {
+                return Err(
+                    "a live non-solid body face lies before the covering face on the travel".into(),
+                );
+            }
+        }
         let mut first = true;
         for other in &faces {
-            work = work
-                .checked_sub(1)
-                .ok_or("the exact extent work budget is exhausted")?;
-            if let Some(other_time) = other.time {
-                if other_time.range(&profile.ring)[1] > tolerance
-                    && other_time.minus(time).range(&profile.ring)[0] < -tolerance
-                {
-                    first = false;
-                    break;
-                }
-            } else if other.parallel_side[0] < -tolerance && other.parallel_side[1] > tolerance {
+            charge(&mut work, Some(1))?;
+            if blocks(other) {
                 first = false;
                 break;
             }

@@ -178,14 +178,21 @@ is directed along its stored direction. The direction of a line with
 feature to its Part Studio model.
 
 `UP_TO_NEXT` ends on the first stored planar face that every ray of the profile
-meets. The operation is `ADD`, `REMOVE` or `INTERSECT`; `NEW` has no target
-body. The profile is a closed convex line boundary. The rollback state lists
-the faces of every body before the feature. Each face stores a plane, line
-carriers, endpoints and loops with an outer or hole role. A ray meets a face
-where its positive plane intersection lies inside the outer loop and outside
-every hole. The target covers the complete profile. No other face meets a ray
-of the profile at a smaller positive distance. A plane parallel to the travel
-direction that crosses the profile prevents the target.
+meets. The operation is `ADD` or `REMOVE`; `NEW` has no target body. The
+profile is a closed convex line boundary. The rollback state lists the faces
+of every body before the feature. Each body stores a `type` and a
+`consumedByComposite` flag. A live body is a body that no composite consumes.
+Candidate faces and blocking faces belong to live bodies of type `SOLID`.
+Each face stores a plane, line carriers, endpoints and loops with an outer or
+hole role. A ray meets a face where its positive plane intersection lies
+inside the outer loop and outside every hole. The target covers the complete
+profile. No other face meets a ray of the profile at a smaller positive
+distance. A plane parallel to the travel direction that crosses the profile
+prevents the target.
+
+The bundle stores no body geometry at the output of a feature with a nonempty
+`namespace`. It stores the input bodies in `bodydetails` and the final STEP
+export only.
 
 A present `booleanScope` or `scope` parameter has a `queries` array. A nonempty
 scope list identifies target bodies at the consuming rollback. An empty
