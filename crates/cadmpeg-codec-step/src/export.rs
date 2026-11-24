@@ -855,7 +855,7 @@ impl<'a> Builder<'a> {
                 | AppearanceTarget::TriangleGroup { .. }
                 | AppearanceTarget::Occurrence(_)
                 | AppearanceTarget::Record { .. }
-                | AppearanceTarget::Source { .. } => {}
+                | AppearanceTarget::Unresolved => {}
             }
         }
         self.dangling_appearance_bindings
@@ -1044,7 +1044,7 @@ impl<'a> Builder<'a> {
                 | AppearanceTarget::TriangleGroup { .. }
                 | AppearanceTarget::Occurrence(_)
                 | AppearanceTarget::Record { .. }
-                | AppearanceTarget::Source { .. } => continue,
+                | AppearanceTarget::Unresolved => continue,
             };
             let Some(target) = target else {
                 let target_id = match &binding.target.entity {
@@ -1059,7 +1059,7 @@ impl<'a> Builder<'a> {
                     | AppearanceTarget::TriangleGroup { .. }
                     | AppearanceTarget::Occurrence(_)
                     | AppearanceTarget::Record { .. }
-                    | AppearanceTarget::Source { .. } => continue,
+                    | AppearanceTarget::Unresolved => continue,
                 };
                 direct_unstyled.insert(target_id);
                 continue;
@@ -3722,7 +3722,7 @@ impl<'a> Builder<'a> {
         };
         let tolerance = edge
             .tolerance
-            .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
+            .map_or(0.0, cadmpeg_ir::scalar::PositiveLength::get)
             .max(self.ir.tolerances.linear.get());
         if coedge.pcurves.is_empty() {
             return Ok(false);
@@ -6463,7 +6463,7 @@ impl<'a> Builder<'a> {
                         .faces
                         .iter()
                         .filter_map(|face| face.tolerance)
-                        .map(cadmpeg_ir::scalar::PositiveReal::get)
+                        .map(cadmpeg_ir::scalar::PositiveLength::get)
                         .collect(),
                 ),
             ),
@@ -6475,7 +6475,7 @@ impl<'a> Builder<'a> {
                         .edges
                         .iter()
                         .filter_map(|edge| edge.tolerance)
-                        .map(cadmpeg_ir::scalar::PositiveReal::get)
+                        .map(cadmpeg_ir::scalar::PositiveLength::get)
                         .collect(),
                 ),
             ),
@@ -6487,7 +6487,7 @@ impl<'a> Builder<'a> {
                         .vertices
                         .iter()
                         .filter_map(|vertex| vertex.tolerance)
-                        .map(cadmpeg_ir::scalar::PositiveReal::get)
+                        .map(cadmpeg_ir::scalar::PositiveLength::get)
                         .collect(),
                 ),
             ),

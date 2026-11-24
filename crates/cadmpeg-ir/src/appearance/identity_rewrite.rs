@@ -17,7 +17,7 @@ rewrite_enum!(AppearanceTarget, []; {
     Tessellation(field0),
     TriangleGroup {tessellation, group},
     Record {arena, id},
-    Source {source_id},
+    Unresolved,
 });
 rewrite_record!(BumpMap, []; {normal_map, depth, normal_scale});
 rewrite_record!(TextureMap2d, []; {map_channel, uvw_source, u_offset, v_offset, u_scale, v_scale, rotation, repeat_u, repeat_v, real_world_offset_x, real_world_offset_y, real_world_scale_x, real_world_scale_y, coordinates});
