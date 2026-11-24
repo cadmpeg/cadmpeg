@@ -25,18 +25,11 @@
       "bodies": [
         {
           "id": "pvz:model:body#cube32.ol",
-          "kind": "solid",
-          "name": "cube32.ol"
+          "kind": "solid"
         },
         {
           "id": "pvz:model:body#cube64.ol",
-          "kind": "solid",
-          "name": "cube64.ol"
-        },
-        {
-          "id": "pvz:model:body#plate.ol",
-          "kind": "general",
-          "name": "plate.ol"
+          "kind": "solid"
         }
       ],
       "coedges": [
@@ -3392,17 +3385,11 @@
         }
       ],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [
         {
@@ -3487,7 +3474,6 @@
           ]
         }
       ],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -3508,13 +3494,11 @@
             "pvz:model:occurrence#2"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "TOP.ASM",
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -3527,12 +3511,10 @@
           "native_ref": "definition 1",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "CUBE64.PRT",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -3545,17 +3527,13 @@
           "native_ref": "definition 2",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "CUBE32.PRT",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
-          "bodies": [
-            "pvz:model:body#plate.ol"
-          ],
+          "bodies": [],
           "bom_properties": {},
           "id": "pvz:model:definition#3",
           "instance_bodies": [],
@@ -3563,29 +3541,18 @@
           "native_ref": "definition 3",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "PLATE.PRT",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [
         {
-          "body": "pvz:model:body#cube32.ol",
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "pvz:model:tessellation#cube32.ol:0",
           "mesh": {
@@ -3775,6 +3742,16 @@
               }
             ]
           },
+          "of": {
+            "body": "pvz:model:body#cube32.ol",
+            "faces": [],
+            "kind": "body"
+          },
+          "source_object": {
+            "format": "pvz",
+            "instance_path": [],
+            "object_id": "cube32.ol"
+          },
           "texture_assignments": [],
           "texture_coordinates": [],
           "triangle_groups": [
@@ -3823,9 +3800,7 @@
           ]
         },
         {
-          "body": "pvz:model:body#cube64.ol",
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "pvz:model:tessellation#cube64.ol:0",
           "mesh": {
@@ -4015,6 +3990,16 @@
               }
             ]
           },
+          "of": {
+            "body": "pvz:model:body#cube64.ol",
+            "faces": [],
+            "kind": "body"
+          },
+          "source_object": {
+            "format": "pvz",
+            "instance_path": [],
+            "object_id": "cube64.ol"
+          },
           "texture_assignments": [],
           "texture_coordinates": [],
           "triangle_groups": [
@@ -4063,9 +4048,7 @@
           ]
         },
         {
-          "body": "pvz:model:body#plate.ol",
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "pvz:model:tessellation#plate.ol:0",
           "mesh": {
@@ -4132,6 +4115,15 @@
                 }
               }
             ]
+          },
+          "of": {
+            "definition": "pvz:model:definition#3",
+            "kind": "definition"
+          },
+          "source_object": {
+            "format": "pvz",
+            "instance_path": [],
+            "object_id": "plate.ol"
           },
           "texture_assignments": [],
           "texture_coordinates": [],
@@ -6317,6 +6309,8 @@
         }
       }
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "1873214c7bc8bc79b4b39b60e614ad37a4c86f13c77cab4184f382afe07e87fd",
     "file_digests": {},
     "retained_records": {},

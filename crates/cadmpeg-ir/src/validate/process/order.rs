@@ -11,6 +11,7 @@ use crate::design::ids::OperationId;
 use crate::process::operation::OperationKind;
 use crate::process::stock::StockRule;
 use crate::report::check::Finding;
+use crate::validate::cycles::on_cycles;
 
 /// The JSON nesting `serde_json` reads, which bounds every recursive process
 /// type the specification gives no ceiling: step folders, program groups,
@@ -80,7 +81,7 @@ fn check_membership(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
 
 /// Modifier inputs are nonempty, name operations, and form no cycle (§7.3).
 fn check_inputs(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
-    let mut graph: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    let mut graph: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
     for operation in &records.ir.process.operations {
         let OperationKind::Modifier { inputs, .. } = &operation.kind else {
             continue;
@@ -107,48 +108,6 @@ fn check_inputs(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
             format_args!("operation is its own input through modifier inputs"),
         );
     }
-}
-
-/// The nodes of `graph` that lie on a cycle, found without recursion.
-pub(super) fn on_cycles<'a>(graph: &BTreeMap<&'a str, Vec<&'a str>>) -> BTreeSet<&'a str> {
-    #[derive(Clone, Copy, PartialEq)]
-    enum Mark {
-        Open,
-        Done,
-    }
-    let mut marks: BTreeMap<&str, Mark> = BTreeMap::new();
-    let mut cyclic = BTreeSet::new();
-    for &start in graph.keys() {
-        if marks.contains_key(start) {
-            continue;
-        }
-        let mut stack: Vec<(&str, usize)> = vec![(start, 0)];
-        marks.insert(start, Mark::Open);
-        while let Some(&mut (node, ref mut next)) = stack.last_mut() {
-            let edges = graph.get(node).map_or(&[][..], Vec::as_slice);
-            let Some(&target) = edges.get(*next) else {
-                marks.insert(node, Mark::Done);
-                stack.pop();
-                continue;
-            };
-            *next += 1;
-            match marks.get(target) {
-                Some(Mark::Open) => {
-                    let from = stack
-                        .iter()
-                        .position(|&(listed, _)| listed == target)
-                        .unwrap_or_default();
-                    cyclic.extend(stack[from..].iter().map(|&(listed, _)| listed));
-                }
-                Some(Mark::Done) => {}
-                None => {
-                    marks.insert(target, Mark::Open);
-                    stack.push((target, 0));
-                }
-            }
-        }
-    }
-    cyclic
 }
 
 /// Every program step names an existing setup or operation (§7.1).
@@ -181,7 +140,7 @@ fn check_programs(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
 /// `PreviousSetup` names an existing setup other than its own, and those
 /// references form no cycle (§7.2).
 fn check_previous_setups(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
-    let mut graph: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    let mut graph: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
     for setup in &records.ir.process.setups {
         let id = setup.id.as_str();
         let Some(StockRule::PreviousSetup(previous)) =
@@ -205,7 +164,7 @@ fn check_previous_setups(records: &ProcessRecords<'_>, findings: &mut Vec<Findin
                 format_args!("setup takes its stock from {previous}, which is no setup"),
             );
         }
-        graph.insert(id, vec![previous]);
+        graph.insert(id, BTreeSet::from([previous]));
     }
     for id in on_cycles(&graph) {
         super::error(

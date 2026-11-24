@@ -12,7 +12,7 @@ fn tessellate_feature(bytes: &[u8]) -> Value {
     let result = F3dCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode the corpus file");
-    let ir = serde_json::to_value(result.ir()).expect("serialize the IR");
+    let ir = cadmpeg_test_support::wire::in_memory_json(result.ir());
     let mut features = ir["model"]["features"]
         .as_array()
         .expect("feature list")
@@ -102,7 +102,7 @@ fn features_by_tag(bytes: &[u8], tag: &str) -> Vec<Value> {
     let result = F3dCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode the corpus file");
-    let ir = serde_json::to_value(result.ir()).expect("serialize the IR");
+    let ir = cadmpeg_test_support::wire::in_memory_json(result.ir());
     ir["model"]["features"]
         .as_array()
         .expect("feature list")

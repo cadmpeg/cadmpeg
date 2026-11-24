@@ -1216,12 +1216,7 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         ["instance-node"]
     );
     assert_eq!(
-        tessellations[0]
-            .0
-            .source_object
-            .as_ref()
-            .expect("required invariant")
-            .color,
+        tessellations[0].2,
         Some(
             Color::new(
                 f64::from(0.2_f32),

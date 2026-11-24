@@ -164,9 +164,9 @@ fn body_boxes(target: &CadIr) -> Vec<Option<BodyBox>> {
     let children = geometry.child_lists();
     let mut body_of_face = HashMap::new();
     for (ordinal, body) in geometry.bodies.iter().enumerate() {
-        for region in children.body_regions(&body.id) {
-            for shell in &region.shells {
-                for face in children.shell_faces(shell) {
+        for region in children.stated_body_regions(&body.id) {
+            for shell in region.stated_shells() {
+                for face in children.stated_shell_faces(shell) {
                     body_of_face.insert(&face.id, ordinal);
                 }
             }

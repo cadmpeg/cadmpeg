@@ -252,9 +252,12 @@ pub(crate) fn build(
             .filter_map(|record| Some((record.body.as_str().to_owned(), record.asm_body_key?)))
             .collect::<Vec<_>>();
         let mut scratch = CadIr::empty();
-        if let Err(error) =
-            cadmpeg_asm::brep::transfer::transfer_into_ir(ctx, &mut scratch, "inventor", brep)
-        {
+        if let Err(error) = cadmpeg_asm::brep::transfer::transfer_into_ir(
+            ctx,
+            &mut scratch,
+            cadmpeg_ir::codec_id!("inventor"),
+            brep,
+        ) {
             if matches!(error, CodecError::ResourceLimit(_)) {
                 failure = Some(error);
             }

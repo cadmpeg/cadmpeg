@@ -148,7 +148,7 @@ impl Writer<'_> {
             let high = max.map(|value| outward(value, true));
             self.extent(Some((low, high)));
         }
-        self.color_primvars(Some(body));
+        self.color_primvars(body.color);
         let out = &mut self.out;
         out.array(
             "uniform double[] brep:intersectTol3d",

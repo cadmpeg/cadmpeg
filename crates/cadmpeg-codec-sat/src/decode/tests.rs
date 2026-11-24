@@ -952,7 +952,13 @@ plane-surface $-1 0 0 0 0 0 1 1 0 0 0 #\nEnd-of-ACIS-data\n";
     assert_eq!(geometry.faces.len(), 1);
     assert_eq!(geometry.shells.len(), 1);
     assert_eq!(geometry.shells[0].id.as_str(), "sat:brep:entity#3");
-    assert_eq!(geometry.regions[0].shells, [geometry.shells[0].id.clone()]);
+    assert_eq!(
+        geometry.regions[0]
+            .stated_shells()
+            .cloned()
+            .collect::<Vec<_>>(),
+        [geometry.shells[0].id.clone()]
+    );
     assert!(result
         .report()
         .losses

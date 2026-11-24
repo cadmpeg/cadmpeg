@@ -347,6 +347,7 @@ fn insert_binding_record(
         id,
         target: target.into(),
         appearance: retained_appearance,
+        precedence: None,
         source_entity_id: None,
         object_type: Some(object_type),
         visible: None,
@@ -428,6 +429,7 @@ mod tests {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
         for index in 0..face_count {
             ir.geometry.faces.push(Face {

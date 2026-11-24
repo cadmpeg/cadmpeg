@@ -59,7 +59,17 @@ fn prims_become_definitions_and_occurrences() {
         .collect();
     assert!(kinds.contains(&ProductDefinitionKind::Part));
     assert!(kinds.contains(&ProductDefinitionKind::Object));
-    assert_eq!(ir.geometry.bodies[0].kind, BodyKind::General);
+    assert!(ir.geometry.bodies.is_empty());
+    let part = ir
+        .model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.kind == Some(ProductDefinitionKind::Object))
+        .unwrap();
+    assert_eq!(
+        ir.model.tessellations[0].of,
+        cadmpeg_ir::tessellation::Meshed::definition(part.id.clone())
+    );
     assert!(has_loss(&result, UsdLossCode::PrimTypeNotTransferred));
     assert!(has_loss(&result, UsdLossCode::MeshSubdivisionNotApplied));
 }
@@ -145,7 +155,7 @@ fn a_patch_becomes_a_sheet_body_face() {
         ir.geometry.faces[0].sense,
         cadmpeg_ir::topology::Sense::Reversed
     );
-    assert_eq!(ir.geometry.faces[0].loops.len(), 1);
+    assert_eq!(ir.geometry.faces[0].loops.stated().count(), 1);
     assert_eq!(ir.geometry.coedges.len(), 4);
     assert!(has_loss(&result, UsdLossCode::NurbsTrimNotTransferred));
 }

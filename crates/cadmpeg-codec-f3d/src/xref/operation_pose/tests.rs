@@ -229,7 +229,7 @@ fn model() -> (cadmpeg_ir::CadIr, BTreeMap<String, OperationPose>) {
     let key = reference.id.clone();
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(&ctx, "xref_references", &[reference])
         .unwrap();
     for i in 0..2 {

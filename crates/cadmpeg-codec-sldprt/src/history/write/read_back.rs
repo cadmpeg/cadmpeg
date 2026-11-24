@@ -11,6 +11,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::Decoded;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{Feature, FeatureId, ParameterId};
+use cadmpeg_ir::source_fidelity::CodecDigests;
 use serde_json::Value;
 
 use super::brep_agreement::stale_after_edit;
@@ -177,10 +178,11 @@ pub(crate) type Writer<'a> =
 /// write, is named.
 pub(crate) fn write_until_read_back(
     input: &CadIr,
+    digests: &CodecDigests,
     write: &mut Writer<'_>,
     round_trip: &dyn Fn(&Decoded) -> Option<Vec<u8>>,
 ) -> Result<(WrittenPass, ReadBack), CodecError> {
-    let mut judge = Judge::new(input, round_trip);
+    let mut judge = Judge::new(input, digests, round_trip);
     let mut withheld = Vec::<(FeatureId, String)>::new();
     let mut pass = write(&withheld)?;
     let mut read_back = judge.read(&pass);
@@ -309,6 +311,8 @@ fn held_back(features: &[FeatureId], changes: &[String]) -> String {
 /// passes of one write.
 struct Judge<'a> {
     input: &'a CadIr,
+    /// The codec digests the decode of `input` recorded.
+    digests: &'a CodecDigests,
     round_trip: &'a dyn Fn(&Decoded) -> Option<Vec<u8>>,
     stated: Option<Document>,
     /// The decoded source document, from the first pass that states one.
@@ -319,9 +323,14 @@ struct Judge<'a> {
 }
 
 impl<'a> Judge<'a> {
-    fn new(input: &'a CadIr, round_trip: &'a dyn Fn(&Decoded) -> Option<Vec<u8>>) -> Self {
+    fn new(
+        input: &'a CadIr,
+        digests: &'a CodecDigests,
+        round_trip: &'a dyn Fn(&Decoded) -> Option<Vec<u8>>,
+    ) -> Self {
         Self {
             input,
+            digests,
             round_trip,
             stated: None,
             source: None,
@@ -372,9 +381,12 @@ impl<'a> Judge<'a> {
             })
             .map(|loss| loss.message.clone())
             .chain(
-                crate::resolved_features::write_prepare::omitted_driven_parameters(self.input)
-                    .iter()
-                    .map(|id| id.as_str().to_owned()),
+                crate::resolved_features::write_prepare::omitted_driven_parameters(
+                    self.input,
+                    self.digests,
+                )
+                .iter()
+                .map(|id| id.as_str().to_owned()),
             )
             .collect::<Vec<_>>();
         self.judge(

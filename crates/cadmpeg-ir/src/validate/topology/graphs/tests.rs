@@ -115,3 +115,84 @@ fn shell_connectivity_through_one_vertex_shared_by_many_faces_is_linear() {
     let ir = vertex_loop_model(&faces, 1);
     assert_eq!(disconnected_shells(&ir), ["test:model:shell#0"]);
 }
+
+#[test]
+fn shell_connectivity_is_not_checked_on_a_marked_shell_or_one_with_a_partial_face() {
+    let faces: [(&str, usize, &[&str]); 4] = [
+        ("a", 0, &["1"]),
+        ("b", 0, &["2"]),
+        ("c", 1, &["3"]),
+        ("d", 1, &["4"]),
+    ];
+    let mut ir = vertex_loop_model(&faces, 2);
+    assert_eq!(
+        disconnected_shells(&ir),
+        ["test:model:shell#0", "test:model:shell#1"]
+    );
+    ir.geometry.shells[0].unstated = Some(crate::topology::Unstated::Members);
+    let stated = ir.geometry.faces[2]
+        .loops
+        .stated()
+        .cloned()
+        .collect::<Vec<_>>();
+    ir.geometry.faces[2].loops = crate::topology::FaceLoops::PartialUnspecified { loops: stated };
+    assert!(disconnected_shells(&ir).is_empty());
+}
+
+#[test]
+fn each_partial_record_is_reported_at_warning() {
+    let mut ir = crate::examples::unit_cube().unwrap();
+    let stated = ir.geometry.faces[0]
+        .loops
+        .stated()
+        .cloned()
+        .collect::<Vec<_>>();
+    ir.geometry.faces[0].loops = crate::topology::FaceLoops::PartialUnspecified { loops: stated };
+    ir.geometry.shells[0].unstated = Some(crate::topology::Unstated::Members);
+    ir.geometry.regions[0].unstated = Some(crate::topology::RegionUnstated::Voids);
+    ir.geometry.bodies[0].unstated = Some(crate::topology::Unstated::Members);
+    let mut findings = Vec::new();
+    super::check_partial_topology(&ir, &mut findings);
+    let mut reported = findings
+        .iter()
+        .map(|finding| {
+            assert_eq!(finding.check, Check::TopologyPartial);
+            assert_eq!(finding.severity, Severity::Warning);
+            finding.entity.clone().unwrap()
+        })
+        .collect::<Vec<_>>();
+    reported.sort();
+    let mut expected = vec![
+        ir.geometry.faces[0].id.as_str().to_owned(),
+        ir.geometry.shells[0].id.as_str().to_owned(),
+        ir.geometry.regions[0].id.as_str().to_owned(),
+        ir.geometry.bodies[0].id.as_str().to_owned(),
+    ];
+    expected.sort();
+    assert_eq!(reported, expected);
+}
+
+#[test]
+fn a_region_mark_names_each_shell_once_and_none_its_shells_name() {
+    let mut ir = crate::examples::unit_cube().unwrap();
+    let shell = ir.geometry.shells[0].id.clone();
+    let region = ir.geometry.regions[0].id.as_str().to_owned();
+    ir.geometry.regions[0].set_shells(Vec::new());
+    ir.geometry.regions[0].unstated = Some(crate::topology::RegionUnstated::Unclassified {
+        shells: vec![shell.clone()],
+    });
+    let repeated = |ir: &crate::CadIr| {
+        let mut findings = Vec::new();
+        super::check_child_list_reciprocity(ir, &mut findings);
+        findings
+            .into_iter()
+            .filter(|finding| {
+                finding.check == Check::ReferentialIntegrity
+                    && finding.entity.as_deref() == Some(region.as_str())
+            })
+            .count()
+    };
+    assert_eq!(repeated(&ir), 0);
+    ir.geometry.regions[0].set_shells(vec![shell]);
+    assert_eq!(repeated(&ir), 1);
+}

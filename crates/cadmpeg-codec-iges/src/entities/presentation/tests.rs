@@ -918,9 +918,7 @@ fn decode_preserves_text_font_glyphs_and_supersession() {
 }
 
 #[test]
-fn decode_binds_the_directory_color_to_a_curve_source_object() {
-    // The source association names its Directory entry as `D{sequence}`; the
-    // colour bound to that entry must reach the curve's source object.
+fn a_free_curve_keeps_its_directory_color_in_its_native_entity() {
     let file = owned_test_file_with_colors(
         &[OwnedTestEntity {
             entity_type: 110,
@@ -946,9 +944,18 @@ fn decode_binds_the_directory_color_to_a_curve_source_object() {
         .as_ref()
         .expect("a projected line names its source entity");
     assert_eq!(source.object_id.as_str(), "D1");
+    let entity = result
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("IGES native")
+        .arenas()["entities"]
+        .iter()
+        .find(|record| record.id() == "iges:entity:directory#1")
+        .expect("native Directory entity");
     assert_eq!(
-        source.color,
-        Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("valid color"))
+        entity.field("color").and_then(|value| value.as_i64()),
+        Some(2)
     );
 }
 

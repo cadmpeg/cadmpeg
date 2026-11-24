@@ -104,10 +104,6 @@ fn instance_member_candidate_is_rejected_at_the_local_entity_limit() {
                         format: cadmpeg_ir::codec_id!("rhino"),
                         object_id: cadmpeg_core::text::NonBlankString::new("one")
                             .expect("source identity"),
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                 ));

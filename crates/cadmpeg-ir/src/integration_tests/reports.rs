@@ -33,7 +33,7 @@ fn loss_provenance_root_alias_constructs_and_serializes() {
 #[test]
 fn unclassified_reports_serialize_empty_dialect_keys() {
     let decode = DecodeReport::unclassified(
-        "rhino",
+        crate::codec_id!("rhino"),
         DecodeTransfer::full(true),
         BTreeMap::new(),
         Vec::new(),

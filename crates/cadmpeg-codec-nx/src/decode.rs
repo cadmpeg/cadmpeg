@@ -219,12 +219,15 @@ fn decoded(
         admitted_entities,
         "admit NX entities",
     )?;
-    ir.state_root_definition(
+    if let Some(root) = ir.state_root_definition(
         ctx,
         cadmpeg_ir::ids::ProductDefinitionId::mint(design_v11::PART_ROOT)
             .map_err(CodecError::malformed)?,
         cadmpeg_ir::products::ExternalDocument::default(),
-    )?;
+    )? {
+        let root = root.id.clone();
+        ir.display_unresolved_meshes(&root);
+    }
     let mut source_fidelity =
         cadmpeg_ir::SourceFidelity::with_annotations(annotations, decode_digest);
     source_fidelity.attach_native_unknown_records(&mut ir, "nx", unknowns, ctx)?;

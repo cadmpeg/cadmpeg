@@ -90,7 +90,7 @@ fn component_reference_curve_is_a_native_sweep_path() {
                     *path = None;
                     *shape = SweepShape::sheet_sections(
                         SweepMode::Surface {},
-                        SweepSection::Unresolved(None),
+                        SweepSection::Unresolved,
                         Vec::new(),
                     );
                 }
