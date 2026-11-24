@@ -147,13 +147,13 @@ fn direct_body_fixture() -> (
         color: None,
         visible: Some(true),
         native_ref: None,
+        unstated: None,
     };
-    let region = Region {
-        id: RegionId::mint("test:model:region#1").expect("identity grammar"),
-        body: body.id.clone(),
-        shells: vec![ShellId::mint("test:model:shell#1").expect("identity grammar")],
-        native_ref: None,
-    };
+    let region = Region::new(
+        RegionId::mint("test:model:region#1").expect("identity grammar"),
+        body.id.clone(),
+        vec![ShellId::mint("test:model:shell#1").expect("identity grammar")],
+    );
     let shell = Shell::new(
         ShellId::mint("test:model:shell#1").expect("identity grammar"),
         region.id.clone(),

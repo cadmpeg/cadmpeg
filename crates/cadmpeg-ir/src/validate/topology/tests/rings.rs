@@ -191,7 +191,7 @@ fn singular_loop_vertex_cannot_have_multiple_free_shell_owners() {
         .try_into()
         .expect("valid identity");
     second_shell.members = vec![crate::topology::ShellMember::FreeVertex { id: vertex }];
-    ir.geometry.regions[0].shells.push(second_shell.id.clone());
+    ir.geometry.regions[0].push_shell(second_shell.id.clone());
     ir.geometry.shells.push(second_shell);
 
     assert!(validate_neutral(&ir, Vec::new())
@@ -241,7 +241,7 @@ fn vertex_loop_is_valid_and_exclusive_with_coedges() {
     });
     let face_loops = ir.geometry.faces[0]
         .loops
-        .iter()
+        .stated()
         .cloned()
         .chain(std::iter::once(loop_id.clone()))
         .collect();

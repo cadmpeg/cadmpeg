@@ -4565,6 +4565,7 @@ mod shape_association_tests {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
         ir
     }

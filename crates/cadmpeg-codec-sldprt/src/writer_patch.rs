@@ -256,8 +256,22 @@ fn same_graph(ir: &CadIr, native: &crate::brep::graph::Brep) -> bool {
             .geometry
             .regions
             .iter()
-            .map(|v| (&v.id, &v.body, &v.shells))
-            .eq(native.regions.iter().map(|v| (&v.id, &v.body, &v.shells)))
+            .map(|v| {
+                (
+                    &v.id,
+                    &v.body,
+                    &v.unstated,
+                    v.stated_shells().collect::<Vec<_>>(),
+                )
+            })
+            .eq(native.regions.iter().map(|v| {
+                (
+                    &v.id,
+                    &v.body,
+                    &v.unstated,
+                    v.stated_shells().collect::<Vec<_>>(),
+                )
+            }))
         && ir
             .geometry
             .shells

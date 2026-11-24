@@ -429,6 +429,7 @@ mod tests {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
         for index in 0..face_count {
             ir.geometry.faces.push(Face {

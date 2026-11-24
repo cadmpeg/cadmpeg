@@ -1283,7 +1283,7 @@ fn schema_projects_feature_fields_with_tagged_union_inventory() {
     );
     assert!(stdout.contains("operation"), "{stdout}");
     // The other measured trap: an optional field is absent and a list is always written.
-    assert!(stdout.contains("suppressed\tboolean?\tno"), "{stdout}");
+    assert!(stdout.contains("suppressed\tboolean\tno"), "{stdout}");
     assert!(stdout.contains("outputs\tarray<BodyId>\tyes"), "{stdout}");
     assert!(stdout.contains("id\tFeatureId\tyes"), "{stdout}");
 

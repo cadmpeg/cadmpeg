@@ -6,7 +6,8 @@ use std::num::NonZeroI8;
 use super::super::read;
 use super::super::units::{Unit, UnitFactor, UnitSymbol};
 use super::{
-    level, BendVariable, BinaryOp, Chain, Constant, ExprError, Function, Measure, Node, UnaryOp,
+    level, AddOp, BendVariable, BinaryOp, Chain, Constant, ExprError, Function, Measure, MulOp,
+    Node, UnaryOp,
 };
 use crate::scalar::NonNegativeReal;
 
@@ -149,23 +150,15 @@ impl<R: Clone> Parser<'_, R> {
         }
     }
 
-    fn binary(op: BinaryOp, left: Node<R>, right: Node<R>) -> Node<R> {
-        Node::Binary {
-            op,
-            left: Box::new(left),
-            right: Box::new(right),
-        }
-    }
-
     /// The operator that continues a chain of `spine` at the next token.
-    fn chain_op(&self, spine: Spine) -> Option<BinaryOp> {
+    fn chain_op(&self, spine: Spine) -> Option<Link> {
         match spine {
-            Spine::Or => self.at_word("or").then_some(BinaryOp::Or),
-            Spine::And => self.at_word("and").then_some(BinaryOp::And),
-            Spine::Sum if self.at_mark("+") => Some(BinaryOp::Add),
-            Spine::Sum if self.at_mark("-") => Some(BinaryOp::Subtract),
-            Spine::Prod if self.at_mark("*") => Some(BinaryOp::Multiply),
-            Spine::Prod if self.at_mark("/") => Some(BinaryOp::Divide),
+            Spine::Or => self.at_word("or").then_some(Link::Or),
+            Spine::And => self.at_word("and").then_some(Link::And),
+            Spine::Sum if self.at_mark("+") => Some(Link::Add(AddOp::Add)),
+            Spine::Sum if self.at_mark("-") => Some(Link::Add(AddOp::Subtract)),
+            Spine::Prod if self.at_mark("*") => Some(Link::Mul(MulOp::Multiply)),
+            Spine::Prod if self.at_mark("/") => Some(Link::Mul(MulOp::Divide)),
             Spine::Sum | Spine::Prod => None,
         }
     }
@@ -275,7 +268,7 @@ impl<R: Clone> Parser<'_, R> {
             } => {
                 let node = match left {
                     None => node,
-                    Some((left, op)) => Self::binary(op, left, node),
+                    Some((left, link)) => link.join(left, node),
                 };
                 let Some(op) = self.chain_op(spine) else {
                     drop(depth);
@@ -306,7 +299,7 @@ impl<R: Clone> Parser<'_, R> {
                 }
                 None => Next::Node(node),
             },
-            Frame::Cmp(Some((left, op))) => Next::Node(Self::binary(op, left, node)),
+            Frame::Cmp(Some((left, op))) => Next::Node(Node::binary(op, left, node)),
             Frame::Neg(depth) => {
                 drop(depth);
                 Next::Node(Node::Unary {
@@ -326,7 +319,7 @@ impl<R: Clone> Parser<'_, R> {
             }
             Frame::Pow(Some((left, depth))) => {
                 drop(depth);
-                Next::Node(Self::binary(BinaryOp::Power, left, node))
+                Next::Node(Node::binary(BinaryOp::Power, left, node))
             }
             Frame::Paren => {
                 self.expect_mark(")")?;
@@ -340,9 +333,9 @@ impl<R: Clone> Parser<'_, R> {
                     Next::Read(Rule::Expr)
                 } else {
                     self.expect_mark(")")?;
-                    let branches = <[Node<R>; 3]>::try_from(parts)
+                    let [condition, then, otherwise] = <[Node<R>; 3]>::try_from(parts)
                         .map_err(|_| ExprError::Malformed("an if states three parts".into()))?;
-                    Next::Node(Node::If(Box::new(branches)))
+                    Next::Node(Node::branch(condition, then, otherwise))
                 }
             }
             Frame::Call(function, mut args) => {
@@ -499,6 +492,28 @@ impl Spine {
     }
 }
 
+/// The operator that joins the next operand to a chain.
+#[derive(Clone, Copy)]
+enum Link {
+    Add(AddOp),
+    Mul(MulOp),
+    And,
+    Or,
+}
+
+impl Link {
+    /// `left` and `right` as one chain node, `right` joining the run of
+    /// `left` where `left` is a chain of the same level.
+    fn join<R>(self, left: Node<R>, right: Node<R>) -> Node<R> {
+        match self {
+            Self::Add(op) => Node::add(left, op, right),
+            Self::Mul(op) => Node::mul(left, op, right),
+            Self::And => Node::and(left, right),
+            Self::Or => Node::or(left, right),
+        }
+    }
+}
+
 /// A rule partly read, waiting for the node it reads next, with the levels
 /// of the ceiling it holds.
 enum Frame<N> {
@@ -508,7 +523,7 @@ enum Frame<N> {
         spine: Spine,
         depth: Option<read::Depth>,
         chain: Chain,
-        left: Option<(N, BinaryOp)>,
+        left: Option<(N, Link)>,
     },
     /// `not` before its operand.
     Not(read::Depth),

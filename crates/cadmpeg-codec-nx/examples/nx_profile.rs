@@ -665,14 +665,14 @@ fn unique_face_body<'a>(
         .regions
         .iter()
         .filter_map(|region| {
-            let owns_face = region.shells.iter().any(|shell_id| {
+            let owns_face = region.stated_shells().any(|shell_id| {
                 ir.geometry
                     .shells
                     .iter()
                     .find(|shell| shell.id == *shell_id)
                     .is_some_and(|shell| {
                         ir.geometry
-                            .shell_faces(&shell.id)
+                            .stated_shell_faces(&shell.id)
                             .any(|face| &face.id == face_id)
                     })
             });

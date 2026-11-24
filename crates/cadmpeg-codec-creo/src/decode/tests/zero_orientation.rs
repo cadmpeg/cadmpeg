@@ -867,6 +867,7 @@ fn named_revolve_transfers_profile_axis() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
 
     let Some(cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -906,6 +907,7 @@ fn named_extrude_with_evaluated_body_is_new_body() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
 
     let Some(cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -940,6 +942,7 @@ fn schema_numbered_extrude_with_evaluated_body_is_new_body() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
 
     let IrFeatureDefinition::Operation(IrFeatureOperation::Extrude { op, solid, .. }) =

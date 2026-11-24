@@ -472,10 +472,14 @@ fn assert_recipe_pad_topology(
         .find(|body| &body.id == body_id)
         .unwrap_or_else(|| panic!("{label}: Pad output body resolves"));
     assert_eq!(body.kind, cadmpeg_ir::topology::BodyKind::Solid, "{label}");
-    let [region] = ir.geometry.body_regions(&body.id).collect::<Vec<_>>()[..] else {
+    let [region] = ir
+        .geometry
+        .stated_body_regions(&body.id)
+        .collect::<Vec<_>>()[..]
+    else {
         panic!("{label}: one output region")
     };
-    let [shell_id] = region.shells.as_slice() else {
+    let [shell_id] = region.stated_shells().collect::<Vec<_>>()[..] else {
         panic!("{label}: one output shell")
     };
     let shell = ir
@@ -486,7 +490,7 @@ fn assert_recipe_pad_topology(
         .unwrap_or_else(|| panic!("{label}: Pad shell resolves"));
     let face_ids = ir
         .geometry
-        .shell_faces(&shell.id)
+        .stated_shell_faces(&shell.id)
         .map(|face| face.id.clone())
         .collect::<Vec<_>>();
     assert_eq!(face_ids.len(), 3, "{label}: output shell face uses");
@@ -525,8 +529,12 @@ fn assert_recipe_pad_topology(
                 panic!("{label}: unexpected decoded Pad face surface {other:?}")
             }
         }
-        assert_eq!(face.loops.len(), 1, "{label}: one loop per source face");
-        for loop_id in &face.loops {
+        assert_eq!(
+            face.loops.stated().count(),
+            1,
+            "{label}: one loop per source face"
+        );
+        for loop_id in face.loops.stated() {
             let loop_ = ir
                 .geometry
                 .loops

@@ -435,12 +435,12 @@ impl LayoutCoordinates<'_> {
     }
 
     fn mirror(&mut self) {
-        self.coordinates.push(Coordinate::between(1, 1));
+        self.coordinates.push(Coordinate::between(0, 1));
     }
 
     fn scale(&mut self, layout: &ScaleLayout) {
         let last = literal(&layout.count).map(|count| i64::from(count) - 1);
-        self.coordinates.push(Coordinate::Range(Some(1), last));
+        self.coordinates.push(Coordinate::Range(Some(0), last));
     }
 }
 

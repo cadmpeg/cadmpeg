@@ -287,6 +287,7 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         },
         Body {
             id: BodyId::mint("nx:s3:body#4".to_string()).expect("identity grammar"),
@@ -296,6 +297,7 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         },
     ]);
     let binding = crate::native::segments::SegmentBodyBinding {
@@ -366,6 +368,7 @@ fn segment_bound_bodies_match_bindings_by_exact_stream_prefix() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     }));
     let bindings = (0..256_u32)
         .map(|index| crate::native::segments::SegmentBodyBinding {
