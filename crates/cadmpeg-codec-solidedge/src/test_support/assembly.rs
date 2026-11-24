@@ -138,6 +138,61 @@ pub(crate) fn structure_stream(entries: &[(u32, u32)]) -> Vec<u8> {
     bytes
 }
 
+/// The bytes of a property list of `pairs` pairs.
+fn property_list(pairs: u32) -> Vec<u8> {
+    let mut bytes = pairs.to_le_bytes().to_vec();
+    for key in 0..pairs {
+        bytes.extend_from_slice(&key.to_le_bytes());
+        bytes.extend_from_slice(&[0; 4]);
+    }
+    bytes
+}
+
+/// An entry of an occurrence structure list that carries a property list of
+/// `pairs` pairs where `pairs` is `Some`.
+pub(crate) fn structure_entry(flags: u32, object: u32, pairs: Option<u32>) -> Vec<u8> {
+    let detail = if pairs.is_some() {
+        0x40_0000 | 0x1_0000_u32
+    } else {
+        0x40_0000
+    };
+    let mut bytes = flags.to_le_bytes().to_vec();
+    bytes.extend_from_slice(&detail.to_le_bytes());
+    bytes.extend_from_slice(&object.to_le_bytes());
+    bytes.extend_from_slice(&0x8000_0027_u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 4]);
+    if let Some(pairs) = pairs {
+        bytes.extend(property_list(pairs));
+    }
+    bytes
+}
+
+/// A node of an occurrence structure list with the members `members`.
+pub(crate) fn structure_node(object: u32, pairs: Option<u32>, members: &[Vec<u8>]) -> Vec<u8> {
+    let detail = if pairs.is_some() { 0x1_0000_u32 } else { 0 };
+    let mut bytes = 0x8000_0000_u32.to_le_bytes().to_vec();
+    bytes.extend_from_slice(&detail.to_le_bytes());
+    bytes.extend_from_slice(&object.to_le_bytes());
+    if let Some(pairs) = pairs {
+        bytes.extend(property_list(pairs));
+    }
+    bytes.extend_from_slice(&u32::try_from(members.len()).unwrap().to_le_bytes());
+    for member in members {
+        bytes.extend_from_slice(member);
+    }
+    bytes
+}
+
+/// A structure list of the items `items`, each an entry or a node.
+pub(crate) fn structure_items(items: &[Vec<u8>]) -> Vec<u8> {
+    let mut bytes = vec![0_u8; 16];
+    bytes.extend_from_slice(&u32::try_from(items.len()).unwrap().to_le_bytes());
+    for item in items {
+        bytes.extend_from_slice(item);
+    }
+    bytes
+}
+
 /// As [`assembly_document`], with the `Preview/Structure/IOT` stream `structure`
 /// where it is `Some`.
 pub(crate) fn assembly_document_with_structure(

@@ -37,7 +37,8 @@ use cadmpeg_ir::transform::Transform;
 use crate::extents::MM_PER_M;
 use crate::layout::{
     assembly_reference, file_moniker, file_moniker_extension, occurrence_structure_entry,
-    occurrence_structure_header, references_collection,
+    occurrence_structure_header, occurrence_structure_node, occurrence_structure_property,
+    references_collection,
 };
 use crate::loss::SolidEdgeLossCode;
 use crate::psm::{Cluster, SpaceMap, TypeTable, SPACE_MAP_STREAM, TYPE_TABLE_STREAM};
@@ -65,6 +66,9 @@ const EXTENSION_FIXED: usize = 6;
 const STRUCTURE_STREAM: &str = "Preview/Structure/IOT";
 /// The flag of a structure entry that marks a hidden occurrence (§9.4).
 const HIDDEN_FLAG: u32 = 0x2;
+/// The bit of a structure item's detail word that marks a property list after
+/// the item's head (§9.4).
+const PROPERTY_LIST_FLAG: u32 = 0x1_0000;
 
 /// Largest deviation of a rotation entry from an orthonormal matrix.
 const EPS_ORTHO: f64 = 1e-6;
@@ -297,28 +301,98 @@ fn link_path(bytes: &[u8]) -> Option<NonBlankString> {
     moniker(bytes, from.checked_add(found)?, RELATIVE_UP_LEVEL).map(|(path, _)| path)
 }
 
-/// The flags of each entry of an occurrence structure list (§9.4) by occurrence
-/// object, or `None` where the stream is not 20 + 20·`n` bytes long for its
-/// stated count `n`.
-fn structure_flags(bytes: &[u8]) -> Option<BTreeMap<u32, u32>> {
+/// The deepest node nesting of an occurrence structure list that is read.
+const MAX_STRUCTURE_DEPTH: usize = 16;
+
+/// A structure item that states one object: the flags of a leaf entry, or
+/// `None` for a node, which states no flags.
+type StructureItem = (u32, Option<u32>);
+
+/// The end of the property list at `at`: a `u32` count `p` and `p` pairs of
+/// `u32`.
+fn property_list_end(bytes: &[u8], at: usize) -> Option<usize> {
+    let count = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
+    let body = count.checked_mul(occurrence_structure_property::LEN)?;
+    let end = at.checked_add(4)?.checked_add(body)?;
+    (end <= bytes.len()).then_some(end)
+}
+
+/// The item at `at` in `bytes` and the offset after it (§9.4). A leaf entry
+/// is followed by its property list where its detail word has
+/// `PROPERTY_LIST_FLAG`. A node has the head `occurrence_structure_node`, the
+/// property list on the same condition, a `u32` member count and the members.
+/// Every object the items state is appended to `objects`.
+fn structure_item(
+    bytes: &[u8],
+    at: usize,
+    depth: usize,
+    objects: &mut Vec<StructureItem>,
+) -> Option<usize> {
+    if depth > MAX_STRUCTURE_DEPTH {
+        return None;
+    }
+    let first = View::u32_le_at(bytes, at)?;
+    let (detail, object, mut next) = if first == occurrence_structure_node::MARKER_VALUE {
+        (
+            View::u32_le_at(bytes, at.checked_add(occurrence_structure_node::DETAIL)?)?,
+            View::u32_le_at(bytes, at.checked_add(occurrence_structure_node::OBJECT)?)?,
+            at.checked_add(occurrence_structure_node::LEN)?,
+        )
+    } else {
+        let end = at.checked_add(occurrence_structure_entry::LEN)?;
+        if end > bytes.len() {
+            return None;
+        }
+        (
+            View::u32_le_at(bytes, at.checked_add(occurrence_structure_entry::DETAIL)?)?,
+            View::u32_le_at(bytes, at.checked_add(occurrence_structure_entry::OBJECT)?)?,
+            end,
+        )
+    };
+    if detail & PROPERTY_LIST_FLAG != 0 {
+        next = property_list_end(bytes, next)?;
+    }
+    if first != occurrence_structure_node::MARKER_VALUE {
+        objects.push((object, Some(first)));
+        return Some(next);
+    }
+    objects.push((object, None));
+    let members = usize::try_from(View::u32_le_at(bytes, next)?).ok()?;
+    next = next.checked_add(4)?;
+    // A member takes at least the 12 bytes of a node head.
+    if members > bytes.len().checked_sub(next)? / occurrence_structure_node::LEN {
+        return None;
+    }
+    // The members are objects of the referenced document, not of this one: a
+    // nested item states none of this document's occurrences.
+    let mut nested = Vec::new();
+    for _ in 0..members {
+        next = structure_item(bytes, next, depth.checked_add(1)?, &mut nested)?;
+    }
+    Some(next)
+}
+
+/// The flags of each top-level item of an occurrence structure list (§9.4) by
+/// occurrence object, `None` for a node, or `None` where the stream does not
+/// parse to its end for its stated count or states an object twice.
+fn structure_flags(bytes: &[u8]) -> Option<BTreeMap<u32, Option<u32>>> {
     let count =
         usize::try_from(View::u32_le_at(bytes, occurrence_structure_header::COUNT)?).ok()?;
-    let body = count.checked_mul(occurrence_structure_entry::LEN)?;
-    if occurrence_structure_header::LEN.checked_add(body)? != bytes.len() {
+    let mut at = occurrence_structure_header::LEN;
+    if count > bytes.len().checked_sub(at)? / occurrence_structure_node::LEN {
         return None;
     }
     let mut flags = BTreeMap::new();
-    for index in 0..count {
-        let at = index
-            .checked_mul(occurrence_structure_entry::LEN)?
-            .checked_add(occurrence_structure_header::LEN)?;
-        let object = View::u32_le_at(bytes, at.checked_add(occurrence_structure_entry::OBJECT)?)?;
-        let entry = View::u32_le_at(bytes, at.checked_add(occurrence_structure_entry::FLAGS)?)?;
+    for _ in 0..count {
+        let mut item = Vec::new();
+        at = structure_item(bytes, at, 0, &mut item)?;
+        // The first object is the item's own; the rest are nested members.
+        let (object, entry) = *item.first()?;
         if flags.insert(object, entry).is_some() {
             return None;
         }
     }
-    Some(flags)
+    (at == bytes.len()).then_some(flags)
 }
 
 fn site_stream(site: u32) -> String {
@@ -434,7 +508,7 @@ pub(crate) fn project<'a>(
             for (id, occurrence) in &mut occurrences {
                 let entry = flags.get(id);
                 occurrence.suppressed = Some(entry.is_none());
-                occurrence.visible = entry.map(|bits| bits & HIDDEN_FLAG == 0);
+                occurrence.visible = entry.copied().flatten().map(|bits| bits & HIDDEN_FLAG == 0);
             }
         }
         None => losses.push(SolidEdgeLossCode::AssemblyVisibilityUnread.note(

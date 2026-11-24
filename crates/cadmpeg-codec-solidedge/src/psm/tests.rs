@@ -57,6 +57,16 @@ fn type_table_parses_declarations_and_compact_records() {
 }
 
 #[test]
+fn type_table_accepts_the_declaration_link_word() {
+    let mut bytes = type_table(&["Alpha", "Beta"], &[1, 0]);
+    // The `u16` at declaration offset 22 does not take part in the class rule.
+    bytes[20 + 22..20 + 24].copy_from_slice(&0x000e_u16.to_le_bytes());
+    let table = TypeTable::parse(&bytes).unwrap();
+    assert_eq!(table.class_name(0, 0), Some("Beta"));
+    assert_eq!(table.class_name(1, 0), Some("Alpha"));
+}
+
+#[test]
 fn class_rule_has_three_declaration_branches() {
     let names = ["A", "B", "C", "D", "E", "F"];
     let table = TypeTable::parse(&type_table(&names, &[2, 0xFFFF, 1])).unwrap();

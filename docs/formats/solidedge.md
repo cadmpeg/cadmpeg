@@ -211,7 +211,7 @@ A declaration has this layout:
 | 0 | 16-byte class GUID |
 | 16 | `u32` declaration index, from `0` through `N` − 1 |
 | 20 | `u16` `1` |
-| 22 | `u16` `0xFFFF` |
+| 22 | `u16` `0xFFFF` or `0x000E`; the class rule (§3.3) does not use it |
 | 24 | `u32` metadata word |
 | 28 | `u16` class-name byte count `n` |
 | 30 | ASCII class name of `n` bytes, ending with one zero byte |
@@ -583,16 +583,35 @@ document. It carries the Unicode extension by the same rule.
 ### 9.4 Occurrence structure list
 
 The stream `Preview/Structure/IOT` lists the occurrences that take part in
-the assembly. A 20-byte header holds a `u32` entry count `n` at offset 16.
-`n` entries of 20 bytes follow, so the stream is 20 + 20·`n` bytes long. An
-entry stores:
+the assembly. A 20-byte header holds a `u32` item count `n` at offset 16. `n`
+items follow and end at the stream end. An item is an entry or a node. An
+entry is 20 bytes:
 
 | Offset | Field |
 | ---: | --- |
 | 0 | `u32` flags: `0x40000001` for a shown occurrence; bit `0x2` is set for a hidden occurrence |
+| 4 | `u32` detail; bit `0x10000` is set where a property list follows the entry |
+| 8 | `u32` identifier of the `CLSID_JAsmReference` object (§9.2) |
+| 12 | `u32` `0x80000027` or `0x8000007E` |
+| 16 | `u32` |
+
+A property list is a `u32` count `p` and `p` pairs of two `u32`.
+The second value of a pair is `0`.
+
+An occurrence of a subassembly is a node. A node has a 12-byte head:
+
+| Offset | Field |
+| ---: | --- |
+| 0 | `u32` `0x80000000` |
+| 4 | `u32` detail; bit `0x10000` is set where a property list follows the head |
 | 8 | `u32` identifier of the `CLSID_JAsmReference` object (§9.2) |
 
+The property list, where present, and a `u32` member count `m` follow the
+head. `m` items follow, each an entry or a node. The members state objects of
+the referenced document. A node states no flags. A stream with only entries
+that have no property list is 20 + 20·`n` bytes long.
+
 An occurrence that the references collection (§9.1) lists and the stream
-does not list is suppressed. Its `CLSID_JAsmReference` object and the
-references collection are the same as for an active occurrence. A hidden
-occurrence keeps its entry.
+does not list among its `n` items is suppressed. Its `CLSID_JAsmReference`
+object and the references collection are the same as for an active
+occurrence. A hidden occurrence keeps its entry.

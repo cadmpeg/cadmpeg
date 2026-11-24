@@ -244,9 +244,7 @@ fn declaration(bytes: &[u8], at: usize, expected: usize) -> Option<(String, usiz
     )?)
     .ok()?;
     let fixed = View::u16_le_at(bytes, at.checked_add(type_declaration::MARKER_ONE)?)?
-        == type_declaration::MARKER_ONE_VALUE
-        && View::u16_le_at(bytes, at.checked_add(type_declaration::MARKER_ABSENT)?)?
-            == type_declaration::MARKER_ABSENT_VALUE;
+        == type_declaration::MARKER_ONE_VALUE;
     if index != expected || !fixed {
         return None;
     }

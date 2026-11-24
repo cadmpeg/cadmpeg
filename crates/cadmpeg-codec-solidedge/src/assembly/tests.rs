@@ -11,7 +11,8 @@ use super::link_path;
 use crate::layout::file_moniker;
 use crate::test_support::{
     assembly_document, assembly_document_with_structure, link_stream, mirror_document,
-    structure_stream, MirrorSpec, OccurrenceSpec, SiteSpec,
+    structure_entry, structure_items, structure_node, structure_stream, MirrorSpec, OccurrenceSpec,
+    SiteSpec,
 };
 use crate::SolidEdgeCodec;
 
@@ -305,6 +306,50 @@ fn structure_list_states_shown_hidden_and_suppressed() {
     assert_eq!(second.suppressed, Some(true));
     assert_eq!(second.visible, None);
     assert_eq!(count(&result, "assembly.visibility-unread"), 0);
+}
+
+#[test]
+fn structure_list_reads_nodes_and_property_lists() {
+    // Occurrence 20 is a node of a subassembly with an entry that carries a
+    // property list and a nested node; occurrence 22 is an entry that carries one.
+    let node = structure_node(
+        20,
+        None,
+        &[
+            structure_entry(SHOWN, 7, Some(7)),
+            structure_node(9, Some(3), &[structure_entry(SHOWN, 7, Some(2))]),
+        ],
+    );
+    let stream = structure_items(&[node, structure_entry(HIDDEN, 22, Some(5))]);
+    let result = pair(Some(stream));
+    let [first, second] = occurrences(&result) else {
+        panic!("two occurrences")
+    };
+    // A node states no flags, so it states no display state.
+    assert_eq!((first.suppressed, first.visible), (Some(false), None));
+    assert_eq!(
+        (second.suppressed, second.visible),
+        (Some(false), Some(false))
+    );
+    assert_eq!(count(&result, "assembly.visibility-unread"), 0);
+}
+
+#[test]
+fn structure_list_with_a_truncated_node_states_nothing() {
+    let node = structure_node(20, None, &[structure_entry(SHOWN, 7, Some(7))]);
+    let mut stream = structure_items(&[node, structure_entry(SHOWN, 22, None)]);
+    stream.truncate(stream.len() - 30);
+    let result = pair(Some(stream));
+    for occurrence in occurrences(&result) {
+        assert_eq!(occurrence.suppressed, None);
+    }
+    assert_eq!(count(&result, "assembly.visibility-unread"), 1);
+    // A member count the stream cannot hold is not read.
+    let mut huge = structure_items(&[structure_node(20, None, &[])]);
+    let at = huge.len() - 4;
+    huge[at..].copy_from_slice(&u32::MAX.to_le_bytes());
+    let result = pair(Some(huge));
+    assert_eq!(count(&result, "assembly.visibility-unread"), 1);
 }
 
 #[test]

@@ -279,12 +279,11 @@ source = "spec"
 anchor = "| 20 | `u16` `1` |"
 
 [[record.field]]
-name = "marker_absent"
+name = "link"
 offset = 22
 type = "u16"
-value = 0xFFFF
 source = "spec"
-anchor = "| 22 | `u16` `0xFFFF` |"
+anchor = "| 22 | `u16` `0xFFFF` or `0x000E`"
 
 [[record.field]]
 name = "metadata"
@@ -972,7 +971,7 @@ name = "occurrence_structure_header"
 kind = "byte"
 parsed_by = "crates/cadmpeg-codec-solidedge/src/assembly.rs"
 section = "9.4"
-anchor = "A 20-byte header holds a `u32` entry count `n` at offset 16."
+anchor = "A 20-byte header holds a `u32` item count `n` at offset 16."
 size = 20
 
 [[record.gap]]
@@ -985,14 +984,14 @@ name = "count"
 offset = 16
 type = "u32"
 source = "spec"
-anchor = "A 20-byte header holds a `u32` entry count `n` at offset 16."
+anchor = "A 20-byte header holds a `u32` item count `n` at offset 16."
 
 [[record]]
 name = "occurrence_structure_entry"
 kind = "byte"
 parsed_by = "crates/cadmpeg-codec-solidedge/src/assembly.rs"
 section = "9.4"
-anchor = "`n` entries of 20 bytes follow"
+anchor = "An entry is 20 bytes:"
 size = 20
 
 [[record.field]]
@@ -1002,10 +1001,12 @@ type = "u32"
 source = "spec"
 anchor = "| 0 | `u32` flags: `0x40000001` for a shown occurrence; bit `0x2` is set for a hidden occurrence |"
 
-[[record.gap]]
+[[record.field]]
+name = "detail"
 offset = 4
-size = 4
-note = "§9.4 states no field between the flags and the occurrence identifier."
+type = "u32"
+source = "spec"
+anchor = "| 4 | `u32` detail; bit `0x10000` is set where a property list follows the entry |"
 
 [[record.field]]
 name = "object"
@@ -1017,7 +1018,60 @@ anchor = "| 8 | `u32` identifier of the `CLSID_JAsmReference` object (§9.2) |"
 [[record.gap]]
 offset = 12
 size = 8
-note = "§9.4 states no field after the occurrence identifier."
+note = "The word at offset 12 and the word at offset 16 do not affect the occurrence."
+
+[[record]]
+name = "occurrence_structure_node"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/assembly.rs"
+section = "9.4"
+anchor = "A node has a 12-byte head:"
+size = 12
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u32"
+value = 0x80000000
+source = "spec"
+anchor = "| 0 | `u32` `0x80000000` |"
+
+[[record.field]]
+name = "detail"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "| 4 | `u32` detail; bit `0x10000` is set where a property list follows the head |"
+
+[[record.field]]
+name = "object"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "| 8 | `u32` identifier of the `CLSID_JAsmReference` object (§9.2) |"
+
+[[record]]
+name = "occurrence_structure_property"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/assembly.rs"
+section = "9.4"
+anchor = "A property list is a `u32` count `p`"
+size = 8
+
+[[record.field]]
+name = "key"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "`p` pairs of two `u32`"
+
+[[record.field]]
+name = "zero"
+offset = 4
+type = "u32"
+value = 0
+source = "spec"
+anchor = "The second value of a pair is `0`."
 
 [[record]]
 name = "file_moniker"

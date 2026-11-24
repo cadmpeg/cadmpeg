@@ -110,7 +110,7 @@ Parsed by:
 | 0 | 16 | `class_guid` | `bytes[16]` | little | spec | \| 0 \| 16-byte class GUID \| |
 | 16 | 4 | `index` | `u32` | little | spec | \| 16 \| `u32` declaration index |
 | 20 | 2 | `marker_one` | `u16` | little | spec | \| 20 \| `u16` `1` \| · value `1` |
-| 22 | 2 | `marker_absent` | `u16` | little | spec | \| 22 \| `u16` `0xFFFF` \| · value `65535` |
+| 22 | 2 | `link` | `u16` | little | spec | \| 22 \| `u16` `0xFFFF` or `0x000E` |
 | 24 | 4 | `metadata` | `u32` | little | spec | \| 24 \| `u32` metadata word \| |
 | 28 | 2 | `name_len` | `u16` | little | spec | \| 28 \| `u16` class-name byte count `n` \| |
 
@@ -427,7 +427,7 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 16 | 4 | `count` | `u32` | little | spec | A 20-byte header holds a `u32` entry count `n` at offset 16. |
+| 16 | 4 | `count` | `u32` | little | spec | A 20-byte header holds a `u32` item count `n` at offset 16. |
 
 Unstated regions:
 
@@ -443,12 +443,37 @@ Parsed by:
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 4 | `flags` | `u32` | little | spec | \| 0 \| `u32` flags: `0x40000001` for a shown occurrence; bit `0x2` is set for a hidden occurrence \| |
+| 4 | 4 | `detail` | `u32` | little | spec | \| 4 \| `u32` detail; bit `0x10000` is set where a property list follows the entry \| |
 | 8 | 4 | `object` | `u32` | little | spec | \| 8 \| `u32` identifier of the `CLSID_JAsmReference` object (§9.2) \| |
 
 Unstated regions:
 
-- `4..8` (4 B): §9.4 states no field between the flags and the occurrence identifier.
-- `12..20` (8 B): §9.4 states no field after the occurrence identifier.
+- `12..20` (8 B): The word at offset 12 and the word at offset 16 do not affect the occurrence.
+
+## `occurrence_structure_node`
+
+Spec §9.4 · layout: byte offsets · size: 12 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/assembly.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `marker` | `u32` | little | spec | \| 0 \| `u32` `0x80000000` \| · value `2147483648` |
+| 4 | 4 | `detail` | `u32` | little | spec | \| 4 \| `u32` detail; bit `0x10000` is set where a property list follows the head \| |
+| 8 | 4 | `object` | `u32` | little | spec | \| 8 \| `u32` identifier of the `CLSID_JAsmReference` object (§9.2) \| |
+
+## `occurrence_structure_property`
+
+Spec §9.4 · layout: byte offsets · size: 8 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/assembly.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `key` | `u32` | little | spec | `p` pairs of two `u32` |
+| 4 | 4 | `zero` | `u32` | little | spec | The second value of a pair is `0`. · value `0` |
 
 ## `file_moniker`
 

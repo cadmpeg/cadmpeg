@@ -106,10 +106,6 @@ pub(crate) mod type_declaration {
     pub(crate) const MARKER_ONE: usize = 20;
     /// Stated value of `marker_one` (`u16`). Spec §3.2.
     pub(crate) const MARKER_ONE_VALUE: u16 = 0x0001;
-    /// Offset of `marker_absent` (`u16`, little-endian). Spec §3.2.
-    pub(crate) const MARKER_ABSENT: usize = 22;
-    /// Stated value of `marker_absent` (`u16`). Spec §3.2.
-    pub(crate) const MARKER_ABSENT_VALUE: u16 = 0xffff;
     /// Offset of `name_len` (`u16`, little-endian). Spec §3.2.
     pub(crate) const NAME_LEN: usize = 28;
 }
@@ -336,10 +332,32 @@ pub(crate) mod occurrence_structure_header {
 pub(crate) mod occurrence_structure_entry {
     /// Record length in bytes. Spec §9.4.
     pub(crate) const LEN: usize = 20;
-    /// Offset of `flags` (`u32`, little-endian). Spec §9.4.
-    pub(crate) const FLAGS: usize = 0;
+    /// Offset of `detail` (`u32`, little-endian). Spec §9.4.
+    pub(crate) const DETAIL: usize = 4;
     /// Offset of `object` (`u32`, little-endian). Spec §9.4.
     pub(crate) const OBJECT: usize = 8;
+}
+
+/// Byte offsets for the `occurrence_structure_node` record.
+///
+/// Spec §9.4. Record length 12 B.
+pub(crate) mod occurrence_structure_node {
+    /// Record length in bytes. Spec §9.4.
+    pub(crate) const LEN: usize = 12;
+    /// Stated value of `marker` (`u32`). Spec §9.4.
+    pub(crate) const MARKER_VALUE: u32 = 0x8000_0000;
+    /// Offset of `detail` (`u32`, little-endian). Spec §9.4.
+    pub(crate) const DETAIL: usize = 4;
+    /// Offset of `object` (`u32`, little-endian). Spec §9.4.
+    pub(crate) const OBJECT: usize = 8;
+}
+
+/// Byte offsets for the `occurrence_structure_property` record.
+///
+/// Spec §9.4. Record length 8 B.
+pub(crate) mod occurrence_structure_property {
+    /// Record length in bytes. Spec §9.4.
+    pub(crate) const LEN: usize = 8;
 }
 
 /// Byte offsets for the `file_moniker` record.
