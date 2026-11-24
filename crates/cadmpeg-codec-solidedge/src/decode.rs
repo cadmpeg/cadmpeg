@@ -32,20 +32,29 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         let definition = root_definition();
         let mut product = ProductDefinition::root(definition.clone(), ExternalDocument::default());
         let cluster = match snapshot.stream(settings::CLUSTER_STREAM) {
-            Some(entry) => Some(snapshot.open(ctx, entry)?),
-            None => None,
+            Some(entry) => match snapshot.open(ctx, entry) {
+                Ok(cluster) => Ok(cluster),
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                Err(error) => Err(format!(
+                    "the {} stream could not be read: {error}",
+                    settings::CLUSTER_STREAM
+                )),
+            },
+            None => Err(format!(
+                "the document has no {} stream",
+                settings::CLUSTER_STREAM
+            )),
         };
-        product.units = match cluster {
-            Some(cluster) => {
+        product.units = match &cluster {
+            Ok(cluster) => {
                 let sets = settings::property_sets(ctx, cluster.window());
                 settings::unit_system(&sets, &mut body.losses)
             }
-            None => {
+            Err(reason) => {
                 body.losses
                     .push(SolidEdgeLossCode::UnitsUnread.note(format!(
-                    "the document has no {} stream; the document unit system is not transferred",
-                    settings::CLUSTER_STREAM
-                )));
+                        "{reason}; the document unit system is not transferred"
+                    )));
                 None
             }
         };
@@ -54,7 +63,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         if design {
             sheet_metal::project_rule(ctx, &snapshot, &definition, &mut ir, &mut body.losses)?;
         }
-        if let Some(cluster) = cluster {
+        if let Ok(cluster) = cluster {
             assembly::project(
                 ctx,
                 &snapshot,

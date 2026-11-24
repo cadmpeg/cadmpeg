@@ -285,3 +285,13 @@ fn member_that_names_no_object_is_skipped() {
     assert!(messages(&result, "sketch.unread").is_empty());
     assert!(messages(&result, "sketch.relations-unread").is_empty());
 }
+
+#[test]
+fn a_member_listed_twice_states_one_curve() {
+    let result = with_members(
+        &XY,
+        &[Member2d::Line([0.0, 0.0, 0.01, 0.0]), Member2d::Repeat(0)],
+    );
+    assert_eq!(result.ir().design.sketch_entities.len(), 1);
+    assert_eq!(messages(&result, "sketch.unread").len(), 1);
+}

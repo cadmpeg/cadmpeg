@@ -71,11 +71,12 @@ fn positive_length(metres: f64, what: &str) -> Result<Dimension<PositiveLength>,
 
 /// The arithmetic mean of the profile's sample points.
 fn centre(profile: &Profile) -> Option<Vector3> {
-    let count = f64::from(u32::try_from(profile.points.len()).ok()?);
-    if profile.points.is_empty() {
+    let samples = profile.samples();
+    let count = f64::from(u32::try_from(samples.len()).ok()?);
+    if samples.is_empty() {
         return None;
     }
-    let (x, y, z) = profile.points.iter().fold((0.0, 0.0, 0.0), |sum, p| {
+    let (x, y, z) = samples.iter().fold((0.0, 0.0, 0.0), |sum, p| {
         (sum.0 + p.x, sum.1 + p.y, sum.2 + p.z)
     });
     Some(Vector3::new(x / count, y / count, z / count))
