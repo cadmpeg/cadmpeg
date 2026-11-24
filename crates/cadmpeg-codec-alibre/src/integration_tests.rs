@@ -370,7 +370,10 @@ fn the_loft_is_the_solid_its_step_twin_is() {
         part.ir().geometry.faces.len(),
         twin.ir().geometry.faces.len()
     );
-    assert_eq!(part.ir().geometry.edges.len(), twin.ir().geometry.edges.len());
+    assert_eq!(
+        part.ir().geometry.edges.len(),
+        twin.ir().geometry.edges.len()
+    );
     let planes = |ir: &cadmpeg_ir::CadIr| {
         ir.geometry
             .surfaces
@@ -526,7 +529,10 @@ fn a_header_tolerance_that_is_not_positive_is_charged_and_left_at_its_default() 
         .into_iter()
         .filter(|kind| *kind == AlibreLossCode::HeaderToleranceUnresolved.kind())
         .count();
-    assert_eq!(unresolved, 2, "one note each for the linear and angular tolerance");
+    assert_eq!(
+        unresolved, 2,
+        "one note each for the linear and angular tolerance"
+    );
     assert_eq!(
         result.ir().tolerances,
         cadmpeg_ir::units::Tolerances::default()

@@ -313,8 +313,14 @@ mod tests {
                 "alibre:brep:tvertex#4",
                 AlibreLossCode::VertexToleranceUnresolved,
             ),
-            ("alibre:brep:tedge#7", AlibreLossCode::EdgeToleranceUnresolved),
-            ("alibre:brep:shell#3", AlibreLossCode::TopologyShellUnprojected),
+            (
+                "alibre:brep:tedge#7",
+                AlibreLossCode::EdgeToleranceUnresolved,
+            ),
+            (
+                "alibre:brep:shell#3",
+                AlibreLossCode::TopologyShellUnprojected,
+            ),
             (
                 "alibre:brep:face#9",
                 AlibreLossCode::TopologyFaceOwnerUnprojected,

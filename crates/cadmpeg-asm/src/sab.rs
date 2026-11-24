@@ -2312,13 +2312,23 @@ mod tests {
     fn extended_base_normalization_reports_what_it_removes() {
         let reference = |at| Token::Ref(at);
         let extended = |name: &str, extra: Vec<Token>| {
-            let mut tokens = vec![reference(-1), Token::Long(5), Token::Long(77), reference(-1)];
+            let mut tokens = vec![
+                reference(-1),
+                Token::Long(5),
+                Token::Long(77),
+                reference(-1),
+            ];
             tokens.extend(extra);
             base_record(name, tokens)
         };
         let attribute = base_record(
             "name_attrib-gen-attrib",
-            vec![reference(-1), Token::Long(6), Token::Long(77), reference(-1)],
+            vec![
+                reference(-1),
+                Token::Long(6),
+                Token::Long(77),
+                reference(-1),
+            ],
         );
         let mut records = vec![
             extended("body", vec![Token::Long(88), reference(2)]),
@@ -2328,7 +2338,13 @@ mod tests {
             base_record("point", vec![reference(-1), Token::Long(7), reference(-1)]),
         ];
         let removed = super::normalize_extended_base(&mut records, Some(3300));
-        assert_eq!(removed, super::ExtendedBaseRemoval { base_integers: 2, body_integers: 1 });
+        assert_eq!(
+            removed,
+            super::ExtendedBaseRemoval {
+                base_integers: 2,
+                body_integers: 1
+            }
+        );
         assert!(!removed.is_empty());
         assert_eq!(
             *records[0].tokens,
@@ -2338,7 +2354,10 @@ mod tests {
             *records[1].tokens,
             [reference(-1), Token::Long(5), reference(-1), reference(3)]
         );
-        assert_eq!(records[2].tokens, attribute.tokens, "attribute records keep their form");
+        assert_eq!(
+            records[2].tokens, attribute.tokens,
+            "attribute records keep their form"
+        );
         assert_eq!(records[3].tokens.len(), 3);
     }
 
@@ -2346,7 +2365,12 @@ mod tests {
     fn extended_base_normalization_leaves_other_save_formats_alone() {
         let record = base_record(
             "body",
-            vec![Token::Ref(-1), Token::Long(5), Token::Long(77), Token::Ref(-1)],
+            vec![
+                Token::Ref(-1),
+                Token::Long(5),
+                Token::Long(77),
+                Token::Ref(-1),
+            ],
         );
         for save_format in [None, Some(700), Some(10_000)] {
             let mut records = vec![record.clone()];
