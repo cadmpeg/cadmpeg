@@ -394,8 +394,7 @@ pub fn cut_with_native(
             .as_ref()
             .map(crate::document::SourceMeta::format),
     )?;
-    let mut document =
-        Document::from_projection(&value.to_string()).map_err(CodecError::malformed)?;
+    let mut document = Document::from_projection(value).map_err(CodecError::malformed)?;
     if finding.check != crate::report::check::Check::ArenaOrder {
         document.finalize();
     }

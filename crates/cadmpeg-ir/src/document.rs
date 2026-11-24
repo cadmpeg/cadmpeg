@@ -2557,9 +2557,14 @@ impl<'de> Deserialize<'de> for CadIr {
 
 impl CadIr {
     /// Parses a document that another document was projected into: each
-    /// arena keeps the order and the repeated ids the projection states.
-    pub(crate) fn from_projection(text: &str) -> Result<Self, serde_json::Error> {
-        let wire: CadIrReadWire = serde_json::from_str(text)?;
+    /// arena keeps the order and the repeated ids the projection states, so
+    /// a reproduction of an arena-order finding still reproduces it.
+    ///
+    /// # Errors
+    ///
+    /// Where `value` is not a document of this IR version.
+    pub fn from_projection(value: serde_json::Value) -> Result<Self, serde_json::Error> {
+        let wire = CadIrReadWire::deserialize(value)?;
         check_ir_version(wire.ir_version.as_ref())?;
         wire.admit()
     }

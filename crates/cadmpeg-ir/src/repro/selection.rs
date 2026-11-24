@@ -293,7 +293,7 @@ pub fn select(
             }
         }
     }
-    Document::from_projection(&value.to_string())
+    Document::from_projection(value)
         .map(Some)
         .map_err(CodecError::malformed)
 }
