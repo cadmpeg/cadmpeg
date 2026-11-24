@@ -15,6 +15,11 @@ use crate::geometry::{self, Nodes};
 
 const EPS_PLANAR_SUPPORT_MM: f64 = 1.0e-9;
 
+/// Sine of the largest angle at which two unit directions count as parallel,
+/// and cosine of the largest deviation from a right angle at which a plane
+/// normal counts as perpendicular to a cylinder axis.
+const EPS_PARALLEL: f64 = 1.0e-9;
+
 const MM_PER_METRE: f64 = cadmpeg_ir::scalar::Magnification::MILLIMETERS_PER_METER.get();
 
 pub(crate) fn support_kinds(nodes: &Nodes<'_>, node: Node<'_>) -> Vec<u16> {
@@ -240,10 +245,14 @@ fn section(
             let cosine = normal.dot(axis);
             let height = plane.origin().get().vector_from(origin).dot(normal);
             let radius = cylinder.radius().get();
-            if cosine == 0.0 {
+            if cosine.abs() <= EPS_PARALLEL {
                 let points = points?;
                 let cross = axis.cross(normal);
-                let half_width = (radius * radius - height * height).sqrt();
+                let depth = radius * radius - height * height;
+                if depth < 0.0 {
+                    return None;
+                }
+                let half_width = depth.sqrt();
                 let centre = origin.translated(normal, height);
                 let candidates = [
                     centre.translated(cross, half_width),
@@ -292,7 +301,9 @@ fn section(
             let second_normal = *second.frame().axis().as_raw();
             let cross = normal.cross(second_normal);
             let square = cross.dot(cross);
-            if square == 0.0 {
+            // Both normals are unit vectors, so the cross product's length is
+            // the sine of the angle between the planes.
+            if square <= EPS_PARALLEL * EPS_PARALLEL {
                 return None;
             }
             let first_height = plane
@@ -395,6 +406,46 @@ mod tests {
             panic!("line section");
         };
         assert!(line.origin().get().distance(start) < EPS_SECTION_LOCATION);
+    }
+    #[test]
+    fn near_parallel_plane_gives_a_generator_line() {
+        let tilt = 1.0e-12_f64;
+        let norm = (1.0 + tilt * tilt).sqrt();
+        let plane = PlaneSurface::try_new(
+            Point3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 1.0 / norm, tilt / norm),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("plane");
+        let start = Point3::new(3.0f64.sqrt(), 1.0, 0.0);
+        let curve = section(
+            &plane,
+            &cylinder(),
+            Some([start, Point3::new(start.x, start.y, 1.0)]),
+        )
+        .expect("line section");
+        assert!(matches!(curve, SolvedCurveGeometry::Line(_)));
+    }
+
+    #[test]
+    fn near_parallel_planes_have_no_section_line() {
+        let tilt = 1.0e-12_f64;
+        let norm = (1.0 + tilt * tilt).sqrt();
+        let first = PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("plane");
+        let second = SolvedSurfaceGeometry::Plane(
+            PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 1.0),
+                Vector3::new(tilt / norm, 0.0, 1.0 / norm),
+                Vector3::new(1.0 / norm, 0.0, -tilt / norm),
+            )
+            .expect("plane"),
+        );
+        assert!(section(&first, &second, None).is_none());
     }
     #[test]
     fn planar_support_requires_all_poles_on_one_plane() {
