@@ -1,6 +1,6 @@
 use super::{
     curve_parameter_scale, scale_curve_geometry, scale_finite_point3, scale_length,
-    scale_positive_length, scale_procedural_curve, scale_procedural_surface,
+    scale_positive_length, scale_procedural_curve, scale_procedural_surface, scale_refusal,
     scale_surface_geometry, scale_transform_translation, surface_parameter_scales,
 };
 use cadmpeg_core::decode::DecodeContext;
@@ -238,10 +238,14 @@ fn pick(
             scale_finite_point3(&mut frame.origin, scale)?;
         }
         for curve in &mut w.curves {
-            scale_curve_geometry(ctx, curve, scale)?;
+            *curve = curve
+                .scaled(ctx, scale)?
+                .map_err(|refusal| scale_refusal(refusal, "curve", scale))?;
         }
         if let Some(surface) = &mut w.surface {
-            scale_surface_geometry(ctx, surface, scale)?;
+            *surface = surface
+                .scaled(ctx, scale)?
+                .map_err(|refusal| scale_refusal(refusal, "surface", scale))?;
         }
         if let Some(body) = &mut w.body {
             topology(ctx, body, scale)?;
@@ -431,9 +435,12 @@ fn topology(
     }
     Ok(())
 }
-fn tolerance(value: &mut Option<PositiveReal>, scale: PositiveReal) -> Result<(), CodecError> {
+fn tolerance(
+    value: &mut Option<cadmpeg_ir::scalar::PositiveLength>,
+    scale: PositiveReal,
+) -> Result<(), CodecError> {
     if let Some(v) = value {
-        *v = PositiveReal::new(v.get() * scale.get())
+        *v = cadmpeg_ir::scalar::PositiveLength::new(v.get() * scale.get())
             .ok_or_else(|| CodecError::malformed("scaled witness tolerance overflow"))?;
     }
     Ok(())

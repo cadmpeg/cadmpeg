@@ -260,12 +260,11 @@ pub(super) fn revolved_about(corners: &[(f64, f64)], axis: Vector3, reference: V
         id(ShellId::mint, "shell", "solid"),
         id(RegionId::mint, "region", "solid"),
     ));
-    ir.geometry.regions.push(Region {
-        id: id(RegionId::mint, "region", "solid"),
-        body: id(BodyId::mint, "body", "solid"),
-        shells: vec![id(ShellId::mint, "shell", "solid")],
-        native_ref: None,
-    });
+    ir.geometry.regions.push(Region::new(
+        id(RegionId::mint, "region", "solid"),
+        id(BodyId::mint, "body", "solid"),
+        vec![id(ShellId::mint, "shell", "solid")],
+    ));
     ir.geometry.bodies.push(Body {
         id: id(BodyId::mint, "body", "solid"),
         kind: BodyKind::Solid,
@@ -274,6 +273,7 @@ pub(super) fn revolved_about(corners: &[(f64, f64)], axis: Vector3, reference: V
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     ir.finalize();
     ir

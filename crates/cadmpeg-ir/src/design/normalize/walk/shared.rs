@@ -4,9 +4,10 @@
 use cadmpeg_core::CodecError;
 
 use crate::design::ops::shared::{
-    ChainLayout, ChainLink, ChainLinks, InstanceOrientation, Joint, JointConnector, JointKind, Law,
-    Limit, LinearRun, Locus, PathReference, PathRollControl, PatternLayout, PatternRun, RunSides,
-    Spacing, Span,
+    ChainLayout, ChainLink, ChainLinks, CircularLayout, CompositeStage, InstanceOrientation, Joint,
+    JointConnector, JointKind, Law, Limit, LinearLayout, LinearRun, Locus, MirrorLayout,
+    PathReference, PathRollControl, PatternLayout, PatternRun, RunSides, ScaleLayout, Spacing,
+    Span,
 };
 
 use super::{Visit, Walk};
@@ -203,27 +204,8 @@ impl Walk for PatternLayout {
     fn walk(&mut self, into: &mut Visit<'_, '_>) -> Result<(), CodecError> {
         let _depth = into.enter("PatternLayout")?;
         match self {
-            Self::Linear {
-                first,
-                second,
-                seed_only: _,
-            } => {
-                first.walk(into)?;
-                second.walk(into)?;
-                Ok(())
-            }
-            Self::Circular {
-                axis,
-                angular,
-                radial,
-                orientation,
-            } => {
-                axis.walk(into)?;
-                angular.walk(into)?;
-                radial.walk(into)?;
-                orientation.walk(into)?;
-                Ok(())
-            }
+            Self::Linear(f0) => f0.walk(into),
+            Self::Circular(f0) => f0.walk(into),
             Self::Path {
                 path,
                 run,
@@ -239,20 +221,75 @@ impl Walk for PatternLayout {
                 reference.walk(into)?;
                 Ok(())
             }
-            Self::Mirror {
-                plane,
-                stitch_tolerance: _,
-            } => plane.walk(into),
+            Self::Mirror(f0) => f0.walk(into),
             Self::Composite(f0) => f0.walk(into),
-            Self::Scale {
-                factor: _,
-                count: _,
-                center,
-            } => center.walk(into),
+            Self::Scale(f0) => f0.walk(into),
             Self::Follow(f0) => f0.walk(into),
             Self::Chain(f0) => f0.walk(into),
             Self::Dimensions(_) | Self::Table(_) | Self::Native(_) => Ok(()),
         }
+    }
+}
+
+impl Walk for CompositeStage {
+    fn walk(&mut self, into: &mut Visit<'_, '_>) -> Result<(), CodecError> {
+        match self {
+            Self::Linear(f0) => f0.walk(into),
+            Self::Circular(f0) => f0.walk(into),
+            Self::Mirror(f0) => f0.walk(into),
+            Self::Scale(f0) => f0.walk(into),
+            Self::Native(_) => Ok(()),
+        }
+    }
+}
+
+impl Walk for LinearLayout {
+    fn walk(&mut self, into: &mut Visit<'_, '_>) -> Result<(), CodecError> {
+        let Self {
+            first,
+            second,
+            seed_only: _,
+        } = self;
+        first.walk(into)?;
+        second.walk(into)?;
+        Ok(())
+    }
+}
+
+impl Walk for CircularLayout {
+    fn walk(&mut self, into: &mut Visit<'_, '_>) -> Result<(), CodecError> {
+        let Self {
+            axis,
+            angular,
+            radial,
+            orientation,
+        } = self;
+        axis.walk(into)?;
+        angular.walk(into)?;
+        radial.walk(into)?;
+        orientation.walk(into)?;
+        Ok(())
+    }
+}
+
+impl Walk for MirrorLayout {
+    fn walk(&mut self, into: &mut Visit<'_, '_>) -> Result<(), CodecError> {
+        let Self {
+            plane,
+            stitch_tolerance: _,
+        } = self;
+        plane.walk(into)
+    }
+}
+
+impl Walk for ScaleLayout {
+    fn walk(&mut self, into: &mut Visit<'_, '_>) -> Result<(), CodecError> {
+        let Self {
+            factor: _,
+            count: _,
+            center,
+        } = self;
+        center.walk(into)
     }
 }
 

@@ -1075,13 +1075,13 @@ fn lump_named_attributes_bind_to_their_owning_body() {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         }],
-        regions: vec![Region {
-            id: RegionId::mint(id(FORMAT, 2).into_string()).expect("identity grammar"),
-            body: body_id.clone(),
-            shells: Vec::new(),
-            native_ref: None,
-        }],
+        regions: vec![Region::new(
+            RegionId::mint(id(FORMAT, 2).into_string()).expect("identity grammar"),
+            body_id.clone(),
+            Vec::new(),
+        )],
         ..AsmBrep::default()
     };
 
@@ -1353,7 +1353,7 @@ fn tolerant_edge_tail_admits_only_nonnegative_finite_source_tolerance() {
         assert_eq!(
             brep.edges[0]
                 .tolerance
-                .map(cadmpeg_ir::scalar::PositiveReal::get),
+                .map(cadmpeg_ir::scalar::PositiveLength::get),
             expected_tolerance
         );
         assert_eq!(brep.tolerant_edge_tails.len(), expected_tails);
@@ -1610,13 +1610,13 @@ fn a_body_of_single_sided_loopless_faces_is_a_solid() {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         }],
-        regions: vec![Region {
-            id: region_id.clone(),
-            body: body_id,
-            shells: vec![shell_id.clone()],
-            native_ref: None,
-        }],
+        regions: vec![Region::new(
+            region_id.clone(),
+            body_id,
+            vec![shell_id.clone()],
+        )],
         shells: vec![Shell::new(shell_id.clone(), region_id)],
         faces: vec![Face {
             id: face_id.clone(),

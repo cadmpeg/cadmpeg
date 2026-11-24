@@ -455,7 +455,7 @@ fn curve_bounded_surface_boundaries_take_the_winding_of_their_role() {
     let cadmpeg_ir::topology::FaceLoops::Classified { outer, .. } = &face.loops else {
         panic!("the outer boundary curve is the outer loop");
     };
-    assert_eq!(face.loops.len(), 2);
+    assert_eq!(face.loops.stated().count(), 2);
     for coedge in &model.coedges {
         let expected = if &coedge.owner_loop == outer {
             Sense::Forward
@@ -528,7 +528,7 @@ fn unmeasured_unflagged_boundaries_stay_unclassified() {
         face.loops,
         cadmpeg_ir::topology::FaceLoops::Unspecified { .. }
     ));
-    assert_eq!(face.loops.len(), 2);
+    assert_eq!(face.loops.stated().count(), 2);
     assert!(result.report().losses.iter().any(|loss| {
         loss.code.local_code() == "decode.warning"
             && loss.message.contains("left its 2 boundaries unclassified")

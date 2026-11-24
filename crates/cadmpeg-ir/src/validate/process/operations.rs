@@ -11,7 +11,7 @@ use super::records::ProcessRecords;
 use crate::design::dimension::{Dimension, ParamRef, ParameterRef, RefTarget};
 use crate::design::parameter::ParameterValue;
 use crate::design::selection::{Ordered, Picks, Selection};
-use crate::geometry::SolvedCurveGeometry;
+use crate::geometry::InlineCurve;
 use crate::process::cycle::{Cycle, CycleKind, ProbeTarget};
 use crate::process::limits::{HeightFrom, HeightRole, RadialLimit, RadiusFrom, RadiusRole};
 use crate::process::operation::{
@@ -351,14 +351,12 @@ fn check_profile_ranges(operation: &Operation, findings: &mut Vec<Finding>) {
         .filter_map(|curve| curve.geometry.as_ref());
     for curve in curves.filter(|curve| curve.range.is_none()) {
         let mut carrier = &curve.carrier;
-        while let SolvedCurveGeometry::Transformed(placed) = carrier {
-            carrier = placed.basis();
+        while let InlineCurve::Transformed { basis, .. } = carrier {
+            carrier = basis;
         }
         if matches!(
             carrier,
-            SolvedCurveGeometry::Line(_)
-                | SolvedCurveGeometry::Parabola(_)
-                | SolvedCurveGeometry::Hyperbola(_)
+            InlineCurve::Line(_) | InlineCurve::Parabola(_) | InlineCurve::Hyperbola(_)
         ) {
             super::error(
                 findings,

@@ -84,7 +84,7 @@ fn assert_closed_cylinder(brep: &str) {
     let [shell] = ir.geometry.shells.as_slice() else {
         panic!("one closed shell");
     };
-    assert_eq!(ir.geometry.shell_faces(&shell.id).count(), 3);
+    assert_eq!(ir.geometry.stated_shell_faces(&shell.id).count(), 3);
     let [wire_edge] = shell.wire_edges().collect::<Vec<_>>()[..] else {
         panic!("additional edge remains shell wire geometry");
     };

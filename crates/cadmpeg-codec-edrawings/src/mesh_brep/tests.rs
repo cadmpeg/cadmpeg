@@ -238,14 +238,14 @@ fn plate_with_through_hole_has_inner_loops() {
         .geometry
         .faces
         .iter()
-        .filter(|f| f.loops.len() == 2)
+        .filter(|f| f.loops.stated().count() == 2)
         .count();
     assert_eq!(with_hole, 2);
     assert!(ir
         .geometry
         .faces
         .iter()
-        .filter(|f| f.loops.len() == 2)
+        .filter(|f| f.loops.stated().count() == 2)
         .all(|f| matches!(f.loops, cadmpeg_ir::topology::FaceLoops::Classified { .. })));
     assert_valid(&ir);
 }
@@ -789,7 +789,11 @@ fn add_cube(
 }
 
 fn shells_of_regions(ir: &CadIr) -> Vec<usize> {
-    ir.geometry.regions.iter().map(|r| r.shells.len()).collect()
+    ir.geometry
+        .regions
+        .iter()
+        .map(|r| r.stated_shells().count())
+        .collect()
 }
 
 #[test]

@@ -9,7 +9,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
 use cadmpeg_ir::design::expr::{
-    self, BinaryOp, Expression, ExpressionDialect, ExpressionToken, Neutral, Node,
+    self, AddOp, Expression, ExpressionDialect, ExpressionToken, Neutral, Node,
 };
 use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition, ParameterValue};
 use cadmpeg_ir::design::units::{Quantity, ValueKind};
@@ -87,15 +87,13 @@ fn a_formula_of_unit_arithmetic_is_neutral() {
         output.value,
         Some(ParameterValue::Number(FiniteReal::new(33.0).unwrap()))
     );
-    let ParameterDefinition::Expression(Expression::Neutral(Neutral(Node::Binary {
-        op: BinaryOp::Subtract,
-        left,
-        ..
-    }))) = &output.definition
+    let ParameterDefinition::Expression(Expression::Neutral(Neutral(Node::Sum { first, rest }))) =
+        &output.definition
     else {
         panic!("a neutral difference: {:?}", output.definition);
     };
-    assert_eq!(**left, Node::Reference(reference(&thickness.id)));
+    assert_eq!(rest.first().map(|(op, _)| *op), Some(AddOp::Subtract));
+    assert_eq!(**first, Node::Reference(reference(&thickness.id)));
     assert_eq!(
         output.definition,
         neutral("$0 - 2[mm]", &[reference(&thickness.id)])

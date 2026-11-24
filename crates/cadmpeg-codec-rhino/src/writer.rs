@@ -31,7 +31,7 @@ const EPS_WRITE_DEGENERATE: f64 = 1.0e-10;
 /// route resolves, so the route refuses the document instead of widening the
 /// stated value.
 fn stated_write_tolerance(
-    stated: Option<cadmpeg_ir::scalar::PositiveReal>,
+    stated: Option<cadmpeg_ir::scalar::PositiveLength>,
     ir: &CadIr,
     owner: &str,
 ) -> Result<f64, CodecError> {
@@ -368,7 +368,7 @@ fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
             .collect::<BTreeSet<_>>();
         let shells = body_regions
             .iter()
-            .flat_map(|region| region.shells.iter().map(|id| id.as_str().to_owned()))
+            .flat_map(|region| region.stated_shells().map(|id| id.as_str().to_owned()))
             .collect::<BTreeSet<_>>();
         let faces = members(
             &geometry.faces,
@@ -389,7 +389,7 @@ fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
             .collect::<BTreeSet<_>>();
         let loops = body_faces
             .iter()
-            .flat_map(|face| face.loops.iter().map(|id| id.as_str().to_owned()))
+            .flat_map(|face| face.loops.stated().map(|id| id.as_str().to_owned()))
             .collect::<BTreeSet<_>>();
         let body_loops = members(
             &geometry.loops,
@@ -946,7 +946,7 @@ fn brep_payload(
                 vertex
                     .source
                     .tolerance
-                    .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
+                    .map_or(0.0, cadmpeg_ir::scalar::PositiveLength::get)
                     .to_le_bytes(),
             );
             Ok(record)
@@ -973,7 +973,7 @@ fn brep_payload(
             record.extend(
                 edge.source
                     .tolerance
-                    .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
+                    .map_or(0.0, cadmpeg_ir::scalar::PositiveLength::get)
                     .to_le_bytes(),
             );
             record.extend(
@@ -1442,7 +1442,7 @@ fn validate_nurbs_trim(
         .max(
             edge.source
                 .tolerance
-                .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get),
+                .map_or(0.0, cadmpeg_ir::scalar::PositiveLength::get),
         )
         .max(
             pcurve
@@ -1778,7 +1778,9 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
     let mut groups = Vec::new();
     for body in &geometry.bodies {
         if body.kind != BodyKind::General
-            || geometry.body_regions(&body.id).count() != 1
+            || geometry
+                .complete_body_regions(&body.id)
+                .is_none_or(|regions| regions.count() != 1)
             || body.transform.is_some()
         {
             return Err(CodecError::NotImplemented(format!(
@@ -1794,10 +1796,13 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("body {} region is missing", body.id.as_str()))
             })?;
-        if region.body != body.id
-            || region.shells.len() != 1
-            || !regions.insert(region.id.as_str().to_owned())
-        {
+        let Some([region_shell]) = geometry.complete_shells(region) else {
+            return Err(CodecError::NotImplemented(format!(
+                "body {} region does not state one complete shell",
+                body.id.as_str()
+            )));
+        };
+        if region.body != body.id || !regions.insert(region.id.as_str().to_owned()) {
             return Err(CodecError::malformed(format_args!(
                 "body {} region graph is invalid",
                 body.id.as_str()
@@ -1806,12 +1811,12 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
         let shell = geometry
             .shells
             .iter()
-            .find(|shell| shell.id == region.shells[0])
+            .find(|shell| shell.id == *region_shell)
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("body {} shell is missing", body.id.as_str()))
             })?;
         if shell.region != region.id
-            || geometry.shell_faces(&shell.id).next().is_some()
+            || geometry.stated_shell_faces(&shell.id).next().is_some()
             || shell.wire_edges().next().is_some()
             || shell.free_vertices().next().is_none()
             || !shells.insert(shell.id.as_str().to_owned())

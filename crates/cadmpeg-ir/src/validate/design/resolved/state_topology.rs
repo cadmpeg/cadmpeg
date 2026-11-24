@@ -150,7 +150,7 @@ fn check_topology(
 /// shell lists a wire edge or free vertex once.
 fn check_child_lists(records: &Records<'_>, breaches: &mut Breaches) {
     for (&id, region) in &records.regions {
-        for shell in &region.record.shells {
+        for shell in region.record.stated_shells() {
             let shell = shell.as_str();
             if let Some(child) = records.shells.get(shell) {
                 if child.record.region.as_str() != id {
@@ -166,7 +166,7 @@ fn check_child_lists(records: &Records<'_>, breaches: &mut Breaches) {
     }
     for (&id, face) in &records.faces {
         let mut seen = BTreeSet::new();
-        for loop_ in &face.record.loops {
+        for loop_ in face.record.loops.stated() {
             let loop_ = loop_.as_str();
             if !seen.insert(loop_) {
                 breaches.breach(
@@ -204,7 +204,11 @@ fn check_child_lists(records: &Records<'_>, breaches: &mut Breaches) {
     for (&id, shell) in &records.shells {
         let region = shell.record.region.as_str();
         if let Some(parent) = records.regions.get(region) {
-            if !parent.record.shells.contains(&shell.record.id) {
+            if !parent
+                .record
+                .stated_shells()
+                .any(|listed| listed == &shell.record.id)
+            {
                 breaches.breach(
                     shell.own || parent.own,
                     format_args!("shell {id} is not listed by its region {region}"),

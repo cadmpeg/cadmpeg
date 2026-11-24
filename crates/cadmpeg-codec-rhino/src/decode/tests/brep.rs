@@ -75,6 +75,7 @@ fn fallback_discards_topology_and_unknown_record_self_link() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     staged = staged.free_carrier_fallback("C2 failure");
     assert_eq!(staged.kind, BrepTransferKind::FreeCarrierFallback);
@@ -278,13 +279,13 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
     assert_eq!(
         geometry.vertices[0]
             .tolerance
-            .map(cadmpeg_ir::scalar::PositiveReal::get),
+            .map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(0.254)
     );
     assert_eq!(
         geometry.edges[0]
             .tolerance
-            .map(cadmpeg_ir::scalar::PositiveReal::get),
+            .map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(0.254)
     );
     assert_eq!(

@@ -14,13 +14,14 @@ use crate::design::evaluation::EvaluationStatus;
 use crate::design::feature::{Driver, FeatureOperation, OperationFamily};
 use crate::design::names::{InstanceIndex, NameKind, TopoName};
 use crate::design::ops::assembly::{
-    AssemblyFeature, ComponentInstance, ComponentPattern, MirrorComponents, MirrorResult, Place,
-    PlaceSet,
+    AssemblyContext, ComponentInstance, ComponentPattern, ContextEffect, MirrorComponents,
+    MirrorResult, Place, PlaceSet, PlacementBase,
 };
 use crate::design::ops::body::{
-    Combine, DeleteBodies, InstanceChange, InstanceOverride, NewComponent, Pattern,
-    PatternInstances, PatternSeeds, Split, SplitMode, TemplateInput, TemplateInstance,
-    TransformBodies, TransformMode, TransformStep, Transformation,
+    Combine, DeleteBodies, InstanceChange, InstanceOverride, Kept, NewComponent, Pattern,
+    PatternInstances, PatternSeeds, PieceForm, ScaleFactors, Split, SplitMethod, SplitMode,
+    SplitTool, TemplateInput, TemplateInstance, TransformBodies, TransformMode, TransformStep,
+    Transformation,
 };
 use crate::design::ops::datum::{Datum, DatumElement};
 use crate::design::ops::dressup::{
@@ -29,8 +30,9 @@ use crate::design::ops::dressup::{
     TransitionKind,
 };
 use crate::design::ops::shared::{
-    AxisLimits, Bounds, Coupling, Joint, JointConnector, JointKind, JointMotion, JointOffset,
-    Limit, LinearRun, PatternLayout, PatternRun, RunSides, Spacing, Span,
+    AxisLimits, Bounds, CompositeStage, Coupling, Joint, JointConnector, JointKind, JointMotion,
+    JointOffset, Limit, LinearLayout, LinearRun, PatternLayout, PatternRun, RunSides, Spacing,
+    Span,
 };
 use crate::design::ops::sheet_metal::{
     BendAllowance, BendSpec, Flange, FlangeWidth, KFactorRow, KFactorTable, SheetMetal,
@@ -51,7 +53,8 @@ use crate::design::options::{
 use crate::design::parameter::DesignParameter;
 use crate::design::refs::Member;
 use crate::design::selection::{
-    Anchor, MemberOrder, Members, PickContext, PickTarget, Picked, Picks, Selection,
+    Anchor, MemberOrder, Members, OccurrencePath, PathStep, PickContext, PickTarget, Picked, Picks,
+    Propagation, RuleTerm, Selection, SelectionRule, SetSelection, StepRef, Unordered,
 };
 use crate::design::units::ValueKind;
 use crate::document::CadIr;
@@ -60,7 +63,7 @@ use crate::ids::OccurrenceId;
 use crate::math::Point2;
 use crate::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
 use crate::report::Severity;
-use crate::scalar::{Angle, Fraction, Length, PositiveLength};
+use crate::scalar::{Angle, Fraction, Length, NonZeroReal, PositiveLength};
 use crate::sketches::{SketchConstraintId, SketchEntityId, SketchId};
 use crate::transform::Transform;
 use crate::units::{FinitePoint2, UnitVector3};
@@ -598,7 +601,11 @@ fn a_hole_has_a_wider_head_and_a_series_only_in_an_assembly_feature() {
     );
     assert_finding(
         &with(hole(None, true)),
-        "not the operation of an AssemblyFeature",
+        "a Hole with a series is in a definition that states no assembly",
+    );
+    assert_no_finding_containing(
+        &in_assembly(hole(None, true)),
+        "a Hole with a series is in a definition",
     );
     assert_finding(&with(hole(None, true)), "which is no Hole feature");
 }
@@ -606,7 +613,15 @@ fn a_hole_has_a_wider_head_and_a_series_only_in_an_assembly_feature() {
 // ----------------------------------------------------------------- patterns and body operations
 
 fn linear(sides: Option<RunSides<Length>>, count: u32) -> PatternLayout {
-    PatternLayout::Linear {
+    PatternLayout::Linear(linear_layout(sides, count))
+}
+
+fn linear_stage(count: u32) -> CompositeStage {
+    CompositeStage::Linear(linear_layout(None, count))
+}
+
+fn linear_layout(sides: Option<RunSides<Length>>, count: u32) -> LinearLayout {
+    LinearLayout {
         first: LinearRun {
             direction: Construction {
                 resolved: Some(UnitVector3::X_AXIS),
@@ -679,7 +694,7 @@ fn a_pattern_layout_and_its_indices_fit_its_runs() {
     );
     assert_finding(
         &with(pattern(
-            PatternLayout::Composite(vec![linear(None, 2)]),
+            PatternLayout::Composite(vec![linear_stage(2)]),
             Vec::new(),
         )),
         "fewer than two stages",
@@ -969,6 +984,7 @@ fn a_place_states_its_base_with_its_placement() {
     let place = Place {
         occurrence: id("occurrence", "a"),
         placement: Some(empty_construction()),
+        scale: None,
         base: None,
         constraints: Vec::new(),
         packaged: None,
@@ -978,6 +994,38 @@ fn a_place_states_its_base_with_its_placement() {
     let mut ir = with(FeatureOperation::Place(Box::new(place)));
     own_occurrences(&mut ir, &["a"]);
     assert_finding(&ir, "Place.base is present where placement is not");
+}
+
+/// §10: a `Place.scale` occurs only with a `placement`, and a `PerAxis` one
+/// states no `frame`.
+#[test]
+fn a_place_scale_occurs_with_a_placement_and_in_the_placed_axes() {
+    let factors =
+        [2.0, 1.0, 1.0].map(|factor| Dimension::Literal(NonZeroReal::new(factor).unwrap()));
+    let place = |placement: bool, frame: bool| {
+        let placement = placement.then(empty_construction);
+        let mut ir = with(FeatureOperation::Place(Box::new(Place {
+            occurrence: id("occurrence", "a"),
+            base: placement.as_ref().map(|_| PlacementBase::Parent),
+            placement,
+            scale: Some(ScaleFactors::PerAxis {
+                factors: factors.clone(),
+                frame: frame.then(|| Box::new(empty_construction())),
+            }),
+            constraints: Vec::new(),
+            packaged: None,
+            native_options: BTreeMap::new(),
+            source_settings: BTreeMap::new(),
+        })));
+        own_occurrences(&mut ir, &["a"]);
+        ir
+    };
+    assert_no_finding_containing(&place(true, false), "Place.scale");
+    assert_finding(
+        &place(false, false),
+        "Place.scale is present where placement is not",
+    );
+    assert_finding(&place(true, true), "a PerAxis Place.scale states a frame");
 }
 
 fn joint(kind: JointKind) -> FeatureOperation {
@@ -1569,7 +1617,7 @@ fn an_index_has_the_followed_and_composite_coordinates() {
     let mut ir = with(pattern(follow, vec![skipped(vec![1, 1, 1])]));
     ir.design.features[1].definition.operation = pattern(linear(None, 3), Vec::new());
     assert_finding(&ir, "other than one coordinate per run");
-    let composite = || PatternLayout::Composite(vec![linear(None, 2), linear(None, 2)]);
+    let composite = || PatternLayout::Composite(vec![linear_stage(2), linear_stage(2)]);
     assert_finding(
         &with(pattern(composite(), vec![skipped(vec![1])])),
         "other than one coordinate per run",
@@ -1580,6 +1628,8 @@ fn an_index_has_the_followed_and_composite_coordinates() {
     );
 }
 
+mod pattern_coordinates;
+
 #[test]
 fn an_assembly_feature_operation_states_no_body_operand() {
     let cutting = |targets| {
@@ -1588,25 +1638,226 @@ fn an_assembly_feature_operation_states_no_body_operand() {
             op: BooleanOp::Cut,
             targets,
         });
-        FeatureOperation::AssemblyFeature(Box::new(AssemblyFeature {
-            participants: unread(),
-            effect: None,
-            operation: Box::new(FeatureOperation::Extrude(Box::new(operation))),
-        }))
+        FeatureOperation::Extrude(Box::new(operation))
     };
     let bodies = Targets::Selected(named(vec![entity(NameKind::Body, 1)]));
-    assert_finding(&with(cutting(Some(bodies))), "a body operand of its own");
-    assert_no_finding_containing(&with(cutting(None)), "body operand");
+    assert_finding(
+        &in_assembly(cutting(Some(bodies))),
+        "a body operand of its own",
+    );
+    assert_no_finding_containing(&in_assembly(cutting(None)), "body operand");
+}
+
+/// The fixture with `operation` in a definition whose assembly context
+/// holds `participants` as its one entry.
+fn in_context(operation: FeatureOperation, participants: SetSelection) -> CadIr {
+    let mut ir = with(operation);
+    ir.design.features[0].definition.assembly = Some(AssemblyContext {
+        participants: BTreeMap::from([(Some(ContextEffect::Instances), participants)]),
+    });
+    ir
 }
 
 fn in_assembly(operation: FeatureOperation) -> CadIr {
-    with(FeatureOperation::AssemblyFeature(Box::new(
-        AssemblyFeature {
-            participants: unread(),
-            effect: None,
-            operation: Box::new(operation),
+    in_context(operation, unread())
+}
+
+fn split_by_tools(targets: Option<SetSelection>) -> FeatureOperation {
+    FeatureOperation::Split(Box::new(Split {
+        mode: SplitMode::ByTools {
+            targets,
+            tools: SplitTool::Geometry {
+                tools: named(vec![entity(NameKind::Face, 2)]),
+                extend: None,
+            },
+            method: None,
+            kept: None,
         },
-    )))
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    }))
+}
+
+#[test]
+fn a_by_tools_split_states_targets_exactly_where_its_definition_states_no_assembly() {
+    let targets = || Some(named(vec![entity(NameKind::Body, 1)]));
+    let unstated = "ByTools.targets is None in a definition that states no assembly";
+    let stated = "a body operand of its own, SplitMode::ByTools.targets";
+    assert_no_finding_containing(&with(split_by_tools(targets())), "ByTools.targets");
+    assert_finding(&with(split_by_tools(None)), unstated);
+    assert_finding(&in_assembly(split_by_tools(targets())), stated);
+    assert_no_finding_containing(&in_assembly(split_by_tools(None)), "ByTools.targets");
+}
+
+/// A component pick through the occurrence `key`.
+fn participant(key: &str) -> Picked {
+    let mut component = pick(PickTarget::Component);
+    component.context = Some(PickContext::Occurrence(OccurrencePath(vec![PathStep {
+        occurrence: StepRef::Occurrence(id("occurrence", key)),
+        configuration: None,
+    }])));
+    component
+}
+
+fn affected(seeds: Vec<Picked>, propagation: Option<Propagation>) -> RuleTerm<Unordered> {
+    RuleTerm {
+        rule: SelectionRule::Affected,
+        seeds: Members::new(seeds).unwrap(),
+        propagation,
+    }
+}
+
+fn rule_selection(
+    terms: Vec<RuleTerm<Unordered>>,
+    excluded: Vec<RuleTerm<Unordered>>,
+    resolved: Option<Vec<Picked>>,
+) -> SetSelection {
+    Selection {
+        at: Anchor::Input,
+        picks: Picks::Rule {
+            terms,
+            excluded,
+            resolved: resolved.map(|picks| Members::new(picks).unwrap()),
+        },
+        native: None,
+    }
+}
+
+fn cut() -> FeatureOperation {
+    FeatureOperation::Combine(Box::new(combine(None, BooleanOp::Cut)))
+}
+
+/// The fixture with a cut whose assembly context holds `entries`.
+fn with_participants(entries: Vec<(Option<ContextEffect>, SetSelection)>) -> CadIr {
+    let mut ir = with(cut());
+    ir.design.features[0].definition.assembly = Some(AssemblyContext {
+        participants: entries.into_iter().collect(),
+    });
+    ir
+}
+
+#[test]
+fn every_assembly_participant_pick_carries_an_occurrence_context() {
+    let message = "an assembly participant pick carries no occurrence context";
+    assert_finding(
+        &in_context(cut(), named(vec![pick(PickTarget::Component)])),
+        message,
+    );
+    let cached = rule_selection(
+        vec![affected(Vec::new(), None)],
+        Vec::new(),
+        Some(vec![pick(PickTarget::Component)]),
+    );
+    assert_finding(&in_context(cut(), cached), message);
+    assert_no_finding_containing(&in_context(cut(), named(vec![participant("a")])), message);
+}
+
+#[test]
+fn an_assembly_context_lists_each_participant_once_in_one_state() {
+    let instances = || Some(ContextEffect::Instances);
+    let definitions = || Some(ContextEffect::Definitions);
+    let twice = "a pick is in two selections of an assembly context";
+    assert_finding(
+        &with_participants(vec![(instances(), named(Vec::new()))]),
+        "is Named with no pick",
+    );
+    assert_finding(
+        &with_participants(vec![
+            (instances(), unread()),
+            (definitions(), named(vec![participant("a")])),
+        ]),
+        "with Unread picks is not its context's only entry",
+    );
+    assert_no_finding_containing(
+        &with_participants(vec![(instances(), unread())]),
+        "only entry",
+    );
+    assert_finding(
+        &with_participants(vec![
+            (instances(), named(vec![participant("a")])),
+            (
+                definitions(),
+                named(vec![participant("a"), participant("b")]),
+            ),
+        ]),
+        twice,
+    );
+    let cached = rule_selection(
+        vec![affected(Vec::new(), None)],
+        Vec::new(),
+        Some(vec![participant("a")]),
+    );
+    assert_finding(
+        &with_participants(vec![
+            (instances(), cached),
+            (definitions(), named(vec![participant("a")])),
+        ]),
+        twice,
+    );
+    let mut current = named(vec![participant("b")]);
+    current.at = Anchor::Current;
+    assert_finding(
+        &with_participants(vec![
+            (instances(), named(vec![participant("a")])),
+            (definitions(), current),
+        ]),
+        "state more than one at",
+    );
+    let distinct = with_participants(vec![
+        (instances(), named(vec![participant("a")])),
+        (definitions(), named(vec![participant("b")])),
+    ]);
+    for message in ["two selections", "more than one at", "occurrence context"] {
+        assert_no_finding_containing(&distinct, message);
+    }
+}
+
+#[test]
+fn an_affected_term_is_a_seedless_unpropagated_term_of_one_participant_selection() {
+    let instances = || Some(ContextEffect::Instances);
+    let only = |term| rule_selection(vec![term], Vec::new(), None);
+    let bare = with_participants(vec![(instances(), only(affected(Vec::new(), None)))]);
+    assert_no_finding_containing(&bare, "Affected");
+    assert_finding(
+        &with_participants(vec![(
+            instances(),
+            only(affected(vec![participant("a")], None)),
+        )]),
+        "an Affected rule term has seeds",
+    );
+    assert_finding(
+        &with_participants(vec![(
+            instances(),
+            only(affected(Vec::new(), Some(Propagation::Off))),
+        )]),
+        "an Affected rule term states a propagation",
+    );
+    assert_finding(
+        &with_participants(vec![
+            (instances(), only(affected(Vec::new(), None))),
+            (
+                Some(ContextEffect::Definitions),
+                only(affected(Vec::new(), None)),
+            ),
+        ]),
+        "more than one selection of an assembly context holds an Affected rule term",
+    );
+    let explicit = RuleTerm {
+        rule: SelectionRule::Explicit,
+        seeds: Members::new(vec![participant("a")]).unwrap(),
+        propagation: None,
+    };
+    assert_finding(
+        &with_participants(vec![(
+            instances(),
+            rule_selection(vec![explicit], vec![affected(Vec::new(), None)], None),
+        )]),
+        "among the excluded terms",
+    );
+    assert_finding(
+        &with(split_by_tools(Some(only(affected(Vec::new(), None))))),
+        "an Affected rule term is outside an assembly context's participants",
+    );
 }
 
 #[test]
@@ -1663,24 +1914,49 @@ fn an_assembly_feature_runs_no_operation_that_states_its_bodies() {
         family: OperationFamily::Split,
     };
     assert_no_finding_containing(&in_assembly(split), excluded);
-    let nested = FeatureOperation::Unresolved {
-        family: OperationFamily::AssemblyFeature,
-    };
-    assert_finding(&in_assembly(nested), "is itself an assembly feature");
 }
 
+/// §10: a `ByTools` split whose tool is `Silhouette` has `method: None`, and
+/// its `kept`, where stated, is `All` or `Native`.
 #[test]
-fn a_composite_stage_is_a_linear_circular_mirror_scale_or_native_layout() {
-    let follow = PatternLayout::Follow(named(vec![pick(PickTarget::Feature(feature("fillet")))]));
-    let stages = |stage| PatternLayout::Composite(vec![linear(None, 2), stage]);
-    let refused = "a Composite stage is no Linear";
-    assert_finding(&with(pattern(stages(follow), Vec::new())), refused);
-    let nested = stages(PatternLayout::Composite(vec![
-        linear(None, 2),
-        linear(None, 2),
-    ]));
-    assert_finding(&with(pattern(nested, Vec::new())), refused);
-    assert_no_finding_containing(&with(pattern(stages(linear(None, 2)), Vec::new())), refused);
+fn a_silhouette_split_states_no_method_and_keeps_all_or_native() {
+    let silhouette = |method, kept| {
+        FeatureOperation::Split(Box::new(Split {
+            mode: SplitMode::ByTools {
+                targets: Some(named(vec![entity(NameKind::Body, 1)])),
+                tools: SplitTool::Silhouette(Box::new(Construction {
+                    resolved: Some(UnitVector3::Z_AXIS),
+                    ..empty_construction()
+                })),
+                method,
+                kept,
+            },
+            native_options: BTreeMap::new(),
+            source_settings: BTreeMap::new(),
+        }))
+    };
+    let all = || {
+        Some(Kept::All {
+            form: Some(PieceForm::Faces),
+        })
+    };
+    let native = Some(Kept::Native(
+        NonBlankString::new("f3d:silhouette_split_solid_body").unwrap(),
+    ));
+    for kept in [all(), native, None] {
+        assert_no_finding_containing(&with(silhouette(None, kept)), "Silhouette split");
+    }
+    assert_finding(
+        &with(silhouette(Some(SplitMethod::Intersect), all())),
+        "a Silhouette split states a method",
+    );
+    let side = Some(Kept::Side {
+        side: Dimension::Literal(true),
+    });
+    assert_finding(
+        &with(silhouette(None, side)),
+        "a Silhouette split keeps a side or pieces",
+    );
 }
 
 #[test]

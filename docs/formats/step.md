@@ -2275,6 +2275,9 @@ emitted hidden layer on schemas that support visibility. A target schema that
 does not support `INVISIBILITY` reports
 `presentation.hidden-layer-visibility-unsupported`, and a hidden layer with no
 emitted assignment reports `presentation.hidden-layer-omitted`.
+STEP has no layer hierarchy. The writer writes a sublayer as a top-level
+layer, hidden where it or a layer above it is hidden, and reports
+`layer.hierarchy-flattened`.
 
 A shape representation contains at least one representation item. In a
 complex instance, its name, item list, and context use the populated

@@ -639,7 +639,7 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
         },
         native_ref: None,
     });
-    let outer = ir.geometry.faces[0].loops.iter().next().unwrap().clone();
+    let outer = ir.geometry.faces[0].loops.stated().next().unwrap().clone();
     ir.geometry.faces[0].loops = cadmpeg_ir::topology::FaceLoops::classified(outer, vec![inner]);
     let output = export(&ir);
     let (exchange, diagnostics) =
@@ -701,7 +701,7 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
         .expect("decoded face");
     assert_eq!(
         face.loops
-            .iter()
+            .stated()
             .next()
             .expect("a decoded face states a loop")
             .as_str(),

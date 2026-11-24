@@ -484,12 +484,13 @@ impl<'a, 'o> CanonText<'a, 'o> {
         Ok(Written::Text)
     }
 
-    /// Write a finite number, or refuse a NaN or infinite one.
+    /// Write a finite number, negative zero as zero (§2.5), or refuse a NaN
+    /// or infinite one.
     fn number(self, value: f64) -> Result<Written, Error> {
         if !value.is_finite() {
             return Err(CanonError::NonFinite(Vec::new()));
         }
-        self.scalar(&value)
+        self.scalar(&(value + 0.0))
     }
 
     fn null(self) -> Written {
@@ -1226,7 +1227,7 @@ impl ser::Serializer for CanonKey<'_> {
 
     fn serialize_f32(self, value: f32) -> Result<String, Error> {
         if value.is_finite() {
-            number_key_text(&value)
+            number_key_text(&(value + 0.0))
         } else {
             Err(ser::Error::custom("float key must be finite"))
         }
@@ -1234,7 +1235,7 @@ impl ser::Serializer for CanonKey<'_> {
 
     fn serialize_f64(self, value: f64) -> Result<String, Error> {
         if value.is_finite() {
-            number_key_text(&value)
+            number_key_text(&(value + 0.0))
         } else {
             Err(ser::Error::custom("float key must be finite"))
         }

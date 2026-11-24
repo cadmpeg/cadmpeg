@@ -392,6 +392,13 @@ impl DesignHoleConstruction {
         self.reference_type == HOLE_CARRIER_FACE_POINT
     }
 
+    /// Whether a face-point carrier has point-data records and none of its
+    /// admitted rules selects the entry point: its records do not all lie at the
+    /// carrier position and no reconstructed plane places the Hole at a record.
+    pub(crate) fn face_point_unselected(&self) -> bool {
+        self.placed_at_face_point() && !self.locations.is_empty() && self.entry_points().is_none()
+    }
+
     /// Drilling vector in model space under the scope's direction control.
     pub(crate) fn drilling_direction(&self, direction_control: u8) -> Option<[f64; 3]> {
         match direction_control {
