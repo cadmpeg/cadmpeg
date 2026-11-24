@@ -2010,6 +2010,12 @@ impl<'a> DecodeContext<'a> {
             self.instance_selection
                 .as_ref()
                 .map_or(&[], |selected| selected.path.as_slice()),
+        )
+    }
+
+    fn object_display(&self, identity: &crate::objects::SourceIdentity) -> ObjectDisplay {
+        object_display(
+            identity,
             self.instance_display.and_then(|display| display.color),
             self.instance_display.map(|display| display.visible),
         )
@@ -3023,6 +3029,7 @@ impl<'a> DecodeContext<'a> {
             return Ok(false);
         };
         let association = self.source_association(identity)?;
+        let display = self.object_display(identity);
         let Some(unknown) = self
             .session
             .unknowns()
@@ -3091,11 +3098,10 @@ impl<'a> DecodeContext<'a> {
                     shells: vec![shell_id.clone()],
                     native_ref: None,
                 });
-                self.session.append_geometry_mut()?.bodies.push(body(
-                    identity,
-                    body_id.clone(),
-                    &association,
-                ));
+                self.session
+                    .append_geometry_mut()?
+                    .bodies
+                    .push(body(body_id.clone(), &display));
                 self.annotate_point_topology(
                     &point_id, &vertex_id, &shell_id, &region_id, &body_id, scaled,
                 );
@@ -3189,11 +3195,10 @@ impl<'a> DecodeContext<'a> {
                     shells: vec![shell_id],
                     native_ref: None,
                 });
-                self.session.append_geometry_mut()?.bodies.push(body(
-                    identity,
-                    body_id.clone(),
-                    &association,
-                ));
+                self.session
+                    .append_geometry_mut()?
+                    .bodies
+                    .push(body(body_id.clone(), &display));
                 let point_prefix = format!("rhino:object:point#{key}.");
                 for point in self
                     .session
@@ -3403,6 +3408,7 @@ impl<'a> DecodeContext<'a> {
             return Ok(false);
         }
         let association = self.source_association(identity)?;
+        let display = self.object_display(identity);
         let session = self.expand.ctx();
         let mut source_boundaries = std::mem::take(&mut extrusion.boundaries);
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
@@ -3476,6 +3482,7 @@ impl<'a> DecodeContext<'a> {
                     candidate_annotations,
                     key.as_str(),
                     &association,
+                    &display,
                     &extrusion,
                     &boundaries,
                 )?);
@@ -3709,6 +3716,7 @@ impl<'a> DecodeContext<'a> {
             return Ok(());
         };
         let association = self.source_association(identity)?;
+        let display = self.object_display(identity);
         let Some(key) = self.checked_object_key(identity, source_order) else {
             return Ok(());
         };
@@ -3722,6 +3730,7 @@ impl<'a> DecodeContext<'a> {
                 brep,
                 key: key.as_str(),
                 association: &association,
+                display: &display,
                 unknown: &unknown,
                 scale,
                 mesh_budget: &mut self.mesh_budget,
@@ -3998,6 +4007,7 @@ fn stage_extrusion_caps(
     annotations: &mut impl ExactnessTarget,
     key: &str,
     association: &SourceObjectAssociation,
+    display: &ObjectDisplay,
     extrusion: &crate::extrusion::DecodedExtrusion,
     boundaries: &[CommittedExtrusionBoundary<'_>],
 ) -> Result<String, CandidateError> {
@@ -4262,7 +4272,7 @@ fn stage_extrusion_caps(
             },
             loops: cadmpeg_ir::topology::FaceLoops::unspecified(loop_ids),
             name: None,
-            color: association.color,
+            color: display.color,
             tolerance: None,
             native_ref: None,
         });
@@ -4288,12 +4298,9 @@ fn stage_extrusion_caps(
         id: body_id.clone(),
         kind: BodyKind::Sheet,
         transform: None,
-        name: association
-            .name
-            .as_deref()
-            .map(std::borrow::ToOwned::to_owned),
-        color: association.color,
-        visible: association.visible,
+        name: display.name.clone(),
+        color: display.color,
+        visible: display.visible,
         native_ref: None,
     });
     annotate_derived(annotations, &body_id.to_string());
@@ -4335,6 +4342,7 @@ struct BrepTransferInput<'a> {
     brep: &'a crate::brep::ValidatedRawBrep,
     key: &'a str,
     association: &'a SourceObjectAssociation,
+    display: &'a ObjectDisplay,
     unknown: &'a UnknownId,
     scale: MillimeterScale,
     mesh_budget: &'a mut crate::mesh::MeshBudget,
@@ -4703,6 +4711,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         brep,
         key,
         association,
+        display,
         unknown,
         scale,
         mesh_budget,
@@ -5085,12 +5094,9 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
             crate::brep::BrepBodyKind::Sheet => BodyKind::Sheet,
         },
         transform: None,
-        name: association
-            .name
-            .as_deref()
-            .map(std::borrow::ToOwned::to_owned),
-        color: association.color,
-        visible: association.visible,
+        name: display.name.clone(),
+        color: display.color,
+        visible: display.visible,
         native_ref: None,
     });
 
@@ -5178,10 +5184,6 @@ pub(crate) fn embedded_brep_json(
         geometry_role: None,
         format: cadmpeg_ir::codec_id!("rhino"),
         object_id: cadmpeg_core::text::NonBlankString::new("embedded-history-brep".to_string())?,
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     };
     let unknown = UnknownId::compose(
@@ -5196,6 +5198,7 @@ pub(crate) fn embedded_brep_json(
         brep: &brep,
         key: "history:embedded-brep",
         association: &association,
+        display: &ObjectDisplay::default(),
         unknown: &unknown,
         scale,
         mesh_budget,
@@ -6353,17 +6356,10 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
 fn source_association(
     identity: &crate::objects::SourceIdentity,
     instance_path: &[String],
-    parent_color: Option<Color>,
-    parent_visible: Option<bool>,
 ) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
     let object_id = format!("{}", identity.object_id);
     let object_id = cadmpeg_core::text::NonBlankString::new(object_id)
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino object UUID is blank"))?;
-    let name = (!identity.name.is_empty()).then(|| identity.name.clone());
-    let layer = identity.layer.as_ref().map(|layer| match layer.id {
-        Some(id) => format!("{id}"),
-        None => layer.name.clone(),
-    });
     let mut admitted_path = Vec::new();
     for segment in instance_path {
         admitted_path.push(segment.to_owned());
@@ -6372,30 +6368,43 @@ fn source_association(
         geometry_role: None,
         format: cadmpeg_ir::codec_id!("rhino"),
         object_id,
-        name,
-        color: identity.effective_color.map(color).or(parent_color),
-        visible: Some(parent_visible.unwrap_or(true) && identity.effective_visible),
-        layer,
         instance_path: admitted_path,
     })
+}
+
+/// The display name, colour, and visibility that the bodies and faces made
+/// from one Rhino object state.
+#[derive(Debug, Clone, Default)]
+struct ObjectDisplay {
+    name: Option<String>,
+    color: Option<Color>,
+    visible: Option<bool>,
+}
+
+fn object_display(
+    identity: &crate::objects::SourceIdentity,
+    parent_color: Option<Color>,
+    parent_visible: Option<bool>,
+) -> ObjectDisplay {
+    ObjectDisplay {
+        name: (!identity.name.is_empty()).then(|| identity.name.clone()),
+        color: identity.effective_color.map(color).or(parent_color),
+        visible: Some(parent_visible.unwrap_or(true) && identity.effective_visible),
+    }
 }
 
 fn color(value: [u8; 4]) -> Color {
     Color::from_rgba8(value[0], value[1], value[2], value[3]).invert_alpha()
 }
 
-fn body(
-    identity: &crate::objects::SourceIdentity,
-    id: cadmpeg_ir::ids::BodyId,
-    association: &SourceObjectAssociation,
-) -> Body {
+fn body(id: cadmpeg_ir::ids::BodyId, display: &ObjectDisplay) -> Body {
     Body {
         id,
         kind: BodyKind::General,
         transform: None,
-        name: (!identity.name.is_empty()).then(|| identity.name.clone()),
-        color: association.color,
-        visible: association.visible,
+        name: display.name.clone(),
+        color: display.color,
+        visible: display.visible,
         native_ref: None,
     }
 }

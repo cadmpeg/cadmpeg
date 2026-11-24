@@ -1330,6 +1330,7 @@ fn writer_round_trips_presentation_layer_visibility() {
         description: Some("layer visibility".into()),
         visible: Some(false),
         items: vec![PresentationItem::Body { body }.into()],
+        native_ref: None,
     });
 
     let mut output = Vec::new();
@@ -1373,6 +1374,7 @@ fn writer_round_trips_empty_presentation_layer_label() {
         description: Some("unnamed layer".into()),
         visible: Some(false),
         items: vec![PresentationItem::Body { body }.into()],
+        native_ref: None,
     });
 
     let mut output = Vec::new();

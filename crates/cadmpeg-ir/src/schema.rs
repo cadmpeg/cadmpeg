@@ -626,7 +626,7 @@ impl_entity_schema!(
     crate::presentation::PresentationLayer,
     PresentationLayer,
     id;
-    id, name, parent, description, visible, items
+    id, name, parent, description, visible, items, native_ref
 );
 impl_entity_schema!(crate::physics::PhysicalMaterial, PhysicalMaterial, id; id, name, density, static_friction, dynamic_friction, restitution, native_ref);
 impl_entity_schema!(crate::physics::MassProperties, MassProperties, id; id, target, mass, density, center_of_mass, inertia, material, native_ref);
@@ -635,7 +635,7 @@ impl_entity_schema!(crate::physics::Articulation, Articulation, id; id, root, na
 impl_entity_schema!(crate::physics::PhysicsScene, PhysicsScene, id; id, name, gravity_direction, gravity_magnitude, native_ref);
 impl_entity_schema!(crate::physics::solver::SolverSettings, SolverSettings, id; id, solver, schema, target, values, native_ref);
 impl_entity_schema!(crate::declared_measures::DeclaredMeasure, DeclaredMeasure, id; id, target, quantity, provenance, source_error, label, native_ref);
-impl_entity_schema!(crate::point_cloud::PointCloud, PointCloud, id; id, definition, name, sensor, positions, normals, colors, channels, native_ref);
+impl_entity_schema!(crate::point_cloud::PointCloud, PointCloud, id; id, definition, name, positions, normals, colors, channels, native_ref);
 impl_entity_schema!(crate::history_body::HistoryBody, HistoryBody, id; id, produced_by, consumed_by, state, topology);
 impl_entity_schema!(crate::physics::Collider, Collider, id; id, target, shape, enabled, material, native_ref);
 

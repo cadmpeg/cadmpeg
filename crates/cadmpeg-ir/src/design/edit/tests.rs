@@ -1598,6 +1598,7 @@ fn removing_an_unordered_member_removes_its_own_result() {
                 )
             })
             .collect(),
+        native_ref: None,
     }];
     let resolved = document.resolved(&id("evaluation", 5)).unwrap();
 

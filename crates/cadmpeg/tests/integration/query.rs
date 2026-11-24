@@ -1682,10 +1682,6 @@ fn query_projects_export_identity_and_losses_from_a_generated_report() {
             format: cadmpeg_ir::codec_id!("step"),
             object_id: cadmpeg_core::nonblank_literal!("orphan"),
             geometry_role: Some(SourceGeometryRole::Support),
-            name: None,
-            color: None,
-            visible: None,
-            layer: None,
             instance_path: Vec::new(),
         }),
     ));

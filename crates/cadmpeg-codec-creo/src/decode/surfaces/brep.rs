@@ -2541,10 +2541,6 @@ pub(in super::super) fn transfer_native_brep(
                                     object_id: crate::identity::source_object_id_checked(
                                         format_args!("VisibGeom:{}", row.id),
                                     )?,
-                                    name: None,
-                                    color: None,
-                                    visible: None,
-                                    layer: None,
                                     instance_path: Vec::new(),
                                 }),
                                 native_ref: None,
@@ -2633,10 +2629,6 @@ pub(in super::super) fn transfer_native_brep(
                                     object_id: crate::identity::source_object_id_checked(
                                         format_args!("VisibGeom:{}", row.id),
                                     )?,
-                                    name: None,
-                                    color: None,
-                                    visible: None,
-                                    layer: None,
                                     instance_path: Vec::new(),
                                 }),
                                 native_ref: None,
@@ -2999,10 +2991,6 @@ pub(in super::super) fn transfer_native_brep(
             .ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("source object_id must not be empty")
             })?,
-            name: None,
-            color: None,
-            visible: None,
-            layer: None,
             instance_path: Vec::new(),
         };
         let position = cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::from(*position))
@@ -3276,10 +3264,6 @@ pub(in super::super) fn transfer_native_brep(
                                 "source object_id must not be empty",
                             )
                         })?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                     native_ref: None,
@@ -3467,10 +3451,6 @@ pub(in super::super) fn transfer_native_brep(
                                     "source object_id must not be empty",
                                 )
                             })?,
-                            name: None,
-                            color: None,
-                            visible: None,
-                            layer: None,
                             instance_path: Vec::new(),
                         }),
                         native_ref: None,
@@ -3895,10 +3875,6 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                         "VisibGeom:{}",
                         pair.surface_id
                     ))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,
@@ -3974,10 +3950,6 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                         object_id: crate::identity::source_object_id_checked(format_args!(
                             "VisibGeom:{curve_id}"
                         ))?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                     native_ref: None,

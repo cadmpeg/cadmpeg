@@ -79,10 +79,6 @@ pub(in crate::decode) fn transfer_active_boundary_planes(
                         "ActDatums:{}",
                         plane.row.id
                     ))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,

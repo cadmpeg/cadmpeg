@@ -761,7 +761,7 @@ The CADIR `display_attributes` arena preserves every signed Directory display nu
 
 A positive Directory line-weight number selects that numbered increment in the uniform Global line-weight series and cannot exceed the Global maximum gradation count. With a positive Global field 17, its model-space width is `number * maximum_width / maximum_gradations`; neutral/native display width converts that result to millimetres. With V5.0 Global field 17 equal to zero, the same bounded number is relative: it requests that many standard strokes and has no physical width in the CADIR display record. Zero leaves the display width unspecified.
 
-A Manifold Solid B-rep Object or orphan Shell color binds to its body. A Face color binds to that face and overrides the body color for that face. Trimmed and bounded surface colors bind to their generated sheet body and face. The blank-status field determines body visibility. Curve and surface source-object associations retain their direct Directory colors.
+A Manifold Solid B-rep Object or orphan Shell color binds to its body. A Face color binds to that face and overrides the body color for that face. Trimmed and bounded surface colors bind to their generated sheet body and face. The blank-status field determines body visibility. A free curve's or surface's Directory color, level, blank status, and entity label stay in its native entity record: its source-object association holds only its identity.
 
 ## Byte accounting
 

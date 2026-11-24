@@ -1003,10 +1003,6 @@ fn generated_source_less_reports_auxiliary_geometry_and_source_identity_it_drops
         format: cadmpeg_ir::codec_id!("step"),
         object_id: cadmpeg_core::text::NonBlankString::new("object-1")
             .expect("nonempty source identity"),
-        name: Some("exact carrier".into()),
-        color: None,
-        visible: Some(true),
-        layer: None,
         instance_path: Vec::new(),
     };
 

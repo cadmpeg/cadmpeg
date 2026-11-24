@@ -11,7 +11,6 @@ use crate::features::geometry::FinitePoint3;
 use crate::ids::{PointCloudId, ProductDefinitionId};
 use crate::scalar::FiniteReal;
 use crate::topology::Color;
-use crate::transform::Transform;
 use crate::units::UnitVector3;
 
 /// One point cloud.
@@ -31,13 +30,6 @@ pub struct PointCloud {
         deserialize_with = "deserialize_name"
     )]
     pub name: Option<String>,
-    /// Pose of the capturing sensor in the frame of the points.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_sensor"
-    )]
-    pub sensor: Option<Transform>,
     /// Point positions in document length units.
     pub positions: Vec<FinitePoint3>,
     /// One unit normal for each point, or none.
@@ -68,7 +60,6 @@ pub struct PointChannel {
 }
 
 cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
-cadmpeg_core::named_optional_field!(deserialize_sensor, Transform, "sensor");
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 
 mod identity_rewrite;

@@ -241,10 +241,6 @@ fn derived_degenerate_sphere_seam_curve_has_counted_export_loss() {
         format: cadmpeg_ir::codec_id!("sldprt"),
         geometry_role: Some(cadmpeg_ir::SourceGeometryRole::Support),
         object_id: cadmpeg_core::nonblank_literal!("sphere-seam"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     });
     ir.geometry.curves.push(curve);
