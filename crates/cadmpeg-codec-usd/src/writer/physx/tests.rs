@@ -3,12 +3,13 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::design::units::Quantity;
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::ids::{OccurrenceId, SolverSettingsId};
 use cadmpeg_ir::physics::solver::{SolverSettings, SolverTarget, SolverValue};
 use cadmpeg_ir::products::JointId;
 use cadmpeg_ir::scalar::FiniteReal;
 
-use super::{lines, placeholder, resolve};
+use super::{joint_placeholder, lines, placeholder, resolve};
 
 fn joint_settings(values: Vec<(&str, SolverValue)>) -> SolverSettings {
     SolverSettings {
@@ -16,7 +17,7 @@ fn joint_settings(values: Vec<(&str, SolverValue)>) -> SolverSettings {
         solver: "physx".to_owned(),
         schema: "PhysxJointAPI".to_owned(),
         target: SolverTarget::Joint {
-            joint: JointId::mint("test:model:joint#0").unwrap(),
+            joint: FeatureId::mint("test:model:feature#joint").unwrap(),
         }
         .into(),
         values: values
@@ -82,13 +83,11 @@ fn placeholders_resolve_to_paths_and_unresolved_lines_are_dropped() {
     let occurrence = SolverTarget::Occurrence {
         occurrence: OccurrenceId::mint("test:model:occurrence#0").unwrap(),
     };
-    let joint = SolverTarget::Joint {
-        joint: JointId::mint("test:model:joint#0").unwrap(),
-    };
+    let joint = JointId::mint("test:model:joint#0").unwrap();
     let text = format!(
         "rel a = [<{}>]\nrel b = [<{}>]\n",
         placeholder(&occurrence).unwrap(),
-        placeholder(&joint).unwrap()
+        joint_placeholder(&joint)
     );
     let paths = BTreeMap::from([(placeholder(&occurrence).unwrap(), "/World/Arm".to_owned())]);
     let (resolved, unresolved) = resolve(&text, &paths);
