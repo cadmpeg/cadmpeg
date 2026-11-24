@@ -907,7 +907,7 @@ where
         if refs % 2 != 1 || count < 2 {
             return None;
         }
-        let trims = (0..count)
+        let mut trims = (0..count)
             .map(|_| self.trim(owner, bytes, &mut at, carrier, refusal))
             .collect::<Option<Vec<_>>>()?;
         if (self.resolve)(owner, allocation_reference(bytes, &mut at)?)? != support {
@@ -915,6 +915,16 @@ where
         }
         let tail = bytes.get(at..)?;
         let bounds = ring_tail(tail, count, inner)?.bounds();
+        if matches!(carrier, Carrier::Cylinder(_)) {
+            let controls =
+                |trim: &Trim| compact_line_control(self.bytes, &self.records[trim.source]);
+            if trims.iter().any(|trim| controls(trim) == Some(0x1d)) {
+                let [_, axial] = carrier.bounds()?;
+                if let Some((index, line)) = cylinder_lower_trim(&trims, axial, controls) {
+                    trims[index].pcurve = PcurveGeometry::Line(line);
+                }
+            }
+        }
         Some(Ring { trims, bounds })
     }
 }
@@ -1270,6 +1280,58 @@ fn line_geometry([a, b]: LineEndpoints) -> Option<LinePcurve> {
         Point2::new(b[0] - a[0], b[1] - a[1]),
     )
     .ok()
+}
+
+fn compact_line_control(bytes: &[u8], record: &ConsolidatedRecord) -> Option<u8> {
+    if (record.family(), record.class()) != (Family::B, 0x18) {
+        return None;
+    }
+    let bytes = payload(bytes, record)?;
+    let mut at = 0;
+    compact_int(bytes, &mut at)?;
+    let [control, scalars @ ..] = bytes.get(at..)? else {
+        return None;
+    };
+    matches!((*control, scalars.len()), (0x1d, 0) | (0x12, 16)).then_some(*control)
+}
+
+fn cylinder_lower_trim(
+    trims: &[Trim],
+    [lower, upper]: [f64; 2],
+    control: impl Fn(&Trim) -> Option<u8>,
+) -> Option<(usize, LinePcurve)> {
+    let [a, b, c, d] = trims else {
+        return None;
+    };
+    let mut ring = [a, b, c, d];
+    let lower_index = ring.iter().position(|trim| control(trim) == Some(0x12))?;
+    ring.rotate_left(lower_index);
+    let [lower_trim, side_a, upper_trim, side_b] = ring;
+    if ![side_a, side_b]
+        .iter()
+        .any(|trim| control(trim) == Some(0x1d))
+    {
+        return None;
+    }
+    let [u0, 0.0] = lower_trim.uv(0.0)? else {
+        return None;
+    };
+    let [u1, 0.0] = lower_trim.uv(1.0)? else {
+        return None;
+    };
+    for t in [0.0, 1.0] {
+        if upper_trim.uv(t)?[1] != upper {
+            return None;
+        }
+    }
+    for side in [side_a, side_b] {
+        let [u0, v0] = side.uv(0.0)?;
+        let [u1, v1] = side.uv(1.0)?;
+        if u0 != u1 || !([v0, v1] == [lower, upper] || [v1, v0] == [lower, upper]) {
+            return None;
+        }
+    }
+    Some((lower_index, line_geometry([[u0, lower], [u1, lower]])?))
 }
 
 fn oblique_line(
@@ -2107,6 +2169,7 @@ mod tests {
     use super::{line_at, ring_tail, RingBounds, RingTail};
 
     mod carriers;
+    mod cylinder_lower_trims;
     mod recovery;
     mod rolling_spans;
     mod roster_priority;

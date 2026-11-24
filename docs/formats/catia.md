@@ -963,7 +963,11 @@ The interval increases and the unit direction uses the same norm tolerance
 as control `08`. Controls `40` and `80` store both limits and the origin and
 select the V and U axes respectively. Their direction sign is resolved by
 the owned loop and its endpoint incidences. Control `0e` on a cylinder
-stores a constant V value and uses the cylinder's U limits. A line record
+stores a constant V value and uses the cylinder's U limits. In a four-side cylinder ring, a line with control `12` and two scalar lanes
+selects the lower axial boundary when its V locus is zero, an opposite
+side has the cylinder's upper V, both axial sides span the stored V limits,
+and at least one axial side uses the operand-only control `1d`. The angular
+coordinates and endpoint parameter order stay fixed. A line record
 defines the locus through its stored origin. An exact incidence can select
 a station beyond its stored interval.
 A consolidated class-`5d` vertex selects its class-`05` incidence roster with
