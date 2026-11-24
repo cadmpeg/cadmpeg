@@ -35,6 +35,7 @@ mod parameter_records;
 #[cfg(test)]
 mod parameter_tests;
 mod parameters;
+mod picked;
 mod programs;
 pub(super) mod records;
 pub(super) mod resolved;
@@ -154,6 +155,7 @@ pub(super) fn check_design(
     selections::check(ctx, &index, &matchers, &held, ids.native_view(), findings)?;
     constructions::check(&index, &held, findings);
     folds::check(&index, &matchers, &held, findings);
+    picked::check(&index, &matchers, findings);
     materials::check(&index, &matchers, findings);
     Ok(())
 }
