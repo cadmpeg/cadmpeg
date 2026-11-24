@@ -312,6 +312,10 @@ pub(crate) struct SourceIdentity {
     pub(crate) effective_color: Option<[u8; 4]>,
     /// Effective visibility after layer combination.
     pub(crate) effective_visible: bool,
+    /// The object's own colour, where its colour source is the object.
+    pub(crate) own_color: Option<[u8; 4]>,
+    /// The object's own visibility flag, where its attributes are read.
+    pub(crate) own_visible: Option<bool>,
     /// Raw object mode.
     pub(crate) object_mode: u8,
     /// Object frame transform.
@@ -1625,6 +1629,10 @@ fn resolve_identity(
     let object_mode = attributes.map_or(0, |value| value.object_mode);
     let definition_member = object_mode & 0x0f == IDEF_OBJECT_MODE;
     let color_selector = attributes.map_or(ColorSource::Layer, |value| value.color_source);
+    let own_color = match color_selector {
+        ColorSource::Object => object_color,
+        _ => None,
+    };
     let color = match color_selector {
         ColorSource::Layer => layer.map(|value| value.color),
         ColorSource::Object => object_color,
@@ -1685,6 +1693,8 @@ fn resolve_identity(
         layer,
         effective_color: color,
         effective_visible: visible,
+        own_color,
+        own_visible: attributes.map(|value| value.visible),
         object_mode,
         object_frame: attributes.and_then(|value| value.object_frame),
         source: SourceRange {

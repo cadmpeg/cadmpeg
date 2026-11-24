@@ -398,7 +398,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         round_trip
             .arenas()
             .keys()
-            .map(String::as_str)
+            .map(cadmpeg_core::text::NonBlankString::as_str)
             .collect::<Vec<_>>(),
         crate::native::SLDPRT_ARENA_NAMES
     );

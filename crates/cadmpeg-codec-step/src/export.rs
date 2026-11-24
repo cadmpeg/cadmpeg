@@ -860,6 +860,7 @@ impl<'a> Builder<'a> {
                 | AppearanceTarget::Tessellation(_)
                 | AppearanceTarget::TriangleGroup { .. }
                 | AppearanceTarget::Occurrence(_)
+                | AppearanceTarget::Definition(_)
                 | AppearanceTarget::Record { .. }
                 | AppearanceTarget::Unresolved => {}
             }
@@ -1049,6 +1050,7 @@ impl<'a> Builder<'a> {
                 AppearanceTarget::Body(_)
                 | AppearanceTarget::TriangleGroup { .. }
                 | AppearanceTarget::Occurrence(_)
+                | AppearanceTarget::Definition(_)
                 | AppearanceTarget::Record { .. }
                 | AppearanceTarget::Unresolved => continue,
             };
@@ -1064,6 +1066,7 @@ impl<'a> Builder<'a> {
                     AppearanceTarget::Body(_)
                     | AppearanceTarget::TriangleGroup { .. }
                     | AppearanceTarget::Occurrence(_)
+                    | AppearanceTarget::Definition(_)
                     | AppearanceTarget::Record { .. }
                     | AppearanceTarget::Unresolved => continue,
                 };
@@ -1378,7 +1381,9 @@ impl<'a> Builder<'a> {
                         .copied()
                         .into_iter()
                         .collect(),
-                    PresentationItem::Source { .. } => Vec::new(),
+                    PresentationItem::Source { .. } | PresentationItem::PointCloud { .. } => {
+                        Vec::new()
+                    }
                     PresentationItem::Tessellation { tessellation } => self
                         .tessellation_step_refs
                         .get(tessellation)
@@ -3139,7 +3144,7 @@ impl<'a> Builder<'a> {
                 .map(|index| index.to_string())
                 .collect::<Vec<_>>()
                 .join(",");
-            let linked_body = mesh.body.as_ref().and_then(|body| {
+            let linked_body = mesh.of.body().and_then(|body| {
                 let link = self.body_step_refs.get(body.as_str()).copied()?;
                 let mut kind = self.bodies.get(body.as_str())?.kind;
                 if kind == BodyKind::Solid && !self.advanced_brep_items.contains(&link) {
@@ -3147,7 +3152,7 @@ impl<'a> Builder<'a> {
                 }
                 matches!(kind, BodyKind::Solid | BodyKind::Sheet).then_some((kind, link))
             });
-            if let Some(body) = &mesh.body {
+            if let Some(body) = mesh.of.body() {
                 if linked_body.is_none() {
                     self.loss(
                         StepLossCode::TessellationBodyLinkUnwritable,
@@ -3159,8 +3164,8 @@ impl<'a> Builder<'a> {
                 }
             }
             let mut reduced_fields = Vec::new();
-            if !mesh.faces.is_empty() {
-                reduced_fields.push(format!("{} face ownership link(s)", mesh.faces.len()));
+            if !mesh.of.faces().is_empty() {
+                reduced_fields.push(format!("{} face ownership link(s)", mesh.of.faces().len()));
             }
             if mesh.chordal_deflection().is_some() {
                 reduced_fields.push("chordal deflection".to_string());

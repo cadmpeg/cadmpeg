@@ -523,6 +523,17 @@ fn an_unterminated_stream_chain_is_charged_as_noncanonical() {
 }
 
 #[test]
+fn a_header_scale_other_than_the_centimetre_is_charged() {
+    let patched = with_sab(BOX, |stream| {
+        // The first header double, tagged `0x06`, is the scale 10.0.
+        let scale = position(stream, &[0x06, 0, 0, 0, 0, 0, 0, 0x24, 0x40]);
+        stream[scale + 1..scale + 9].copy_from_slice(&1.0_f64.to_le_bytes());
+    });
+    assert!(loss_kinds(&decode(&patched)).contains(&AlibreLossCode::HeaderScaleUnverified.kind()));
+    assert!(!loss_kinds(&decode(BOX)).contains(&AlibreLossCode::HeaderScaleUnverified.kind()));
+}
+
+#[test]
 fn a_header_tolerance_that_is_not_positive_is_charged_and_left_at_its_default() {
     let patched = with_sab(BOX, |stream| {
         // The header doubles are tagged `0x06`: the scale 10.0, then the

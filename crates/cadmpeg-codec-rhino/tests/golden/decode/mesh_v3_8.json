@@ -75,10 +75,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": [
-            "rhino:object:tessellation#record-000000-offset-177"
-          ]
+          }
         }
       ],
       "rigid_bodies": [],
@@ -122,7 +119,6 @@
               "kind": 1380450307
             }
           ],
-          "faces": [],
           "feature_edges": [],
           "id": "rhino:object:tessellation#record-000000-offset-177",
           "mesh": {
@@ -194,6 +190,10 @@
                 }
               }
             ]
+          },
+          "of": {
+            "definition": "rhino:model:product-definition#root",
+            "kind": "definition"
           },
           "source_object": {
             "format": "rhino",

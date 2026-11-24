@@ -393,7 +393,7 @@ impl GivenUpPart {
             .native
             .namespace_mut(codec)
             .arenas_mut()
-            .entry("unknowns".to_owned())
+            .entry(cadmpeg_core::nonblank_literal!("unknowns"))
             .or_default();
         let at = arena.partition_point(|existing| existing.id() < record.id());
         arena.insert(at, record);

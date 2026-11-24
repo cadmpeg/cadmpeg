@@ -1025,7 +1025,7 @@ fn index_committed_identities(
                 continue;
             }
 
-            let arena = identity_hash(arena);
+            let arena = identity_hash(arena.as_str());
             for (record, value) in records.iter().enumerate() {
                 insert_identity(
                     &mut identities,
@@ -1073,7 +1073,7 @@ fn committed_identity_contains(
                         continue;
                     }
                     for (name, records) in native.arenas() {
-                        if identity_hash(name) != *arena_hash {
+                        if identity_hash(name.as_str()) != *arena_hash {
                             continue;
                         }
 
@@ -1130,7 +1130,7 @@ fn stage_committed_identities(
                     continue;
                 }
 
-                let arena_hash = identity_hash(arena);
+                let arena_hash = identity_hash(arena.as_str());
                 let mut start = 0;
                 for (existing_format, existing_namespace) in &base.native.0 {
                     if existing_format != format {
@@ -1600,7 +1600,7 @@ mod tests {
             .namespace_mut(crate::codec_id!("test"))
             .arenas_mut()
             .insert(
-                "records".into(),
+                cadmpeg_core::nonblank_literal!("records"),
                 vec![NativeRecord::new(
                     crate::ids::Identity::new(identity).expect("valid identity"),
                     serde_json::Map::new(),

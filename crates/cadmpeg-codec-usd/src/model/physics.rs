@@ -27,6 +27,16 @@ use crate::schema::physx::Holder;
 use crate::schema::xform::{compose, quaternion, Affine};
 use crate::stage::Prim;
 
+/// The record whose physics a prim's physics schemas describe: the body of
+/// its definition, the mesh that is its definition's geometry, or the
+/// occurrence of the prim.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum PhysicsOwner {
+    Body,
+    Mesh,
+    Occurrence,
+}
+
 /// A joint prim collected for the pass after the traversal.
 pub(super) struct PendingJoint {
     pub(super) path: String,
@@ -103,12 +113,12 @@ impl super::Builder<'_, '_, '_, '_> {
     }
 
     /// Reads the physics API schemas of the prim of occurrence `path`, which
-    /// defines `key` with optional body `body`.
+    /// defines `key` whose geometry is `owner`.
     pub(super) fn physics_apis(
         &mut self,
         prim: &Prim<'_>,
         key: &str,
-        body: bool,
+        owner: PhysicsOwner,
     ) -> Result<(), cadmpeg_core::CodecError> {
         let schemas = prim.api_schemas();
         let occurrence = PhysicsTarget::Occurrence {
@@ -184,16 +194,18 @@ impl super::Builder<'_, '_, '_, '_> {
             self.admit("usd_mass")?;
         }
         if schemas.contains("PhysicsCollisionAPI") {
-            self.collider(prim, key, body)?;
+            self.collider(prim, key, owner)?;
         } else {
-            let target = if body {
-                SolverTarget::Body {
+            let target = match owner {
+                PhysicsOwner::Body => SolverTarget::Body {
                     body: crate::ids::body(key),
-                }
-            } else {
-                SolverTarget::Occurrence {
+                },
+                PhysicsOwner::Mesh => SolverTarget::Definition {
+                    definition: crate::ids::definition(key),
+                },
+                PhysicsOwner::Occurrence => SolverTarget::Occurrence {
                     occurrence: crate::ids::occurrence(&prim.path),
-                }
+                },
             };
             self.physx(prim, &[Holder::Collision], &target, None);
         }
@@ -218,14 +230,14 @@ impl super::Builder<'_, '_, '_, '_> {
         Ok(())
     }
 
-    /// Reads the collision schemas of `prim`: a collider of the body of
-    /// definition `key` when `body`, and of the occurrence of `prim`
-    /// otherwise.
+    /// Reads the collision schemas of `prim`: a collider of the body or the
+    /// mesh of definition `key` where `owner` names one, and of the occurrence
+    /// of `prim` otherwise.
     pub(super) fn collider(
         &mut self,
         prim: &Prim<'_>,
         key: &str,
-        body: bool,
+        owner: PhysicsOwner,
     ) -> Result<(), cadmpeg_core::CodecError> {
         let occurrence = PhysicsTarget::Occurrence {
             occurrence: crate::ids::occurrence(&prim.path),
@@ -243,15 +255,20 @@ impl super::Builder<'_, '_, '_, '_> {
             },
         };
         let material = self.physics_material(prim)?;
-        let (id, target) = if body {
-            (
+        let (id, target) = match owner {
+            PhysicsOwner::Body => (
                 crate::ids::collider(key),
                 PhysicsTarget::Body {
                     body: crate::ids::body(key),
                 },
-            )
-        } else {
-            (crate::ids::collider(&prim.path), occurrence)
+            ),
+            PhysicsOwner::Mesh => (
+                crate::ids::collider(key),
+                PhysicsTarget::Definition {
+                    definition: crate::ids::definition(key),
+                },
+            ),
+            PhysicsOwner::Occurrence => (crate::ids::collider(&prim.path), occurrence),
         };
         if !self
             .ir

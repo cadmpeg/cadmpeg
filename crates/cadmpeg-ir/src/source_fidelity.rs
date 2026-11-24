@@ -756,7 +756,7 @@ impl SourceFidelity {
             }
         }
 
-        let arena_name = "unknowns".to_owned();
+        let arena_name = cadmpeg_core::nonblank_literal!("unknowns");
 
         ir.native
             .namespace_mut(codec)

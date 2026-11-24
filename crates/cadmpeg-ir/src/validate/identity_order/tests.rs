@@ -39,7 +39,7 @@ fn native_order_groups_preserve_combined_name_and_finding_order() {
             ir.native
                 .namespace_mut(crate::design::names::CodecId::new(format).expect("a codec id"))
                 .arenas_mut()
-                .entry(arena.into())
+                .entry(cadmpeg_core::text::NonBlankString::new(arena).expect("an arena name"))
                 .or_default()
                 .push(
                     crate::native::NativeRecord::new(
@@ -97,7 +97,7 @@ fn duplicate_identity_findings_keep_model_then_native_visit_order() {
         ir.native
             .namespace_mut(crate::codec_id!("test"))
             .arenas_mut()
-            .entry("records".into())
+            .entry(cadmpeg_core::nonblank_literal!("records"))
             .or_default()
             .push(
                 crate::native::NativeRecord::new(id.try_into().unwrap(), serde_json::Map::new())
