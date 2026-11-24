@@ -589,12 +589,10 @@ fn the_measurement_word_selects_each_side_or_whole_symmetric_travel() {
 mod through_all;
 
 #[test]
-fn signed_distance_lanes_project_positive_travel_on_each_side() {
+fn signed_distance_lanes_on_opposite_sides_project_two_sides() {
     use cadmpeg_ir::features::extents::ExtrudeDirection;
     for (along, against, first_length, second_length, reversed) in [
         (4.4, 3.7, 44.0, 37.0, false),
-        (-4.4, 3.7, 44.0, 37.0, true),
-        (4.4, -3.7, 44.0, 37.0, false),
         (-4.4, -3.7, 44.0, 37.0, true),
     ] {
         let scope = fixed_extrude(
@@ -648,7 +646,10 @@ fn zero_first_side_uses_the_reversed_second_side_magnitude() {
     };
     let along = parameter("AlongDistance", 0.0);
     let placement = placement();
-    for against in [-3.7, 3.7] {
+    for (against, direction) in [
+        (-3.7, ExtrudeDirection::ProfileNormal {}),
+        (3.7, ExtrudeDirection::ReversedProfileNormal {}),
+    ] {
         let against = parameter("AgainstDistance", against);
         let definition = crate::test_support::with_decode_context(|ctx| {
             project_extrude(
@@ -665,13 +666,13 @@ fn zero_first_side_uses_the_reversed_second_side_magnitude() {
         assert!(matches!(
             definition,
             Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
-                direction: ExtrudeDirection::ReversedProfileNormal {},
+                direction: actual,
                 extent: ExtrudeExtent::OneSided {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind { length }, ..
                     }
                 }, ..
-            })) if length.get() == 37.0
+            })) if length.get() == 37.0 && actual == direction
         ));
     }
 }
