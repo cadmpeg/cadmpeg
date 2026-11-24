@@ -84,10 +84,11 @@ enum Preservation {
 }
 
 fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
-    let Some(record) = input
-        .fidelity
-        .and_then(|sidecar| sidecar.retained_record(ids::FILE_SOURCE_IMAGE_ID))
-    else {
+    let Some((fidelity, record)) = input.fidelity.and_then(|sidecar| {
+        sidecar
+            .retained_record(ids::FILE_SOURCE_IMAGE_ID)
+            .map(|record| (sidecar, record))
+    }) else {
         return Ok(Preservation::SourceImageUnavailable);
     };
     let Some(data) = record.data() else {
@@ -95,7 +96,8 @@ fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
     };
     let mut bytes = Vec::new();
     let mut notes = Vec::new();
-    let write_path = F3dCodec::write_preserved_bytes(input.ir, data, &mut bytes, &mut notes)?;
+    let write_path =
+        F3dCodec::write_preserved_bytes(input.ir, fidelity, data, &mut bytes, &mut notes)?;
     Ok(Preservation::Written {
         bytes,
         write_path,

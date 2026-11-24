@@ -2444,6 +2444,7 @@ impl CadIr {
         format: &str,
         records: I,
     ) -> Result<(), crate::native::NativeConvertError> {
+        let codec = crate::native::namespace_codec(format)?;
         let records = crate::native::arena_from(
             ctx,
             records.into_iter().map(|record| {
@@ -2459,14 +2460,10 @@ impl CadIr {
             }
         }
 
-        let key = "unknowns".to_owned();
-        if let Some(namespace) = self.native.0.get_mut(format) {
-            namespace.arenas_mut().insert(key, records);
-        } else {
-            let mut namespace = crate::native::NativeNamespace::default();
-            namespace.arenas_mut().insert(key, records);
-            self.native.0.insert(format.to_owned(), namespace);
-        }
+        self.native
+            .namespace_mut(codec)
+            .arenas_mut()
+            .insert("unknowns".to_owned(), records);
         Ok(())
     }
 
@@ -2661,13 +2658,6 @@ impl CadIr {
 }
 
 /// Source-container metadata preserved for reporting.
-///
-/// Attribute keys ending in [`crate::compare::LOCAL_DIGEST_SUFFIX`] hold
-/// machine-local digests over decoded content for the write-path edit oracle.
-/// Not portable across platforms; not tolerance-aware. Digests over retained
-/// source bytes must not use that suffix. See
-/// [`crate::hash::document_local_sha256`] and
-/// [`crate::compare::is_local_digest_attribute`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -2682,7 +2672,7 @@ pub struct SourceMeta {
 impl SourceMeta {
     pub(crate) fn repro_header(&self) -> Self {
         Self {
-            identity: FormatIdentity::unclassified(self.format()),
+            identity: FormatIdentity::unclassified(self.identity.codec()),
             attributes: BTreeMap::new(),
         }
     }
@@ -2696,13 +2686,6 @@ impl SourceMeta {
             identity: FormatIdentity::classified(dialects),
             attributes,
         }
-    }
-
-    pub(crate) fn normalized_digest_copy(&self) -> Self {
-        let mut copy = self.clone();
-        copy.attributes
-            .remove(crate::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
-        copy
     }
 
     /// The complete source identity: format plus classified layers, if any.

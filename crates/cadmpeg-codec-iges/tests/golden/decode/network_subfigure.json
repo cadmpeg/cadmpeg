@@ -650,7 +650,6 @@
     "source": {
       "attributes": {
         "author": "author",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "drafting_standard": "0",
         "iges_version_flag": "11",
         "model_scale": "1",
@@ -753,6 +752,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "7a141dd51129e5a40732386c89a7953ebcb6f123cba9352ea9d4699b0c9528a6",
     "file_digests": {},
     "retained_records": {

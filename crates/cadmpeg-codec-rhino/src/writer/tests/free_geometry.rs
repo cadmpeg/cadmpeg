@@ -744,7 +744,7 @@ fn unsupported_retained_native_records_are_refused_before_output() {
     decoded
         .ir_mut()
         .native
-        .namespace_mut("rhino")
+        .namespace_mut(cadmpeg_ir::codec_id!("rhino"))
         .arenas_mut()
         .entry("materials".into())
         .or_default()

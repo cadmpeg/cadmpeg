@@ -568,7 +568,7 @@ fn attach_records(
     ir.model
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
-    let namespace = ir.native.namespace_mut("nx");
+    let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("nx"));
     NATIVE_CATALOGUE
         .emit_all(ctx, model, namespace)
         .map_err(CodecError::from)?;

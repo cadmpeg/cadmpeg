@@ -685,7 +685,7 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
             FeatureDefinition::Operation(FeatureOperation::Sweep {
                 shape: cadmpeg_ir::features::sweeps::SweepShape::sheet_sections(
                     SweepMode::Unresolved {},
-                    SweepSection::Unresolved(None),
+                    SweepSection::Unresolved,
                     Vec::new(),
                 ),
 

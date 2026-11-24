@@ -7,11 +7,10 @@ use cadmpeg_core::text::NonBlankString;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::features::geometry::FinitePoint3;
+use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::ids::{PointCloudId, ProductDefinitionId};
 use crate::scalar::FiniteReal;
 use crate::topology::Color;
-use crate::units::UnitVector3;
 
 /// One point cloud.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -29,11 +28,12 @@ pub struct PointCloud {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_name"
     )]
-    pub name: Option<String>,
+    pub name: Option<NonBlankString>,
     /// Point positions in document length units.
     pub positions: Vec<FinitePoint3>,
-    /// One unit normal for each point, or none.
-    pub normals: Vec<UnitVector3>,
+    /// The normal vector the source stores at each point, or none. It need
+    /// not be a unit vector.
+    pub normals: Vec<FiniteVector3>,
     /// One color for each point, or none.
     pub colors: Vec<Color>,
     /// Named scalar values, one for each point in each channel.
@@ -59,7 +59,7 @@ pub struct PointChannel {
     pub values: Vec<FiniteReal>,
 }
 
-cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
+cadmpeg_core::named_optional_field!(deserialize_name, NonBlankString, "name");
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 
 mod identity_rewrite;

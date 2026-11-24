@@ -282,7 +282,9 @@ fn derived_validator_rejects_changed_source_transform_state_types_and_qualifiers
                     "derived_transform"
                 });
             } else {
-                let namespace = changed.native.namespace_mut("inventor");
+                let namespace = changed
+                    .native
+                    .namespace_mut(cadmpeg_ir::codec_id!("inventor"));
                 let arena_name = if (6..=8).contains(&change) {
                     "rse_records"
                 } else {
@@ -455,7 +457,9 @@ fn derived_validator_checks_all_three_feature_slot_qualifiers_and_nulls() {
     for slot in 0..3 {
         for null in [false, true] {
             let mut changed = ir.clone();
-            let namespace = changed.native.namespace_mut("inventor");
+            let namespace = changed
+                .native
+                .namespace_mut(cadmpeg_ir::codec_id!("inventor"));
             let mut records: Vec<serde_json::Value> =
                 namespace.arena_as("pm_dc_features").expect("features");
             let source = records

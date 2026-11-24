@@ -576,7 +576,15 @@ fn consolidated_cylinder_retained_limit_refuses_json_record() {
     let native = crate::native::CatiaNative::decode(&b2_cylinder_stream());
     let cylinder = native.consolidated_cylinders.first().expect("cylinder");
     let arena_name = "consolidated_cylinders";
-    let json_len = serde_json::to_vec(cylinder).expect("cylinder JSON").len();
+    let json_len = crate::test_support::with_service_context(|ctx| {
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        namespace
+            .set_arena(ctx, arena_name, std::slice::from_ref(cylinder))
+            .expect("store the native arena");
+        serde_json::to_vec(&namespace.arenas()[arena_name][0])
+            .expect("cylinder JSON")
+            .len()
+    });
     let limit = u64::try_from(json_len - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -584,12 +592,6 @@ fn consolidated_cylinder_retained_limit_refuses_json_record() {
     });
     let error = refused.expect_err("record exceeds retained-byte limit");
     assert!(error.to_string().contains("RetainedBytes"), "{error}");
-    crate::test_support::with_service_context(|ctx| {
-        let mut namespace = cadmpeg_ir::NativeNamespace::default();
-        namespace
-            .set_arena(ctx, arena_name, std::slice::from_ref(cylinder))
-            .expect("store the native arena");
-    });
 }
 
 #[test]
@@ -620,7 +622,15 @@ fn consolidated_owner_packet_retained_limit_refuses_json_record() {
         .first()
         .expect("owner packet");
     let arena_name = "consolidated_owner_packets";
-    let json_len = serde_json::to_vec(packet).expect("packet JSON").len();
+    let json_len = crate::test_support::with_service_context(|ctx| {
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        namespace
+            .set_arena(ctx, arena_name, std::slice::from_ref(packet))
+            .expect("store the native arena");
+        serde_json::to_vec(&namespace.arenas()[arena_name][0])
+            .expect("packet JSON")
+            .len()
+    });
     let limit = u64::try_from(json_len - 1).expect("small JSON");
     let refused = crate::test_support::with_retained_limit(limit, |ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -628,12 +638,6 @@ fn consolidated_owner_packet_retained_limit_refuses_json_record() {
     });
     let error = refused.expect_err("record exceeds retained-byte limit");
     assert!(error.to_string().contains("RetainedBytes"), "{error}");
-    crate::test_support::with_service_context(|ctx| {
-        let mut namespace = cadmpeg_ir::NativeNamespace::default();
-        namespace
-            .set_arena(ctx, arena_name, std::slice::from_ref(packet))
-            .expect("store the native arena");
-    });
 }
 
 #[test]

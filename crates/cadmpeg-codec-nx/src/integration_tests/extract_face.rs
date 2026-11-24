@@ -54,7 +54,7 @@ fn extract_face_pipeline_retains_relations_without_inventing_authored_face_roles
         let mut invalid = wire;
         invalid["lanes"][0][0]["right"]["object_index"] = serde_json::json!(2);
         ir.native
-            .namespace_mut("nx")
+            .namespace_mut(cadmpeg_ir::codec_id!("nx"))
             .set_arena(
                 ctx,
                 "feature_extract_face_construction_envelopes",

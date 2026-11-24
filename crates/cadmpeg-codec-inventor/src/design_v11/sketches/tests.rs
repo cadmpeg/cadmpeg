@@ -453,7 +453,7 @@ fn shared_endpoint_roles_survive_legacy_arena_sorting() {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     ir.native
-        .namespace_mut("inventor")
+        .namespace_mut(cadmpeg_ir::codec_id!("inventor"))
         .set_arena(
             &ctx,
             "pm_dc_features",

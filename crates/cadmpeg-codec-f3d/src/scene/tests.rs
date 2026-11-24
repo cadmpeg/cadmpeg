@@ -163,7 +163,7 @@ fn scene_binding_is_exact_and_preserves_all_three_states() {
         rows.extend(found);
     }
     ir.native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(&ctx, "display_poses", &rows)
         .unwrap();
     let unchanged = ir.model.occurrences.clone();
@@ -319,7 +319,7 @@ fn scene_inserted_synthetic_root_leaves_placement_path_to_holder_and_child_uses_
     world.extend(encoded(&[3, 4533, 5, 991]));
     let (rows, _) = decode(&world);
     ir.native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(&ctx, "display_poses", &rows)
         .unwrap();
     let mut losses = Vec::new();
@@ -455,7 +455,7 @@ fn scene_fully_tagged_paths_bind_through_complete_occurrence_chains() {
     assert_eq!(rows.len(), 3);
     assert!(rows.iter().all(|row| row.tagged_from == Some(0)));
     ir.native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(&ctx, "display_poses", &rows)
         .unwrap();
     let unchanged = ir.model.occurrences.clone();
@@ -513,7 +513,7 @@ fn scene_shared_definition_paths_keep_each_insertion_and_original_occurrence() {
         let (rows, mut losses) = decode(&world);
         assert_eq!(rows.len(), 2);
         ir.native
-            .namespace_mut("f3d")
+            .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
             .set_arena(&ctx, "display_poses", &rows)
             .unwrap();
         bind(&ctx, &mut ir, &sources, &BTreeMap::new(), &mut losses).unwrap();
@@ -570,7 +570,7 @@ fn scene_carrierless_children_leave_their_insertion_path_to_the_insertion() {
     let (rows, mut losses) = decode(&world);
     assert_eq!(rows.len(), 3);
     ir.native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(&ctx, "display_poses", &rows)
         .unwrap();
     let unchanged = ir.model.occurrences.clone();
@@ -633,7 +633,7 @@ fn scene_expansion_refusal_binds_on_the_unexpanded_tree() {
         };
     }
     ir.native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(&ctx, "display_poses", &rows)
         .unwrap();
     bind(&ctx, &mut ir, &sources, &BTreeMap::new(), &mut losses).unwrap();
@@ -706,7 +706,7 @@ fn scene_expansion_refusal_binds_children_listed_per_placement() {
     world.extend(encoded(&[3, 19, 23, 31]));
     let (rows, mut losses) = decode(&world);
     ir.native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(&ctx, "display_poses", &rows)
         .unwrap();
     bind(&ctx, &mut ir, &sources, &BTreeMap::new(), &mut losses).unwrap();
@@ -805,7 +805,7 @@ fn scene_expansion_keeps_each_placements_child_and_binds_every_row() {
         })
         .collect::<BTreeMap<_, _>>();
     ir.native
-        .namespace_mut("f3d")
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
         .set_arena(&ctx, "display_poses", &rows)
         .unwrap();
     let mut losses = Vec::new();

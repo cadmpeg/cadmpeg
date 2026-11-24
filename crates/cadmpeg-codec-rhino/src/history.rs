@@ -2148,7 +2148,7 @@ pub(crate) fn project(
             value_count: record.values.len(),
         });
     ir.native
-        .namespace_mut("rhino")
+        .namespace_mut(cadmpeg_ir::codec_id!("rhino"))
         .set_arena_from(ctx, "history_records", native)
         .map_err(|error| {
             let detail = error.to_string();

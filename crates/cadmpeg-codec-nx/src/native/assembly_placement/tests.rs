@@ -55,6 +55,25 @@ fn placement_frame_requires_complete_text_terminators_and_proper_rotation() {
 }
 
 #[test]
+fn placement_wire_reads_the_one_zero_written_for_a_negative_zero_atom() {
+    let mut raw = frame();
+    raw[MAGIC_VALUE.len() + 1] = 0x80;
+    let parsed = parse_frame(View::over_retained(&raw)).unwrap();
+    assert_eq!(parsed.matrix[1].to_bits(), (-0.0_f64).to_bits());
+    let wire = serde_json::json!({
+        "id":"nx:assembly:placement#123", "raw_frame":NativeBytes::new(raw.as_slice()),
+        "matrix":[1.,0.,0.,0., 0.,1.,0.,0., 0.,0.,1.,0.],
+        "label":"A", "uuid":"01234567-89ab-cdef-0123-456789abcdef",
+        "source_entry":ENTRY_NAME, "source_offset":123,
+    });
+    let record: AssemblyPlacement = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(record.raw_frame.as_ref(), raw.as_slice());
+    let mut moved = wire;
+    moved["matrix"][1] = serde_json::json!(0.5);
+    assert!(serde_json::from_value::<AssemblyPlacement>(moved).is_err());
+}
+
+#[test]
 fn placement_wire_rejects_derived_field_and_source_identity_changes() {
     let raw = frame();
     let wire = serde_json::json!({

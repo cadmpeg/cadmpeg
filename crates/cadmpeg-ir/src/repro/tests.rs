@@ -63,10 +63,10 @@ fn repro_signature_ignores_identity_numbers_and_value_for_hash() {
         related: Vec::new(),
         message: "edge synthetic:scope:edge#123 misses by 1.5e-3".into(),
     };
-    let first = Signature::new(&finding, "cadir", Stage::Check);
+    let first = Signature::new(&finding, crate::codec_id!("cadir"), Stage::Check);
     finding.entity = Some("synthetic:other:edge#999".into());
     finding.message = "edge synthetic:other:edge#999 misses by 3e-3".into();
-    let second = Signature::new(&finding, "cadir", Stage::Check);
+    let second = Signature::new(&finding, crate::codec_id!("cadir"), Stage::Check);
     assert_eq!(first.hash, "9655c8ece9402271");
     assert_eq!(first.hash, second.hash);
     assert_eq!(first.numbers.len(), 1);
@@ -87,7 +87,7 @@ fn repro_signature_strips_quoted_names_and_paths() {
         related: Vec::new(),
         message: "carrier `PLANTED_NAME` from /PLANTED_PATH/file.cad misses by 2.0".into(),
     };
-    let signature = Signature::new(&finding, "cadir", Stage::Check);
+    let signature = Signature::new(&finding, crate::codec_id!("cadir"), Stage::Check);
     assert!(!signature.message.contains("PLANTED"));
     assert_eq!(signature.numbers.len(), 1);
 }
@@ -101,7 +101,7 @@ fn repro_signature_normalizes_hex_ranges_and_decimal_exponents() {
         related: Vec::new(),
         message: "offsets 0x10..0x20 differ by -1.5e+2".into(),
     };
-    let signature = Signature::new(&finding, "f3d", Stage::Check);
+    let signature = Signature::new(&finding, crate::codec_id!("f3d"), Stage::Check);
     assert_eq!(
         signature.message,
         "offsets {number}..{number} differ by {number}"
@@ -110,7 +110,7 @@ fn repro_signature_normalizes_hex_ranges_and_decimal_exponents() {
         signature
             .numbers
             .iter()
-            .map(|number| number.value)
+            .map(|number| number.value.get())
             .collect::<Vec<_>>(),
         vec![16.0, 32.0, -150.0]
     );
@@ -125,10 +125,12 @@ fn bundle_metadata_context_refuses_a_key_stated_twice() {
         related: Vec::new(),
         message: "unresolved link".into(),
     };
-    let mut context = Map::new();
-    context.insert("tool".into(), Value::String("cli".into()));
+    let context = AttributeJson::Object(BTreeMap::from([(
+        "tool".to_owned(),
+        AttributeJson::String("cli".into()),
+    )]));
     let metadata = BundleMetadata {
-        signature: Signature::new(&finding, "cadir", Stage::Check),
+        signature: Signature::new(&finding, crate::codec_id!("cadir"), Stage::Check),
         roots: Vec::new(),
         context,
         manifest: Vec::new(),
@@ -137,14 +139,15 @@ fn bundle_metadata_context_refuses_a_key_stated_twice() {
     let wire = serde_json::to_string(&metadata).expect("metadata writes");
     let read: BundleMetadata = serde_json::from_str(&wire).expect("distinct keys read");
     assert_eq!(read, metadata);
+    let tool = r#"{"tool":{"kind":"string","value":"cli"}}"#;
     for (stated, repeated) in [
         (
-            r#""context":{"tool":"cli"}"#,
-            r#""context":{"tool":"cli","tool":"gui"}"#,
+            tool,
+            r#"{"tool":{"kind":"string","value":"cli"},"tool":{"kind":"string","value":"gui"}}"#,
         ),
         (
-            r#""context":{"tool":"cli"}"#,
-            r#""context":{"tool":{"name":"a","name":"b"}}"#,
+            tool,
+            r#"{"tool":{"kind":"object","value":{"name":{"kind":"null"},"name":{"kind":"null"}}}}"#,
         ),
     ] {
         let tampered = wire.replace(stated, repeated);
@@ -153,5 +156,47 @@ fn bundle_metadata_context_refuses_a_key_stated_twice() {
             .expect_err("a repeated context key is refused")
             .to_string();
         assert!(error.contains("duplicate key"), "{error}");
+    }
+}
+
+/// `Signature.check` is an open name, `codec` a codec id, and
+/// `incomplete_reason` a `NonBlankString` (§2.7).
+#[test]
+fn bundle_metadata_reads_an_open_check_name_and_refuses_a_blank_reason() {
+    let finding = Finding {
+        check: Check::NativeLinks,
+        severity: Severity::Error,
+        entity: None,
+        related: Vec::new(),
+        message: "unresolved link".into(),
+    };
+    let metadata = BundleMetadata {
+        signature: Signature::new(&finding, crate::codec_id!("cadir"), Stage::Check),
+        roots: Vec::new(),
+        context: AttributeJson::Object(BTreeMap::new()),
+        manifest: Vec::new(),
+        incomplete_reason: NonBlankString::new("bounded cut"),
+    };
+    let wire = serde_json::to_value(&metadata).unwrap();
+    assert_eq!(wire["signature"]["check"], "native_links");
+    let mut open = wire.clone();
+    open["signature"]["check"] = "a_check_no_release_names_yet".into();
+    let read: BundleMetadata = serde_json::from_value(open).unwrap();
+    assert_eq!(
+        read.signature.check.as_str(),
+        "a_check_no_release_names_yet"
+    );
+    assert_eq!(read.signature.hash, metadata.signature.hash);
+    for (field, value) in [("incomplete_reason", " "), ("codec", "Not A Codec")] {
+        let mut refused = wire.clone();
+        if field == "codec" {
+            refused["signature"][field] = value.into();
+        } else {
+            refused[field] = value.into();
+        }
+        assert!(
+            serde_json::from_value::<BundleMetadata>(refused).is_err(),
+            "{field}"
+        );
     }
 }

@@ -509,7 +509,7 @@ mod tests {
             )
             .expect("valid native identity")],
         );
-        ir.native.0.insert("test".into(), namespace);
+        ir.native.0.insert(crate::codec_id!("test"), namespace);
         let model_id = "test:fixture:model#0";
         ir.model
             .parameters
@@ -562,7 +562,7 @@ mod tests {
         namespace
             .arenas_mut()
             .insert("records".into(), vec![native_record(native_id)]);
-        ir.native.0.insert("test".into(), namespace);
+        ir.native.0.insert(crate::codec_id!("test"), namespace);
 
         let index = ModelIndex::with_additional_native_identities(&ir, [staged_id, native_id]);
         assert!(index.entity_identities_distinct());
@@ -581,7 +581,7 @@ mod tests {
         assert!(!model_only.native_record_owns(native_id));
 
         ir.native
-            .namespace_mut("test")
+            .namespace_mut(crate::codec_id!("test"))
             .arenas_mut()
             .get_mut("records")
             .unwrap()

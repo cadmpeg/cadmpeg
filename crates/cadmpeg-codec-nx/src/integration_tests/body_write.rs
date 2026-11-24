@@ -24,7 +24,7 @@ fn body_write_native_check_rejects_zero_class_indices() {
         crate::test_support::with_decode_context(|ctx| {
             let mut ir = cadmpeg_ir::CadIr::empty();
             ir.native
-                .namespace_mut("nx")
+                .namespace_mut(cadmpeg_ir::codec_id!("nx"))
                 .set_arena(ctx, arena, &[&wire])
                 .unwrap();
             assert!(crate::NxCodec::validate_native(ctx, &ir, None)
@@ -32,7 +32,7 @@ fn body_write_native_check_rejects_zero_class_indices() {
                 .is_empty());
             wire["endpoint_class_index"] = serde_json::json!(0);
             ir.native
-                .namespace_mut("nx")
+                .namespace_mut(cadmpeg_ir::codec_id!("nx"))
                 .set_arena(ctx, arena, &[&wire])
                 .unwrap();
             let findings = crate::NxCodec::validate_native(ctx, &ir, None).unwrap();

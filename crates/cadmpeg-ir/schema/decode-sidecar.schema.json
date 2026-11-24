@@ -141,6 +141,11 @@
         "exactness"
       ]
     },
+    "CodecId": {
+      "description": "A codec id: one or more lower-case ASCII letters and digits.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+$"
+    },
     "DecodeReport": {
       "type": "object",
       "properties": {
@@ -313,7 +318,7 @@
         },
         "instance": {
           "description": "Instance of this format layer inside the containing document.\n\n`None` when the layer occurs once or has no report-local identity. This\nis not source-declared evidence and therefore does not belong in\n[`Self::declared`].",
-          "type": "string"
+          "$ref": "#/$defs/NonBlankString"
         }
       },
       "additionalProperties": false,
@@ -430,7 +435,7 @@
           "properties": {
             "format": {
               "description": "Registry format namespace.",
-              "type": "string"
+              "$ref": "#/$defs/CodecId"
             },
             "kind": {
               "type": "string",
@@ -821,6 +826,10 @@
         "kind"
       ]
     },
+    "NonBlankString": {
+      "type": "string",
+      "pattern": "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]"
+    },
     "NonEmptyMap": {
       "type": "object",
       "additionalProperties": false,
@@ -954,6 +963,20 @@
           "description": "Sparse source locations and conversion exactness.",
           "$ref": "#/$defs/Annotations"
         },
+        "codec_digests": {
+          "description": "The decoding codec's narrower digests, keyed as its format\nspecification lists.",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+              "$ref": "#/$defs/Sha256Digest"
+            }
+          }
+        },
+        "content_digest": {
+          "description": "SHA-256 of the canonical JSON of the document the decode returned.",
+          "$ref": "#/$defs/Sha256Digest"
+        },
         "decode_digest": {
           "description": "SHA-256 of the decode's root file.",
           "$ref": "#/$defs/Sha256Digest"
@@ -990,6 +1013,8 @@
       "required": [
         "decode_digest",
         "file_digests",
+        "content_digest",
+        "codec_digests",
         "unrepresented",
         "annotations",
         "retained_records"

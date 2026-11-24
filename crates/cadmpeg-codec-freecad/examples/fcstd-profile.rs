@@ -16,7 +16,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::features::FeatureDefinition;
-use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
+use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::{report::Severity, CadIr};
 use serde::Serialize;
 use serde_json::Value;
@@ -1110,9 +1110,6 @@ fn design_property_edit_round_trip(ir: &CadIr) -> Result<bool, Box<dyn std::erro
 }
 
 fn semantic_fingerprint(mut ir: CadIr) -> Result<String, Box<dyn std::error::Error>> {
-    if let Some(source) = &mut ir.source {
-        source.attributes.remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
-    }
     if let Some(namespace) = ir.native.0.get_mut("fcstd") {
         namespace.arenas_mut().remove("physical_ledger");
         namespace.arenas_mut().remove("byte_coverage");

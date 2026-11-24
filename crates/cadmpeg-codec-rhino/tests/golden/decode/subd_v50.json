@@ -437,6 +437,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "27e63fd38b086884f6a0759c5a6a1a3ec4b2a75e624779b40226353d678e5afb",
     "file_digests": {},
     "retained_records": {

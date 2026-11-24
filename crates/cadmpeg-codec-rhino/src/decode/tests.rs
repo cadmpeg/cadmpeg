@@ -1133,15 +1133,19 @@ fn candidate_rejection_restores_native_records_annotations_and_all_model_arenas(
                     },
                     native_ref: None,
                 });
-                candidate.native.namespace_mut("rhino").arenas_mut().insert(
-                    "history_records".into(),
-                    vec![NativeRecord::new(
-                        cadmpeg_ir::ids::Identity::new("rhino:history:record#rejected")
-                            .expect("valid identity"),
-                        serde_json::Map::new(),
-                    )
-                    .unwrap()],
-                );
+                candidate
+                    .native
+                    .namespace_mut(cadmpeg_ir::codec_id!("rhino"))
+                    .arenas_mut()
+                    .insert(
+                        "history_records".into(),
+                        vec![NativeRecord::new(
+                            cadmpeg_ir::ids::Identity::new("rhino:history:record#rejected")
+                                .expect("valid identity"),
+                            serde_json::Map::new(),
+                        )
+                        .unwrap()],
+                    );
                 {
                     set_exactness(annotations, "rhino:test:asset#rejected", Exactness::Derived);
                 }
