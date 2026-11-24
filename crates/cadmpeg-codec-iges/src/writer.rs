@@ -441,6 +441,15 @@ fn append_name_properties(
 }
 
 fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, CodecError> {
+    let (complete, partial_losses) = match cadmpeg_ir::codec::write::without_partial_topology(
+        ir,
+        "IGES",
+        "it is written as shells in no manifold solid",
+    )? {
+        Some((complete, losses)) => (Some(complete), losses),
+        None => (None, Vec::new()),
+    };
+    let ir = complete.as_ref().unwrap_or(ir);
     let lowered = cadmpeg_ir::codec::write::subset_lowering::lower_subset_curves(ir, |curve| {
         curve
             .geometry
@@ -455,7 +464,8 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     reject_unsupported_model(ir)?;
     reject_owned_wire_topology(ir)?;
     validate_analytic_surface_context(ir)?;
-    let mut losses = procedural_reduction_losses(ir)?;
+    let mut losses = partial_losses;
+    losses.extend(procedural_reduction_losses(ir)?);
     losses.extend(reject_unsupported_native(ir)?);
     for body in ir
         .geometry
