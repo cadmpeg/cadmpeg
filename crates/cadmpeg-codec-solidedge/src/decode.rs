@@ -37,10 +37,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 continue;
             }
             found = true;
-            body.losses
-                .push(SolidEdgeLossCode::PrimaryStateAssumed.note(
+            // The losses of a partition that does not decode leave no body
+            // to describe, so they join the report only with the partition.
+            let mut partition_losses = vec![SolidEdgeLossCode::PrimaryStateAssumed.note(
                 "primary partition supplies the saved body state; delta selection is unresolved",
-            ));
+            )];
             let result = (|| {
                 let source = snapshot.open(ctx, entry)?;
                 let payload = partition::payload(source).map_err(CodecError::from)?;
@@ -52,15 +53,14 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                     cadmpeg_parasolid::Carrier::new(entry.path().to_owned()),
                 ));
                 if !records.is_terminated() {
-                    body.losses
-                        .push(SolidEdgeLossCode::PartitionIncomplete.note(format!(
-                            "partition node framing stopped at {}",
-                            records.stop_offset().unwrap_or(0)
-                        )));
+                    partition_losses.push(SolidEdgeLossCode::PartitionIncomplete.note(format!(
+                        "partition node framing stopped at {}",
+                        records.stop_offset().unwrap_or(0)
+                    )));
                 }
                 let stream = u32::try_from(ordinal)
                     .map_err(|_| CodecError::Malformed("too many partition streams".into()))?;
-                let mut candidate = brep::project(ctx, &records, stream, &mut body.losses)?;
+                let mut candidate = brep::project(ctx, &records, stream, &mut partition_losses)?;
                 candidate.finalize();
                 let report =
                     cadmpeg_ir::validate::validate_neutral_for_decode(ctx, &candidate, Vec::new())?;
@@ -95,14 +95,17 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 )??;
                 Ok::<_, CodecError>(())
             })();
-            if let Err(error) = result {
-                if matches!(error, CodecError::ResourceLimit(_)) {
-                    return Err(error);
+            match result {
+                Ok(()) => body.losses.extend(partition_losses),
+                Err(error) => {
+                    if matches!(error, CodecError::ResourceLimit(_)) {
+                        return Err(error);
+                    }
+                    body.losses.push(
+                        SolidEdgeLossCode::PartitionUnreadable
+                            .note(format!("partition could not be decoded: {error}")),
+                    );
                 }
-                body.losses.push(
-                    SolidEdgeLossCode::PartitionUnreadable
-                        .note(format!("partition could not be decoded: {error}")),
-                );
             }
         }
         if !found {
