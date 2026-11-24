@@ -9,7 +9,7 @@ use predicates::prelude::{predicate, PredicateBooleanExt};
 use tempfile::tempdir;
 
 use crate::support::fixture;
-#[cfg(all(feature = "creo", feature = "step"))]
+#[cfg(all(feature = "creo", any(feature = "step", feature = "iges")))]
 use crate::support::geometryless_creo;
 #[cfg(feature = "rhino")]
 use crate::support::minimal_rhino_archive;
@@ -205,6 +205,51 @@ fn convert_writes_a_container_only_document_to_step() {
         .any(|note| note.as_str().unwrap().contains(
             "the document records container depth; the step writer plans from geometry"
         )));
+}
+
+/// A container-only document converts to IGES: the writer writes a file that
+/// holds no entity and charges `export:output.empty`, which `--reject-empty`
+/// refuses before any byte is written.
+#[cfg(all(feature = "creo", feature = "iges"))]
+#[test]
+fn convert_writes_a_container_only_document_to_iges_and_reject_empty_refuses_it() {
+    let dir = tempdir().unwrap();
+    let input = geometryless_creo(dir.path(), "empty.prt");
+    let run = |output: &std::path::Path, report: &std::path::Path, reject_empty: bool| {
+        let mut command = Command::cargo_bin("cadmpeg").unwrap();
+        command.args([
+            "convert",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+            "--container-only",
+            "--report",
+            report.to_str().unwrap(),
+        ]);
+        if reject_empty {
+            command.arg("--reject-empty");
+        }
+        command.assert()
+    };
+
+    let output = dir.path().join("empty.igs");
+    let report = dir.path().join("written.json");
+    run(&output, &report, false).success();
+    assert!(!fs::read(&output).unwrap().is_empty());
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    assert!(value["export"]["losses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|loss| loss["code"]["value"]["namespace"] == "export"
+            && loss["code"]["value"]["code"] == "output.empty"));
+
+    let refused = dir.path().join("refused.igs");
+    let report = dir.path().join("refused.json");
+    run(&refused, &report, true).code(1);
+    assert!(!refused.exists());
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    assert_eq!(value["refusal"]["code"], "strict_export_rejected");
 }
 
 /// A same-format container-only F3Z conversion replays the archive, whose
@@ -572,11 +617,11 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
         .iter()
         .any(|loss| loss["code"]["value"]["code"] == "export.no-geometry-written"));
 
-    let lossless = fixture(dir.path(), "cube.cadir.json", &{
-        let mut cube = unit_cube().expect("unit cube fixture is admitted");
-        cadmpeg_ir::examples::add_document_root(&mut cube);
-        cube
-    });
+    let lossless = fixture(
+        dir.path(),
+        "cube.cadir.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
     for scope in [
         "--reject-lossy",
         "--reject-lossy=decode",
@@ -630,7 +675,7 @@ fn report_to_an_unwritable_path_is_an_operational_error() {
     let input = fixture(
         dir.path(),
         "cube.cadir.json",
-        &crate::support::rooted_cube(),
+        &cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted"),
     );
     let report = dir.path().join("missing-subdir").join("report.json");
     Command::cargo_bin("cadmpeg")

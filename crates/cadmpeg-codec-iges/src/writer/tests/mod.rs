@@ -147,7 +147,12 @@ fn rejects_mixed_unclassified_bounded_surface_representation() {
         EncodeInput::new(decoded.ir(), None),
         TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
     );
-    assert!(matches!(result, Err(CodecError::NotImplemented(_))));
+    assert!(matches!(
+        result,
+        Err(cadmpeg_ir::codec::write::EncodeError::Backend(
+            CodecError::NotImplemented(_)
+        ))
+    ));
 }
 
 #[test]

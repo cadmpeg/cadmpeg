@@ -999,7 +999,7 @@ fn cumulative_l8_domain_fixtures_validate_without_loss() {
 const WRITER_REPLAY_CRASH: &[u8] = include_bytes!("test_support/fuzz_iges_writer_replay_crash.bin");
 
 #[test]
-fn writer_replay_of_degraded_decode_output_stops_at_the_empty_model_refusal() {
+fn writer_replay_of_degraded_decode_output_writes_an_empty_file() {
     let (control, json) = WRITER_REPLAY_CRASH
         .split_first()
         .expect("fuzzer bytes carry a control byte");
@@ -1042,11 +1042,12 @@ fn writer_replay_of_degraded_decode_output_stops_at_the_empty_model_refusal() {
         EncodeInput::new(&decoded_ir, Some(&source_fidelity)),
         TargetRequest::Explicit(version.descriptor().id.as_str()),
     );
-    let Err(error) = replay else {
-        panic!("degraded decode output re-planned without transferable content")
-    };
+    let plan = replay.expect("degraded decode output plans");
     assert!(
-        error.to_string().contains("refuses an empty model"),
-        "{error}"
+        plan.report().losses.iter().any(|loss| {
+            cadmpeg_ir::report::strictness::code_name(&loss.code) == "export:output.empty"
+        }),
+        "{:?}",
+        plan.report().losses
     );
 }

@@ -362,7 +362,10 @@ fn multiple_pcurve_uses_are_rejected_before_output() {
         )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("expected error");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::write::EncodeError::Backend(cadmpeg_core::CodecError::NotImplemented(_))
+    ));
     assert_eq!(output, [0xaa]);
 }
 

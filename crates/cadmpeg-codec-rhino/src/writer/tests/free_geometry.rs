@@ -110,7 +110,10 @@ fn invalid_archive_tolerances_are_rejected_before_output() {
         )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("invalid tolerance must not be serialized");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::write::EncodeError::Backend(cadmpeg_core::CodecError::NotImplemented(_))
+    ));
     assert_eq!(output, [0xaa]);
 }
 
@@ -404,7 +407,9 @@ fn standalone_mesh_round_trips_across_archive_versions() {
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str())
         ),
-        Err(cadmpeg_core::CodecError::NotImplemented(_))
+        Err(cadmpeg_ir::codec::write::EncodeError::Backend(
+            cadmpeg_core::CodecError::NotImplemented(_)
+        ))
     ));
 }
 

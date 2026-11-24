@@ -1753,7 +1753,7 @@ fn transformed_cone_basis_outside_wr2_is_refused_at_planning() {
         )
         .expect_err("transformed cone basis remains outside WR2");
     assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
+        matches!(error, cadmpeg_ir::codec::write::EncodeError::Backend(cadmpeg_core::CodecError::NotImplemented(message)) if message.contains("outside (0, pi/2)"))
     );
 }
 
@@ -1900,7 +1900,7 @@ fn a_cone_cache_for_an_unwritable_construction_is_refused_at_planning() {
         )
         .expect_err("a cached cone outside WR2 cannot be written");
     assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
+        matches!(error, cadmpeg_ir::codec::write::EncodeError::Backend(cadmpeg_core::CodecError::NotImplemented(message)) if message.contains("outside (0, pi/2)"))
     );
 }
 

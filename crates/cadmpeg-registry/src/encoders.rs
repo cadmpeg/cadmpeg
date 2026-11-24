@@ -23,7 +23,6 @@ pub fn build_encoder(format: Format) -> Box<dyn Encoder> {
 #[cfg(test)]
 mod tests {
     use cadmpeg_core::decode::DecodeDepth;
-    use cadmpeg_core::CodecError;
     use cadmpeg_ir::codec::write::target::TargetRequest;
     use cadmpeg_ir::codec::FormatId;
 
@@ -99,7 +98,7 @@ mod tests {
                     TargetRequest::Explicit(&requested),
                 )
                 .expect_err("an id outside the catalog is refused");
-            let CodecError::UnsupportedTarget(refusal) = &error else {
+            let cadmpeg_ir::codec::write::EncodeError::UnsupportedTarget(refusal) = &error else {
                 panic!("{}: expected a target refusal, got {error}", encoder.id());
             };
             assert_eq!(refusal.format(), encoder.id().as_str());

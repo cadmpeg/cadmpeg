@@ -12,8 +12,8 @@ use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    native_records_omitted, ArenaCoverage, ArenaDisposition, ArenaDispositions, ExportBody,
-    WritePath,
+    native_records_omitted, output_empty, ArenaCoverage, ArenaDisposition, ArenaDispositions,
+    ExportBody, WritePath,
 };
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::eval::model_surface_point;
@@ -465,9 +465,8 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     let ctx = &ctx;
     reject_unsupported_model(ir)?;
     reject_owned_wire_topology(ir)?;
-    let unbounded_analytic = validate_analytic_surface_context(ir)?;
     let mut losses = partial_losses;
-    losses.extend(unbounded_analytic.clone());
+    losses.extend(validate_analytic_surface_context(ir)?);
     losses.extend(procedural_reduction_losses(ir)?);
     losses.extend(reject_unsupported_native(ir)?);
     for body in ir
@@ -666,13 +665,9 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     resolve_entity_references(&mut entities)?;
     append_name_properties(&mut entities, &body_presentations)?;
     if entities.is_empty() {
-        return Err(CodecError::NotImplemented(match unbounded_analytic {
-            Some(withheld) => format!(
-                "IGES semantic writer refuses an empty model; {}",
-                withheld.message
-            ),
-            None => "IGES semantic writer refuses an empty model".into(),
-        }));
+        losses.push(output_empty(
+            "the IGES output holds no entity: the document states no record the IGES writer writes",
+        ));
     }
 
     let minimum_resolution = minimum_resolution_for_output(&index)?;

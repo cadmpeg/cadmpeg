@@ -39,7 +39,7 @@
 //! This crate also owns the golden harness in [`crate::golden`]. Both helpers
 //! are test-only and must not be depended on by production builds.
 
-use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::write::EncodeError;
 
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -128,7 +128,7 @@ pub enum SemanticOutcome {
     /// The encoder refused.
     Refused {
         /// The refusal error.
-        error: CodecError,
+        error: EncodeError,
     },
 }
 
@@ -216,7 +216,7 @@ pub enum MutationOutcome {
     /// The encoder refused the edit.
     Refused {
         /// The refusal error.
-        error: CodecError,
+        error: EncodeError,
     },
 }
 

@@ -22,8 +22,8 @@ use crate::report::{
     Severity,
 };
 use crate::source_fidelity::SourceFidelity;
-use cadmpeg_core::decode::{Companions, DecodeDepth};
-use cadmpeg_core::target::TargetCatalog;
+use cadmpeg_core::decode::{Companions, DecodeDepth, ResourceLimit};
+use cadmpeg_core::target::{TargetCatalog, TargetRefusal};
 use cadmpeg_core::CodecError;
 
 pub mod approximation;
@@ -110,12 +110,15 @@ pub trait Encoder: encoder_sealed::Sealed {
     ///
     /// Never refuses on scope. A document that records less depth than
     /// [`Self::request`] is planned from what it holds, and the report notes
-    /// the shortfall.
+    /// the shortfall. Charges `export:record.invalid` for each Error of
+    /// [`EncodeInput::validation`] that the output carries, then refuses with
+    /// [`EncodeError::StrictRejected`] where [`EncodeInput::strictness`]
+    /// refuses an entry of the completed report (§3.4, Refusals).
     fn plan(
         &self,
         input: EncodeInput<'_>,
         request: TargetRequest<'_>,
-    ) -> Result<ExportPlan, CodecError>;
+    ) -> Result<ExportPlan, EncodeError>;
 }
 
 impl<E: EncoderBackend> Encoder for E {
@@ -135,11 +138,15 @@ impl<E: EncoderBackend> Encoder for E {
         &self,
         input: EncodeInput<'_>,
         request: TargetRequest<'_>,
-    ) -> Result<ExportPlan, CodecError> {
-        let target = E::TARGET.resolve(input.ir, request, E::FORMAT)?;
+    ) -> Result<ExportPlan, EncodeError> {
+        let target = E::TARGET
+            .resolve(input.ir, request, E::FORMAT)
+            .map_err(EncodeError::from_backend)?;
         let identity = target.export_target().cloned();
         let synthesized_identity = target.synthesized_target().cloned();
-        let body = self.plan_resolved(input, target)?;
+        let body = self
+            .plan_resolved(input, target)
+            .map_err(EncodeError::from_backend)?;
         let ExportBody {
             bytes,
             census,
@@ -187,14 +194,69 @@ impl<E: EncoderBackend> Encoder for E {
             None => ExportReport::cadir(census, write_path, losses, notes),
             Some(target) => ExportReport::native(target, census, write_path, losses, notes),
         };
-        Ok(ExportPlan {
+        let mut plan = ExportPlan {
             report,
             bytes,
             format: E::FORMAT,
             coverage,
-        })
+        };
+        if let Some(validation) = input.validation {
+            plan.charge_carried_errors(input.ir, validation);
+        }
+        match input.strictness.first_refused(&plan.report.losses, false) {
+            None => Ok(plan),
+            Some(entry) => Err(EncodeError::StrictRejected(StrictWriteRejection {
+                report: Box::new(plan.report),
+                entry,
+            })),
+        }
     }
 }
+
+/// A refused write (§3.4, Refusals).
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum EncodeError {
+    /// The requested target names no catalog entry, the catalog has no
+    /// default, or the writer cannot deliver the target from this document.
+    #[error("{0}")]
+    UnsupportedTarget(Box<TargetRefusal>),
+    /// A session ceiling of the caller's limits ran out.
+    #[error(
+        "resource limit on {:?}: {:?} (scope {:?}, limit {}, used {}, requested {})",
+        .0.dimension, .0.reason, .0.scope, .0.limit, .0.used, .0.additional
+    )]
+    ResourceLimit(ResourceLimit),
+    /// A write or seek on the destination failed.
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+    /// The caller's [`EncodeInput::strictness`] refused an entry of the
+    /// completed export report. Nothing is written.
+    #[error("{0}")]
+    StrictRejected(StrictWriteRejection),
+    /// Interim: a backend refusal that §3.4 states as a report entry or as
+    /// another variant, kept until each writer moves to that form.
+    #[error(transparent)]
+    Backend(CodecError),
+}
+
+impl EncodeError {
+    fn from_backend(error: CodecError) -> Self {
+        match error {
+            CodecError::UnsupportedTarget(refusal) => Self::UnsupportedTarget(refusal),
+            CodecError::ResourceLimit(limit) => Self::ResourceLimit(limit),
+            CodecError::Io(error) => Self::Io(error),
+            error => Self::Backend(error),
+        }
+    }
+}
+
+/// The strictness of an [`EncodeInput`] that states none: it refuses nothing.
+static PERMISSIVE: Strictness = Strictness {
+    pinned: false,
+    floor: None,
+    codes: std::collections::BTreeSet::new(),
+};
 
 /// Borrowed inputs used to plan an export.
 #[derive(Debug, Clone, Copy)]
@@ -212,6 +274,13 @@ pub struct EncodeInput<'a> {
     /// gives the features whose states the document lacks (§3.4, Features
     /// without their state). Every other writer ignores it.
     pub missing_states: MissingStateForm,
+    /// The report entries on which the caller refuses the write (§3.4,
+    /// Refusals). The default refuses none.
+    pub strictness: &'a Strictness,
+    /// Interim: the caller's validation of the document. The sealed wrapper
+    /// charges `export:record.invalid` for each of its Errors that the output
+    /// carries (§3.4, Refusals).
+    pub validation: Option<&'a ValidationReport>,
 }
 
 /// The form a writer gives features whose states the target needs and the
@@ -237,6 +306,8 @@ impl<'a> EncodeInput<'a> {
             assets: None,
             scene: SceneOptions::DEFAULT,
             missing_states: MissingStateForm::GeometryTrue,
+            strictness: &PERMISSIVE,
+            validation: None,
         }
     }
 
@@ -259,6 +330,20 @@ impl<'a> EncodeInput<'a> {
     #[must_use]
     pub const fn with_missing_states(mut self, form: MissingStateForm) -> Self {
         self.missing_states = form;
+        self
+    }
+
+    /// Selects the report entries on which the caller refuses the write.
+    #[must_use]
+    pub const fn with_strictness(mut self, strictness: &'a Strictness) -> Self {
+        self.strictness = strictness;
+        self
+    }
+
+    /// Attaches the caller's validation of the document.
+    #[must_use]
+    pub const fn with_validation(mut self, validation: &'a ValidationReport) -> Self {
+        self.validation = Some(validation);
         self
     }
 }
@@ -460,8 +545,8 @@ impl ExportPlan {
     /// Charges `export:record.invalid` for each Error of `report` that this
     /// payload carries ([`Self::carried_errors`]): with the kind of the
     /// record's model arena where the finding names one, and naming the rule
-    /// otherwise (§3.4, Refusals). Returns the number of notes charged.
-    pub fn charge_carried_errors(&mut self, ir: &CadIr, report: &ValidationReport) -> usize {
+    /// otherwise (§3.4, Refusals).
+    fn charge_carried_errors(&mut self, ir: &CadIr, report: &ValidationReport) {
         let carried = self.carried_errors(ir, report);
         let locator = FindingLocator::new(ir, carried.iter().copied());
         let notes: Vec<LossNote> = carried
@@ -482,22 +567,7 @@ impl ExportPlan {
                 }
             })
             .collect();
-        let charged = notes.len();
         self.report.losses.extend(notes);
-        charged
-    }
-
-    /// The plan, or the refusal of `strictness` naming the first entry of
-    /// the completed report it refuses (§3.4, Refusals). A refused plan
-    /// writes nothing.
-    pub fn refuse(self, strictness: &Strictness) -> Result<Self, StrictWriteRejection> {
-        match strictness.first_refused(&self.report.losses, false) {
-            None => Ok(self),
-            Some(entry) => Err(StrictWriteRejection {
-                report: Box::new(self.report),
-                entry,
-            }),
-        }
     }
 
     fn carries_location(&self, location: EntityLocation<'_>) -> bool {
@@ -512,7 +582,7 @@ impl ExportPlan {
     }
 
     /// Writes the planned payload and returns the unchanged plan-time report.
-    pub fn write_to(self, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
+    pub fn write_to(self, writer: &mut dyn Write) -> Result<ExportReport, EncodeError> {
         writer.write_all(&self.bytes)?;
         Ok(self.report)
     }
@@ -520,6 +590,7 @@ impl ExportPlan {
 
 /// A write refused by the caller's [`Strictness`]: the completed export
 /// report and the index of the first loss it refuses (§3.4, Refusals).
+/// Only the sealed [`Encoder::plan`] wrapper constructs it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StrictWriteRejection {
     report: Box<ExportReport>,

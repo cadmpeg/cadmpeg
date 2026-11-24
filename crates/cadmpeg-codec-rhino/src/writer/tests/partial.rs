@@ -12,7 +12,9 @@ use cadmpeg_ir::topology::{BodyKind, FaceLoops, RegionUnstated};
 use super::planar_tetrahedron;
 use crate::{RhinoArchiveVersion, RhinoCodec};
 
-fn write(ir: &cadmpeg_ir::CadIr) -> Result<(Vec<u8>, Vec<String>), cadmpeg_core::CodecError> {
+fn write(
+    ir: &cadmpeg_ir::CadIr,
+) -> Result<(Vec<u8>, Vec<String>), cadmpeg_ir::codec::write::EncodeError> {
     let mut bytes = Vec::new();
     let plan = RhinoCodec.plan(
         EncodeInput::new(ir, None),
@@ -63,6 +65,8 @@ fn a_marked_region_with_no_partial_face_stays_refused() {
     ir.geometry.regions[0].unstated = Some(RegionUnstated::Voids);
     assert!(matches!(
         write(&ir),
-        Err(cadmpeg_core::CodecError::NotImplemented(_))
+        Err(cadmpeg_ir::codec::write::EncodeError::Backend(
+            cadmpeg_core::CodecError::NotImplemented(_)
+        ))
     ));
 }

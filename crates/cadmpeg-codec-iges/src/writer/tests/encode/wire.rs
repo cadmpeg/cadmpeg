@@ -123,7 +123,10 @@ fn encode_refuses_reversed_composite_with_shared_wire_vertex() {
     let Err(error) = plan_at(IgesVersion::V5_0, decoded.ir(), None) else {
         panic!("shared wire vertex was accepted");
     };
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::write::EncodeError::Backend(cadmpeg_core::CodecError::NotImplemented(_))
+    ));
     assert!(error.to_string().contains("shared wire vertex"), "{error}");
 }
 
@@ -136,7 +139,10 @@ fn encode_reports_orphan_wire_vertex_as_malformed() {
     let Err(error) = plan_at(IgesVersion::V5_0, decoded.ir(), None) else {
         panic!("orphan vertex was accepted");
     };
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::write::EncodeError::Backend(cadmpeg_core::CodecError::Malformed(_))
+    ));
     assert!(
         error.to_string().contains("no wire or face owner"),
         "{error}"

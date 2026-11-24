@@ -31,7 +31,10 @@ fn admitted_angular_tolerance_above_pi_is_a_writer_limit() {
         )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("Rhino cannot state this angular tolerance");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::write::EncodeError::Backend(cadmpeg_core::CodecError::NotImplemented(_))
+    ));
 }
 
 #[test]

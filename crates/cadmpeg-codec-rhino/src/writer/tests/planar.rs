@@ -410,7 +410,10 @@ fn sub_resolution_edge_tolerance_is_refused_before_output() {
         )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("a stated tolerance below the write bound must not be widened");
-    assert!(matches!(&error, cadmpeg_core::CodecError::InvalidInput(_)));
+    assert!(matches!(
+        &error,
+        cadmpeg_ir::codec::write::EncodeError::Backend(cadmpeg_core::CodecError::InvalidInput(_))
+    ));
     let message = error.to_string();
     assert!(message.contains(EPS_BELOW_WRITE_BOUND_TEXT), "{message}");
     assert!(message.contains("edge#polygon.0"), "{message}");
@@ -436,7 +439,10 @@ fn sub_resolution_face_tolerance_is_refused_before_output() {
         )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("a stated tolerance below the write bound must not be widened");
-    assert!(matches!(&error, cadmpeg_core::CodecError::InvalidInput(_)));
+    assert!(matches!(
+        &error,
+        cadmpeg_ir::codec::write::EncodeError::Backend(cadmpeg_core::CodecError::InvalidInput(_))
+    ));
     let message = error.to_string();
     assert!(message.contains(EPS_BELOW_WRITE_BOUND_TEXT), "{message}");
     assert!(message.contains("face#polygon"), "{message}");

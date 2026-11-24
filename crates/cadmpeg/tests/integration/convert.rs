@@ -153,7 +153,7 @@ fn convert_stdout_contains_only_json_artifact() {
     let input = fixture(
         dir.path(),
         "cube.cadir.json",
-        &crate::support::rooted_cube(),
+        &cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted"),
     );
     let output = Command::cargo_bin("cadmpeg")
         .unwrap()
@@ -484,11 +484,11 @@ fn assert_geometry_depth_step_writes_the_full_decode_bytes(name: &str, bytes: &[
 #[test]
 fn step_artifact_starts_with_step_header() {
     let dir = tempdir().unwrap();
-    let input = fixture(dir.path(), "cube.json", &{
-        let mut cube = unit_cube().expect("unit cube fixture is admitted");
-        cadmpeg_ir::examples::add_document_root(&mut cube);
-        cube
-    });
+    let input = fixture(
+        dir.path(),
+        "cube.json",
+        &unit_cube().expect("unit cube fixture is admitted"),
+    );
 
     let output = Command::cargo_bin("cadmpeg")
         .unwrap()

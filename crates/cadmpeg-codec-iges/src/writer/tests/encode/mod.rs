@@ -449,15 +449,25 @@ fn encode_refuses_unsupported_curve_geometry_instead_of_dropping_it() {
 }
 
 #[test]
-fn encode_refuses_an_empty_source_less_model() {
+fn an_empty_source_less_model_writes_an_empty_file() {
     let ir = CadIr::empty();
-    let Err(error) = plan_at(IgesVersion::V5_3, &ir, None) else {
-        panic!("empty semantic output was accepted")
-    };
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("an empty model plans");
     assert!(
-        error.to_string().contains("refuses an empty model"),
-        "{error}"
+        plan.report().losses.iter().any(|loss| {
+            cadmpeg_ir::report::strictness::code_name(&loss.code) == "export:output.empty"
+        }),
+        "{:?}",
+        plan.report().losses
     );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("the empty file writes");
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut std::io::Cursor::new(bytes),
+            &cadmpeg_ir::codec::DecodeOptions::default(),
+        )
+        .expect("the empty file decodes");
+    assert_eq!(decoded.ir().geometry.bodies.len(), 0);
 }
 
 #[test]

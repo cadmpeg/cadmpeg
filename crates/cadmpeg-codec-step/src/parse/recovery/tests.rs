@@ -541,7 +541,7 @@ fn recovery_never_turns_a_resource_refusal_into_an_omission() {
 fn strict_decode_rejects_the_reported_given_up_record() {
     let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));ENDSEC;DATA;#1=ITEM(#0);#2=CARTESIAN_POINT('',(1.,2.,3.));ENDSEC;END-ISO-10303-21;";
     let mut options = DecodeOptions::default();
-    options.policy.mode = cadmpeg_core::decode::DecodeMode::Strict;
+    options.strictness.pinned = true;
     let error = StepCodec::default()
         .decode(&mut Cursor::new(source), &options)
         .expect_err("strict mode rejects a completed decode with a given-up record");
