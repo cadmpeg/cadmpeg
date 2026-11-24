@@ -206,12 +206,11 @@ pub fn cylinder_with_curve_sources(
         id(ShellId::mint, "shell", "cylinder"),
         id(RegionId::mint, "region", "cylinder"),
     ));
-    ir.geometry.regions.push(Region {
-        id: id(RegionId::mint, "region", "cylinder"),
-        body: id(BodyId::mint, "body", "cylinder"),
-        shells: vec![id(ShellId::mint, "shell", "cylinder")],
-        native_ref: None,
-    });
+    ir.geometry.regions.push(Region::new(
+        id(RegionId::mint, "region", "cylinder"),
+        id(BodyId::mint, "body", "cylinder"),
+        vec![id(ShellId::mint, "shell", "cylinder")],
+    ));
     ir.geometry.bodies.push(Body {
         id: id(BodyId::mint, "body", "cylinder"),
         kind: BodyKind::Solid,
@@ -220,6 +219,7 @@ pub fn cylinder_with_curve_sources(
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     ir.finalize();
     ir

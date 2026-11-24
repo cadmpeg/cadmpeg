@@ -218,7 +218,7 @@ fn derived_reference_native_shape_uses_required_text_validation() {
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     crate::test_support::with_decode_context(|ctx| {
         crate::native::F3dNative::default()
-            .store(ctx, ir.native.namespace_mut("f3d"))
+            .store(ctx, ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")))
             .unwrap();
         for field in [
             None,
@@ -231,7 +231,7 @@ fn derived_reference_native_shape_uses_required_text_validation() {
                 candidate[field] = json!("");
             }
             ir.native
-                .namespace_mut("f3d")
+                .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
                 .set_arena(ctx, "derived_references", &[candidate])
                 .unwrap();
             let findings = super::super::validate_native(ctx, &ir).unwrap();

@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Borrowed wire projections for features, their metadata and memberships,
-//! and sweep sections.
+//! Borrowed wire projections for features and their metadata and memberships.
 
 use std::collections::BTreeMap;
 
 use super::{Feature, FeatureContent, FeatureDefinition, FeatureId, SketchFeatureBinding};
 use crate::features::evaluation::FeatureResultMembers;
 use crate::features::geometry::FeatureEquationCurve;
-use crate::features::profiles::PlanarProfileRef;
 use crate::features::selections::{DistinctMembers, SelectionReference};
-use crate::features::sweeps::{CoilPlacement, SweepSection};
+use crate::features::sweeps::CoilPlacement;
 use crate::ids::{BodyId, ProductDefinitionId};
 use crate::math::{Point3, Vector3};
 use crate::sketches::SketchId;
@@ -165,27 +163,6 @@ impl Serialize for CoilPlacement {
                 radial: frame.v_axis().into(),
             },
             Self::Native { native_ref } => Wire::Native { native_ref },
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<G: Serialize> Serialize for SweepSection<G> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        #[derive(Serialize)]
-        #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-        enum SectionWire<'a, G> {
-            #[serde(rename = "unresolved")]
-            Unnamed,
-            Unresolved(&'a String),
-            Profile(&'a PlanarProfileRef),
-            Generated(&'a G),
-        }
-        match self {
-            Self::Unresolved(None) => SectionWire::Unnamed,
-            Self::Unresolved(Some(native)) => SectionWire::Unresolved(native),
-            Self::Profile(profile) => SectionWire::Profile(profile),
-            Self::Generated(generated) => SectionWire::Generated(generated),
         }
         .serialize(serializer)
     }

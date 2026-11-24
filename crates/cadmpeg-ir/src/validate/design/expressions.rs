@@ -29,6 +29,7 @@ use crate::features::ParameterId;
 use crate::process::groups::ProcessDefinition;
 use crate::products::Storage;
 use crate::report::check::Finding;
+use crate::validate::cycles::cycles;
 
 /// Where one expression occurs.
 #[derive(Clone, Copy)]
@@ -264,10 +265,14 @@ pub(super) fn measures<R>(root: &Node<R>) -> Vec<&Measure> {
     while let Some(node) = pending.pop() {
         match node {
             Node::Measure(measure) => found.push(&**measure),
-            Node::Unary { operand, .. } => pending.push(operand),
-            Node::Binary { left, right, .. } => pending.extend([&**left, &**right]),
-            Node::Call { args, .. } => pending.extend(args),
-            Node::If(branches) => pending.extend(branches.iter()),
+            Node::Unary { .. }
+            | Node::Binary { .. }
+            | Node::Sum { .. }
+            | Node::Product { .. }
+            | Node::All(_)
+            | Node::Any(_)
+            | Node::Call { .. }
+            | Node::If { .. } => pending.extend(node.operands()),
             Node::Number { .. }
             | Node::Constant(_)
             | Node::Boolean(_)
@@ -658,58 +663,4 @@ fn check_cycles(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
             ),
         );
     }
-}
-
-/// The strongly connected components of `graph` that hold a cycle, each
-/// sorted, by Kosaraju's two passes, each walked without recursion.
-pub(in crate::validate) fn cycles<'a>(
-    graph: &BTreeMap<&'a str, BTreeSet<&'a str>>,
-) -> Vec<Vec<&'a str>> {
-    let mut order = Vec::with_capacity(graph.len());
-    let mut visited = BTreeSet::new();
-    for &start in graph.keys() {
-        if !visited.insert(start) {
-            continue;
-        }
-        let mut stack = vec![(start, graph[start].iter())];
-        while let Some((node, next)) = stack.last_mut() {
-            if let Some(&target) = next.next() {
-                if graph.contains_key(target) && visited.insert(target) {
-                    stack.push((target, graph[target].iter()));
-                }
-            } else {
-                order.push(*node);
-                stack.pop();
-            }
-        }
-    }
-    let mut reverse: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-    for (&from, targets) in graph {
-        for &to in targets {
-            reverse.entry(to).or_default().push(from);
-        }
-    }
-    let mut assigned = BTreeSet::new();
-    let mut found = Vec::new();
-    for &root in order.iter().rev() {
-        if !assigned.insert(root) {
-            continue;
-        }
-        let mut component = vec![root];
-        let mut pending = vec![root];
-        while let Some(node) = pending.pop() {
-            for &from in reverse.get(node).into_iter().flatten() {
-                if assigned.insert(from) {
-                    component.push(from);
-                    pending.push(from);
-                }
-            }
-        }
-        let cyclic = component.len() > 1 || graph[root].contains(root);
-        if cyclic {
-            component.sort_unstable();
-            found.push(component);
-        }
-    }
-    found
 }

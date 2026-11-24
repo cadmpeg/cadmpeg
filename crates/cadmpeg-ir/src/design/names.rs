@@ -6,12 +6,12 @@
 //! name states meaning and a discriminator among entities of equal meaning;
 //! the source's own allocations live only in [`NameEntry::native`].
 
-use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
-use cadmpeg_core::text::NonBlankString;
+use cadmpeg_core::text::{is_codec_id, NonBlankString};
+pub use cadmpeg_core::text::{CodecId, StaticCodecId};
 use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -22,117 +22,6 @@ use super::read::{self, Ceiling};
 use super::refs::EntityRef;
 use crate::features::FeatureId;
 use crate::sketches::{SketchEntityId, SpatialSketchEntityId};
-
-/// A codec id (§2.2): one or more lower-case ASCII letters and digits. The
-/// set of codec ids is open. Build a compile-time id with
-/// [`crate::codec_id!`].
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
-#[serde(try_from = "String")]
-pub struct CodecId(Cow<'static, str>);
-
-/// Whether `text` is a codec id.
-const fn is_codec_id(text: &[u8]) -> bool {
-    if text.is_empty() {
-        return false;
-    }
-    let mut index = 0;
-    while index < text.len() {
-        if !matches!(text[index], b'a'..=b'z' | b'0'..=b'9') {
-            return false;
-        }
-        index += 1;
-    }
-    true
-}
-
-/// A static codec id whose grammar was admitted during const evaluation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StaticCodecId(&'static str);
-
-impl StaticCodecId {
-    /// Admit a static codec id, returning `None` for text of another form.
-    #[must_use]
-    pub const fn new(id: &'static str) -> Option<Self> {
-        if is_codec_id(id.as_bytes()) {
-            Some(Self(id))
-        } else {
-            None
-        }
-    }
-}
-
-impl CodecId {
-    /// Construct a codec id from a static proof.
-    #[must_use]
-    pub const fn from_static(id: StaticCodecId) -> Self {
-        Self(Cow::Borrowed(id.0))
-    }
-
-    /// The codec id `text` spells, or `None` for text of another form.
-    #[must_use]
-    pub fn new(text: impl Into<String>) -> Option<Self> {
-        let text = text.into();
-        is_codec_id(text.as_bytes()).then_some(Self(Cow::Owned(text)))
-    }
-
-    /// The codec id.
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl TryFrom<String> for CodecId {
-    type Error = &'static str;
-
-    fn try_from(text: String) -> Result<Self, Self::Error> {
-        Self::new(text).ok_or("not a codec id: lower-case ASCII letters and digits")
-    }
-}
-
-impl Serialize for CodecId {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.0)
-    }
-}
-
-impl std::fmt::Display for CodecId {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for CodecId {
-    fn schema_name() -> Cow<'static, str> {
-        "CodecId".into()
-    }
-
-    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        schemars::json_schema!({
-            "description": "A codec id: one or more lower-case ASCII letters and digits.",
-            "type": "string",
-            "pattern": "^[a-z0-9]+$"
-        })
-    }
-}
-
-/// Build a checked [`CodecId`] from a constant.
-///
-/// ```compile_fail
-/// let _ = cadmpeg_ir::codec_id!("Step");
-/// ```
-#[macro_export]
-macro_rules! codec_id {
-    ($id:expr) => {{
-        const STATIC_CODEC_ID: $crate::design::names::StaticCodecId =
-            match $crate::design::names::StaticCodecId::new($id) {
-                Some(id) => id,
-                None => panic!("a codec id is lower-case ASCII letters and digits"),
-            };
-        $crate::design::names::CodecId::from_static(STATIC_CODEC_ID)
-    }};
-}
 
 /// A text `codec:name` (§2.7): a codec id, `:`, and a name that holds a
 /// character that is not white space. Build a compile-time name with
@@ -224,7 +113,7 @@ impl std::borrow::Borrow<str> for CodecName {
 
 #[cfg(feature = "schema")]
 impl JsonSchema for CodecName {
-    fn schema_name() -> Cow<'static, str> {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
         "CodecName".into()
     }
 

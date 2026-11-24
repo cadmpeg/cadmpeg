@@ -447,7 +447,7 @@ fn drill(ir: &mut CadIr, key: &str, center: [f64; 2], radius: f64, height: f64) 
             .iter_mut()
             .find(|candidate| &candidate.id == face)
             .expect("a cap");
-        let mut loops = face.loops.to_vec();
+        let mut loops = face.loops.stated().cloned().collect::<Vec<_>>();
         let outer = loops.remove(0);
         loops.push(mint(LoopId::mint, "loop", &name(inner)));
         face.loops = FaceLoops::classified(outer, loops);

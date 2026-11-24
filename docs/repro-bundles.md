@@ -16,8 +16,9 @@ pub fn shrink(bundle: &Bundle, signature: &Signature, budget: Duration,
 ```
 
 `Document` is `cadmpeg_ir::CadIr`. `Finding` is the existing check finding.
-`CutOptions::context` is a JSON object. Its values pass through unchanged. The
-caller controls the information in that object. Row and serialized-byte limits
+`CutOptions::context` is a JSON object. Its values pass through unchanged, and the
+bundle writes it as the typed JSON value `AttributeJson` (§2.7 of the CADIR
+specification). The caller controls the information in that object. Row and serialized-byte limits
 bound the selected closure. The source document can exceed these limits. A cut
 that exceeds its bound carries `incomplete_reason` and a bounded header document.
 A finding with global context carries the same explicit incomplete-cut marker.
@@ -54,7 +55,9 @@ in the fragment. The manifest gives each retained arena's row count, compact
 JSON array size, and one-line description. Context is caller-owned data.
 
 A signature records its normalization version, pipeline stage, codec id, check
-id, severity, entity kind, normalized message, numeric observations, and hash.
+name, severity, entity kind, normalized message, numeric observations, and hash.
+The check name is the wire name of the check, an open name: a reader admits a
+name that it does not know.
 Entity identities become `{entity}`. Quoted text and path tokens become `{text}`.
 Decimal numbers, exponents, and hexadecimal integers become `{number}`. Each numeric
 observation has an inclusive band of ten percent of its absolute value. Zero has

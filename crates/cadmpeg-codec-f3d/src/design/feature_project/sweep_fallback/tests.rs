@@ -444,6 +444,7 @@ fn complete_output_facts_reject_partial_mixed_and_duplicate_bodies() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     };
     feature
         .evaluation

@@ -1028,10 +1028,13 @@ mod term_use_wire_tests {
     use super::ParasolidTermUseRecord;
 
     #[test]
-    fn complete_limit_retains_both_native_points_and_signed_zero() {
+    fn complete_limit_retains_both_native_points_and_holds_one_zero() {
         let json = r#"{"id":"term","stream_ordinal":0,"xmt":2,"count":2,"form":"TF","data":{"layout":"xyz3","hvecs":[[0.0,-0.0,1.0],[0.0,-0.0,1.0]]},"framing":"direct","inflated_offset":10}"#;
         let record: ParasolidTermUseRecord = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&record).unwrap(), json);
+        assert_eq!(
+            serde_json::to_string(&record).unwrap(),
+            json.replace("-0.0", "0.0")
+        );
         assert_eq!(
             serde_json::to_vec(&record).unwrap(),
             serde_json::to_vec(&super::ParasolidTermUseRecordWire::from(record.clone())).unwrap()

@@ -973,7 +973,7 @@ fn pattern_inputs_keep_curve_bindings_and_directions_without_guessed_seeds() {
                 SweepMode::Solid {
                     op: cadmpeg_ir::features::sweeps::SolidSweepOperation::Join,
                 },
-                cadmpeg_ir::features::sweeps::SweepSection::Unresolved(None),
+                cadmpeg_ir::features::sweeps::SweepSection::Unresolved,
                 Vec::new(),
             ),
             path: Some(PathRef::Native("curve-reference".into())),

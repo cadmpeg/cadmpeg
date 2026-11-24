@@ -165,7 +165,7 @@ fn classified_report_wire_requires_its_primary_format() {
 #[test]
 fn container_only_report_wire_preserves_the_coherent_transfer_state() {
     let report = DecodeReport::unclassified(
-        "test",
+        crate::codec_id!("test"),
         DecodeTransfer::ContainerOnly {},
         BTreeMap::new(),
         Vec::new(),

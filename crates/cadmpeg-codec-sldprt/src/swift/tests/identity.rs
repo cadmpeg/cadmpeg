@@ -287,6 +287,7 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     };
     let face = Face {
         id: FaceId::mint("sldprt:brep:face#22").expect("identity grammar"),

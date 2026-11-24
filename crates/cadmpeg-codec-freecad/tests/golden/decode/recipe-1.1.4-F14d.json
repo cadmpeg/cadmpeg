@@ -708,7 +708,7 @@
               "ref_direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -739,7 +739,7 @@
                 "ref_direction": {
                   "x": 1.0,
                   "y": 0.0,
-                  "z": -0.0
+                  "z": 0.0
                 }
               },
               "kind": "transformed",
@@ -815,7 +815,7 @@
               "ref_direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -846,7 +846,7 @@
                 "ref_direction": {
                   "x": 1.0,
                   "y": 0.0,
-                  "z": -0.0
+                  "z": 0.0
                 }
               },
               "kind": "transformed",
@@ -1484,7 +1484,7 @@
               "v": 0.0
             },
             "y_axis": {
-              "u": -0.0,
+              "u": 0.0,
               "v": 1.0
             }
           },
@@ -1664,7 +1664,7 @@
               "v": 0.0
             },
             "y_axis": {
-              "u": -0.0,
+              "u": 0.0,
               "v": 1.0
             }
           },
@@ -2079,8 +2079,8 @@
             "kind": "solved",
             "value": {
               "axis": {
-                "x": -0.0,
-                "y": -0.0,
+                "x": 0.0,
+                "y": 0.0,
                 "z": -1.0
               },
               "kind": "cylinder",
@@ -2093,7 +2093,7 @@
               "ref_direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -2122,7 +2122,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -2152,7 +2152,7 @@
                 "u_axis": {
                   "x": 1.0,
                   "y": 0.0,
-                  "z": -0.0
+                  "z": 0.0
                 }
               },
               "kind": "transformed",
@@ -2190,8 +2190,8 @@
             "kind": "solved",
             "value": {
               "axis": {
-                "x": -0.0,
-                "y": -0.0,
+                "x": 0.0,
+                "y": 0.0,
                 "z": -1.0
               },
               "kind": "cylinder",
@@ -2204,7 +2204,7 @@
               "ref_direction": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -2233,7 +2233,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -2263,7 +2263,7 @@
                 "u_axis": {
                   "x": 1.0,
                   "y": 0.0,
-                  "z": -0.0
+                  "z": 0.0
                 }
               },
               "kind": "transformed",
@@ -2301,8 +2301,8 @@
             "kind": "solved",
             "value": {
               "axis": {
-                "x": -0.0,
-                "y": -0.0,
+                "x": 0.0,
+                "y": 0.0,
                 "z": -1.0
               },
               "kind": "cylinder",
@@ -2454,7 +2454,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -2509,264 +2509,13 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [
-        {
-          "definition": {
-            "kind": "post_process",
-            "value": {
-              "fuzzy_tolerance": {
-                "kind": "automatic"
-              },
-              "operation": {
-                "kind": "primitive",
-                "value": {
-                  "op": "new_body",
-                  "placement": [
-                    [
-                      1.0,
-                      0.0,
-                      0.0,
-                      5.0
-                    ],
-                    [
-                      0.0,
-                      1.0,
-                      0.0,
-                      -7.0
-                    ],
-                    [
-                      0.0,
-                      0.0,
-                      1.0,
-                      3.0
-                    ]
-                  ],
-                  "solid": {
-                    "angle": 6.283185307179586,
-                    "height": 12.0,
-                    "kind": "cylinder",
-                    "radius": 4.0
-                  }
-                }
-              },
-              "refine": true
-            }
-          },
-          "dependencies": [
-            "fcstd:design:feature#Body",
-            "fcstd:design:feature#Sketch"
-          ],
-          "id": "fcstd:design:feature#AdditiveCylinder",
-          "name": "AdditiveCylinder",
-          "native_ref": "fcstd:native:object#AdditiveCylinder",
-          "ordinal": 11,
-          "outputs": [
-            "fcstd:model:body#AdditiveCylinder:Shape:AdditiveCylinder.Shape.brp:9%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "MapMode": "1",
-            "Suppressed": "false",
-            "Visibility": "true"
-          },
-          "source_tag": "PartDesign::AdditiveCylinder",
-          "suppressed": false
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "tree_node",
-              "value": {
-                "children": {
-                  "active_child": "fcstd:design:feature#AdditiveCylinder",
-                  "children": [
-                    "fcstd:design:feature#DatumPlane",
-                    "fcstd:design:feature#Sketch",
-                    "fcstd:design:feature#AdditiveCylinder"
-                  ]
-                },
-                "role": "solid_bodies"
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Body",
-          "name": "Body",
-          "native_ref": "fcstd:native:object#Body",
-          "ordinal": 0,
-          "outputs": [
-            "fcstd:model:body#Body:Shape:Body.Shape.brp:13%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Tip": "fcstd:native:object#AdditiveCylinder",
-            "Visibility": "true"
-          },
-          "source_tag": "PartDesign::Body"
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "datum_plane",
-              "value": {
-                "frame": {
-                  "normal": {
-                    "x": 0.0,
-                    "y": 0.0,
-                    "z": 1.0
-                  },
-                  "origin": {
-                    "x": 0.0,
-                    "y": 0.0,
-                    "z": 3.0
-                  },
-                  "u_axis": {
-                    "x": 1.0,
-                    "y": 0.0,
-                    "z": 0.0
-                  }
-                }
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#DatumPlane",
-          "name": "DatumPlane",
-          "native_ref": "fcstd:native:object#DatumPlane",
-          "ordinal": 9,
-          "outputs": [
-            "fcstd:model:body#DatumPlane:Shape:DatumPlane.Shape.brp:1%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "MapMode": "5",
-            "Visibility": "false"
-          },
-          "source_tag": "PartDesign::Plane"
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "sketch",
-              "value": {
-                "sketch": {
-                  "kind": "planar",
-                  "sketch": "fcstd:design:sketch#Sketch"
-                }
-              }
-            }
-          },
-          "dependencies": [
-            "fcstd:design:feature#DatumPlane"
-          ],
-          "id": "fcstd:design:feature#Sketch",
-          "name": "Sketch",
-          "native_ref": "fcstd:native:object#Sketch",
-          "ordinal": 10,
-          "outputs": [
-            "fcstd:model:body#Sketch:Shape:Sketch.Shape.brp:2%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "MapMode": "5",
-            "Visibility": "false"
-          },
-          "source_tag": "Sketcher::SketchObject"
-        }
-      ],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [
-        {
-          "dependencies": [],
-          "expression": "360.0000000000000000",
-          "id": "fcstd:design:parameter#AdditiveCylinder:Angle",
-          "name": "Angle",
-          "native_ref": "fcstd:native:property#AdditiveCylinder:Angle",
-          "ordinal": 1,
-          "owner": "fcstd:design:feature#AdditiveCylinder",
-          "properties": {},
-          "value": {
-            "kind": "angle",
-            "value": 6.283185307179586
-          }
-        },
-        {
-          "dependencies": [],
-          "expression": "4.0000000000000000",
-          "id": "fcstd:design:parameter#AdditiveCylinder:Radius",
-          "name": "Radius",
-          "native_ref": "fcstd:native:property#AdditiveCylinder:Radius",
-          "ordinal": 17,
-          "owner": "fcstd:design:feature#AdditiveCylinder",
-          "properties": {},
-          "value": {
-            "kind": "length",
-            "value": 4.0
-          }
-        },
-        {
-          "dependencies": [],
-          "expression": "20.0000000000000000",
-          "id": "fcstd:design:parameter#DatumPlane:Length",
-          "name": "Length",
-          "native_ref": "fcstd:native:property#DatumPlane:Length",
-          "ordinal": 7,
-          "owner": "fcstd:design:feature#DatumPlane",
-          "properties": {},
-          "value": {
-            "kind": "length",
-            "value": 20.0
-          }
-        },
-        {
-          "dependencies": [],
-          "expression": "5.0000000000000000",
-          "id": "fcstd:design:parameter#Sketch:constraint:1",
-          "name": "Constraint1",
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "ordinal": 0,
-          "owner": "fcstd:design:feature#Sketch",
-          "properties": {
-            "is_driving": "1",
-            "source_name": "point_x"
-          },
-          "value": {
-            "kind": "length",
-            "value": 5.0
-          }
-        },
-        {
-          "dependencies": [],
-          "expression": "-7.0000000000000000",
-          "id": "fcstd:design:parameter#Sketch:constraint:2",
-          "name": "Constraint2",
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "ordinal": 1,
-          "owner": "fcstd:design:feature#Sketch",
-          "properties": {
-            "is_driving": "1",
-            "source_name": "point_y"
-          },
-          "value": {
-            "kind": "length",
-            "value": -7.0
-          }
-        }
-      ],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -2783,136 +2532,15 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [
-        {
-          "active": true,
-          "definition": {
-            "first": {
-              "kind": "entity",
-              "value": "fcstd:design:sketch-entity#Sketch:reference-root-point"
-            },
-            "kind": "horizontal_distance",
-            "parameter": "fcstd:design:parameter#Sketch:constraint:1",
-            "second": {
-              "kind": "entity",
-              "value": "fcstd:design:sketch-entity#Sketch:1"
-            }
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Sketch:1",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "name": "point_x",
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "sketch": "fcstd:design:sketch#Sketch",
-          "virtual_space": false,
-          "visible": true
-        },
-        {
-          "active": true,
-          "definition": {
-            "first": {
-              "kind": "entity",
-              "value": "fcstd:design:sketch-entity#Sketch:reference-root-point"
-            },
-            "kind": "vertical_distance",
-            "parameter": "fcstd:design:parameter#Sketch:constraint:2",
-            "second": {
-              "kind": "entity",
-              "value": "fcstd:design:sketch-entity#Sketch:1"
-            }
-          },
-          "driving": true,
-          "id": "fcstd:design:sketch-constraint#Sketch:2",
-          "label_distance": 10.0,
-          "label_position": 0.0,
-          "name": "point_y",
-          "native_ref": "fcstd:native:property#Sketch:Constraints",
-          "sketch": "fcstd:design:sketch#Sketch",
-          "virtual_space": false,
-          "visible": true
-        }
-      ],
-      "sketch_entities": [
-        {
-          "construction": false,
-          "endpoint_refs": [],
-          "geometry": {
-            "kind": "point",
-            "position": {
-              "u": 5.0,
-              "v": -7.0
-            }
-          },
-          "id": "fcstd:design:sketch-entity#Sketch:1",
-          "native_ref": "fcstd:native:property#Sketch:Geometry",
-          "sketch": "fcstd:design:sketch#Sketch"
-        },
-        {
-          "construction": true,
-          "endpoint_refs": [],
-          "geometry": {
-            "kind": "point",
-            "position": {
-              "u": 0.0,
-              "v": 0.0
-            }
-          },
-          "id": "fcstd:design:sketch-entity#Sketch:reference-root-point",
-          "native_ref": "fcstd:native:object#Sketch",
-          "sketch": "fcstd:design:sketch#Sketch"
-        }
-      ],
-      "sketches": [
-        {
-          "id": "fcstd:design:sketch#Sketch",
-          "name": "Sketch",
-          "native_ref": "fcstd:native:object#Sketch",
-          "placement": {
-            "frame": {
-              "normal": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 1.0
-              },
-              "origin": {
-                "x": 0.0,
-                "y": 0.0,
-                "z": 3.0
-              },
-              "u_axis": {
-                "x": 1.0,
-                "y": 0.0,
-                "z": 0.0
-              }
-            },
-            "kind": "resolved"
-          },
-          "profiles": [
-            [
-              {
-                "entity": "fcstd:design:sketch-entity#Sketch:1",
-                "reversed": false
-              }
-            ]
-          ]
-        }
-      ],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -3808,7 +3436,6 @@
       "attributes": {
         "application_domains": "App,PartDesign,Sketcher",
         "document_kind": "part-design",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
         "program_version": "1.1R20260928 (Git shallow)"
       },
@@ -3883,6 +3510,10 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {
+      "fcstd_uncarried_local_sha256": "<elided: digest over tolerantly compared geometry>"
+    },
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "c278186012c4375a354fd43814f9258a0418803b43b41fd08c767f19a2d4909e",
     "file_digests": {},
     "retained_records": {},

@@ -637,8 +637,7 @@ A positional surface parameter body ends at its compound close, the next validat
 
 Row bodies end at a valid row-close marker, named-record header, or a following positional row header that matches the row schema. Scalar-token length takes precedence over structural-byte interpretation, so an `e3` byte inside a complete scalar does not close the row. The first row after `srf_array\0` can be a named-record row with the fields `geom_id`, `geom_type`, `feat_id`, `orient`, `boundary_type`, `next_geom_ptr`, `envlp`, `outline`, and `local_sys`.
 Named-record rows require one defined `orient` byte and one defined `boundary_type` byte from the row header value sets. An absent or undefined discriminator does not define a surface row.
-`geom_id` is unique within one selected namespace. Multiple header-shaped byte
-sequences carrying the same identifier are ambiguous and are not surface rows.
+`geom_id` is unique within one selected namespace.
 CADIR decision: where rows read from different streams of one namespace carry
 one `geom_id`, the native surface-row arena states the first row in the order
 the streams are read (CADIR §2.2). Each later row is read and not stated, and

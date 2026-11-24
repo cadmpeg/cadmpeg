@@ -29,7 +29,7 @@ fn brep_face_references_preserve_service_loop_order() {
     assert_eq!(
         references
             .face_loops
-            .iter()
+            .stated()
             .map(LoopId::as_str)
             .collect::<Vec<_>>(),
         ["creo:visibgeom:loop#5", "creo:visibgeom:loop#5:1"]

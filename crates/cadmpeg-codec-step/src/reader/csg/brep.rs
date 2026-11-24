@@ -365,12 +365,7 @@ impl SolidBuilder {
             .insert(Shell::new(shell.clone(), region.clone()))
             .map_err(failed)?;
         draft
-            .insert(Region {
-                id: region,
-                body: body.clone(),
-                shells: vec![shell],
-                native_ref: None,
-            })
+            .insert(Region::new(region, body.clone(), vec![shell]))
             .map_err(failed)?;
         draft
             .insert(Body {
@@ -381,6 +376,7 @@ impl SolidBuilder {
                 color: None,
                 visible: None,
                 native_ref: Some(format!("#{}", self.item)),
+                unstated: None,
             })
             .map_err(failed)?;
         Ok(BuiltSolid {

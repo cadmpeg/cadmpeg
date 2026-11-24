@@ -102,7 +102,6 @@ fn unjoined_imports_retain_decoded_body_sources_and_named_losses() {
             count: 0,
             unjoined: 0,
             tessellations_by_scope: Default::default(),
-            scopeless_tessellations: Vec::new(),
         };
         let mut losses = Vec::new();
         crate::test_support::zip_test::with_scan(&archive, |scan| {
