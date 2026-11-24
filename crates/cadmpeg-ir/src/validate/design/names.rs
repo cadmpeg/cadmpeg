@@ -370,6 +370,30 @@ fn valid_pattern_index(layout: &PatternLayout, instance: &InstanceIndex) -> Opti
     Some(in_range && seed_only)
 }
 
+/// Whether an instance index of `layout` that has one coordinate per run
+/// lies in each run's coordinate range, and whether, under a literal
+/// `seed_only: true` of a two-run `Linear` layout or stage, it has a zero
+/// coordinate there (§6.5, part 10 "Patterns"). `None` where the layout does
+/// not state its runs or the index has another number of coordinates.
+pub(super) fn index_in_runs(
+    layout: &PatternLayout,
+    instance: &InstanceIndex,
+) -> Option<(bool, bool)> {
+    let coordinates = &instance.0;
+    let index = layout_coordinates(layout)?;
+    if coordinates.len() != index.coordinates.len() {
+        return None;
+    }
+    let in_range = coordinates
+        .iter()
+        .zip(&index.coordinates)
+        .all(|(value, coordinate)| coordinate.admits(i64::from(*value)));
+    let seed_only = index.seed_only.iter().all(|&first| {
+        coordinates[first] == 0 || coordinates.get(first + 1).is_some_and(|value| *value == 0)
+    });
+    Some((in_range, seed_only))
+}
+
 /// The coordinates an instance index of a layout has.
 struct LayoutCoordinates<'a> {
     /// One per run, in index order.

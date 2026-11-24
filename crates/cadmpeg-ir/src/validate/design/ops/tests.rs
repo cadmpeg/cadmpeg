@@ -706,6 +706,43 @@ fn a_pattern_layout_and_its_indices_fit_its_runs() {
     );
 }
 
+/// Part 10: an override's instance index lies in each run's coordinate
+/// range, and under a literal `seed_only: true` of a two-run linear stage
+/// it has a zero coordinate in that stage (§6.5).
+#[test]
+fn an_override_index_lies_in_its_runs_and_a_seed_only_stage() {
+    const OUTSIDE: &str = "lies outside a run's coordinate range";
+    const SEED_ONLY: &str = "has no zero coordinate under seed_only";
+    let indices = |index: Vec<i32>| {
+        let mut ir = fixture::document();
+        ir.design.features[1].definition.operation =
+            pattern_of("extrude", linear(None, 3), vec![skipped(index)]);
+        ir
+    };
+    assert_no_design_finding(&indices(vec![2]));
+    assert_finding(&indices(vec![3]), OUTSIDE);
+
+    let two_runs = || {
+        let mut layout = linear_layout(None, 2);
+        layout.second = Some(layout.first.clone());
+        layout.seed_only = Some(Dimension::Literal(true));
+        layout
+    };
+    let staged = |index: Vec<i32>| {
+        with(pattern(
+            PatternLayout::Composite(vec![CompositeStage::Linear(two_runs()), linear_stage(2)]),
+            vec![skipped(index)],
+        ))
+    };
+    let found = |ir: &CadIr| {
+        design_findings(ir)
+            .into_iter()
+            .any(|finding| finding.message.contains(SEED_ONLY))
+    };
+    assert!(!found(&staged(vec![1, 0, 1])));
+    assert!(found(&staged(vec![1, 1, 0])));
+}
+
 fn combine(
     target: Option<Selection<crate::design::selection::Unordered>>,
     op: BooleanOp,
