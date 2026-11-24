@@ -364,7 +364,11 @@ pub(super) fn indexed_operands(
         }
         (_, false, false) => ExtrudeExtent::OneSided { side: first },
     };
-    if output == Output::Surface && !surface_extent(&start, &extent, &direction) {
+    if output == Output::Surface
+        && !surface_extent(&start, &extent, &direction, || {
+            profile_corners(source, label, index)
+        })
+    {
         return None;
     }
     // The solid body of slot 14 bounds a through-all extent; no other extent
@@ -395,15 +399,73 @@ pub(super) fn indexed_operands(
     })
 }
 
+/// The model-space corners of the bounding boxes of the non-construction
+/// curves of the profile sketch. Every point of the profile lies inside the
+/// hull of these corners. `None` when the sketch is unplaced or holds a curve
+/// kind whose box this function does not evaluate (points, lines, circles and
+/// arcs).
+fn profile_corners(
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+) -> Option<Vec<Vector3>> {
+    use cadmpeg_ir::sketches::SketchGeometryDefinition as Curve;
+    let [participant] = label.participants.references() else {
+        return None;
+    };
+    let token = source.identity.segment_token.as_str();
+    let sketch = index
+        .sketches
+        .get(&(token, participant.record_ordinal()?))?
+        .as_ref()?;
+    let neutral = index.sketch_ids.get(sketch.id().as_str())?;
+    let (origin, normal, u_axis) =
+        crate::sketch::project_placement(sketch, &index.transforms, &index.directions)?
+            .resolved()?;
+    let (origin, normal, u_axis) = (origin.get(), normal.get(), u_axis.get());
+    let v_axis = normal.cross(u_axis);
+    let at = |u: f64, v: f64| {
+        let point = origin.translated(u_axis, u).translated(v_axis, v);
+        Vector3::new(point.x, point.y, point.z)
+    };
+    let mut corners = Vec::new();
+    for entity in index.neutral_entities.values() {
+        if entity.sketch != *neutral || entity.construction {
+            continue;
+        }
+        match entity.geometry.definition().to_raw() {
+            Curve::Point { position } => corners.push(at(position.u, position.v)),
+            Curve::Line { start, end } => {
+                corners.push(at(start.u, start.v));
+                corners.push(at(end.u, end.v));
+            }
+            // The box of the full circle contains every arc of it.
+            Curve::Circle { center, radius } | Curve::Arc { center, radius, .. } => {
+                let reach = radius.get();
+                for (du, dv) in [(-1.0, -1.0), (-1.0, 1.0), (1.0, -1.0), (1.0, 1.0)] {
+                    corners.push(at(center.u + du * reach, center.v + dv * reach));
+                }
+            }
+            _ => return None,
+        }
+    }
+    Some(corners)
+}
+
 /// The surface extrusion extents that the format model defines: one side from
 /// the profile plane, through all or to a plane face; or from a start face to
-/// an end face, where the two face planes are parallel, the travel direction
-/// crosses them, and the travel line through the profile meets the start plane
-/// before the end plane. For parallel planes the gap between the two meeting
-/// points along the travel direction does not depend on the profile point, so
-/// no profile point is read. Non-parallel planes order differently at
-/// different profile points and stay native.
-fn surface_extent(start: &ExtrudeStart, extent: &ExtrudeExtent, travel: &UnitVector3) -> bool {
+/// an end face, where the travel direction crosses both planes and the travel
+/// line through every profile point meets the start plane before the end
+/// plane by more than [`EPS_FACE_GAP`]. The distance between the two meeting
+/// points is affine in the profile point, so the corners of the profile
+/// curve boxes bound it. Parallel planes have a point-independent gap and need
+/// no profile point.
+fn surface_extent(
+    start: &ExtrudeStart,
+    extent: &ExtrudeExtent,
+    travel: &UnitVector3,
+    profile_corners: impl FnOnce() -> Option<Vec<Vector3>>,
+) -> bool {
     use cadmpeg_ir::features::extents::{ExtrudeSide, PlaneTargetSource};
     let ExtrudeExtent::OneSided {
         side: ExtrudeSide { termination, .. },
@@ -434,18 +496,32 @@ fn surface_extent(start: &ExtrudeStart, extent: &ExtrudeExtent, travel: &UnitVec
         ) => {
             let travel = *travel.as_raw();
             let (from_normal, to_normal) = (from.normal().get(), to.normal().get());
-            let toward = to_normal.dot(travel);
-            // Distance along the travel direction from the start plane to the
-            // end plane, measured from the start plane origin.
-            let gap = to
-                .origin()
-                .get()
-                .vector_from(from.origin().get())
-                .dot(to_normal)
-                / toward;
-            from_normal.dot(to_normal).abs() >= 1.0 - EPS_PLANE_PARALLEL
-                && toward.abs() > EPS_TRAVEL_CROSSING
-                && gap > EPS_FACE_GAP
+            let (from_origin, to_origin) = (from.origin().get(), to.origin().get());
+            let (from_toward, to_toward) = (from_normal.dot(travel), to_normal.dot(travel));
+            if from_toward.abs() <= EPS_TRAVEL_CROSSING || to_toward.abs() <= EPS_TRAVEL_CROSSING {
+                return false;
+            }
+            let parallel = from_normal.dot(to_normal).abs() >= 1.0 - EPS_PLANE_PARALLEL;
+            let points = if parallel {
+                vec![Vector3::new(from_origin.x, from_origin.y, from_origin.z)]
+            } else {
+                match profile_corners() {
+                    Some(corners) if !corners.is_empty() => corners,
+                    _ => return false,
+                }
+            };
+            // Travel from the point to each plane; the planes are met in the
+            // order start, end when the end distance exceeds the start distance.
+            let meets =
+                |origin: cadmpeg_ir::math::Point3, normal: Vector3, toward: f64, p: Vector3| {
+                    Vector3::new(origin.x - p.x, origin.y - p.y, origin.z - p.z).dot(normal)
+                        / toward
+                };
+            points.iter().all(|point| {
+                meets(to_origin, to_normal, to_toward, *point)
+                    - meets(from_origin, from_normal, from_toward, *point)
+                    > EPS_FACE_GAP
+            })
         }
         _ => false,
     }
@@ -622,6 +698,12 @@ impl<'a> ValidationIndex<'a> {
                 .sketches
                 .iter()
                 .filter_map(|r| Some((r.native_ref.as_deref()?, r.id.clone())))
+                .collect(),
+            neutral_entities: records
+                .model
+                .sketch_entities
+                .iter()
+                .map(|entity| (entity.id().as_str(), entity))
                 .collect(),
             entity_style_links: records
                 .entity_links
