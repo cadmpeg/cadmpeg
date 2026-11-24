@@ -382,40 +382,28 @@ pub(in crate::feature::loft_sweep) fn loft_final_proof(
 /// pattern or a mirror. Removal leaves gaps in the member indices and a copy
 /// repeats a name, so neither contradicts the loft, and a face that is gone
 /// proves nothing. A named face contradicts the loft when no such operation
-/// produces it: a cap that is not a plane, a cap of a section that the loft
-/// does not use, a side face whose first or last section or curve differs from
-/// the loft, a side face that is not an unconstrained loft surface, a side
-/// member index below one, or a name of another family. An empty owned set is
+/// produces it: a cap of a section that the loft does not use, a side face
+/// whose first or last section or curve differs from the loft, a side member
+/// index below one, or a name of another family. An empty owned set is
 /// consistent.
+///
+/// The screen reads names and tails only, not surfaces. The projector proves
+/// the surface of each cap and side face on the state after the loft, and the
+/// final model can hold a face with another surface when a later feature
+/// re-surfaced it, which section 13.2 does not forbid. A surface of the final
+/// model therefore does not contradict a loft that the state proved. A legacy
+/// naming attribute that the projector refuses (a form other than the
+/// count-prefixed pairs of integers, or a source count below one) refuses
+/// the screen as well, whichever generator it names.
 pub(in crate::feature::loft_sweep) fn loft_owned_consistent(
     ir: &CadIr,
     generator: u32,
     sections: [u32; 2],
     section_curves: impl Fn(usize) -> Vec<i64>,
 ) -> bool {
-    let geometry = &ir.geometry;
     if sections[0] == sections[1] {
         return false;
     }
-    let is_plane = |face: &Face| {
-        geometry
-            .surfaces
-            .iter()
-            .find(|surface| surface.id == face.surface)
-            .is_some_and(|surface| {
-                matches!(
-                    &surface.geometry,
-                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
-                )
-            })
-    };
-    let is_loft_side = |face: &Face| {
-        geometry
-            .surfaces
-            .iter()
-            .find(|surface| surface.id == face.surface)
-            .is_some_and(|surface| side_surface_is_loft(geometry, &surface.geometry).is_some())
-    };
     let first_curves = section_curves(0);
     let last_curves = section_curves(1);
     let uses = |section: i64| sections.iter().any(|source| i64::from(*source) == section);
@@ -423,8 +411,8 @@ pub(in crate::feature::loft_sweep) fn loft_owned_consistent(
         .geometry
         .faces
         .iter()
-        .map(|face| (face.id.as_str(), face))
-        .collect::<HashMap<_, _>>();
+        .map(|face| face.id.as_str())
+        .collect::<HashSet<_>>();
     for attribute in &ir.model.attributes {
         let AttributeTarget::Face(id) = &attribute.target.entity else {
             continue;
@@ -453,22 +441,20 @@ pub(in crate::feature::loft_sweep) fn loft_owned_consistent(
             {
                 continue;
             }
-            let Some(face) = faces.get(id.as_str()) else {
+            if !faces.contains(id.as_str()) {
                 return false;
-            };
+            }
             match (family.as_str(), integers(rest)) {
                 ("INV_NMX_GEN_TAG", Some(values)) => {
-                    matches!(values[..], [0, section, 260] if uses(section)) && is_plane(face)
+                    matches!(values[..], [0, section, 260] if uses(section))
                 }
-                ("INV_NMX_ORDERED_GEN_TAG", Some(values)) => {
-                    side_tag(&values).is_some_and(|tag| {
-                        tag.first_section == i64::from(sections[0])
-                            && tag.last_section == i64::from(sections[1])
-                            && first_curves.contains(&tag.first_curve)
-                            && last_curves.contains(&tag.last_curve)
-                            && tag.member >= 1
-                    }) && is_loft_side(face)
-                }
+                ("INV_NMX_ORDERED_GEN_TAG", Some(values)) => side_tag(&values).is_some_and(|tag| {
+                    tag.first_section == i64::from(sections[0])
+                        && tag.last_section == i64::from(sections[1])
+                        && first_curves.contains(&tag.first_curve)
+                        && last_curves.contains(&tag.last_curve)
+                        && tag.member >= 1
+                }),
                 _ => false,
             }
         } else if name == LEGACY_CAP_CLASS || name == LEGACY_SIDE_CLASS {
@@ -496,12 +482,11 @@ pub(in crate::feature::loft_sweep) fn loft_owned_consistent(
             {
                 continue;
             }
-            let Some(face) = faces.get(id.as_str()) else {
+            if !faces.contains(id.as_str()) {
                 return false;
-            };
+            }
             *count == 1
                 && names[1] == -1
-                && is_plane(face)
                 && if name == LEGACY_CAP_CLASS {
                     matches!(tail[..], [0, section, 260] if uses(section))
                 } else {

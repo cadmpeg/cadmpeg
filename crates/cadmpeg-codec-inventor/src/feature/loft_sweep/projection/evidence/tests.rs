@@ -641,10 +641,6 @@ fn a_bound_state_does_not_admit_an_owned_face_that_contradicts_the_loft() {
         edit(&mut model);
         assert!(!final_proof(&model, true));
     };
-    // A cap on a surface that is not a plane.
-    check(&|model| {
-        model.geometry.surfaces[1].geometry = self::model().geometry.surfaces[2].geometry.clone();
-    });
     // A cap of a section that the loft does not use.
     check(&|model| model.model.attributes[0].values[10] = Some(AttributeValue::Integer(40)));
     // A side face whose last section differs from the loft.
@@ -664,6 +660,47 @@ fn a_bound_state_admits_a_final_model_that_holds_no_face_of_the_loft() {
     assert!(loft_final_proof(&legacy_model(), 18, [19, 23], legacy_curves, true).is_some());
     assert!(loft_final_proof(&legacy_model(), 18, [19, 23], legacy_curves, false).is_none());
     assert!(loft_final_proof(&legacy_model(), 17, [19, 19], legacy_curves, true).is_none());
+}
+
+#[test]
+fn a_bound_state_admits_a_face_that_a_later_feature_re_surfaced() {
+    // The projector proves the surface of each face on the state after the
+    // loft. The final model can hold another surface under the same name.
+    let cylinder = || self::model().geometry.surfaces[2].geometry.clone();
+    let mut cap = consumed_cap();
+    cap.geometry.surfaces[1].geometry = cylinder();
+    assert!(final_proof(&cap, true));
+    assert!(!final_proof(&cap, false));
+    // The side face of the legacy form.
+    let mut side = consumed_cap();
+    side.geometry.surfaces[2].geometry = cylinder();
+    assert!(final_proof(&side, true));
+    // The caps and the side face of the schema-44 form, with the side face
+    // on a surface that is no loft surface.
+    let mut modern = self::model();
+    for (i, attribute) in modern.model.attributes.iter_mut().enumerate() {
+        attribute.values.truncate(11);
+        let (family, values) = match i {
+            0 => ("INV_NMX_GEN_TAG", vec![0, 19, 260]),
+            1 => ("INV_NMX_GEN_TAG", vec![0, 23, 260]),
+            _ => (
+                "INV_NMX_ORDERED_GEN_TAG",
+                vec![2, 8, 19, 258, 0, 0, 3, 23, 258, 4, 1],
+            ),
+        };
+        attribute.values[5] = Some(AttributeValue::String(family.into()));
+        attribute.values.extend(
+            values
+                .into_iter()
+                .map(|value| Some(AttributeValue::Integer(value))),
+        );
+    }
+    modern.geometry.surfaces[0].geometry = cylinder();
+    assert!(loft_result(&modern, 17, [19, 23], legacy_curves).is_none());
+    assert!(final_proof(&modern, true));
+    // A name that no loft writes is still a contradiction.
+    modern.model.attributes[2].values[21] = Some(AttributeValue::Integer(0));
+    assert!(!final_proof(&modern, true));
 }
 
 #[test]
