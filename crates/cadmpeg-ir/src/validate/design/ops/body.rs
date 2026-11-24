@@ -991,7 +991,9 @@ pub(super) fn check_split(site: Site<'_>, split: &Split, findings: &mut Vec<Find
                 );
             }
             let curves = match tools {
-                SplitTool::Geometry(geometry) => {
+                SplitTool::Geometry {
+                    tools: geometry, ..
+                } => {
                     let datum = |class| matches!(class, Class::Datum | Class::Principal(_));
                     if picks::classes(geometry).into_iter().any(datum) {
                         error(
@@ -1003,6 +1005,25 @@ pub(super) fn check_split(site: Site<'_>, split: &Split, findings: &mut Vec<Find
                     picks::classes(geometry)
                 }
                 SplitTool::Plane(_) => Vec::new(),
+                SplitTool::Silhouette(_) => {
+                    if method.is_some() {
+                        error(
+                            findings,
+                            site.entity,
+                            format_args!("a Silhouette split states a method"),
+                        );
+                    }
+                    if matches!(kept, Some(Kept::Side { .. } | Kept::Pieces { .. })) {
+                        error(
+                            findings,
+                            site.entity,
+                            format_args!(
+                                "a Silhouette split keeps a side or pieces; it keeps All or Native"
+                            ),
+                        );
+                    }
+                    Vec::new()
+                }
             };
             let curve = |class: &Class| {
                 matches!(
