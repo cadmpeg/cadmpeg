@@ -209,7 +209,9 @@ pub(crate) fn validate_native(
         &data.feature_history_states,
         &data.pm_dc_features,
         &data.active_carrier,
-        &ir.model.history_bodies,
+        ir.model
+            .omitted_arenas_held()
+            .then_some(ir.model.history_bodies.as_slice()),
     ) {
         findings.push(finding(Check::NativeLinks, detail, None));
     }

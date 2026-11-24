@@ -110,17 +110,11 @@
         }
       ],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [
         {
@@ -205,7 +199,6 @@
           ]
         }
       ],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -225,7 +218,6 @@
             "usd:stage:occurrence#/Root/Cover"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "Root",
           "storage": {
             "kind": "embedded"
@@ -240,7 +232,6 @@
           "native_ref": "/Root/Cover",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Cover",
           "storage": {
             "kind": "embedded"
@@ -255,7 +246,6 @@
           "native_ref": "/Root/Plate",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Plate",
           "storage": {
             "kind": "embedded"
@@ -270,7 +260,6 @@
             "usd:stage:occurrence#/Root"
           ],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
@@ -279,14 +268,7 @@
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [
         {
           "channels": [],
