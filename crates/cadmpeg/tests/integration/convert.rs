@@ -1065,6 +1065,13 @@ fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() 
             .success();
         let sidecar = cadmpeg_ir::decode_sidecar_path(&persisted).unwrap();
         assert!(sidecar.exists());
+        // The sidecar annotates no record of the arenas the document omits,
+        // so the read document checks as the decode does.
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(["check", persisted.to_str().unwrap()])
+            .assert()
+            .success();
 
         let replay = dir.path().join(format!("replay.{format}"));
         Command::cargo_bin("cadmpeg")

@@ -1500,6 +1500,15 @@ macro_rules! declare_wire_omitted {
         }
 
         impl Model {
+            /// The identities of the records of the arenas the wire omits.
+            #[must_use]
+            pub fn omitted_record_ids(&self) -> std::collections::BTreeSet<&str> {
+                use crate::schema::ArenaRecord;
+                let mut ids = std::collections::BTreeSet::new();
+                $(ids.extend(self.$field.iter().map(|record| record.record_identity()));)*
+                ids
+            }
+
             /// Borrow the arenas the wire omits in canonical identity order.
             pub(crate) fn sorted_omitted(&self) -> SortedOmittedArenas<'_> {
                 SortedOmittedArenas { $($field: sorted_model_value!(self, $field),)* }
