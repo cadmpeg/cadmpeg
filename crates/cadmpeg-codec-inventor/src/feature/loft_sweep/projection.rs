@@ -74,7 +74,7 @@ pub(in crate::feature) fn project(
                 if matches!(family, FeatureFamily::Sweep) {
                     "sweep"
                 } else {
-                    "loft"
+                    crate::feature::history_states::LOFT_TAG
                 }
                 .into(),
             ),

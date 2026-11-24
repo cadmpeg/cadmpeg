@@ -356,9 +356,14 @@ fn side_surface_is_loft(geometry: &Topology, surface: &SurfaceGeometry) -> Optio
 /// final model holds the result faces unless a later feature consumed or
 /// split a cap, or copied faces with a pattern or a mirror. The history state
 /// after the loft holds them then (spec section 13.2), and the validator
-/// cannot decode the state. The loft stays proved when `history_bound` says
-/// that the loft has a bound history state and no generator-owned face of the
-/// final model contradicts the loft.
+/// cannot decode the state. `history_bound` says that the loft has a bound
+/// history-state record of the loft kind. The loft stays proved then when no
+/// generator-owned face of the final model contradicts it.
+///
+/// A loft proved this way is screened for contradicting faces, not proved
+/// again: the state is not persisted with its faces, so the validator has
+/// nothing to prove the result against. The projector proved it when it
+/// decoded the state.
 pub(in crate::feature::loft_sweep) fn loft_final_proof(
     ir: &CadIr,
     generator: u32,
@@ -467,20 +472,22 @@ pub(in crate::feature::loft_sweep) fn loft_owned_consistent(
                 _ => false,
             }
         } else if name == LEGACY_CAP_CLASS || name == LEGACY_SIDE_CLASS {
+            // `legacy_owned_faces` refuses the whole loft for a legacy
+            // attribute of another form, so the screen does too.
             let [_, _, _, _, _, Some(AttributeValue::Integer(_)), Some(AttributeValue::Integer(count)), rest @ ..] =
                 attribute.values.as_slice()
             else {
-                continue;
+                return false;
             };
             let Some(integers) = integers(rest) else {
-                continue;
+                return false;
             };
             let Some(pairs) = usize::try_from(*count)
                 .ok()
                 .and_then(|count| count.checked_mul(2))
                 .filter(|pairs| *count >= 1 && *pairs <= integers.len())
             else {
-                continue;
+                return false;
             };
             let (names, tail) = integers.split_at(pairs);
             if !names

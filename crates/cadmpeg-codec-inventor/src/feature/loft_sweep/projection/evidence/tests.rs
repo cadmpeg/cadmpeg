@@ -665,3 +665,26 @@ fn a_bound_state_admits_a_final_model_that_holds_no_face_of_the_loft() {
     assert!(loft_final_proof(&legacy_model(), 18, [19, 23], legacy_curves, false).is_none());
     assert!(loft_final_proof(&legacy_model(), 17, [19, 19], legacy_curves, true).is_none());
 }
+
+#[test]
+fn a_legacy_attribute_that_the_projector_refuses_refuses_the_screen() {
+    // `legacy_owned_faces` refuses the whole loft for these forms, whichever
+    // generator the attribute names, and so does the screen.
+    let refused = |edit: &dyn Fn(&mut CadIr)| {
+        let mut model = consumed_cap();
+        edit(&mut model);
+        assert!(legacy_loft(&model, 17, [19, 23], legacy_curves).is_none());
+        assert!(!final_proof(&model, true));
+    };
+    // The attribute of the later generator, count 0.
+    refused(&|model| model.model.attributes[2].values[6] = Some(AttributeValue::Integer(0)));
+    // The attribute of the loft itself, count 0 and a negative count.
+    refused(&|model| model.model.attributes[1].values[6] = Some(AttributeValue::Integer(0)));
+    refused(&|model| model.model.attributes[1].values[6] = Some(AttributeValue::Integer(-1)));
+    // A count that the pairs do not fit.
+    refused(&|model| model.model.attributes[2].values[6] = Some(AttributeValue::Integer(40)));
+    // A tail that holds a value other than an integer.
+    refused(&|model| model.model.attributes[2].values[10] = None);
+    // A record too short to hold the count.
+    refused(&|model| model.model.attributes[2].values.truncate(6));
+}

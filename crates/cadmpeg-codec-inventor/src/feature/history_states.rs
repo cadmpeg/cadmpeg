@@ -39,6 +39,8 @@ pub(crate) const SPLIT_TAG: &str = "split_body";
 pub(crate) const BASE_TAG: &str = "base";
 /// Kind of a base feature whose result body does not join the current model.
 pub(crate) const NATIVE_BASE_KIND: &str = "native:Base";
+/// Source tag of a loft feature.
+pub(crate) const LOFT_TAG: &str = "loft";
 
 /// Schema-44 attribute families that carry source-name pairs.
 const SCHEMA_44_FAMILIES: [&str; 6] = [
@@ -701,6 +703,21 @@ pub(crate) fn read<'a>(
             Reading::Unread(reason) => Read::Unread(reason),
         },
     )
+}
+
+/// Whether `records` hold the history-state record of the loft feature
+/// `feature` with a bound state after it. A loft has no body check, so its
+/// binding is `Bound` exactly when a naming tag lists its source index; that
+/// is the strongest binding a loft has. The record also has to be the record
+/// of a loft: a record of another kind under the same feature is not a loft
+/// state.
+pub(crate) fn loft_state_bound(records: &[FeatureHistoryState], feature: &str) -> bool {
+    records.iter().any(|state| {
+        state.feature == feature
+            && state.kind == LOFT_TAG
+            && state.state_after.is_some()
+            && state.binding == Binding::Bound
+    })
 }
 
 /// Records of the active carrier and the losses that the read reports.

@@ -2536,12 +2536,10 @@ fn validate_features(
                                     .as_ref()?;
                                 Some((*parameter, value))
                             },
-                            data.feature_history_states.iter().any(|state| {
-                                state.feature == raw_feature.id()
-                                    && state.state_after.is_some()
-                                    && state.binding
-                                        == crate::feature::history_states::Binding::Bound
-                            }),
+                            crate::feature::history_states::loft_state_bound(
+                                &data.feature_history_states,
+                                &raw_feature.id(),
+                            ),
                         )
                     })
                 });
