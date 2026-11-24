@@ -42,6 +42,7 @@ use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ProductDefinition, Storage};
 use cadmpeg_ir::report::loss::LossNote;
@@ -187,7 +188,9 @@ pub(crate) fn project(
         .features
         .iter()
         .filter_map(|feature| Some((&feature.id, feature.product_definition.as_ref()?)))
+        .map(|(feature, owner)| (feature.clone(), owner.clone()))
         .collect::<HashMap<_, _>>();
+    let mut scoped_features = Vec::new();
     for (prefix, (definition, mut projected)) in scopes {
         let Span {
             definitions: spanned,
@@ -197,8 +200,8 @@ pub(crate) fn project(
             for feature in &mut projected.features {
                 feature.component = owners
                     .get(&feature.id)
-                    .filter(|owner| spanned.contains(**owner))
-                    .map(|owner| (*owner).clone());
+                    .filter(|owner| spanned.contains(*owner))
+                    .cloned();
             }
         }
         let Some(Container::Ordered {
@@ -222,6 +225,14 @@ pub(crate) fn project(
             .into_iter()
             .collect();
         ctx.charge_entities(1, "project F3D v11 design scope")?;
+        scoped_features.push((
+            definition.clone(),
+            projected
+                .features
+                .iter()
+                .map(|feature| feature.id.clone())
+                .collect::<BTreeSet<_>>(),
+        ));
         ir.design.scopes.push(DesignScope {
             active_configuration: scoped_configurations.active.get(&definition).cloned(),
             definition,
@@ -238,6 +249,7 @@ pub(crate) fn project(
         ir.design.containers.extend(projected.containers);
         ir.design.features.extend(projected.features);
     }
+    settle_components(ir, &scoped_features, &owners);
     ctx.charge_entities(
         u64::try_from(scoped_parameters.len() + scoped_configurations.records.len())
             .map_err(|_| CodecError::malformed("F3D v11 design record count exceeds u64"))?,
@@ -250,6 +262,47 @@ pub(crate) fn project(
     sheet_metal::project(ctx, ir, &definitions, losses)?;
     thread::project(ctx, ir, losses)?;
     Ok(())
+}
+
+/// Most rounds `settle_components` runs: naming a component other than the
+/// scope's own definition makes the scope span several, and that changes what
+/// it spans.
+const SETTLE_ROUNDS: usize = 4;
+
+/// Sets `Feature.component` of each scope's features from the definitions the
+/// scope spans by the occurrence walk of §5.1, the set a reader of the
+/// document computes: a feature names its owner where the scope spans several
+/// definitions and the owner is one of them, and names none otherwise.
+fn settle_components(
+    ir: &mut CadIr,
+    scoped: &[(ProductDefinitionId, BTreeSet<FeatureId>)],
+    owners: &HashMap<FeatureId, ProductDefinitionId>,
+) {
+    for (definition, members) in scoped {
+        let mut spanned = BTreeSet::<String>::new();
+        for _ in 0..SETTLE_ROUNDS {
+            let now = ir
+                .spanned_definitions(definition)
+                .into_iter()
+                .map(str::to_owned)
+                .collect::<BTreeSet<_>>();
+            if now == spanned {
+                break;
+            }
+            spanned = now;
+            for feature in ir
+                .design
+                .features
+                .iter_mut()
+                .filter(|feature| members.contains(&feature.id))
+            {
+                feature.component = owners
+                    .get(&feature.id)
+                    .filter(|owner| spanned.len() > 1 && spanned.contains(owner.as_str()))
+                    .cloned();
+            }
+        }
+    }
 }
 
 /// The position of the rollback marker of the timeline `id`: after its last
