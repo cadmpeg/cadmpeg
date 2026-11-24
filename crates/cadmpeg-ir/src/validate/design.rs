@@ -149,7 +149,7 @@ pub(super) fn check_design(
     let records = &index.records;
     linkage::check_linkage(records, ids, findings);
     containers::check_containers(records, findings);
-    evaluations::check_evaluations(records, ctx.policy().limits.max_state_chain_depth, findings);
+    evaluations::check_evaluations(records, ctx.policy().limits.max_state_chain_depth, findings)?;
     evaluations::check_current_geometry(records, findings);
     resolved::check_resolved_states(ctx, records, ids, findings)?;
     configurations::check_configurations(records, findings);

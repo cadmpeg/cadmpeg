@@ -53,7 +53,7 @@ pub(super) fn check_process(
         &records,
         ctx.policy().limits.max_state_chain_depth,
         findings,
-    );
+    )?;
     evaluations::check_resolved_states(ctx, &records, ids, findings)?;
     operations::check_operations(&records, findings);
     Ok(())

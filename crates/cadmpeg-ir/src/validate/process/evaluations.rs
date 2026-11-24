@@ -25,12 +25,13 @@ pub(super) fn check_evaluations(
     records: &ProcessRecords<'_>,
     max_chain_depth: u64,
     findings: &mut Vec<Finding>,
-) {
+) -> Result<(), CodecError> {
     check_configuration_states(records, findings);
     check_toolpaths(records, findings);
     check_states(records, findings);
-    check_chains(records, max_chain_depth, findings);
+    check_chains(records, max_chain_depth, findings)?;
     check_material_removal(records, findings);
+    Ok(())
 }
 
 /// Whether `configuration` names a configuration of `scope`. A configuration
@@ -398,9 +399,14 @@ fn check_base(
     }
 }
 
-/// Process bases form a forest, and no chain of bases, counted through the
-/// evaluations it rests on, is deeper than a reader admits (§2.5, §7.9).
-fn check_chains(records: &ProcessRecords<'_>, max_chain_depth: u64, findings: &mut Vec<Finding>) {
+/// Process bases form a forest (§7.9). A chain of bases, counted through the
+/// evaluations it rests on, longer than the caller's ceiling refuses the
+/// session (§2.5).
+fn check_chains(
+    records: &ProcessRecords<'_>,
+    max_chain_depth: u64,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
     #[derive(Clone, Copy)]
     enum Mark {
         OnChain,
@@ -473,6 +479,7 @@ fn check_chains(records: &ProcessRecords<'_>, max_chain_depth: u64, findings: &m
             marks.insert(id, Mark::Depth(depth));
         }
     }
+    let mut deepest = 0;
     for (id, mark) in marks {
         if cyclic.contains(id) {
             super::error(
@@ -481,17 +488,16 @@ fn check_chains(records: &ProcessRecords<'_>, max_chain_depth: u64, findings: &m
                 format_args!("process state is its own ancestor through its state bases; bases form a forest"),
             );
         } else if let Mark::Depth(depth) = mark {
-            if depth > max_chain_depth {
-                super::error(
-                    findings,
-                    id,
-                    format_args!(
-                        "process state's chain of state bases is {depth} deep, past the ceiling of {max_chain_depth} a reader admits"
-                    ),
-                );
-            }
+            deepest = deepest.max(depth);
         }
     }
+    if deepest > max_chain_depth {
+        return Err(crate::validate::state_chain_refusal(
+            max_chain_depth,
+            deepest,
+        ));
+    }
+    Ok(())
 }
 
 /// The `Removal` process states whose `feature` names one `MaterialRemoval`

@@ -109,6 +109,21 @@ fn record_related_finding(
     findings.push(finding);
 }
 
+/// The refusal of a chain of state bases `depth` states long, past the
+/// caller's ceiling `limit`: a refusal of the session, and no finding on the
+/// document (§2.5).
+fn state_chain_refusal(limit: u64, depth: u64) -> CodecError {
+    CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
+        scope: cadmpeg_core::decode::LimitScope::Session,
+        dimension: cadmpeg_core::decode::ResourceDimension::RecursionDepth,
+        reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
+        limit,
+        used: limit,
+        additional: depth.saturating_sub(limit),
+        operation: "CADIR state base chain depth",
+    })
+}
+
 /// Validate `ir` and copy `losses` into the returned report unchanged.
 fn validate_model(
     ctx: &DecodeContext<'_>,
