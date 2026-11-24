@@ -243,51 +243,54 @@ fn whole_sketch_region_query(query: &Value) -> bool {
 }
 fn sketch_entities(queries: &[Value], model: &Model, entity_type: &str) -> Mapping<Value> {
     let mut selected = std::collections::BTreeSet::new();
+    let mut ordered = Vec::new();
     let mut selected_sketch = None;
     for source in queries {
-        let query = super::query::resolved(source)?;
-        if text(&query, "queryType")? != "SKETCH_ENTITY"
-            || text(&query, "historyType")? != "CREATION"
-            || text(&query, "entityType")? != entity_type
-        {
-            return Err("this sketch entity selection is not supported yet".into());
-        }
-        let [operation] = rows(&query, "operationId")? else {
-            return Err("a sketch entity needs one source operation".into());
-        };
-        let native = operation
-            .as_str()
-            .and_then(|s| s.strip_suffix(".wireOp"))
-            .ok_or("the source sketch operation is not supported yet")?;
-        let sketch = id("sketch", native);
-        if selected_sketch.as_ref().is_some_and(|id| id != &sketch) {
-            return Err("selections from multiple sketches are not supported yet".into());
-        }
-        let entity_id = id(
-            "entity",
-            &format!("{native}/{}", text(&query, "sketchEntityId")?),
-        );
-        let entity = model
-            .sketch_entities
-            .iter()
-            .find(|e| e.id().as_str() == entity_id)
-            .ok_or("the selected sketch entity has no solved geometry")?;
-        if entity_type == "VERTEX" {
-            let wire = serde_json::to_value(entity)
-                .map_err(|_| "the selected sketch entity is unreadable")?;
-            if wire.pointer("/geometry/kind").and_then(Value::as_str) != Some("point") {
-                return Err(
-                    "hole locations on sketch curve endpoints are not supported yet".into(),
-                );
+        for query in super::query::resolved_leaves(source)? {
+            if text(&query, "queryType")? != "SKETCH_ENTITY"
+                || text(&query, "historyType")? != "CREATION"
+                || text(&query, "entityType")? != entity_type
+            {
+                return Err("this sketch entity selection is not supported yet".into());
             }
-        }
-        selected_sketch = Some(sketch);
-        if !selected.insert(entity_id) {
-            return Err("the sketch selection repeats an entity".into());
+            let [operation] = rows(&query, "operationId")? else {
+                return Err("a sketch entity needs one source operation".into());
+            };
+            let native = operation
+                .as_str()
+                .and_then(|s| s.strip_suffix(".wireOp"))
+                .ok_or("the source sketch operation is not supported yet")?;
+            let sketch = id("sketch", native);
+            if selected_sketch.as_ref().is_some_and(|id| id != &sketch) {
+                return Err("selections from multiple sketches are not supported yet".into());
+            }
+            let entity_id = id(
+                "entity",
+                &format!("{native}/{}", text(&query, "sketchEntityId")?),
+            );
+            let entity = model
+                .sketch_entities
+                .iter()
+                .find(|e| e.id().as_str() == entity_id)
+                .ok_or("the selected sketch entity has no solved geometry")?;
+            if entity_type == "VERTEX" {
+                let wire = serde_json::to_value(entity)
+                    .map_err(|_| "the selected sketch entity is unreadable")?;
+                if wire.pointer("/geometry/kind").and_then(Value::as_str) != Some("point") {
+                    return Err(
+                        "hole locations on sketch curve endpoints are not supported yet".into(),
+                    );
+                }
+            }
+            selected_sketch = Some(sketch);
+            if !selected.insert(entity_id.clone()) {
+                return Err("the sketch selection repeats an entity".into());
+            }
+            ordered.push(entity_id);
         }
     }
     Ok(
-        json!({"kind":"sketch_entities","value":{"sketch":selected_sketch.ok_or("the sketch selection is empty")?,"entities":selected}}),
+        json!({"kind":"sketch_entities","value":{"sketch":selected_sketch.ok_or("the sketch selection is empty")?,"entities":ordered}}),
     )
 }
 fn sketch_axis(feature: &Value, model: &Model) -> Mapping<Value> {
@@ -517,11 +520,32 @@ pub(super) fn dependencies(
                 matches!(key, "entities" | "axis")
                     || key == "booleanScope" && value(source, "operationType") != Some("NEW")
             }
+            Some("sweep") => {
+                matches!(key, "profiles" | "path")
+                    || key == "booleanScope" && value(source, "operationType") != Some("NEW")
+            }
             Some("fillet" | "chamfer") => key == "entities",
             Some("hole") => key == "scope" || key == hole_profile,
             _ => false,
         };
         if !consumed {
+            continue;
+        }
+        if operation == Some("sweep") && key == "path" {
+            for source in rows(parameter, "queries")? {
+                for query in super::query::resolved_leaves(source)? {
+                    for operation in rows(&query, "operationId")? {
+                        let native = operation
+                            .as_str()
+                            .and_then(|operation| operation.strip_suffix(".wireOp"))
+                            .ok_or("the sweep path producer is unresolved")?;
+                        let feature = reference(native)?;
+                        if !result.contains(&feature) {
+                            result.push(feature);
+                        }
+                    }
+                }
+            }
             continue;
         }
         for source in rows(parameter, "queries")? {
@@ -556,9 +580,8 @@ pub(super) fn dependencies(
                 }
             }
             let historical = match (operation, key) {
-                (Some("extrude" | "revolve"), "booleanScope") | (Some("hole"), "scope") => {
-                    Some(topology::OperandKind::Body)
-                }
+                (Some("extrude" | "revolve" | "sweep"), "booleanScope")
+                | (Some("hole"), "scope") => Some(topology::OperandKind::Body),
                 (Some("sketch"), "sketchPlane") | (Some("extrude"), "endBoundEntityFace") => {
                     Some(topology::OperandKind::Face)
                 }
@@ -807,6 +830,56 @@ pub(super) fn map(
                 "start": {"kind": "profile_plane"}, "extent": {"kind": if enabled(feature,"symmetric")? {"symmetric"} else {"one_sided"}, "side": {"termination": termination}}, "op": operation(feature)?, "solid": true}),
             );
             Ok(definition)
+        }
+        "sweep" => {
+            if value(feature, "bodyType") != Some("SOLID") {
+                return Err("this sweep body type is not supported yet".into());
+            }
+            if !matches!(value(feature, "operationType"), Some("NEW" | "ADD")) {
+                return Err("this sweep Boolean operation is not supported yet".into());
+            }
+            if let Ok(control) = parameter(feature, "profileControl") {
+                if text(control, "value")? != "NONE" {
+                    return Err("this sweep profile control is not supported yet".into());
+                }
+            }
+            for key in [
+                "pathOppositeDirection",
+                "extendToFullPath",
+                "hasTwist",
+                "hasScale",
+            ] {
+                if enabled(feature, key)? {
+                    return Err(format!("sweep {key} is not supported yet"));
+                }
+            }
+            let profile = profile(feature, "profiles", model, inputs)?;
+            let selected = sketch_entities(queries(feature, "path")?, model, "EDGE")?;
+            let selection = selected.get("value").ok_or("the sweep path is missing")?;
+            for entity_id in rows(selection, "entities")? {
+                let entity = model
+                    .sketch_entities
+                    .iter()
+                    .find(|e| Some(e.id().as_str()) == entity_id.as_str())
+                    .ok_or("the sweep path curve is missing")?;
+                if matches!(
+                    entity.geometry.definition(),
+                    cadmpeg_ir::sketches::SketchGeometryDefinition::Native { .. }
+                        | cadmpeg_ir::sketches::SketchGeometryDefinition::Point { .. }
+                ) {
+                    return Err("the sweep path needs resolved sketch curves".into());
+                }
+            }
+            Ok(definition(
+                "sweep",
+                json!({
+                    "shape": {"kind":"solid", "op":operation(feature)?,
+                        "section":{"kind":"profile", "value":profile}, "sections":[]},
+                    "path":{"kind":"sketch_curves", "value":{
+                        "sketch":selection["sketch"], "curves":selection["entities"]}},
+                    "path_tangent":false, "linearize":false
+                }),
+            ))
         }
         "revolve" => {
             if value(feature, "bodyType") != Some("SOLID") {

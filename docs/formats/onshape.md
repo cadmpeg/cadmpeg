@@ -112,6 +112,20 @@ A referenced planar face and the stored attachment frame are coplanar. The
 stored origin retains tangential translation. The stored x axis retains
 in-plane rotation. The normal carries the attachment sense.
 
+A `sweep` feature stores solid cross-section selections in `profiles` and
+trajectory selections in `path`. `bodyType: "SOLID"` selects a solid result.
+`operationType: "NEW"` creates a body; `ADD` joins the swept volume to the
+merge scope. `profileControl` defaults to `NONE`, which transports the
+profile along the path. `hasTwist` and `hasScale` enable twist and scale
+controls. `pathOppositeDirection` reverses path travel; `extendToFullPath`
+extends travel to the full path.
+A sketch-edge path query has `queryType: "SKETCH_ENTITY"`,
+`historyType: "CREATION"`, `entityType: "EDGE"`, one `operationId` with the
+suffix `.wireOp`, and a `sketchEntityId`. The operation prefix identifies
+the source sketch. Path queries preserve source order and select distinct
+curves from that sketch. A `UNION` query stores its ordered operands in
+`subqueries`; nested unions preserve operand order.
+
 Thin extrusions select curves through `wallShape` in the `MODEL` domain.
 Explicit `midplane`, `flipWall` and `oppositeDirection` fields establish wall
 placement. `midplane` selects a symmetric `thickness`. Otherwise,
@@ -162,7 +176,7 @@ For a string fragment, a nonnegative size counts literal UTF-8 bytes after
 absolute value. Two sizes select two fragments, joined with `.`. Each
 literal fragment enters the string dictionary. A dotted result also enters
 that dictionary. Type names share the string dictionary. Admitted type
-names are `Query`, `EntityType` and `Id`.
+names are `Query`, `QueryType`, `EntityType` and `Id`.
 
 Each completed scalar, array or map enters the value dictionary after its
 children. A reference reuses that stored value and charges its expanded

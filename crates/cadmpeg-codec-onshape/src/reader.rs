@@ -499,7 +499,7 @@ pub(super) fn read(
         .filter(|(_, feature)| {
             matches!(
                 feature.get("featureType").and_then(Value::as_str),
-                Some("extrude" | "revolve")
+                Some("extrude" | "revolve" | "sweep")
             ) && features::value(feature, "operationType") == Some("NEW")
                 && suppression(feature) == Ok(false)
         })
@@ -695,6 +695,8 @@ pub(super) fn read(
                         && features::value(feature, "bodyType") == Some("THIN")
                     {
                         OnshapeLossCode::ThinNotSupported
+                    } else if feature.get("featureType").and_then(Value::as_str) == Some("sweep") {
+                        OnshapeLossCode::SweepNotSupported
                     } else {
                         OnshapeLossCode::HistoryNotSupported
                     };
@@ -764,6 +766,12 @@ pub(super) fn read(
                     .iter()
                     .any(|design| design.id.as_str() == feature_id)
                     && features::value(feature, "operationType") == Some("NEW"))
+                    || definition
+                        .pointer("/value/value/shape/op")
+                        .and_then(Value::as_str)
+                        == Some("new_body")
+                        && definition.pointer("/value/kind").and_then(Value::as_str)
+                            == Some("sweep")
                     || definition
                         .pointer("/value/value/op")
                         .and_then(Value::as_str)
