@@ -36,6 +36,31 @@ pub(super) fn check_appearance_attributes(
             AppearanceTarget::Record { arena, id } => record(ir, findings, owner, arena, id),
             _ => {}
         }
+        if binding
+            .source_entity_id
+            .as_deref()
+            .is_some_and(|id| id.trim().is_empty())
+        {
+            error(findings, owner, format_args!("source_entity_id is blank"));
+        }
+        if matches!(binding.target.entity, AppearanceTarget::Unresolved) {
+            if binding.source_entity_id.is_none() && binding.native_ref.is_none() {
+                error(
+                    findings,
+                    owner,
+                    format_args!(
+                        "an unresolved target states neither source_entity_id nor native_ref"
+                    ),
+                );
+            }
+            if binding.target.path.is_some() || binding.target.state.is_some() {
+                error(
+                    findings,
+                    owner,
+                    format_args!("an unresolved target states a path or a state"),
+                );
+            }
+        }
     }
     for attribute in &ir.model.attributes {
         let owner = attribute.id.as_str();

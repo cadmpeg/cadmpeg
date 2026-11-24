@@ -627,7 +627,6 @@ pub(super) fn check_references(
                 }
                 Some(_) => {}
             },
-            AppearanceTarget::Source { .. } => {}
             _ => {}
         }
     }

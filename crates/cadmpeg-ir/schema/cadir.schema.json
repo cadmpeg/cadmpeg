@@ -1951,31 +1951,17 @@
           ]
         },
         {
-          "description": "Native presentation carrier without a neutral geometry arena.",
+          "description": "An object the source assigns the appearance to that the decoder did\nnot join to a record of the document. The binding's\n`source_entity_id` or `native_ref` states what the decoder read of it.",
           "type": "object",
           "properties": {
             "kind": {
               "type": "string",
-              "const": "source"
-            },
-            "value": {
-              "type": "object",
-              "properties": {
-                "source_id": {
-                  "description": "Native source entity identity.",
-                  "type": "string"
-                }
-              },
-              "additionalProperties": false,
-              "required": [
-                "source_id"
-              ]
+              "const": "unresolved"
             }
           },
           "additionalProperties": false,
           "required": [
-            "kind",
-            "value"
+            "kind"
           ]
         }
       ]
