@@ -24,7 +24,7 @@ fn native_unknown_admission_matches_product_projection_without_mutation() {
             .namespace_mut(crate::design::names::CodecId::new(format).expect("a codec id"))
             .arenas_mut()
             .insert(
-                arena.into(),
+                cadmpeg_core::text::NonBlankString::new(arena).expect("an arena name"),
                 vec![crate::NativeRecord::new(
                     id.as_str().try_into().unwrap(),
                     serde_json::Map::new(),
@@ -203,7 +203,7 @@ fn native_unknown_annotation_collision_preserves_first_native_arena() {
             .namespace_mut(crate::design::names::CodecId::new(native_format).expect("a codec id"))
             .arenas_mut()
             .insert(
-                "records".into(),
+                cadmpeg_core::nonblank_literal!("records"),
                 vec![crate::NativeRecord::new(
                     id.try_into().unwrap(),
                     serde_json::Map::from_iter([(

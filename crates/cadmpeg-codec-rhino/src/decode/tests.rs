@@ -1138,7 +1138,7 @@ fn candidate_rejection_restores_native_records_annotations_and_all_model_arenas(
                     .namespace_mut(cadmpeg_ir::codec_id!("rhino"))
                     .arenas_mut()
                     .insert(
-                        "history_records".into(),
+                        cadmpeg_core::nonblank_literal!("history_records"),
                         vec![NativeRecord::new(
                             cadmpeg_ir::ids::Identity::new("rhino:history:record#rejected")
                                 .expect("valid identity"),

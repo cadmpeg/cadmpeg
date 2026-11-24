@@ -487,6 +487,7 @@ fn binding(
         id: id("appearance-binding", key),
         target,
         appearance: id("appearance", appearance),
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,

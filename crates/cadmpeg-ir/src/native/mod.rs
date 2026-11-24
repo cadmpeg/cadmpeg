@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
-use cadmpeg_core::text::CodecId;
+use cadmpeg_core::text::{CodecId, NonBlankString};
 use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::{JsonSchema, Schema, SchemaGenerator};
@@ -180,6 +180,9 @@ pub enum NativeConvertError {
         #[source]
         source: Box<NativeConvertError>,
     },
+    /// An arena name holds no character that is not white space.
+    #[error("native arena name {0:?} is blank")]
+    BlankArena(String),
     /// A named arena contains a refused record.
     #[error("native arena {arena}: {source}")]
     Arena {
@@ -880,6 +883,11 @@ where
     Ok(converted)
 }
 
+/// The arena key `name` spells, refused when it is blank.
+fn arena_name(name: &str) -> Result<NonBlankString, NativeConvertError> {
+    NonBlankString::new(name).ok_or_else(|| NativeConvertError::BlankArena(name.to_owned()))
+}
+
 /// Source-format arena collection.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -887,7 +895,7 @@ where
 pub struct NativeNamespace {
     /// Record arenas keyed by stable arena name.
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    arenas: BTreeMap<String, Vec<NativeRecord>>,
+    arenas: BTreeMap<NonBlankString, Vec<NativeRecord>>,
 }
 
 impl NativeNamespace {
@@ -901,12 +909,12 @@ impl NativeNamespace {
 
     /// Return the record arenas keyed by stable arena name.
     #[must_use]
-    pub fn arenas(&self) -> &BTreeMap<String, Vec<NativeRecord>> {
+    pub fn arenas(&self) -> &BTreeMap<NonBlankString, Vec<NativeRecord>> {
         &self.arenas
     }
 
     /// Return the record arenas for modification.
-    pub fn arenas_mut(&mut self) -> &mut BTreeMap<String, Vec<NativeRecord>> {
+    pub fn arenas_mut(&mut self) -> &mut BTreeMap<NonBlankString, Vec<NativeRecord>> {
         &mut self.arenas
     }
 
@@ -931,7 +939,7 @@ impl NativeNamespace {
         name: impl AsRef<str>,
         records: I,
     ) -> Result<(), NativeConvertError> {
-        let name = name.as_ref().to_owned();
+        let name = arena_name(name.as_ref())?;
 
         let converted = match arena_from(ctx, records.into_iter().map(Ok::<T, NativeConvertError>))
         {
@@ -939,7 +947,7 @@ impl NativeNamespace {
             Err(source) if source.resource_limit().is_some() => return Err(source),
             Err(source) => {
                 return Err(NativeConvertError::Arena {
-                    arena: name,
+                    arena: name.into_string(),
                     source: Box::new(source),
                 });
             }
@@ -951,9 +959,15 @@ impl NativeNamespace {
 
     /// Replace an arena with pre-built canonical [`NativeRecord`]s, sorted in
     /// canonical identity order (preserving input order for equal identities).
-    pub fn set_arena_records(&mut self, name: impl AsRef<str>, mut records: Vec<NativeRecord>) {
+    pub fn set_arena_records(
+        &mut self,
+        name: impl AsRef<str>,
+        mut records: Vec<NativeRecord>,
+    ) -> Result<(), NativeConvertError> {
+        let name = arena_name(name.as_ref())?;
         records.sort_by(|left, right| left.id().cmp(right.id()));
-        self.arenas.insert(name.as_ref().to_owned(), records);
+        self.arenas.insert(name, records);
+        Ok(())
     }
 
     /// Admit an arena through a codec-owned collection constructor.
@@ -998,7 +1012,7 @@ impl NativeNamespace {
         let mut typed = Vec::new();
         if let Some((arena, records)) = self.arenas.get_key_value(name) {
             for record in records {
-                typed.push(read_record(ctx, arena, record)?);
+                typed.push(read_record(ctx, arena.as_str(), record)?);
             }
         }
         Ok(typed)
@@ -1022,7 +1036,7 @@ impl NativeNamespace {
                     let arena = cadmpeg_core::decode::DecodeArena::new();
                     let policy = cadmpeg_core::decode::DecodePolicy::default();
                     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-                    read_record(&ctx, name, record)
+                    read_record(&ctx, name.as_str(), record)
                 })
             })
     }
@@ -1039,7 +1053,7 @@ impl NativeNamespace {
             .flat_map(move |(arena, records)| {
                 records
                     .iter()
-                    .map(move |record| read_record(ctx, arena, record))
+                    .map(move |record| read_record(ctx, arena.as_str(), record))
             })
     }
 
@@ -1062,7 +1076,7 @@ impl NativeNamespace {
             .flat_map(move |(arena, records)| {
                 records
                     .iter()
-                    .map(move |record| read_record_fast(ctx, arena, record, fast))
+                    .map(move |record| read_record_fast(ctx, arena.as_str(), record, fast))
             })
     }
 }
@@ -1132,7 +1146,7 @@ impl Native {
                     let count = NonZeroUsize::new(records.len())?;
                     Some(LossCount {
                         format: format.to_string(),
-                        kind: kind.clone(),
+                        kind: kind.as_str().to_owned(),
                         count,
                     })
                 })

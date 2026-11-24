@@ -502,7 +502,7 @@ mod tests {
         let native_id = "test:fixture:native#0";
         let mut namespace = NativeNamespace::default();
         namespace.arenas_mut().insert(
-            "records".into(),
+            cadmpeg_core::nonblank_literal!("records"),
             vec![NativeRecord::new(
                 crate::ids::Identity::new(native_id).expect("valid identity"),
                 Map::new(),
@@ -559,9 +559,10 @@ mod tests {
             None,
         ));
         let mut namespace = NativeNamespace::default();
-        namespace
-            .arenas_mut()
-            .insert("records".into(), vec![native_record(native_id)]);
+        namespace.arenas_mut().insert(
+            cadmpeg_core::nonblank_literal!("records"),
+            vec![native_record(native_id)],
+        );
         ir.native.0.insert(crate::codec_id!("test"), namespace);
 
         let index = ModelIndex::with_additional_native_identities(&ir, [staged_id, native_id]);

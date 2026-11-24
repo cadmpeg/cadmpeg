@@ -95,7 +95,7 @@ fn a_datum_link_native_ref_resolves() {
         .namespace_mut(crate::codec_id!("sldprt"))
         .arenas_mut()
         .insert(
-            "records".into(),
+            cadmpeg_core::nonblank_literal!("records"),
             [record, link]
                 .into_iter()
                 .map(|id| NativeRecord::new(Identity::new(id).unwrap(), Map::new()).unwrap())

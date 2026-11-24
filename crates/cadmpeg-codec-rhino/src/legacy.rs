@@ -2951,7 +2951,11 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 Ok(mesh) => {
                     ctx.charge_entities(1, "Rhino V1 mesh")?;
 
-                    ir.model.tessellations.push(mesh);
+                    ir.model.tessellations.push(mesh.with_of(
+                        cadmpeg_ir::tessellation::Meshed::definition(
+                            crate::product::root_definition_id(),
+                        ),
+                    ));
                     push_v1_record(
                         ctx,
                         &mut typed_source_records,
