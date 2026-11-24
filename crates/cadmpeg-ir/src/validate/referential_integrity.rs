@@ -10,16 +10,6 @@ use crate::report::{
 };
 use crate::schema::{ArenaRecord, EntitySchema};
 
-/// The names of the id types of the records of the arenas the CADIR wire
-/// omits ([`crate::document::ArenaName::WIRE_OMITTED`]). Each name is a type
-/// in scope, so a renamed type fails to compile.
-macro_rules! id_type_names {
-    ($($id:ident),* $(,)?) => {{
-        $(let _: Option<$id> = None;)*
-        [$(stringify!($id)),*]
-    }};
-}
-
 /// Whether a reference of the visited id type can name a record of an arena
 /// the CADIR wire omits.
 fn targets_omitted_arena() -> bool {
@@ -30,21 +20,22 @@ fn targets_omitted_arena() -> bool {
         SketchConstraintId, SketchEntityId, SketchId, SpatialSketchEntityId, SpatialSketchId,
     };
     use crate::spreadsheets::SpreadsheetId;
-    let omitted = id_type_names!(
-        FeatureId,
-        FeatureInputTopologyId,
-        FeatureResultTopologyId,
-        ConfigurationId,
-        ParameterId,
-        SketchId,
-        SketchEntityId,
-        SketchConstraintId,
-        SpatialSketchId,
-        SpatialSketchEntityId,
-        SpreadsheetId,
-        JointId,
-        HistoryBodyId,
-    );
+    use std::any::type_name;
+    let omitted = [
+        type_name::<FeatureId>(),
+        type_name::<FeatureInputTopologyId>(),
+        type_name::<FeatureResultTopologyId>(),
+        type_name::<ConfigurationId>(),
+        type_name::<ParameterId>(),
+        type_name::<SketchId>(),
+        type_name::<SketchEntityId>(),
+        type_name::<SketchConstraintId>(),
+        type_name::<SpatialSketchId>(),
+        type_name::<SpatialSketchEntityId>(),
+        type_name::<SpreadsheetId>(),
+        type_name::<JointId>(),
+        type_name::<HistoryBodyId>(),
+    ];
     crate::schema::rewrite::typed::visited_id_type()
         .is_some_and(|id_type| omitted.contains(&id_type))
 }

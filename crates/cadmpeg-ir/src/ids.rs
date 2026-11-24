@@ -1285,7 +1285,7 @@ macro_rules! id_type {
             }
 
             fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
-                $crate::schema::rewrite::typed::visiting_id_type(stringify!($name), || {
+                $crate::schema::rewrite::typed::visiting_id_type(std::any::type_name::<Self>(), || {
                     $crate::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.0, ctx, visitor)
                 })
             }

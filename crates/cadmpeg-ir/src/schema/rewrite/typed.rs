@@ -32,7 +32,7 @@ pub(crate) fn visiting_id_type<R>(id_type: &'static str, visit: impl FnOnce() ->
     visit()
 }
 
-/// The name of the id type whose reference a visitor of
+/// The [`std::any::type_name`] of the id type whose reference a visitor of
 /// [`RewriteIdentities::visit_identity_references`] is being handed, where a
 /// typed id hands it.
 pub(crate) fn visited_id_type() -> Option<&'static str> {
