@@ -1,6 +1,6 @@
 ### Breaking
 
-- No tool converts a CADIR 10 document to CADIR 11: keep the source CAD files and decode them again. [Upgrading from CADIR 10](https://github.com/cadmpeg/cadmpeg/blob/main/docs/upgrading-to-cadir-11.md) lists the layout changes and the new arena paths.
+- No tool converts a CADIR 10 document to CADIR 11: keep the source CAD files. [Upgrading from CADIR 10](https://github.com/cadmpeg/cadmpeg/blob/main/docs/upgrading-to-cadir-11.md) lists the layout changes and the new arena paths.
 - A CADIR 11 document holds its topology under `geometry` and its feature history under `design`: `.model.faces` is `.geometry.faces`, and `.model.features` is `.design.features`. `cadmpeg query` names the arenas the same way. `scope` replaces `decode_depth`.
 - A SolidWorks or Fusion write of a document read from a `.cadir.json` writes an unedited document from its retained source and refuses an edited one.
 - Keep the `.fidelity.json` decode sidecar beside its `.cadir.json`. A FreeCAD or SolidWorks write reads it to find the edited records, and reports `export:edit.unverified` without it.
