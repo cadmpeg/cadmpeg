@@ -9,10 +9,12 @@ use cadmpeg_ir::{
     geometry::{CurveGeometry, SolvedCurveGeometry},
     report::loss::LossNote,
     schema::EntityKind,
+    source_fidelity::CodecDigests,
     CadIr,
 };
 
-pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
+/// `digests` are the codec digests the decode recorded.
+pub(super) fn losses(ir: &CadIr, digests: &CodecDigests, regenerated_brep: bool) -> Vec<LossNote> {
     let unwritten_bindings = if regenerated_brep {
         super::face_colors_and_unwritten_bindings(ir).1
     } else {
@@ -100,11 +102,11 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
         "attribute outside the sldprt namespace",
     );
     charge(
-        crate::resolved_features::write_prepare::omitted_driven_dimensions(ir),
+        crate::resolved_features::write_prepare::omitted_driven_dimensions(ir, digests),
         SldprtLossCode::WriterDrivenDimensionsOmitted,
         "driven (reference) sketch dimension",
     );
-    let omitted = crate::resolved_features::write_prepare::omitted_driven_parameters(ir);
+    let omitted = crate::resolved_features::write_prepare::omitted_driven_parameters(ir, digests);
     charge(
         ir.model
             .parameters
@@ -117,7 +119,7 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
     // A write that reduces a foreign history writes every expression with its
     // value, or leaves out one with no value, and names it there
     // (`history_drop`).
-    let readers = (!super::history_drop::HistoryDrop::applies(ir)).then(|| {
+    let readers = (!super::history_drop::HistoryDrop::applies(digests)).then(|| {
         crate::history::write::parameters::omitted_readers(&ir.model.parameters, &omitted)
     });
     let bound = ir
@@ -148,7 +150,7 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
         ir.model
             .tessellations
             .iter()
-            .filter(|mesh| mesh.body.is_some())
+            .filter(|mesh| mesh.of.body().is_some())
             .count(),
         SldprtLossCode::WriterTessellationMetadataOmitted,
         "tessellation body binding",
@@ -157,7 +159,7 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
         ir.model
             .tessellations
             .iter()
-            .map(|mesh| mesh.faces.len())
+            .map(|mesh| mesh.of.faces().len())
             .sum(),
         SldprtLossCode::WriterTessellationMetadataOmitted,
         "tessellation face binding",

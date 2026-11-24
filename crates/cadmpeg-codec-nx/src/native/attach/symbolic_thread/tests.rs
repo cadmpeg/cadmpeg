@@ -104,12 +104,9 @@ fn fixture(cylinders: &[(&str, &str, f64)]) -> CadIr {
             ir.geometry
                 .shells
                 .push(Shell::new(shell.clone(), region.clone()));
-            ir.geometry.regions.push(Region {
-                id: region.clone(),
-                body: body.clone(),
-                shells: vec![shell],
-                native_ref: None,
-            });
+            ir.geometry
+                .regions
+                .push(Region::new(region.clone(), body.clone(), vec![shell]));
             ir.geometry.bodies.push(Body {
                 id: body,
                 kind: BodyKind::Sheet,
@@ -118,6 +115,7 @@ fn fixture(cylinders: &[(&str, &str, f64)]) -> CadIr {
                 color: None,
                 visible: None,
                 native_ref: None,
+                unstated: None,
             });
         }
     }

@@ -15,7 +15,7 @@
 //! unless it is one reference to an integer parameter.
 
 use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
-use cadmpeg_ir::design::expr::{BinaryOp, Function, Node, UnaryOp};
+use cadmpeg_ir::design::expr::{AddOp, Function, MulOp, Node, UnaryOp};
 use cadmpeg_ir::design::parameter::DesignParameter;
 use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
 
@@ -308,11 +308,7 @@ impl Typing<'_> {
                 if self.is_global(*index) {
                     return Some(match self.blind(place)? {
                         Blind::Unit(unit) => (
-                            Node::Binary {
-                                op: BinaryOp::Multiply,
-                                left: Box::new(reference),
-                                right: Box::new(number_node(1.0, Some(unit))?),
-                            },
+                            Node::mul(reference, MulOp::Multiply, number_node(1.0, Some(unit))?),
                             place,
                         ),
                         Blind::Dimensionless => (reference, Quantity::REAL),
@@ -355,35 +351,21 @@ impl Typing<'_> {
                     return None;
                 }
                 let op = if *operator == b'+' {
-                    BinaryOp::Add
+                    AddOp::Add
                 } else {
-                    BinaryOp::Subtract
+                    AddOp::Subtract
                 };
-                Some((
-                    Node::Binary {
-                        op,
-                        left: Box::new(left),
-                        right: Box::new(right),
-                    },
-                    shared,
-                ))
+                Some((Node::add(left, op, right), shared))
             }
             Ast::Binary(operator, left, right) => {
                 let (left, first) = self.node(left, None, false)?;
                 let (right, second) = self.node(right, None, false)?;
                 let (op, sign) = if *operator == b'*' {
-                    (BinaryOp::Multiply, 1)
+                    (MulOp::Multiply, 1)
                 } else {
-                    (BinaryOp::Divide, -1)
+                    (MulOp::Divide, -1)
                 };
-                Some((
-                    Node::Binary {
-                        op,
-                        left: Box::new(left),
-                        right: Box::new(right),
-                    },
-                    combined(first, second, sign)?,
-                ))
+                Some((Node::mul(left, op, right), combined(first, second, sign)?))
             }
         }
     }

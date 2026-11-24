@@ -35,13 +35,13 @@ fn bounded_plane_builds_a_sheet_face_in_v4_and_v5() {
             .find(|face| face.id.as_str() == "iges:model:face#bounded-plane-D1")
             .unwrap();
         assert_eq!(face.surface.as_str(), "iges:model:surface#D1");
-        assert_eq!(face.loops.len(), 1);
+        assert_eq!(face.loops.stated().count(), 1);
         let loop_ = result
             .ir()
             .geometry
             .loops
             .iter()
-            .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
+            .find(|loop_| Some(&loop_.id) == face.loops.stated().next())
             .unwrap();
         assert_eq!(
             result
@@ -119,7 +119,7 @@ fn bounded_plane_accepts_a_simple_piecewise_linear_nurbs_boundary() {
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#bounded-plane-D1")
         .expect("piecewise-linear NURBS boundary face");
-    assert_eq!(face.loops.len(), 1);
+    assert_eq!(face.loops.stated().count(), 1);
     assert!(
         !has_entity_projection_loss(&result),
         "{:#?}",
@@ -231,7 +231,7 @@ fn bounded_plane_accepts_a_simple_composite_line_boundary() {
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#bounded-plane-D1")
         .expect("composite line boundary face");
-    assert_eq!(face.loops.len(), 1);
+    assert_eq!(face.loops.stated().count(), 1);
     assert!(
         !has_entity_projection_loss(&result),
         "{:#?}",

@@ -2162,3 +2162,11 @@ A TechDraw annotation's `TextSize` has physical millimetre units with the
 `App::PropertyLength` carrier. A positive value gives `text_style.height`.
 Its `App::PropertyFont` `Font` string gives `text_style.font_family` with that
 height. GUI point and pixel sizes are distinct from physical em height.
+
+## 13. Codec digests
+
+The `SourceFidelity.codec_digests` of a `Full` FCStd decode (CADIR §3.1, Rule B) holds one SHA-256 digest. It covers the records outside the `entries`, `extensions`, `objects`, and `properties` native arenas, whose content the archive entries store directly.
+
+| Key | Records |
+| --- | --- |
+| `fcstd_uncarried_local_sha256` | Every neutral record, the source metadata, and every native record outside the `entries`, `extensions`, `objects`, and `properties` arenas, without `scope`. |

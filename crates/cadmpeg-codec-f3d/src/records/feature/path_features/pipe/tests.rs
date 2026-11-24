@@ -51,7 +51,9 @@ fn pipe_native_admits_known_roles_and_keeps_role8() {
                 );
             }
             let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-            native.store(&ctx, ir.native.namespace_mut("f3d")).unwrap();
+            native
+                .store(&ctx, ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")))
+                .unwrap();
             let findings = crate::validate::validate_native(&ctx, &ir).unwrap();
             assert!(!findings.iter().any(|finding| finding.message
                 == "Fusion Design path-feature operand roles conflict with its construction"));

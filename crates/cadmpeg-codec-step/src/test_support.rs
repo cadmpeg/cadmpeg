@@ -43,3 +43,23 @@ pub(crate) fn lex(
 }
 
 pub(crate) mod pmi_limits;
+
+/// The `name` attribute the decoder states for the carrier `id`.
+pub(crate) fn carrier_name<'a>(ir: &'a cadmpeg_ir::document::CadIr, id: &str) -> Option<&'a str> {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+    ir.model.attributes.iter().find_map(|attribute| {
+        let target = match &attribute.target.entity {
+            AttributeTarget::Curve(curve) => curve.as_str(),
+            AttributeTarget::Point(point) => point.as_str(),
+            AttributeTarget::Surface(surface) => surface.as_str(),
+            _ => return None,
+        };
+        if attribute.name != "name" || target != id {
+            return None;
+        }
+        match attribute.values.as_slice() {
+            [Some(AttributeValue::String(name))] => Some(name.as_str()),
+            _ => None,
+        }
+    })
+}

@@ -20,7 +20,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{native_records_omitted, output_empty, record_invalid};
+use cadmpeg_ir::codec::write::{
+    native_records_omitted, output_empty, partial_topology_omitted, record_invalid,
+};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::decode::curve_point_solved;
@@ -39,7 +41,7 @@ use cadmpeg_ir::topology::{
     BodyKind, Color, EdgeCarrier, EdgeEnds, FaceLoops, LoopBoundary, Point, Sense, Shell,
     ShellMember, Vertex,
 };
-use cadmpeg_ir::units::coincidence_allowance;
+use cadmpeg_ir::units::binding_allowance;
 use serde_json::Value;
 
 use crate::loss::F3dLossCode;
@@ -258,6 +260,7 @@ impl<'a> Reduction<'a> {
     /// Remove every item the generator has no form for. Idempotent: it runs
     /// again after each fallback.
     pub(super) fn prepare(&mut self) -> Result<(), CodecError> {
+        self.omit_partial_bodies()?;
         self.drop_unwritten_native();
         if !self.writes_design() {
             self.drop_design_only_arenas();
@@ -599,7 +602,7 @@ impl<'a> Reduction<'a> {
                 };
                 ends.start == ends.end
                     && position.distance(*point)
-                        <= coincidence_allowance(
+                        <= binding_allowance(
                             linear,
                             &[
                                 edge.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get),
@@ -694,7 +697,7 @@ impl<'a> Reduction<'a> {
                     .and_then(|construction| construction.cache_fit_tolerance())
                     .map(FitTolerance::get);
                 let edge_tolerance = edge.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get);
-                let allowance = coincidence_allowance(
+                let allowance = binding_allowance(
                     linear,
                     &[edge_tolerance, start_tolerance, end_tolerance, fit],
                 );
@@ -884,7 +887,7 @@ impl<'a> Reduction<'a> {
                             "vertex {vertex} lies {distance:.6} mm off its curve"
                         ));
                     } else if within
-                        && distance > coincidence_allowance(linear, &[edge_tolerance, own, fit])
+                        && distance > binding_allowance(linear, &[edge_tolerance, own, fit])
                     {
                         let raised = tolerant.entry(vertex).or_insert(distance);
                         if distance > *raised {
@@ -1004,6 +1007,38 @@ impl<'a> Reduction<'a> {
         })
     }
 
+    /// A body that does not state every region, shell, face, or loop is not
+    /// written: F3D's body records hold no partial form (§3.4, Content the
+    /// target cannot hold).
+    fn omit_partial_bodies(&mut self) -> Result<(), CodecError> {
+        let geometry = &self.ir.geometry;
+        let lists = geometry.child_lists();
+        let (partial, kept): (Vec<_>, Vec<_>) = geometry.bodies.iter().partition(|body| {
+            lists.complete_body_regions(&body.id).is_none_or(|regions| {
+                regions
+                    .iter()
+                    .any(|region| lists.complete_shells(region).is_none())
+            })
+        });
+        if partial.is_empty() {
+            return Ok(());
+        }
+        let losses = partial_topology_omitted("F3D", geometry, "the body is not written");
+        let kept = kept
+            .into_iter()
+            .map(|body| body.id.to_string())
+            .collect::<Vec<_>>();
+        let kept = kept.iter().map(String::as_str).collect::<BTreeSet<_>>();
+        let unreachable = retain_bodies(self.ir.to_mut(), &kept)?;
+        self.losses.extend(losses);
+        self.charge_removed(
+            &unreachable,
+            &BTreeSet::new(),
+            "their bodies do not state every region, shell, face, or loop",
+        );
+        Ok(())
+    }
+
     /// A loop that is one vertex at a surface singularity has no ASM record:
     /// the face's surface states the pole. Each such loop that is not a face's
     /// classified outer loop is dropped, with its vertex where nothing else
@@ -1015,7 +1050,10 @@ impl<'a> Reduction<'a> {
             .iter()
             .filter_map(|face| match &face.loops {
                 FaceLoops::Classified { outer, .. } => Some(outer.as_str()),
-                FaceLoops::Unspecified { .. } => None,
+                FaceLoops::PartialClassified { outer, .. } => {
+                    outer.as_ref().map(cadmpeg_ir::ids::LoopId::as_str)
+                }
+                FaceLoops::Unspecified { .. } | FaceLoops::PartialUnspecified { .. } => None,
             })
             .collect::<HashSet<_>>();
         let poles = geometry
@@ -1033,8 +1071,13 @@ impl<'a> Reduction<'a> {
         let geometry = &mut self.ir.to_mut().geometry;
         for face in &mut geometry.faces {
             match &mut face.loops {
-                FaceLoops::Unspecified { loops } => loops.retain(|id| !poles.contains(id)),
-                FaceLoops::Classified { inner, .. } => inner.retain(|id| !poles.contains(id)),
+                FaceLoops::Unspecified { loops } | FaceLoops::PartialUnspecified { loops } => {
+                    loops.retain(|id| !poles.contains(id));
+                }
+                FaceLoops::Classified { inner, .. }
+                | FaceLoops::PartialClassified { inner, .. } => {
+                    inner.retain(|id| !poles.contains(id));
+                }
             }
         }
         geometry.loops.retain(|row| !poles.contains(&row.id));
@@ -1214,7 +1257,7 @@ impl<'a> Reduction<'a> {
                     .faces
                     .iter()
                     .filter(|face| faces.contains(face.id.as_str()))
-                    .flat_map(|face| face.loops.iter())
+                    .flat_map(|face| face.loops.stated())
                     .map(ToString::to_string),
             )
             .collect::<HashSet<_>>();
@@ -1296,11 +1339,9 @@ impl<'a> Reduction<'a> {
             .retain(|shell| !empty_shells.contains(shell.id.as_str()));
         let mut empty_regions = HashSet::new();
         for region in &mut geometry.regions {
-            let before = region.shells.len();
-            region
-                .shells
-                .retain(|shell| !empty_shells.contains(shell.as_str()));
-            if region.shells.is_empty() && before != 0 {
+            let before = region.stated_shells().count();
+            region.retain_stated_shells(|shell| !empty_shells.contains(shell.as_str()));
+            if region.stated_shells().next().is_none() && before != 0 {
                 empty_regions.insert(region.id.to_string());
             }
         }
@@ -1880,8 +1921,17 @@ fn omit_vertex_free_edge(geometry: &mut cadmpeg_ir::document::Topology, edge: &E
     let coedge_ids = coedge_ids.into_iter().cloned().collect::<HashSet<_>>();
     for face in &mut geometry.faces {
         match &mut face.loops {
-            FaceLoops::Unspecified { loops: members } => members.retain(|id| !loops.contains(id)),
+            FaceLoops::Unspecified { loops: members }
+            | FaceLoops::PartialUnspecified { loops: members } => {
+                members.retain(|id| !loops.contains(id));
+            }
             FaceLoops::Classified { inner, .. } => inner.retain(|id| !loops.contains(id)),
+            FaceLoops::PartialClassified { outer, inner } => {
+                inner.retain(|id| !loops.contains(id));
+                if outer.as_ref().is_some_and(|id| loops.contains(id)) {
+                    *outer = None;
+                }
+            }
         }
     }
     for shell in &mut geometry.shells {
@@ -1968,7 +2018,7 @@ fn unwritable_faces(ir: &CadIr) -> BTreeMap<String, Vec<(String, String)>> {
             Some(format!("surface {}", face.surface))
         } else {
             face.loops
-                .iter()
+                .stated()
                 .filter_map(|id| loops.get(id.as_str()))
                 .flat_map(|row| row.coedges())
                 .filter_map(|coedge| coedge_edges.get(coedge.as_str()))
@@ -2046,7 +2096,7 @@ fn split_disconnected_shells(
         for (local, &index) in members.iter().enumerate() {
             for row in geometry.faces[index]
                 .loops
-                .iter()
+                .stated()
                 .filter_map(|id| loops.get(id.as_str()))
             {
                 let mut incidences = row
@@ -2112,12 +2162,7 @@ fn split_disconnected_shells(
     }
     for (id, region, after) in created {
         if let Some(row) = geometry.regions.iter_mut().find(|row| row.id == region) {
-            let at = row
-                .shells
-                .iter()
-                .position(|shell| *shell == after)
-                .map_or(row.shells.len(), |position| position + 1);
-            row.shells.insert(at, id.clone());
+            row.insert_shell_after(&after, id.clone());
         }
         geometry.shells.push(Shell::new(id, region));
     }

@@ -261,7 +261,11 @@ fn normal_and_split_edges_keep_the_coedge_interval_until_spline_emission() {
         let mut builder =
             super::super::Builder::new(&ir, crate::StepSchema::Ap214, HashSet::new()).unwrap();
         if split {
-            builder.split_non_manifold_edges(&ir.geometry.regions[0].shells);
+            let shells = ir
+                .geometry
+                .complete_shells(&ir.geometry.regions[0])
+                .expect("a complete region");
+            builder.split_non_manifold_edges(shells);
         }
         for coedge in ir
             .geometry

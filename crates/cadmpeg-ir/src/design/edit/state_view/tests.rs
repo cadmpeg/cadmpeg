@@ -46,6 +46,7 @@ fn name(text: &str) -> NameEntry {
 
 fn body(key: u32) -> Body {
     Body {
+        unstated: None,
         id: id("body", key),
         kind: BodyKind::Solid,
         transform: None,
@@ -74,12 +75,9 @@ fn evaluation(key: u32, base: StateBase) -> Evaluation {
 fn current_document() -> CadIr {
     let mut ir = CadIr::empty();
     ir.geometry.bodies = vec![body(1), body(9)];
-    ir.geometry.regions.push(Region {
-        id: id("region", 1),
-        body: id("body", 1),
-        shells: Vec::new(),
-        native_ref: None,
-    });
+    ir.geometry
+        .regions
+        .push(Region::new(id("region", 1), id("body", 1), Vec::new()));
     ir.design.names = BTreeMap::from([
         (EntityRef::Body(id("body", 1)), name("one")),
         (EntityRef::Body(id("body", 9)), name("nine")),

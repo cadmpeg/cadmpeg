@@ -61,23 +61,45 @@ enum CanonicalTimeUnitWire {
     Second,
 }
 
-/// Maximum distance, in the document's length unit, between an evaluated
-/// carrier point and the vertex position it must coincide with. Exact carriers
-/// agree to rational-weight rounding (well under `1e-3` mm); real mismatches
-/// from decoder defects start orders of magnitude above this bound. A decoder
-/// that binds a carrier to topology applies the same bound, so a binding it
-/// accepts is one the topology contract also accepts.
+/// The least distance, in the document's length unit, within which a decoder
+/// binds a carrier to topology. Exact carriers agree to rational-weight rounding
+/// (well under `1e-3` mm); real mismatches from decoder defects start orders
+/// of magnitude above this bound. A decoder that binds a carrier to topology
+/// applies the same bound, so a binding it accepts is one the topology
+/// contract also accepts.
 pub const COINCIDENCE_TOLERANCE: f64 = 0.01;
 
-/// The distance within which positions the model makes coincide agree: the
-/// largest of [`COINCIDENCE_TOLERANCE`], the document's `linear` tolerance and
-/// the declared `tolerances` (edge, vertex, face, cache fit) that apply there.
-/// Validation and every writer that decides whether its output meets that
-/// check use this one bound, so the two cannot disagree.
-pub fn coincidence_allowance(
+/// The rounding that binary64 evaluation leaves on a position, as a share of
+/// the largest magnitude that enters the evaluation: 2⁻⁴⁴.
+pub const EVALUATION_RESOLUTION: f64 = 5.684_341_886_080_802e-14;
+
+/// The tolerance in force where a rule compares positions of faces, edges,
+/// and vertices: the largest of their `tolerances`, each that states none
+/// taking `linear`, and `linear` where the rule compares none.
+pub fn tolerance_in_force(
     linear: crate::scalar::PositiveLength,
     tolerances: &[Option<f64>],
 ) -> f64 {
+    tolerances
+        .iter()
+        .map(|tolerance| tolerance.unwrap_or(linear.get()))
+        .reduce(f64::max)
+        .unwrap_or(linear.get())
+}
+
+/// The coincidence allowance of part 10: the tolerance in force, plus the
+/// fit tolerance of each stored approximation the two positions are
+/// evaluated through, plus the [`EVALUATION_RESOLUTION`] of `magnitude`, the
+/// largest magnitude that enters their evaluation.
+pub fn coincidence_allowance(in_force: f64, fits: &[Option<f64>], magnitude: f64) -> f64 {
+    in_force + fits.iter().flatten().sum::<f64>() + EVALUATION_RESOLUTION * magnitude
+}
+
+/// The distance within which a decoder binds a carrier to topology, and a
+/// writer takes positions as coincident: the largest of
+/// [`COINCIDENCE_TOLERANCE`], the document's `linear` tolerance, and the
+/// declared `tolerances` (edge, vertex, face, cache fit) that apply there.
+pub fn binding_allowance(linear: crate::scalar::PositiveLength, tolerances: &[Option<f64>]) -> f64 {
     tolerances
         .iter()
         .flatten()
@@ -86,7 +108,7 @@ pub fn coincidence_allowance(
 }
 
 /// An array of finite coordinates.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, cadmpeg_derive::StructuralOrd)]
 pub struct FiniteVector<const N: usize>([f64; N]);
 
 impl<const N: usize> FiniteVector<N> {
@@ -215,13 +237,16 @@ impl<const N: usize> NonzeroVector<N> {
 }
 
 macro_rules! vector_wire {
-    ($name:ident, $error:literal) => {
+    ($name:ident, $schema_name:literal, $error:literal) => {
         impl<const N: usize> Serialize for $name<N>
         where
             [f64; N]: Serialize,
         {
+            /// Writes negative zero as zero (§2.5).
             fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-                self.0.serialize(serializer)
+                self.0
+                    .map(|component| component + 0.0)
+                    .serialize(serializer)
             }
         }
         impl<'de, const N: usize> Deserialize<'de> for $name<N>
@@ -229,7 +254,7 @@ macro_rules! vector_wire {
             [f64; N]: Deserialize<'de>,
         {
             fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-                Self::new(<[f64; N]>::deserialize(deserializer)?)
+                Self::new(<[f64; N]>::deserialize(deserializer)?.map(|component| component + 0.0))
                     .ok_or_else(|| serde::de::Error::custom($error))
             }
         }
@@ -239,7 +264,7 @@ macro_rules! vector_wire {
             [f64; N]: JsonSchema,
         {
             fn schema_name() -> std::borrow::Cow<'static, str> {
-                format!("{}{}", stringify!($name), N).into()
+                format!("{}{}", $schema_name, N).into()
             }
             fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
                 <[f64; N]>::json_schema(generator)
@@ -248,9 +273,15 @@ macro_rules! vector_wire {
     };
 }
 
-vector_wire!(FiniteVector, "coordinates must be finite");
+// `FiniteVector3` names the finite displacement of `features::geometry`.
+vector_wire!(
+    FiniteVector,
+    "FiniteCoordinates",
+    "coordinates must be finite"
+);
 vector_wire!(
     NonzeroVector,
+    "NonzeroVector",
     "coordinates must be finite with squared norm greater than epsilon"
 );
 
@@ -394,7 +425,7 @@ impl SumSquaresUnitVector3 {
 }
 
 /// A direction with unit length within the analytic frame tolerance.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "Vector3", into = "Vector3")]
 pub struct UnitVector3(Vector3);
@@ -677,7 +708,7 @@ impl From<UnitVector3> for Vector3 {
 }
 
 /// A finite direction whose Euclidean length exceeds machine epsilon.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::StructuralOrd)]
 #[serde(transparent)]
 pub struct DirectionAboveEpsilon(FiniteVector3);
 
@@ -1115,7 +1146,7 @@ impl Transform {
 }
 
 /// A parameter-space point with finite coordinates.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "Point2", into = "Point2")]
 pub struct FinitePoint2(Point2);
@@ -1191,7 +1222,7 @@ impl PartialEq<Point2> for FinitePoint2 {
 }
 
 /// A finite parameter-space direction whose squared norm exceeds machine epsilon.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "Point2", into = "Point2")]
 pub struct NonzeroPoint2(Point2);
@@ -1250,6 +1281,34 @@ mod tests {
     use crate::math::Vector3;
     use crate::scalar::PositiveReal;
     use crate::scalar::{FiniteReal, NonNegativeReal};
+
+    #[test]
+    fn the_tolerance_in_force_takes_linear_for_each_entity_that_states_none() {
+        let linear = crate::scalar::PositiveLength::new(0.02).unwrap();
+        assert_eq!(super::tolerance_in_force(linear, &[]), 0.02);
+        assert_eq!(
+            super::tolerance_in_force(linear, &[Some(0.001), None]),
+            0.02
+        );
+        assert_eq!(
+            super::tolerance_in_force(linear, &[Some(0.001), Some(0.003)]),
+            0.003
+        );
+        assert_eq!(super::tolerance_in_force(linear, &[Some(0.05), None]), 0.05);
+    }
+
+    #[test]
+    fn the_coincidence_allowance_is_the_sum_of_its_three_terms() {
+        assert_eq!(
+            super::coincidence_allowance(0.02, &[Some(0.01), None, Some(0.005)], 0.0),
+            0.035
+        );
+        assert_eq!(
+            super::coincidence_allowance(0.0, &[], 17_592_186_044_416.0),
+            1.0
+        );
+        assert_eq!(super::EVALUATION_RESOLUTION, 2.0_f64.powi(-44));
+    }
 
     #[test]
     fn direction_above_epsilon_refuses_zero_and_normalizes_overflow() {
@@ -1327,6 +1386,28 @@ mod tests {
         assert_eq!(
             FiniteVector::new([-0.0, f64::MAX, 5.0e-324]),
             Some(coordinates)
+        );
+    }
+
+    #[test]
+    fn coordinates_write_and_read_one_zero() {
+        use crate::math::{Point2, Point3};
+
+        let coordinates = FiniteVector::new([-0.0, 1.0]).expect("finite coordinates");
+        assert_eq!(serde_json::to_string(&coordinates).unwrap(), "[0.0,1.0]");
+        let read: FiniteVector<2> = serde_json::from_str("[-0.0,-0]").unwrap();
+        assert_eq!(read.get().map(f64::to_bits), [0, 0]);
+        assert_eq!(
+            serde_json::to_string(&Vector3::new(-0.0, 1.0, -0.0)).unwrap(),
+            r#"{"x":0.0,"y":1.0,"z":0.0}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&Point3::new(-0.0, -0.0, 2.5)).unwrap(),
+            r#"{"x":0.0,"y":0.0,"z":2.5}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&Point2::new(-0.0, -1.0)).unwrap(),
+            r#"{"u":0.0,"v":-1.0}"#
         );
     }
 
@@ -1537,8 +1618,14 @@ mod tests {
             let admitted = NonNegativeReal::new(value).expect("nonnegative");
             let wire = serde_json::to_string(&admitted).expect("serialize");
             let decoded: NonNegativeReal = serde_json::from_str(&wire).expect("deserialize");
-            assert_eq!(decoded.get().to_bits(), value.to_bits());
+            assert_eq!(decoded.get().to_bits(), (value + 0.0).to_bits());
         }
+        let zero: NonNegativeReal = serde_json::from_str("-0.0").expect("a zero");
+        assert_eq!(zero.get().to_bits(), 0);
+        assert_eq!(
+            serde_json::to_string(&FiniteReal::new(-0.0).expect("finite")).expect("serialize"),
+            "0.0"
+        );
         assert!(serde_json::from_str::<PositiveReal>("0").is_err());
         assert!(serde_json::from_str::<NonNegativeReal>("-1").is_err());
     }

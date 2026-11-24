@@ -400,6 +400,7 @@ fn a_configuration_write_with_a_subnormal_marker_goes_on_and_reports_the_point()
 
     let losses = prepare_configurations_for_write(
         &ir,
+        &cadmpeg_ir::source_fidelity::CodecDigests::new(),
         &mut Some(native),
         &cadmpeg_ir::Annotations::default(),
         &mut crate::history::write::edits::SourceEdits::without_source(&ir),

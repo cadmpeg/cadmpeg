@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// A NURBS store admits its knots through [`Self::new`], so a reader holds
 /// the guarantee and the raw values through [`Self::as_slice`] or deref.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::StructuralOrd)]
 #[serde(transparent)]
 pub struct KnotVector(Vec<f64>);
 
@@ -162,7 +162,7 @@ pub(super) fn admit_knots<K: KnotValue>(knots: K, prefix: &str) -> Result<KnotVe
 /// One rational pole in model space: its position and its weight.
 // A source states a raw position; a NURBS store holds the admitted row, whose
 // position is a `FinitePoint3`.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct WeightedPole3<P = Point3> {
@@ -179,7 +179,7 @@ pub struct WeightedPole3<P = Point3> {
 /// exactly one spelling.
 // A source states raw positions; a `NurbsCurve` holds the admitted poles,
 // whose positions are `FinitePoint3` values.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -497,7 +497,7 @@ impl<P: Copy> NurbsPoles3<P> {
 /// ```
 // A source states raw positions; a `NurbsSurface` holds the admitted grid,
 // whose positions are `FinitePoint3` values.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -689,7 +689,7 @@ impl<P: Copy> NurbsPoleGrid<P> {
 /// The control grid is stored as rows: the outer index is u, the inner index
 /// is v, so the grid states both pole counts. `weights == None` denotes a
 /// non-rational surface.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct NurbsSurface {
     /// Degree in the u parametric direction.
@@ -1398,7 +1398,7 @@ pub enum SurfaceParameterAxis {
 }
 
 /// A NURBS curve knot/pole payload.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct NurbsCurve {
     /// Curve degree.

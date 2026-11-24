@@ -462,7 +462,7 @@ fn decode_container<'a>(
         .extend(assembly_projection.definitions);
     ir.model.occurrences = assembly_projection.occurrences;
     ir.model.assembly_joints = assembly_projection.joints;
-    let namespace = ir.native.namespace_mut("inventor");
+    let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("inventor"));
     namespace.set_arena(ctx, "storage_bands", &storage_bands)?;
     namespace.set_arena(ctx, "databases", &databases)?;
     namespace.set_arena(ctx, "database_issues", &database_issues)?;
@@ -658,7 +658,7 @@ fn decode_container<'a>(
             stats: kernel_stats,
             annotation_records: kernel_annotations,
         },
-    ) = transfer_into_ir(ctx, &mut ir, "inventor", kernel_brep)?;
+    ) = transfer_into_ir(ctx, &mut ir, cadmpeg_ir::codec_id!("inventor"), kernel_brep)?;
     let mut unresolved = if delivered >= DecodeDepth::Design {
         project_design(
             ctx,
@@ -732,11 +732,9 @@ fn decode_container<'a>(
         })?;
     let composite_losses = composite.losses;
     if !composite_links.is_empty() {
-        ir.native.namespace_mut("inventor").set_arena(
-            ctx,
-            "composite_member_links",
-            &composite_links,
-        )?;
+        ir.native
+            .namespace_mut(cadmpeg_ir::codec_id!("inventor"))
+            .set_arena(ctx, "composite_member_links", &composite_links)?;
     }
     if delivered >= DecodeDepth::Design {
         let links = crate::feature::body_selection::links(
@@ -761,7 +759,7 @@ fn decode_container<'a>(
         crate::feature::body_selection::project(&mut ir, &joined, &feature_inventory);
         if !links.is_empty() {
             ir.native
-                .namespace_mut("inventor")
+                .namespace_mut(cadmpeg_ir::codec_id!("inventor"))
                 .set_arena(ctx, "body_wrapper_links", &links)?;
         }
         if let ActiveCarrierState::Selected(carrier) = &container.rse.active_carrier {
@@ -777,11 +775,9 @@ fn decode_container<'a>(
                 },
             )?;
             if !history.records.is_empty() {
-                ir.native.namespace_mut("inventor").set_arena(
-                    ctx,
-                    "feature_history_states",
-                    &history.records,
-                )?;
+                ir.native
+                    .namespace_mut(cadmpeg_ir::codec_id!("inventor"))
+                    .set_arena(ctx, "feature_history_states", &history.records)?;
             }
             losses.extend(crate::feature::history_states::losses(&history));
             ir.model.history_bodies = history.bodies.bodies;

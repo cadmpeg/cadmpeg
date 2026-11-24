@@ -50,6 +50,7 @@ fn body(key: &str) -> Body {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     }
 }
 

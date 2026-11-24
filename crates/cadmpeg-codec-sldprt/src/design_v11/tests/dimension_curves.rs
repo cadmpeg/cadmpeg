@@ -13,7 +13,7 @@ use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use super::assert_no_design_findings;
-use super::sketch_and_extrude;
+use super::sketch_and_extrude_from;
 use super::state_zero::{entity, project, set_profiles};
 use crate::loss::SldprtLossCode;
 
@@ -25,9 +25,26 @@ const NATIVE_DISTANCE: &str = "sldprt:model:sketch-constraint#test:2";
 
 /// The fixture's rectangle and circle as the stored profile, and a circle
 /// `built` from a dimension record at `center` with `radius`, which the
-/// fixture's diameter dimension names.
+/// fixture's diameter dimension names and measures.
 fn with_dimension_circle(center: [f64; 2], radius: f64) -> CadIr {
-    let (mut ir, _) = sketch_and_extrude();
+    let keywords = format!(
+        r#"<Keywords Name="Block">
+            <Feature Name="Front" id="2"/>
+            <Feature Name="Top" id="3"/>
+            <Feature Name="Right" id="4"/>
+            <Sketch Name="Origin" Type="OriginProfileFeature" id="106"/>
+            <Sketch Name="Sketch1" Type="ProfileFeature" id="8">
+                <Dimension Name="D1">50</Dimension>
+                <Dimension Name="D2">30</Dimension>
+                <Dimension Name="D3">&lt;MOD-DIAM&gt;{}</Dimension>
+            </Sketch>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7">
+                <Dimension Name="D1">10</Dimension>
+            </Extrusion>
+        </Keywords>"#,
+        2.0 * radius
+    );
+    let (mut ir, _) = sketch_and_extrude_from(keywords.as_bytes());
     push_built(&mut ir, "built", 2, center, radius);
     let diameter = ir
         .model
