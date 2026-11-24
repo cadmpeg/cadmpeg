@@ -11,6 +11,34 @@ pub mod native_fields;
 
 pub use cache::TextReplacements;
 
+thread_local! {
+    static VISITED_ID_TYPE: std::cell::Cell<Option<&'static str>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Restores the previous visited id type when a visit ends, also by unwinding.
+struct VisitedIdType(Option<&'static str>);
+
+impl Drop for VisitedIdType {
+    fn drop(&mut self) {
+        VISITED_ID_TYPE.with(|cell| cell.set(self.0));
+    }
+}
+
+/// Runs `visit` with `id_type` as the type of the reference it hands to its
+/// visitor ([`visited_id_type`]).
+pub(crate) fn visiting_id_type<R>(id_type: &'static str, visit: impl FnOnce() -> R) -> R {
+    let _restore = VisitedIdType(VISITED_ID_TYPE.with(|cell| cell.replace(Some(id_type))));
+    visit()
+}
+
+/// The name of the id type whose reference a visitor of
+/// [`RewriteIdentities::visit_identity_references`] is being handed, where a
+/// typed id hands it.
+pub(crate) fn visited_id_type() -> Option<&'static str> {
+    VISITED_ID_TYPE.with(std::cell::Cell::get)
+}
+
 /// Rewrite owned fields without projecting or reconstructing a serde value.
 pub trait RewriteIdentities: Sized {
     /// False only when identity and text replacement cannot change this value.

@@ -1500,6 +1500,18 @@ macro_rules! declare_wire_omitted {
         }
 
         impl Model {
+            /// Drops what the CADIR wire omits: the records of those arenas,
+            /// their feature-parent relations, and `ProductDefinition.sketches`.
+            /// The model then holds what its CADIR JSON reads back as.
+            pub fn drop_omitted_arenas(&mut self) {
+                $(self.$field.clear();)*
+                self.feature_regeneration_parents = FeatureRegenerationParents::default();
+                for definition in &mut self.product_definitions {
+                    definition.sketches.clear();
+                }
+                self.omitted = OmittedArenas::NotRead;
+            }
+
             /// The identities of the records of the arenas the wire omits.
             #[must_use]
             pub fn omitted_record_ids(&self) -> std::collections::BTreeSet<&str> {

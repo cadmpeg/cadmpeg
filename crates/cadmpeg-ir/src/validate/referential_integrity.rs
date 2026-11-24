@@ -8,8 +8,68 @@ use crate::report::{
     check::{Check, Finding},
     Severity,
 };
-use crate::schema::EntitySchema;
+use crate::schema::{ArenaRecord, EntitySchema};
 
+/// The names of the id types of the records of the arenas the CADIR wire
+/// omits ([`crate::document::ArenaName::WIRE_OMITTED`]). Each name is a type
+/// in scope, so a renamed type fails to compile.
+macro_rules! id_type_names {
+    ($($id:ident),* $(,)?) => {{
+        $(let _: Option<$id> = None;)*
+        [$(stringify!($id)),*]
+    }};
+}
+
+/// Whether a reference of the visited id type can name a record of an arena
+/// the CADIR wire omits.
+fn targets_omitted_arena() -> bool {
+    use crate::features::{ConfigurationId, FeatureId, ParameterId};
+    use crate::ids::{FeatureInputTopologyId, FeatureResultTopologyId, HistoryBodyId};
+    use crate::products::JointId;
+    use crate::sketches::{
+        SketchConstraintId, SketchEntityId, SketchId, SpatialSketchEntityId, SpatialSketchId,
+    };
+    use crate::spreadsheets::SpreadsheetId;
+    let omitted = id_type_names!(
+        FeatureId,
+        FeatureInputTopologyId,
+        FeatureResultTopologyId,
+        ConfigurationId,
+        ParameterId,
+        SketchId,
+        SketchEntityId,
+        SketchConstraintId,
+        SpatialSketchId,
+        SpatialSketchEntityId,
+        SpreadsheetId,
+        JointId,
+        HistoryBodyId,
+    );
+    crate::schema::rewrite::typed::visited_id_type()
+        .is_some_and(|id_type| omitted.contains(&id_type))
+}
+
+/// The identities of the records of the `design` home.
+fn design_identities(ir: &CadIr) -> std::collections::HashSet<&str> {
+    macro_rules! collect {
+        (@arena $ids:ident, design, $field:ident) => {
+            $ids.extend(ir.design.$field.iter().map(ArenaRecord::record_identity));
+        };
+        (@arena $ids:ident, $home:ident, $field:ident) => {};
+        ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {{
+            let mut ids = std::collections::HashSet::new();
+            $(collect!(@arena ids, $home, $field);)*
+            ids
+        }};
+    }
+    crate::document::every_arena_registry!(collect)
+}
+
+/// Checks that every typed reference of a `geometry` or `model` record
+/// resolves. On a document read from CADIR JSON, which holds no record of the
+/// arenas the wire omits, a reference of an id type of those arenas resolves
+/// against the `design` records that restate them, and one that resolves
+/// nowhere is a Warning: the omitted arena may hold its target.
 pub(super) fn check_typed_references(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
@@ -17,11 +77,12 @@ pub(super) fn check_typed_references(
     findings: &mut Vec<Finding>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let not_read = (!ir.model.omitted_arenas_held()).then(|| {
-        crate::document::ArenaName::WIRE_OMITTED
+        let arenas = crate::document::ArenaName::WIRE_OMITTED
             .iter()
             .map(|arena| arena.as_str())
             .collect::<Vec<_>>()
-            .join(", ")
+            .join(", ");
+        (arenas, design_identities(ir))
     });
     macro_rules! check_arenas {
         ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
@@ -35,8 +96,12 @@ pub(super) fn check_typed_references(
                         if finding.message.contains(target) { return Ok(()); }
                     }
                     match &not_read {
-                        None => record_finding(findings, Check::ReferentialIntegrity, Severity::Error, Some(owner), format_args!("unresolved typed reference {target}")),
-                        Some(omitted) => record_finding(findings, Check::ReferentialIntegrity, Severity::Warning, Some(owner), format_args!("unresolved typed reference {target}; the document was read from CADIR, which does not carry the arenas {omitted}, and one of them may hold it")),
+                        Some((omitted, design)) if targets_omitted_arena() => {
+                            if !design.contains(target) {
+                                record_finding(findings, Check::ReferentialIntegrity, Severity::Warning, Some(owner), format_args!("unresolved typed reference {target}; the document was read from CADIR, which does not carry the arenas {omitted}, and one of them may hold it"));
+                            }
+                        }
+                        _ => record_finding(findings, Check::ReferentialIntegrity, Severity::Error, Some(owner), format_args!("unresolved typed reference {target}")),
                     }
                     Ok(())
                 });
@@ -103,6 +168,69 @@ mod tests {
                 && finding.entity.as_deref() == Some(owner.as_str())
                 && finding.message == format!("unresolved typed reference {missing}")
         }));
+    }
+
+    /// The findings of the typed-reference check of `ir` against no held
+    /// identity.
+    fn unresolved(ir: &crate::CadIr) -> Vec<crate::report::check::Finding> {
+        let identities = crate::index::identities::BorrowedIdentities::<()>::new();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+        let mut findings = Vec::new();
+        check_typed_references(&ctx, ir, &identities, &mut findings).unwrap();
+        findings
+    }
+
+    /// A document read from CADIR JSON, which holds no record of the arenas
+    /// the wire omits.
+    fn read_from_cadir() -> crate::CadIr {
+        let ir =
+            crate::CadIr::from_json(&crate::CadIr::empty().to_canonical_json().unwrap()).unwrap();
+        assert!(!ir.model.omitted_arenas_held());
+        ir
+    }
+
+    #[test]
+    fn a_dangling_geometry_reference_of_a_cadir_read_document_is_an_error() {
+        let mut ir = read_from_cadir();
+        ir.geometry.vertices.push(crate::topology::Vertex {
+            id: "test:model:vertex#owner".try_into().unwrap(),
+            point: "test:model:point#missing".try_into().unwrap(),
+            tolerance: None,
+            native_ref: None,
+        });
+        let findings = unresolved(&ir);
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert_eq!(findings[0].severity, Severity::Error);
+        assert_eq!(
+            findings[0].message,
+            "unresolved typed reference test:model:point#missing"
+        );
+    }
+
+    #[test]
+    fn a_reference_into_an_omitted_arena_of_a_cadir_read_document_is_a_warning() {
+        let mut ir = read_from_cadir();
+        let mut definition: crate::products::ProductDefinition =
+            serde_json::from_value(serde_json::json!({
+                "id": "test:model:product#owner", "bom_properties": {},
+                "storage": {"kind": "embedded"}, "bodies": [], "occurrences": [],
+                "instance_bodies": [], "representations": []
+            }))
+            .unwrap();
+        definition.sketches = vec!["test:model:sketch#omitted".try_into().unwrap()];
+        ir.model.product_definitions.push(definition.clone());
+        let findings = unresolved(&ir);
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert_eq!(findings[0].severity, Severity::Warning);
+        assert!(findings[0]
+            .message
+            .starts_with("unresolved typed reference test:model:sketch#omitted; "));
+
+        let mut held = crate::CadIr::empty();
+        held.model.product_definitions.push(definition);
+        let findings = unresolved(&held);
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert_eq!(findings[0].severity, Severity::Error);
     }
 
     #[test]

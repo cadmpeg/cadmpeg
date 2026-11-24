@@ -188,6 +188,17 @@ macro_rules! split_arena_dispositions {
     };
 }
 
+/// Adds the identities of the records of a `design` arena whose disposition
+/// carries them to `$ids`; arenas of other homes add none.
+macro_rules! written_design_ids {
+    ($dispositions:expr, $ids:ident, $ir:expr, $field:ident, design) => {
+        if $dispositions.design.$field.carries() {
+            $ids.extend($ir.design.$field.iter().map(ArenaRecord::record_identity));
+        }
+    };
+    ($dispositions:expr, $ids:ident, $ir:expr, $field:ident, $home:ident) => {};
+}
+
 macro_rules! declare_arena_dispositions {
     ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
         split_arena_dispositions! { [] [] [] $($field: $home;)* }
@@ -225,16 +236,36 @@ macro_rules! declare_arena_dispositions {
 
             /// Each arena of `ir` whose records the write omits and charges: its
             /// kind, label and record count.
+            /// The identities of the `design` records the payload writes.
+            fn written_design_ids<'ir>(&self, ir: &'ir CadIr) -> std::collections::HashSet<&'ir str> {
+                let mut ids = std::collections::HashSet::new();
+                $(written_design_ids!(self, ids, ir, $field, $home);)*
+                ids
+            }
+
             fn charged_omissions(&self, ir: &CadIr) -> Vec<(EntityKind, &'static str, usize)> {
                 // While the document holds a v10 design record, the v11 design
                 // arenas with a v10 counterpart restate content the v10 path
                 // writes.
                 let restated = ir.arenas().holds(ArenaClass::Design, ArenaHome::Model);
+                // A record of an arena the CADIR wire omits that a written
+                // `design` record restates under its id is carried by that
+                // record.
+                let written_design = self.written_design_ids(ir);
                 let mut charged = Vec::new();
                 $(
+                    let label = crate::document::arena_label!($field, $home);
                     // The document root is the written document itself.
                     let records = if arena_kind(&ir.$home.$field) == EntityKind::ProductDefinition {
                         crate::products::stated_definitions(&ir.model.product_definitions).count()
+                    } else if crate::document::ArenaName::WIRE_OMITTED
+                        .iter()
+                        .any(|arena| arena.as_str() == label)
+                    {
+                        ir.$home.$field
+                            .iter()
+                            .filter(|record| !written_design.contains(record.record_identity()))
+                            .count()
                     } else {
                         ir.$home.$field.len()
                     };
@@ -242,11 +273,7 @@ macro_rules! declare_arena_dispositions {
                         && records != 0
                         && !(restated && has_v10_counterpart(arena_kind(&ir.$home.$field)))
                     {
-                        charged.push((
-                            arena_kind(&ir.$home.$field),
-                            crate::document::arena_label!($field, $home),
-                            records,
-                        ));
+                        charged.push((arena_kind(&ir.$home.$field), label, records));
                     }
                 )*
                 charged
