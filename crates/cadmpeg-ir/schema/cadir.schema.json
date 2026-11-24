@@ -25107,7 +25107,7 @@
                 },
                 "continuity": {
                   "description": "Uniform, component-specific, or unresolved boundary continuity.",
-                  "$ref": "#/$defs/FilledSurfaceContinuityState"
+                  "$ref": "#/$defs/FilledSurfaceContinuity"
                 },
                 "interior_constraints": {
                   "description": "Curves and points inside the boundary that constrain the patch, in source order.",
@@ -28022,10 +28022,6 @@
     "FilledSurfaceContinuity": {
       "description": "Resolved continuity conditions for a filled-surface boundary.\n\nOne condition per boundary component, in source order. A boundary whose\ncomponents all impose the same condition is uniform, which [`Self::uniform`]\nreports; a uniform boundary has no second spelling to disagree with.",
       "$ref": "#/$defs/NonEmptyMembers14"
-    },
-    "FilledSurfaceContinuityState": {
-      "description": "Optional filled-surface continuity.\n\nThe wire carries the component conditions and nothing else, so an aggregate\ncondition that disagrees with them is unrepresentable.",
-      "$ref": "#/$defs/FilledSurfaceContinuity"
     },
     "Fillet": {
       "description": "Rounds edges or blends between face sets. A fillet holds one or more\nsets, each with its own size and profile.",
@@ -81969,12 +81965,23 @@
             "kind": {
               "type": "string",
               "const": "unresolved"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "The source requires a cross-section and names its carrier, a native\nrecord whose geometry is unresolved.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "native"
             },
             "value": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "$ref": "#/$defs/NonBlankString"
             }
           },
           "additionalProperties": false,
@@ -82031,12 +82038,23 @@
             "kind": {
               "type": "string",
               "const": "unresolved"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "The source requires a cross-section and names its carrier, a native\nrecord whose geometry is unresolved.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "native"
             },
             "value": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "$ref": "#/$defs/NonBlankString"
             }
           },
           "additionalProperties": false,

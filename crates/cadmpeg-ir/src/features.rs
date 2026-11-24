@@ -87,9 +87,8 @@ use sheet_metal_forms::{
     SheetMetalRelief, SheetMetalThicknessSide, SheetMetalTransition,
 };
 use surface_inputs::{
-    deserialize_continuity, CurveProjectionDirection, FilledSurfaceContinuity, RuledSurfaceCorner,
-    RuledSurfaceMode, SurfaceBoundary, SurfaceExtension, SurfaceProjectionMode, TrimRegion,
-    WrapMode,
+    CurveProjectionDirection, FilledSurfaceContinuity, RuledSurfaceCorner, RuledSurfaceMode,
+    SurfaceBoundary, SurfaceExtension, SurfaceProjectionMode, TrimRegion, WrapMode,
 };
 use sweeps::{
     CoilConstruction, FaceMaker, HelicalSweepConstruction, HelixConstructionStyle, HelixShape,
@@ -2394,6 +2393,11 @@ impl From<SketchFeatureBindingWire> for SketchFeatureBinding {
 }
 
 cadmpeg_core::named_optional_field!(deserialize_filled_surface_weight, PositiveReal, "weight");
+cadmpeg_core::named_optional_field!(
+    deserialize_continuity,
+    FilledSurfaceContinuity,
+    "continuity"
+);
 
 selection_field_deserializer!(deserialize_selection_native, "native");
 selection_field_deserializer!(deserialize_selection_local_id, "local_id");

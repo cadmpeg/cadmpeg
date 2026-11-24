@@ -47,7 +47,9 @@ fn committed_json_schemas_equal_the_derived_schemas() {
 }
 
 /// Whether `node` can admit `null`: false only where a keyword of the node,
-/// or of the definition it references, refuses it.
+/// or of the definition it references, refuses it. `not` refuses `null`
+/// where its schema admits it, so `{"not": {}}`, the schema of an enum with
+/// no variant, admits no value.
 fn admits_null(node: &Value, defs: &Map<String, Value>, depth: usize) -> bool {
     let Value::Object(node) = node else {
         return node.as_bool().unwrap_or(false);
@@ -84,7 +86,8 @@ fn admits_null(node: &Value, defs: &Map<String, Value>, depth: usize) -> bool {
         })
         || refuses("anyOf", &|branches| arms(branches, false))
         || refuses("oneOf", &|branches| arms(branches, false))
-        || refuses("allOf", &|branches| arms(branches, true)))
+        || refuses("allOf", &|branches| arms(branches, true))
+        || refuses("not", &|negated| admits_null(negated, defs, depth + 1)))
 }
 
 /// Every place in `schema` that admits `null` for a value that is not a list
@@ -213,7 +216,7 @@ fn null_is_admitted_only_as_an_element_or_a_map_value() {
 /// newtype variant's `value`, required, and an optional member whose
 /// definition is a newtype struct over an `Option`. It passes `null` as a
 /// list element, a pair key, and a map value, and checks the members of the
-/// objects they hold.
+/// objects they hold. A member with no value, `{"not": {}}`, admits no `null`.
 #[test]
 fn the_null_walk_finds_an_option_outside_an_element() {
     let schema = serde_json::json!({
@@ -230,12 +233,13 @@ fn the_null_walk_finds_an_option_outside_an_element() {
                 }
             },
             "map": {"type": "object", "additionalProperties": {"type": ["string", "null"]}},
+            "never": {"not": {}},
             "named": {
                 "type": "object",
                 "patternProperties": {"^a": {"anyOf": [{"type": "string"}, {"type": "null"}]}}
             }
         },
-        "required": ["section", "list", "pairs", "map", "named"],
+        "required": ["section", "list", "pairs", "map", "named", "never"],
         "$defs": {
             "Section": {
                 "oneOf": [{

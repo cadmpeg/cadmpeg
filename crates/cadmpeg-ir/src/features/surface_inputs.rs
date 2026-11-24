@@ -12,12 +12,6 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-cadmpeg_core::named_optional_field!(
-    pub(super) deserialize_continuity,
-    FilledSurfaceContinuity,
-    "continuity"
-);
-
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
