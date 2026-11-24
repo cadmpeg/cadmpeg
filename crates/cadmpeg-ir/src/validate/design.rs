@@ -153,6 +153,7 @@ pub(super) fn check_design(
     let matchers = matching::Matchers::new(&states);
     names::check(ctx, &index, &states, &held, findings)?;
     selections::check(ctx, &index, &matchers, &held, ids.native_view(), findings)?;
+    selections::check_template_inputs(&index.records, &held, findings);
     constructions::check(&index, &held, findings);
     folds::check(&index, &matchers, &held, findings);
     materials::check(&index, &matchers, findings);

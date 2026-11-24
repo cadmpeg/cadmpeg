@@ -916,3 +916,53 @@ pub(in crate::validate) fn check_path(
         previous = Some(placed.prototype.as_str());
     }
 }
+
+/// Every `TemplateInput` pick names an input of an instance that lists the
+/// picking feature as a member: the feature whose definition holds the pick,
+/// or that owns the sketch, sketch record, or parameter that holds it.
+pub(super) fn check_template_inputs(
+    index: &DesignRecords<'_>,
+    held: &[Held<'_>],
+    findings: &mut Vec<Finding>,
+) {
+    for record in held {
+        let Some(picking) = record.holder.feature() else {
+            continue;
+        };
+        for selection in &record.selections {
+            for pick in selection.picks() {
+                let PickTarget::TemplateInput { instance, input } = &pick.target else {
+                    continue;
+                };
+                let valid = match index
+                    .features
+                    .get(instance.as_str())
+                    .map(|feature| &feature.definition.operation)
+                {
+                    Some(FeatureOperation::TemplateInstance(template)) => {
+                        template
+                            .members
+                            .iter()
+                            .any(|member| member.as_str() == picking)
+                            && usize::try_from(*input)
+                                .is_ok_and(|input| input < template.inputs.len())
+                    }
+                    _ => false,
+                };
+                if !valid {
+                    record_finding(
+                        findings,
+                        Check::Design,
+                        Severity::Error,
+                        Some(record.holder.record()),
+                        crate::rule!(
+                            "design.templateinput-picks-input-no-input-instance",
+                            "TemplateInput picks input {input} of {}, which is no input of an instance that lists this feature",
+                            instance.as_str()
+                        ),
+                    );
+                }
+            }
+        }
+    }
+}

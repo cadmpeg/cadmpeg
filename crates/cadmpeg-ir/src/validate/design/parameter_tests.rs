@@ -15,6 +15,10 @@ use crate::design::expr::{
 };
 use crate::design::feature::{FeatureOperation, FuzzyTolerance};
 use crate::design::ops::shared::{Law, Limit, Span};
+use crate::design::ops::sheet_metal::{
+    AngleRange, BendAllowance, BendEquations, BendQuantity, BendSpec, BendTableAngle,
+    SheetMetalRule,
+};
 use crate::design::ops::sketch::{SketchConstraint, SketchRelation};
 use crate::design::ops::surface::{CurveDefinition, CurveFeature, EquationCoordinates};
 use crate::design::ops::swept::Extrude;
@@ -35,7 +39,7 @@ use crate::products::{
     ProductDefinition, Storage,
 };
 use crate::report::Severity;
-use crate::scalar::{FiniteReal, Length};
+use crate::scalar::{Angle, FiniteReal, Length};
 use crate::validate::design::fixture::{
     assert_finding, assert_no_design_finding, design_findings, document, feature, id, parameter,
     unresolved,
@@ -779,6 +783,11 @@ fn law_expressions_type_check() {
     assert_finding(&ir, "expression does not type-check");
     ir.design.features[0].definition.operation = equation_curve("t > 0.5");
     assert_finding(&ir, "a law's value is a number");
+    ir.design.features[0].definition.operation = equation_curve("t * 10[deg]");
+    assert_finding(
+        &ir,
+        "expression's root does not have the quantity its place takes",
+    );
     ir.design.features[0].definition.operation = equation_curve("bendangle * 1[mm]");
     assert_finding(&ir, "a bend variable occurs only in a bend allowance");
     ir.design.parameters[0].definition = expression("t * 1[mm]", &[]);
@@ -933,4 +942,57 @@ fn parameters_naming_one_external_parameter_have_one_kind() {
         .all(|finding| !finding.message.contains(FRAGMENT)));
     ir.design.parameters[0].kind = ValueKind::Quantity(Quantity::ANGLE);
     assert_finding(&ir, FRAGMENT);
+}
+
+fn bend_rule(yields: BendQuantity, value: &str) -> SheetMetalRule {
+    SheetMetalRule {
+        id: id("sheet-metal-rule", "gauge"),
+        scope: id("definition", "part"),
+        name: None,
+        thickness: None,
+        bend: BendSpec {
+            radius: None,
+            radius_side: None,
+            relief: None,
+        },
+        allowance: Some(BendAllowance::Equations(BendEquations {
+            yields,
+            angle: BendTableAngle::Deflection,
+            ranges: vec![AngleRange {
+                from: Angle::new(0.0).unwrap(),
+                from_inclusive: true,
+                to: Angle::new(3.0).unwrap(),
+                to_inclusive: true,
+                value: Expression::Neutral(neutral(value, &[])),
+            }],
+        })),
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+        native_ref: None,
+    }
+}
+
+#[test]
+fn a_bend_equation_value_has_the_quantity_its_rule_yields() {
+    let with_rule = |yields, value| {
+        let mut ir = with_width();
+        ir.design.sheet_metal_rules.push(bend_rule(yields, value));
+        ir
+    };
+    let mismatch = "expression's root does not have the quantity its place takes";
+    let compensation = || BendQuantity::Compensation { flanges: None };
+    assert_no_finding_containing(
+        &with_rule(compensation(), "2 * bendthickness"),
+        "expression",
+    );
+    assert_finding(&with_rule(compensation(), "bendangle"), mismatch);
+    assert_no_finding_containing(&with_rule(BendQuantity::KFactor, "0.44"), "expression");
+    assert_finding(&with_rule(BendQuantity::KFactor, "bendradius"), mismatch);
+    assert_no_finding_containing(
+        &with_rule(
+            BendQuantity::Native(NonBlankString::new("test:quantity").unwrap()),
+            "bendangle",
+        ),
+        "expression",
+    );
 }

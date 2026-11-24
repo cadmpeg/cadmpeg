@@ -671,6 +671,52 @@ fn skipped(index: Vec<i32>) -> InstanceOverride {
 }
 
 #[test]
+fn pattern_members_belong_to_its_container_and_to_one_generator() {
+    use crate::design::container::UnorderedKind;
+    use crate::design::ops::body::PatternMember;
+    let members_of = |seed: &str| {
+        let FeatureOperation::Pattern(mut pattern) = pattern_of(seed, linear(None, 3), Vec::new())
+        else {
+            unreachable!()
+        };
+        pattern.instances = PatternInstances::Members(vec![PatternMember {
+            index: InstanceIndex(vec![1]),
+            features: vec![feature("copy")],
+        }]);
+        FeatureOperation::Pattern(pattern)
+    };
+    let mut ir = fixture::document();
+    ir.design.containers[0] = Container::Unordered {
+        id: id("container", "timeline"),
+        kind: UnorderedKind::Group,
+        members: [
+            Member::Feature(feature("extrude")),
+            Member::Feature(feature("fillet")),
+        ]
+        .into_iter()
+        .collect(),
+    };
+    ir.design.features[0].definition.operation = members_of("fillet");
+    ir.design
+        .features
+        .push(fixture::unresolved("copy", OperationFamily::Fillet));
+    assert_finding(
+        &ir,
+        "pattern member test:design:feature#copy is no member of the pattern's container",
+    );
+    let Container::Unordered { members, .. } = &mut ir.design.containers[0] else {
+        unreachable!()
+    };
+    members.insert(Member::Feature(feature("copy")));
+    assert!(!design_findings(&ir).iter().any(|f| f
+        .message
+        .contains("no member of the pattern's container")
+        || f.message.contains("several generators")));
+    ir.design.features[1].definition.operation = members_of("extrude");
+    assert_finding(&ir, "feature is a member of several generators");
+}
+
+#[test]
 fn a_pattern_layout_and_its_indices_fit_its_runs() {
     let mut ir = fixture::document();
     ir.design.features[1].definition.operation =
@@ -802,6 +848,38 @@ fn a_template_input_pick_names_an_input_of_its_instance() {
         .iter()
         .any(|f| f.message.contains("TemplateInput")));
     ir.design.features[1].definition.operation = input(1);
+    assert_finding(&ir, "TemplateInput picks input 1");
+
+    let plane = |input| {
+        SketchPlane::Placed(Box::new(Construction {
+            inputs: vec![crate::design::construction::ConstructionInput {
+                role: None,
+                reference: Some(crate::design::construction::InputReference::Picks(named(
+                    vec![pick(PickTarget::TemplateInput {
+                        instance: feature("extrude"),
+                        input,
+                    })],
+                ))),
+                value: None,
+                reversed: None,
+            }],
+            after: Vec::new(),
+            solution: None,
+            mode: None,
+            resolved: None,
+            resolved_in: BTreeMap::new(),
+        }))
+    };
+    ir.design.features[1].definition.operation = input(0);
+    ir.design.sketches.push(Sketch {
+        owner: ir.design.features[1].id.clone(),
+        plane: plane(0),
+        ..profile_sketch()
+    });
+    assert!(!design_findings(&ir)
+        .iter()
+        .any(|f| f.message.contains("TemplateInput")));
+    ir.design.sketches[0].plane = plane(1);
     assert_finding(&ir, "TemplateInput picks input 1");
 }
 
@@ -1550,6 +1628,50 @@ fn sketched_with_circle() -> CadIr {
 
 fn sketch_entity_pick(key: &str) -> Picked {
     pick(PickTarget::SketchEntity(id("sketch-entity", key)))
+}
+
+#[test]
+fn a_louver_open_edge_is_a_curve_of_its_profile_sketch() {
+    use crate::design::ops::sheet_metal::StampForm;
+    let louver = |edge: &str| {
+        sheet(SheetMetalKind::Stamp {
+            entry: None,
+            form: StampForm::Louver {
+                profile: named(vec![sketch_pick()]),
+                open_edge: named(vec![sketch_entity_pick(edge)]),
+                depth: Dimension::Literal(positive(1.0)),
+                flap_angle: Dimension::Literal(crate::scalar::Angle::new(0.5).unwrap()),
+                wall_angle: Dimension::Literal(crate::scalar::Angle::new(0.5).unwrap()),
+                rim_radius: None,
+            },
+            rule: None,
+        })
+    };
+    let open_edge = "Louver.open_edge picks";
+    let mut ir = sketched();
+    ir.design.sketches.push(Sketch {
+        id: sketch_id("other"),
+        ..profile_sketch()
+    });
+    ir.design.sketch_entities.push(SketchEntity {
+        sketch: sketch_id("other"),
+        ..sketch_entity(
+            "elsewhere",
+            PlanarCurve::Line {
+                start: point(0.0, 1.0),
+                end: point(1.0, 1.0),
+            },
+            Vec::new(),
+        )
+    });
+    ir.design.features[1].definition.operation = louver("line");
+    assert!(!design_findings(&ir)
+        .iter()
+        .any(|f| f.message.contains(open_edge)));
+    ir.design.features[1].definition.operation = louver("start");
+    assert_finding(&ir, open_edge);
+    ir.design.features[1].definition.operation = louver("elsewhere");
+    assert_finding(&ir, open_edge);
 }
 
 #[test]
