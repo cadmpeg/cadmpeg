@@ -5,6 +5,8 @@ use cadmpeg_ir::report::loss::{LossKind, LossNote, LossTaxonomy};
 #[derive(Clone, Copy)]
 pub(super) enum OnshapeLossCode {
     HistoryNotSupported,
+    PlaneNotSupported,
+    SketchPlaneAssumed,
     VariableEvaluated,
     PartNotMatched,
     ConstraintNotSupported,
@@ -25,6 +27,8 @@ pub(super) enum OnshapeLossCode {
 impl OnshapeLossCode {
     const fn code(self) -> &'static str {
         match self {
+            Self::SketchPlaneAssumed => "sketch.plane-assumed",
+            Self::PlaneNotSupported => "plane.not-supported",
             Self::HistoryNotSupported => "history.not-supported",
             Self::VariableEvaluated => "history.variable-evaluated",
             Self::PartNotMatched => "history.part-not-matched",
