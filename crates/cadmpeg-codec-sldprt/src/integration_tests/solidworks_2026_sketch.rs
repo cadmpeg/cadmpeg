@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The `SolidWorks` 2026 P01a part: a 20 x 30 mm rectangle sketch, extruded.
 //!
-//! A `SolidWorks` 2026 `sgSketch` lists point records that no curve names
-//! (their object index is null), so its curve records index the list by
-//! position and not by object index.
+//! The point records of a `SolidWorks` 2026 `sgSketch` list carry object
+//! indices 1, 2, null, null, null, null, 3 and 4; the endpoint values of its
+//! curve records plus one name no point record for two of them, so the list
+//! is indexed by position.
 
 use std::io::Cursor;
 use std::path::Path;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
 use crate::loss::SldprtLossCode;
@@ -69,4 +72,42 @@ fn the_sketch_of_p01a_resolves_to_four_lines() {
             code.kind().local_code()
         );
     }
+}
+
+#[test]
+fn the_position_reading_of_p01a_states_its_assumption_once_per_line() {
+    let result = decode_p01a();
+    let charged = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == SldprtLossCode::SketchPointRecordIndexBasisAssumed.kind())
+        .count();
+    assert_eq!(charged, 4, "one per line of the rectangle");
+}
+
+#[test]
+fn the_extrusion_of_p01a_consumes_the_sketch_profile() {
+    let result = decode_p01a();
+    let profiles = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
+                Some(profile)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(profiles.len(), 1, "one extrusion");
+    assert!(
+        !matches!(
+            profiles[0],
+            ProfileRef::Planar(PlanarProfileRef::Unresolved(_) | PlanarProfileRef::Native(_))
+        ),
+        "the profile is {:?}",
+        profiles[0]
+    );
 }

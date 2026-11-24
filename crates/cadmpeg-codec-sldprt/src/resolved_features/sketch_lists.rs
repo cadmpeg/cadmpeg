@@ -104,6 +104,9 @@ pub(super) enum CurveForm {
 pub(super) struct SketchRecordList {
     points: Vec<usize>,
     curves: Vec<usize>,
+    /// Whether the curve records that §2 would read by object index are read
+    /// by point-record position instead ([`Self::indexed_by_position`]).
+    by_position: bool,
 }
 
 impl SketchRecordList {
@@ -112,34 +115,40 @@ impl SketchRecordList {
         self.points.get(index).copied()
     }
 
+    /// The u32 that stands just before the head of the point record at
+    /// `point`: its object index.
+    fn object_index(payload: &[u8], point: usize) -> Option<u32> {
+        point
+            .checked_sub(size_of::<u32>())
+            .and_then(|at| View::u32_le_at(payload, at))
+    }
+
     /// Whether `index + 1` is the object index of a point record of this
-    /// sketch, for both of `indices`: the u32 that stands just before the
-    /// head of a point record. A curve record whose indices pass is read by
-    /// §2 as object indices; one whose indices pass for no point record
-    /// indexes the sketch's point records by position.
-    fn holds_object_indices(&self, payload: &[u8], indices: [usize; 2]) -> bool {
-        let object_at = |point: usize| {
-            point
-                .checked_sub(size_of::<u32>())
-                .and_then(|at| View::u32_le_at(payload, at))
-        };
-        // Only a list with a null object index (SolidWorks 2026) is indexed
-        // by position; the others keep the object-index reading.
-        if !self
-            .points
-            .iter()
-            .any(|&point| object_at(point) == Some(u32::MAX))
-        {
-            return true;
-        }
+    /// sketch, for both of `indices`.
+    fn names_object_indices(&self, payload: &[u8], indices: [usize; 2]) -> bool {
         indices.into_iter().all(|index| {
             let Some(object) = index.checked_add(1).and_then(|id| u32::try_from(id).ok()) else {
                 return false;
             };
             self.points
                 .iter()
-                .any(|&point| object_at(point) == Some(object))
+                .any(|&point| Self::object_index(payload, point) == Some(object))
         })
+    }
+
+    /// Whether the list holds a point record with a null object index and a
+    /// curve record that §2 would read by object index whose endpoint values
+    /// plus one are not both object indices of point records. The list is
+    /// then indexed by position as a whole, so that its records share one
+    /// reading.
+    fn indexed_by_position(&self, payload: &[u8]) -> bool {
+        self.points
+            .iter()
+            .any(|&point| Self::object_index(payload, point) == Some(u32::MAX))
+            && self.curves.iter().any(|&curve| {
+                object_index_line_indices(payload, curve)
+                    .is_some_and(|indices| !self.names_object_indices(payload, indices))
+            })
     }
 }
 
@@ -333,10 +342,13 @@ fn sketch_at(payload: &[u8], heads: &[usize], first: usize) -> Option<SketchReco
         .iter()
         .rposition(|&curve| curve_record(payload, curve))?;
     let curves = run.get(..=last)?.to_vec();
-    Some(SketchRecordList {
+    let mut list = SketchRecordList {
         points: points.to_vec(),
         curves,
-    })
+        by_position: false,
+    };
+    list.by_position = list.indexed_by_position(payload);
+    Some(list)
 }
 
 /// The offsets of every record head: `ff ff`, the schema version `1f 00` or
@@ -486,9 +498,8 @@ pub(super) fn curve_form(payload: &[u8], offset: usize) -> Option<CurveForm> {
 }
 
 /// [`curve_form`] for a record of `list`: a line that §2 would read by object
-/// index is read by §2 only when its indices, plus one, are object indices of
-/// point records of the list. `SolidWorks` 2026 sketches list point records
-/// that carry no object index, and index the list by position.
+/// index is read by §2 unless the list is indexed by position
+/// ([`SketchRecordList::indexed_by_position`]).
 pub(super) fn curve_form_in(
     payload: &[u8],
     offset: usize,
@@ -520,7 +531,7 @@ pub(super) fn curve_form_in(
         && start != end
         && !(object_index_line(payload, offset, fields, selector)
             && super::endpoints::wide_indexed_curve_endpoint_indices(payload, offset).is_some()
-            && list.is_none_or(|list| list.holds_object_indices(payload, [start, end]))))
+            && list.is_none_or(|list| !list.by_position)))
     .then_some(CurveForm::Line { start, end })
 }
 
@@ -544,6 +555,24 @@ fn object_index_line(payload: &[u8], offset: usize, fields: usize, selector: u16
         && prefix_end.and_then(|end| payload.get(offset..end)) == Some(SKETCH_MARKER)
         && object_index_locus(payload, offset)
         && end.is_some_and(|end| end == payload.len() || record_head(payload, end))
+}
+
+/// The endpoint values of the record at `offset` when it is a line that §2
+/// reads by object index.
+fn object_index_line_indices(payload: &[u8], offset: usize) -> Option<[usize; 2]> {
+    let fields = curve_fields(payload, offset)?;
+    let selector = View::u16_le_at(payload, offset.checked_add(SELECTOR)?)?;
+    let sense = View::i32_le_at(payload, fields.checked_add(SENSE)?)?;
+    let start = usize::from(View::u16_le_at(payload, fields)?);
+    let end = usize::from(View::u16_le_at(payload, fields.checked_add(2)?)?);
+    (selector & SELECTOR_OPEN_BIT == 0
+        && sense != COUNTERCLOCKWISE
+        && sense != CLOCKWISE
+        && sense & LINE_TYPE_MASK == 0
+        && start != end
+        && object_index_line(payload, offset, fields, selector)
+        && super::endpoints::wide_indexed_curve_endpoint_indices(payload, offset).is_some())
+    .then_some([start, end])
 }
 
 /// The loss of a curve record on locus `05 00 01 00` that [`curve_form`]
@@ -836,10 +865,10 @@ pub(super) fn unchecked_record_conflict(
     lists: &SketchRecordLists,
     offset: usize,
 ) -> Option<ChordConflict> {
-    let ListedRecord::Curve { .. } = lists.record(offset)? else {
+    let ListedRecord::Curve { sketch, .. } = lists.record(offset)? else {
         return None;
     };
-    match curve_form(payload, offset) {
+    match curve_form_in(payload, offset, Some(sketch)) {
         Some(CurveForm::Arc { .. }) => Some(ChordConflict::Unchecked),
         Some(CurveForm::Line { .. }) => None,
         None => unread_form_conflict(payload, offset),
