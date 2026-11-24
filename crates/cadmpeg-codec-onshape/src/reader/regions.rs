@@ -256,6 +256,7 @@ pub(super) fn profile(
         if edges.is_empty() {
             return Err("the sketch region has no resolved boundary edges".into());
         }
+        attach_tangencies(&mut edges, model, &mut recovery.budget)?;
         let region = if outside {
             exterior_region(&sketch_id, &edges, model, &mut recovery)?
         } else {
@@ -517,6 +518,7 @@ struct Edge {
     closed: bool,
     geometry: Value,
     side: i64,
+    tangent_peers: BTreeSet<String>,
 }
 
 impl Edge {
@@ -594,8 +596,13 @@ impl Edge {
                 )
             }
         };
-        if a.iter().chain(&b).any(|n| !n.is_finite()) {
+        if a.iter().chain(&b).chain(&range).any(|n| !n.is_finite()) {
             return Err("the sketch-region boundary exceeds the finite range".into());
+        }
+        if text(geometry, "kind")? != "line"
+            && !(range[1] > range[0] && range[1] - range[0] <= std::f64::consts::TAU)
+        {
+            return Err("the sketch-region curve interval is missing or exceeds one turn".into());
         }
         Ok(Self {
             id,
@@ -605,6 +612,7 @@ impl Edge {
             closed,
             geometry: geometry.clone(),
             side: 1,
+            tangent_peers: BTreeSet::new(),
         })
     }
 
@@ -634,6 +642,38 @@ fn isolated(edge: &Edge, loops: &Loops, budget: &mut Budget) -> Mapping<bool> {
         }
     }
     Ok(true)
+}
+
+fn attach_tangencies(edges: &mut [Edge], model: &Model, budget: &mut Budget) -> Mapping<()> {
+    budget.work(
+        model
+            .sketch_constraints
+            .len()
+            .checked_add(edges.len())
+            .ok_or(BUDGET_LOSS)?,
+    )?;
+    let mut peers: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for constraint in &model.sketch_constraints {
+        let wire = serde_json::to_value(constraint)
+            .map_err(|_| "a stored tangent constraint is unreadable")?;
+        let Some(definition) = wire.get("definition") else {
+            continue;
+        };
+        if definition.get("kind").and_then(Value::as_str) != Some("tangent") {
+            continue;
+        }
+        let first = text(definition, "first")?;
+        let second = text(definition, "second")?;
+        peers.entry(first.into()).or_default().insert(second.into());
+        peers.entry(second.into()).or_default().insert(first.into());
+    }
+    for edge in edges {
+        if let Some(peers) = peers.get(&edge.id) {
+            budget.work(peers.len())?;
+            edge.tangent_peers = peers.clone();
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -802,6 +842,21 @@ fn separated(a: &Edge, b: &Edge) -> Mapping<bool> {
             return Ok(true);
         }
     }
+    if let (Some(conic), None) | (None, Some(conic)) = (ca, cb) {
+        let line = if ca.is_none() { a } else { b };
+        let offset = conic.normalize([line.a[0] - conic.center[0], line.a[1] - conic.center[1]]);
+        let delta = conic.normalize([line.b[0] - line.a[0], line.b[1] - line.a[1]]);
+        let qa = dot(delta, delta);
+        let qb = 2.0 * dot(offset, delta);
+        let qc = dot(offset, offset) - 1.0;
+        let uncertainty = BOUNDARY_ROUNDOFF_FACTOR
+            * f64::EPSILON
+            * (qb * qb + 4.0 * qa * qc.abs()).max(1.0)
+            * (1.0 + scale / conic.radii[0].min(conic.radii[1]));
+        if (qb * qb - 4.0 * qa * qc).abs() <= uncertainty {
+            return Ok(false);
+        }
+    }
     if let (Some(ca), Some(cb)) = (ca, cb) {
         for (edge, source, target) in [(a, ca, cb), (b, cb, ca)] {
             if conic_separated(edge, source, target, scale) {
@@ -809,7 +864,21 @@ fn separated(a: &Edge, b: &Edge) -> Mapping<bool> {
             }
         }
     }
-    Ok(false)
+    if let (Some(ca), Some(cb)) = (ca, cb) {
+        if ca.center == cb.center && ca.radii == cb.radii && ca.axis == cb.axis {
+            return Ok(false);
+        }
+    }
+    if ca.is_none()
+        && cb.is_none()
+        && cross(
+            [a.b[0] - a.a[0], a.b[1] - a.a[1]],
+            [b.b[0] - b.a[0], b.b[1] - b.a[1]],
+        ) == 0.0
+    {
+        return Ok(false);
+    }
+    Ok(intersections(a, b)?.is_empty())
 }
 fn conic_separated(edge: &Edge, source: Conic, target: Conic, scale: f64) -> bool {
     let [x, y] = source.center;
@@ -833,6 +902,248 @@ fn conic_separated(edge: &Edge, source: Conic, target: Conic, scale: f64) -> boo
     let high = constant + h1 + h2;
     [low, high, tolerance].iter().all(|v| v.is_finite())
         && (low > 1.0 + tolerance || high < 1.0 - tolerance)
+}
+
+fn on_curve(edge: &Edge, point: [f64; 2]) -> Mapping<bool> {
+    let Some(conic) = edge.conic()? else {
+        let delta = [edge.b[0] - edge.a[0], edge.b[1] - edge.a[1]];
+        let length = dot(delta, delta);
+        if length == 0.0 {
+            return Err("a boundary line has no direction".into());
+        }
+        let t = dot([point[0] - edge.a[0], point[1] - edge.a[1]], delta) / length;
+        return Ok((0.0..=1.0).contains(&t));
+    };
+    if edge.closed {
+        return Ok(true);
+    }
+    let [u, v] = conic.normalize([point[0] - conic.center[0], point[1] - conic.center[1]]);
+    let offset = (v.atan2(u) - edge.range[0]).rem_euclid(std::f64::consts::TAU);
+    let roundoff = BOUNDARY_ROUNDOFF_FACTOR * f64::EPSILON * std::f64::consts::TAU;
+    Ok(offset <= edge.range[1] - edge.range[0] + roundoff
+        || std::f64::consts::TAU - offset <= roundoff)
+}
+
+fn intersections(a: &Edge, b: &Edge) -> Mapping<Vec<[f64; 2]>> {
+    let candidates = if a.tangent_peers.contains(&b.id) || b.tangent_peers.contains(&a.id) {
+        if let Some(point) = tangent_contact(a, b)? {
+            vec![point]
+        } else {
+            carrier_intersections(a, b).map_err(|reason| {
+                format!(
+                    "the {} and {} boundary intersection is unresolved: {reason}",
+                    a.geometry
+                        .get("kind")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown"),
+                    b.geometry
+                        .get("kind")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown")
+                )
+            })?
+        }
+    } else {
+        carrier_intersections(a, b).map_err(|reason| {
+            format!(
+                "the {} and {} boundary intersection is unresolved: {reason}",
+                a.geometry
+                    .get("kind")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown"),
+                b.geometry
+                    .get("kind")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown")
+            )
+        })?
+    };
+    if candidates.iter().flatten().any(|n| !n.is_finite()) {
+        return Err("the analytic boundary intersection exceeds the finite range".into());
+    }
+    candidates
+        .into_iter()
+        .filter_map(|point| {
+            match on_curve(a, point).and_then(|x| on_curve(b, point).map(|y| x && y)) {
+                Ok(true) => Some(Ok(point)),
+                Ok(false) => None,
+                Err(reason) => Some(Err(reason)),
+            }
+        })
+        .collect()
+}
+fn tangent_contact(first: &Edge, second: &Edge) -> Mapping<Option<[f64; 2]>> {
+    let roundoff = BOUNDARY_ROUNDOFF_FACTOR * f64::EPSILON;
+    match (first.conic()?, second.conic()?) {
+        (Some(conic), None) | (None, Some(conic)) => {
+            let line = if first.conic()?.is_none() {
+                first
+            } else {
+                second
+            };
+            let offset =
+                conic.normalize([line.a[0] - conic.center[0], line.a[1] - conic.center[1]]);
+            let delta = conic.normalize([line.b[0] - line.a[0], line.b[1] - line.a[1]]);
+            let length = dot(delta, delta);
+            if length == 0.0 || !length.is_finite() {
+                return Err("the stored tangent line has no finite direction".into());
+            }
+            let t = -dot(offset, delta) / length;
+            let normal_distance = cross(offset, delta).abs() / length.sqrt();
+            if !t.is_finite()
+                || !normal_distance.is_finite()
+                || (normal_distance - 1.0).abs() > roundoff * (normal_distance + 1.0)
+            {
+                return Err(
+                    "the stored tangent constraint contradicts its line and conic carriers".into(),
+                );
+            }
+            Ok(Some([
+                line.a[0] + t * (line.b[0] - line.a[0]),
+                line.a[1] + t * (line.b[1] - line.a[1]),
+            ]))
+        }
+        (Some(ca), Some(cb)) if ca.radii[0] == ca.radii[1] && cb.radii[0] == cb.radii[1] => {
+            let delta = [cb.center[0] - ca.center[0], cb.center[1] - ca.center[1]];
+            let center_distance = delta[0].hypot(delta[1]);
+            let first_radius = ca.radii[0];
+            let second_radius = cb.radii[0];
+            if center_distance == 0.0 || !center_distance.is_finite() {
+                return Err("the stored tangent circles have no distinct finite centers".into());
+            }
+            let tolerance = roundoff * (center_distance + first_radius + second_radius).max(1.0);
+            let external = (center_distance - first_radius - second_radius).abs() <= tolerance;
+            let internal =
+                (center_distance - (first_radius - second_radius).abs()).abs() <= tolerance;
+            if external == internal {
+                return Err("the stored tangent constraint contradicts its circle carriers".into());
+            }
+            let along = if external || first_radius > second_radius {
+                first_radius
+            } else {
+                -first_radius
+            };
+            Ok(Some([
+                ca.center[0] + along * delta[0] / center_distance,
+                ca.center[1] + along * delta[1] / center_distance,
+            ]))
+        }
+        _ => Ok(None),
+    }
+}
+fn carrier_intersections(first: &Edge, second: &Edge) -> Mapping<Vec<[f64; 2]>> {
+    let candidates = match (first.conic()?, second.conic()?) {
+        (None, None) => {
+            let da = [first.b[0] - first.a[0], first.b[1] - first.a[1]];
+            let db = [second.b[0] - second.a[0], second.b[1] - second.a[1]];
+            let offset = [second.a[0] - first.a[0], second.a[1] - first.a[1]];
+            let determinant = cross(da, db);
+            let first_numerator = cross(offset, db);
+            let second_numerator = cross(offset, da);
+            if ![determinant, first_numerator, second_numerator]
+                .iter()
+                .all(|n| n.is_finite())
+            {
+                return Err("the analytic line intersection exceeds the finite range".into());
+            }
+            if determinant == 0.0 {
+                if cross(offset, da) == 0.0 {
+                    return Err("the analytic boundary lines overlap or touch".into());
+                }
+                Vec::new()
+            } else {
+                let t = first_numerator / determinant;
+                let u = second_numerator / determinant;
+                if !t.is_finite() || !u.is_finite() {
+                    return Err(
+                        "the analytic line intersection parameters exceed the finite range".into(),
+                    );
+                }
+                if (0.0..=1.0).contains(&t) && (0.0..=1.0).contains(&u) {
+                    vec![[first.a[0] + t * da[0], first.a[1] + t * da[1]]]
+                } else {
+                    Vec::new()
+                }
+            }
+        }
+        (Some(conic), None) | (None, Some(conic)) => {
+            let line = if first.conic()?.is_none() {
+                first
+            } else {
+                second
+            };
+            let offset =
+                conic.normalize([line.a[0] - conic.center[0], line.a[1] - conic.center[1]]);
+            let delta = conic.normalize([line.b[0] - line.a[0], line.b[1] - line.a[1]]);
+            super::intersection::roots(&[
+                dot(offset, offset) - 1.0,
+                2.0 * dot(offset, delta),
+                dot(delta, delta),
+            ])?
+            .into_iter()
+            .filter(|t| (0.0..=1.0).contains(t))
+            .map(|t| {
+                [
+                    line.a[0] + t * (line.b[0] - line.a[0]),
+                    line.a[1] + t * (line.b[1] - line.a[1]),
+                ]
+            })
+            .collect()
+        }
+        (Some(source), Some(target)) => {
+            let offset = target.normalize([
+                source.center[0] - target.center[0],
+                source.center[1] - target.center[1],
+            ]);
+            let (cosine, sine) = source.vectors();
+            let cosine_local = target.normalize(cosine);
+            let sine_local = target.normalize(sine);
+            let x = [
+                offset[0] + cosine_local[0],
+                2.0 * sine_local[0],
+                offset[0] - cosine_local[0],
+            ];
+            let y = [
+                offset[1] + cosine_local[1],
+                2.0 * sine_local[1],
+                offset[1] - cosine_local[1],
+            ];
+            let square = |[p0, p1, p2]: [f64; 3]| {
+                [
+                    p0 * p0,
+                    2.0 * p0 * p1,
+                    p1 * p1 + 2.0 * p0 * p2,
+                    2.0 * p1 * p2,
+                    p2 * p2,
+                ]
+            };
+            let xx = square(x);
+            let yy = square(y);
+            let coefficients: Vec<_> = xx
+                .into_iter()
+                .zip(yy)
+                .zip([1.0, 0.0, 2.0, 0.0, 1.0])
+                .map(|((xs, ys), unit)| xs + ys - unit)
+                .collect();
+            let at = |angle: f64| {
+                [
+                    source.center[0] + cosine[0] * angle.cos() + sine[0] * angle.sin(),
+                    source.center[1] + cosine[1] * angle.cos() + sine[1] * angle.sin(),
+                ]
+            };
+            let mut points: Vec<_> = super::intersection::roots(&coefficients)?
+                .into_iter()
+                .map(|t| at(2.0 * t.atan()))
+                .collect();
+            // tan(theta/2) omits theta=pi. Test that algebraic chart seam too.
+            let seam = dot([x[2], y[2]], [x[2], y[2]]) - 1.0;
+            if seam.abs() <= BOUNDARY_ROUNDOFF_FACTOR * f64::EPSILON {
+                points.push(at(std::f64::consts::PI));
+            }
+            points
+        }
+    };
+    Ok(candidates)
 }
 
 fn cross([a, b]: [f64; 2], [c, d]: [f64; 2]) -> f64 {
@@ -965,12 +1276,15 @@ fn endpoint_contact(first: &Edge, second: &Edge, roundoff: f64) -> Mapping<bool>
             {
                 let shared = [first.a, first.b].into_iter().any(endpoint);
                 let axis = usize::from(first_delta[0].abs() < first_delta[1].abs());
-                let low = first.a[axis]
-                    .min(first.b[axis])
-                    .max(second.a[axis].min(second.b[axis]));
-                let high = first.a[axis]
-                    .max(first.b[axis])
-                    .min(second.a[axis].max(second.b[axis]));
+                let [a, b, c, d] = [first.a, first.b, second.a, second.b].map(|point| {
+                    if axis == 0 {
+                        point[0]
+                    } else {
+                        point[1]
+                    }
+                });
+                let low = a.min(b).max(c.min(d));
+                let high = a.max(b).min(c.max(d));
                 return Ok(shared && high - low <= roundoff);
             }
             let offset = [second.a[0] - first.a[0], second.a[1] - first.a[1]];
@@ -980,45 +1294,8 @@ fn endpoint_contact(first: &Edge, second: &Edge, roundoff: f64) -> Mapping<bool>
                 first.a[1] + parameter * first_delta[1],
             ]))
         }
-        (Some(conic), None) | (None, Some(conic)) => {
-            let (curve, line) = if first.conic()?.is_some() {
-                (first, second)
-            } else {
-                (second, first)
-            };
-            let offset =
-                conic.normalize([line.a[0] - conic.center[0], line.a[1] - conic.center[1]]);
-            let delta = conic.normalize([line.b[0] - line.a[0], line.b[1] - line.a[1]]);
-            let qa = dot(delta, delta);
-            let qb = 2.0 * dot(offset, delta);
-            let qc = dot(offset, offset) - 1.0;
-            let discriminant = qb * qb - 4.0 * qa * qc;
-            if !discriminant.is_finite() || discriminant < 0.0 || qa == 0.0 {
-                return Ok(false);
-            }
-            for parameter in [
-                (-qb - discriminant.sqrt()) / (2.0 * qa),
-                (-qb + discriminant.sqrt()) / (2.0 * qa),
-            ] {
-                if !(0.0..=1.0).contains(&parameter) {
-                    continue;
-                }
-                let point = [
-                    line.a[0] + parameter * (line.b[0] - line.a[0]),
-                    line.a[1] + parameter * (line.b[1] - line.a[1]),
-                ];
-                let [local_u, local_v] =
-                    conic.normalize([point[0] - conic.center[0], point[1] - conic.center[1]]);
-                let angle = local_v.atan2(local_u);
-                if (curve.closed
-                    || (angle - curve.range[0]).rem_euclid(std::f64::consts::TAU)
-                        < curve.range[1] - curve.range[0])
-                    && !endpoint(point)
-                {
-                    return Ok(false);
-                }
-            }
-            Ok(true)
+        (Some(_), None) | (None, Some(_)) => {
+            Ok(intersections(first, second)?.into_iter().all(endpoint))
         }
         (Some(ca), Some(cb)) => {
             if ca.center != cb.center
@@ -1027,7 +1304,7 @@ fn endpoint_contact(first: &Edge, second: &Edge, roundoff: f64) -> Mapping<bool>
                 || first.closed
                 || second.closed
             {
-                return Ok(false);
+                return Ok(intersections(first, second)?.into_iter().all(endpoint));
             }
             let tau = std::f64::consts::TAU;
             let a_span = first.range[1] - first.range[0];
@@ -1238,6 +1515,7 @@ fn source_loops(sketch: &str, model: &Model, budget: &mut Budget) -> Mapping<Loo
         }
         edges.push(Edge::new(entity.id().as_str().to_owned(), &wire)?);
     }
+    attach_tangencies(&mut edges, model, budget)?;
     let scale = edges
         .iter()
         .flat_map(|e| e.a.into_iter().chain(e.b))

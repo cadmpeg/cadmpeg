@@ -7,6 +7,7 @@ mod member_isolation;
 mod permissive;
 mod pipeline;
 mod projection;
+mod regions;
 mod rereview;
 mod review;
 mod rollback;

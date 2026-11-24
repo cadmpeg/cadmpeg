@@ -4,6 +4,7 @@
 use crate::archive;
 pub(super) mod expression;
 mod features;
+mod intersection;
 mod planes;
 pub(super) mod query;
 mod regions;

@@ -95,6 +95,14 @@ Region selections can restrict the parameter interval of an exact curve.
 Loop closure follows stored curve endpoints and parameter intervals. Analytic
 intersection and containment of closed boundaries establish hole nesting.
 Directed carrier turns establish loop sense.
+Two arcs of different circle or ellipse carriers touch only where the
+carrier equations meet within their parameter intervals; a closed form
+resolves each meeting, and a crossing inside both intervals separates the
+boundaries from an adjacent contact. An arc interval absent, empty or longer
+than one turn refuses the region. A stored `TANGENT` constraint between two
+entities states a single contact of their carriers; a contact that disagrees
+with the carriers within arithmetic roundoff refuses the region, and an
+unstated near-tangent contact stays unresolved.
 
 A `BTMIndividualSketchRegionQuery-140` whose `queryString` is
 `query = qSketchRegion(id + "<featureId>", <filterInnerLoops>);` selects
