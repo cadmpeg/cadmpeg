@@ -492,7 +492,7 @@ impl DecodeReport {
     #[must_use]
     #[cfg(test)]
     pub(crate) fn unclassified(
-        format: impl Into<String>,
+        format: crate::design::names::CodecId,
         transfer: DecodeTransfer,
         coverage: BTreeMap<String, usize>,
         losses: Vec<LossNote>,

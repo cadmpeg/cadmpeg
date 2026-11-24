@@ -65,7 +65,9 @@ pub(super) const fn clear_revision_form_tolerance<P>(
 }
 
 /// A finite, non-negative fit tolerance.
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "f64", into = "f64")]
 pub struct FitTolerance(f64);
@@ -124,7 +126,7 @@ impl From<NonNegativeReal> for FitTolerance {
 
 /// Fit contract of a solved cache that the construction states itself, used by
 /// constructions with no revision-gated [`RevisionCacheForm`].
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct LegacyCache {
@@ -147,7 +149,7 @@ impl LegacyCache {
 
 /// The cache contract of a construction that has both a legacy and a
 /// revision-gated layout: the tolerance is stated in exactly one of them.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CacheContract<F> {

@@ -1503,7 +1503,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
             FeatureOperation::Sweep {
                 shape: cadmpeg_ir::features::sweeps::SweepShape::sheet_sections(
                     cadmpeg_ir::features::sweeps::SweepMode::Unresolved {},
-                    cadmpeg_ir::features::sweeps::SweepSection::Unresolved(None),
+                    cadmpeg_ir::features::sweeps::SweepSection::Unresolved,
                     Vec::new(),
                 ),
 

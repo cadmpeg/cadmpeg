@@ -24,7 +24,7 @@ fn decoded(bytes: &[u8]) -> (serde_json::Value, Vec<String>) {
     );
     assert!(!codes.is_empty(), "the report names loss codes");
     (
-        serde_json::to_value(result.ir()).expect("serialize the IR"),
+        cadmpeg_test_support::wire::in_memory_json(result.ir()),
         codes,
     )
 }

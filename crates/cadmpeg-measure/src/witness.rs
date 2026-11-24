@@ -156,8 +156,11 @@ impl<'ir> WitnessInput<'_, 'ir> {
             work: &slice,
             ..self.eval
         };
+        let Some(boundary) = face.loops.boundary() else {
+            return Ok(None);
+        };
         let mut votes: Vec<(&'ir str, Vote)> = Vec::new();
-        for loop_id in &face.loops {
+        for loop_id in boundary {
             let Some(face_loop) = self.owners.loop_(loop_id.as_str()) else {
                 continue;
             };
@@ -241,7 +244,10 @@ impl<'ir> WitnessInput<'_, 'ir> {
             let Some(face) = self.owners.face(face_id) else {
                 continue;
             };
-            for loop_id in &face.loops {
+            let Some(boundary) = face.loops.boundary() else {
+                continue;
+            };
+            for loop_id in boundary {
                 let Some(face_loop) = self.owners.loop_(loop_id.as_str()) else {
                     continue;
                 };
@@ -390,13 +396,17 @@ impl<'ir> WitnessInput<'_, 'ir> {
         shell_id: &'ir str,
     ) -> Option<(&'ir str, Verdict)> {
         let shell = self.owners.shell(shell_id)?;
-        let shell_faces = self.owners.shell_faces(&shell.id);
+        let region = self.owners.region(shell.region.as_str())?;
+        let region_shells = self
+            .owners
+            .complete_body_shells(&region.body)?
+            .into_iter()
+            .find(|shells| shells.contains(&shell.id))?;
+        let shell_faces = self.owners.stated_shell_faces(&shell.id);
         if shell_faces.is_empty() || !closure(self.owners, faces, self.edges, shell).closed() {
             return None;
         }
-        let region = self.owners.region(shell.region.as_str())?;
-        let outer = region
-            .shells
+        let outer = region_shells
             .first()
             .is_some_and(|first| *first == shell.id);
         let handedness = match self.placements.get(region.body.as_str()) {

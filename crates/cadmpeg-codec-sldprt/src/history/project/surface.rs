@@ -69,10 +69,8 @@ pub(super) fn project_filled_surface(feature: &Feature) -> FeatureDefinition {
             .get("SupportFaces")
             .cloned()
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
-        continuity: continuity.map_or_else(
-            cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuityState::unresolved,
-            cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuityState::uniform,
-        ),
+        continuity: continuity
+            .map(cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuity::one),
         merge_result: feature
             .properties
             .get("MergeResult")

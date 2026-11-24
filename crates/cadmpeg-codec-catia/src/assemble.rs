@@ -50,10 +50,6 @@ pub(crate) fn cgm_source_key(
         geometry_role: None,
         format: cadmpeg_ir::codec_id!(crate::dialect::FORMAT),
         object_id,
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     })
 }
@@ -1208,6 +1204,20 @@ mod route_tests {
         assert!(!neutral_model_is_admissible(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut invalid,
+            &[]
+        )
+        .expect("check that the neutral model is admissible"));
+    }
+
+    /// A finding of a check outside the admission set does not drop a
+    /// candidate.
+    #[test]
+    fn neutral_model_admissibility_ignores_findings_outside_its_checks() {
+        let mut ir = cadmpeg_test_support::admissibility::rejected_outside_admission("catia:test")
+            .expect("fixture identities are valid");
+        assert!(neutral_model_is_admissible(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &mut ir,
             &[]
         )
         .expect("check that the neutral model is admissible"));

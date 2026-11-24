@@ -13,6 +13,7 @@ const DIGEST: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f2
 // Their values are still visited through the complete sidecar reader.
 const MAP_PATHS: &[&str] = &[
     "/fidelity/file_digests",
+    "/fidelity/codec_digests",
     "/fidelity/retained_records",
     "/fidelity/annotations/provenance",
     "/fidelity/annotations/exactness",
@@ -54,6 +55,8 @@ fn fixture() -> Value {
         "fidelity": {
             "decode_digest": DIGEST,
             "file_digests": {"synthetic:document:definition#component": DIGEST},
+            "content_digest": DIGEST,
+            "codec_digests": {"synthetic_lane": DIGEST},
             "unrepresented": ["model"],
             "annotations": {
                 "provenance": {FIRST: {"stream": "source", "offset": 7, "tag": "record"}},

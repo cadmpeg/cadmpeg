@@ -829,7 +829,7 @@ fn metadata_edits_preserve_unedited_f64_bits_and_complete_display_member() {
     {
         assert_eq!(original.mesh(), actual.mesh());
         assert_eq!(original.channels(), actual.channels());
-        assert_eq!(original.faces, actual.faces);
+        assert_eq!(original.of.faces(), actual.of.faces());
     }
 }
 

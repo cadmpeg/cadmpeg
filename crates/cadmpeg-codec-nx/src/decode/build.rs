@@ -491,10 +491,6 @@ pub(super) fn try_decode_geometry(
                                     "source object_id must not be empty",
                                 )
                             })?,
-                            name: None,
-                            color: None,
-                            visible: None,
-                            layer: None,
                             instance_path: Vec::new(),
                         }),
                         native_ref: None,
@@ -567,10 +563,6 @@ pub(super) fn try_decode_geometry(
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,
@@ -969,10 +961,6 @@ pub(super) fn try_decode_geometry(
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,
@@ -2322,12 +2310,11 @@ fn finalize_point_topology(
     ));
 
     let region_shells = vec![shell_id];
-    ir.geometry.regions.push(Region {
-        id: region_id.clone(),
-        body: body_id.clone(),
-        shells: region_shells,
-        native_ref: None,
-    });
+    ir.geometry.regions.push(Region::new(
+        region_id.clone(),
+        body_id.clone(),
+        region_shells,
+    ));
 
     ir.geometry.bodies.push(Body {
         id: body_id,
@@ -2337,6 +2324,7 @@ fn finalize_point_topology(
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     Ok(())
 }

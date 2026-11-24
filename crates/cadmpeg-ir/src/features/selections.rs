@@ -216,7 +216,7 @@ pub enum FaceSelection {
 /// and slice methods. The mint refuses an empty list, `push` only grows, and
 /// `DerefMut` hands out `&mut [T]`, which cannot shorten the sequence, so no
 /// reader has to ask whether a member is there.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 #[cfg_attr(feature = "schema", schemars(extend("minItems" = 1)))]

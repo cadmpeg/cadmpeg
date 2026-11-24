@@ -30,7 +30,7 @@ impl SketchScaledAtom {
 
     fn from_wire(value: f64, raw: [u8; 7]) -> Result<Self, &'static str> {
         let scalar = Self(raw);
-        if scalar.value().to_bits() != value.to_bits() {
+        if scalar.value() != value {
             return Err("values must match scaled shifted-binary64 raw_values");
         }
         Ok(scalar)

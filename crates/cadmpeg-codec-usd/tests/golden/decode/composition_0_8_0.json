@@ -1049,17 +1049,11 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [
         {
@@ -1225,7 +1219,6 @@
           ]
         }
       ],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -1246,12 +1239,10 @@
             "usd:stage:occurrence#/Scene/Box"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "Scene",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [
@@ -1264,12 +1255,10 @@
           "native_ref": "/Scene/Box",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Box",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -1282,12 +1271,10 @@
             "usd:stage:occurrence#/Scene/Robot:arc0"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "Robot",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -1300,12 +1287,10 @@
             "usd:stage:occurrence#/Scene/Shelf:arc0"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "Shelf",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -1314,14 +1299,12 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "./robot/payload.usd",
           "storage": {
             "kind": "external",
             "object": "/Robot",
             "path": "./robot/payload.usd"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -1330,13 +1313,11 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "shelf.usda",
           "storage": {
             "kind": "external",
             "path": "shelf.usda"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -1347,24 +1328,15 @@
             "usd:stage:occurrence#/Scene"
           ],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -1550,6 +1522,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "eaafe226f6e750f5ca6b17c6290984a3bc987d740d2d53f483f9a973c735721f",
     "file_digests": {},
     "retained_records": {},
