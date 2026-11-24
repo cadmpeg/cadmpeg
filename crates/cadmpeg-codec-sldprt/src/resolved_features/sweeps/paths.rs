@@ -205,7 +205,7 @@ pub(super) fn spatial(
     ordered(curves)
 }
 
-fn spatial_primary_points(
+pub(super) fn spatial_primary_points(
     lane: &FeatureInputLane,
     lists: &SketchRecordLists,
     owner: &str,

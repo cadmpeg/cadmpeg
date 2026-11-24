@@ -872,34 +872,53 @@ fn projected_records_alone_frame_no_list() {
     assert_eq!(lists.record(first), None);
 }
 
-/// A list of three points with the given object indices and one 92-byte
-/// selector-4 line on locus `05 00 01 00` for each pair of endpoint values,
-/// and an arc record after them.
-fn object_index_lines(objects: [u32; 3], pairs: &[(u16, u16)]) -> (Vec<u8>, Vec<usize>) {
+/// A sketch of four points with the given object indices (the first is the
+/// header's trailing word), one 92-byte selector-4 line on locus
+/// `05 00 01 00` for each pair of endpoint values, an arc record after them,
+/// and, in `later`, such lines after an unread record.
+fn object_index_lines(
+    objects: [u32; 4],
+    pairs: &[(u16, u16)],
+    later: &[(u16, u16)],
+) -> (Vec<u8>, Vec<usize>) {
     let mut payload = vec![0; 7];
-    header(&mut payload, 3);
+    header(&mut payload, 4);
     let points = [
         point(&mut payload, 0.0, 0.0),
         point(&mut payload, 0.01, 0.0),
         point(&mut payload, 0.0, 0.01),
+        point(&mut payload, 0.01, 0.01),
     ];
     payload.extend_from_slice(&0u32.to_le_bytes());
     let mut lines = Vec::new();
-    for &(start, end) in pairs {
-        let at = curve(&mut payload, start, end, 0, None);
+    let mut line = |payload: &mut Vec<u8>, (start, end): (u16, u16)| {
+        let at = curve(payload, start, end, 0, None);
         payload[at + head::LOCUS..at + head::LOCUS + 4].copy_from_slice(&OBJECT_INDEX_LOCUS);
         payload.truncate(at + 92);
         lines.push(at);
+    };
+    for &pair in pairs {
+        line(&mut payload, pair);
     }
     curve(&mut payload, 1, 2, 1, Some(0));
+    if !later.is_empty() {
+        let separator = payload.len();
+        head(&mut payload);
+        payload[separator + head::OBJECT_POINTER] = 0;
+        payload.extend_from_slice(&[0; 24]);
+        for &pair in later {
+            line(&mut payload, pair);
+        }
+        curve(&mut payload, 1, 2, 1, Some(0));
+    }
     for (point, object) in points.into_iter().zip(objects) {
         payload[point - 4..point].copy_from_slice(&object.to_le_bytes());
     }
     (payload, lines)
 }
 
-/// What a line of `list` reads as: its geometry and whether it charges the
-/// assumed index basis.
+/// What a line reads as: its geometry and whether it charges the assumed
+/// index basis.
 fn listed_line(payload: &[u8], line: usize) -> (Option<SketchGeometry>, bool) {
     (
         listed_geometry(payload, line, &millimetres),
@@ -909,67 +928,93 @@ fn listed_line(payload: &[u8], line: usize) -> (Option<SketchGeometry>, bool) {
     )
 }
 
-const LINE_BY_POSITION: fn() -> Option<SketchGeometry> = || {
+fn by_position(payload: &[u8]) -> bool {
+    SketchRecordLists::new(payload).lists[0].by_position
+}
+
+fn line_by_position() -> Option<SketchGeometry> {
     expected(SketchGeometryDefinition::Line {
         start: Point2::new(10.0, 0.0),
         end: Point2::new(0.0, 10.0),
     })
-};
+}
 
-/// A list without a null object index keeps the object-index reading of §2,
-/// also when the endpoint values plus one name no point record.
+/// A sketch without a null object index keeps the object-index reading of
+/// §2, also when the endpoint values plus one name no point record.
 #[test]
-fn a_list_without_a_null_object_index_keeps_the_object_index_reading() {
-    let (payload, lines) = object_index_lines([5, 6, 7], &[(1, 2)]);
-    assert!(!SketchRecordLists::new(&payload).lists[0].by_position);
+fn a_sketch_without_a_null_object_index_keeps_the_object_index_reading() {
+    let (payload, lines) = object_index_lines([9, 5, 6, 7], &[(1, 2)], &[]);
+    assert!(!by_position(&payload));
     assert_eq!(listed_line(&payload, lines[0]), (None, false));
     assert!(curve_stays_unresolved(&payload, lines[0]));
 }
 
-/// A list with a null object index whose lines all name point records by
+/// The u32 before the first point record is the header's trailing word: a
+/// null there is not a null object index.
+#[test]
+fn the_header_word_before_the_first_point_is_not_a_null_object_index() {
+    let (payload, lines) = object_index_lines([u32::MAX, 5, 6, 7], &[(1, 2)], &[]);
+    assert!(!by_position(&payload));
+    assert_eq!(listed_line(&payload, lines[0]), (None, false));
+}
+
+/// A sketch with a null object index whose lines all name point records by
 /// object index keeps the object-index reading.
 #[test]
-fn a_list_with_a_null_object_index_whose_lines_name_object_indices_keeps_that_reading() {
-    let (payload, lines) = object_index_lines([u32::MAX, 2, 3], &[(1, 2)]);
-    assert!(!SketchRecordLists::new(&payload).lists[0].by_position);
+fn a_sketch_with_a_null_object_index_whose_lines_name_object_indices_keeps_that_reading() {
+    let (payload, lines) = object_index_lines([9, 2, 3, u32::MAX], &[(1, 2)], &[]);
+    assert!(!by_position(&payload));
     assert_eq!(listed_line(&payload, lines[0]), (None, false));
     assert!(curve_stays_unresolved(&payload, lines[0]));
 }
 
-/// A list with a null object index and a line whose values plus one name no
+/// A sketch with a null object index and a line whose values plus one name no
 /// point record is read by position, and each line states the assumption.
 #[test]
-fn a_list_with_a_null_object_index_and_an_unnamed_line_is_read_by_position() {
-    let (payload, lines) = object_index_lines([u32::MAX, 5, 6], &[(1, 2)]);
-    assert!(SketchRecordLists::new(&payload).lists[0].by_position);
+fn a_sketch_with_a_null_object_index_and_an_unnamed_line_is_read_by_position() {
+    let (payload, lines) = object_index_lines([9, 5, 6, u32::MAX], &[(1, 2)], &[]);
+    let lists = SketchRecordLists::new(&payload);
+    assert!(lists.lists[0].by_position);
     assert_eq!(
-        curve_form_in(
-            &payload,
-            lines[0],
-            Some(&SketchRecordLists::new(&payload).lists[0])
-        ),
+        curve_form_in(&payload, lines[0], Some(&lists.lists[0])),
         Some(CurveForm::Line { start: 1, end: 2 })
     );
-    assert_eq!(listed_line(&payload, lines[0]), (LINE_BY_POSITION(), true));
-}
-
-/// The basis is decided once per list: a line whose values plus one do name
-/// point records is read by position when another line of its list does not.
-#[test]
-fn one_unnamed_line_puts_every_line_of_its_list_on_the_position_reading() {
-    let (payload, lines) = object_index_lines([u32::MAX, 2, 3], &[(1, 2), (0, 2)]);
-    assert!(SketchRecordLists::new(&payload).lists[0].by_position);
-    assert_eq!(listed_line(&payload, lines[0]), (LINE_BY_POSITION(), true));
-    let (_, charged) = listed_line(&payload, lines[1]);
-    assert!(charged);
-    let loss = point_record_index_basis_loss(
-        &payload,
-        lines[0],
-        Some(&SketchRecordLists::new(&payload).lists[0]),
-    )
-    .expect("the line states the assumed basis");
+    assert_eq!(listed_line(&payload, lines[0]), (line_by_position(), true));
+    let loss = point_record_index_basis_loss(&payload, lines[0], Some(&lists.lists[0]))
+        .expect("the line states the assumed basis");
     assert_eq!(
         loss.code,
         SldprtLossCode::SketchPointRecordIndexBasisAssumed.kind()
     );
+}
+
+/// The basis is decided once per sketch: a line whose values plus one do name
+/// point records is read by position when another line of its sketch does not.
+#[test]
+fn one_unnamed_line_puts_every_line_of_its_sketch_on_the_position_reading() {
+    let (payload, lines) = object_index_lines([9, 2, 3, u32::MAX], &[(1, 2), (0, 2)], &[]);
+    assert!(by_position(&payload));
+    assert_eq!(listed_line(&payload, lines[0]), (line_by_position(), true));
+    assert!(listed_line(&payload, lines[1]).1);
+}
+
+/// The decision covers the curve records after the first curve list: a line
+/// there whose values plus one name no point record puts the lines of the
+/// first list on the position reading, and the reverse.
+#[test]
+fn an_unnamed_line_in_a_later_curve_list_decides_the_basis_of_the_sketch() {
+    let (payload, lines) = object_index_lines([9, 2, 3, u32::MAX], &[(1, 2)], &[(0, 2)]);
+    let lists = SketchRecordLists::new(&payload);
+    assert!(matches!(
+        lists.record(lines[1]),
+        Some(ListedRecord::Curve { later: true, .. })
+    ));
+    assert!(by_position(&payload));
+    assert_eq!(listed_line(&payload, lines[0]), (line_by_position(), true));
+    let (payload, lines) = object_index_lines([9, 2, 3, u32::MAX], &[(0, 2)], &[(1, 2)]);
+    assert!(by_position(&payload));
+    assert!(listed_line(&payload, lines[0]).1);
+    let (payload, lines) = object_index_lines([9, 2, 3, u32::MAX], &[(1, 2)], &[(1, 2)]);
+    assert!(!by_position(&payload));
+    assert_eq!(listed_line(&payload, lines[0]), (None, false));
 }

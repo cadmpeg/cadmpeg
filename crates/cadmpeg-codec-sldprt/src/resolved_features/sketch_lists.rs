@@ -136,16 +136,19 @@ impl SketchRecordList {
         })
     }
 
-    /// Whether the list holds a point record with a null object index and a
-    /// curve record that §2 would read by object index whose endpoint values
-    /// plus one are not both object indices of point records. The list is
-    /// then indexed by position as a whole, so that its records share one
-    /// reading.
-    fn indexed_by_position(&self, payload: &[u8]) -> bool {
+    /// Whether the sketch holds a point record with a null object index and a
+    /// curve record, in its first curve list or in `later` ones, that §2 would
+    /// read by object index whose endpoint values plus one are not both
+    /// object indices of point records. The sketch is then indexed by
+    /// position as a whole, so that its records share one reading. The u32
+    /// before the first point record is the trailing word of the `sgSketch`
+    /// header and is not an object index.
+    fn indexed_by_position(&self, payload: &[u8], later: &[usize]) -> bool {
         self.points
             .iter()
+            .skip(1)
             .any(|&point| Self::object_index(payload, point) == Some(u32::MAX))
-            && self.curves.iter().any(|&curve| {
+            && self.curves.iter().chain(later).any(|&curve| {
                 object_index_line_indices(payload, curve)
                     .is_some_and(|indices| !self.names_object_indices(payload, indices))
             })
@@ -212,6 +215,7 @@ impl SketchRecordLists {
         }
         let mut owner = None;
         let mut next = 0;
+        let mut later_of = vec![Vec::new(); lists.len()];
         for curve in later_curves {
             while lists
                 .get(next)
@@ -223,7 +227,11 @@ impl SketchRecordLists {
             }
             if let Some(owner) = owner {
                 records.insert(curve, (owner, RecordPlace::LaterCurveList));
+                later_of[owner].push(curve);
             }
+        }
+        for (list, later) in lists.iter_mut().zip(&later_of) {
+            list.by_position = list.indexed_by_position(payload, later);
         }
         Self { lists, records }
     }
@@ -342,13 +350,11 @@ fn sketch_at(payload: &[u8], heads: &[usize], first: usize) -> Option<SketchReco
         .iter()
         .rposition(|&curve| curve_record(payload, curve))?;
     let curves = run.get(..=last)?.to_vec();
-    let mut list = SketchRecordList {
+    Some(SketchRecordList {
         points: points.to_vec(),
         curves,
         by_position: false,
-    };
-    list.by_position = list.indexed_by_position(payload);
-    Some(list)
+    })
 }
 
 /// The offsets of every record head: `ff ff`, the schema version `1f 00` or

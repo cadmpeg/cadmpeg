@@ -1,3 +1,3 @@
 ### Fixed
 
-- Read the lines of a SolidWorks 2026 sketch. Its point records hold null object indices beside numbered ones, and its curve records index the list by position where their values plus one are not object indices of its point records; they were read as object indices and left unresolved or joined to the wrong points. The sketch, its extrusion and a spatial sweep path through such a sketch now resolve.
+- Read the lines of a SolidWorks 2026 sketch. When its point records include a null object index and a line has endpoint values plus one that are not object indices of its point records, the endpoint values of all its lines are zero-based point-record positions. They were read as object indices, which left the sketch and the extrusion that names it unresolved. A spatial sweep path through such a sketch now resolves.
