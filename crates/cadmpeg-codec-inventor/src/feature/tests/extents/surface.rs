@@ -379,17 +379,54 @@ fn true_boolean(ordinal: u32) -> PmDcFeatureProperty {
     )
 }
 
-/// A from-to surface extrusion between two tilted faces whose profile sketch
-/// holds the given non-construction lines, in millimetres of the sketch plane.
-/// The sketch lies in the plane z = 0 with u = +x and v = +y.
-fn from_to_over_profile(
+/// A curve of the profile sketch fixture, in millimetres of the sketch plane.
+#[derive(Clone, Copy)]
+enum Shape {
+    Line([f64; 2], [f64; 2]),
+    Point([f64; 2]),
+    /// Centre and radius.
+    Circle([f64; 2], f64),
+    /// Centre and radius; the angles are 0 to pi/2.
+    Arc([f64; 2], f64),
+    /// Centre, major radius and minor radius.
+    Ellipse([f64; 2], f64, f64),
+}
+
+/// A sketch entity of the fixture: a shape, whether it is a construction
+/// entity and whether it belongs to another sketch than the profile sketch.
+#[derive(Clone, Copy)]
+struct Member {
+    shape: Shape,
+    construction: bool,
+    other_sketch: bool,
+}
+
+impl Member {
+    fn profile(shape: Shape) -> Self {
+        Self {
+            shape,
+            construction: false,
+            other_sketch: false,
+        }
+    }
+}
+
+/// A from-to surface extrusion between two faces whose profile sketch is
+/// placed by `matrix` (centimetres) and holds the given entities. Entities
+/// that are not projected neutrally make `incomplete` true.
+fn from_to_over_sketch(
     start: PmDcFeatureProperty,
     end: PmDcFeatureProperty,
-    lines: &[([f64; 2], [f64; 2])],
+    matrix: [[f64; 4]; 4],
+    members: &[Member],
+    incomplete: bool,
 ) -> Option<Feature> {
     use cadmpeg_ir::math::Point2;
-    use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometryDefinition as Curve};
-    let lines = lines.to_vec();
+    use cadmpeg_ir::scalar::{Angle, Length};
+    use cadmpeg_ir::sketches::{
+        EllipseRadii, SketchEntity, SketchEntityId, SketchGeometryDefinition as Curve, SketchId,
+    };
+    let members = members.to_vec();
     build_extent_extrusion(
         ExtentCase {
             output: Output::Surface,
@@ -400,7 +437,7 @@ fn from_to_over_profile(
         },
         &FROM_TO_SLOTS,
         from_to_properties(1, start, end),
-        IDENTITY_MATRIX,
+        matrix,
         |index| {
             let sketch = index
                 .sketch_ids
@@ -408,27 +445,73 @@ fn from_to_over_profile(
                 .next()
                 .expect("neutral sketch")
                 .clone();
-            for (ordinal, (a, b)) in lines.into_iter().enumerate() {
+            let other = SketchId::mint("test:design:sketch#other".to_owned()).expect("sketch id");
+            if incomplete {
+                index.incomplete_sketches.insert(("generated", 50));
+            }
+            for (ordinal, member) in members.into_iter().enumerate() {
+                let point = |p: [f64; 2]| Point2::new(p[0], p[1]);
+                let length = |r: f64| Length::new(r).expect("length");
+                let geometry = match member.shape {
+                    Shape::Line(a, b) => Curve::Line {
+                        start: point(a),
+                        end: point(b),
+                    },
+                    Shape::Point(p) => Curve::Point { position: point(p) },
+                    Shape::Circle(c, r) => Curve::Circle {
+                        center: point(c),
+                        radius: length(r),
+                    },
+                    Shape::Arc(c, r) => Curve::Arc {
+                        center: point(c),
+                        radius: length(r),
+                        start_angle: Angle::new(0.0).expect("angle"),
+                        end_angle: Angle::new(std::f64::consts::FRAC_PI_2).expect("angle"),
+                    },
+                    Shape::Ellipse(c, major, minor) => Curve::Ellipse {
+                        center: point(c),
+                        major_angle: Angle::new(0.0).expect("angle"),
+                        radii: EllipseRadii {
+                            major_radius: length(major),
+                            minor_radius: length(minor),
+                        },
+                        bounds: None,
+                    },
+                };
                 let id = SketchEntityId::mint(format!("test:design:entity#{ordinal}"))
                     .expect("entity id");
-                let line = SketchEntity::new(
+                let entity = SketchEntity::new(
                     id.clone(),
-                    sketch.clone(),
-                    Curve::Line {
-                        start: Point2::new(a[0], a[1]),
-                        end: Point2::new(b[0], b[1]),
-                    }
-                    .try_into()
-                    .expect("line geometry"),
-                );
-                let line: &'static SketchEntity = Box::leak(Box::new(line));
+                    if member.other_sketch {
+                        other.clone()
+                    } else {
+                        sketch.clone()
+                    },
+                    geometry.try_into().expect("test geometry"),
+                )
+                .with_construction(member.construction);
+                let entity: &'static SketchEntity = Box::leak(Box::new(entity));
                 index
                     .neutral_entities
-                    .insert(Box::leak(id.as_str().to_owned().into_boxed_str()), line);
+                    .insert(Box::leak(id.as_str().to_owned().into_boxed_str()), entity);
             }
         },
         |_, _, _, _| {},
     )
+}
+
+/// A from-to surface extrusion over the sketch frame of the identity matrix
+/// whose profile sketch holds the given non-construction lines.
+fn from_to_over_profile(
+    start: PmDcFeatureProperty,
+    end: PmDcFeatureProperty,
+    lines: &[([f64; 2], [f64; 2])],
+) -> Option<Feature> {
+    let members = lines
+        .iter()
+        .map(|(a, b)| Member::profile(Shape::Line(*a, *b)))
+        .collect::<Vec<_>>();
+    from_to_over_sketch(start, end, IDENTITY_MATRIX, &members, false)
 }
 
 #[test]
@@ -438,8 +521,8 @@ fn from_to_surface_extrusion_orders_tilted_faces_at_the_profile() {
     const SPAN: [([f64; 2], [f64; 2]); 1] = [([0.0, 0.0], [10.0, 100.0])];
     // Travel +z. Face A has normal (0, -0.8, 0.6) through z = 10 mm and face
     // B has normal (0, -0.6, 0.8) through z = 40 mm. The line through a
-    // profile point (0, y, 0) meets A at z = (10 + 0.8 y) / 0.6 and B at
-    // z = (40 + 0.6 y) / 0.8, so A comes first for y < 66.7 mm and B first
+    // profile point (0, y, 0) meets A at z = (6 + 0.8 y) / 0.6 and B at
+    // z = (32 + 0.6 y) / 0.8, so A comes first for y < 51.4 mm and B first
     // beyond: y = 0 gives 16.7 and 50; y = 100 gives 143.3 and 115.
     let a = || tilted_plane_face(21, 1.0, [0.0, 0.6, 0.8]);
     let b = || tilted_plane_face(21, 4.0, [0.0, 0.8, 0.6]);
@@ -456,6 +539,273 @@ fn from_to_surface_extrusion_orders_tilted_faces_at_the_profile() {
     assert!(from_to_over_profile(b(), a_end(), &SPAN).is_none());
     // Without a profile curve the order is not defined for tilted planes.
     assert!(from_to_over_profile(a(), b_end(), &[]).is_none());
+}
+
+/// The tilted faces of the profile-order tests: face A has normal
+/// (0, -0.8, 0.6) through z = 10 mm and face B has normal (0, -0.6, 0.8)
+/// through z = 40 mm, in either role. With travel +z the line through a
+/// profile point (0, y, 0) meets A at z = 10 + 4y/3 and B at z = 40 + 3y/4, so
+/// the gap from the first face to the second is 30 - 7y/12 millimetres, which
+/// is positive for y < 51.4.
+fn tilted_a(ordinal: u32) -> PmDcFeatureProperty {
+    tilted_plane_face(ordinal, 1.0, [0.0, 0.6, 0.8])
+}
+
+fn tilted_b(ordinal: u32) -> PmDcFeatureProperty {
+    tilted_plane_face(ordinal, 4.0, [0.0, 0.8, 0.6])
+}
+
+fn ordered_over(shapes: &[Shape]) -> bool {
+    let members = shapes
+        .iter()
+        .map(|shape| Member::profile(*shape))
+        .collect::<Vec<_>>();
+    from_to_over_sketch(tilted_a(21), tilted_b(23), IDENTITY_MATRIX, &members, false).is_some()
+}
+
+#[test]
+fn from_to_profile_corners_cover_points_circles_and_arcs() {
+    // The gap is positive at y up to 51.4 mm, so the highest corner decides.
+    assert!(ordered_over(&[Shape::Point([0.0, 50.0])]));
+    assert!(!ordered_over(&[Shape::Point([0.0, 52.0])]));
+    // A circle of centre (0, 40) reaches y = 40 + r in the box corners:
+    // r = 10 reaches 50, r = 12 reaches 52.
+    assert!(ordered_over(&[Shape::Circle([0.0, 40.0], 10.0)]));
+    assert!(!ordered_over(&[Shape::Circle([0.0, 40.0], 12.0)]));
+    // An arc is bounded by the box of its full circle.
+    assert!(ordered_over(&[Shape::Arc([0.0, 40.0], 10.0)]));
+    assert!(!ordered_over(&[Shape::Arc([0.0, 40.0], 12.0)]));
+    // Every curve of the sketch bounds the profile.
+    assert!(!ordered_over(&[
+        Shape::Point([0.0, 0.0]),
+        Shape::Circle([0.0, 40.0], 12.0),
+    ]));
+}
+
+#[test]
+fn from_to_profile_corners_exclude_construction_and_other_sketches() {
+    let near = Shape::Line([0.0, 0.0], [10.0, 0.0]);
+    // A line at y = 100 puts the gap at 30 - 58.3 < 0 in the profile.
+    let far = Shape::Line([0.0, 100.0], [10.0, 100.0]);
+    let build = |far_member: Member| {
+        from_to_over_sketch(
+            tilted_a(21),
+            tilted_b(23),
+            IDENTITY_MATRIX,
+            &[Member::profile(near), far_member],
+            false,
+        )
+        .is_some()
+    };
+    assert!(!build(Member::profile(far)));
+    assert!(build(Member {
+        construction: true,
+        ..Member::profile(far)
+    }));
+    assert!(build(Member {
+        other_sketch: true,
+        ..Member::profile(far)
+    }));
+}
+
+#[test]
+fn from_to_unsupported_curves_keep_nonparallel_planes_native() {
+    let near = Shape::Line([0.0, 0.0], [10.0, 0.0]);
+    assert!(ordered_over(&[near]));
+    // The box of an ellipse is not evaluated, so the order is not defined.
+    assert!(!ordered_over(&[near, Shape::Ellipse([0.0, 0.0], 2.0, 1.0)]));
+    // Parallel planes have a point-independent gap and project without it.
+    let members = [Member::profile(Shape::Ellipse([0.0, 0.0], 2.0, 1.0))];
+    assert!(from_to_over_sketch(
+        plane_face_at(21, 1.0),
+        plane_face_at(23, 4.0),
+        IDENTITY_MATRIX,
+        &members,
+        false,
+    )
+    .is_some());
+}
+
+#[test]
+fn from_to_sketch_without_a_neutral_entity_keeps_nonparallel_planes_native() {
+    let near = [Member::profile(Shape::Line([0.0, 0.0], [10.0, 0.0]))];
+    let build = |incomplete| {
+        from_to_over_sketch(
+            tilted_a(21),
+            tilted_b(23),
+            IDENTITY_MATRIX,
+            &near,
+            incomplete,
+        )
+        .is_some()
+    };
+    // The same sketch orders the faces when every record projected.
+    assert!(build(false));
+    // A record that failed neutral projection can lie anywhere.
+    assert!(!build(true));
+}
+
+#[test]
+fn from_to_parallel_planes_project_without_sketch_entities() {
+    for (start, end) in [(1.0, 4.0), (4.0, 1.0)] {
+        let projected = from_to_over_sketch(
+            plane_face_at(21, start),
+            plane_face_at(23, end),
+            IDENTITY_MATRIX,
+            &[],
+            false,
+        )
+        .is_some();
+        // The gap along +z is 30 mm for the first order and -30 for the second.
+        assert_eq!(projected, start < end);
+    }
+}
+
+#[test]
+fn from_to_antiparallel_normals_order_by_the_gap() {
+    // Face B has u x v = (0,1,0) x (1,0,0) = (0,0,-1): the normals are
+    // antiparallel and both cross the +z travel. A is at z = 10 mm.
+    let down =
+        |ordinal, z| framed_plane_face(ordinal, [0.0, 0.0, z], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]);
+    let line = [Member::profile(Shape::Line([0.0, 0.0], [5.0, 5.0]))];
+    for members in [&[][..], &line[..]] {
+        let build = |a_z, b_z| {
+            from_to_over_sketch(
+                plane_face_at(21, a_z),
+                down(23, b_z),
+                IDENTITY_MATRIX,
+                members,
+                false,
+            )
+            .is_some()
+        };
+        // Travel meets z = 10 then z = 40: gap 30 mm. Swapped: gap -30 mm.
+        assert!(build(1.0, 4.0));
+        assert!(!build(4.0, 1.0));
+    }
+}
+
+#[test]
+fn from_to_nearly_parallel_planes_use_the_profile_corners() {
+    // Face A is the plane z = 10 mm. Face B has normal (0, -s, c) with
+    // s = 3e-5, so 1 - c = 4.5e-10 counts as parallel, and passes through
+    // z = 10.001 mm. The travel +z meets B at 10.001 + y tan(asin s), so the
+    // gap is 0.001 + 3e-5 y mm: 0.004 at y = 100 and -0.002 at y = -100.
+    let s: f64 = 3.0e-5;
+    let c = (1.0 - s * s).sqrt();
+    let b = framed_plane_face(23, [0.0, 0.0, 1.0001], [1.0, 0.0, 0.0], [0.0, c, s]);
+    let build = |y: f64| {
+        from_to_over_sketch(
+            plane_face_at(21, 1.0),
+            b.clone(),
+            IDENTITY_MATRIX,
+            &[Member::profile(Shape::Line([0.0, 0.0], [0.0, y]))],
+            false,
+        )
+        .is_some()
+    };
+    assert!(build(100.0));
+    assert!(!build(-100.0));
+}
+
+#[test]
+fn from_to_gap_that_depends_on_x_bounds_a_diagonal_profile() {
+    // Face A has normal u x v = (0,1,0) x (-0.8,0,0.6) = (0.6, 0, 0.8) through
+    // z = 10 mm and meets the travel line through (x, y, 0) at
+    // z = 10 - 0.75 x. Face B is the plane z = 40 mm, so the gap is
+    // 30 + 0.75 x, positive for x > -40. The diagonal from (0, 0) to (-30, 30)
+    // reaches x = -30 and the one to (-50, 50) reaches x = -50.
+    let a = framed_plane_face(21, [0.0, 0.0, 1.0], [0.0, 1.0, 0.0], [-0.8, 0.0, 0.6]);
+    let build = |end: [f64; 2]| {
+        from_to_over_sketch(
+            a.clone(),
+            plane_face_at(23, 4.0),
+            IDENTITY_MATRIX,
+            &[Member::profile(Shape::Line([0.0, 0.0], end))],
+            false,
+        )
+        .is_some()
+    };
+    assert!(build([-30.0, 30.0]));
+    assert!(!build([-50.0, 50.0]));
+    assert!(build([30.0, -30.0]));
+}
+
+#[test]
+fn from_to_profile_corners_follow_a_rotated_offset_sketch_frame() {
+    // The matrix columns are u = (0,0,-1), v = (0,1,0) and normal
+    // u x v = (1,0,0), and the translation (1,2,3) cm places the origin at
+    // (10, 20, 30) mm. The travel is the normal, +x. The line from (0,0) to
+    // (5,7) in the sketch lies at model points (10, 20, 30) and
+    // (10 + 0*5, 20 + 7, 30 - 5) = (10, 27, 25).
+    let matrix = [
+        [0.0, 0.0, 1.0, 1.0],
+        [0.0, 1.0, 0.0, 2.0],
+        [-1.0, 0.0, 0.0, 3.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    // Face A has normal (0.6,0.8,0) x (0,0,1) = (0.8,-0.6,0) through
+    // (20,20,0) mm. From a point (10, y, z) the travel +x meets A after
+    // 10 - 0.75 (20 - y) mm. Face B has normal (1,0,0) through x = bx and is
+    // met after bx - 10 mm. The gap is bx - 20 + 0.75 (20 - y): bx = 26 gives
+    // 6 at y = 20 and 0.75 at y = 27; bx = 24 gives 4 and -1.25.
+    let face_a =
+        |ordinal| framed_plane_face(ordinal, [2.0, 2.0, 0.0], [0.6, 0.8, 0.0], [0.0, 0.0, 1.0]);
+    let face_b = |ordinal, bx_cm| {
+        framed_plane_face(ordinal, [bx_cm, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0])
+    };
+    let line = [Member::profile(Shape::Line([0.0, 0.0], [5.0, 7.0]))];
+    let build = |start, end| from_to_over_sketch(start, end, matrix, &line, false).is_some();
+    assert!(build(face_a(21), face_b(23, 2.6)));
+    assert!(!build(face_a(21), face_b(23, 2.4)));
+    // Swapped roles negate the gap.
+    assert!(!build(face_b(21, 2.6), face_a(23)));
+}
+
+#[test]
+fn incomplete_sketches_name_the_sketches_with_an_unprojected_record() {
+    use crate::sketch::PmDcSketchEntityKind;
+    use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometryDefinition as Curve};
+    let polygon = || PmDcSketchEntityKind::Polygon {
+        reference: reference(0),
+        value: 0,
+    };
+    let line = || PmDcSketchEntityKind::Line {
+        points: reference_list(&[]),
+        auxiliary: Vec::new(),
+        origin: [cadmpeg_ir::scalar::FiniteReal::ZERO; 2],
+        direction: [
+            cadmpeg_ir::scalar::FiniteReal::ONE,
+            cadmpeg_ir::scalar::FiniteReal::ZERO,
+        ],
+    };
+    // Sketch reference 51 is the record with ordinal 50. In it entity 1
+    // projected and entity 3 is a construction line that did not project, so
+    // it is complete. Entity 2 in sketch 71 and entity 4 in sketch 61 are no
+    // construction lines and did not project.
+    let raw = [
+        crate::sketch::test_entity(test_header(), reference(51), polygon(), false, segment(), 1),
+        crate::sketch::test_entity(test_header(), reference(71), polygon(), false, segment(), 2),
+        crate::sketch::test_entity(test_header(), reference(51), line(), true, segment(), 3),
+        crate::sketch::test_entity(test_header(), reference(61), polygon(), false, segment(), 4),
+    ];
+    let sketch =
+        cadmpeg_ir::sketches::SketchId::mint("test:design:sketch#1".to_owned()).expect("sketch id");
+    let projected = SketchEntity::new(
+        SketchEntityId::mint("test:design:entity#1".to_owned()).expect("entity id"),
+        sketch,
+        Curve::Point {
+            position: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+        }
+        .try_into()
+        .expect("point geometry"),
+    )
+    .with_native_ref(Some(raw[0].id()));
+    let incomplete = crate::feature::extrusion::incomplete_sketches(&raw, &[projected]);
+    assert_eq!(
+        incomplete,
+        std::collections::HashSet::from([("generated", 70), ("generated", 60)])
+    );
 }
 
 #[test]
