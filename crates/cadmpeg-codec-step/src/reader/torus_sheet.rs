@@ -211,7 +211,7 @@ fn face_samples(
                 .map_or(tolerance, |bound| tolerance.max(bound.get())),
         })
     };
-    for loop_id in &face.loops {
+    for loop_id in face.loops.stated() {
         let Some(boundary) = index.loops(loop_id.as_str(), StandardIndex) else {
             continue;
         };

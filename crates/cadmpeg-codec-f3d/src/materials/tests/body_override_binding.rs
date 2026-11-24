@@ -17,6 +17,7 @@ fn binding(id: &str, body: &BodyId, appearance: &str) -> AppearanceBinding {
         target: AppearanceTarget::Body(body.clone()).into(),
         appearance: AppearanceId::mint(format!("f3d:test:appearance#{appearance}"))
             .expect("identity grammar"),
+        precedence: None,
         source_entity_id: None,
         object_type: None,
         visible: None,

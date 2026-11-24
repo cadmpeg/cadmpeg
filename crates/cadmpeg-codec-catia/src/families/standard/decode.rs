@@ -276,7 +276,7 @@ fn bind_consolidated_revolution_faces_and_seams(
         }
         let face_edges = face
             .loops
-            .iter()
+            .stated()
             .filter_map(|id| loop_indices.get(id))
             .flat_map(|index| ir.geometry.loops[*index].coedges())
             .filter_map(|id| coedge_indices.get(id))
@@ -1214,15 +1214,13 @@ fn attach_free_vertices(
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     admission.charge()?;
     let region_shells = vec![shell_id];
-    ir.geometry.regions.push(Region {
-        id: region_id,
-        body: body_id,
-        shells: region_shells,
-        native_ref: None,
-    });
+    ir.geometry
+        .regions
+        .push(Region::new(region_id, body_id, region_shells));
     ir.geometry.shells.push(shell);
     Ok(())
 }
@@ -3950,6 +3948,7 @@ fn attach_standard_faces(
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     annotate(
         annotations,
@@ -3963,12 +3962,9 @@ fn attach_standard_faces(
     annotations.derived(&region_id, "shells")?;
     let region_shells = vec![shell_id.clone()];
     admission.charge()?;
-    ir.geometry.regions.push(Region {
-        id: region_id.clone(),
-        body: body_id,
-        shells: region_shells,
-        native_ref: None,
-    });
+    ir.geometry
+        .regions
+        .push(Region::new(region_id.clone(), body_id, region_shells));
     annotate(
         annotations,
         &shell_id,
@@ -4028,7 +4024,7 @@ fn partition_standard_face_components(
             else {
                 return Ok(false);
             };
-            region.shells = region_shells;
+            region.set_shells(region_shells);
             if !ir.geometry.shells.iter().any(|shell| shell.id == shell_id) {
                 return Ok(false);
             }
@@ -4051,12 +4047,11 @@ fn partition_standard_face_components(
             annotations.derived(&region_id, field)?;
         }
         admission.charge()?;
-        ir.geometry.regions.push(Region {
-            id: region_id.clone(),
-            body: body_id.clone(),
-            shells: region_shells,
-            native_ref: None,
-        });
+        ir.geometry.regions.push(Region::new(
+            region_id.clone(),
+            body_id.clone(),
+            region_shells,
+        ));
         annotations.derived(&shell_id, "region")?;
         admission.charge()?;
         ir.geometry.shells.push(Shell::new(shell_id, region_id));
@@ -8305,7 +8300,7 @@ fn standard_face_boundary_witnesses(
         let mut witnesses = Vec::new();
         for edge in face
             .loops
-            .iter()
+            .stated()
             .filter_map(|id| loops.get(id.as_str()))
             .flat_map(|loop_| loop_.coedges())
             .filter_map(|id| coedges.get(id.as_str()))

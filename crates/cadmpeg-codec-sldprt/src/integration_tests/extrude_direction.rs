@@ -446,12 +446,19 @@ fn edit_and_write(
     decoded: cadmpeg_ir::codec::DecodeResult,
     edit: impl FnOnce(&mut cadmpeg_ir::CadIr),
 ) -> Result<Written, cadmpeg_core::CodecError> {
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     {
         let mut ir = decoded.ir_mut();
         edit(&mut ir);
     }
+    write_editable(&decoded)
+}
+
+/// Writes `decoded` through `Inherit` with its sidecar.
+fn write_editable(
+    decoded: &cadmpeg_test_support::EditableDecodeResult,
+) -> Result<Written, cadmpeg_core::CodecError> {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     let plan = SldprtCodec.plan(
         EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
         TargetRequest::Inherit,
@@ -909,17 +916,12 @@ fn configuration_states_without_baselines_write_over_settled_reversals() {
     let mut refused = Vec::new();
     for (alternate, side) in SETTLED_CASES {
         let (bytes, anchor) = lane_flagged(Some(side), Some(alternate));
-        let decoded = decode(bytes);
+        let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decode(bytes));
         let decoded_directions = directions(decoded.ir(), anchor);
-        let written = edit_and_write(decoded, |ir| {
-            let source = ir.source.as_mut().expect("the decoded source");
-            source
-                .attributes
-                .remove("sldprt_configuration_feature_states_local_sha256");
-            source
-                .attributes
-                .remove("sldprt_configuration_parameter_values_local_sha256");
-        });
+        let digests = &mut decoded.source_fidelity_mut().codec_digests;
+        digests.remove("sldprt_configuration_feature_states_local_sha256");
+        digests.remove("sldprt_configuration_parameter_values_local_sha256");
+        let written = write_editable(&decoded);
         match written {
             Ok((written, _)) => assert_eq!(
                 directions(decode(written).ir(), anchor),

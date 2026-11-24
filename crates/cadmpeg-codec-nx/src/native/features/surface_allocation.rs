@@ -594,7 +594,7 @@ mod tests {
                     .unwrap()
                     .is_empty()
             );
-            let namespace = ir.native.namespace_mut("nx");
+            let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("nx"));
             let original = serde_json::to_value(
                 &namespace.arenas()["feature_surface_construction_payloads"][0],
             )

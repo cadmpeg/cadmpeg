@@ -588,7 +588,7 @@ fn solid_hatch_pattern_needs_no_length_binding() {
         assert_eq!(pattern.fill_type, 0);
         let mut ir = CadIr::empty();
         ir.native
-            .namespace_mut("rhino")
+            .namespace_mut(cadmpeg_ir::codec_id!("rhino"))
             .set_arena(
                 &cadmpeg_core::decode::test_support::service_decode_context(),
                 "hatch_patterns",

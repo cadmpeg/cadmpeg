@@ -23,17 +23,17 @@ fn push_body_with_face(ir: &mut cadmpeg_ir::CadIr, index: u32) {
     let region =
         RegionId::mint(format!("test:model:entity#region{index}")).expect("identity grammar");
     let shell = ShellId::mint(format!("test:model:entity#shell{index}")).expect("identity grammar");
-    ir.geometry.regions.push(Region {
-        id: region.clone(),
-        body: body(index),
-        shells: vec![shell.clone()],
-        native_ref: None,
-    });
+    ir.geometry.regions.push(Region::new(
+        region.clone(),
+        body(index),
+        vec![shell.clone()],
+    ));
     ir.geometry.shells.push(Shell {
         id: shell.clone(),
         region,
         members: Vec::new(),
         native_ref: None,
+        unstated: None,
     });
     ir.geometry.faces.push(Face {
         id: FaceId::mint(format!("test:model:entity#face{index}")).expect("identity grammar"),

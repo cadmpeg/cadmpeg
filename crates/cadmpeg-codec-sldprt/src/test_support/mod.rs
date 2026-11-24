@@ -345,7 +345,14 @@ pub(crate) fn write_in_native_envelope(
 ) -> Result<crate::writer::SemanticOutput, CodecError> {
     let (ir, fidelity) = fixture_native_envelope_context(EncodeInput::new(ir, Some(fidelity)))?;
     let records = crate::source_records(&ir, &fidelity)?;
-    crate::writer::write_semantic_with_records(&ir, &fidelity.annotations, &records, &[], writer)
+    crate::writer::write_semantic_with_records(
+        &ir,
+        &fidelity.annotations,
+        &fidelity.codec_digests,
+        &records,
+        &[],
+        writer,
+    )
 }
 
 pub(crate) fn make_source_image_unavailable(fidelity: &mut SourceFidelity) {
@@ -397,3 +404,20 @@ pub(crate) mod sketch_records;
 pub(crate) mod surfaces;
 pub(crate) mod swift;
 pub(crate) mod tessellation;
+
+/// The machine-local digest of `ir` without `scope`, by which a test compares
+/// two decodes of one part; see [`cadmpeg_ir::hash::document_local_sha256`].
+pub(crate) fn document_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    let digest = cadmpeg_ir::hash::document_local_sha256(
+        &ctx,
+        ir,
+        ir.source.as_ref(),
+        "sldprt",
+        "sldprt:file:source-image#0",
+    )?;
+    ctx.finish_session()?;
+    Ok(digest)
+}

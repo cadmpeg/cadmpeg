@@ -22,18 +22,7 @@
     },
     "fragment": false,
     "geometry": {
-      "bodies": [
-        {
-          "id": "usd:stage:body#/Root/Cover",
-          "kind": "general",
-          "name": "Cover"
-        },
-        {
-          "id": "usd:stage:body#/Root/Plate",
-          "kind": "general",
-          "name": "Plate"
-        }
-      ],
+      "bodies": [],
       "coedges": [],
       "curves": [],
       "edges": [],
@@ -121,17 +110,11 @@
         }
       ],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [
         {
@@ -216,7 +199,6 @@
           ]
         }
       ],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -236,17 +218,13 @@
             "usd:stage:occurrence#/Root/Cover"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "Root",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
-          "bodies": [
-            "usd:stage:body#/Root/Cover"
-          ],
+          "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Root/Cover",
           "instance_bodies": [],
@@ -254,17 +232,13 @@
           "native_ref": "/Root/Cover",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Cover",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
-          "bodies": [
-            "usd:stage:body#/Root/Plate"
-          ],
+          "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Root/Plate",
           "instance_bodies": [],
@@ -272,12 +246,10 @@
           "native_ref": "/Root/Plate",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Plate",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -288,29 +260,18 @@
             "usd:stage:occurrence#/Root"
           ],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [
         {
-          "body": "usd:stage:body#/Root/Cover",
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "usd:stage:tessellation#/Root/Cover",
           "mesh": {
@@ -340,14 +301,16 @@
               }
             ]
           },
+          "of": {
+            "definition": "usd:stage:definition#/Root/Cover",
+            "kind": "definition"
+          },
           "texture_assignments": [],
           "texture_coordinates": [],
           "triangle_groups": []
         },
         {
-          "body": "usd:stage:body#/Root/Plate",
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "usd:stage:tessellation#/Root/Plate",
           "mesh": {
@@ -376,6 +339,10 @@
                 "z": 0.0
               }
             ]
+          },
+          "of": {
+            "definition": "usd:stage:definition#/Root/Plate",
+            "kind": "definition"
           },
           "texture_assignments": [],
           "texture_coordinates": [],
@@ -468,6 +435,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "54f9eb93d08432f284664a6703848a3375065faa64be844da2bc920cfd53776e",
     "file_digests": {},
     "retained_records": {},

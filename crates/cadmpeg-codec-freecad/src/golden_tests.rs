@@ -22,7 +22,7 @@ use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::compare::texts_agree;
 use cadmpeg_test_support::golden::{
-    elide_local_digests, snapshot_text, Branch, Harness, NATIVE_ELISION_KEY, NATIVE_ELISION_MARKER,
+    snapshot_text, Branch, Harness, NATIVE_ELISION_KEY, NATIVE_ELISION_MARKER,
 };
 
 use super::FcstdCodec;
@@ -78,10 +78,6 @@ fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
     {
         Ok(result) => {
-            let mut result = EditableDecodeResult::from(result);
-            if let Some(source) = result.ir_mut().source.as_mut() {
-                elide_local_digests(&mut source.attributes);
-            }
             let mut ir = serde_json::to_value(result.ir()).expect("serialize ir");
             if let Some(native) = ir.get_mut("native") {
                 *native = elided_native(&result.ir().native);
@@ -90,8 +86,7 @@ fn decode_snapshot(bytes: &[u8]) -> String {
             serde_json::json!({
                 "ir": ir,
                 "report": serde_json::to_value(result.report()).expect("serialize report"),
-                "source_fidelity": serde_json::to_value(result.source_fidelity())
-                    .expect("serialize source_fidelity"),
+                "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.source_fidelity()),
             })
         }
         Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
@@ -174,13 +169,13 @@ fn elided_native(native: &cadmpeg_ir::Native) -> serde_json::Value {
         let mut namespace_digests = serde_json::Map::new();
         let mut namespace_values = serde_json::Map::new();
         for (arena, records) in namespace.arenas() {
-            namespace_counts.insert(arena.clone(), serde_json::json!(records.len()));
+            namespace_counts.insert(arena.to_string(), serde_json::json!(records.len()));
             if matches!(arena.as_str(), "attachments" | "product_nodes") && !records.is_empty() {
-                namespace_values.insert(arena.clone(), serde_json::json!(records));
+                namespace_values.insert(arena.to_string(), serde_json::json!(records));
                 continue;
             }
             namespace_digests.insert(
-                arena.clone(),
+                arena.to_string(),
                 serde_json::json!(cadmpeg_ir::hash::canonical_json_sha256(
                     &cadmpeg_core::decode::test_support::service_decode_context(),
                     records
@@ -188,10 +183,10 @@ fn elided_native(native: &cadmpeg_ir::Native) -> serde_json::Value {
                 .expect("the native records state canonical JSON")),
             );
         }
-        counts.insert(format.clone(), namespace_counts.into());
-        digests.insert(format.clone(), namespace_digests.into());
+        counts.insert(format.to_string(), namespace_counts.into());
+        digests.insert(format.to_string(), namespace_digests.into());
         if !namespace_values.is_empty() {
-            values.insert(format.clone(), namespace_values.into());
+            values.insert(format.to_string(), namespace_values.into());
         }
     }
     let mut block = serde_json::Map::new();
@@ -529,10 +524,13 @@ mod native_elision {
     /// One namespace holding one record whose only codec-owned member is `name`.
     fn one_object_native(name: &str) -> cadmpeg_ir::Native {
         let mut native = cadmpeg_ir::Native::default();
-        native.namespace_mut("fcstd").arenas_mut().insert(
-            "objects".to_owned(),
-            vec![named_record("fcstd:native:object#Box", name)],
-        );
+        native
+            .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
+            .arenas_mut()
+            .insert(
+                cadmpeg_core::nonblank_literal!("objects"),
+                vec![named_record("fcstd:native:object#Box", name)],
+            );
         native
     }
 
@@ -540,10 +538,13 @@ mod native_elision {
     /// a drift reaches.
     fn two_arena_native(object_name: &str, property_name: &str) -> cadmpeg_ir::Native {
         let mut native = one_object_native(object_name);
-        native.namespace_mut("fcstd").arenas_mut().insert(
-            "properties".to_owned(),
-            vec![named_record("fcstd:native:property#Length", property_name)],
-        );
+        native
+            .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
+            .arenas_mut()
+            .insert(
+                cadmpeg_core::nonblank_literal!("properties"),
+                vec![named_record("fcstd:native:property#Length", property_name)],
+            );
         native
     }
 
@@ -567,11 +568,11 @@ mod native_elision {
                     .collect::<Vec<_>>();
                 ids.sort_unstable();
                 arenas.insert(
-                    arena.clone(),
+                    arena.to_string(),
                     serde_json::json!({ "count": records.len(), "ids": ids }),
                 );
             }
-            shape.insert(format.clone(), serde_json::Value::Object(arenas));
+            shape.insert(format.to_string(), serde_json::Value::Object(arenas));
         }
         serde_json::Value::Object(shape)
     }
@@ -652,9 +653,12 @@ mod native_elision {
             )
             .unwrap();
             native
-                .namespace_mut("fcstd")
+                .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
                 .arenas_mut()
-                .insert(arena.to_owned(), vec![record]);
+                .insert(
+                    cadmpeg_core::text::NonBlankString::new(arena).unwrap(),
+                    vec![record],
+                );
             let before = elided_native(&native);
             assert!(before["__arena_sha256"]["fcstd"][arena].is_null());
             assert_eq!(before["__arena_counts"]["fcstd"][arena], 1);

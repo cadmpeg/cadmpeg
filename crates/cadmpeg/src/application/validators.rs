@@ -92,7 +92,7 @@ mod tests {
     fn an_unregistered_namespace_reaches_no_codec_validator() {
         let inputs = InputCatalog::with_builtins();
         let mut ir = CadIr::empty();
-        let _ = ir.native.namespace_mut("absent");
+        let _ = ir.native.namespace_mut(cadmpeg_ir::codec_id!("absent"));
         assert!(findings(&inputs, &ir).is_empty());
     }
 
@@ -101,7 +101,7 @@ mod tests {
     fn a_registered_namespace_reaches_its_own_codec_validator() {
         let inputs = InputCatalog::with_builtins();
         let mut ir = CadIr::empty();
-        let _ = ir.native.namespace_mut("fcstd");
+        let _ = ir.native.namespace_mut(cadmpeg_ir::codec_id!("fcstd"));
         let findings = findings(&inputs, &ir);
         assert!(!findings.is_empty());
         assert!(

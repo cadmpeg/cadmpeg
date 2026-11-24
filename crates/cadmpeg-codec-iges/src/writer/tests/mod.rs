@@ -67,6 +67,7 @@ mod closed_edge_range;
 mod encode;
 mod extrusion_directrix;
 mod ownership;
+mod partial;
 mod pcurve_orientation;
 mod physical_dependence;
 mod quarantine;
@@ -102,14 +103,14 @@ fn rejects_mixed_unclassified_bounded_surface_representation() {
     let mut decoded = EditableDecodeResult::from(decoded);
     let model_only_loop_id = decoded.ir().geometry.faces[0]
         .loops
-        .iter()
+        .stated()
         .next()
         .expect("a decoded face states a loop")
         .clone();
     {
         let mut ir = decoded.ir_mut();
         for face in &mut ir.geometry.faces {
-            let ids = face.loops.to_vec();
+            let ids = face.loops.stated().cloned().collect::<Vec<_>>();
             face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(ids);
         }
         let coedge_ids = ir

@@ -1221,7 +1221,7 @@ pub(super) fn attach_point_edge_carriers(out: &mut AsmBrep, records: &[Record], 
 pub(super) fn classify_body_kinds(out: &mut AsmBrep, collapsed: &HashSet<EdgeId>) {
     let mut shell_bodies = HashMap::new();
     for region in &out.regions {
-        for shell in &region.shells {
+        for shell in region.stated_shells() {
             shell_bodies.insert(shell, &region.body);
         }
     }
@@ -1258,10 +1258,14 @@ pub(super) fn classify_body_kinds(out: &mut AsmBrep, collapsed: &HashSet<EdgeId>
         let Some(body) = face_bodies.get(&face.id).copied() else {
             continue;
         };
-        if !face.loops.is_empty() || double_sided.contains(&face.id) {
+        let whole_surface = face
+            .loops
+            .boundary()
+            .is_some_and(cadmpeg_ir::topology::FaceBoundary::is_empty);
+        if !whole_surface || double_sided.contains(&face.id) {
             body_has_bounded_faces.insert(body);
         }
-        for loop_id in &face.loops {
+        for loop_id in face.loops.stated() {
             loop_bodies.insert(loop_id, body);
         }
     }

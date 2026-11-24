@@ -41,7 +41,10 @@ impl Builder<'_> {
         &self,
         face: &Face,
     ) -> Result<Option<ClosedBound>, ResourceLimit> {
-        for id in &face.loops {
+        let Some(face_loops) = face.loops.boundary() else {
+            return Ok(None);
+        };
+        for id in face_loops {
             if !self
                 .loops
                 .get(id.as_str())
@@ -96,7 +99,7 @@ impl Builder<'_> {
             }
             SolvedSurfaceGeometry::Torus(_) => return Ok(self.spindle_bound(face)),
             SolvedSurfaceGeometry::Nurbs(n) => {
-                let tolerance = if face.loops.is_empty() {
+                let tolerance = if face_loops.is_empty() {
                     0.0
                 } else {
                     self.ir.tolerances.linear.get()
@@ -108,7 +111,7 @@ impl Builder<'_> {
             }
             _ => return Ok(None),
         };
-        if face.loops.is_empty() {
+        if face_loops.is_empty() {
             Ok(Some(bound))
         } else if matches!(bound, ClosedBound::Poles(_)) {
             Ok(Some(ClosedBound::Stated))

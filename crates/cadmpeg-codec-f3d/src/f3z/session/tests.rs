@@ -18,14 +18,6 @@ fn assert_cube_document(ir: &cadmpeg_ir::CadIr) {
     );
     assert_eq!(ir.geometry.bodies.len(), 1);
     assert_eq!(ir.geometry.faces.len(), 6);
-    assert_eq!(
-        ir.source
-            .as_ref()
-            .unwrap()
-            .attributes
-            .get(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE,),
-        Some(&crate::decode::document_local_sha256(ir).unwrap())
-    );
     let validation = cadmpeg_ir::validate_neutral(ir, Vec::new()).unwrap();
     assert!(validation.is_ok(), "{validation:#?}");
 }

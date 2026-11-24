@@ -170,20 +170,13 @@
         "appearance_bindings": [],
         "appearances": [],
         "articulations": [],
-        "assembly_joints": [],
         "assets": [],
         "attributes": [],
         "colliders": [],
-        "configurations": [],
         "declared_measures": [],
         "drawings": [],
-        "feature_input_topologies": [],
-        "feature_result_topologies": [],
-        "features": [],
-        "history_bodies": [],
         "mass_properties": [],
         "occurrences": [],
-        "parameters": [],
         "physical_materials": [],
         "physics_scenes": [],
         "pmi": [],
@@ -201,24 +194,15 @@
             "kind": "part",
             "occurrences": [],
             "representations": [],
-            "sketches": [],
             "storage": {
               "document": {},
               "kind": "file"
-            },
-            "tessellations": []
+            }
           }
         ],
         "rigid_bodies": [],
         "semantic_annotations": [],
-        "sketch_constraints": [],
-        "sketch_entities": [],
-        "sketches": [],
         "solver_settings": [],
-        "spatial_sketch_constraints": [],
-        "spatial_sketch_entities": [],
-        "spatial_sketches": [],
-        "spreadsheets": [],
         "tessellations": [],
         "view_presentations": []
       },
@@ -481,6 +465,8 @@
           }
         }
       },
+      "codec_digests": {},
+      "content_digest": "<elided: digest over tolerantly compared geometry>",
       "decode_digest": "aa8376eac0457c4fe436a022b5a0c0822a21c197de2287ba19124ae8a6c1c1e3",
       "file_digests": {},
       "retained_records": {

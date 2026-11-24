@@ -161,14 +161,14 @@ fn same_attribute(left: &SourceAttribute, right: &SourceAttribute) -> bool {
             .zip(&right.values)
             .all(|(left, right)| match (left, right) {
                 (Some(AttributeValue::Float(left)), Some(AttributeValue::Float(right))) => {
-                    left.get().to_bits() == right.get().to_bits()
+                    left.get() == right.get()
                 }
                 (Some(AttributeValue::Vector(left)), Some(AttributeValue::Vector(right))) => {
                     left.len() == right.len()
                         && left
                             .iter()
                             .zip(right)
-                            .all(|(left, right)| left.get().to_bits() == right.get().to_bits())
+                            .all(|(left, right)| left.get() == right.get())
                 }
                 _ => left == right,
             })
