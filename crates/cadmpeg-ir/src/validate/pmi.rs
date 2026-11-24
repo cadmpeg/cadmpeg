@@ -184,6 +184,19 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                 let id = annotation.id.as_str();
                 nominals::check_bound_nominal(&bound_parameters, id, dimension, findings);
                 tolerances::check_dimension_tolerance(id, dimension, findings);
+                tolerances::check_dimension_statements(&bound_parameters, id, dimension, findings);
+                if dimension.dimension == crate::pmi::PmiDimensionKind::DirectedLocation
+                    && annotation.targets.len() != 2
+                {
+                    error(
+                        findings,
+                        id,
+                        format_args!(
+                            "directed location dimension has {} targets; it has two, the origin and the target",
+                            annotation.targets.len()
+                        ),
+                    );
+                }
             }
             PmiDefinition::Presentation { semantics, .. } => {
                 for id in semantics {

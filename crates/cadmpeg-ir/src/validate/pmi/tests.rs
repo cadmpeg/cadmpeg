@@ -296,3 +296,192 @@ fn a_bound_nominal_names_a_parameter_of_the_document() {
     ir.model.parameters.push(model_parameter("model"));
     assert_errors(&mut ir, "", 0);
 }
+
+fn literal(value: f64, quantity: PmiQuantity) -> Dimension<PmiValue> {
+    Dimension::Literal(PmiValue::new(value, quantity).expect("finite value"))
+}
+
+fn stating(
+    kind: PmiDimensionKind,
+    nominal: Option<Dimension<PmiValue>>,
+    tolerance: Option<Tolerance>,
+    decimals: Option<u8>,
+) -> PmiDimension {
+    let mut dimension = PmiDimension::new(kind);
+    dimension.nominal = nominal;
+    dimension.tolerance = tolerance;
+    dimension.decimals = decimals;
+    dimension
+}
+
+#[test]
+fn a_dimension_tolerance_goes_with_a_length_or_angle_and_a_fit_with_a_length() {
+    let other = |quantity| Some(literal(0.5, quantity));
+    let mut ir = document([
+        stating(
+            PmiDimensionKind::Angular,
+            None,
+            Some(Tolerance::Deviations(deviations(-0.1, 0.1))),
+            None,
+        ),
+        stating(
+            PmiDimensionKind::Diameter,
+            None,
+            Some(fit(None, None)),
+            None,
+        ),
+        stating(
+            PmiDimensionKind::Other("slope".into()),
+            None,
+            Some(Tolerance::Deviations(deviations(-0.1, 0.1))),
+            None,
+        ),
+    ]);
+    assert_errors(&mut ir, "", 0);
+
+    let mut ir = document([
+        stating(
+            PmiDimensionKind::Other("slope".into()),
+            other(PmiQuantity::Ratio),
+            Some(Tolerance::Deviations(deviations(-0.1, 0.1))),
+            None,
+        ),
+        stating(PmiDimensionKind::Angular, None, Some(fit(None, None)), None),
+    ]);
+    let findings = pmi_errors(&mut ir);
+    assert!(
+        findings.iter().any(|finding| finding
+            .message
+            .contains("its quantity is no length or angle")),
+        "{findings:#?}"
+    );
+    assert!(
+        findings.iter().any(|finding| finding
+            .message
+            .contains("states a fit, but its quantity is no length")),
+        "{findings:#?}"
+    );
+}
+
+#[test]
+fn a_dimension_fit_designation_is_capital_letters_and_a_grade() {
+    let mut ir = document([stating(
+        PmiDimensionKind::Diameter,
+        None,
+        Some(Tolerance::Fit {
+            fit: LimitsAndFits {
+                form_variance: "h".to_owned(),
+                zone: FitZone::Shaft,
+                grade: String::new(),
+                source: None,
+            },
+            mate: None,
+            deviations: None,
+        }),
+        None,
+    )]);
+    let findings = pmi_errors(&mut ir);
+    assert_eq!(findings.len(), 2, "{findings:#?}");
+    assert!(findings[0].message.contains("is not capital letters only"));
+    assert!(findings[1].message.contains("states an empty grade"));
+}
+
+#[test]
+fn basic_single_limit_and_decimals_need_a_stated_nominal() {
+    let length = || Some(literal(10.0, PmiQuantity::Length));
+    let mut ir = document([
+        stating(
+            PmiDimensionKind::Size,
+            length(),
+            Some(Tolerance::Basic),
+            Some(2),
+        ),
+        stating(
+            PmiDimensionKind::Size,
+            length(),
+            Some(Tolerance::SingleLimit(LimitSide::Minimum)),
+            None,
+        ),
+        stating(PmiDimensionKind::Size, None, Some(Tolerance::General), None),
+    ]);
+    assert_errors(&mut ir, "", 0);
+
+    let mut ir = document([
+        stating(PmiDimensionKind::Size, None, Some(Tolerance::Basic), None),
+        stating(
+            PmiDimensionKind::Size,
+            None,
+            Some(Tolerance::SingleLimit(LimitSide::Maximum)),
+            None,
+        ),
+    ]);
+    assert_errors(&mut ir, "basic or single-limit tolerance and no nominal", 2);
+
+    let mut ir = document([
+        stating(PmiDimensionKind::Size, None, None, Some(2)),
+        stating(
+            PmiDimensionKind::Other("slope".into()),
+            Some(literal(0.5, PmiQuantity::Ratio)),
+            None,
+            Some(2),
+        ),
+    ]);
+    assert_errors(
+        &mut ir,
+        "states decimals, but no length or angle nominal",
+        2,
+    );
+}
+
+fn warnings(ir: &mut CadIr) -> Vec<Finding> {
+    ir.finalize();
+    validate_neutral(ir, Vec::new())
+        .expect("validate the neutral model")
+        .findings
+        .into_iter()
+        .filter(|finding| finding.check == Check::Pmi && finding.severity == Severity::Warning)
+        .collect()
+}
+
+#[test]
+fn a_bound_dimension_restating_its_parameters_tolerance_or_decimals_is_a_warning() {
+    let mut ir = bound_document(
+        [("length", ValueKind::Quantity(Quantity::LENGTH))],
+        [stating(
+            PmiDimensionKind::Size,
+            Some(Dimension::Parameter(parameter_id("length"))),
+            Some(Tolerance::Deviations(deviations(-0.1, 0.1))),
+            Some(2),
+        )],
+    );
+    ir.design.parameters[0].tolerance = Some(Tolerance::Deviations(deviations(-0.1, 0.2)));
+    ir.design.parameters[0].decimals = Some(3);
+    assert!(warnings(&mut ir).is_empty());
+
+    ir.design.parameters[0].tolerance = Some(Tolerance::Deviations(deviations(-0.1, 0.1)));
+    ir.design.parameters[0].decimals = Some(2);
+    let found = warnings(&mut ir);
+    assert_eq!(found.len(), 2, "{found:#?}");
+    assert!(found[0].message.contains("(D61)"));
+    assert!(found[1].message.contains("(D60)"));
+}
+
+#[test]
+fn a_directed_location_has_two_targets() {
+    let shape = |key: &str| {
+        crate::references::InstanceTarget::new(crate::pmi::PmiTarget::Product {
+            product: ProductDefinitionId::mint(format!("test:model:definition#{key}"))
+                .expect("valid identity"),
+        })
+    };
+    let mut ir = document([PmiDimension::new(PmiDimensionKind::DirectedLocation)]);
+    assert_errors(&mut ir, "directed location dimension has 0 targets", 1);
+    ir.model.pmi[0].targets = vec![shape("origin"), shape("target")];
+    let findings = pmi_errors(&mut ir);
+    assert!(
+        findings
+            .iter()
+            .all(|finding| !finding.message.contains("directed location")),
+        "{findings:#?}"
+    );
+}

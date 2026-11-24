@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! A PMI dimension's tolerance (part 10, §5.12, §8): a `Deviations` has its
 //! `lower` below its `upper`, in `Tolerance::Deviations` and in a fit's
-//! `deviations`, and a fit's `mate` has the other `zone` than its `fit`.
+//! `deviations`, a fit's `mate` has the other `zone` than its `fit`, and
+//! what the dimension states goes with its quantity and nominal.
 
 use super::error;
+use super::nominals::{nominal_quantity, BoundParameters};
+use crate::design::dimension::Dimension;
 use crate::design::parameter::{Deviations, FitDeviations, Tolerance};
-use crate::pmi::PmiDimension;
+use crate::pmi::{LimitsAndFits, PmiDimension, PmiQuantity};
 use crate::report::check::Finding;
 
 pub(super) fn check_dimension_tolerance(
@@ -51,4 +54,133 @@ pub(super) fn check_dimension_tolerance(
             );
         }
     }
+}
+
+/// What a PMI dimension states beside its nominal (part 10, §8): a fit's
+/// designations are capital letters and a grade; a tolerance goes with a
+/// length or angle, and a fit with a length; `Basic`, `SingleLimit`, and
+/// `decimals` go with a stated nominal, `decimals` with a length or angle
+/// one; and a tolerance or `decimals` equal to the bound parameter's is a
+/// second spelling of it (D60, D61).
+pub(super) fn check_dimension_statements(
+    parameters: &BoundParameters<'_>,
+    annotation: &str,
+    dimension: &PmiDimension,
+    findings: &mut Vec<Finding>,
+) {
+    let nominal = nominal_quantity(parameters, dimension);
+    let quantity = dimension.dimension.quantity().or(nominal);
+    if let Some(tolerance) = &dimension.tolerance {
+        if quantity.is_some_and(|quantity| quantity == PmiQuantity::Ratio) {
+            error(
+                findings,
+                annotation,
+                format_args!(
+                    "dimension states a tolerance, but its quantity is no length or angle"
+                ),
+            );
+        }
+        match tolerance {
+            Tolerance::Fit { fit, mate, .. } => {
+                if quantity.is_some_and(|quantity| quantity != PmiQuantity::Length) {
+                    error(
+                        findings,
+                        annotation,
+                        format_args!("dimension states a fit, but its quantity is no length"),
+                    );
+                }
+                for (what, designation) in
+                    std::iter::once(("fit", fit)).chain(mate.iter().map(|mate| ("mate", mate)))
+                {
+                    check_designation(annotation, what, designation, findings);
+                }
+            }
+            Tolerance::Basic | Tolerance::SingleLimit(_) if dimension.nominal.is_none() => error(
+                findings,
+                annotation,
+                format_args!("dimension states a basic or single-limit tolerance and no nominal"),
+            ),
+            Tolerance::Deviations(_)
+            | Tolerance::General
+            | Tolerance::Basic
+            | Tolerance::SingleLimit(_) => {}
+        }
+    }
+    if dimension.decimals.is_some() {
+        let stated = match (&dimension.nominal, nominal) {
+            (None, _) => false,
+            (Some(_), Some(quantity)) => quantity != PmiQuantity::Ratio,
+            (Some(_), None) => true,
+        };
+        if !stated {
+            error(
+                findings,
+                annotation,
+                format_args!("dimension states decimals, but no length or angle nominal"),
+            );
+        }
+    }
+    let bound = match &dimension.nominal {
+        Some(Dimension::Parameter(id)) => parameters.design(id.as_str()).map(|p| (p, true)),
+        Some(Dimension::Negated(id)) => parameters.design(id.as_str()).map(|p| (p, false)),
+        Some(Dimension::Literal(_)) | None => None,
+    };
+    if let Some((parameter, same_sign)) = bound {
+        if same_sign && parameter.tolerance.is_some() && dimension.tolerance == parameter.tolerance
+        {
+            warning(
+                findings,
+                annotation,
+                format_args!(
+                    "dimension restates the tolerance of the parameter its nominal binds, {} (D61)",
+                    parameter.id.as_str()
+                ),
+            );
+        }
+        if parameter.decimals.is_some() && dimension.decimals == parameter.decimals {
+            warning(
+                findings,
+                annotation,
+                format_args!(
+                    "dimension restates the decimals of the parameter its nominal binds, {} (D60)",
+                    parameter.id.as_str()
+                ),
+            );
+        }
+    }
+}
+
+/// A designation's `form_variance` holds capital letters only, and its
+/// `grade` is not empty.
+fn check_designation(
+    annotation: &str,
+    what: &str,
+    designation: &LimitsAndFits,
+    findings: &mut Vec<Finding>,
+) {
+    let letters = &designation.form_variance;
+    if letters.is_empty() || !letters.chars().all(|letter| letter.is_ascii_uppercase()) {
+        error(
+            findings,
+            annotation,
+            format_args!("dimension's {what} designation {letters:?} is not capital letters only"),
+        );
+    }
+    if designation.grade.is_empty() {
+        error(
+            findings,
+            annotation,
+            format_args!("dimension's {what} designation states an empty grade"),
+        );
+    }
+}
+
+fn warning(findings: &mut Vec<Finding>, annotation: &str, message: std::fmt::Arguments<'_>) {
+    crate::validate::record_finding(
+        findings,
+        crate::report::check::Check::Pmi,
+        crate::report::Severity::Warning,
+        Some(annotation),
+        message,
+    );
 }
