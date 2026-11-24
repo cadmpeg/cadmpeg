@@ -392,7 +392,9 @@ fn collect_refs(value: &Value, out: &mut Vec<u32>) {
     match value {
         Value::Ref(id) => out.push(*id),
         Value::List(items) | Value::Typed(_, items) => {
-            items.iter().for_each(|item| collect_refs(item, out));
+            for item in items {
+                collect_refs(item, out);
+            }
         }
         _ => {}
     }
@@ -441,10 +443,9 @@ fn datum_problem(part: &Part21, root: &Instance) -> Option<String> {
             if instance.name == "DESIGNASSEMBLY" {
                 continue;
             }
-            instance
-                .args
-                .iter()
-                .for_each(|value| collect_refs(value, &mut next));
+            for value in &instance.args {
+                collect_refs(value, &mut next);
+            }
         }
         level = next;
     }
