@@ -26,14 +26,20 @@ pub(super) fn check_point_clouds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 Check::ReferentialIntegrity,
                 Severity::Error,
                 id,
-                format_args!("references missing product definition `{definition}`"),
+                crate::rule!(
+                    "point_clouds.references-missing-product-definition",
+                    "references missing product definition `{definition}`"
+                ),
             ),
             Some(Storage::External(_)) => record_finding(
                 findings,
                 Check::ReferentialIntegrity,
                 Severity::Error,
                 id,
-                format_args!("is held by external product definition `{definition}`"),
+                crate::rule!(
+                    "point_clouds.held-external-product-definition",
+                    "is held by external product definition `{definition}`"
+                ),
             ),
             Some(_) => {}
         }
@@ -44,7 +50,10 @@ pub(super) fn check_point_clouds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 Check::PayloadIntegrity,
                 Severity::Error,
                 id,
-                format_args!("a point cloud holds no point"),
+                crate::rule!(
+                    "point_clouds.point-cloud-holds-no-point",
+                    "a point cloud holds no point"
+                ),
             );
         }
         for (what, count) in [
@@ -57,7 +66,7 @@ pub(super) fn check_point_clouds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     Check::PayloadIntegrity,
                     Severity::Error,
                     id,
-                    format_args!("{count} {what} for {points} points"),
+                    crate::rule!("point_clouds.points", "{count} {what} for {points} points"),
                 );
             }
         }
@@ -69,7 +78,11 @@ pub(super) fn check_point_clouds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     Check::PayloadIntegrity,
                     Severity::Error,
                     id,
-                    format_args!("channel `{}` occurs twice", channel.name),
+                    crate::rule!(
+                        "point_clouds.channel-occurs-twice",
+                        "channel `{}` occurs twice",
+                        channel.name
+                    ),
                 );
             }
             if channel.values.len() != points {
@@ -78,7 +91,8 @@ pub(super) fn check_point_clouds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     Check::PayloadIntegrity,
                     Severity::Error,
                     id,
-                    format_args!(
+                    crate::rule!(
+                        "point_clouds.channel-holds-values-points",
                         "channel `{}` holds {} values for {points} points",
                         channel.name,
                         channel.values.len()

@@ -8,6 +8,7 @@ use crate::design::container::{Container, Folder, Rollback};
 use crate::report::check::Finding;
 
 pub(super) fn check_containers(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
+    check_scope_contents(index, findings);
     let design = &index.ir.design;
     let mut listings: BTreeMap<MemberKey<'_>, usize> = BTreeMap::new();
     for container in &design.containers {
@@ -19,7 +20,10 @@ pub(super) fn check_containers(index: &DesignRecords<'_>, findings: &mut Vec<Fin
                 super::error(
                     findings,
                     id,
-                    format_args!("container lists {key}, which is no record of the design"),
+                    crate::rule!(
+                        "design.container-lists-no-record-design",
+                        "container lists {key}, which is no record of the design"
+                    ),
                 );
             }
         }
@@ -34,7 +38,11 @@ pub(super) fn check_containers(index: &DesignRecords<'_>, findings: &mut Vec<Fin
                 super::error(
                     findings,
                     scope.definition.as_str(),
-                    format_args!("scope root {} is no container of the design", root.as_str()),
+                    crate::rule!(
+                        "design.scope-root-no-container-design",
+                        "scope root {} is no container of the design",
+                        root.as_str()
+                    ),
                 );
             }
         }
@@ -55,7 +63,7 @@ pub(super) fn check_containers(index: &DesignRecords<'_>, findings: &mut Vec<Fin
             super::error(
                 findings,
                 key.id(),
-                format_args!(
+                crate::rule!("design.member-scope-root-times-member-exactly", 
                     "{key} is a member or scope root {count} times; it is a member of exactly one container or a root of exactly one scope"
                 ),
             );
@@ -67,9 +75,62 @@ pub(super) fn check_containers(index: &DesignRecords<'_>, findings: &mut Vec<Fin
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "design.container-own-ancestor-through-membership-containers",
                     "container is its own ancestor through membership; containers form a tree"
                 ),
+            );
+        }
+    }
+}
+
+/// A scope holds a root container that has a member, a parameter, program,
+/// sheet-metal rule, configuration, arrangement, or publication that names
+/// it, an `occurrences` entry, or a setup that names it (§5.1).
+fn check_scope_contents(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
+    let ir = index.ir;
+    let design = &ir.design;
+    let mut named: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    named.extend(design.parameters.iter().map(|record| record.scope.as_str()));
+    named.extend(design.programs.iter().map(|record| record.scope.as_str()));
+    named.extend(
+        design
+            .sheet_metal_rules
+            .iter()
+            .map(|record| record.scope.as_str()),
+    );
+    named.extend(
+        design
+            .configurations
+            .iter()
+            .map(|record| record.scope.as_str()),
+    );
+    named.extend(
+        design
+            .arrangements
+            .iter()
+            .map(|record| record.scope.as_str()),
+    );
+    named.extend(
+        design
+            .publications
+            .iter()
+            .map(|record| record.scope.as_str()),
+    );
+    named.extend(ir.process.setups.iter().map(|setup| setup.scope.as_str()));
+    for scope in &design.scopes {
+        let definition = scope.definition.as_str();
+        let filled_root = scope.roots.iter().any(|root| {
+            index
+                .containers
+                .get(root.as_str())
+                .is_some_and(|container| !members(container).is_empty())
+        });
+        if !filled_root && scope.occurrences.is_empty() && !named.contains(definition) {
+            super::error(
+                findings,
+                definition,
+                crate::rule!("design.design-scope-holds-no-member-parameter", "design scope holds no member, parameter, program, rule, configuration, arrangement, publication, occurrence design, or setup"),
             );
         }
     }
@@ -108,7 +169,8 @@ fn check_order(container: &Container, findings: &mut Vec<Finding>) {
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "design.rollback-names-no-member-container",
                     "rollback names {}, which is no member of the container",
                     MemberKey::of(member)
                 ),
@@ -122,9 +184,11 @@ fn check_order(container: &Container, findings: &mut Vec<Finding>) {
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "design.folder-no-run-container-members",
                     "folder {}..={} is no run of the container's {count} members",
-                    folder.first, folder.last
+                    folder.first,
+                    folder.last
                 ),
             );
         }
@@ -135,9 +199,13 @@ fn check_order(container: &Container, findings: &mut Vec<Finding>) {
                 super::error(
                     findings,
                     id,
-                    format_args!(
+                    crate::rule!(
+                        "design.folders-neither-nest-nor-disjoint",
                         "folders {}..={} and {}..={} neither nest nor are disjoint",
-                        first.first, first.last, second.first, second.last
+                        first.first,
+                        first.last,
+                        second.first,
+                        second.last
                     ),
                 );
             }

@@ -115,12 +115,6 @@ enum ObjectCurveGeometry<'a> {
 impl<'a> WritableObjectCurve<'a> {
     /// Admits a free curve with writable attributes and geometry.
     pub(super) fn try_new(curve: &'a cadmpeg_ir::geometry::Curve) -> Result<Self, CodecError> {
-        if curve.source_object.is_some() {
-            return Err(CodecError::NotImplemented(format!(
-                "curve {} source-object state is not writable",
-                curve.id.as_str()
-            )));
-        }
         let geometry = match &curve.geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) => {
                 check_frame(curve.id.as_str(), *circle.frame(), "circle")?;
@@ -177,12 +171,6 @@ pub(super) enum WritableFaceSurface<'a> {
 
 impl<'a> WritableFaceSurface<'a> {
     pub(super) fn try_new(surface: &'a cadmpeg_ir::geometry::Surface) -> Result<Self, CodecError> {
-        if surface.source_object.is_some() {
-            return Err(CodecError::NotImplemented(format!(
-                "surface {} source-object state is not writable",
-                surface.id.as_str(),
-            )));
-        }
         match &surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) => {
                 let origin = plane.origin().get();
@@ -438,12 +426,6 @@ impl<'a> WritableModel<'a> {
                     CodecError::malformed(format_args!("curve {} is missing", curve_id.as_str()))
                 })?;
             used_curves.insert(curve_id.as_str());
-            if curve.source_object.is_some() {
-                return Err(CodecError::NotImplemented(format!(
-                    "edge curve {} source-object state is not writable",
-                    curve.id.as_str()
-                )));
-            }
             let domain = edge
                 .param_range()
                 .ok_or_else(|| {

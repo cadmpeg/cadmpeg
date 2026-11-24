@@ -80,7 +80,10 @@ pub(super) fn check_history_bodies(
                 Check::ReferentialIntegrity,
                 Severity::Error,
                 Some(owner),
-                format_args!("history body names neither a producing nor a consuming feature"),
+                crate::rule!(
+                    "history_bodies.history-body-names-neither-producing-nor",
+                    "history body names neither a producing nor a consuming feature"
+                ),
             );
         }
         for (role, feature) in [
@@ -94,7 +97,10 @@ pub(super) fn check_history_bodies(
                         Check::ReferentialIntegrity,
                         Severity::Error,
                         Some(owner),
-                        format_args!("history body {role} {feature} names no feature"),
+                        crate::rule!(
+                            "history_bodies.history-body-names-no-feature",
+                            "history body {role} {feature} names no feature"
+                        ),
                     );
                 }
             }
@@ -108,7 +114,10 @@ pub(super) fn check_history_bodies(
                     Check::Identity,
                     Severity::Error,
                     Some(owner),
-                    format_args!("history body record {id} repeats a top-level identity"),
+                    crate::rule!(
+                        "history_bodies.history-body-record-repeats-top-level",
+                        "history body record {id} repeats a top-level identity"
+                    ),
                 );
             } else if !owners.insert(id.to_owned()) {
                 record_finding(
@@ -116,7 +125,8 @@ pub(super) fn check_history_bodies(
                     Check::Identity,
                     Severity::Error,
                     Some(owner),
-                    format_args!(
+                    crate::rule!(
+                        "history_bodies.history-body-record-repeats-identity-another",
                         "history body record {id} repeats an identity of another history body"
                     ),
                 );

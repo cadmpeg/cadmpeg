@@ -394,15 +394,30 @@ fn a_scoped_root_owns_its_current_states_and_unproduced_shapes_at_every_depth() 
     assert!(current.is_disjoint(&unproduced));
     let root = root_bodies(&design);
     assert_eq!(root, &current | &unproduced);
-    // A Body member's shape is a state of its Body: no definition owns it.
-    assert!(root
-        .iter()
-        .all(|body| !body.starts_with("fcstd:model:body#Hole:Shape:")));
+    // A Body member's shape is a state of its Body, which an evaluation
+    // states, or the `Tip`'s repeat of the current state: no body of the
+    // geometry (§5.4).
     assert!(design
         .geometry
         .bodies
         .iter()
-        .any(|body| body.id.as_str().starts_with("fcstd:model:body#Hole:Shape:")));
+        .all(|body| !body.id.as_str().starts_with("fcstd:model:body#Hole:Shape:")));
+    let owners = design
+        .model
+        .product_definitions
+        .iter()
+        .flat_map(|definition| &definition.bodies)
+        .map(|body| body.as_str().to_owned())
+        .collect::<Vec<_>>();
+    let mut listed = owners.clone();
+    listed.sort();
+    listed.dedup();
+    assert_eq!(listed.len(), owners.len());
+    assert!(design
+        .geometry
+        .bodies
+        .iter()
+        .all(|body| owners.contains(&body.id.as_str().to_owned())));
     assert_eq!(
         root_bodies(&decode(CORE_OPERATIONS, DecodeDepth::Geometry)),
         root

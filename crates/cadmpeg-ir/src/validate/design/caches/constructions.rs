@@ -135,7 +135,8 @@ pub(in crate::validate::design) fn check_construction<'a>(
                 warning(
                     findings,
                     at,
-                    format_args!(
+                    crate::rule!(
+                        "design.construction-misses-input",
                         "a construction's {which} misses its {:?} input by {residual}",
                         input.role.as_ref().map(|role| &role.relation)
                     ),

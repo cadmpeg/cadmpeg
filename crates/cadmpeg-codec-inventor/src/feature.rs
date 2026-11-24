@@ -53,6 +53,7 @@ pub(crate) mod fillet;
 pub(crate) mod history;
 pub(crate) mod history_bodies;
 pub(crate) mod history_states;
+pub(crate) mod history_views;
 mod hole;
 pub(crate) mod loft_sweep;
 pub(crate) mod mirror;
@@ -2177,6 +2178,9 @@ impl FeatureFamily {
 pub(crate) struct ProjectionIndex<'a> {
     body_joins: Option<&'a HashMap<String, cadmpeg_ir::ids::BodyId>>,
     result_model: Option<&'a CadIr>,
+    /// Models of history states, which a loft result check reads when the
+    /// final model no longer holds the faces of the loft.
+    result_states: Option<&'a dyn history_views::ResultStates>,
     thread_definitions: &'a [thread::Definition],
     edge_names: HashMap<(String, u32), Option<cadmpeg_ir::features::selections::GeneratedEdgeRef>>,
     dimensions: HashMap<(&'a str, u32), Option<&'a revolve::Dimension>>,
@@ -2204,12 +2208,14 @@ pub(crate) struct ProjectionIndex<'a> {
 }
 
 /// The projected sketch model that features consume.
+#[derive(Default)]
 pub(crate) struct ProjectedSketches<'a> {
     pub(crate) sketches: &'a [Sketch],
     pub(crate) entities: &'a [cadmpeg_ir::sketches::SketchEntity],
     /// The decoded profile bodies that extrusion profiles resolve through.
     pub(crate) profile_bodies: &'a [profile::ProfileBody],
     pub(crate) result_model: Option<&'a CadIr>,
+    pub(crate) result_states: Option<&'a dyn history_views::ResultStates>,
 }
 
 pub(crate) fn project(
@@ -2225,6 +2231,7 @@ pub(crate) fn project(
         entities: sketch_entities,
         profile_bodies,
         result_model,
+        result_states,
     } = *projected;
     let total = inventory.features.len() + inventory.pattern_features.len();
     let mut feature_tokens = HashSet::new();
@@ -2325,6 +2332,7 @@ pub(crate) fn project(
     let mut index = ProjectionIndex {
         body_joins: None,
         result_model,
+        result_states,
         thread_definitions: &inventory.thread_definitions,
         edge_names: HashMap::new(),
         sketch_entities: if inventory.properties.iter().any(|property| {
@@ -5102,7 +5110,7 @@ pub(crate) mod tests {
                     sketches: &[],
                     entities: &[],
                     profile_bodies: &[],
-                    result_model: None,
+                    ..Default::default()
                 },
             )
             .expect("feature projection")
@@ -5561,6 +5569,7 @@ pub(crate) mod tests {
         ProjectionIndex {
             body_joins: None,
             result_model: None,
+            result_states: None,
             thread_definitions: &[],
             edge_names: std::collections::HashMap::new(),
             dimensions: std::collections::HashMap::new(),

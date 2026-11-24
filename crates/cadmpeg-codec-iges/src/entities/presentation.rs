@@ -689,9 +689,22 @@ pub(super) fn project(
             native_ref: None,
         });
     }
+    carriers::state(
+        ir,
+        &carriers::Sources {
+            entries: &entries,
+            records: &records,
+            decoded: &decoded,
+            sequences,
+        },
+        &resolve,
+        ctx,
+        &mut losses,
+    )?;
 
     Ok(ProjectionOutcome { decoded, losses })
 }
 
+mod carriers;
 #[cfg(test)]
 mod tests;

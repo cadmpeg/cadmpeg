@@ -290,6 +290,11 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
     ),
     ("crates/cadmpeg-ir/src/provenance.rs", "Provenance", "wire"),
     ("crates/cadmpeg-ir/src/provenance.rs", "Provenance", "wire"),
+    (
+        "crates/cadmpeg-ir/src/report/check.rs",
+        "RuleName",
+        "keyless",
+    ),
     ("crates/cadmpeg-ir/src/scalar.rs", "$name", "keyless"),
     (
         "crates/cadmpeg-ir/src/scalar.rs",
