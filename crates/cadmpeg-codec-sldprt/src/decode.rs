@@ -1195,7 +1195,6 @@ pub(crate) fn append_design_losses(
         .iter()
         .filter(|constraint| {
             !sketch_constraint_has_complete_neutral_semantics(constraint.definition.kind())
-                && constraint.active != Some(false)
         })
         .count();
     let native_spatial_constraints = ir
@@ -3742,10 +3741,12 @@ fn build_geometry_ir(
         &lanes,
         form_padding,
     );
-    crate::pmi::apply_to_parameters(
+    let refined_lengths = crate::pmi::apply_to_parameters(
         &mut ir.model.parameters,
         &ir.model.features,
         &pmi_dimensions,
+        length_unit,
+        length_places,
     )?;
     crate::resolved_features::projections::bind_parameter_scalars(
         &mut ir.model.parameters,
@@ -3763,6 +3764,7 @@ fn build_geometry_ir(
         &ir.model.features,
         &lanes,
     )?;
+    crate::history::configuration::convert_refined_configuration_values(&mut ir, &refined_lengths);
     crate::history::configuration::align_configuration_parameter_kinds(&mut ir);
     complete_resolved_configuration_parameter_snapshots(&mut ir)?;
     stamp_parameter_baseline(ctx, &mut ir)?;
@@ -5277,10 +5279,12 @@ fn build_metadata_ir(
         &lanes,
         form_padding,
     );
-    crate::pmi::apply_to_parameters(
+    let refined_lengths = crate::pmi::apply_to_parameters(
         &mut ir.model.parameters,
         &ir.model.features,
         &pmi_dimensions,
+        length_unit,
+        length_places,
     )?;
     crate::resolved_features::projections::bind_parameter_scalars(
         &mut ir.model.parameters,
@@ -5298,6 +5302,7 @@ fn build_metadata_ir(
         &ir.model.features,
         &lanes,
     )?;
+    crate::history::configuration::convert_refined_configuration_values(&mut ir, &refined_lengths);
     crate::history::configuration::align_configuration_parameter_kinds(&mut ir);
     complete_resolved_configuration_parameter_snapshots(&mut ir)?;
     stamp_parameter_baseline(ctx, &mut ir)?;

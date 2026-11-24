@@ -170,6 +170,12 @@ opt-level = 2
 # and type DWARF. This drops the rest.
 debug = "line-tables-only"
 
+# The SLDPRT writer tests decode, write and decode again one part per edit.
+# At opt-level 0 and 1 the crate calls the generic byte scans and hashing that
+# unoptimized crates instantiate; at 2 it instantiates and inlines its own.
+[profile.test.package.cadmpeg-codec-sldprt]
+opt-level = 2
+
 [profile.release]
 lto = "thin"
 # Codecs parse untrusted files; a trapped overflow beats a wrapped offset
