@@ -486,6 +486,7 @@ fn validation_errors_outside_the_geometry_and_history_arenas_and_without_a_recor
     ] {
         validation.findings.push(Finding {
             check: Check::ReferentialIntegrity,
+            rule: cadmpeg_ir::rule_name!("sldprt/test.fixture-reference"),
             severity: Severity::Error,
             message: message.into(),
             entity: entity.map(str::to_owned),

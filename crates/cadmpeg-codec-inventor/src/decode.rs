@@ -659,6 +659,34 @@ fn decode_container<'a>(
             annotation_records: kernel_annotations,
         },
     ) = transfer_into_ir(ctx, &mut ir, cadmpeg_ir::codec_id!("inventor"), kernel_brep)?;
+    let history_framing = match &container.rse.active_carrier {
+        ActiveCarrierState::Selected(carrier) if delivered >= DecodeDepth::Design => {
+            crate::feature::history_states::frame_carrier(ctx, carrier)?
+        }
+        _ => crate::feature::history_states::Framing::Absent,
+    };
+    let history_read = match &container.rse.active_carrier {
+        ActiveCarrierState::Selected(carrier) => {
+            crate::feature::history_states::read(ctx, carrier, &history_framing)?
+        }
+        _ => crate::feature::history_states::Read::Absent,
+    };
+    let state_views = match (&container.rse.active_carrier, &history_read) {
+        (
+            ActiveCarrierState::Selected(carrier),
+            crate::feature::history_states::Read::Closed(closed),
+        ) => Some(crate::feature::history_views::StateViews::new(
+            carrier,
+            closed,
+            crate::feature::history_views::MAX_STATE_VIEW_WORK,
+        )),
+        _ => None,
+    };
+    let result_states: Option<&dyn crate::feature::history_views::ResultStates> = match &state_views
+    {
+        Some(views) => Some(views),
+        None => None,
+    };
     let mut unresolved = if delivered >= DecodeDepth::Design {
         project_design(
             ctx,
@@ -667,6 +695,7 @@ fn decode_container<'a>(
             &design_inventory,
             &sketch_inventory,
             &feature_inventory,
+            result_states,
         )?
     } else {
         UnresolvedDesign::default()
@@ -766,6 +795,7 @@ fn decode_container<'a>(
             let history = crate::feature::history_states::project(
                 ctx,
                 carrier,
+                &history_read,
                 &crate::feature::history_states::Inputs {
                     features: &feature_inventory.features,
                     model_features: &ir.model.features,
@@ -1635,6 +1665,7 @@ fn project_design(
     design: &crate::design::DesignInventory,
     sketch: &crate::sketch::SketchInventory,
     feature: &crate::feature::FeatureInventory,
+    result_states: Option<&dyn crate::feature::history_views::ResultStates>,
 ) -> Result<UnresolvedDesign, CodecError> {
     let mut admitted_entities = 0_u64;
     let scopes = crate::design::parameter_scopes(design)?;
@@ -1657,6 +1688,7 @@ fn project_design(
             entities: &ir.model.sketch_entities,
             profile_bodies: &profile_bodies.bodies,
             result_model: Some(ir),
+            result_states,
         },
     )?;
     let mut added_profiles = features.added_profiles;

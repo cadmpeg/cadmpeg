@@ -322,6 +322,7 @@ fn a_failed_plan_refuses_on_check_errors_only_under_reject_errors() {
         );
         conversion.reject_errors = reject_errors;
         conversion.validation.findings.push(Finding {
+            rule: cadmpeg_ir::rule_name!("cadmpeg/test.synthetic-document-wide-error"),
             related: Vec::new(),
             check: Check::Counts,
             severity: Severity::Error,
@@ -680,6 +681,7 @@ fn an_error_without_an_entity_refuses_a_step_export_under_reject_errors() {
         conversion.reject_errors = true;
         assert_eq!(conversion.validation.error_count(), 0);
         conversion.validation.findings.push(Finding {
+            rule: cadmpeg_ir::rule_name!("cadmpeg/test.synthetic-document-wide-error"),
             related: Vec::new(),
             check: Check::Counts,
             severity: Severity::Error,
@@ -688,6 +690,7 @@ fn an_error_without_an_entity_refuses_a_step_export_under_reject_errors() {
         });
         if include_design_error {
             conversion.validation.findings.push(Finding {
+                rule: cadmpeg_ir::rule_name!("cadmpeg/test.synthetic-design-error"),
                 related: Vec::new(),
                 check: Check::Counts,
                 severity: Severity::Error,
@@ -744,6 +747,7 @@ fn a_design_arena_error_refuses_a_freecad_round_trip_under_reject_errors() {
         };
         if inject_error {
             conversion.validation.findings.push(Finding {
+                rule: cadmpeg_ir::rule_name!("cadmpeg/test.synthetic-design-error"),
                 related: Vec::new(),
                 check: Check::Counts,
                 severity: Severity::Error,
@@ -789,6 +793,7 @@ fn a_carried_error_does_not_refuse_the_export_by_default() {
     );
     assert_eq!(conversion.validation.error_count(), 0);
     conversion.validation.findings.push(Finding {
+        rule: cadmpeg_ir::rule_name!("cadmpeg/test.synthetic-document-wide-error"),
         related: Vec::new(),
         check: Check::Counts,
         severity: Severity::Error,
@@ -818,6 +823,7 @@ fn an_f3d_native_design_record_error_does_not_refuse_a_step_export_under_reject_
     conversion.reject_errors = true;
     assert_eq!(conversion.validation.error_count(), 0);
     let finding = Finding {
+        rule: cadmpeg_ir::rule_name!("cadmpeg/test.synthetic-native-design-record-error"),
         related: Vec::new(),
         check: Check::Counts,
         severity: Severity::Error,
