@@ -14,7 +14,6 @@ use crate::design::ops::surface::{
 use crate::design::options::{BooleanOp, SectionCondition, Solidify};
 use crate::design::selection::SetSelection;
 use crate::report::check::{Check, Finding};
-use crate::scalar::Fraction;
 
 use super::super::records::DesignRecords;
 
@@ -116,13 +115,10 @@ pub(super) fn check_extend(
     findings: &mut Vec<Finding>,
 ) {
     match &extend.limit {
-        Some(ExtendLimit::Distance(Dimension::Literal(distance))) if distance.get() <= 0.0 => {
-            error(
-                findings,
-                site.entity,
-                format_args!("a literal ExtendLimit::Distance is not positive"),
-            );
-        }
+        Some(ExtendLimit::Distance(distance)) => site.bound(findings, |values| {
+            (values.get(distance)?.get() <= 0.0)
+                .then(|| "ExtendLimit::Distance is not positive".to_owned())
+        }),
         Some(ExtendLimit::UpTo(target)) => {
             check_up_to(site, "ExtendLimit::UpTo", target, findings);
         }
@@ -133,12 +129,12 @@ pub(super) fn check_extend(
     }
 }
 
-fn law_fraction_outside(law: &Law<Fraction>) -> bool {
-    let outside = |value: &Dimension<Fraction>| matches!(value, Dimension::Literal(value) if !(value.get() > 0.0 && value.get() < 1.0));
+/// The values a constant or linear law states.
+fn law_values<T>(law: &Law<T>) -> Vec<&Dimension<T>> {
     match law {
-        Law::Constant(value) => outside(value),
-        Law::Linear { start, end } => outside(start) || outside(end),
-        _ => false,
+        Law::Constant(value) => vec![value],
+        Law::Linear { start, end } => vec![start, end],
+        _ => Vec::new(),
     }
 }
 
@@ -224,12 +220,13 @@ pub(super) fn check_implicit_sweep(
                     ),
                 );
             }
-            if parameter.as_ref().is_some_and(law_fraction_outside) {
-                error(
-                    findings,
-                    site.entity,
-                    format_args!("an ImplicitSection::Conic parameter lies outside (0, 1)"),
-                );
+            for value in parameter.iter().flat_map(law_values) {
+                site.bound(findings, |values| {
+                    let value = values.get(value)?.get();
+                    (!(value > 0.0 && value < 1.0)).then(|| {
+                        "an ImplicitSection::Conic parameter lies outside (0, 1)".to_owned()
+                    })
+                });
             }
         }
         _ => {}
@@ -294,16 +291,12 @@ pub(super) fn check_curve(
                 );
             }
         }
-        CurveDefinition::Polygon {
-            sides: Dimension::Literal(sides),
-            ..
-        } if *sides < 3 => error(
-            findings,
-            site.entity,
-            format_args!(
-                "CurveDefinition::Polygon has {sides} sides; a literal count is at least 3"
-            ),
-        ),
+        CurveDefinition::Polygon { sides, .. } => site.bound(findings, |values| {
+            let sides = values.get(sides)?;
+            (sides < 3).then(|| {
+                format!("CurveDefinition::Polygon has {sides} sides; a count is at least 3")
+            })
+        }),
         CurveDefinition::Offset { corner, .. } => {
             swept::check_corner(
                 site,
