@@ -855,13 +855,15 @@ fn hole_wire_rejects_cross_form_thread_fields() {
 #[test]
 fn filled_surface_continuity_preserves_aggregate_and_component_wire_fields() {
     use crate::features::selections::{EdgeSelection, FaceSelection};
-    use crate::features::surface_inputs::{SurfaceBoundary, SurfaceContinuity};
+    use crate::features::surface_inputs::{
+        FilledSurfaceContinuity, SurfaceBoundary, SurfaceContinuity,
+    };
     use crate::features::{FeatureDefinition, FeatureOperation};
 
     let definition = FeatureDefinition::Operation(FeatureOperation::FilledSurface {
         boundary: SurfaceBoundary::Edges(EdgeSelection::Unresolved),
         support_faces: FaceSelection::Faces(Vec::new()),
-        continuity: Some(crate::features::surface_inputs::FilledSurfaceContinuity {
+        continuity: Some(FilledSurfaceContinuity {
             conditions: crate::features::selections::NonEmptyMembers::try_from(vec![
                 SurfaceContinuity::Contact.into(),
                 SurfaceContinuity::Contact.into(),
@@ -887,12 +889,10 @@ fn filled_surface_continuity_preserves_aggregate_and_component_wire_fields() {
     else {
         panic!("filled-surface fixture");
     };
-    assert_eq!(
-        continuity
-            .as_ref()
-            .and_then(crate::features::surface_inputs::FilledSurfaceContinuity::uniform_continuity),
-        Some(SurfaceContinuity::Contact)
-    );
+    let uniform = continuity
+        .as_ref()
+        .and_then(FilledSurfaceContinuity::uniform_continuity);
+    assert_eq!(uniform, Some(SurfaceContinuity::Contact));
 
     let mut mixed = wire;
     mixed["value"]["value"]["continuity"] =
@@ -902,12 +902,10 @@ fn filled_surface_continuity_preserves_aggregate_and_component_wire_fields() {
     else {
         panic!("filled-surface fixture");
     };
-    assert_eq!(
-        continuity
-            .as_ref()
-            .and_then(crate::features::surface_inputs::FilledSurfaceContinuity::uniform_continuity),
-        None
-    );
+    let uniform = continuity
+        .as_ref()
+        .and_then(FilledSurfaceContinuity::uniform_continuity);
+    assert_eq!(uniform, None);
 }
 
 #[test]
@@ -945,14 +943,8 @@ fn empty_filled_surface_continuity_list_is_refused() {
     let resolved: FilledSurfaceContinuity =
         serde_json::from_value(serde_json::json!([{ "kind": "tangent" }])).unwrap();
     assert_eq!(
-        Some(resolved.conditions.as_slice()),
-        Some(
-            &[
-                crate::features::surface_inputs::FilledSurfaceBoundaryCondition::from(
-                    SurfaceContinuity::Tangent
-                )
-            ][..]
-        )
+        resolved,
+        FilledSurfaceContinuity::one(SurfaceContinuity::Tangent)
     );
 }
 
