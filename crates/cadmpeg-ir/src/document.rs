@@ -1524,6 +1524,28 @@ macro_rules! declare_wire_omitted {
                 self.omitted = OmittedArenas::NotRead;
             }
 
+            /// Takes what the CADIR wire omits from `decoded`, the decode of
+            /// the source this model was saved from: the records of those
+            /// arenas, their feature-parent relations, the sketches of each
+            /// product definition both models hold, and the digest the
+            /// decode wrapper recorded of them. It undoes
+            /// [`Self::drop_omitted_arenas`] for a model whose saved source is
+            /// at hand.
+            pub fn adopt_omitted_arenas(&mut self, decoded: &Self) {
+                $(self.$field.clone_from(&decoded.$field);)*
+                self.feature_regeneration_parents
+                    .clone_from(&decoded.feature_regeneration_parents);
+                for definition in &mut self.product_definitions {
+                    definition.sketches = decoded
+                        .product_definitions
+                        .iter()
+                        .find(|candidate| candidate.id == definition.id)
+                        .map(|candidate| candidate.sketches.clone())
+                        .unwrap_or_default();
+                }
+                self.omitted.clone_from(&decoded.omitted);
+            }
+
             /// The identities of the records of the arenas the wire omits.
             #[must_use]
             pub fn omitted_record_ids(&self) -> std::collections::BTreeSet<&str> {

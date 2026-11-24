@@ -315,7 +315,7 @@ impl CadIr {
 
     /// [`Editor::set_parameter_expression`](super::Editor::set_parameter_expression)
     /// on the document itself.
-    pub(super) fn set_parameter_expression(
+    pub(crate) fn set_parameter_expression(
         &mut self,
         parameter: &ParameterId,
         expression: Expression,

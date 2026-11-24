@@ -83,6 +83,30 @@
         },
         "message": "IGES Global minimum resolution changed from 1.00000000000000002e-3 mm to 1.00000000000000002e-2 mm to cover the emitted geometry",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "arena.omitted",
+            "kind": "attributes_not_transferred",
+            "namespace": "export"
+          }
+        },
+        "message": "the iges write does not represent model arena `attributes`: 1 record(s) omitted: iges:model:attribute#curve.D3",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "arena.omitted",
+            "kind": "attributes_not_transferred",
+            "namespace": "export"
+          }
+        },
+        "message": "the iges write does not represent model arena `presentation_layers`: 3 record(s) omitted: iges:model:layer#11, iges:model:layer#2, iges:model:layer#7",
+        "severity": "warning"
       }
     ],
     "notes": [
