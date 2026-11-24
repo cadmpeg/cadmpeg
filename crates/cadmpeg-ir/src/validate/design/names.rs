@@ -123,6 +123,18 @@ pub(super) fn check<'a>(
         .iter()
         .map(|extent| index.state_features(StateAt::Position(&extent.state.at)))
         .collect();
+    let instance_features: Vec<(&HashSet<&str>, Vec<&str>)> = states
+        .instances
+        .iter()
+        .map(|instance| {
+            let placed = index
+                .path_prototypes(instance.path)
+                .into_iter()
+                .flat_map(|definition| index.scope_features(definition))
+                .collect();
+            (&instance.records, placed)
+        })
+        .collect();
     for (entity, entry) in ir.design.names.entries() {
         let holds = states.geometry_holds(entity);
         check_entry(
@@ -133,10 +145,21 @@ pub(super) fn check<'a>(
             entity.id(),
             findings,
         );
+        let placed: Vec<&str> = instance_features
+            .iter()
+            .filter(|(records, _)| records.contains(entity.id()))
+            .flat_map(|(_, placed)| placed.iter().copied())
+            .collect();
         for (extent, features) in states.extents.iter().zip(&extent_features) {
             if extent.records.contains(entity.id()) {
                 if let Some(features) = features {
-                    check_order(entry, features, entity.id(), findings);
+                    if placed.is_empty() {
+                        check_order(entry, features, entity.id(), findings);
+                    } else {
+                        let mut features = (**features).clone();
+                        features.extend(placed.iter().copied());
+                        check_order(entry, &features, entity.id(), findings);
+                    }
                 }
             }
         }
@@ -632,3 +655,6 @@ fn check_hole_role(
         );
     }
 }
+
+#[cfg(test)]
+mod tests;

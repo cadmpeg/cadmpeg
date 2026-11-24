@@ -1955,11 +1955,9 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [
         {
@@ -2236,80 +2234,8 @@
           ]
         }
       ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "primitive",
-              "value": {
-                "op": "new_body",
-                "placement": [
-                  [
-                    1.0,
-                    0.0,
-                    0.0,
-                    0.0
-                  ],
-                  [
-                    0.0,
-                    1.0,
-                    0.0,
-                    0.0
-                  ],
-                  [
-                    0.0,
-                    0.0,
-                    1.0,
-                    0.0
-                  ]
-                ],
-                "solid": {
-                  "height": 8.0,
-                  "kind": "box",
-                  "length": 25.0,
-                  "width": 15.0
-                }
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Model",
-          "name": "Model",
-          "native_ref": "fcstd:native:object#Model",
-          "ordinal": 1,
-          "outputs": [
-            "fcstd:model:body#Model:Shape:Model.Shape.brp:34%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "MapMode": "0",
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Box"
-        }
-      ],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [
-        {
-          "dependencies": [],
-          "expression": "25.0000000000000000",
-          "id": "fcstd:design:parameter#Model:Length",
-          "name": "Length",
-          "native_ref": "fcstd:native:property#Model:Length",
-          "ordinal": 8,
-          "owner": "fcstd:design:feature#Model",
-          "properties": {},
-          "value": {
-            "kind": "length",
-            "value": 25.0
-          }
-        }
-      ],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -2326,7 +2252,6 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
@@ -2519,14 +2444,7 @@
           "text_style": {}
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },

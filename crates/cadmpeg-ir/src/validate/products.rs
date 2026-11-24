@@ -181,7 +181,7 @@ pub(super) fn check_products(
         record_finding(
             findings,
             Check::ReferentialIntegrity,
-            crate::report::Severity::Error,
+            crate::report::Severity::Warning,
             Some(definition),
             format_args!("product definition places itself"),
         );

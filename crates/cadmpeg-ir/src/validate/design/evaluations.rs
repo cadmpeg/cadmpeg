@@ -3,6 +3,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::CodecError;
+
 use super::parameters;
 use super::records::{DesignRecords, MemberKey, OfKey, PositionKey};
 use super::selections::check_path;
@@ -185,13 +187,14 @@ fn current_positions<'a>(index: &DesignRecords<'a>, scope: &str) -> BTreeSet<Pos
         .unwrap_or_default()
 }
 
-/// The evaluation rules. `max_chain_depth` is the reader's ceiling on a chain
-/// of state bases, `ResourceLimits::max_state_chain_depth`.
+/// The evaluation rules. `max_chain_depth` is the caller's ceiling on a chain
+/// of state bases, `ResourceLimits::max_state_chain_depth`; a longer chain
+/// refuses the session.
 pub(super) fn check_evaluations(
     index: &DesignRecords<'_>,
     max_chain_depth: u64,
     findings: &mut Vec<Finding>,
-) {
+) -> Result<(), CodecError> {
     let StateChains { cyclic, depths } = state_chains(index).unwrap_or_else(|id| {
         super::error(
             findings,
@@ -200,14 +203,12 @@ pub(super) fn check_evaluations(
         );
         StateChains::default()
     });
-    for (id, depth) in &depths {
-        if depth.checked_sub(1) == Some(max_chain_depth) {
-            super::error(
-                findings,
-                id,
-                format_args!("evaluation's chain of state bases is {depth} deep, past the ceiling of {max_chain_depth} a reader admits"),
-            );
-        }
+    if let Some(refusal) = depths
+        .values()
+        .max()
+        .and_then(|&deepest| crate::validate::state_chain_refusal(max_chain_depth, deepest))
+    {
+        return Err(refusal);
     }
     let mut keys = BTreeMap::new();
     for evaluation in &index.ir.design.evaluations {
@@ -416,6 +417,7 @@ pub(super) fn check_evaluations(
             );
         }
     }
+    Ok(())
 }
 
 /// The chains of state bases: the evaluations on a cycle, and the depth of

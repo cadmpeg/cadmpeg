@@ -708,7 +708,7 @@ impl<'a> Builder<'a> {
             .extend(cadmpeg_ir::codec::write::partial_topology_omitted(
                 "STEP",
                 &self.ir.geometry,
-                "the region is not written",
+                "it is written as a shell-based surface model of its stated shells",
             ));
         let surface_regions = self
             .ir
@@ -1941,8 +1941,18 @@ impl<'a> Builder<'a> {
             if self.omitted_prototype_bodies.contains(&region.body) {
                 continue;
             }
-            let Some(region_shells) = self.children.complete_shells(region) else {
-                continue;
+            // §3.4: a region that is marked, or that holds a marked shell or
+            // a partial face, is written as its stated shells and never as a
+            // solid.
+            let complete = self.children.complete_shells(region);
+            let partial = complete.is_none();
+            let stated: Vec<ShellId>;
+            let region_shells = match complete {
+                Some(shells) => shells,
+                None => {
+                    stated = region.stated_shells().cloned().collect();
+                    stated.as_slice()
+                }
             };
             let body_kind = self
                 .bodies
@@ -2023,8 +2033,8 @@ impl<'a> Builder<'a> {
                 self.empty_regions.insert(region.id.as_str().to_owned());
                 continue;
             };
-            if closed {
-                self.split_non_manifold_edges(region_shells);
+            if let (true, Some(shells)) = (closed, complete) {
+                self.split_non_manifold_edges(shells);
             }
             let outer = self.emit_shell(outer_id.as_str(), closed, false);
             if outer.is_none() {
@@ -2054,6 +2064,7 @@ impl<'a> Builder<'a> {
                 }
             }
             let solid = closed
+                && !partial
                 && outer.is_some_and(|(_, shell_closed)| shell_closed)
                 && voids.len() == void_ids.len()
                 && voids.iter().all(|(_, shell_closed)| *shell_closed);
@@ -2069,7 +2080,7 @@ impl<'a> Builder<'a> {
                 );
                 continue;
             };
-            if closed && !solid {
+            if closed && !solid && !partial {
                 self.loss(
                     StepLossCode::RegionSolidReducedToSheet,
                     format!("region {} was written as a surface model because its solid shells are incomplete or open", region.id),
@@ -3308,7 +3319,11 @@ impl<'a> Builder<'a> {
         for fid in &face_ids {
             if let Some(r) = self.emit_face(fid, reversed) {
                 face_refs.push(r);
-            } else {
+            } else if !self
+                .faces
+                .get(fid.as_str())
+                .is_some_and(|face| face.loops.is_partial())
+            {
                 let code = match self.faces.get(fid.as_str()).map(|face| &face.loops) {
                     Some(cadmpeg_ir::topology::FaceLoops::Classified { .. }) => {
                         StepLossCode::ShellOmittedOuterFace
@@ -3393,6 +3408,9 @@ impl<'a> Builder<'a> {
     /// reverse flips the face `same_sense` and the orientation of every bound.
     fn emit_face(&mut self, face_id: &str, reversed: bool) -> Option<Ref> {
         let face = self.faces.get(face_id).copied()?;
+        if face.loops.is_partial() {
+            return None;
+        }
         let surface_id = face.surface.as_str();
         let same_sense = matches!(face.sense, Sense::Forward) != reversed;
         let bound_flag = if reversed { ".F." } else { ".T." };
@@ -7199,6 +7217,8 @@ mod accounting_tests;
 mod construction_tests;
 #[cfg(test)]
 mod non_manifold_tests;
+#[cfg(test)]
+mod partial_tests;
 
 /// A seam ring written as a `VERTEX_LOOP`: its pole, the carriers it leaves
 /// out, and the points of its other poles.

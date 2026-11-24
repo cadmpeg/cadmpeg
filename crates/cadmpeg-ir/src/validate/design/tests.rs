@@ -400,6 +400,43 @@ fn construction_inputs_are_checked_against_their_kind_and_relation() {
 }
 
 #[test]
+fn a_built_centroid_reference_is_a_warning() {
+    let point = |inputs: Vec<Value>| {
+        json!({"kind": "datum", "value": {
+            "element": {"kind": "points", "value": [construction(inputs)]},
+            "native_options": {},
+            "source_settings": {}
+        }})
+    };
+    let built = json!({
+        "role": {"subject": "whole", "relation": {"kind": "centroid"}},
+        "reference": {"kind": "built", "value": {
+            "kind": "point",
+            "inputs": [input(
+                "coincident",
+                Some(named(input_anchor(), vec![principal("origin")])),
+                None,
+            )],
+            "after": [],
+            "resolved_in": {}
+        }}
+    });
+    let mut features = planes();
+    features[1] = feature("b", point(vec![built]));
+    let ir = timeline(features);
+    let message = "a nested construction is the reference of a Centroid input";
+    assert_finding(&ir, Check::Design, Severity::Warning, message);
+    let findings = findings(&ir);
+    assert!(
+        !findings
+            .iter()
+            .any(|finding| finding.severity == Severity::Error
+                && finding.message.contains("nested construction")),
+        "{findings:#?}"
+    );
+}
+
+#[test]
 fn a_resolved_plane_whose_axes_are_not_perpendicular_is_an_error() {
     let mut features = planes();
     let mut skew = construction(vec![input(

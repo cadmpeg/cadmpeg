@@ -2,7 +2,8 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, LimitScope, ResourceLimit};
+use cadmpeg_core::CodecError;
 
 use crate::design::configuration::{FeatureStateOverride, ParameterOverride};
 use crate::design::container::{Container, OrderedKind, Rollback};
@@ -16,7 +17,6 @@ use crate::design::refs::{Evaluated, Member, Position};
 use crate::design::units::ValueKind;
 use crate::document::CadIr;
 use crate::report::check::{Check, Finding};
-use crate::report::Severity;
 use crate::validate::design::fixture::{
     after, assert_finding, assert_no_design_finding, body, configuration, design_findings,
     document, evaluation, feature, id, parameter, set_base, stored, unresolved,
@@ -304,38 +304,42 @@ fn state_chain(count: usize) -> CadIr {
     ir
 }
 
-/// The design findings of `ir` under `policy`.
-fn findings_under(ir: &CadIr, policy: &DecodePolicy) -> Vec<Finding> {
+/// The design findings of `ir` under `policy`, or the validation's refusal.
+fn findings_under(ir: &CadIr, policy: &DecodePolicy) -> Result<Vec<Finding>, CodecError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy).unwrap();
-    let report = crate::validate::validate_neutral_for_decode(&ctx, ir, Vec::new()).unwrap();
+    let report = crate::validate::validate_neutral_for_decode(&ctx, ir, Vec::new());
     ctx.finish_session().unwrap();
-    report
+    Ok(report?
         .findings
         .into_iter()
         .filter(|finding| finding.check == Check::Design)
-        .collect()
+        .collect())
 }
 
 #[test]
-fn a_state_chain_past_the_reader_ceiling_is_refused() {
+fn a_state_chain_past_the_ceiling_refuses_the_session_and_is_no_finding() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_state_chain_depth = 8;
     let ceiling = policy.limits.max_state_chain_depth;
     let depth = usize::try_from(ceiling).unwrap();
     let ir = state_chain(depth + 1);
-    let findings = findings_under(&ir, &policy);
-    let past = format!("past the ceiling of {ceiling}");
+    let refusal = findings_under(&ir, &policy).unwrap_err();
     assert!(
-        findings
-            .iter()
-            .any(|finding| finding.severity == Severity::Error && finding.message.contains(&past)),
-        "no design error containing {past:?} in {findings:#?}"
+        matches!(
+            refusal,
+            CodecError::ResourceLimit(ResourceLimit {
+                scope: LimitScope::Session,
+                limit,
+                ..
+            }) if limit == ceiling
+        ),
+        "{refusal:?}"
     );
     let text = serde_json::to_string(&ir).unwrap();
     assert!(read::from_str::<CadIr>(&text, &policy.limits).is_err());
     let ir = state_chain(depth);
-    let findings = findings_under(&ir, &policy);
+    let findings = findings_under(&ir, &policy).unwrap();
     assert!(findings.is_empty(), "{findings:#?}");
     let text = serde_json::to_string(&ir).unwrap();
     assert!(read::from_str::<CadIr>(&text, &policy.limits).is_ok());

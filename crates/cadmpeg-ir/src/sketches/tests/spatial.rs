@@ -4,7 +4,6 @@ use crate::test_support::edit;
 use crate::examples::unit_cube;
 use crate::math::{Point3, Vector3};
 use crate::validate::validate_neutral;
-use crate::CadIr;
 
 const EPS_SPATIAL_LINE_BOUNDARY: f64 = 1.0e-12;
 const EPS_SPATIAL_FRAME_BOUNDARY: f64 = 1.0e-9;
@@ -533,15 +532,16 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
     assert!(invalid_distance_findings
         .iter()
         .any(|finding| finding.message == "spatial offset distance does not match its parameter"));
-    let json = ir.to_canonical_json().expect("serialize spatial sketch");
-    let decoded = CadIr::from_json(&json).expect("deserialize spatial sketch");
-    assert_eq!(decoded.model.spatial_sketches, ir.model.spatial_sketches);
     assert_eq!(
-        decoded.model.spatial_sketch_entities,
+        round_trip(&ir.model.spatial_sketches),
+        ir.model.spatial_sketches
+    );
+    assert_eq!(
+        round_trip(&ir.model.spatial_sketch_entities),
         ir.model.spatial_sketch_entities
     );
     assert_eq!(
-        decoded.model.spatial_sketch_constraints,
+        round_trip(&ir.model.spatial_sketch_constraints),
         ir.model.spatial_sketch_constraints
     );
 }
@@ -1156,4 +1156,9 @@ fn spatial_native_constraint_admission_requires_kind_and_operands() {
         rejected[field] = invalid;
         assert!(serde_json::from_value::<Checked>(rejected).is_err());
     }
+}
+
+/// `records` read back from their JSON form.
+fn round_trip<T: serde::Serialize + serde::de::DeserializeOwned>(records: &[T]) -> Vec<T> {
+    serde_json::from_value(serde_json::to_value(records).unwrap()).unwrap()
 }

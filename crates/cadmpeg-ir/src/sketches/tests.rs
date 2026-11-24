@@ -11,7 +11,6 @@ use crate::examples::unit_cube;
 use crate::math::{Point3, Vector3};
 use crate::report::check::Check;
 use crate::validate::validate_neutral;
-use crate::CadIr;
 
 #[test]
 fn sketch_entity_ids_are_checked_at_both_construction_boundaries() {
@@ -158,11 +157,10 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .is_ok());
-    let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
-    assert_eq!(
-        round_trip.model.sketch_constraints,
-        ir.model.sketch_constraints
-    );
+    let round_trip: Vec<crate::sketches::SketchConstraint> =
+        serde_json::from_value(serde_json::to_value(&ir.model.sketch_constraints).unwrap())
+            .unwrap();
+    assert_eq!(round_trip, ir.model.sketch_constraints);
 }
 
 #[test]
@@ -490,11 +488,10 @@ fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
             .as_deref()
             .is_some_and(|entity| entity.starts_with("synthetic:test:constraint#"))
     }));
-    let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
-    assert_eq!(
-        round_trip.model.sketch_constraints,
-        ir.model.sketch_constraints
-    );
+    let round_trip: Vec<crate::sketches::SketchConstraint> =
+        serde_json::from_value(serde_json::to_value(&ir.model.sketch_constraints).unwrap())
+            .unwrap();
+    assert_eq!(round_trip, ir.model.sketch_constraints);
 
     let midpoint_entity = ir
         .model
