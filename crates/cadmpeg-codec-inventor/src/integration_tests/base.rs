@@ -18,6 +18,7 @@ use crate::test_support::test_fixtures::{
 use crate::InventorCodec;
 
 mod derived;
+mod history;
 
 fn list(bytes: &mut Vec<u8>, references: &[u32]) {
     push_u16(bytes, 2);
@@ -149,6 +150,22 @@ fn fixtures() -> (SyntheticRecords, BaseEnvelopeRecords) {
             references,
         },
     )
+}
+
+fn base_inputs<'a>(
+    document: &'a crate::rse::RseInventory<'a>,
+    features: &'a crate::feature::FeatureInventory,
+    design: &'a crate::design::DesignInventory,
+    keys: &'a [cadmpeg_asm::brep::records::BodyNativeKey],
+) -> crate::feature::base::Inputs<'a> {
+    crate::feature::base::Inputs {
+        document,
+        inventory: features,
+        design,
+        transforms: &[],
+        keys,
+        states: None,
+    }
 }
 
 fn decode(design: &[([u8; 16], Vec<u8>)], base: &BaseEnvelopeRecords) -> cadmpeg_ir::CadIr {
@@ -470,11 +487,7 @@ fn base_projection_rejects_duplicate_segment_identifiers() {
     assert_eq!(
         crate::feature::base::project(
             &ctx,
-            &document,
-            &features,
-            &design,
-            &[],
-            &keys,
+            &base_inputs(&document, &features, &design, &keys),
             &mut valid_ir
         )
         .expect("valid Base projection")
@@ -497,9 +510,13 @@ fn base_projection_rejects_duplicate_segment_identifiers() {
         }
     }
     assert_eq!(
-        crate::feature::base::project(&ctx, &document, &features, &design, &[], &keys, &mut ir)
-            .expect("ambiguous Base projection")
-            .transferred,
+        crate::feature::base::project(
+            &ctx,
+            &base_inputs(&document, &features, &design, &keys),
+            &mut ir
+        )
+        .expect("ambiguous Base projection")
+        .transferred,
         0
     );
     assert!(ir.model.feature_result_topologies.is_empty());

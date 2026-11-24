@@ -526,6 +526,10 @@ impl ResultStates for FixedStates {
         self.asked.borrow_mut().push(source_index);
         Ok(Rc::new((self.outcome)(&self.model)))
     }
+
+    fn introduces(&self, _: u32, _: i64) -> bool {
+        false
+    }
 }
 
 fn proof(final_model: Option<&CadIr>, states: Option<&dyn ResultStates>) -> Result<(), Unproved> {
