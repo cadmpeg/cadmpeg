@@ -8,9 +8,10 @@ use crate::design::feature::FeatureOperation;
 use crate::document::CadIr;
 use crate::process::state::{ProcessBase, ProcessStateOf};
 use crate::report::check::{Check, Finding};
+use crate::report::Severity;
 use crate::validate::design::fixture as design;
 use crate::validate::process::fixture::{
-    assert_error, assert_no_process_finding, document, id, state,
+    assert_error, assert_no_process_finding, document, id, process_findings, state,
 };
 
 #[test]
@@ -275,5 +276,44 @@ fn a_resolved_process_state_names_what_it_holds() {
     assert_error(
         &ir,
         "owner entry names test:design:body#missing, which is no body of the resolved state",
+    );
+}
+
+#[test]
+fn a_process_state_meets_the_rules_of_one_topology() {
+    let mut ir = document();
+    let first = ir.geometry.coedges[0].clone();
+    let other = ir
+        .geometry
+        .coedges
+        .iter()
+        .find(|coedge| coedge.edge != first.edge)
+        .unwrap()
+        .id
+        .clone();
+    let mut crossing = first.clone();
+    crossing.radial_next = other;
+    let stock = ir
+        .process
+        .states
+        .iter()
+        .position(|state| state.id.as_str().ends_with("#stock"))
+        .unwrap();
+    if let Some(content) = &mut ir.process.states[stock].content {
+        content.delta.records.coedges.push(crossing);
+    }
+    let message = format!(
+        "resolved state: record {}: radial ring crosses edges",
+        first.id.as_str()
+    );
+    let found: Vec<_> = process_findings(&ir)
+        .into_iter()
+        .filter(|finding| finding.message == message)
+        .collect();
+    assert_eq!(found.len(), 1, "{found:#?}");
+    assert_eq!(found[0].severity, Severity::Error);
+    assert_eq!(
+        found[0].entity.as_deref(),
+        Some(ir.process.states[stock].id.as_str())
     );
 }

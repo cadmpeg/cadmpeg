@@ -1628,6 +1628,7 @@ fn an_index_has_the_followed_and_composite_coordinates() {
     );
 }
 
+mod forms;
 mod pattern_coordinates;
 
 #[test]
