@@ -29,6 +29,11 @@ pub(crate) enum ExportLossCode {
     NativeRecordsOmitted,
     /// The output holds no geometry (§3.5).
     OutputEmpty,
+    /// A partial face is not written (§3.4, Content the target cannot hold).
+    FacePartial,
+    /// A region that is marked or holds a marked shell or a partial face is
+    /// not written as a solid (§3.4, Content the target cannot hold).
+    SolidPartial,
     /// A feature the target needs a state or names for is not written
     /// (§3.4, Features without their state).
     EvaluationMissing,
@@ -69,6 +74,8 @@ impl ExportLossCode {
             Self::EditDropped(_) => "edit.dropped",
             Self::NativeRecordsOmitted => "native.records-omitted",
             Self::OutputEmpty => "output.empty",
+            Self::FacePartial => "face.partial",
+            Self::SolidPartial => "solid.partial",
             Self::EvaluationMissing => "evaluation.missing",
             Self::EvaluationStale => "evaluation.stale",
             Self::ParameterFlattened => "parameter.flattened",
@@ -87,6 +94,8 @@ impl ExportLossCode {
             Self::ArenaOmitted(_)
             | Self::NativeRecordsOmitted
             | Self::OutputEmpty
+            | Self::FacePartial
+            | Self::SolidPartial
             | Self::EvaluationMissing
             | Self::EvaluationStale
             | Self::ParameterFlattened
@@ -106,6 +115,9 @@ impl ExportLossCode {
             Self::NativeRecordsOmitted => return LossTaxonomy::PassthroughRecordOmitted,
             Self::SourceCarried | Self::SourceUnchecked => return LossTaxonomy::RecordNotTyped,
             Self::OutputEmpty => return LossTaxonomy::NoExportableSolids,
+            Self::FacePartial | Self::SolidPartial => {
+                return LossTaxonomy::TopologyNotTransferred;
+            }
             Self::EvaluationMissing
             | Self::EvaluationStale
             | Self::ParameterFlattened
@@ -344,6 +356,25 @@ where
 #[must_use]
 pub fn output_empty(message: impl Into<String>) -> LossNote {
     ExportLossCode::OutputEmpty.note(message)
+}
+
+/// `export:face.partial`: the writer did not write the partial face `face`
+/// (§3.4, Content the target cannot hold).
+#[must_use]
+pub fn face_partial(format: &str, face: &crate::ids::FaceId) -> LossNote {
+    ExportLossCode::FacePartial.note(format!(
+        "{format} writes no partial face: {face} does not state every loop"
+    ))
+}
+
+/// `export:solid.partial`: the writer did not write `region` as a solid,
+/// because it is marked or holds a marked shell or a partial face (§3.4,
+/// Content the target cannot hold). `form` names what it wrote instead.
+#[must_use]
+pub fn solid_partial(format: &str, region: &crate::ids::RegionId, form: &str) -> LossNote {
+    ExportLossCode::SolidPartial.note(format!(
+        "{format} writes no solid for {region}, which does not state every shell or face: {form}"
+    ))
 }
 
 /// `export:record.invalid`: the writer wrote these records of `kind` from the

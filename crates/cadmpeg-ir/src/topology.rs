@@ -170,6 +170,14 @@ pub struct Body {
         deserialize_with = "deserialize_visible"
     )]
     pub visible: Option<bool>,
+    /// Marks a body a region of which the document does not state (§5.6,
+    /// Unstated children).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_unstated"
+    )]
+    pub unstated: Option<Unstated>,
     /// The source record this body projects.
     #[serde(
         default,
@@ -180,6 +188,10 @@ pub struct Body {
 }
 
 /// A connected region of a body.
+///
+/// Its shell list is read through [`Region::stated_shells`] or
+/// [`crate::document::Topology::complete_shells`], so every reader states
+/// whether it accepts a region whose shells are not all stated.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -190,7 +202,15 @@ pub struct Region {
     pub body: BodyId,
     /// Ordered boundary shells. For a solid region, the first shell is the
     /// exterior boundary and all subsequent shells bound voids.
-    pub shells: Vec<ShellId>,
+    shells: Vec<ShellId>,
+    /// Marks a region a shell of which the document does not state (§5.6,
+    /// Unstated children).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_region_unstated"
+    )]
+    pub unstated: Option<RegionUnstated>,
     /// The source record this region projects.
     #[serde(
         default,
@@ -198,6 +218,115 @@ pub struct Region {
         deserialize_with = "deserialize_native_ref"
     )]
     pub native_ref: Option<String>,
+}
+
+impl Region {
+    /// Constructs a region that states every shell, the exterior first.
+    #[must_use]
+    pub const fn new(id: RegionId, body: BodyId, shells: Vec<ShellId>) -> Self {
+        Self {
+            id,
+            body,
+            shells,
+            unstated: None,
+            native_ref: None,
+        }
+    }
+
+    /// This region with `native_ref` as its source record.
+    #[must_use]
+    pub fn with_native_ref(mut self, native_ref: Option<String>) -> Self {
+        self.native_ref = native_ref;
+        self
+    }
+
+    /// Every shell the region names, its `shells` and then its mark's list,
+    /// whatever role each has. For reference walks.
+    pub fn stated_shells(&self) -> impl Iterator<Item = &ShellId> {
+        let marked: &[ShellId] = match &self.unstated {
+            Some(RegionUnstated::Exterior { voids }) => voids,
+            Some(RegionUnstated::Unclassified { shells }) => shells,
+            Some(RegionUnstated::Voids) | None => &[],
+        };
+        self.shells.iter().chain(marked)
+    }
+
+    /// Mutable access to every shell id the region names, for id rewrites.
+    pub fn stated_shells_mut(&mut self) -> impl Iterator<Item = &mut ShellId> {
+        let marked: &mut [ShellId] = match &mut self.unstated {
+            Some(RegionUnstated::Exterior { voids }) => voids,
+            Some(RegionUnstated::Unclassified { shells }) => shells,
+            Some(RegionUnstated::Voids) | None => &mut [],
+        };
+        self.shells.iter_mut().chain(marked)
+    }
+
+    /// Appends `shell` to the positional list: the exterior when the list is
+    /// empty, a void otherwise.
+    pub fn push_shell(&mut self, shell: ShellId) {
+        self.shells.push(shell);
+    }
+
+    /// Replaces the positional list.
+    pub fn set_shells(&mut self, shells: Vec<ShellId>) {
+        self.shells = shells;
+    }
+
+    /// Keeps the shells, positional and marked, for which `keep` holds.
+    pub fn retain_stated_shells(&mut self, mut keep: impl FnMut(&ShellId) -> bool) {
+        self.shells.retain(&mut keep);
+        match &mut self.unstated {
+            Some(RegionUnstated::Exterior { voids }) => voids.retain(keep),
+            Some(RegionUnstated::Unclassified { shells }) => shells.retain(keep),
+            Some(RegionUnstated::Voids) | None => {}
+        }
+    }
+}
+
+impl crate::schema::EntitySchema for Region {
+    const KIND: crate::schema::EntityKind = crate::schema::EntityKind::Region;
+
+    fn identity(&self) -> &str {
+        let Self {
+            id,
+            body: _,
+            shells: _,
+            unstated: _,
+            native_ref: _,
+        } = self;
+        id.as_str()
+    }
+}
+
+/// The child kind a record does not state in full (§5.6, Unstated children).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum Unstated {
+    /// A shell's face, wire edge, free vertex, or cage, or a body's region.
+    Members,
+}
+
+/// Which shells of a region the document does not state (§5.6, Unstated
+/// children).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+pub enum RegionUnstated {
+    /// `shells` holds the exterior first; a void is not stated.
+    Voids,
+    /// The exterior is not stated; `shells` is empty.
+    Exterior {
+        /// The voids stated, in source order.
+        voids: Vec<ShellId>,
+    },
+    /// Which shell is the exterior is not stated; `shells` is empty.
+    Unclassified {
+        /// The shells stated, in source order.
+        shells: Vec<ShellId>,
+    },
 }
 
 /// One member of a shell that names no parent of its own: a wire edge or a
@@ -233,6 +362,14 @@ pub struct Shell {
     pub region: RegionId,
     /// Wire edges and free vertices owned by the shell.
     pub members: Vec<ShellMember>,
+    /// Marks a shell a face, wire edge, free vertex, or cage of which the
+    /// document does not state (§5.6, Unstated children).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_unstated"
+    )]
+    pub unstated: Option<Unstated>,
     /// The source record this shell projects.
     #[serde(
         default,
@@ -250,6 +387,7 @@ impl Shell {
             id,
             region,
             members: Vec::new(),
+            unstated: None,
             native_ref: None,
         }
     }
@@ -316,24 +454,74 @@ impl Shell {
 }
 
 impl crate::document::Topology {
-    /// The faces of `shell`, the faces whose [`Face::shell`] names it, in
-    /// arena order.
-    pub fn shell_faces<'a, 'b>(
+    /// Every face of `shell` the document states, the faces whose
+    /// [`Face::shell`] names it, in arena order. For reference walks.
+    pub fn stated_shell_faces<'a, 'b>(
         &'a self,
         shell: &'b ShellId,
     ) -> impl Iterator<Item = &'a Face> + use<'a, 'b> {
         self.faces.iter().filter(move |face| &face.shell == shell)
     }
 
-    /// The regions of `body`, the regions whose [`Region::body`] names it, in
-    /// arena order.
-    pub fn body_regions<'a, 'b>(
+    /// The faces of `shell` where it states every face; `None` where the shell
+    /// is marked (§5.6, Unstated children). A face of the list may still be
+    /// partial: its [`FaceLoops::boundary`] says so.
+    pub fn complete_shell_faces<'a, 'b>(
+        &'a self,
+        shell: &'b ShellId,
+    ) -> Option<impl Iterator<Item = &'a Face> + use<'a, 'b>> {
+        let marked = self
+            .shells
+            .iter()
+            .any(|record| &record.id == shell && record.unstated.is_some());
+        (!marked).then(|| self.stated_shell_faces(shell))
+    }
+
+    /// Every region of `body` the document states, the regions whose
+    /// [`Region::body`] names it, in arena order. For reference walks.
+    pub fn stated_body_regions<'a, 'b>(
         &'a self,
         body: &'b BodyId,
     ) -> impl Iterator<Item = &'a Region> + use<'a, 'b> {
         self.regions
             .iter()
             .filter(move |region| &region.body == body)
+    }
+
+    /// The regions of `body` where it states every region; `None` where the
+    /// body is marked (§5.6, Unstated children).
+    pub fn complete_body_regions<'a, 'b>(
+        &'a self,
+        body: &'b BodyId,
+    ) -> Option<impl Iterator<Item = &'a Region> + use<'a, 'b>> {
+        let marked = self
+            .bodies
+            .iter()
+            .any(|record| &record.id == body && record.unstated.is_some());
+        (!marked).then(|| self.stated_body_regions(body))
+    }
+
+    /// The shells of `region`, the exterior first and every later one a void
+    /// of a solid region, where everything the region holds is stated: `None`
+    /// where the region, its body, one of its shells is marked, or a face of
+    /// one is partial (§5.6, Unstated children). For tessellation,
+    /// measurement, orientation checks and writers.
+    #[must_use]
+    pub fn complete_shells<'a>(&self, region: &'a Region) -> Option<&'a [ShellId]> {
+        let complete = region.unstated.is_none()
+            && !self
+                .bodies
+                .iter()
+                .any(|body| body.id == region.body && body.unstated.is_some())
+            && !self
+                .shells
+                .iter()
+                .any(|shell| region.shells.contains(&shell.id) && shell.unstated.is_some())
+            && !self
+                .faces
+                .iter()
+                .any(|face| face.loops.is_partial() && region.shells.contains(&face.shell));
+        complete.then_some(region.shells.as_slice())
     }
 
     /// Every shell's faces and every body's regions, derived from the parent
@@ -347,6 +535,18 @@ impl crate::document::Topology {
         for region in &self.regions {
             lists.regions.entry(&region.body).or_default().push(region);
         }
+        lists.marked_shells.extend(
+            self.shells
+                .iter()
+                .filter(|shell| shell.unstated.is_some())
+                .map(|shell| &shell.id),
+        );
+        lists.marked_bodies.extend(
+            self.bodies
+                .iter()
+                .filter(|body| body.unstated.is_some())
+                .map(|body| &body.id),
+        );
         lists
     }
 }
@@ -357,19 +557,50 @@ impl crate::document::Topology {
 pub struct ChildLists<'a> {
     faces: std::collections::HashMap<&'a ShellId, Vec<&'a Face>>,
     regions: std::collections::HashMap<&'a BodyId, Vec<&'a Region>>,
+    marked_shells: std::collections::HashSet<&'a ShellId>,
+    marked_bodies: std::collections::HashSet<&'a BodyId>,
 }
 
 impl<'a> ChildLists<'a> {
-    /// The faces whose [`Face::shell`] names `shell`.
+    /// Every face whose [`Face::shell`] names `shell`. For reference walks.
     #[must_use]
-    pub fn shell_faces(&self, shell: &ShellId) -> &[&'a Face] {
+    pub fn stated_shell_faces(&self, shell: &ShellId) -> &[&'a Face] {
         self.faces.get(shell).map_or(&[], Vec::as_slice)
     }
 
-    /// The regions whose [`Region::body`] names `body`.
+    /// The faces of `shell` where it states every face; `None` where the shell
+    /// is marked. A face of the list may still be partial.
     #[must_use]
-    pub fn body_regions(&self, body: &BodyId) -> &[&'a Region] {
+    pub fn complete_shell_faces(&self, shell: &ShellId) -> Option<&[&'a Face]> {
+        (!self.marked_shells.contains(shell)).then(|| self.stated_shell_faces(shell))
+    }
+
+    /// Every region whose [`Region::body`] names `body`. For reference walks.
+    #[must_use]
+    pub fn stated_body_regions(&self, body: &BodyId) -> &[&'a Region] {
         self.regions.get(body).map_or(&[], Vec::as_slice)
+    }
+
+    /// The regions of `body` where it states every region; `None` where the
+    /// body is marked.
+    #[must_use]
+    pub fn complete_body_regions(&self, body: &BodyId) -> Option<&[&'a Region]> {
+        (!self.marked_bodies.contains(body)).then(|| self.stated_body_regions(body))
+    }
+
+    /// [`crate::document::Topology::complete_shells`] read from these lists.
+    #[must_use]
+    pub fn complete_shells(&self, region: &'a Region) -> Option<&'a [ShellId]> {
+        let complete = region.unstated.is_none()
+            && !self.marked_bodies.contains(&region.body)
+            && region.shells.iter().all(|shell| {
+                !self.marked_shells.contains(shell)
+                    && self
+                        .stated_shell_faces(shell)
+                        .iter()
+                        .all(|face| !face.loops.is_partial())
+            });
+        complete.then_some(region.shells.as_slice())
     }
 }
 
@@ -424,18 +655,22 @@ impl Face {
     }
 }
 
-/// Face loop ids in one of the two states a source can state.
+/// Face loop ids in one of the states a source can state.
 ///
 /// The wire is one tagged object, so a loop has no role of its own to disagree
 /// with the face's classification and the round trip is stable by
 /// construction. `Unspecified` keeps source order when the source did not
 /// classify outer versus inner; `Classified` names the outer loop once and
 /// requires it, so a classification that states no outer boundary is not a
-/// state.
+/// state. The two partial arms state a face at least one loop of which the
+/// document does not state (§5.6, Unstated children).
 ///
 /// `loops` on `Unspecified` is a `Vec`, not a non-empty list: a closed surface
 /// with no boundary is a face with no loop, and nx, sat, step and freecad all
 /// produce one.
+///
+/// A reader takes the loops through [`Self::stated`], for a reference walk, or
+/// through [`Self::boundary`], which answers only for a complete face.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -453,6 +688,85 @@ pub enum FaceLoops {
         /// Inner loops in source order.
         inner: Vec<LoopId>,
     },
+    /// A loop is not stated, and the source does not classify the loops.
+    PartialUnspecified {
+        /// The loops stated, in source order.
+        loops: Vec<LoopId>,
+    },
+    /// A loop is not stated, and the source classifies the loops.
+    PartialClassified {
+        /// The outer loop, where it is stated.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_partial_outer"
+        )]
+        outer: Option<LoopId>,
+        /// The inner loops stated, in source order.
+        inner: Vec<LoopId>,
+    },
+}
+
+/// The loops of a face whose boundary is stated in full, outer first where the
+/// face classifies one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FaceBoundary<'a> {
+    /// The source did not classify outer versus inner.
+    Unspecified(&'a [LoopId]),
+    /// The source classified the boundary.
+    Classified {
+        /// Outer loop.
+        outer: &'a LoopId,
+        /// Inner loops in source order.
+        inner: &'a [LoopId],
+    },
+}
+
+impl<'a> FaceBoundary<'a> {
+    /// Ordered loop ids: outer first when the face states one.
+    pub fn iter(self) -> impl Iterator<Item = &'a LoopId> + Clone {
+        let (outer, rest) = match self {
+            Self::Unspecified(loops) => (None, loops),
+            Self::Classified { outer, inner } => (Some(outer), inner),
+        };
+        outer.into_iter().chain(rest)
+    }
+
+    /// Ordered loop ids as an owned list.
+    #[must_use]
+    pub fn to_vec(self) -> Vec<LoopId> {
+        self.iter().cloned().collect()
+    }
+
+    /// Number of loops.
+    #[must_use]
+    pub const fn len(self) -> usize {
+        match self {
+            Self::Unspecified(loops) => loops.len(),
+            Self::Classified { inner, .. } => 1 + inner.len(),
+        }
+    }
+
+    /// Whether the face has no loops: the whole of its surface's domain.
+    #[must_use]
+    pub const fn is_empty(self) -> bool {
+        self.len() == 0
+    }
+}
+
+impl<'a> IntoIterator for FaceBoundary<'a> {
+    type Item = &'a LoopId;
+    type IntoIter = Box<dyn Iterator<Item = &'a LoopId> + 'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        Box::new(self.iter())
+    }
+}
+
+impl PartialEq<Vec<LoopId>> for FaceBoundary<'_> {
+    fn eq(&self, other: &Vec<LoopId>) -> bool {
+        self.iter().eq(other.iter())
+    }
 }
 
 impl FaceLoops {
@@ -468,79 +782,60 @@ impl FaceLoops {
         Self::Classified { outer, inner }
     }
 
-    /// Ordered loop ids: outer first when the face states one.
-    pub fn iter(&self) -> Box<dyn Iterator<Item = &LoopId> + '_> {
+    /// Every loop the face names, in any arm, outer first where it is stated.
+    /// For reference walks: a partial face's loops are records it names.
+    pub fn stated(&self) -> impl Iterator<Item = &LoopId> + Clone {
+        let (outer, rest) = match self {
+            Self::Unspecified { loops } | Self::PartialUnspecified { loops } => (None, loops),
+            Self::Classified { outer, inner } => (Some(outer), inner),
+            Self::PartialClassified { outer, inner } => (outer.as_ref(), inner),
+        };
+        outer.into_iter().chain(rest)
+    }
+
+    /// The face's boundary where it is stated in full; `None` for a partial
+    /// face, whose extent on its surface is not stated.
+    #[must_use]
+    pub fn boundary(&self) -> Option<FaceBoundary<'_>> {
         match self {
-            Self::Unspecified { loops } => Box::new(loops.iter()),
-            Self::Classified { outer, inner } => {
-                Box::new(std::iter::once(outer).chain(inner.iter()))
-            }
+            Self::Unspecified { loops } => Some(FaceBoundary::Unspecified(loops)),
+            Self::Classified { outer, inner } => Some(FaceBoundary::Classified { outer, inner }),
+            Self::PartialUnspecified { .. } | Self::PartialClassified { .. } => None,
         }
+    }
+
+    /// Whether a loop of the face is not stated.
+    #[must_use]
+    pub const fn is_partial(&self) -> bool {
+        matches!(
+            self,
+            Self::PartialUnspecified { .. } | Self::PartialClassified { .. }
+        )
     }
 
     /// Whether `id` is a loop of this face.
     #[must_use]
     pub fn contains(&self, id: &LoopId) -> bool {
-        self.iter().any(|member| member == id)
-    }
-
-    /// Ordered loop ids as an owned list.
-    #[must_use]
-    pub fn to_vec(&self) -> Vec<LoopId> {
-        self.iter().cloned().collect()
-    }
-
-    /// Number of loops.
-    #[must_use]
-    pub fn len(&self) -> usize {
-        match self {
-            Self::Unspecified { loops } => loops.len(),
-            Self::Classified { inner, .. } => 1 + inner.len(),
-        }
-    }
-
-    /// Whether the face has no loops.
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.stated().any(|member| member == id)
     }
 
     /// Role of `id` when it is a member of this face.
     #[must_use]
     pub fn role(&self, id: &LoopId) -> LoopBoundaryRole {
-        match self {
-            Self::Unspecified { .. } => LoopBoundaryRole::Unspecified,
-            Self::Classified { outer, inner } => {
-                if outer == id {
-                    LoopBoundaryRole::Outer
-                } else if inner.iter().any(|member| member == id) {
-                    LoopBoundaryRole::Inner
-                } else {
-                    LoopBoundaryRole::Unspecified
-                }
+        let (outer, inner) = match self {
+            Self::Unspecified { .. } | Self::PartialUnspecified { .. } => {
+                return LoopBoundaryRole::Unspecified;
             }
+            Self::Classified { outer, inner } => (Some(outer), inner),
+            Self::PartialClassified { outer, inner } => (outer.as_ref(), inner),
+        };
+        if outer == Some(id) {
+            LoopBoundaryRole::Outer
+        } else if inner.iter().any(|member| member == id) {
+            LoopBoundaryRole::Inner
+        } else {
+            LoopBoundaryRole::Unspecified
         }
-    }
-}
-
-impl PartialEq<Vec<LoopId>> for FaceLoops {
-    fn eq(&self, other: &Vec<LoopId>) -> bool {
-        self.iter().eq(other.iter())
-    }
-}
-
-impl PartialEq<FaceLoops> for Vec<LoopId> {
-    fn eq(&self, other: &FaceLoops) -> bool {
-        other.iter().eq(self.iter())
-    }
-}
-
-impl<'a> IntoIterator for &'a FaceLoops {
-    type Item = &'a LoopId;
-    type IntoIter = Box<dyn Iterator<Item = &'a LoopId> + 'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        Box::new(self.iter())
     }
 }
 
@@ -1464,6 +1759,13 @@ cadmpeg_core::named_optional_field!(
     "tolerance"
 );
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
+cadmpeg_core::named_optional_field!(deserialize_unstated, Unstated, "unstated");
+cadmpeg_core::named_optional_field!(
+    deserialize_region_unstated,
+    RegionUnstated,
+    "unstated"
+);
+cadmpeg_core::named_optional_field!(deserialize_partial_outer, LoopId, "outer");
 cadmpeg_core::named_optional_field!(deserialize_ends, EdgeEnds, "ends");
 
 #[cfg(test)]
