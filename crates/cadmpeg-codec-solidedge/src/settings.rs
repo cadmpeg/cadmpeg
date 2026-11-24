@@ -22,6 +22,8 @@ const MAX_NAME_BYTES: usize = 512;
 const LENGTH_PROPERTY: &str = "DefaultDistancePrimary";
 /// The record naming the document angle unit.
 const ANGLE_PROPERTY: &str = "DefaultAnglePrimary";
+/// The index of the property set that stores the document unit settings.
+const UNITS_SET_INDEX: u32 = 2;
 
 /// One property value.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -137,9 +139,12 @@ fn record(ctx: &DecodeContext<'_>, bytes: &[u8], at: usize) -> Option<(Property,
 /// The document unit system the property sets select, with a loss for each
 /// unit the bytes do not settle.
 pub(crate) fn unit_system(sets: &[PropertySet], losses: &mut Vec<LossNote>) -> Option<UnitSystem> {
-    let Some(set) = sets.iter().find(|set| set.word(LENGTH_PROPERTY).is_some()) else {
+    let Some(set) = sets
+        .iter()
+        .find(|set| set.index == UNITS_SET_INDEX && set.word(LENGTH_PROPERTY).is_some())
+    else {
         losses.push(SolidEdgeLossCode::UnitsUnread.note(format!(
-            "no {CLUSTER_STREAM} property set stores {LENGTH_PROPERTY}; the document unit system is not transferred"
+            "no {CLUSTER_STREAM} property set with index {UNITS_SET_INDEX} stores {LENGTH_PROPERTY}; the document unit system is not transferred"
         )));
         return None;
     };
