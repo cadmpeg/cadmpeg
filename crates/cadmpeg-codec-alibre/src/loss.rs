@@ -27,6 +27,8 @@ pub(crate) enum AlibreLossCode {
     GeometryProceduralSurfaceUntyped,
     /// A coedge names a pcurve record with no decodable 2D carrier.
     GeometryPcurveUndecoded,
+    /// The header scale is not the centimetre the decoder reads lengths in.
+    HeaderScaleUnverified,
     /// A header tolerance cannot supply a positive finite document tolerance.
     HeaderToleranceUnresolved,
     /// A tolerant vertex has no positive finite evaluated tolerance.
@@ -55,6 +57,7 @@ impl AlibreLossCode {
         Self::GeometryFramedWithoutCarriers,
         Self::GeometryProceduralSurfaceUntyped,
         Self::GeometryPcurveUndecoded,
+        Self::HeaderScaleUnverified,
         Self::HeaderToleranceUnresolved,
         Self::VertexToleranceUnresolved,
         Self::EdgeToleranceUnresolved,
@@ -73,6 +76,7 @@ impl AlibreLossCode {
             Self::GeometryFramedWithoutCarriers => "geometry.framed-without-carriers",
             Self::GeometryProceduralSurfaceUntyped => "geometry.procedural-surface-untyped",
             Self::GeometryPcurveUndecoded => "geometry.pcurve-undecoded",
+            Self::HeaderScaleUnverified => "header.scale-unverified",
             Self::HeaderToleranceUnresolved => "header.tolerance-unresolved",
             Self::VertexToleranceUnresolved => "vertex.tolerance-unresolved",
             Self::EdgeToleranceUnresolved => "edge.tolerance-unresolved",
@@ -88,7 +92,7 @@ impl AlibreLossCode {
     /// The severity of this loss.
     const fn severity(self) -> Severity {
         match self {
-            Self::GeometryFramedWithoutCarriers => Severity::Blocking,
+            Self::GeometryFramedWithoutCarriers | Self::HeaderScaleUnverified => Severity::Blocking,
             Self::ContainerNoncanonical
             | Self::GeometryProceduralSurfaceUntyped
             | Self::GeometryPcurveUndecoded
@@ -114,12 +118,14 @@ impl AlibreLossCode {
             | Self::EdgeToleranceUnresolved
             | Self::TopologyShellUnprojected
             | Self::TopologyFaceOwnerUnprojected
-            | Self::SourceRecordExtensionsUnprojected => LossTaxonomy::GeometryNotTransferred,
+            | Self::HeaderScaleUnverified => LossTaxonomy::GeometryNotTransferred,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::ContainerNoncanonical | Self::SourceRecordNameUnresolved => {
                 LossTaxonomy::NoncanonicalSourceSyntax
             }
-            Self::SourceStreamsUndecoded => LossTaxonomy::MetadataNotTransferred,
+            Self::SourceRecordExtensionsUnprojected | Self::SourceStreamsUndecoded => {
+                LossTaxonomy::MetadataNotTransferred
+            }
         }
     }
 
@@ -152,6 +158,7 @@ mod tests {
                 "geometry.framed-without-carriers",
                 "geometry.procedural-surface-untyped",
                 "geometry.pcurve-undecoded",
+                "header.scale-unverified",
                 "header.tolerance-unresolved",
                 "vertex.tolerance-unresolved",
                 "edge.tolerance-unresolved",

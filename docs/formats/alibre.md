@@ -33,7 +33,7 @@ The stream is an ACIS binary stream as [`asm.md`](asm.md) §1 defines for the `A
 
 ### 2.1 Length unit
 
-The model unit is the centimetre, and the header `scale` is `10.0`, in millimetres per unit. The decoder multiplies every model-space length by 10 to obtain millimetres, as it does for every ACIS binary stream. The resolved tolerance `resabs` is multiplied by 10 in the same way.
+The model unit is the centimetre, and the header `scale` is `10.0`, in millimetres per unit, in every committed part. The shared ACIS binary reader reads every model-space length as centimetres and multiplies it by 10 to obtain millimetres; the decoder does not take the factor from the header. A header that states any other scale is charged as `alibre/header.scale-unverified` (blocking), because the lengths would then be off by the ratio. The resolved tolerance `resabs` is multiplied by 10 in the same way.
 
 ### 2.2 Key string
 
@@ -55,7 +55,7 @@ The `coedge` record stores no integer between the loop reference and the pcurve 
 
 The stream holds the records `body`, `lump`, `shell`, `face`, `loop`, `coedge`, `edge`, `vertex`, `point`, and the surface and curve classes `plane`, `cone`, `torus`, `straight`, `ellipse`, `intcurve`, `pcurve`, and `spline` with its subtypes. Attribute records of the classes `name_attrib`, `TimeStamp`, `StateID`, `Autograph`, and `tag-sys` hang from entities through the attribute reference. The name chains of these records are `name_attrib-gen-attrib`, `TimeStamp-Alibre-attrib`, `StateID-Alibre-attrib`, `Autograph-Alibre-attrib`, and `tag-sys-attrib`. The `name_attrib-gen-attrib` record of the body holds the string `alibrePartClosedBody%5`. This string is a payload string and not an identifier, so it keeps its `%5` ending (§2.3).
 
-An `edge` record stores the continuity string `unknown` or `tangent`. A side face of a lofted solid rests on a `spline` surface whose subtype is `skinsur`; the record ends with a solved `nubs` surface block, which the decoder reads as the face carrier. The two cap faces of the loft rest on `plane` surfaces. The loft has four `intcurve` edge curves, and its coedges reference 16 `pcurve` records. The decoder reads none of them as a pcurve entity and reports `alibre/geometry.pcurve-undecoded` (ALB-01).
+An `edge` record stores the continuity string `unknown` or `tangent`. A side face of a lofted solid rests on a `spline` surface whose subtype is `skinsur`; the record ends with a solved `nubs` surface block, which the decoder reads as the face carrier. The two cap faces of the loft rest on `plane` surfaces. The edges between a lofted face and a cap face have `intcurve` curves, and the coedges of a lofted solid reference `pcurve` records. The decoder reads none of these as a pcurve entity and reports `alibre/geometry.pcurve-undecoded` with the count (ALB-01).
 
 ## 3. Decode
 

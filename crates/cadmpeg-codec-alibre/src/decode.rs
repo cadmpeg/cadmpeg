@@ -20,9 +20,10 @@ use crate::dialect::{classify, kernel_stream, Classification, KernelStream};
 use crate::loss::AlibreLossCode;
 use crate::FORMAT;
 
-/// Millimetres per ASM model-space length unit, which the header scale of an
-/// Alibre stream declares.
-const HEADER_SCALE_TO_MM: f64 = 10.0;
+/// Millimetres per ASM model-space length unit: the shared binary reader
+/// reads every length in centimetres, and an Alibre header states that unit
+/// as its scale (`alibre.md` §2.1).
+use cadmpeg_asm::nurbs::reader::LEN_TO_MM as HEADER_SCALE_TO_MM;
 
 pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, CodecError> {
     let digest = Sha256Digest::digest(root.window());
@@ -146,6 +147,13 @@ fn from_kernel(
     let header = &kernel.header.metadata;
     losses.extend(classification.kernel_loss());
     let mut ir = new_ir(classification, Some(kernel))?;
+    if let Some(scale) = header.scale {
+        if (scale - HEADER_SCALE_TO_MM).abs() > 1e-9 {
+            losses.push(AlibreLossCode::HeaderScaleUnverified.note(format!(
+                "the SAB_DATA header scale is {scale}, not the {HEADER_SCALE_TO_MM} millimetres per unit the decoder reads every length in; lengths may be off by the ratio"
+            )));
+        }
+    }
     if let Some(value) = header.linear {
         let linear_mm = value * HEADER_SCALE_TO_MM;
         match cadmpeg_ir::scalar::PositiveLength::new(linear_mm) {
