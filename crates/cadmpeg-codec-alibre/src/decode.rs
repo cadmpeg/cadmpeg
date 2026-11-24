@@ -25,6 +25,11 @@ use crate::FORMAT;
 /// as its scale (`alibre.md` §2.1).
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM as HEADER_SCALE_TO_MM;
 
+/// How far a stored header scale may differ from the centimetre before it is
+/// charged: the scale is written as an exact double, so only a real
+/// difference passes this bound.
+const HEADER_SCALE_TOLERANCE: f64 = 1e-9;
+
 pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, CodecError> {
     let digest = Sha256Digest::digest(root.window());
     let container = AlibreContainer::open(ctx, root)?;
@@ -148,7 +153,7 @@ fn from_kernel(
     losses.extend(classification.kernel_loss());
     let mut ir = new_ir(classification, Some(kernel))?;
     if let Some(scale) = header.scale {
-        if (scale - HEADER_SCALE_TO_MM).abs() > 1e-9 {
+        if (scale - HEADER_SCALE_TO_MM).abs() > HEADER_SCALE_TOLERANCE {
             losses.push(AlibreLossCode::HeaderScaleUnverified.note(format!(
                 "the SAB_DATA header scale is {scale}, not the {HEADER_SCALE_TO_MM} millimetres per unit the decoder reads every length in; lengths may be off by the ratio"
             )));
