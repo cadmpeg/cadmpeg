@@ -2,7 +2,9 @@
 use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_core::decode::{DecodeContext, View};
 
-use crate::feature::base::{current_body, entry, reference_counts, unique_link_header, wrappers};
+use crate::feature::base::{
+    current_body, entry, history_candidate, reference_counts, unique_link_header, wrappers,
+};
 use crate::feature::tests::{reference, test_feature, test_header};
 use crate::feature::{
     PmDcFeatureProperty, PmDcFeaturePropertyKind, PmDcFeaturePropertyPayload, PmDcKernelEntityLink,
@@ -197,4 +199,55 @@ fn base_slots_require_two_distinct_surface_wrappers_and_null_tail() {
     ] {
         assert!(wrappers(&invalid, crate::feature::BASE_CLASS_ID, |_| Some(&first)).is_none());
     }
+}
+
+#[test]
+fn history_candidate_requires_the_carrier_link_and_no_final_body_with_the_key() {
+    let output = wrapper(1);
+    let link = link();
+    let key = body_key();
+    assert!(history_candidate(&output, &link, "seg", 0, &[]));
+    // A final body that carries the key is not a candidate.
+    assert!(!history_candidate(
+        &output,
+        &link,
+        "seg",
+        0,
+        std::slice::from_ref(&key)
+    ));
+    // Duplicate final keys are still final bodies.
+    assert!(!history_candidate(
+        &output,
+        &link,
+        "seg",
+        0,
+        &[key.clone(), key.clone()]
+    ));
+    // A body of another carrier or another key does not hold the key.
+    let mut other = key.clone();
+    other.source_brep = Some("Bother:record:0".into());
+    assert!(history_candidate(&output, &link, "seg", 0, &[other]));
+    let mut other = key;
+    other.asm_body_key = Some(8);
+    assert!(history_candidate(&output, &link, "seg", 0, &[other]));
+}
+
+#[test]
+fn history_candidate_refuses_a_link_that_does_not_select_the_carrier() {
+    let output = wrapper(1);
+    let link = link();
+    assert!(!history_candidate(&output, &link, "other", 0, &[]));
+    assert!(!history_candidate(&output, &link, "seg", 1, &[]));
+    for output in [wrapper(0), wrapper(0x8000_0001)] {
+        assert!(!history_candidate(&output, &link, "seg", 0, &[]));
+    }
+    let mut payload = (*link).clone();
+    payload.state = 1;
+    let changed = Located::new(
+        payload,
+        RecordTypeId::from_bytes(KERNEL_ENTITY_LINK_TYPE),
+        cadmpeg_ir::identity_key!("seg"),
+        1,
+    );
+    assert!(!history_candidate(&output, &changed, "seg", 0, &[]));
 }

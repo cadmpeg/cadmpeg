@@ -789,7 +789,7 @@ fn decode_container<'a>(
         )?);
     }
     let mut stored_body_losses = Vec::new();
-    if delivered >= DecodeDepth::Design && !body_keys.is_empty() {
+    if delivered >= DecodeDepth::Design && (!body_keys.is_empty() || result_states.is_some()) {
         let projection = crate::feature::base::project(
             ctx,
             &crate::feature::base::Inputs {
