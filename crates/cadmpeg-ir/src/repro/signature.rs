@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Versioned finding normalization.
-use crate::report::{
-    check::{Check, Finding},
-    Severity,
-};
+use crate::design::names::CodecId;
+use crate::report::{check::Finding, Severity};
+use crate::scalar::FiniteReal;
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -29,11 +29,28 @@ pub enum Stage {
 #[serde(deny_unknown_fields)]
 pub struct NumberBand {
     /// Original value.
-    pub value: f64,
+    pub value: FiniteReal,
     /// Inclusive lower bound.
-    pub lower: f64,
+    pub lower: FiniteReal,
     /// Inclusive upper bound.
-    pub upper: f64,
+    pub upper: FiniteReal,
+}
+
+impl NumberBand {
+    /// The band around a value, clamped to the float range.
+    fn around(value: FiniteReal) -> Self {
+        let center = value.get();
+        let radius = center.abs() * NUMBER_BAND_FRACTION;
+        let bound = |bound: f64| {
+            FiniteReal::new(bound.clamp(-f64::MAX, f64::MAX))
+                .expect("a bound clamped to the float range is finite")
+        };
+        Self {
+            value,
+            lower: bound(center - radius),
+            upper: bound(center + radius),
+        }
+    }
 }
 
 /// Stable normalized identity of a finding.
@@ -46,9 +63,9 @@ pub struct Signature {
     /// Producing stage.
     pub stage: Stage,
     /// Registry codec id.
-    pub codec: String,
-    /// Validator id.
-    pub check: Check,
+    pub codec: CodecId,
+    /// The wire name of the check that found the finding, an open name.
+    pub check: NonBlankString,
     /// Finding severity.
     pub severity: Severity,
     /// Entity kind from its identity.
@@ -66,7 +83,7 @@ const HEX: &[u8; 16] = b"0123456789abcdef";
 
 impl Signature {
     /// Normalize an existing check finding.
-    pub fn new(finding: &Finding, codec: &str, stage: Stage) -> Self {
+    pub fn new(finding: &Finding, codec: CodecId, stage: Stage) -> Self {
         let mut message = finding.message.clone();
         let mut ids: Vec<&str> = finding
             .entity
@@ -112,8 +129,9 @@ impl Signature {
         Self {
             signature_version,
             stage,
-            codec: codec.into(),
-            check: finding.check,
+            codec,
+            check: NonBlankString::new(finding.check.to_string())
+                .expect("every check has a nonblank wire name"),
             severity: finding.severity,
             entity_kind,
             message,
@@ -124,7 +142,7 @@ impl Signature {
 
     /// Match normalized fields and each retained numeric observation's band.
     pub fn reproduces(&self, finding: &Finding) -> bool {
-        let candidate = Self::new(finding, &self.codec, self.stage);
+        let candidate = Self::new(finding, self.codec.clone(), self.stage);
         self.signature_version == candidate.signature_version
             && candidate.hash == self.hash
             && candidate.numbers.len() == self.numbers.len()
@@ -132,7 +150,9 @@ impl Signature {
                 .numbers
                 .iter()
                 .zip(&candidate.numbers)
-                .all(|(band, number)| number.value >= band.lower && number.value <= band.upper)
+                .all(|(band, number)| {
+                    number.value.get() >= band.lower.get() && number.value.get() <= band.upper.get()
+                })
     }
 }
 
@@ -143,12 +163,7 @@ fn normalize_numbers(message: &str) -> (String, Vec<NumberBand>) {
     while !rest.is_empty() {
         let first = rest.chars().next().unwrap_or_default();
         if let Some((length, value)) = number_at(rest, !output.ends_with('.')) {
-            let radius = value.abs() * NUMBER_BAND_FRACTION;
-            numbers.push(NumberBand {
-                value,
-                lower: (value - radius).max(-f64::MAX),
-                upper: (value + radius).min(f64::MAX),
-            });
+            numbers.push(NumberBand::around(value));
             output.push_str("{number}");
             rest = &rest[length..];
             continue;
@@ -209,7 +224,7 @@ pub(crate) fn entity_kind(id: &str) -> String {
     }
 }
 
-fn number_at(text: &str, leading_dot: bool) -> Option<(usize, f64)> {
+fn number_at(text: &str, leading_dot: bool) -> Option<(usize, FiniteReal)> {
     let bytes = text.as_bytes();
     let mut end = usize::from(matches!(bytes.first(), Some(b'+' | b'-')));
     let start = end;
@@ -227,7 +242,7 @@ fn number_at(text: &str, leading_dot: bool) -> Option<(usize, f64)> {
         if bytes.first() == Some(&b'-') {
             value = -value;
         }
-        return Some((end, value));
+        return Some((end, FiniteReal::new(value)?));
     }
     while bytes.get(end).is_some_and(u8::is_ascii_digit) {
         end += 1;
@@ -259,5 +274,5 @@ fn number_at(text: &str, leading_dot: bool) -> Option<(usize, f64)> {
         }
     }
     let value = text[..end].parse::<f64>().ok()?;
-    value.is_finite().then_some((end, value))
+    Some((end, FiniteReal::new(value)?))
 }

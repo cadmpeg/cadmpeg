@@ -6289,14 +6289,17 @@
       "properties": {
         "context": {
           "description": "Opaque application data.",
-          "type": "object",
-          "additionalProperties": true
+          "$ref": "#/$defs/AttributeJson"
         },
         "incomplete_reason": {
           "description": "Reason this cut exceeds its resource bound or requires global context.",
-          "type": [
-            "string",
-            "null"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonBlankString"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "manifest": {
@@ -7523,136 +7526,6 @@
             "kind",
             "indices"
           ]
-        }
-      ]
-    },
-    "Check": {
-      "description": "Which invariant a validation finding concerns.",
-      "oneOf": [
-        {
-          "description": "A whole-document check was skipped for a fragment.",
-          "type": "string",
-          "const": "fragment_skipped"
-        },
-        {
-          "description": "An entity id does not match `<format>:<scope>:<kind>#<key>`, or is not\nglobally unique. A native validator reports a duplicated, unowned, or\nuncovered source-native identity here as well.",
-          "type": "string",
-          "const": "identity"
-        },
-        {
-          "description": "A PMI target, datum reference, datum system, or semantic-annotation\nreference does not resolve.",
-          "type": "string",
-          "const": "pmi"
-        },
-        {
-          "description": "A presentation-layer item does not resolve, or an appearance texture\nmapping or bump map carries a non-finite value.",
-          "type": "string",
-          "const": "presentation"
-        },
-        {
-          "description": "An arena is not strictly sorted by entity id.",
-          "type": "string",
-          "const": "arena_order"
-        },
-        {
-          "description": "A reference between entities is defective: a typed reference or id does\nnot resolve; an entity belongs to another owner or sketch; a dependency\nor referenced feature does not precede its consumer, or the consumer\nomits it from its dependencies; references form a cycle; an identity,\nordinal, address, or range is repeated or invalid; a constraint's\noperands are not the kinds the constraint states; a configuration state\ndisagrees with the feature states it closes over; an entity schema\ncannot state its typed references; or an occurrence places the root\ndefinition.",
-          "type": "string",
-          "const": "referential_integrity"
-        },
-        {
-          "description": "A coedge radial ring does not close, crosses edges, or, with two\nmembers, states equal coedge senses.",
-          "type": "string",
-          "const": "coedge_pairing"
-        },
-        {
-          "description": "Wire topology ownership is violated: a coedge also references a wire\nedge, an edge also references a free vertex, a wire edge or free vertex\ndoes not belong to exactly one shell, or a wire body contains faces.",
-          "type": "string",
-          "const": "wire_topology"
-        },
-        {
-          "description": "A face-bearing shell is disconnected through shared edges or vertices.",
-          "type": "string",
-          "const": "shell_topology"
-        },
-        {
-          "description": "A surface, curve, pcurve, or point carrier is orphan: no topology or\nretained construction data reaches it.",
-          "type": "string",
-          "const": "carrier_reachability"
-        },
-        {
-          "description": "An annotation provenance or exactness key does not resolve to an entity,\nan exactness field path does not resolve, or an entity cannot be\nserialized to check its field paths.",
-          "type": "string",
-          "const": "annotations"
-        },
-        {
-          "description": "A source-native link is defective: a `native_ref` or native-record link\ndoes not resolve, or a link list is not an array of identity strings. A\ncodec's native validator also reports here a native record whose frame,\narena census, ordinal run, ownership, or identity disagrees with the\nsource container.",
-          "type": "string",
-          "const": "native_links"
-        },
-        {
-          "description": "A parameter range is outside its carrier's canonical domain: an edge\nrange, a coedge use-curve range, or a coedge pcurve range; or a spatial\nsketch NURBS surface states a zero degree.",
-          "type": "string",
-          "const": "parameter_domain"
-        },
-        {
-          "description": "A document-wide or per-entity tolerance is outside a sane canonical\nrange.",
-          "type": "string",
-          "const": "tolerances"
-        },
-        {
-          "description": "Preserved bytes do not account for their source: a ledger entry, owner,\nor boundary is invalid, a nonempty entry is missing, ranges overlap or\nleave a gap, a coverage report is stale or does not prove exact closure,\na preservation record disagrees with the authoritative bytes, or a\ncarrier census disagrees with the parsed payloads.",
-          "type": "string",
-          "const": "payload_integrity"
-        },
-        {
-          "description": "A tessellation references a missing body, face, or texture asset.",
-          "type": "string",
-          "const": "tessellation"
-        },
-        {
-          "description": "Geometry disagrees with what it supports, or a feature's geometric\ninputs are inconsistent: an edge curve, a coedge use-curve, or a pcurve\nmapped through its face surface misses the vertex positions it must\nmeet; a procedural curve does not evaluate at its endpoints or misses\nits endpoint or offset-distance contract; a sketch profile is\ndisconnected, or a sketch constraint, offset pair, locus, or projected\ncopy has no consistent solution; a feature reference does not name the\nkind of geometry it must name, or does not precede its consumer; a\ngenerated vertex, edge, face, body, profile, or region selection is\nempty, repeated, out of range, or owned by another sketch; or a\nconfiguration parameter, sheet-metal height, or scale transform is not a\nusable value.",
-          "type": "string",
-          "const": "geometric_consistency"
-        },
-        {
-          "description": "A count or multiplicity is internally inconsistent: a parameter name or\nordinal repeats within its scope, a design repeats a configuration\nordinal, configuration source index, or feature ordinal, a design states\nmore than one active configuration, a feature states more than one input\nor result topology state, a sketch constraint states the wrong number of\nmembers, a native record census disagrees with the source container, or\na document states more than one root definition, or a complete decoded\ndocument none.",
-          "type": "string",
-          "const": "counts"
-        },
-        {
-          "description": "A face's edge loop does not list its coedges in traversal order: its\ncoedges form one closed traversal by vertex identity in another order,\nseveral closed traversals, or none.",
-          "type": "string",
-          "const": "ring_order"
-        },
-        {
-          "description": "A coedge does not list its pcurve uses in traversal order: they form\none chain from the coedge's end to its start.",
-          "type": "string",
-          "const": "pcurve_order"
-        },
-        {
-          "description": "A face's sense disagrees with the winding of its loops, or the faces\nof a body whose shells are closed disagree on its volume: a face's\nreadings or a shell's volume sign contradict the body's orientation,\nor the flux of the unit field through the shells exceeds its\ntolerance.",
-          "type": "string",
-          "const": "orientation"
-        },
-        {
-          "description": "The measurement findings pass ran out of its allowance before it\nchecked every face, edge and closed body for [`Self::RingOrder`],\n[`Self::PcurveOrder`] and [`Self::Orientation`].",
-          "type": "string",
-          "const": "measurement_incomplete"
-        },
-        {
-          "description": "A quantity that the source declares for its bodies differs from the\nquantity measured on the decoded geometry by more than the\nmeasurement's error terms, cannot be measured, or names no bodies.",
-          "type": "string",
-          "const": "declared_measure"
-        },
-        {
-          "description": "A record of the design layer breaks a rule of part 10 of the CADIR\nv11 specification: a scope invariant, the container tree, a position,\nan evaluation key or base, a current state, a resolved state, or a\nconfiguration, arrangement, or override.",
-          "type": "string",
-          "const": "design"
-        },
-        {
-          "description": "A record of the process layer breaks a rule of part 10 of the CADIR\nv11 specification: an operation's setup membership, a step, a\nreference between process records, a toolpath or process state key,\na binding, or a setting stated off its operation's class.",
-          "type": "string",
-          "const": "process"
         }
       ]
     },
@@ -17389,9 +17262,13 @@
         },
         "instance": {
           "description": "Instance of this format layer inside the containing document.\n\n`None` when the layer occurs once or has no report-local identity. This\nis not source-declared evidence and therefore does not belong in\n[`Self::declared`].",
-          "type": [
-            "string",
-            "null"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonBlankString"
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       },
@@ -47553,7 +47430,7 @@
       "properties": {
         "arena": {
           "description": "Dotted arena address.",
-          "type": "string"
+          "$ref": "#/$defs/NonBlankString"
         },
         "description": {
           "description": "One-line arena description.",
@@ -47562,13 +47439,13 @@
         "rows": {
           "description": "Retained rows.",
           "type": "integer",
-          "format": "uint",
+          "format": "uint64",
           "minimum": 0
         },
         "serialized_bytes": {
           "description": "Compact JSON array size in bytes.",
           "type": "integer",
-          "format": "uint",
+          "format": "uint64",
           "minimum": 0
         }
       },
@@ -51594,18 +51471,15 @@
       "properties": {
         "lower": {
           "description": "Inclusive lower bound.",
-          "type": "number",
-          "format": "double"
+          "$ref": "#/$defs/FiniteReal"
         },
         "upper": {
           "description": "Inclusive upper bound.",
-          "type": "number",
-          "format": "double"
+          "$ref": "#/$defs/FiniteReal"
         },
         "value": {
           "description": "Original value.",
-          "type": "number",
-          "format": "double"
+          "$ref": "#/$defs/FiniteReal"
         }
       },
       "additionalProperties": false,
@@ -76328,12 +76202,12 @@
       "type": "object",
       "properties": {
         "check": {
-          "description": "Validator id.",
-          "$ref": "#/$defs/Check"
+          "description": "The wire name of the check that found the finding, an open name.",
+          "$ref": "#/$defs/NonBlankString"
         },
         "codec": {
           "description": "Registry codec id.",
-          "type": "string"
+          "$ref": "#/$defs/CodecId"
         },
         "entity_kind": {
           "description": "Entity kind from its identity.",
