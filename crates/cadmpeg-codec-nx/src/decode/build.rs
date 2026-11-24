@@ -1225,7 +1225,11 @@ pub(super) fn try_decode_geometry(
                         )
                         .map(|tolerance| {
                             cadmpeg_ir::geometry::legacy_cache::FitTolerance::from(
-                                cadmpeg_ir::scalar::NonNegativeReal::from(tolerance),
+                                cadmpeg_ir::scalar::NonNegativeReal::from(
+                                    cadmpeg_ir::scalar::PositiveReal::from_assigned_length(
+                                        tolerance,
+                                    ),
+                                ),
                             )
                         });
                         match &mut carrier.metadata {

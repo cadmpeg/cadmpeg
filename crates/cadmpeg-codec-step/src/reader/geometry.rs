@@ -223,7 +223,7 @@ pub(super) fn infer_edge_parameter_ranges(
         // the inversion has already shown it misses, and refuses the body.
         let mut edge_tolerance = None;
         if worst > tolerance {
-            edge_tolerance = PositiveReal::new(tolerance + worst);
+            edge_tolerance = cadmpeg_ir::scalar::PositiveLength::new(tolerance + worst);
             let carried = edge_tolerance.map_or_else(String::new, |bound| {
                 format!("; the edge carries {:.6e} as its tolerance", bound.get())
             });

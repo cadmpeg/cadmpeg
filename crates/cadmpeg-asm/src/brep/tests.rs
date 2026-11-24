@@ -1353,7 +1353,7 @@ fn tolerant_edge_tail_admits_only_nonnegative_finite_source_tolerance() {
         assert_eq!(
             brep.edges[0]
                 .tolerance
-                .map(cadmpeg_ir::scalar::PositiveReal::get),
+                .map(cadmpeg_ir::scalar::PositiveLength::get),
             expected_tolerance
         );
         assert_eq!(brep.tolerant_edge_tails.len(), expected_tails);

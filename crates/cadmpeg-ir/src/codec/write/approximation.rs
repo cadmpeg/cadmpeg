@@ -761,7 +761,7 @@ fn trims_meet_vertices(
             point.position().get(),
             vertex
                 .tolerance
-                .map_or(0.0, crate::scalar::PositiveReal::get),
+                .map_or(0.0, crate::scalar::PositiveLength::get),
         ))
     };
     for face in ir
@@ -792,7 +792,8 @@ fn trims_meet_vertices(
                 let allowance = [
                     start_tolerance,
                     end_tolerance,
-                    edge.tolerance.map_or(0.0, crate::scalar::PositiveReal::get),
+                    edge.tolerance
+                        .map_or(0.0, crate::scalar::PositiveLength::get),
                 ]
                 .into_iter()
                 .fold(ir.tolerances.linear.get(), f64::max)

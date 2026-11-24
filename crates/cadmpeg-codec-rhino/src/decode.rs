@@ -5720,14 +5720,14 @@ fn c2_curve_to_nurbs_join(
 fn scaled_tolerance(
     value: crate::brep::BrepTolerance,
     scale: MillimeterScale,
-) -> Result<Option<cadmpeg_ir::scalar::PositiveReal>, crate::curves::GeometryError> {
+) -> Result<Option<cadmpeg_ir::scalar::PositiveLength>, crate::curves::GeometryError> {
     let Some(source) = value.positive() else {
         return Ok(None);
     };
     let scaled = crate::wire::scaled_coordinate(source.get(), scale)
         .ok_or_else(|| crate::curves::GeometryError::unpositioned("scaled tolerance is invalid"))?;
     Ok(Some(
-        cadmpeg_ir::scalar::PositiveReal::from_finite(scaled).ok_or_else(|| {
+        cadmpeg_ir::scalar::PositiveLength::from_assigned_real(scaled).ok_or_else(|| {
             crate::curves::GeometryError::unpositioned(
                 "scaled tolerance must be positive and finite",
             )

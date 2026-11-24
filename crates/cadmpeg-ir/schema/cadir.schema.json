@@ -20692,10 +20692,10 @@
           ]
         },
         "tolerance": {
-          "description": "Optional geometric tolerance in the document's length unit.",
+          "description": "The entity's tolerance in millimetres, overriding `tolerances.linear`.",
           "anyOf": [
             {
-              "$ref": "#/$defs/PositiveReal"
+              "$ref": "#/$defs/PositiveLength"
             },
             {
               "type": "null"
@@ -23741,10 +23741,10 @@
           "$ref": "#/$defs/SurfaceId"
         },
         "tolerance": {
-          "description": "Optional geometric tolerance in the document's length unit.",
+          "description": "The entity's tolerance in millimetres, overriding `tolerances.linear`.",
           "anyOf": [
             {
-              "$ref": "#/$defs/PositiveReal"
+              "$ref": "#/$defs/PositiveLength"
             },
             {
               "type": "null"
@@ -99322,10 +99322,10 @@
           "$ref": "#/$defs/PointId"
         },
         "tolerance": {
-          "description": "Optional geometric tolerance in the document's length unit.",
+          "description": "The entity's tolerance in millimetres, overriding `tolerances.linear`.",
           "anyOf": [
             {
-              "$ref": "#/$defs/PositiveReal"
+              "$ref": "#/$defs/PositiveLength"
             },
             {
               "type": "null"

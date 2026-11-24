@@ -1711,7 +1711,7 @@ fn encode_source_less_edges_vertices_points(
                 let tolerance = [edge.tolerance, vertex.tolerance]
                     .into_iter()
                     .flatten()
-                    .map(cadmpeg_ir::scalar::PositiveReal::get)
+                    .map(cadmpeg_ir::scalar::PositiveLength::get)
                     .fold(0.0, f64::max);
                 edge.curve()
                     .and_then(|curve_id| curve_ordinals.get(curve_id))
