@@ -84,11 +84,18 @@ impl Record {
 }
 
 impl Document {
-    /// The records of `ir`; `None` when it does not serialize.
+    /// The records of `ir`, with the arenas the wire omits; `None` when it
+    /// does not serialize.
     pub(crate) fn of(ir: &CadIr) -> Option<Self> {
         let Value::Object(mut root) = serde_json::to_value(ir).ok()? else {
             return None;
         };
+        let Value::Object(omitted) = ir.model.omitted_arenas_value().ok()? else {
+            return None;
+        };
+        if let Some(Value::Object(model)) = root.get_mut("model") {
+            model.extend(omitted);
+        }
         let mut arenas = BTreeMap::new();
         for home in HOMES {
             let Some(Value::Object(members)) = root.remove(home) else {

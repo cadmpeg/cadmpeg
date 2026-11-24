@@ -713,7 +713,9 @@ fn standard_face_attachment_mints_face_body_region_and_shell_ids() {
         "catia:standard:shell#0-0"
     );
     assert_eq!(
-        ir.geometry.shell_faces(&ir.geometry.shells[0].id).count(),
+        ir.geometry
+            .stated_shell_faces(&ir.geometry.shells[0].id)
+            .count(),
         1
     );
 }
@@ -776,7 +778,7 @@ fn face_partition_splits_components_into_separate_regions_and_shells() {
     assert_eq!(
         base_ir
             .geometry
-            .shell_faces(&base_ir.geometry.shells[1].id)
+            .stated_shell_faces(&base_ir.geometry.shells[1].id)
             .next()
             .expect("shell face")
             .id

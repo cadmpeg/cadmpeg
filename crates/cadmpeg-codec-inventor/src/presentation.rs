@@ -267,6 +267,7 @@ fn project_default_bindings(
             ),
             target: AppearanceTarget::Body(body.clone()).into(),
             appearance: appearance.clone(),
+            precedence: None,
             source_entity_id: Some(format!(
                 "inventor:presentation:rendering-style#{}-{}",
                 style.identity.segment_token, style.identity.record_ordinal
@@ -422,6 +423,7 @@ fn project_face_bindings(
             ),
             target: AppearanceTarget::Face(face_id.clone()).into(),
             appearance: appearance_id,
+            precedence: None,
             source_entity_id: Some(format!(
                 "inventor:presentation:graphics-face#{}-{}",
                 graphics_face.identity.segment_token, graphics_face.identity.record_ordinal

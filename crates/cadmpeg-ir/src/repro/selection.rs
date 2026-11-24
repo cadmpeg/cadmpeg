@@ -222,7 +222,7 @@ pub fn select(
             if !rows.is_empty() {
                 selected
                     .native
-                    .namespace_mut(codec)
+                    .namespace_mut(codec.clone())
                     .arenas_mut()
                     .insert(arena.clone(), rows);
             }

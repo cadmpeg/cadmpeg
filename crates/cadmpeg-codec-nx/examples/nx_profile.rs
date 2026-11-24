@@ -665,14 +665,14 @@ fn unique_face_body<'a>(
         .regions
         .iter()
         .filter_map(|region| {
-            let owns_face = region.shells.iter().any(|shell_id| {
+            let owns_face = region.stated_shells().any(|shell_id| {
                 ir.geometry
                     .shells
                     .iter()
                     .find(|shell| shell.id == *shell_id)
                     .is_some_and(|shell| {
                         ir.geometry
-                            .shell_faces(&shell.id)
+                            .stated_shell_faces(&shell.id)
                             .any(|face| &face.id == face_id)
                     })
             });
@@ -1264,6 +1264,7 @@ mod tests {
                 .expect("valid identity"),
             target: AppearanceTarget::Body(body.id.clone()).into(),
             appearance: appearance_id,
+            precedence: None,
             source_entity_id: None,
             object_type: None,
             visible: None,
@@ -1338,6 +1339,7 @@ mod tests {
                 .expect("valid identity"),
             target: target.clone().into(),
             appearance: appearance_id.clone(),
+            precedence: None,
             source_entity_id: None,
             object_type: None,
             visible: None,
@@ -1354,6 +1356,7 @@ mod tests {
                 .expect("valid identity"),
             target: target.clone().into(),
             appearance: appearance_id,
+            precedence: None,
             source_entity_id: None,
             object_type: None,
             visible: None,

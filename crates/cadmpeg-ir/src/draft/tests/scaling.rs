@@ -121,13 +121,16 @@ fn native_candidate_admission_does_not_build_an_unread_prefix_index() {
     let mut candidate = CadIr::empty();
     let mut native = NativeNamespace::default();
     native.arenas_mut().insert(
-        "records".into(),
+        cadmpeg_core::nonblank_literal!("records"),
         vec![NativeRecord::from_identity(
             crate::ids::Identity::new("test:native:record#last".to_owned()).unwrap(),
             None,
         )],
     );
-    candidate.native.0.insert("fixture".into(), native);
+    candidate
+        .native
+        .0
+        .insert(crate::codec_id!("fixture"), native);
     let annotations = Annotations::default();
     session
         .try_admit_append(

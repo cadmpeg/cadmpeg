@@ -125,7 +125,7 @@ fn bounded_feature_scalars_reject_out_of_domain_values_on_every_admission_route(
                 assert_eq!(admitted.get().to_bits(), value.to_bits());
                 let wire = serde_json::to_string(&admitted).unwrap();
                 let decoded: $ty = serde_json::from_str(&wire).unwrap();
-                assert_eq!(decoded.get().to_bits(), value.to_bits());
+                assert_eq!(decoded.get().to_bits(), (value + 0.0).to_bits());
             }
             for value in [$($invalid,)* f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
                 assert!(<$ty>::new(value).is_none());
@@ -692,7 +692,7 @@ fn finite_binary32_preserves_source_precision_and_rejects_nonfinite_values() {
         assert_eq!(value.get().to_bits(), source.to_bits());
         assert_eq!(
             serde_json::to_string(&value).unwrap(),
-            serde_json::to_string(&source).unwrap()
+            serde_json::to_string(&(source + 0.0)).unwrap()
         );
     }
     for source in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {

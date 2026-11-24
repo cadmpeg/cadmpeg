@@ -3705,7 +3705,7 @@ fn finish_decode(
             |ir, losses| crate::design_v11::project(ctx, ir, losses),
         )?;
     }
-    native.store_owned(ctx, ir.native.namespace_mut("catia"))?;
+    native.store_owned(ctx, ir.native.namespace_mut(cadmpeg_ir::codec_id!("catia")))?;
     decode_result(
         ctx,
         scan,

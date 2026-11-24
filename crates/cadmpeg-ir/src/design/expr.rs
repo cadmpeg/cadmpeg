@@ -180,6 +180,26 @@ pub enum Node<R> {
         /// The right operand.
         right: Box<Node<R>>,
     },
+    /// A run of `+` and `-`, evaluated from the left: `first`, then each
+    /// later operand with the operator before it.
+    Sum {
+        /// The first operand.
+        first: Box<Node<R>>,
+        /// Each later operand with the operator before it.
+        rest: Vec<(AddOp, Node<R>)>,
+    },
+    /// A run of `*` and `/`, evaluated from the left: `first`, then each
+    /// later operand with the operator before it.
+    Product {
+        /// The first operand.
+        first: Box<Node<R>>,
+        /// Each later operand with the operator before it.
+        rest: Vec<(MulOp, Node<R>)>,
+    },
+    /// A run of `and`. Every operand evaluates.
+    All(Vec<Node<R>>),
+    /// A run of `or`. Every operand evaluates.
+    Any(Vec<Node<R>>),
     /// A function call.
     Call {
         /// The function.
@@ -187,9 +207,97 @@ pub enum Node<R> {
         /// The arguments.
         args: Vec<Node<R>>,
     },
-    /// `if(c, a, b)`: `c` is Boolean, `a` and `b` are of the same kind, and
-    /// only the taken branch evaluates.
-    If(Box<[Node<R>; 3]>),
+    /// A ladder of conditions: `if(p, a, if(q, b, c))` is `cases: [(p, a),
+    /// (q, b)], otherwise: c`. The conditions are tested in order, and only
+    /// the value of the first that is true, or `otherwise` where none is,
+    /// evaluates.
+    If {
+        /// Each condition with its value, in order.
+        cases: Vec<(Node<R>, Node<R>)>,
+        /// The value where no condition is true.
+        otherwise: Box<Node<R>>,
+    },
+}
+
+impl<R> Node<R> {
+    /// `left op right` as one `Sum`: `right` joins the run of `left` where
+    /// `left` is a `Sum`.
+    #[must_use]
+    pub fn add(mut left: Self, op: AddOp, right: Self) -> Self {
+        if let Self::Sum { rest, .. } = &mut left {
+            rest.push((op, right));
+            left
+        } else {
+            Self::Sum {
+                first: Box::new(left),
+                rest: vec![(op, right)],
+            }
+        }
+    }
+
+    /// `left op right` as one `Product`: `right` joins the run of `left`
+    /// where `left` is a `Product`.
+    #[must_use]
+    pub fn mul(mut left: Self, op: MulOp, right: Self) -> Self {
+        if let Self::Product { rest, .. } = &mut left {
+            rest.push((op, right));
+            left
+        } else {
+            Self::Product {
+                first: Box::new(left),
+                rest: vec![(op, right)],
+            }
+        }
+    }
+
+    /// `left and right` as one `All`: `right` joins the run of `left` where
+    /// `left` is an `All`.
+    #[must_use]
+    pub fn and(mut left: Self, right: Self) -> Self {
+        if let Self::All(operands) = &mut left {
+            operands.push(right);
+            left
+        } else {
+            Self::All(vec![left, right])
+        }
+    }
+
+    /// `left or right` as one `Any`: `right` joins the run of `left` where
+    /// `left` is an `Any`.
+    #[must_use]
+    pub fn or(mut left: Self, right: Self) -> Self {
+        if let Self::Any(operands) = &mut left {
+            operands.push(right);
+            left
+        } else {
+            Self::Any(vec![left, right])
+        }
+    }
+
+    /// `if(condition, then, otherwise)` as one `If`: where `otherwise` is an
+    /// `If`, the condition and `then` become the first case of its ladder.
+    #[must_use]
+    pub fn branch(condition: Self, then: Self, mut otherwise: Self) -> Self {
+        if let Self::If { cases, .. } = &mut otherwise {
+            cases.insert(0, (condition, then));
+            otherwise
+        } else {
+            Self::If {
+                cases: vec![(condition, then)],
+                otherwise: Box::new(otherwise),
+            }
+        }
+    }
+
+    /// `left op right` as a `Binary`.
+    #[must_use]
+    pub fn binary(op: BinaryOp, left: Self, right: Self) -> Self {
+        Self::Binary {
+            op,
+            left: Box::new(left),
+            right: Box::new(right),
+        }
+    }
 }
 
 /// A dimensionless constant.
@@ -227,19 +335,33 @@ pub enum UnaryOp {
     Not,
 }
 
-/// A binary operation.
+/// An operator of a `Sum`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
-pub enum BinaryOp {
+pub enum AddOp {
     /// `+`, of the same quantity.
     Add,
     /// `-`, of the same quantity.
     Subtract,
+}
+
+/// An operator of a `Product`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum MulOp {
     /// `*`: exponents add.
     Multiply,
     /// `/`: exponents subtract; real division.
     Divide,
+}
+
+/// A binary operation: `^` and the comparisons.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum BinaryOp {
     /// `^`: right-associative, and binds tighter than unary minus.
     Power,
     /// `==`: exact comparison of canonical values.
@@ -254,10 +376,6 @@ pub enum BinaryOp {
     Greater,
     /// `>=`, of the same quantity.
     GreaterEqual,
-    /// `and`, of Booleans.
-    And,
-    /// `or`, of Booleans.
-    Or,
 }
 
 /// A function. Its name in canonical text is the lower-case variant name.

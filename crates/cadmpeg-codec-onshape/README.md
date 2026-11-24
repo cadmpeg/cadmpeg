@@ -42,7 +42,8 @@ including tangent-added edges.
 Unreadable members, invalid names, encryption, unsupported compression and repeated
 names carry `onshape/member.unreadable`. The first member with each name is
 admitted. JSON responses with stale or malformed microversion declarations
-are omitted with the same loss. Malformed feature arrays carry
+are omitted with the same loss. `sketches.json` retains its member bytes when
+its JSON or microversion is unreadable. Malformed feature arrays carry
 `onshape/history.not-supported` and retain readable final geometry.
 
 Member size, remaining bundle capacity and expansion limits omit the affected member with
@@ -62,3 +63,8 @@ and the sampling failure. Stored-value proofs that need its geometry refuse.
 The design timeline states the stored rollback bar. An absent or invalid
 `rollbackIndex` states the bar after the last feature and carries
 `onshape/history.rollback-unread`.
+
+Unsupported construction plane forms carry `onshape/plane.not-supported`.
+Unresolved plane quantities and supports carry `onshape/history.not-supported`.
+A mapped sketch on a created datum plane with an unresolved attachment matrix
+uses the support frame and carries `onshape/sketch.plane-assumed`.

@@ -302,7 +302,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }) => self.encode_filled_surface(
                 boundary,
                 support_faces,
-                continuity,
+                continuity.as_ref(),
                 *merge_result,
                 !interior_constraints.is_empty() || *reverse_normal == Some(true),
             ),

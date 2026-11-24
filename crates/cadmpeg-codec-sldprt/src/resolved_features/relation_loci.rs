@@ -199,7 +199,10 @@ pub(super) fn linked_single_entities(
     Ok(Some(result))
 }
 
-pub(super) fn relation_constraint_is_inactive(
+/// Whether the solved sketch geometry contradicts the typed reading of a
+/// dimensional relation: its operands measure another value than the stored
+/// one, or the stored value has another quantity than the reading measures.
+pub(super) fn relation_contradicts_geometry(
     parameter: Option<&cadmpeg_ir::features::parameters::DesignParameter>,
     definition: &SketchConstraintDefinitionInput,
     sketch_entities: &[SketchEntity],
@@ -308,7 +311,17 @@ pub(super) fn relation_constraint_is_inactive(
                     None => return Ok(false),
                 },
             )
-            .is_some_and(|measured| !same_dimension_angle(measured, expected.get()))
+            .is_some_and(|measured| {
+                let expected = expected.get().rem_euclid(std::f64::consts::TAU);
+                ![
+                    measured,
+                    std::f64::consts::PI - measured,
+                    std::f64::consts::PI + measured,
+                    std::f64::consts::TAU - measured,
+                ]
+                .into_iter()
+                .any(|candidate| same_dimension_angle(candidate, expected))
+            })
         }
         SketchConstraintDefinitionInput::Radius { entity: id, .. }
         | SketchConstraintDefinitionInput::Diameter { entity: id, .. } => {
@@ -344,7 +357,7 @@ pub(super) fn relation_constraint_is_inactive(
                 definition,
                 SketchConstraintDefinitionInput::RepeatedDiameter { .. }
             );
-            let mut inactive = false;
+            let mut contradicted = false;
             for id in entities {
                 let Some(entity) = entity(id) else {
                     return Ok(false);
@@ -355,9 +368,9 @@ pub(super) fn relation_constraint_is_inactive(
                     _ => return Ok(false),
                 };
                 let measured = if diameter { radius * 2.0 } else { radius };
-                inactive |= !same_dimension_length(measured, expected.get());
+                contradicted |= !same_dimension_length(measured, expected.get());
             }
-            inactive
+            contradicted
         }
         _ => false,
     })

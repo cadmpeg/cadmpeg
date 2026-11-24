@@ -43,6 +43,7 @@ fn semantic_writer_reclassifies_the_final_retained_envelope() {
     let dialect = crate::writer::write_semantic_with_records(
         &ir,
         &fidelity.annotations,
+        &fidelity.codec_digests,
         &records,
         &[],
         &mut written,

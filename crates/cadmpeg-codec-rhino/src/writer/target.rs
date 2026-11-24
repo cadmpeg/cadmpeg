@@ -20,6 +20,47 @@ const OFF_CATALOG_SOURCE_REASON: &str =
     "the source archive version is one this writer cannot synthesize, and 3DM has no byte-replay \
      path that could preserve it";
 
+/// The document with each partial face left out (§3.4), and the losses that
+/// name what it leaves out. A Brep whose faces close is a solid in 3DM, and
+/// this writer joins every face of a body into one Brep, so a marked region
+/// that holds no partial face, whose stated faces can close, stays refused.
+fn partial_free(
+    ir: &cadmpeg_ir::CadIr,
+) -> Result<
+    (
+        Option<cadmpeg_ir::CadIr>,
+        Vec<cadmpeg_ir::report::loss::LossNote>,
+    ),
+    CodecError,
+> {
+    let geometry = &ir.geometry;
+    let lists = geometry.child_lists();
+    let marked_without_partial_face = geometry.regions.iter().any(|region| {
+        lists.complete_shells(region).is_none()
+            && !region.stated_shells().any(|shell| {
+                lists
+                    .stated_shell_faces(shell)
+                    .iter()
+                    .any(|face| face.loops.is_partial())
+            })
+    });
+    if marked_without_partial_face {
+        return Err(CodecError::NotImplemented(
+            "Brep writing requires a body that states every region, shell, face, and loop".into(),
+        ));
+    }
+    Ok(
+        match cadmpeg_ir::codec::write::without_partial_topology(
+            ir,
+            "Rhino",
+            "its faces are written as an open Brep",
+        )? {
+            Some((complete, losses)) => (Some(complete), losses),
+            None => (None, Vec::new()),
+        },
+    )
+}
+
 /// Synthesize the resolved archive version.
 ///
 /// Every catalog resolution names its `RhinoArchiveVersion::ALL` row by
@@ -33,8 +74,10 @@ pub(crate) fn plan(
         return Err(target.unavailable(OFF_CATALOG_SOURCE_REASON));
     };
     let version = RhinoArchiveVersion::ALL[index];
+    let (complete, partial_losses) = partial_free(input.ir)?;
+    let ir = complete.as_ref().unwrap_or(input.ir);
     let mut bytes = Vec::new();
-    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
+    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(ir)?;
     super::write(&recovered.document, version, &mut bytes)?;
     let vertex_quantization = !version.stores_mesh_vertices_as_f64()
         && input
@@ -59,7 +102,7 @@ pub(crate) fn plan(
                 || cadmpeg_core::convert::f32_from_f64(normal.y).map(f64::from) != Some(normal.y)
                 || cadmpeg_core::convert::f32_from_f64(normal.z).map(f64::from) != Some(normal.z)
         });
-    let mut losses = Vec::new();
+    let mut losses = partial_losses;
     if !recovered.sampled_agreements.is_empty() {
         losses.push(RhinoLossCode::EdgePcurveAgreementSampled.note(format!(
             "{} recovered edge(s) have coedge curves compared at five parameters; agreement between samples is not established",

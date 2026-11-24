@@ -64,7 +64,7 @@ fn roster_rejects_disagreeing_locally_valid_lane_forms_before_hoisting() {
             .to_string()
             .contains("occurrence_lane_form"));
         let mut ir = cadmpeg_ir::CadIr::empty();
-        ir.native.0.insert("nx".into(), namespace);
+        ir.native.0.insert(cadmpeg_ir::codec_id!("nx"), namespace);
         let findings = validate_native(&ir);
         assert_eq!(findings.len(), 1);
         assert!(findings[0].message.contains("occurrence_lane_form"));
@@ -76,7 +76,7 @@ fn native_occurrence_admission_preserves_caller_resource_refusals() {
     let namespace: NativeNamespace =
         serde_json::from_value(json!({"fast_load_component_occurrences": rows(0)})).unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.native.0.insert("nx".into(), namespace);
+    ir.native.0.insert(cadmpeg_ir::codec_id!("nx"), namespace);
     crate::test_support::with_decode_context_over(
         &[],
         |policy| policy.limits.max_recursion_depth = 0,

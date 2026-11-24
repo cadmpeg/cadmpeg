@@ -14,15 +14,6 @@ use crate::report::{
 pub(super) fn check_presentation(ids: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
     let ir: &CadIr = ids.ir();
     let all_ids: &dyn IdentitySet = ids;
-    if ir.model.presentation_documents.len() > 1 {
-        record_finding(
-            findings,
-            Check::ReferentialIntegrity,
-            Severity::Error,
-            None,
-            format_args!("{}", "multiple document presentation records"),
-        );
-    }
     for document in &ir.model.presentation_documents {
         let native_valid = match &document.native_ref {
             Some(native) => all_ids.contains(native),
@@ -48,7 +39,6 @@ pub(super) fn check_presentation(ids: &ModelIndex<'_>, findings: &mut Vec<Findin
         }
     }
 
-    let mut orders = std::collections::BTreeSet::new();
     for view in &ir.model.view_presentations {
         let mut references_valid = match &view.object {
             Some(object) => all_ids.contains(object),
@@ -59,13 +49,13 @@ pub(super) fn check_presentation(ids: &ModelIndex<'_>, findings: &mut Vec<Findin
                 references_valid = all_ids.contains(native);
             }
         }
-        if !references_valid || !orders.insert(view.order) {
+        if !references_valid {
             record_finding(
                 findings,
                 Check::ReferentialIntegrity,
                 Severity::Error,
                 Some(view.id.as_str()),
-                format_args!("{}", "invalid view presentation reference, order, or size"),
+                format_args!("{}", "invalid view presentation reference"),
             );
         }
     }
@@ -85,6 +75,11 @@ pub(super) fn check_presentation(ids: &ModelIndex<'_>, findings: &mut Vec<Findin
     });
     let pmi = BorrowedIdentities::build(|add| {
         for item in &ir.model.pmi {
+            add(item.id.as_str(), ());
+        }
+    });
+    let point_clouds = BorrowedIdentities::build(|add| {
+        for item in &ir.model.point_clouds {
             add(item.id.as_str(), ());
         }
     });
@@ -138,6 +133,9 @@ pub(super) fn check_presentation(ids: &ModelIndex<'_>, findings: &mut Vec<Findin
                 PresentationItem::Tessellation { tessellation } => ids
                     .tessellations(tessellation.as_str(), StandardIndex)
                     .is_some(),
+                PresentationItem::PointCloud { point_cloud } => {
+                    point_clouds.contains(point_cloud.as_str())
+                }
                 PresentationItem::Source { .. } => true,
             };
             if !resolved {

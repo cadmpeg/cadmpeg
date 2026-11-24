@@ -95,19 +95,14 @@ fn check_fillet_set(site: Site<'_>, set: &FilletSet, findings: &mut Vec<Finding>
         ),
         Some(FilletSize::Variable(stations)) => {
             check_stations(site, stations, findings);
-            let bound = stations.points.iter().any(|station| match &station.value {
-                Dimension::Literal(value) => value.get() > 0.0,
-                Dimension::Parameter(_) | Dimension::Negated(_) => true,
+            site.bound(findings, |values| {
+                for station in &stations.points {
+                    if values.get(&station.value)?.get() > 0.0 {
+                        return None;
+                    }
+                }
+                Some("a Variable radius has no positive station value".to_owned())
             });
-            if !bound {
-                error(
-                    findings,
-                    site.entity,
-                    format_args!(
-                        "a Variable radius has no positive literal or bound station value"
-                    ),
-                );
-            }
         }
         _ => {}
     }
@@ -125,22 +120,13 @@ fn check_fillet_set(site: Site<'_>, set: &FilletSet, findings: &mut Vec<Finding>
         );
     }
     if let Some(FilletProfile::Conic(
-        ConicShape::Rho {
-            rho: Some(Dimension::Literal(rho)),
-        }
-        | ConicShape::CenterAndRho {
-            rho: Dimension::Literal(rho),
-            ..
-        },
+        ConicShape::Rho { rho: Some(rho) } | ConicShape::CenterAndRho { rho, .. },
     )) = &section.profile
     {
-        if !(rho.get() > 0.0 && rho.get() < 1.0) {
-            error(
-                findings,
-                site.entity,
-                format_args!("a conic rho of {} lies outside (0, 1)", rho.get()),
-            );
-        }
+        site.bound(findings, |values| {
+            let rho = values.get(rho)?.get();
+            (!(rho > 0.0 && rho < 1.0)).then(|| format!("a conic rho of {rho} lies outside (0, 1)"))
+        });
     }
 }
 
@@ -152,30 +138,38 @@ fn check_stations<Q>(site: Site<'_>, stations: &Stations<Q>, findings: &mut Vec<
             format_args!("Stations.points holds fewer than two entries"),
         );
     }
-    let mut last: Vec<(&Along, f64)> = Vec::new();
-    let mut on_chain = false;
-    for station in &stations.points {
-        let StationAt::Parameter { along, fraction } = &station.at else {
-            continue;
-        };
-        on_chain |= matches!(along, Along::Chain {});
-        let Dimension::Literal(fraction) = fraction else {
-            continue;
-        };
-        let fraction = fraction.get();
-        if let Some((_, previous)) = last.iter_mut().find(|(other, _)| *other == along) {
-            if fraction <= *previous {
-                error(
-                    findings,
-                    site.entity,
-                    format_args!("station fractions on one Along do not strictly increase"),
-                );
+    let on_chain = stations.points.iter().any(|station| {
+        matches!(
+            &station.at,
+            StationAt::Parameter {
+                along: Along::Chain {},
+                ..
             }
-            *previous = fraction;
-        } else {
-            last.push((along, fraction));
+        )
+    });
+    site.bound(findings, |values| {
+        let mut last: Vec<(&Along, f64)> = Vec::new();
+        for station in &stations.points {
+            let StationAt::Parameter { along, fraction } = &station.at else {
+                continue;
+            };
+            let Some(fraction) = values.get(fraction) else {
+                continue;
+            };
+            let fraction = fraction.get();
+            if let Some((_, previous)) = last.iter_mut().find(|(other, _)| *other == along) {
+                if fraction <= *previous {
+                    return Some(
+                        "station fractions on one Along do not strictly increase".to_owned(),
+                    );
+                }
+                *previous = fraction;
+            } else {
+                last.push((along, fraction));
+            }
         }
-    }
+        None
+    });
     if stations.chain_start.is_some() && !on_chain {
         error(
             findings,
@@ -615,18 +609,14 @@ fn check_hole_shape(
             measure,
             ..
         } => {
-            if *measure == Some(SlotLength::TangentToTangent) {
-                if let (Dimension::Literal(length), Some(diameter)) =
-                    (length, literal(bore.diameter.as_ref()))
-                {
-                    if length.get() <= diameter {
-                        error(
-                            findings,
-                            site.entity,
-                            format_args!("a TangentToTangent slot's length does not exceed its bore diameter"),
-                        );
-                    }
-                }
+            if let (Some(SlotLength::TangentToTangent), Some(diameter)) = (measure, &bore.diameter)
+            {
+                site.bound(findings, |values| {
+                    (values.get(length)?.get() <= values.get(diameter)?.get()).then(|| {
+                        "a TangentToTangent slot's length does not exceed its bore diameter"
+                            .to_owned()
+                    })
+                });
             }
             bore
         }
@@ -644,13 +634,6 @@ fn check_hole_shape(
             site.entity,
             format_args!("HoleBottom::Trimmed occurs with an extent that ends on no face"),
         );
-    }
-}
-
-fn literal(dimension: Option<&Dimension<PositiveLength>>) -> Option<f64> {
-    match dimension {
-        Some(Dimension::Literal(value)) => Some(value.get()),
-        _ => None,
     }
 }
 
@@ -672,42 +655,40 @@ fn check_bore(site: Site<'_>, bore: &Bore, findings: &mut Vec<Finding>) {
             );
         }
     }
-    let Some(bore_diameter) = literal(bore.diameter.as_ref()) else {
-        return;
-    };
     let head = match &bore.head {
         Some(
             HoleHead::Counterbore { diameter, .. }
             | HoleHead::Counterdrill { diameter, .. }
             | HoleHead::Spotface { diameter, .. },
-        ) => literal(diameter.as_ref()),
-        Some(HoleHead::Countersink(cone)) => literal(cone.diameter.as_ref()),
+        ) => diameter.as_ref(),
+        Some(HoleHead::Countersink(cone)) => cone.diameter.as_ref(),
         _ => None,
     };
-    if head.is_some_and(|head| head <= bore_diameter) {
-        error(
-            findings,
-            site.entity,
-            format_args!("a hole head's diameter does not exceed the bore diameter"),
-        );
+    if let (Some(bore_diameter), Some(head)) = (&bore.diameter, head) {
+        site.bound(findings, |values| {
+            (values.get(head)?.get() <= values.get(bore_diameter)?.get())
+                .then(|| "a hole head's diameter does not exceed the bore diameter".to_owned())
+        });
     }
 }
 
 fn check_thread_spec(site: Site<'_>, spec: &ThreadSpec, findings: &mut Vec<Finding>) {
-    let minor = literal(spec.minor_diameter.as_ref());
-    let pitch = literal(spec.pitch_diameter.as_ref());
-    let major = literal(spec.major_diameter.as_ref());
-    let ordered = |low: Option<f64>, high: Option<f64>| match (low, high) {
-        (Some(low), Some(high)) => low < high,
-        _ => true,
-    };
-    if !(ordered(minor, pitch) && ordered(pitch, major) && ordered(minor, major)) {
-        error(
-            findings,
-            site.entity,
-            format_args!("thread diameters are not minor < pitch < major"),
-        );
-    }
+    site.bound(findings, |values| {
+        let read = |diameter: Option<&Dimension<PositiveLength>>| {
+            diameter
+                .and_then(|diameter| values.get(diameter))
+                .map(PositiveLength::get)
+        };
+        let minor = read(spec.minor_diameter.as_ref());
+        let pitch = read(spec.pitch_diameter.as_ref());
+        let major = read(spec.major_diameter.as_ref());
+        let ordered = |low: Option<f64>, high: Option<f64>| match (low, high) {
+            (Some(low), Some(high)) => low < high,
+            _ => true,
+        };
+        (!(ordered(minor, pitch) && ordered(pitch, major) && ordered(minor, major)))
+            .then(|| "thread diameters are not minor < pitch < major".to_owned())
+    });
     if let Some(ThreadLength::ToElement { element, .. }) = &spec.length {
         check_face_edge_or_plane(site, "ThreadLength::ToElement.element", element, findings);
     }
