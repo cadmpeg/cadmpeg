@@ -613,13 +613,10 @@ fn the_decode_is_deterministic_and_keeps_its_streams_in_the_loss_report() {
     let second = decode_assembly(ASM_TWO);
     assert_eq!(first.ir(), second.ir());
     assert!(loss_codes(&first).contains(&AlibreLossCode::SourceStreamsUndecoded.kind()));
-    // The occurrences do not carry the component configuration.
-    assert_eq!(
-        count_loss(&first, AlibreLossCode::AssemblyConfigurationUnmapped),
-        1
-    );
-    // The reader maps everything else the specimens state.
+    // The reader maps everything the specimens state: one configuration of
+    // the default name leaves nothing to report.
     for code in [
+        AlibreLossCode::AssemblyConfigurationUnmapped,
         AlibreLossCode::AssemblyRecordUnreadable,
         AlibreLossCode::AssemblyEntitiesUnread,
         AlibreLossCode::AssemblyInclusionUnmapped,

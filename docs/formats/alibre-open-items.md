@@ -82,7 +82,7 @@ This document uses ASD-STE100 Simplified Technical English.
 
 **Question.** How do the configurations of an assembly differ in the state they give to each occurrence, and what does the configuration name of an inclusion select?
 
-**Known.** `alibre.md` §5.2 gives the suppressed and hidden lists of the `DESIGNASSEMBLYCONFIGURATION`. Every specimen holds one configuration, `Config<1>`, and every inclusion names `Config<1>`. The decoder states the state of the active configuration on the occurrences and reports `alibre/assembly.configuration-unmapped`.
+**Known.** `alibre.md` §5.2 gives the suppressed and hidden lists of the `DESIGNASSEMBLYCONFIGURATION`. Every specimen holds one configuration, `Config<1>`, and every inclusion names `Config<1>`. The decoder states the state of the active configuration on the occurrences and reports `alibre/assembly.configuration-unmapped` only when an inclusion names a configuration other than `Config<1>` or the assembly holds a configuration besides the active one.
 
 **Need.** An assembly with a second configuration that suppresses and moves one occurrence, and a component with a second configuration that an inclusion selects, with the entities compared.
 

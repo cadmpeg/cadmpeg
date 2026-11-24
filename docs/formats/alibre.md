@@ -142,7 +142,7 @@ A decode reports these losses, each with the code `alibre/<code>`:
 | `assembly.inclusion-field-unmapped` | An inclusion states an attribute that the occurrence does not carry, or an attribute past the fifteen of the schema. One loss counts all inclusions. |
 | `assembly.nested-member-state-unread` | An inclusion hides a component below its subassembly. One loss counts all inclusions. |
 | `assembly.record-unreadable` | An inclusion, a member, or a configuration does not read as its entity, the list of configurations is absent, or the active configuration is not one of the configurations that read. The decode leaves the record out and goes on. |
-| `assembly.configuration-unmapped` | An occurrence names a component configuration, or the assembly holds more than one configuration. The occurrences carry the state of the active configuration only. |
+| `assembly.configuration-unmapped` | An occurrence names a component configuration other than `Config<1>`, or the assembly holds a configuration besides the active one. The occurrences carry the state of the active configuration only. One configuration of the default name loses nothing and reports nothing. |
 | `assembly.member-dialect-unverified` | A component file declares an ACIS save format outside the verified bands, as `alibre/source.kernel-dialect-unverified` states for a part. The assembly has no kernel layer of its own. |
 | `assembly.entities-unread` | The stream holds an entity name that the reader does not know, or the relation lists of the assembly are not empty. |
 | `source.streams-undecoded` | `CONSTITUENTS`, `PROP_DATA`, `VERSION`, and the two cache streams carry no decoded content. |

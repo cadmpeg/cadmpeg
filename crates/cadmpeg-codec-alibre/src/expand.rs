@@ -23,7 +23,7 @@ use cadmpeg_ir::products::{
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
 
-use crate::assembly::{self, Assembly, Inclusion, Placement};
+use crate::assembly::{self, Assembly, Inclusion, Placement, DEFAULT_CONFIGURATION};
 use crate::container::{AlibreContainer, DocumentKind, STEP_STREAM};
 use crate::dialect::classify_assembly;
 use crate::loss::AlibreLossCode;
@@ -310,14 +310,22 @@ fn model_losses(model: &Assembly) -> Vec<LossNote> {
     let named = model
         .inclusions
         .iter()
-        .filter(|inclusion| inclusion.configuration.is_some())
+        .filter(|inclusion| {
+            inclusion
+                .configuration
+                .as_deref()
+                .is_some_and(|name| name != DEFAULT_CONFIGURATION)
+        })
         .count();
-    let others = model.configurations.iter().skip(1).count();
+    let others = model
+        .configurations
+        .len()
+        .saturating_sub(usize::from(model.active.is_some()));
     if named > 0 || others > 0 {
         losses.push(AlibreLossCode::AssemblyConfigurationUnmapped.note(format!(
-            "{named} occurrence(s) name a configuration of their component, and {others} assembly \
-             configuration(s) beyond the active one are not read; the occurrences carry the state \
-             of the active configuration only"
+            "{named} occurrence(s) name a configuration of their component other than {DEFAULT_CONFIGURATION}, \
+             and {others} assembly configuration(s) beyond the active one are not read; the occurrences carry the \
+             state of the active configuration only"
         )));
     }
     let unmapped = model

@@ -314,6 +314,7 @@ fn a_synthetic_assembly_decodes_like_the_specimens() {
     assert_eq!(result.ir().geometry.bodies.len(), 1);
     // One configuration of the default name loses nothing.
     for code in [
+        AlibreLossCode::AssemblyConfigurationUnmapped,
         AlibreLossCode::AssemblyRecordUnreadable,
         AlibreLossCode::AssemblyPlacementUnreadable,
         AlibreLossCode::AssemblyInclusionUnmapped,
@@ -409,6 +410,37 @@ fn an_entity_of_an_unknown_name_is_reported_as_unread() {
     let losses = losses_of(&result, AlibreLossCode::AssemblyEntitiesUnread);
     assert_eq!(losses.len(), 1, "{losses:?}");
     assert!(losses[0].contains("FROBNICATE x2"), "{}", losses[0]);
+}
+
+#[test]
+fn the_configuration_loss_names_only_what_is_lost() {
+    // A component configuration other than the default.
+    let mut other = Inc::new("a/asm_box", BOX_GUID);
+    other.configuration = "Config<2>".to_owned();
+    let synth = Synth::new(vec![other]);
+    let result = decode_synth(&synth, &Beside::parts());
+    let losses = losses_of(&result, AlibreLossCode::AssemblyConfigurationUnmapped);
+    assert_eq!(losses.len(), 1);
+    assert!(
+        losses[0].starts_with("1 occurrence(s) name"),
+        "{}",
+        losses[0]
+    );
+
+    // Configurations beyond the active one, counted by the active index.
+    let mut synth = Synth::new(vec![Inc::new("a/asm_box", BOX_GUID)]);
+    synth.configurations.push(Config {
+        name: "Config<2>".to_owned(),
+    });
+    synth.active = Some(1);
+    let result = decode_synth(&synth, &Beside::parts());
+    let losses = losses_of(&result, AlibreLossCode::AssemblyConfigurationUnmapped);
+    assert_eq!(losses.len(), 1);
+    assert!(
+        losses[0].contains("1 assembly configuration(s) beyond the active one"),
+        "{}",
+        losses[0]
+    );
 }
 
 #[test]

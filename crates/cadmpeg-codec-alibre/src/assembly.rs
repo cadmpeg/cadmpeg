@@ -19,6 +19,10 @@ use crate::part21::{Instance, Part21, Value};
 /// Millimetres per length unit of the stream.
 pub(crate) const MM_PER_UNIT: f64 = 10.0;
 
+/// The name of the configuration of a component that Alibre gives a new
+/// document, which every specimen inclusion selects.
+pub(crate) const DEFAULT_CONFIGURATION: &str = "Config<1>";
+
 /// The attribute indices of the `DESIGNASSEMBLY` entity that the reader uses.
 const ASSEMBLY_PRODUCT: usize = 18;
 const ASSEMBLY_INCLUSIONS: usize = 20;

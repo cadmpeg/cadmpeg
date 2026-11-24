@@ -5388,18 +5388,6 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "assembly.configuration-unmapped",
-            "kind": "metadata_not_transferred",
-            "namespace": "alibre"
-          }
-        },
-        "message": "2 occurrence(s) name a configuration of their component, and 0 assembly configuration(s) beyond the active one are not read; the occurrences carry the state of the active configuration only",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
             "code": "source.streams-undecoded",
             "kind": "metadata_not_transferred",
             "namespace": "alibre"
@@ -5431,18 +5419,6 @@
           }
         },
         "message": "component asm_two: streams without a decoder: LIGHT_CONFIGURATION_DATA, PROP_DATA, VERSION, CONSTITUENTS, GLOBAL_PARAMETER_DATA_CACHE; the component references of CONSTITUENTS repeat those of STEP_DATA",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "assembly.configuration-unmapped",
-            "kind": "metadata_not_transferred",
-            "namespace": "alibre"
-          }
-        },
-        "message": "component asm_two: 2 occurrence(s) name a configuration of their component, and 0 assembly configuration(s) beyond the active one are not read; the occurrences carry the state of the active configuration only",
         "severity": "warning"
       },
       {
