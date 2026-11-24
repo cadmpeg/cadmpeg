@@ -40,7 +40,7 @@ This document uses ASD-STE100 Simplified Technical English.
 
 **Question.** What do `PROP_DATA`, `VERSION`, `AUTOGRAPH_DATA`, `DESIGN_PARAMETER_DATA`, `HOLE_OPERATIONS_DATA`, `EXTERNAL_THREAD_OPERATIONS_DATA`, `CUSTOM_ITEM_PROP_DATA`, `STANDARD_DESIGN_PROP_DATA`, `GLOBAL_PARAMETER_DATA_CACHE`, and `LIGHT_CONFIGURATION_DATA` hold?
 
-**Known.** All streams are present in every part. `AUTOGRAPH_DATA` holds text records of the form `#<n>{<number>,<n>,<n>,<n>,<n>,<word>,<n>}`. The streams other than `PROP_DATA`, `VERSION`, and `AUTOGRAPH_DATA` hold at most 48 bytes.
+**Known.** A part stores all of these streams. `AUTOGRAPH_DATA` holds text records of the form `#<n>{<number>,<n>,<n>,<n>,<n>,<word>,<n>}`. The streams other than `PROP_DATA`, `VERSION`, and `AUTOGRAPH_DATA` hold at most 48 bytes.
 
 **Need.** Parts that change one document property, one hole operation, or one thread at a time, with the stream changes compared.
 
@@ -58,6 +58,6 @@ This document uses ASD-STE100 Simplified Technical English.
 
 **Question.** What do the extra integer of the entity base and the extra integer of the `body` record mean?
 
-**Known.** The extra base integer is `-1` in every record. The `body` integer is `0`. The decoder removes both before it reads the class fields, and it reports the removal as `alibre/source.record-extensions-unprojected`.
+**Known.** The extra base integer takes the value `-1`, and the `body` integer the value `0`. The decoder removes both before it reads the class fields, and it reports the removal as `alibre/source.record-extensions-unprojected`.
 
 **Need.** A save of a part with several bodies, with the `body` integers compared.
