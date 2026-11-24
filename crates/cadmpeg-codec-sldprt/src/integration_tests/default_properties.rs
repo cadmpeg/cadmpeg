@@ -60,15 +60,7 @@ fn semantic_metadata_edit_retains_saved_default_bytes_and_aliases() {
             .count(),
         2
     );
-    let before = decoded
-        .ir()
-        .source
-        .as_ref()
-        .unwrap()
-        .attributes
-        .get("sldprt_swobjects_local_sha256")
-        .unwrap()
-        .clone();
+    let before = decoded.source_fidelity().codec_digests["sldprt_swobjects_local_sha256"].clone();
     let mut ir = decoded.ir_mut();
     let bbox = ir
         .model
@@ -108,15 +100,8 @@ fn semantic_metadata_edit_retains_saved_default_bytes_and_aliases() {
         vec![Some(AttributeValue::String(String::new()))]
     );
     assert_ne!(
-        readback
-            .ir()
-            .source
-            .as_ref()
-            .unwrap()
-            .attributes
-            .get("sldprt_swobjects_local_sha256")
-            .unwrap(),
-        &before
+        readback.source_fidelity().codec_digests["sldprt_swobjects_local_sha256"],
+        before
     );
 }
 /// The one saved-property carrier in `bytes`.

@@ -578,7 +578,8 @@ fn producers_and_names(ir: &cadmpeg_ir::CadIr) -> [usize; 4] {
 }
 
 /// A write with no retained source generates partitions without the
-/// attributes the feature outputs and the face and body names are read from.
+/// attributes the feature outputs and the face and body names are read from,
+/// and reports that it could not tell the part's edits.
 /// Its note counts what the document states of them, and the written part
 /// reads back with none of them.
 #[test]
@@ -592,6 +593,15 @@ fn a_part_written_without_its_source_counts_the_outputs_and_names_it_drops() {
         .iter()
         .find(|loss| loss.code.local_code() == "writer.producer-attributes-omitted")
         .unwrap_or_else(|| panic!("{losses:#?}"));
+    // With no sidecar the writer cannot tell the part's edits, reads it as
+    // unedited, and says so.
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.code.namespace() == "export"
+                && loss.code.local_code() == "edit.unverified"),
+        "{losses:#?}"
+    );
     let counts = format!(
         "{feature_outputs} document feature output(s), {state_outputs} configuration \
          feature-state output(s), {faces} face name(s) and {bodies} body name(s)"

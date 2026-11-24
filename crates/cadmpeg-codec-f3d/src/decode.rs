@@ -4167,8 +4167,10 @@ impl<'a> F3dDecodeSession<'a> {
                     Err(error) => report_xref_parse_loss(&mut self.report, &error),
                 }
                 self.note_uninterpreted_design();
-                self.native
-                    .store(ctx, self.ir.native.namespace_mut("f3d"))?;
+                self.native.store(
+                    ctx,
+                    self.ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")),
+                )?;
                 let annotations =
                     populate_annotations(&self.ir, scan, &self.native, None, &self.unknowns)?;
                 let source_image = preserve_source_image(scan);
@@ -4198,7 +4200,8 @@ impl<'a> F3dDecodeSession<'a> {
             "admit F3D entities",
         )?;
         self.note_uninterpreted_design();
-        let mut f3d_namespace = std::mem::take(self.ir.native.namespace_mut("f3d"));
+        let mut f3d_namespace =
+            std::mem::take(self.ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")));
         let (store_res, annotations_res) = std::thread::scope(|scope| {
             let ir = &self.ir;
             let native = &self.native;
@@ -4224,7 +4227,7 @@ impl<'a> F3dDecodeSession<'a> {
             };
             (store_res, annotations_res)
         });
-        *self.ir.native.namespace_mut("f3d") = f3d_namespace;
+        *self.ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")) = f3d_namespace;
         store_res?;
         let annotations = annotations_res?;
         let source_image = preserve_source_image(scan);
@@ -4330,17 +4333,6 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 |ir, losses| crate::design_v11::project(ctx, ir, depth, losses),
             )?;
             decoded.ir.finalize();
-            let hash = cadmpeg_ir::hash::document_local_sha256(
-                ctx,
-                &decoded.ir,
-                Some(&decoded.source),
-                "f3d",
-                crate::ids::FILE_SOURCE_IMAGE_ID,
-            )?;
-            decoded.source.attributes.insert(
-                cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-                hash,
-            );
             Ok(decoded.into_decoded())
         }
     }
@@ -5586,30 +5578,13 @@ fn decode_result(
             .losses
             .extend(crate::tree::state_root_definition(ctx, &mut ir)?);
     }
-    let mut source = crate::report::classify_document(
+    let source = crate::report::classify_document(
         scan,
         report_scope,
         retained.source_attributes,
         &mut report,
     )?;
-    // Stamped on the finalized, classified document, so the write path
-    // compares against the exact document the sealed wrapper returns.
-    // Standalone decodes apply post-passes and stamp `document_local_sha256`
-    // in `decode`, so skip the discarded intermediate digest here.
     ir.finalize();
-    if archive_member {
-        let hash = cadmpeg_ir::hash::document_local_sha256(
-            ctx,
-            &ir,
-            Some(&source),
-            "f3d",
-            crate::ids::FILE_SOURCE_IMAGE_ID,
-        )?;
-        source.attributes.insert(
-            cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-            hash,
-        );
-    }
     Ok(AuthoredDecoded {
         scene_sources: crate::scene::Sources::new(),
         operation_poses: std::collections::BTreeMap::new(),
@@ -5712,9 +5687,8 @@ pub(crate) fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {
     )
 }
 
-/// Machine-local `document_local_sha256` for the F3D write-path edit oracle.
-///
-/// See [`cadmpeg_ir::hash::document_local_sha256`].
+/// The machine-local digest by which the F3D patch path compares two documents
+/// it holds; see [`cadmpeg_ir::hash::document_local_sha256`].
 pub(crate) fn document_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
@@ -6122,7 +6096,7 @@ fn build_geometry_ir(
         creation_timestamps,
         sketch_region_bodies_omitted: _,
     } = brep;
-    let (namespace, remainder) = transfer_into_ir(ctx, &mut ir, "f3d", asm)?;
+    let (namespace, remainder) = transfer_into_ir(ctx, &mut ir, cadmpeg_ir::codec_id!("f3d"), asm)?;
     let mut native = F3dNative::load_inner(ctx, namespace)?;
     native.sketch_curve_links = sketch_curve_links;
     native.persistent_design_links = persistent_design_links;

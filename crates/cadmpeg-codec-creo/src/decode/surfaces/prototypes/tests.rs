@@ -501,8 +501,8 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         nonvisible_surface
             .source_object
             .as_ref()
-            .and_then(|source| source.visible),
-        Some(false)
+            .map(|source| source.object_id.as_str()),
+        Some("NovisGeom:42")
     );
 }
 

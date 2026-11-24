@@ -5,7 +5,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::mem::discriminant;
 
-use super::order::on_cycles;
 use super::records::{OwnerKey, ProcessRecords};
 use crate::design::ids::{MachineId, MachiningFeatureId};
 use crate::design::units::UnitSymbol;
@@ -13,6 +12,7 @@ use crate::process::feature::MachiningFeatureClass;
 use crate::process::groups::GroupKind;
 use crate::process::operation::{ProcessGeometry, Tooling};
 use crate::report::check::Finding;
+use crate::validate::cycles::on_cycles;
 
 pub(super) fn check_references(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
     check_tooling(records, findings);
@@ -151,7 +151,7 @@ fn check_machining_features(records: &ProcessRecords<'_>, findings: &mut Vec<Fin
             );
         }
     }
-    let mut graph: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    let mut graph: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
     for feature in &process.features {
         let id = feature.id.as_str();
         let named: Vec<&str> = match &feature.class {
@@ -170,7 +170,7 @@ fn check_machining_features(records: &ProcessRecords<'_>, findings: &mut Vec<Fin
                 );
             }
         }
-        graph.insert(id, named);
+        graph.insert(id, named.into_iter().collect());
     }
     for id in on_cycles(&graph) {
         super::error(
@@ -225,7 +225,7 @@ fn check_groups(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
             );
         }
     }
-    let mut graph: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    let mut graph: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
     for group in &process.groups {
         let id = group.id.as_str();
         if let GroupKind::Geometry { geometry } = &group.kind {
@@ -256,7 +256,7 @@ fn check_groups(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
             }
             Some(_) => {}
         }
-        graph.insert(id, vec![parent]);
+        graph.insert(id, BTreeSet::from([parent]));
     }
     for id in on_cycles(&graph) {
         super::error(

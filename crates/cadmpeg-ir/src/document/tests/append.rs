@@ -53,15 +53,18 @@ fn staged_document() -> CadIr {
         ("test", "new", "new-arena"),
         ("other", "new", "new-namespace"),
     ] {
-        ir.native.namespace_mut(format).arenas_mut().insert(
-            arena.into(),
-            vec![NativeRecord::new(
-                crate::ids::Identity::new(format!("test:append:record#{key}"))
-                    .expect("valid identity"),
-                serde_json::Map::new(),
-            )
-            .unwrap()],
-        );
+        ir.native
+            .namespace_mut(crate::design::names::CodecId::new(format).expect("a codec id"))
+            .arenas_mut()
+            .insert(
+                arena.into(),
+                vec![NativeRecord::new(
+                    crate::ids::Identity::new(format!("test:append:record#{key}"))
+                        .expect("valid identity"),
+                    serde_json::Map::new(),
+                )
+                .unwrap()],
+            );
     }
     // Exercise the complete-document admission route before the append route.
     CadIr::from_json(&ir.to_canonical_json().unwrap()).unwrap()
@@ -70,15 +73,18 @@ fn staged_document() -> CadIr {
 #[test]
 fn rejected_append_restores_neutral_native_and_parent_state() {
     let mut ir = crate::examples::unit_cube().unwrap();
-    ir.native.namespace_mut("test").arenas_mut().insert(
-        "existing".into(),
-        vec![NativeRecord::new(
-            crate::ids::Identity::new("test:append:record#original").expect("valid identity"),
-            serde_json::Map::new(),
-        )
-        .unwrap()],
-    );
-    ir.native.namespace_mut("empty");
+    ir.native
+        .namespace_mut(crate::codec_id!("test"))
+        .arenas_mut()
+        .insert(
+            "existing".into(),
+            vec![NativeRecord::new(
+                crate::ids::Identity::new("test:append:record#original").expect("valid identity"),
+                serde_json::Map::new(),
+            )
+            .unwrap()],
+        );
+    ir.native.namespace_mut(crate::codec_id!("empty"));
     let before = ir.clone();
     let staged = staged_document();
     let result = ir.try_append(staged.geometry, staged.model, staged.native, |combined| {

@@ -12169,7 +12169,7 @@
           "description": "The expanded motion the source stores beside the cycle, a cache of\nthe cycle.",
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Motion"
+            "$ref": "#/$defs/Motion2"
           }
         },
         "feeds": {
@@ -13193,6 +13193,10 @@
       "description": "A quantity that the source states for a target.",
       "type": "object",
       "properties": {
+        "basis": {
+          "description": "Whether the value can predate the bodies; `None` states neither.",
+          "$ref": "#/$defs/MeasureBasis"
+        },
         "id": {
           "description": "Globally unique record identity.",
           "$ref": "#/$defs/DeclaredMeasureId"
@@ -13205,17 +13209,13 @@
           "description": "Format-native record supplying the quantity.",
           "type": "string"
         },
-        "provenance": {
-          "description": "The evidence class of the stated quantity.",
-          "$ref": "#/$defs/DeclaredMeasureProvenance"
+        "precision": {
+          "description": "The bound within which the stored value holds the value the source\ncomputed, in the quantity's unit and for each coordinate of a\ncentroid.",
+          "$ref": "#/$defs/NonNegativeReal"
         },
         "quantity": {
           "description": "The stated quantity.",
           "$ref": "#/$defs/DeclaredQuantity"
-        },
-        "source_error": {
-          "description": "Absolute bound on source-value representation error, in the quantity's\nunits. For centroid quantities, this is a Euclidean-distance bound.",
-          "$ref": "#/$defs/NonNegativeReal"
         },
         "target": {
           "description": "The described bodies.",
@@ -13226,33 +13226,12 @@
       "required": [
         "id",
         "target",
-        "quantity",
-        "provenance"
+        "quantity"
       ]
     },
     "DeclaredMeasureId": {
       "description": "Identifies a [`crate::declared_measures::DeclaredMeasure`] record.",
       "$ref": "#/$defs/Identity"
-    },
-    "DeclaredMeasureProvenance": {
-      "description": "The evidence class of a source-stated quantity.",
-      "oneOf": [
-        {
-          "description": "A source-stated quantity without a more specific evidence class.",
-          "type": "string",
-          "const": "source_declaration"
-        },
-        {
-          "description": "A source validation property that states an expected geometric value.",
-          "type": "string",
-          "const": "validation_property"
-        },
-        {
-          "description": "A computed quantity retained by the source for later reuse.",
-          "type": "string",
-          "const": "saved_cache"
-        }
-      ]
     },
     "DeclaredQuantity": {
       "description": "One stated quantity.",
@@ -30350,7 +30329,7 @@
           "properties": {
             "format": {
               "description": "Registry format namespace.",
-              "type": "string"
+              "$ref": "#/$defs/CodecId"
             },
             "kind": {
               "type": "string",
@@ -42666,6 +42645,21 @@
         "of"
       ]
     },
+    "MeasureBasis": {
+      "description": "Whether a stated value can predate the bodies it describes.",
+      "oneOf": [
+        {
+          "description": "A value written with the bodies for a reader to check a transfer\nagainst.",
+          "type": "string",
+          "const": "validation"
+        },
+        {
+          "description": "The source's own last computation, which an edit after it leaves\nstale.",
+          "type": "string",
+          "const": "cache"
+        }
+      ]
+    },
     "MeasureKind": {
       "description": "What a measure reads.",
       "oneOf": [
@@ -44621,7 +44615,7 @@
       ]
     },
     "Motion": {
-      "description": "One motion or event of a toolpath.",
+      "description": "One motion or event of a toolpath. `C` is what a `Cycle` motion holds:\na cycle, or [`NoCycle`] in a cycle's expansion, which holds none.",
       "oneOf": [
         {
           "description": "A rapid move.",
@@ -44770,6 +44764,410 @@
             },
             "value": {
               "$ref": "#/$defs/Cycle"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A tool change.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "tool_change"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "number": {
+                  "description": "The tool number.",
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A spindle command.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "spindle"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "direction": {
+                  "description": "The spindle direction.",
+                  "$ref": "#/$defs/SpindleDirection"
+                },
+                "speed": {
+                  "description": "The spindle speed.",
+                  "$ref": "#/$defs/AngularSpeed"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "direction"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A coolant command.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "coolant"
+            },
+            "value": {
+              "$ref": "#/$defs/Coolant"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A dwell.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "dwell"
+            },
+            "value": {
+              "$ref": "#/$defs/Duration"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A comment.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "comment"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A typed value the source states between motions, by its source key.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "attribute"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "description": "The source key.",
+                  "$ref": "#/$defs/NonBlankString"
+                },
+                "value": {
+                  "description": "The value.",
+                  "$ref": "#/$defs/MotionValue"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "key",
+                "value"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "Sets a heater to `celsius` degrees Celsius, and with `wait` holds the\nmotion until it is reached.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "temperature"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "celsius": {
+                  "description": "The temperature in degrees Celsius.",
+                  "$ref": "#/$defs/FiniteReal"
+                },
+                "heater": {
+                  "description": "The heater.",
+                  "$ref": "#/$defs/Heater"
+                },
+                "wait": {
+                  "description": "Whether the motion holds until the temperature is reached.",
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "heater",
+                "celsius",
+                "wait"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "Sets the part-cooling fan to the fraction `speed` of full.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "fan"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "speed": {
+                  "description": "The fraction of full speed.",
+                  "$ref": "#/$defs/Fraction"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "speed"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "The pierce that starts a jet cut, before its lead-in.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "pierce"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "A motion whose target the stored path does not determine in full,\nwith its words.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "native"
+            },
+            "value": {
+              "$ref": "#/$defs/NonBlankString"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        }
+      ]
+    },
+    "Motion2": {
+      "description": "One motion or event of a toolpath. `C` is what a `Cycle` motion holds:\na cycle, or [`NoCycle`] in a cycle's expansion, which holds none.",
+      "oneOf": [
+        {
+          "description": "A rapid move.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "rapid"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "axis": {
+                  "description": "The tool axis of a multi-axis motion; `None` is the frame's z\naxis.",
+                  "$ref": "#/$defs/UnitVector3"
+                },
+                "feed": {
+                  "description": "A rate the source states on the rapid: the rapid does not move at\nit, and a later motion with no feed takes it.",
+                  "$ref": "#/$defs/Feed"
+                },
+                "to": {
+                  "description": "The target point.",
+                  "$ref": "#/$defs/FinitePoint3"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "to"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A linear move.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "linear"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "axis": {
+                  "description": "The tool axis of a multi-axis motion; `None` is the frame's z\naxis.",
+                  "$ref": "#/$defs/UnitVector3"
+                },
+                "feed": {
+                  "description": "The feed, per time; `None` means the motion states none and the\nprevious one holds.",
+                  "$ref": "#/$defs/Feed"
+                },
+                "to": {
+                  "description": "The target point.",
+                  "$ref": "#/$defs/FinitePoint3"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "to"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "An arc move. An arc whose `to` leaves the plane through its start\nnormal to `normal` is helical.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "arc"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "center": {
+                  "description": "Any point on the arc's axis.",
+                  "$ref": "#/$defs/FinitePoint3"
+                },
+                "clockwise": {
+                  "description": "Whether the arc turns clockwise about `normal`.",
+                  "type": "boolean"
+                },
+                "feed": {
+                  "description": "The feed, per time; `None` means the motion states none and the\nprevious one holds.",
+                  "$ref": "#/$defs/Feed"
+                },
+                "normal": {
+                  "description": "The arc's axis direction; the radius is measured perpendicular to\nit.",
+                  "$ref": "#/$defs/UnitVector3"
+                },
+                "to": {
+                  "description": "The target point.",
+                  "$ref": "#/$defs/FinitePoint3"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "to",
+                "center",
+                "normal",
+                "clockwise"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "The movement class of the motions after it until the next.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "class"
+            },
+            "value": {
+              "$ref": "#/$defs/MotionClass"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A drilling or probing cycle.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "cycle"
+            },
+            "value": {
+              "$ref": "#/$defs/NoCycle"
             }
           },
           "additionalProperties": false,
@@ -45285,10 +45683,13 @@
       "uniqueItems": true
     },
     "Native": {
-      "description": "Native records grouped by source-format namespace id.",
+      "description": "Native records grouped by the codec id of their namespace.",
       "type": "object",
-      "additionalProperties": {
-        "$ref": "#/$defs/NativeNamespace"
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[a-z0-9]+$": {
+          "$ref": "#/$defs/NativeNamespace"
+        }
       }
     },
     "NativeFeatureKind": {
@@ -45964,6 +46365,10 @@
       "required": [
         "occurrence"
       ]
+    },
+    "NoCycle": {
+      "description": "What a `Cycle` motion of a cycle's expansion holds: it has no value, so an expansion holds no cycle.",
+      "not": {}
     },
     "NoGeneratedSection": {
       "description": "The generated cross-section of a result that generates none.\n\nA sheet sweep owns no geometry of its own, so this type has no value and\n[`SweepSection::Generated`] is unreachable for a sheet section.",
@@ -50898,6 +51303,11 @@
           "maxItems": 2,
           "minItems": 2
         },
+        "support_surface": {
+          "description": "The surface in whose parameter space the pcurve lies.",
+          "$ref": "#/$defs/SurfaceId",
+          "default": null
+        },
         "uv_offset": {
           "description": "Translation in the support native chart.",
           "type": "array",
@@ -54293,17 +54703,17 @@
         },
         "name": {
           "description": "Source name.",
-          "type": "string"
+          "$ref": "#/$defs/NonBlankString"
         },
         "native_ref": {
           "description": "Identifier of the full-fidelity source record.",
           "type": "string"
         },
         "normals": {
-          "description": "One unit normal for each point, or none.",
+          "description": "The normal vector the source stores at each point, or none. It need\nnot be a unit vector.",
           "type": "array",
           "items": {
-            "$ref": "#/$defs/UnitVector3"
+            "$ref": "#/$defs/FiniteVector3"
           }
         },
         "positions": {
@@ -54312,10 +54722,6 @@
           "items": {
             "$ref": "#/$defs/FinitePoint3"
           }
-        },
-        "sensor": {
-          "description": "Pose of the capturing sensor in the frame of the points.",
-          "$ref": "#/$defs/Transform"
         }
       },
       "additionalProperties": false,
@@ -55092,6 +55498,10 @@
           "description": "Layer name.",
           "type": "string"
         },
+        "native_ref": {
+          "description": "Identifier of the full-fidelity source record.",
+          "type": "string"
+        },
         "parent": {
           "description": "The layer this layer is a sublayer of. A hidden layer hides the items\nof the layers below it.",
           "$ref": "#/$defs/LayerId"
@@ -55157,7 +55567,7 @@
           "properties": {
             "kind": {
               "type": "string",
-              "const": "Camera"
+              "const": "camera"
             },
             "value": {
               "$ref": "#/$defs/CameraState"
@@ -55175,7 +55585,7 @@
           "properties": {
             "kind": {
               "type": "string",
-              "const": "Native"
+              "const": "native"
             },
             "value": {
               "type": "string"
@@ -75985,7 +76395,7 @@
       ]
     },
     "SourceMeta": {
-      "description": "Source-container metadata preserved for reporting.\n\nAttribute keys ending in [`crate::compare::LOCAL_DIGEST_SUFFIX`] hold\nmachine-local digests over decoded content for the write-path edit oracle.\nNot portable across platforms; not tolerance-aware. Digests over retained\nsource bytes must not use that suffix. See\n[`crate::hash::document_local_sha256`] and\n[`crate::compare::is_local_digest_attribute`].",
+      "description": "Source-container metadata preserved for reporting.",
       "type": "object",
       "properties": {
         "attributes": {
@@ -76051,13 +76461,9 @@
       ]
     },
     "SourceObjectAssociation": {
-      "description": "Native object identity and effective display metadata for a free carrier.\n\n`format` identifies the source format. `object_id` is the source format's\nnative object identifier, not an IR arena identifier. `name`, `color`, and\n`visible` are the effective object display values. `layer` is the native\nlayer identifier. `instance_path` contains native instance identifiers in\noutermost-to-innermost order; an empty path means that the object is not\nnested in an instance.",
+      "description": "The identity of the source object a point, carrier, cage, or tessellation\nwas read from, and nothing else: its name, colour, visibility, and layer\nhave their own homes (D21).\n\n`format` identifies the source format. `object_id` is the source format's\nnative object identifier, not an IR arena identifier. `instance_path`\ncontains native instance identifiers in outermost-to-innermost order; an\nempty path means that the object is not nested in an instance.",
       "type": "object",
       "properties": {
-        "color": {
-          "description": "Effective source object color, when present.",
-          "$ref": "#/$defs/Color"
-        },
         "format": {
           "description": "The codec of the source format.",
           "$ref": "#/$defs/CodecId"
@@ -76073,21 +76479,9 @@
             "type": "string"
           }
         },
-        "layer": {
-          "description": "Native source layer identifier, when present.",
-          "type": "string"
-        },
-        "name": {
-          "description": "Effective source object name, when present.",
-          "type": "string"
-        },
         "object_id": {
           "description": "Native source object identifier.",
           "$ref": "#/$defs/NonBlankString"
-        },
-        "visible": {
-          "description": "Effective source object visibility, when present.",
-          "type": "boolean"
         }
       },
       "additionalProperties": false,

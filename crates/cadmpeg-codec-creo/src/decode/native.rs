@@ -226,7 +226,7 @@ pub(super) fn store_arena<T: Serialize>(
     if records.is_empty() {
         return Ok(());
     }
-    let namespace = ir.native.namespace_mut("creo");
+    let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("creo"));
     namespace.set_arena(ctx, key.as_str(), records)?;
     Ok(())
 }

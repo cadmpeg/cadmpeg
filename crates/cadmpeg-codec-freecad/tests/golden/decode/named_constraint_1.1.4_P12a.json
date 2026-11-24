@@ -5865,7 +5865,7 @@
                 "settings": ""
               },
               "kind": {
-                "kind": "Camera",
+                "kind": "camera",
                 "value": {
                   "properties": {
                     "settings": ""
@@ -7361,7 +7361,6 @@
       "attributes": {
         "application_domains": "App,PartDesign,Sketcher,Spreadsheet",
         "document_kind": "part-design",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
         "program_version": "1.1R20260928 (Git shallow)"
       },
@@ -7436,6 +7435,10 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {
+      "fcstd_uncarried_local_sha256": "<elided: digest over tolerantly compared geometry>"
+    },
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "703bdba9622a88c56205442ee8b60e48587d6e2883b0687fa59cdf5021990e89",
     "file_digests": {},
     "retained_records": {},

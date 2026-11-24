@@ -45,17 +45,20 @@ mod tests {
     fn census_preserves_registered_and_nonempty_native_populations() {
         let mut ir = CadIr::empty();
         ir.native
-            .namespace_mut("future")
+            .namespace_mut(crate::codec_id!("future"))
             .arenas_mut()
             .insert("empty".into(), Vec::new());
-        ir.native.namespace_mut("future").arenas_mut().insert(
-            "records".into(),
-            vec![crate::native::NativeRecord::new(
-                crate::ids::Identity::new("test:native:record#counted").unwrap(),
-                serde_json::Map::new(),
-            )
-            .unwrap()],
-        );
+        ir.native
+            .namespace_mut(crate::codec_id!("future"))
+            .arenas_mut()
+            .insert(
+                "records".into(),
+                vec![crate::native::NativeRecord::new(
+                    crate::ids::Identity::new("test:native:record#counted").unwrap(),
+                    serde_json::Map::new(),
+                )
+                .unwrap()],
+            );
         let standard = ir.census();
         assert_eq!(standard["native.future.records"], 1);
         assert!(!standard.contains_key("native.future.empty"));

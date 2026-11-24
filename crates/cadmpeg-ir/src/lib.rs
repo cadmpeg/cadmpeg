@@ -90,6 +90,7 @@ pub mod units;
 pub mod validate;
 
 pub use annotations::{AnnotationBuilder, Annotations, ExactnessNote};
+pub use cadmpeg_core::codec_id;
 pub use codec::{Codec, CodecBackend, Confidence, DecodeFailure, DecodeOptions, DecodeResult};
 pub use container::{ContainerKind, ContainerSummary};
 pub use diff::{

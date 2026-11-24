@@ -83,7 +83,7 @@ fn linked_datum(record: &str, link: &str) -> Feature {
 #[test]
 fn a_datum_link_native_ref_resolves() {
     let mut ir = document();
-    ir.native.namespace_mut("sldprt");
+    ir.native.namespace_mut(crate::codec_id!("sldprt"));
     ir.design.features.push(linked_datum(
         "sldprt:feature#missing",
         "sldprt:link#missing",
@@ -91,13 +91,16 @@ fn a_datum_link_native_ref_resolves() {
     assert_finding(&ir, "native_ref `sldprt:link#missing` does not resolve");
 
     let (record, link) = ("sldprt:native:feature#0", "sldprt:native:link#0");
-    ir.native.namespace_mut("sldprt").arenas_mut().insert(
-        "records".into(),
-        [record, link]
-            .into_iter()
-            .map(|id| NativeRecord::new(Identity::new(id).unwrap(), Map::new()).unwrap())
-            .collect(),
-    );
+    ir.native
+        .namespace_mut(crate::codec_id!("sldprt"))
+        .arenas_mut()
+        .insert(
+            "records".into(),
+            [record, link]
+                .into_iter()
+                .map(|id| NativeRecord::new(Identity::new(id).unwrap(), Map::new()).unwrap())
+                .collect(),
+        );
     ir.native.finalize();
     ir.design.features.pop();
     ir.design.features.push(linked_datum(record, link));

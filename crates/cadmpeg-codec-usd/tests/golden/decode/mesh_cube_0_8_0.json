@@ -778,6 +778,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "121589534d2364fe2a88e80f22cfb73a9b43de3f285bcd554c7b9be9a108541e",
     "file_digests": {},
     "retained_records": {},
