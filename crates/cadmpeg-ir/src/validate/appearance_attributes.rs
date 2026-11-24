@@ -3,8 +3,7 @@
 //! (§8) that the reference checks of `topology` leave out: the targets that
 //! name a shell, a loop, a region, a carrier, a design record, a product,
 //! PMI, drawing, or presentation record, or a neutral record by its arena;
-//! the `native_ref` of each record; what an unresolved binding states; and
-//! the expressions an attribute states.
+//! the `native_ref` of each record; and the expressions an attribute states.
 
 use std::collections::{BTreeMap, BTreeSet};
 
