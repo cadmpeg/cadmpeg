@@ -499,14 +499,35 @@ fn layout_coordinates(layout: &PatternLayout) -> Option<LayoutCoordinates<'_>> {
 /// a seed that is not literal. That carve-out is interim, gap
 /// 20261119-ERR1-C-H6-2: §6.5 does not yet state it.
 fn run_coordinate<'a, Q>(run: &PatternRun<Q>, on_path: bool) -> Coordinate<'a> {
-    let Some(last) = spacing_count(&run.spacing).map(|count| i64::from(count) - 1) else {
-        return Coordinate::ANY;
-    };
     let seed = match &run.seed {
         None => Some(0),
         Some(seed) => literal(seed).map(i64::from),
     };
-    match &run.sides {
+    sided_coordinate(&run.spacing, run.sides.as_ref(), seed, on_path)
+}
+
+/// Whether `value` lies in the coordinate range of a run with its seed first,
+/// as a sketch pattern's runs are (§6.5, Coordinate range).
+pub(super) fn seed_first_run_admits<Q>(
+    spacing: &Spacing<Q>,
+    sides: Option<&RunSides<Q>>,
+    value: i64,
+) -> bool {
+    sided_coordinate(spacing, sides, Some(0), false).admits(value)
+}
+
+/// The coordinate range of a run of `spacing` and `sides`, with the seed at
+/// step `seed` where it is literal.
+fn sided_coordinate<'a, Q>(
+    spacing: &Spacing<Q>,
+    sides: Option<&RunSides<Q>>,
+    seed: Option<i64>,
+    on_path: bool,
+) -> Coordinate<'a> {
+    let Some(last) = spacing_count(spacing).map(|count| i64::from(count) - 1) else {
+        return Coordinate::ANY;
+    };
+    match sides {
         Some(RunSides::One) => seed.map_or(Coordinate::ANY, |seed| {
             Coordinate::between(-seed, last - seed)
         }),

@@ -1390,6 +1390,15 @@ fn check_pattern<S: Space>(
             );
         }
         indices.push(&instance.index);
+        if instance_in_counts(&pattern.layout, &instance.index) == Some(false) {
+            ops.refuse(
+                findings,
+                format_args!(
+                    "sketch pattern instance index {:?} lies outside its layout's runs",
+                    instance.index.0
+                ),
+            );
+        }
         let suppressed = instance.suppressed == Some(true);
         if !suppressed && instance.entities.len() != pattern.seeds.len() {
             ops.refuse(
@@ -1413,6 +1422,32 @@ fn check_pattern<S: Space>(
                 );
             }
         }
+    }
+}
+
+/// Whether a sketch pattern instance index has one coordinate per run of the
+/// layout, each in its run's coordinate range (§6.5, Coordinate range), the
+/// seed first. `None` for a `Native` layout, which states no runs.
+fn instance_in_counts<S: SketchSpace>(
+    layout: &SketchPatternLayout<S>,
+    index: &crate::design::names::InstanceIndex,
+) -> Option<bool> {
+    use super::super::names::seed_first_run_admits;
+    let coordinates = &index.0;
+    match layout {
+        SketchPatternLayout::Linear { directions } => Some(
+            coordinates.len() == directions.len()
+                && coordinates.iter().zip(directions).all(|(value, axis)| {
+                    seed_first_run_admits(&axis.spacing, axis.sides.as_ref(), i64::from(*value))
+                }),
+        ),
+        SketchPatternLayout::Circular { spacing, sides, .. } => {
+            Some(match coordinates.as_slice() {
+                [value] => seed_first_run_admits(spacing, sides.as_ref(), i64::from(*value)),
+                _ => false,
+            })
+        }
+        SketchPatternLayout::Native(_) => None,
     }
 }
 

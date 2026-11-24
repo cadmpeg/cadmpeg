@@ -1983,3 +1983,55 @@ fn a_tapped_series_stage_states_no_standard() {
     }
     assert_finding(&with(operation), "a tapped series stage states");
 }
+
+/// Part 10: a sketch pattern's instance indices lie in its runs' coordinate
+/// ranges (§6.5). A run of two instances, the seed first, on one side holds
+/// coordinates 0 and 1.
+#[test]
+fn a_sketch_pattern_instance_lies_in_its_runs() {
+    use crate::design::ops::sketch::{
+        SketchPattern, SketchPatternAxis, SketchPatternInstance, SketchPatternLayout,
+    };
+    const OUTSIDE: &str = "lies outside its layout's runs";
+    let patterned = |coordinate: i32| {
+        let mut ir = sketched();
+        ir.design.sketch_entities.push(sketch_entity(
+            "copy",
+            PlanarCurve::Line {
+                start: point(0.0, 1.0),
+                end: point(1.0, 1.0),
+            },
+            Vec::new(),
+        ));
+        ir.design.sketch_constraints.push(constraint(
+            "pattern",
+            SketchRelation::Pattern(Box::new(SketchPattern {
+                seeds: vec![id("sketch-entity", "line")],
+                layout: SketchPatternLayout::Linear {
+                    directions: vec![SketchPatternAxis {
+                        direction: None,
+                        spacing: Spacing::Pitch {
+                            count: Dimension::Literal(2),
+                            pitch: Dimension::Literal(length(1.0)),
+                        },
+                        sides: Some(RunSides::One),
+                    }],
+                },
+                instances: vec![SketchPatternInstance {
+                    index: InstanceIndex(vec![coordinate]),
+                    entities: vec![id("sketch-entity", "copy")],
+                    suppressed: None,
+                }],
+            })),
+        ));
+        ir
+    };
+    let outside = |ir: &CadIr| {
+        sketch_findings(ir)
+            .iter()
+            .any(|message| message.contains(OUTSIDE))
+    };
+    assert!(!outside(&patterned(1)));
+    assert!(outside(&patterned(2)));
+    assert!(outside(&patterned(-1)));
+}
