@@ -509,21 +509,46 @@ pub(super) fn check_native_links(
                     );
                     continue;
                 };
-                if !all_ids.contains(target, crate::index::StandardIndex) {
-                    super::record_finding(
-                        findings,
-                        Check::NativeLinks,
-                        Severity::Error,
-                        Some(record.id()),
-                        crate::rule!(
-                            "annotations_native.native-record-link-does-not-resolve",
-                            "native-record link `{target}` does not resolve"
-                        ),
-                    );
-                }
+                check_native_record_link(all_ids, arena, record.id(), target, findings);
             }
         }
     });
+}
+
+/// A native record's link resolves, and to a native record: native records
+/// carry no reference into the neutral model (§2.1 Linkage, part 10). A
+/// given-up part's `unknowns` stub links its innermost containing record,
+/// which may be neutral (§3.3).
+fn check_native_record_link(
+    all_ids: &crate::index::ModelIndex<'_>,
+    arena: &str,
+    record: &str,
+    target: &str,
+    findings: &mut Vec<Finding>,
+) {
+    if !all_ids.contains(target, crate::index::StandardIndex) {
+        super::record_finding(
+            findings,
+            Check::NativeLinks,
+            Severity::Error,
+            Some(record),
+            crate::rule!(
+                "annotations_native.native-record-link-does-not-resolve",
+                "native-record link `{target}` does not resolve"
+            ),
+        );
+    } else if arena != "unknowns" && !all_ids.native_record_owns(target) {
+        super::record_finding(
+            findings,
+            Check::NativeLinks,
+            Severity::Error,
+            Some(record),
+            crate::rule!(
+                "annotations_native.native-record-link-names-neutral-record",
+                "native-record link `{target}` names a neutral record; a native record references no record of the neutral model"
+            ),
+        );
+    }
 }
 
 #[cfg(test)]

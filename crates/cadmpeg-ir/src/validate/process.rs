@@ -49,6 +49,7 @@ pub(super) fn check_process(
         order::check_nesting(record.arena, record.id, &record.found, findings);
     }
     references::check_references(&records, findings);
+    references::check_native_refs(&records, ids, findings);
     bindings::check_bindings(&records, &walked, findings);
     scope::check_scope(&records, &walked, findings);
     evaluations::check_evaluations(
