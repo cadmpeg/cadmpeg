@@ -141,6 +141,11 @@
         "exactness"
       ]
     },
+    "CodecId": {
+      "description": "A codec id: one or more lower-case ASCII letters and digits.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+$"
+    },
     "DecodeReport": {
       "type": "object",
       "properties": {
@@ -430,7 +435,7 @@
           "properties": {
             "format": {
               "description": "Registry format namespace.",
-              "type": "string"
+              "$ref": "#/$defs/CodecId"
             },
             "kind": {
               "type": "string",

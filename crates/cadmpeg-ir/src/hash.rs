@@ -755,7 +755,7 @@ mod tests {
 
     fn pinned_native() -> Native {
         let mut native = Native::default();
-        let namespace = native.namespace_mut("pin");
+        let namespace = native.namespace_mut(crate::codec_id!("pin"));
         namespace
             .arenas_mut()
             .insert("records".into(), vec![pinned_record()]);
@@ -864,7 +864,7 @@ mod tests {
     fn pinned_document() -> CadIr {
         let mut ir = CadIr::empty();
         ir.native = pinned_native();
-        let namespace = ir.native.namespace_mut("pin");
+        let namespace = ir.native.namespace_mut(crate::codec_id!("pin"));
         namespace.arenas_mut().insert(
             "unknowns".into(),
             vec![
@@ -882,14 +882,17 @@ mod tests {
     /// A document carrying one `pin` unknown record with the given fields.
     fn pinned_document_with_unknown(fields: serde_json::Map<String, serde_json::Value>) -> CadIr {
         let mut ir = pinned_document();
-        ir.native.namespace_mut("pin").arenas_mut().insert(
-            "unknowns".into(),
-            vec![NativeRecord::new(
-                crate::ids::Identity::new("pin:model:record#0").expect("valid identity"),
-                fields,
-            )
-            .expect("valid native identity")],
-        );
+        ir.native
+            .namespace_mut(crate::codec_id!("pin"))
+            .arenas_mut()
+            .insert(
+                "unknowns".into(),
+                vec![NativeRecord::new(
+                    crate::ids::Identity::new("pin:model:record#0").expect("valid identity"),
+                    fields,
+                )
+                .expect("valid native identity")],
+            );
         ir.finalize();
         ir
     }
@@ -1221,7 +1224,7 @@ mod tests {
                 &ctx,
             )
             .unwrap();
-        let namespace = ir.native.namespace_mut("other");
+        let namespace = ir.native.namespace_mut(crate::codec_id!("other"));
         namespace.arenas_mut().insert(
             "records".into(),
             vec![NativeRecord::new(
@@ -1461,7 +1464,7 @@ mod tests {
             records.push(NativeRecord::from_canonical_flat(&ctx, &id, json, 1).unwrap());
         }
         ir.native
-            .namespace_mut("test")
+            .namespace_mut(crate::codec_id!("test"))
             .set_arena_records("items", records);
         ir.set_native_unknowns(&ctx, "test", &[]).unwrap();
         ir.finalize();

@@ -2444,6 +2444,7 @@ impl CadIr {
         format: &str,
         records: I,
     ) -> Result<(), crate::native::NativeConvertError> {
+        let codec = crate::native::namespace_codec(format)?;
         let records = crate::native::arena_from(
             ctx,
             records.into_iter().map(|record| {
@@ -2459,14 +2460,10 @@ impl CadIr {
             }
         }
 
-        let key = "unknowns".to_owned();
-        if let Some(namespace) = self.native.0.get_mut(format) {
-            namespace.arenas_mut().insert(key, records);
-        } else {
-            let mut namespace = crate::native::NativeNamespace::default();
-            namespace.arenas_mut().insert(key, records);
-            self.native.0.insert(format.to_owned(), namespace);
-        }
+        self.native
+            .namespace_mut(codec)
+            .arenas_mut()
+            .insert("unknowns".to_owned(), records);
         Ok(())
     }
 
@@ -2682,7 +2679,7 @@ pub struct SourceMeta {
 impl SourceMeta {
     pub(crate) fn repro_header(&self) -> Self {
         Self {
-            identity: FormatIdentity::unclassified(self.format()),
+            identity: FormatIdentity::unclassified(self.identity.codec()),
             attributes: BTreeMap::new(),
         }
     }

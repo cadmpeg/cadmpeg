@@ -267,7 +267,7 @@ fn an_unresolved_binding_states_what_the_decoder_read_and_no_instance() {
 #[test]
 fn native_refs_of_appearances_bindings_and_attributes_resolve() {
     let mut ir = unit_cube().unwrap();
-    ir.native.namespace_mut("native");
+    ir.native.namespace_mut(crate::codec_id!("native"));
     let mut asset = appearance();
     asset.native_ref = Some("native:missing#1".into());
     let mut assigned = binding(AppearanceTarget::Body(ir.geometry.bodies[0].id.clone()));

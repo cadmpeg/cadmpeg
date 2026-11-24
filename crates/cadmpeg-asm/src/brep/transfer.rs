@@ -2,6 +2,7 @@
 //! Exhaustive transfer from an ASM graph into neutral and native IR arenas.
 
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::text::CodecId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::native::NativeNamespace;
@@ -43,17 +44,21 @@ pub struct AsmTransferRemainder {
 pub fn transfer_into_ir<'ir>(
     ctx: &DecodeContext<'_>,
     ir: &'ir mut CadIr,
-    native_format: &str,
+    native_format: CodecId,
     brep: AsmBrep,
 ) -> Result<(&'ir NativeNamespace, AsmTransferRemainder), CodecError> {
-    if ir.native.namespace(native_format).is_some_and(|namespace| {
-        ASM_NATIVE_ARENAS.iter().any(|name| {
-            namespace
-                .arenas()
-                .get(*name)
-                .is_some_and(|records| !records.is_empty())
+    if ir
+        .native
+        .namespace(native_format.as_str())
+        .is_some_and(|namespace| {
+            ASM_NATIVE_ARENAS.iter().any(|name| {
+                namespace
+                    .arenas()
+                    .get(*name)
+                    .is_some_and(|records| !records.is_empty())
+            })
         })
-    }) {
+    {
         return Err(CodecError::malformed(format_args!(
             "native namespace {native_format} already contains ASM records"
         )));
@@ -182,8 +187,13 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::default())
             .expect("test root fits policy");
         let mut ir = CadIr::empty();
-        let (namespace, remainder) = transfer_into_ir(&ctx, &mut ir, "test", AsmBrep::default())
-            .expect("empty ASM transfer succeeds");
+        let (namespace, remainder) = transfer_into_ir(
+            &ctx,
+            &mut ir,
+            cadmpeg_ir::codec_id!("test"),
+            AsmBrep::default(),
+        )
+        .expect("empty ASM transfer succeeds");
         assert!(remainder.unknowns.is_empty());
         assert!(remainder.annotation_records.is_empty());
         assert_eq!(namespace.arenas().len(), 12);
@@ -209,7 +219,7 @@ mod tests {
             Vec::new(),
         ));
         let mut ir = CadIr::empty();
-        let error = transfer_into_ir(&ctx, &mut ir, "test", brep)
+        let error = transfer_into_ir(&ctx, &mut ir, cadmpeg_ir::codec_id!("test"), brep)
             .err()
             .expect("one entity exceeds zero entities");
         let CodecError::ResourceLimit(limit) = error else {
@@ -235,7 +245,7 @@ mod tests {
             .expect("test root fits policy");
         let mut ir = CadIr::empty();
         ir.native
-            .namespace_mut("test")
+            .namespace_mut(cadmpeg_ir::codec_id!("test"))
             .set_arena(
                 &ctx,
                 "body_native_keys",
@@ -244,7 +254,13 @@ mod tests {
                 }],
             )
             .expect("test native record serializes");
-        assert!(transfer_into_ir(&ctx, &mut ir, "test", AsmBrep::default()).is_err());
+        assert!(transfer_into_ir(
+            &ctx,
+            &mut ir,
+            cadmpeg_ir::codec_id!("test"),
+            AsmBrep::default()
+        )
+        .is_err());
         let held: Vec<HeldRecord> = ir
             .native
             .namespace("test")

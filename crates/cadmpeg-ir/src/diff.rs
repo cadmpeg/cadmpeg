@@ -505,8 +505,8 @@ fn diff_native_namespaces(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
     namespaces
         .into_iter()
         .flat_map(|namespace| {
-            let left_ns = left.native.namespace(namespace);
-            let right_ns = right.native.namespace(namespace);
+            let left_ns = left.native.namespace(namespace.as_str());
+            let right_ns = right.native.namespace(namespace.as_str());
             let arenas = left_ns
                 .into_iter()
                 .flat_map(|value| value.arenas().keys())

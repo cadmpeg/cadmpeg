@@ -4167,8 +4167,10 @@ impl<'a> F3dDecodeSession<'a> {
                     Err(error) => report_xref_parse_loss(&mut self.report, &error),
                 }
                 self.note_uninterpreted_design();
-                self.native
-                    .store(ctx, self.ir.native.namespace_mut("f3d"))?;
+                self.native.store(
+                    ctx,
+                    self.ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")),
+                )?;
                 let annotations =
                     populate_annotations(&self.ir, scan, &self.native, None, &self.unknowns)?;
                 let source_image = preserve_source_image(scan);
@@ -4198,7 +4200,8 @@ impl<'a> F3dDecodeSession<'a> {
             "admit F3D entities",
         )?;
         self.note_uninterpreted_design();
-        let mut f3d_namespace = std::mem::take(self.ir.native.namespace_mut("f3d"));
+        let mut f3d_namespace =
+            std::mem::take(self.ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")));
         let (store_res, annotations_res) = std::thread::scope(|scope| {
             let ir = &self.ir;
             let native = &self.native;
@@ -4224,7 +4227,7 @@ impl<'a> F3dDecodeSession<'a> {
             };
             (store_res, annotations_res)
         });
-        *self.ir.native.namespace_mut("f3d") = f3d_namespace;
+        *self.ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")) = f3d_namespace;
         store_res?;
         let annotations = annotations_res?;
         let source_image = preserve_source_image(scan);
@@ -6122,7 +6125,7 @@ fn build_geometry_ir(
         creation_timestamps,
         sketch_region_bodies_omitted: _,
     } = brep;
-    let (namespace, remainder) = transfer_into_ir(ctx, &mut ir, "f3d", asm)?;
+    let (namespace, remainder) = transfer_into_ir(ctx, &mut ir, cadmpeg_ir::codec_id!("f3d"), asm)?;
     let mut native = F3dNative::load_inner(ctx, namespace)?;
     native.sketch_curve_links = sketch_curve_links;
     native.persistent_design_links = persistent_design_links;

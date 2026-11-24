@@ -4246,7 +4246,10 @@ fn build_geometry_ir(
         admitted_entities,
         "admit SLDPRT entities",
     )?;
-    native.store(ctx, ir.native.namespace_mut("sldprt"))?;
+    native.store(
+        ctx,
+        ir.native.namespace_mut(cadmpeg_ir::codec_id!("sldprt")),
+    )?;
     let mut unknowns = brep.unknowns;
     for owned_face_color in brep.face_colors {
         let annotation_source = &owned_face_color.source_stream;
@@ -5651,7 +5654,10 @@ fn build_metadata_ir(
         admitted_entities,
         "admit SLDPRT entities",
     )?;
-    native.store(ctx, ir.native.namespace_mut("sldprt"))?;
+    native.store(
+        ctx,
+        ir.native.namespace_mut(cadmpeg_ir::codec_id!("sldprt")),
+    )?;
     bind_active_configuration_partition(&mut ir);
     mark_active_configuration(&mut ir);
     crate::resolved_features::projections::note_blend_edge_generators(
