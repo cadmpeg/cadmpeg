@@ -15,12 +15,13 @@ use crate::design::feature::{Driver, FeatureOperation, OperationFamily};
 use crate::design::names::{InstanceIndex, NameKind, TopoName};
 use crate::design::ops::assembly::{
     AssemblyFeature, ComponentInstance, ComponentPattern, MirrorComponents, MirrorResult, Place,
-    PlaceSet,
+    PlaceSet, PlacementBase,
 };
 use crate::design::ops::body::{
     Combine, DeleteBodies, InstanceChange, InstanceOverride, Kept, NewComponent, Pattern,
-    PatternInstances, PatternSeeds, PieceForm, Split, SplitMethod, SplitMode, SplitTool,
-    TemplateInput, TemplateInstance, TransformBodies, TransformMode, TransformStep, Transformation,
+    PatternInstances, PatternSeeds, PieceForm, ScaleFactors, Split, SplitMethod, SplitMode,
+    SplitTool, TemplateInput, TemplateInstance, TransformBodies, TransformMode, TransformStep,
+    Transformation,
 };
 use crate::design::ops::datum::{Datum, DatumElement};
 use crate::design::ops::dressup::{
@@ -61,7 +62,7 @@ use crate::ids::OccurrenceId;
 use crate::math::Point2;
 use crate::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
 use crate::report::Severity;
-use crate::scalar::{Angle, Fraction, Length, PositiveLength, PositiveReal};
+use crate::scalar::{Angle, Fraction, Length, NonZeroReal, PositiveLength, PositiveReal};
 use crate::sketches::{SketchConstraintId, SketchEntityId, SketchId};
 use crate::transform::Transform;
 use crate::units::{FinitePoint2, UnitVector3};
@@ -978,6 +979,7 @@ fn a_place_states_its_base_with_its_placement() {
     let place = Place {
         occurrence: id("occurrence", "a"),
         placement: Some(empty_construction()),
+        scale: None,
         base: None,
         constraints: Vec::new(),
         packaged: None,
@@ -987,6 +989,38 @@ fn a_place_states_its_base_with_its_placement() {
     let mut ir = with(FeatureOperation::Place(Box::new(place)));
     own_occurrences(&mut ir, &["a"]);
     assert_finding(&ir, "Place.base is present where placement is not");
+}
+
+/// §10: a `Place.scale` occurs only with a `placement`, and a `PerAxis` one
+/// states no `frame`.
+#[test]
+fn a_place_scale_occurs_with_a_placement_and_in_the_placed_axes() {
+    let factors =
+        [2.0, 1.0, 1.0].map(|factor| Dimension::Literal(NonZeroReal::new(factor).unwrap()));
+    let place = |placement: bool, frame: bool| {
+        let placement = placement.then(empty_construction);
+        let mut ir = with(FeatureOperation::Place(Box::new(Place {
+            occurrence: id("occurrence", "a"),
+            base: placement.as_ref().map(|_| PlacementBase::Parent),
+            placement,
+            scale: Some(ScaleFactors::PerAxis {
+                factors: factors.clone(),
+                frame: frame.then(|| Box::new(empty_construction())),
+            }),
+            constraints: Vec::new(),
+            packaged: None,
+            native_options: BTreeMap::new(),
+            source_settings: BTreeMap::new(),
+        })));
+        own_occurrences(&mut ir, &["a"]);
+        ir
+    };
+    assert_no_finding_containing(&place(true, false), "Place.scale");
+    assert_finding(
+        &place(false, false),
+        "Place.scale is present where placement is not",
+    );
+    assert_finding(&place(true, true), "a PerAxis Place.scale states a frame");
 }
 
 fn joint(kind: JointKind) -> FeatureOperation {

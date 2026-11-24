@@ -58937,6 +58937,17 @@
             }
           ]
         },
+        "scale": {
+          "description": "The scale the source composes with `placement` on the occurrence,\napplied in the placed definition's own axes before `placement`, with\nfactors an expression can bind. A `PerAxis` scale states no `frame`.\n`None` where the source stores no scale, or a scale of one on every\naxis.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScaleFactors2"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "source_settings": {
           "description": "Source options with no design meaning.",
           "type": "object",

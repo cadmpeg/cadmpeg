@@ -12,7 +12,7 @@ use crate::design::feature::{Driver, Feature, FeatureOperation, OperationFamily}
 use crate::design::ops::assembly::{
     AssemblyFeature, ComponentPattern, MirrorComponents, Place, PlaceSet, RigidGroup,
 };
-use crate::design::ops::body::SplitMode;
+use crate::design::ops::body::{ScaleFactors, SplitMode};
 use crate::design::ops::dressup::OffsetResult;
 use crate::design::ops::shared::{
     AxisLimits, Bounds, Joint, JointConnector, JointKind, JointMotion, PathAxisControl,
@@ -94,6 +94,19 @@ pub(super) fn check_place(
             site.entity,
             format_args!("Place.base is present where placement is not, or absent where it is"),
         );
+    }
+    match &place.scale {
+        Some(_) if place.placement.is_none() => error(
+            findings,
+            site.entity,
+            format_args!("Place.scale is present where placement is not"),
+        ),
+        Some(ScaleFactors::PerAxis { frame: Some(_), .. }) => error(
+            findings,
+            site.entity,
+            format_args!("a PerAxis Place.scale states a frame"),
+        ),
+        _ => {}
     }
     for constraint in &place.constraints {
         check_joint(index, site, constraint, findings);
