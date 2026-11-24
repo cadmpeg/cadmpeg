@@ -3347,8 +3347,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -4726,7 +4725,7 @@
       }
     },
     "codec_digests": {},
-    "content_digest": "b9daac03b653e6fd2dc12204e17ffec9d3afa5f228cb6686e533c00b0e3ccbb1",
+    "content_digest": "60fa87fae6aa71e8de070d95ab1104260675a0c9419994fbf5d3073020a6bded",
     "decode_digest": "a7fddcdb0d293a96783dae2f0a1ae0a2ac11c4fec864c4a4acdd675117ab45c2",
     "file_digests": {},
     "retained_records": {},

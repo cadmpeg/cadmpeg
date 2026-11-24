@@ -1321,8 +1321,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -1946,7 +1945,7 @@
       }
     },
     "codec_digests": {},
-    "content_digest": "cd994f3b28c9a1b7a509b751646d6e886ea307ca15b3dfc29e54d3fad74aa0c8",
+    "content_digest": "6922e084ce05c25d210c389228c79c0436f290f07d6049534ae459dd40b7d227",
     "decode_digest": "a2d5b839460a8e33cd680fe58d5c48a436e6d3964538a51edb591f83bb6725ee",
     "file_digests": {},
     "retained_records": {},

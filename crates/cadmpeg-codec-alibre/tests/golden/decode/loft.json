@@ -4446,8 +4446,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -5800,7 +5799,7 @@
       }
     },
     "codec_digests": {},
-    "content_digest": "97cf919b2d9a9e54392b3b5474eedd78b84df33256142cd9e4f2794696335c48",
+    "content_digest": "9f6c86c9f1e7e37775b23d49ac3a77b450b6d6fe88059ba1e2b659570fe1a221",
     "decode_digest": "fd43d82345eca4cb065d5390bd60c7d3569f6428dedb0baa639986feebfc3f46",
     "file_digests": {},
     "retained_records": {

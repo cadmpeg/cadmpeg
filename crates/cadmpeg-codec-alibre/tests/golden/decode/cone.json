@@ -1127,8 +1127,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -1703,7 +1702,7 @@
       }
     },
     "codec_digests": {},
-    "content_digest": "707525115b5d176b26dcd4b48bf4ff73eb4bcb6911e26b964b04bb6881d8ffeb",
+    "content_digest": "0b755b4bf22178a382eeeaeb5b31808f941725317880717f9a8f92b76878660e",
     "decode_digest": "280a3641d93431b621ae25c16ef4e3354dcdcc805991e68874cd75f46497eadd",
     "file_digests": {},
     "retained_records": {},

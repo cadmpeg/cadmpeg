@@ -953,8 +953,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -1453,7 +1452,7 @@
       }
     },
     "codec_digests": {},
-    "content_digest": "dd1ced8192b8165c1848c4c4aadc5577fa2cc21a30f5de0e2638dfb33c1a2869",
+    "content_digest": "01f59092edc34b70c23bf1b2a02d6ece3691ddfd8dfdf34c5464ca4ceb6d2f17",
     "decode_digest": "f89c07eb29466302d8aa7994905573b3dcb5261b44e5304f0cba2ba0b5e843bf",
     "file_digests": {},
     "retained_records": {},
