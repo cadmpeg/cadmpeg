@@ -90,11 +90,10 @@ fn a_part_with_parameters_states_one_scope_over_its_root_definition() {
         scope.unproduced.iter().collect::<Vec<_>>(),
         root.bodies.iter().collect::<Vec<_>>()
     );
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code.to_string() == "catia/history.features-unread"));
+    assert!(result.report().losses.iter().any(|loss| loss.code
+        == crate::loss::CatiaLossCode::HistoryFeaturesUnread
+            .note("")
+            .code));
     assert_eq!(
         ir.design
             .parameters
