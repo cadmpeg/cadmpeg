@@ -200,3 +200,111 @@ fn governing_support_loads_an_uncached_tensor_before_the_group() {
         }
     }
 }
+
+fn reference(from: usize, to: usize) -> u8 {
+    if to < from {
+        backward(from - to)
+    } else {
+        u8::try_from(4 * (to - from - 1) + 3).expect("owned fixture reference")
+    }
+}
+fn shared_support_quad(bytes: &mut Vec<u8>, base: usize, support: usize) {
+    bytes.extend(super::governing_roots::group(3));
+    frame(bytes, 0x61, &[0x81, 3, 0, 0x13, 3]);
+    frame(bytes, 0x5f, &[0x82, reference(base + 2, support), 3, 3]);
+    let mut owner = vec![0x89];
+    for i in 0..4 {
+        owner.extend([4 * (2 * i) + 3, 4 * (2 * i + 1) + 3]);
+    }
+    owner.extend([reference(base + 3, support), 0x84, 0x41, 0, 0, 1]);
+    frame(bytes, 0x62, &owner);
+    let corners = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
+    for i in 0..4 {
+        let a = corners[i];
+        let b = corners[(i + 1) % 4];
+        let mut line = vec![5, 0];
+        for value in [0.0_f64, 1.0, a[0], a[1], b[0] - a[0], b[1] - a[1]] {
+            line.extend(value.to_le_bytes());
+        }
+        frame(bytes, 0x18, &line);
+        let edge = base + 5 + 2 * i;
+        frame(
+            bytes,
+            0x5e,
+            &[
+                5,
+                reference(edge, base + 12 + i),
+                reference(edge, base + 12 + (i + 1) % 4),
+                1,
+                1,
+                1,
+            ],
+        );
+    }
+    for _ in 0..4 {
+        frame(bytes, 0x5d, &[1]);
+    }
+}
+#[test]
+fn local_and_governing_groups_decode_a_shared_tensor_and_its_diagnostics_once() {
+    let mut data = Vec::new();
+    shared_support_quad(&mut data, 0, 16);
+    let mut tensor = crate::test_support::test_a5a8::a5_surface_stream_with_tail(
+        &crate::test_support::test_a5a8::a5_surface_extrapolated_tail(),
+    );
+    tensor[7] = 5;
+    data.extend(tensor);
+    shared_support_quad(&mut data, 17, 16);
+    let logical = data;
+    for source_count in [1, 2] {
+        let data = logical.repeat(source_count);
+        let sources = (0..source_count)
+            .map(|i| {
+                vec![
+                    SourceExtent::within(&data, i * logical.len(), (i + 1) * logical.len())
+                        .expect("source"),
+                ]
+            })
+            .collect::<Vec<_>>();
+        let records = consolidated_records_in_sources(&data, &sources).expect("records");
+        let selection = crate::container::body_selection::BodySelection {
+            source: 0,
+            allocation_ends: vec![1, 18],
+        };
+        let mut notes = crate::nurbs::LaneRefusals::new();
+        let sheets = crate::test_support::with_service_context(|ctx| {
+            patches(
+                ctx,
+                &CadIr::empty(),
+                &Stream {
+                    data: &data,
+                    sources: &sources,
+                    records: &records,
+                    selection: Some(&selection),
+                },
+                &BTreeMap::new(),
+                &mut notes,
+            )
+        })
+        .expect("two selected groups");
+        let selected = sheets
+            .patches
+            .iter()
+            .filter(|patch| patch.body.0 == 0)
+            .collect::<Vec<_>>();
+        assert_eq!(selected.len(), 2);
+        assert_ne!(selected[0].body, selected[1].body);
+        if source_count == 2 {
+            assert!(sheets.patches.iter().any(|patch| patch.body.0 == 1));
+        }
+        let notes = notes.take_notes();
+        assert_eq!(
+            notes
+                .iter()
+                .filter(|note| note.code.local_code()
+                    == "geometry.surface-extrapolation-not-transferred")
+                .count(),
+            source_count
+        );
+    }
+}

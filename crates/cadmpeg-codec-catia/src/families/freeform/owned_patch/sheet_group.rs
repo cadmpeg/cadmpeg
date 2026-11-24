@@ -592,7 +592,7 @@ pub(super) fn patches(
     let mut allocation_starts = BTreeMap::new();
     let mut source_bytes = BTreeMap::new();
     let mut mixed_allocations = BTreeMap::new();
-    let mut governing_tensors = BTreeMap::new();
+    let mut tensor_cache = BTreeMap::new();
     let mut groups = records
         .iter()
         .filter(|frame| {
@@ -639,7 +639,6 @@ pub(super) fn patches(
         }
         let backward = backward_root(group, bytes);
         let mut end_anchored = backward;
-        let mut preceding_supports = false;
         let (alloc, members) = if backward {
             let Some(seed) = records.windows(3).find(|frames| {
                 frames[0].source_index() == source
@@ -678,7 +677,6 @@ pub(super) fn patches(
                     if resolved.inferred {
                         refusal.push_governing_support_scope(group_position);
                     }
-                    preceding_supports = true;
                     end_anchored = resolved.end_anchored;
                     (alloc, Some(resolved.members))
                 } else {
@@ -731,37 +729,27 @@ pub(super) fn patches(
             (frame.family() == family && frame.class() == class).then_some(target)
         };
         let physical = |position| file_offset(extents, position);
-        let mut load_tensors = || {
-            let uncached = alloc
-                .records
-                .iter()
-                .filter(|frame| {
-                    frame.family() == Family::A
-                        && frame.class() == 0x34
-                        && physical(frame.byte_offset())
-                            .is_some_and(|pos| !carriers.contains_key(&pos))
-                })
-                .cloned()
-                .collect::<Vec<_>>();
-            Ok::<_, cadmpeg_core::CodecError>(
-                crate::families::a5a8::records::a5_owned_surfaces_from_records(
-                    bytes, &uncached, refusal,
-                )?
-                .into_iter()
-                .map(|surface| (surface.pos, surface.geometry))
-                .collect(),
-            )
-        };
-        let local_tensors;
-        let tensors: &BTreeMap<_, _> = if preceding_supports {
-            match governing_tensors.entry(source) {
-                Entry::Occupied(entry) => entry.into_mut(),
-                Entry::Vacant(entry) => entry.insert(load_tensors()?),
-            }
-        } else {
-            local_tensors = load_tensors()?;
-            &local_tensors
-        };
+        let (parsed, tensors) = tensor_cache
+            .entry(source)
+            .or_insert_with(|| (BTreeSet::new(), BTreeMap::new()));
+        let uncached = alloc
+            .records
+            .iter()
+            .filter(|frame| {
+                frame.family() == Family::A
+                    && frame.class() == 0x34
+                    && physical(frame.byte_offset()).is_some_and(|pos| !carriers.contains_key(&pos))
+                    && parsed.insert(frame.byte_offset())
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        tensors.extend(
+            crate::families::a5a8::records::a5_owned_surfaces_from_records(
+                bytes, &uncached, refusal,
+            )?
+            .into_iter()
+            .map(|surface| (surface.pos, surface.geometry)),
+        );
         let trim_source = Source {
             bytes,
             records: &alloc.records,
