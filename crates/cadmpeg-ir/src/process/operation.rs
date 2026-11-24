@@ -22,9 +22,9 @@ use super::{Choice, ProcessConstruction, ProcessDimension, WorkpieceSelection};
 use crate::design::construction::{kinds, Construction};
 use crate::design::ids::{MachiningFeatureId, OperationId, PresetId, ProcessGroupId, ToolId};
 use crate::design::names::NativeName;
+use crate::design::ops::sketch::BoundedCurve;
 use crate::design::selection::OrderedSelection;
 use crate::features::ConfigurationId;
-use crate::geometry::SolvedCurveGeometry;
 
 /// One machining step with one tool, or a modifier of other operations'
 /// toolpaths.
@@ -487,8 +487,13 @@ pub enum GeometrySource {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ProfileCurve {
-    /// The curve.
-    pub geometry: SolvedCurveGeometry,
+    /// The curve. `None` where the decoder did not read its carrier.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_geometry"
+    )]
+    pub geometry: Option<BoundedCurve>,
     /// The model entities the curve was taken from, where the source records
     /// them.
     #[serde(
@@ -502,6 +507,7 @@ pub struct ProfileCurve {
 cadmpeg_core::named_optional_field!(deserialize_combine, GeometryCombine, "combine");
 cadmpeg_core::named_optional_field!(deserialize_comment, String, "comment");
 cadmpeg_core::named_optional_field!(deserialize_cycle, CycleSettings, "cycle");
+cadmpeg_core::named_optional_field!(deserialize_geometry, BoundedCurve, "geometry");
 cadmpeg_core::named_optional_field!(deserialize_leads, Leads, "leads");
 cadmpeg_core::named_optional_field!(deserialize_linking, Linking, "linking");
 cadmpeg_core::named_optional_field!(deserialize_name, String, "name");

@@ -3765,6 +3765,11 @@
             "faces": [],
             "kind": "body"
           },
+          "source_object": {
+            "format": "pvz",
+            "instance_path": [],
+            "object_id": "cube32.ol"
+          },
           "texture_assignments": [],
           "texture_coordinates": [],
           "triangle_groups": [
@@ -4008,6 +4013,11 @@
             "faces": [],
             "kind": "body"
           },
+          "source_object": {
+            "format": "pvz",
+            "instance_path": [],
+            "object_id": "cube64.ol"
+          },
           "texture_assignments": [],
           "texture_coordinates": [],
           "triangle_groups": [
@@ -4127,6 +4137,11 @@
           "of": {
             "definition": "pvz:model:definition#3",
             "kind": "definition"
+          },
+          "source_object": {
+            "format": "pvz",
+            "instance_path": [],
+            "object_id": "plate.ol"
           },
           "texture_assignments": [],
           "texture_coordinates": [],

@@ -383,7 +383,7 @@ fn an_annotation_states_its_native_record_and_native_maps() {
     );
     value.native_ref = Some("native:pmi#1".into());
     value.source_settings.insert(
-        cadmpeg_core::text::NonBlankString::new("sldprt:val_precision").expect("a key"),
+        crate::codec_name!("sldprt:val_precision"),
         crate::design::options::NativeOption::Integer(
             crate::design::dimension::Dimension::Literal(3),
         ),

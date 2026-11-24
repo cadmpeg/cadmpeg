@@ -68,15 +68,9 @@
           "relationships": {
             "items": [
               {
-                "native": {
-                  "codec": "step",
-                  "value": {
-                    "kind": "text",
-                    "value": "#8"
-                  }
-                },
                 "target": {
-                  "kind": "unresolved"
+                  "kind": "pmi",
+                  "value": "step:presentation:pmi#8"
                 }
               },
               {
@@ -107,7 +101,8 @@
               }
             ]
           },
-          "runtime_type": "DRAUGHTING_MODEL"
+          "runtime_type": "DRAUGHTING_MODEL",
+          "views": []
         }
       ],
       "feature_input_topologies": [],

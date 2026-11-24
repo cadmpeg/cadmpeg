@@ -228,16 +228,9 @@ fn an_unread_profile_and_an_unresolved_operation_are_not_checked() {
 // ----------------------------------------------------------------- shared option types
 
 #[test]
-fn native_keys_have_the_codec_form_and_one_map() {
-    let key = NonBlankString::new("thickness").unwrap();
+fn a_native_key_is_in_one_map() {
     let option = NativeOption::Bool(Dimension::Literal(true));
-    assert_finding(
-        &extruding(|e| {
-            e.native_options.insert(key.clone(), option.clone());
-        }),
-        "does not have the form codec:name",
-    );
-    let key = NonBlankString::new("sldprt:flag").unwrap();
+    let key = crate::codec_name!("sldprt:flag");
     assert_finding(
         &extruding(|e| {
             e.native_options.insert(key.clone(), option.clone());

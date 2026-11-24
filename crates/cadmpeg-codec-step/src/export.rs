@@ -22,8 +22,8 @@ use cadmpeg_ir::geometry::{
     SolvedSurfaceGeometry, Surface,
 };
 use cadmpeg_ir::ids::{
-    AppearanceBindingId, AppearanceId, EdgeId, LoopId, OccurrenceId, ProductDefinitionId, ShellId,
-    VertexId,
+    AppearanceBindingId, AppearanceId, EdgeId, LayerId, LoopId, OccurrenceId, ProductDefinitionId,
+    ShellId, VertexId,
 };
 use cadmpeg_ir::pmi::zones::ToleranceZoneForm;
 use cadmpeg_ir::pmi::{
@@ -1286,7 +1286,23 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_layers(&mut self) {
+        let hidden: HashSet<LayerId> =
+            cadmpeg_ir::presentation::hidden_layers(&self.ir.model.presentation_layers)
+                .into_iter()
+                .cloned()
+                .collect();
         for layer in self.ir.model.presentation_layers.clone() {
+            let layer_hidden = hidden.contains(&layer.id);
+            if layer.parent.is_some() {
+                self.loss(
+                    StepLossCode::LayerHierarchyFlattened,
+                    format!(
+                        "layer '{}' is a sublayer; STEP holds no layer hierarchy, so it is \
+                         written as a top-level layer, hidden where a layer above it is hidden",
+                        layer.name
+                    ),
+                );
+            }
             let mut assigned = Vec::new();
             let mut unsupported = 0usize;
             for item in layer.items {
@@ -1382,7 +1398,7 @@ impl<'a> Builder<'a> {
                 );
             }
             if assigned.is_empty() {
-                if layer.visible == Some(false) {
+                if layer_hidden {
                     self.hidden_presentation_layers_without_items
                         .insert(layer.id.as_str().to_owned());
                 }
@@ -1396,7 +1412,7 @@ impl<'a> Builder<'a> {
                         refs(&assigned)
                     ),
                 );
-                if layer.visible == Some(false) {
+                if layer_hidden {
                     self.hidden_presentation_layer_items.push(assignment);
                 }
             }
@@ -2702,13 +2718,8 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_layer_visibility(&mut self) {
-        let hidden_layers = self
-            .ir
-            .model
-            .presentation_layers
-            .iter()
-            .filter(|layer| layer.visible == Some(false))
-            .count();
+        let hidden_layers =
+            cadmpeg_ir::presentation::hidden_layers(&self.ir.model.presentation_layers).len();
         if hidden_layers == 0 {
             return;
         }
@@ -6750,7 +6761,7 @@ impl<'a> Builder<'a> {
                 surface
                     .source_object
                     .as_ref()
-                    .is_some_and(|source| source.format != cadmpeg_ir::CodecFormat::Step)
+                    .is_some_and(|source| source.format != cadmpeg_ir::codec_id!("step"))
             })
             .count()
             + self
@@ -6762,7 +6773,7 @@ impl<'a> Builder<'a> {
                     curve
                         .source_object
                         .as_ref()
-                        .is_some_and(|source| source.format != cadmpeg_ir::CodecFormat::Step)
+                        .is_some_and(|source| source.format != cadmpeg_ir::codec_id!("step"))
                 })
                 .count()
             + self
@@ -6773,7 +6784,7 @@ impl<'a> Builder<'a> {
                 .filter(|subd| {
                     subd.source_object
                         .as_ref()
-                        .is_some_and(|source| source.format != cadmpeg_ir::CodecFormat::Step)
+                        .is_some_and(|source| source.format != cadmpeg_ir::codec_id!("step"))
                 })
                 .count()
             + self
@@ -6785,7 +6796,7 @@ impl<'a> Builder<'a> {
                     tessellation
                         .source_object
                         .as_ref()
-                        .is_some_and(|source| source.format != cadmpeg_ir::CodecFormat::Step)
+                        .is_some_and(|source| source.format != cadmpeg_ir::codec_id!("step"))
                 })
                 .count();
         let source_object_count = source_object_count
@@ -6798,7 +6809,7 @@ impl<'a> Builder<'a> {
                     point
                         .source_object
                         .as_ref()
-                        .is_some_and(|source| source.format != cadmpeg_ir::CodecFormat::Step)
+                        .is_some_and(|source| source.format != cadmpeg_ir::codec_id!("step"))
                 })
                 .count();
         if source_object_count > 0 {

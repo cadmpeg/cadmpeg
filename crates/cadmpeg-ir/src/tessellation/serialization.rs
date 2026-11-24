@@ -2,8 +2,8 @@
 //! Borrow mesh lanes, addressing tables and channel payloads during serialization.
 
 use super::{
-    ChannelAddressing, Meshed, Tessellation, TessellationChannel, TessellationId, TessellationMesh,
-    TessellationTextureAssignment, TessellationTriangleGroup, TextureCoordinates,
+    ChannelAddressing, MeshColors, Meshed, Tessellation, TessellationChannel, TessellationId,
+    TessellationMesh, TessellationTextureAssignment, TessellationTriangleGroup, TextureCoordinates,
 };
 use crate::design::refs::StateRef;
 use crate::features::geometry::{FinitePoint3, FiniteVector3};
@@ -28,6 +28,8 @@ impl Serialize for Tessellation {
             triangle_groups: &'a Vec<TessellationTriangleGroup>,
             texture_assignments: &'a Vec<TessellationTextureAssignment>,
             texture_coordinates: &'a Vec<TextureCoordinates>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            colors: Option<&'a MeshColors>,
             channels: &'a [TessellationChannel],
         }
         Wire {
@@ -41,6 +43,7 @@ impl Serialize for Tessellation {
             triangle_groups: &self.triangle_groups,
             texture_assignments: &self.texture_assignments,
             texture_coordinates: &self.texture_coordinates,
+            colors: self.colors.as_ref(),
             channels: &self.channels,
         }
         .serialize(serializer)

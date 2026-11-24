@@ -149,6 +149,9 @@ pub enum ParameterDefinition {
     Driven,
     /// A parameter program sets the value.
     Assigned(ParameterProgramId),
+    /// The source holds the parameter with no value and no definition of it.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Unset,
 }
 
 /// A parameter's cached value; the variant follows the parameter's kind.

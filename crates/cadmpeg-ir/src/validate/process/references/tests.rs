@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::names::CodecId;
 use crate::design::units::UnitSymbol;
 use crate::process::feature::{MachiningFeature, MachiningFeatureClass};
 use crate::process::groups::{GroupKind, ProcessGroup, ProcessOwner};
 use crate::process::operation::{GeometryCombine, Tooling};
 use crate::process::tool::{NcNumbers, ToolPocket};
-use crate::validate::process::fixture::{assert_error, document, id, native, parameter, text};
+use crate::validate::process::fixture::{
+    assert_error, assert_no_process_finding, document, id, native, parameter, text,
+};
 
 #[test]
 fn tooling_and_machines_resolve() {
@@ -168,10 +169,10 @@ fn parameter_owners_resolve_and_names_are_unique_per_owner() {
 }
 
 #[test]
-fn native_kinds_name_known_codecs_and_units_match_their_quantity() {
+fn native_kinds_name_any_codec_and_units_match_their_quantity() {
     let mut ir = document();
-    ir.process.tools[0].native_kind.codec = CodecId::from(text("unknown"));
-    assert_error(&ir, "native_kind codec `unknown` is no known codec id");
+    ir.process.tools[0].native_kind.codec = crate::codec_id!("unknown");
+    assert_no_process_finding(&ir);
 
     let mut ir = document();
     ir.process.tools[0].unit = Some(UnitSymbol::Deg);

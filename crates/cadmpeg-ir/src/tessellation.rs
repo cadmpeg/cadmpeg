@@ -876,6 +876,13 @@ struct TessellationWire {
     texture_assignments: Vec<TessellationTextureAssignment>,
     /// Named texture-coordinate sets.
     texture_coordinates: Vec<TextureCoordinates>,
+    /// Colours the source stores per vertex, corner, or triangle.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_colors"
+    )]
+    colors: Option<MeshColors>,
     /// Additional per-vertex or per-facet data channels.
     channels: Vec<TessellationChannel>,
 }
@@ -1014,6 +1021,8 @@ pub struct Tessellation {
     texture_assignments: Vec<TessellationTextureAssignment>,
     /// Named texture-coordinate sets.
     texture_coordinates: Vec<TextureCoordinates>,
+    /// Colours the source stores per vertex, corner, or triangle.
+    colors: Option<MeshColors>,
     channels: Vec<TessellationChannel>,
 }
 
@@ -1100,6 +1109,30 @@ pub struct TextureCoordinates {
     pub addressing: TextureCoordinateAddressing,
     /// The values: one per vertex or one per triangle corner.
     pub values: Vec<FinitePoint2>,
+}
+
+/// The mesh element that each value of a colour set belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum ColorAddressing {
+    /// One value per vertex, in vertex order.
+    Vertex,
+    /// One value per triangle corner, in triangle order.
+    Corner,
+    /// One value per triangle, in triangle order.
+    Triangle,
+}
+
+/// The colours a source stores per element of a mesh.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct MeshColors {
+    /// The mesh element of each value.
+    pub addressing: ColorAddressing,
+    /// The values: one per element `addressing` names.
+    pub values: Vec<Color>,
 }
 
 /// One descriptor from the source tessellation table.
@@ -1195,6 +1228,32 @@ fn require_texture_coordinates(
         }
     }
     Ok(())
+}
+
+fn require_colors(
+    mesh: &TessellationMesh<FinitePoint3, FiniteVector3>,
+    colors: Option<&MeshColors>,
+) -> Result<(), TessellationError> {
+    let Some(colors) = colors else {
+        return Ok(());
+    };
+    let lists_triangles = !matches!(
+        mesh,
+        TessellationMesh::Strips { .. } | TessellationMesh::ShadedStrips { .. }
+    );
+    let expected = match colors.addressing {
+        ColorAddressing::Vertex => Some(mesh.vertex_count()),
+        ColorAddressing::Corner if lists_triangles => mesh.triangle_count().checked_mul(3),
+        ColorAddressing::Triangle if lists_triangles => Some(mesh.triangle_count()),
+        ColorAddressing::Corner | ColorAddressing::Triangle => None,
+    };
+    if expected == Some(colors.values.len()) {
+        Ok(())
+    } else {
+        Err(tessellation_error(
+            "contains tessellation colours that do not hold one value per element of their addressing",
+        ))
+    }
 }
 
 fn require_triangle_groups(
@@ -1326,6 +1385,7 @@ impl Tessellation {
             triangle_groups: Vec::new(),
             texture_assignments: Vec::new(),
             texture_coordinates: Vec::new(),
+            colors: None,
             channels,
         })
     }
@@ -1351,6 +1411,7 @@ impl Tessellation {
             triangles.len(),
             &self.texture_coordinates,
         )?;
+        require_colors(&mesh, self.colors.as_ref())?;
         Ok(Self {
             mesh,
             channels,
@@ -1577,6 +1638,19 @@ impl Tessellation {
         &self.texture_coordinates
     }
 
+    /// Set the colours the source stores per vertex, corner, or triangle.
+    pub fn with_colors(mut self, colors: Option<MeshColors>) -> Result<Self, TessellationError> {
+        require_colors(&self.mesh, colors.as_ref())?;
+        self.colors = colors;
+        Ok(self)
+    }
+
+    /// The colours the source stores per vertex, corner, or triangle.
+    #[must_use]
+    pub const fn colors(&self) -> Option<&MeshColors> {
+        self.colors.as_ref()
+    }
+
     /// Set the texture assignments.
     pub fn with_texture_assignments(
         mut self,
@@ -1694,6 +1768,7 @@ impl From<Tessellation> for TessellationWire {
             triangle_groups: tessellation.triangle_groups,
             texture_assignments: tessellation.texture_assignments,
             texture_coordinates: tessellation.texture_coordinates,
+            colors: tessellation.colors,
             channels: tessellation.channels,
         }
     }
@@ -1713,6 +1788,7 @@ impl TryFrom<TessellationWire> for Tessellation {
         mesh = mesh.with_feature_edges(wire.feature_edges)?;
         mesh = mesh.with_triangle_groups(wire.triangle_groups)?;
         mesh = mesh.with_texture_coordinates(wire.texture_coordinates)?;
+        mesh = mesh.with_colors(wire.colors)?;
         mesh.with_texture_assignments(wire.texture_assignments)
     }
 }
@@ -1777,6 +1853,7 @@ cadmpeg_core::named_optional_field!(
 );
 cadmpeg_core::named_optional_field!(deserialize_source_id, String, "source_id");
 cadmpeg_core::named_optional_field!(deserialize_face, FaceId, "face");
+cadmpeg_core::named_optional_field!(deserialize_colors, MeshColors, "colors");
 
 mod identity_rewrite;
 

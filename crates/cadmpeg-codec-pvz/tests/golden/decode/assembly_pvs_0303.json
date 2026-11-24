@@ -307,6 +307,11 @@
             "definition": "pvz:model:definition#1",
             "kind": "definition"
           },
+          "source_object": {
+            "format": "pvz",
+            "instance_path": [],
+            "object_id": "bracket.ol"
+          },
           "texture_assignments": [],
           "texture_coordinates": [],
           "triangle_groups": [
@@ -393,6 +398,11 @@
           "of": {
             "definition": "pvz:model:definition#2",
             "kind": "definition"
+          },
+          "source_object": {
+            "format": "pvz",
+            "instance_path": [],
+            "object_id": "plate.ol"
           },
           "texture_assignments": [],
           "texture_coordinates": [],

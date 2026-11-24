@@ -234,6 +234,11 @@
             "definition": "pvz:model:definition#1",
             "kind": "definition"
           },
+          "source_object": {
+            "format": "pvz",
+            "instance_path": [],
+            "object_id": "bracket.ol"
+          },
           "texture_assignments": [],
           "texture_coordinates": [],
           "triangle_groups": [

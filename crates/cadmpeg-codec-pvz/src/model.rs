@@ -422,7 +422,8 @@ fn uniform_scale(axes: [[f64; 3]; 3]) -> Option<f64> {
 /// Adds the display geometry of one geometry member: one tessellation per
 /// mesh, and the appearances the meshes use. A mesh displays `exact`, the
 /// member's first exact body, where the member holds one, and is otherwise the
-/// geometry of `definition`, the one definition that uses the member.
+/// geometry of `definition`, the one definition that uses the member. Each
+/// mesh names the member as the object it was read from.
 pub(crate) fn display_geometry(
     ctx: &DecodeContext<'_>,
     member: &str,
@@ -440,6 +441,18 @@ pub(crate) fn display_geometry(
         (None, Some(definition)) => Meshed::definition(definition),
         (None, None) => Meshed::Unresolved,
     };
+    let source_object = NonBlankString::new(member.to_owned()).map(|object_id| {
+        cadmpeg_ir::SourceObjectAssociation {
+            format: cadmpeg_ir::codec_id!("pvz"),
+            geometry_role: None,
+            object_id,
+            name: None,
+            color: None,
+            visible: None,
+            layer: None,
+            instance_path: Vec::new(),
+        }
+    });
     let mut admitted = u64_from_index(ir.entity_count());
     let mut used = BTreeSet::new();
     let mut rejected = Vec::new();
@@ -452,9 +465,11 @@ pub(crate) fn display_geometry(
         let id = crate::ids::tessellation(member, index);
         match tessellation(id.clone(), mesh) {
             Ok(tessellation) => {
-                ir.model
-                    .tessellations
-                    .push(tessellation.with_of(of.clone()));
+                ir.model.tessellations.push(
+                    tessellation
+                        .with_of(of.clone())
+                        .with_source_object(source_object.clone()),
+                );
                 if let Some(base) = mesh.appearance {
                     used.insert(base);
                     ir.model.appearance_bindings.push(AppearanceBinding {

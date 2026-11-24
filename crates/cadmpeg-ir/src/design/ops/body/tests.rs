@@ -161,12 +161,15 @@ fn frame_construction() -> Construction<kinds::Frame> {
 }
 
 fn options() -> NativeOptions {
-    NativeOptions::from([(text("nx:single_output"), NativeOption::Bool(literal(true)))])
+    NativeOptions::from([(
+        crate::codec_name!("nx:single_output"),
+        NativeOption::Bool(literal(true)),
+    )])
 }
 
 fn settings() -> NativeOptions {
     NativeOptions::from([(
-        text("sldprt:flex_accuracy"),
+        crate::codec_name!("sldprt:flex_accuracy"),
         NativeOption::Integer(literal(3)),
     )])
 }

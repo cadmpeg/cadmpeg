@@ -1214,6 +1214,7 @@ fn ap203e1_reports_hidden_presentation_layer_visibility_loss() {
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#hidden").expect("identity grammar"),
         name: "hidden layer".into(),
+        parent: None,
         description: None,
         visible: Some(false),
         items: vec![PresentationItem::Body { body }.into()],
@@ -1387,7 +1388,7 @@ fn edge_without_vertices_is_reported_and_omitted() {
 fn subds_tessellations_and_source_associations_are_reported_as_losses() {
     let source_object = cadmpeg_ir::SourceObjectAssociation {
         geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Rhino,
+        format: cadmpeg_ir::codec_id!("rhino"),
         object_id: cadmpeg_core::text::NonBlankString::new("object-0")
             .expect("nonempty source identity"),
         name: None,

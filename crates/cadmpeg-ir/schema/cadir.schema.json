@@ -5882,7 +5882,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -5903,7 +5903,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -6010,6 +6010,31 @@
       "additionalProperties": false,
       "required": [
         "entity"
+      ]
+    },
+    "BoundedCurve": {
+      "description": "A curve carrier and the interval of its own parameter that a piece uses.",
+      "type": "object",
+      "properties": {
+        "carrier": {
+          "description": "The carrier.",
+          "$ref": "#/$defs/InlineCurve"
+        },
+        "range": {
+          "description": "The interval of the carrier's parameter. `None` is the carrier's whole\ndomain; a piece the source bounds inside that domain, an arc\nincluded, states it.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IncreasingParameterInterval"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "carrier"
       ]
     },
     "Bounds": {
@@ -7003,7 +7028,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -7020,7 +7045,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -8889,79 +8914,15 @@
         }
       ]
     },
-    "CodecFormat": {
-      "description": "Registry codec format id stored on a source-object association.\n\nThe variant set is the generated `FORMAT` constants. Serialize as the\nregistry string. Deserialize rejects any other string.",
-      "oneOf": [
-        {
-          "description": "`acis`",
-          "type": "string",
-          "const": "acis"
-        },
-        {
-          "description": "`catia`",
-          "type": "string",
-          "const": "catia"
-        },
-        {
-          "description": "`creo`",
-          "type": "string",
-          "const": "creo"
-        },
-        {
-          "description": "`f3d`",
-          "type": "string",
-          "const": "f3d"
-        },
-        {
-          "description": "`fcstd`",
-          "type": "string",
-          "const": "fcstd"
-        },
-        {
-          "description": "`iges`",
-          "type": "string",
-          "const": "iges"
-        },
-        {
-          "description": "`inventor`",
-          "type": "string",
-          "const": "inventor"
-        },
-        {
-          "description": "`nx`",
-          "type": "string",
-          "const": "nx"
-        },
-        {
-          "description": "`parasolid`",
-          "type": "string",
-          "const": "parasolid"
-        },
-        {
-          "description": "`rhino`",
-          "type": "string",
-          "const": "rhino"
-        },
-        {
-          "description": "`sat`",
-          "type": "string",
-          "const": "sat"
-        },
-        {
-          "description": "`sldprt`",
-          "type": "string",
-          "const": "sldprt"
-        },
-        {
-          "description": "`step`",
-          "type": "string",
-          "const": "step"
-        }
-      ]
-    },
     "CodecId": {
-      "description": "A format id of the dialect registry.",
-      "$ref": "#/$defs/NonBlankString"
+      "description": "A codec id: one or more lower-case ASCII letters and digits.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+$"
+    },
+    "CodecName": {
+      "description": "A codec id, `:`, and a name that holds a character that is not white space.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]"
     },
     "Coedge": {
       "description": "One use of an edge by a loop.\n\nCoedges form a loop ring through the owning [`Loop`] coedge order, and a\nradial ring around their shared edge through `radial_next`.",
@@ -9533,6 +9494,26 @@
         "a"
       ]
     },
+    "ColorAddressing": {
+      "description": "The mesh element that each value of a colour set belongs to.",
+      "oneOf": [
+        {
+          "description": "One value per vertex, in vertex order.",
+          "type": "string",
+          "const": "vertex"
+        },
+        {
+          "description": "One value per triangle corner, in triangle order.",
+          "type": "string",
+          "const": "corner"
+        },
+        {
+          "description": "One value per triangle, in triangle order.",
+          "type": "string",
+          "const": "triangle"
+        }
+      ]
+    },
     "Combine": {
       "description": "A Boolean combination of bodies.",
       "type": "object",
@@ -9542,7 +9523,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -9574,7 +9555,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -9776,7 +9757,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -9790,7 +9771,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -13016,7 +12997,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -13026,7 +13007,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -14214,7 +14195,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -14224,7 +14205,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -14256,7 +14237,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -14269,7 +14250,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -14856,7 +14837,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -14888,7 +14869,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -16331,7 +16312,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -16352,7 +16333,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -16389,7 +16370,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -16399,7 +16380,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -17113,7 +17094,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -17145,7 +17126,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -19276,7 +19257,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -19308,7 +19289,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -19444,7 +19425,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -19494,7 +19475,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -19827,6 +19808,17 @@
             "type": "string"
           }
         },
+        "base_view": {
+          "description": "The view a section or detail view is cut or magnified from.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DrawingId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "curves": {
           "description": "Curves in source order. Origin is the view origin; X points right and Y points up.\nCoordinates are millimetres before view scale and rotation.",
           "type": "array",
@@ -19839,6 +19831,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/NonzeroVector3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "edge_classes": {
+          "description": "The edge classes a view's hidden-line projection draws besides its\nvisible hard edges.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EdgeClasses"
             },
             {
               "type": "null"
@@ -20007,6 +20010,13 @@
             }
           ]
         },
+        "views": {
+          "description": "The drawing records a page shows or a view collection holds, in\nsource order, or in id order where the source's list is a set.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DrawingId"
+          }
+        },
         "visible": {
           "description": "Whether the source explicitly displays this drawing entity.",
           "type": [
@@ -20034,6 +20044,7 @@
         "runtime_type",
         "order",
         "relationships",
+        "views",
         "curves",
         "parameters",
         "assets"
@@ -20233,6 +20244,45 @@
           "description": "Extension-defined drawing object.",
           "type": "string",
           "const": "other"
+        }
+      ]
+    },
+    "DrawingPart": {
+      "description": "The part of a drawing record that a reference names.",
+      "oneOf": [
+        {
+          "description": "The curve at this index of the record's `curves`.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "curve"
+            },
+            "value": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A part the decoder did not resolve to a curve, such as a view\nvertex; the source's string stays in the reference's `native`.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "unread"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
         }
       ]
     },
@@ -20553,6 +20603,73 @@
         }
       },
       "additionalProperties": false
+    },
+    "EdgeClass": {
+      "description": "An edge class a hidden-line projection can draw.",
+      "oneOf": [
+        {
+          "description": "Visible edges between tangent faces.",
+          "type": "string",
+          "const": "visible_smooth"
+        },
+        {
+          "description": "Visible seam edges of closed faces.",
+          "type": "string",
+          "const": "visible_seam"
+        },
+        {
+          "description": "Visible iso-parameter lines.",
+          "type": "string",
+          "const": "visible_iso"
+        },
+        {
+          "description": "Hidden edges between faces that meet at an angle.",
+          "type": "string",
+          "const": "hidden_hard"
+        },
+        {
+          "description": "Hidden edges between tangent faces.",
+          "type": "string",
+          "const": "hidden_smooth"
+        },
+        {
+          "description": "Hidden seam edges of closed faces.",
+          "type": "string",
+          "const": "hidden_seam"
+        },
+        {
+          "description": "Hidden iso-parameter lines.",
+          "type": "string",
+          "const": "hidden_iso"
+        }
+      ]
+    },
+    "EdgeClasses": {
+      "description": "The edge classes a hidden-line projection draws besides its visible hard\nedges, which every projection draws.",
+      "type": "object",
+      "properties": {
+        "drawn": {
+          "description": "Each class drawn; a class the set does not hold is not drawn.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EdgeClass"
+          },
+          "uniqueItems": true
+        },
+        "iso_count": {
+          "description": "The number of iso-parameter lines.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "drawn"
+      ]
     },
     "EdgeEnds": {
       "description": "The start and end vertices of an edge.",
@@ -20893,7 +21010,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -20907,7 +21024,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -22457,7 +22574,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -22478,7 +22595,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -22714,7 +22831,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -22735,7 +22852,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -22801,7 +22918,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -22852,7 +22969,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -30159,14 +30276,14 @@
               "properties": {
                 "kind": {
                   "description": "The operation's kind, written `codec:kind`.",
-                  "$ref": "#/$defs/NonBlankString"
+                  "$ref": "#/$defs/CodecName"
                 },
                 "native_options": {
                   "description": "Options whose meaning is not established.",
                   "type": "object",
                   "additionalProperties": false,
                   "patternProperties": {
-                    "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+                    "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
                       "$ref": "#/$defs/NativeOption"
                     }
                   }
@@ -30176,7 +30293,7 @@
                   "type": "object",
                   "additionalProperties": false,
                   "patternProperties": {
-                    "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+                    "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
                       "$ref": "#/$defs/NativeOption"
                     }
                   }
@@ -30983,7 +31100,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -31000,7 +31117,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -32040,7 +32157,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -32050,7 +32167,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -32402,7 +32519,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -32412,7 +32529,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -34343,7 +34460,7 @@
               "const": "other"
             },
             "value": {
-              "$ref": "#/$defs/NonBlankString"
+              "$ref": "#/$defs/CodecName"
             }
           },
           "additionalProperties": false,
@@ -34949,7 +35066,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -34974,7 +35091,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -35632,7 +35749,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -35650,7 +35767,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -37278,7 +37395,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -37303,7 +37420,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -39153,7 +39270,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -39180,7 +39297,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -39233,6 +39350,494 @@
       "required": [
         "parameter",
         "step"
+      ]
+    },
+    "InlineCurve": {
+      "description": "A curve carrier held outside a `Topology`: a leaf carrier, or an inline\nplacement of one. It names no record.",
+      "oneOf": [
+        {
+          "description": "Infinite line.",
+          "type": "object",
+          "properties": {
+            "direction": {
+              "description": "Line direction.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "kind": {
+              "type": "string",
+              "const": "line"
+            },
+            "origin": {
+              "description": "Line origin.",
+              "$ref": "#/$defs/Point3"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "origin",
+            "direction"
+          ]
+        },
+        {
+          "description": "Full circle.",
+          "type": "object",
+          "properties": {
+            "axis": {
+              "description": "Frame axis direction.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "center": {
+              "description": "Circle center.",
+              "$ref": "#/$defs/Point3"
+            },
+            "kind": {
+              "type": "string",
+              "const": "circle"
+            },
+            "radius": {
+              "description": "Circle radius.",
+              "type": "number",
+              "format": "double"
+            },
+            "ref_direction": {
+              "description": "Frame reference direction, perpendicular to `axis`.",
+              "$ref": "#/$defs/Vector3"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "center",
+            "axis",
+            "ref_direction",
+            "radius"
+          ]
+        },
+        {
+          "description": "Ellipse.",
+          "type": "object",
+          "properties": {
+            "axis": {
+              "description": "Frame axis direction.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "center": {
+              "description": "Ellipse center.",
+              "$ref": "#/$defs/Point3"
+            },
+            "kind": {
+              "type": "string",
+              "const": "ellipse"
+            },
+            "major_direction": {
+              "description": "Major-axis direction, perpendicular to `axis`.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "major_radius": {
+              "description": "Major semiaxis radius.",
+              "type": "number",
+              "format": "double"
+            },
+            "minor_radius": {
+              "description": "Minor semiaxis radius.",
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "center",
+            "axis",
+            "major_direction",
+            "major_radius",
+            "minor_radius"
+          ]
+        },
+        {
+          "description": "Parabola in STEP conic form.",
+          "type": "object",
+          "properties": {
+            "axis": {
+              "description": "Frame axis direction.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "focal_distance": {
+              "description": "Distance from the vertex to the focus.",
+              "type": "number",
+              "format": "double"
+            },
+            "kind": {
+              "type": "string",
+              "const": "parabola"
+            },
+            "major_direction": {
+              "description": "Major-axis direction, perpendicular to `axis`.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "vertex": {
+              "description": "Parabola vertex.",
+              "$ref": "#/$defs/Point3"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "vertex",
+            "axis",
+            "major_direction",
+            "focal_distance"
+          ]
+        },
+        {
+          "description": "Hyperbola in STEP conic form.",
+          "type": "object",
+          "properties": {
+            "axis": {
+              "description": "Frame axis direction.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "center": {
+              "description": "Hyperbola center.",
+              "$ref": "#/$defs/Point3"
+            },
+            "kind": {
+              "type": "string",
+              "const": "hyperbola"
+            },
+            "major_direction": {
+              "description": "Major-axis direction, perpendicular to `axis`.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "major_radius": {
+              "description": "Transverse semiaxis radius.",
+              "type": "number",
+              "format": "double"
+            },
+            "minor_radius": {
+              "description": "Conjugate semiaxis radius.",
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "center",
+            "axis",
+            "major_direction",
+            "major_radius",
+            "minor_radius"
+          ]
+        },
+        {
+          "description": "Free-form NURBS curve.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "nurbs"
+            }
+          },
+          "$ref": "#/$defs/NurbsCurve",
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "Source-native polyline with an explicit chordal error bound.",
+          "type": "object",
+          "properties": {
+            "chordal_deflection": {
+              "description": "Maximum chordal deviation recorded by the source.",
+              "type": "number",
+              "format": "double"
+            },
+            "kind": {
+              "type": "string",
+              "const": "polyline"
+            },
+            "samples": {
+              "description": "The polyline's sample rows.",
+              "$ref": "#/$defs/PolylineSamples"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "samples",
+            "chordal_deflection"
+          ]
+        },
+        {
+          "description": "Exact affine placement of an inline basis curve.",
+          "type": "object",
+          "properties": {
+            "basis": {
+              "description": "Unplaced basis geometry with unchanged parameterization.",
+              "$ref": "#/$defs/InlineCurve"
+            },
+            "kind": {
+              "type": "string",
+              "const": "transformed"
+            },
+            "transform": {
+              "description": "Affine map from basis coordinates to model coordinates.",
+              "$ref": "#/$defs/Transform"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "basis",
+            "transform"
+          ]
+        }
+      ]
+    },
+    "InlineSurface": {
+      "description": "A surface carrier held outside a `Topology`: a leaf carrier, or an inline\nplacement of one. It names no record.",
+      "oneOf": [
+        {
+          "description": "Infinite plane.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "plane"
+            },
+            "normal": {
+              "description": "Plane normal.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "origin": {
+              "description": "Plane origin.",
+              "$ref": "#/$defs/Point3"
+            },
+            "u_axis": {
+              "description": "First in-plane axis, perpendicular to `normal`.",
+              "$ref": "#/$defs/Vector3"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "origin",
+            "normal",
+            "u_axis"
+          ]
+        },
+        {
+          "description": "Right circular cylinder.",
+          "type": "object",
+          "properties": {
+            "axis": {
+              "description": "Frame axis direction.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "kind": {
+              "type": "string",
+              "const": "cylinder"
+            },
+            "origin": {
+              "description": "Cylinder frame origin.",
+              "$ref": "#/$defs/Point3"
+            },
+            "radius": {
+              "description": "Cylinder radius.",
+              "type": "number",
+              "format": "double"
+            },
+            "ref_direction": {
+              "description": "Frame reference direction, perpendicular to `axis`.",
+              "$ref": "#/$defs/Vector3"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "origin",
+            "axis",
+            "ref_direction",
+            "radius"
+          ]
+        },
+        {
+          "description": "Right elliptical cone.",
+          "type": "object",
+          "properties": {
+            "axis": {
+              "description": "Frame axis direction.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "half_angle": {
+              "description": "Half angle of the cone, in radians.",
+              "type": "number",
+              "format": "double"
+            },
+            "kind": {
+              "type": "string",
+              "const": "cone"
+            },
+            "origin": {
+              "description": "Cone frame origin.",
+              "$ref": "#/$defs/Point3"
+            },
+            "radius": {
+              "description": "Cross-section radius at the origin.",
+              "type": "number",
+              "format": "double"
+            },
+            "ratio": {
+              "description": "Ratio of the minor to the major cross-section radius.",
+              "type": "number",
+              "format": "double"
+            },
+            "ref_direction": {
+              "description": "Frame reference direction, perpendicular to `axis`.",
+              "$ref": "#/$defs/Vector3"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "origin",
+            "axis",
+            "ref_direction",
+            "radius",
+            "ratio",
+            "half_angle"
+          ]
+        },
+        {
+          "description": "Sphere.",
+          "type": "object",
+          "properties": {
+            "axis": {
+              "description": "Frame axis direction.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "center": {
+              "description": "Sphere center.",
+              "$ref": "#/$defs/Point3"
+            },
+            "kind": {
+              "type": "string",
+              "const": "sphere"
+            },
+            "radius": {
+              "description": "Signed sphere radius.",
+              "type": "number",
+              "format": "double"
+            },
+            "ref_direction": {
+              "description": "Frame reference direction, perpendicular to `axis`.",
+              "$ref": "#/$defs/Vector3"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "center",
+            "axis",
+            "ref_direction",
+            "radius"
+          ]
+        },
+        {
+          "description": "Torus.",
+          "type": "object",
+          "properties": {
+            "axis": {
+              "description": "Frame axis direction.",
+              "$ref": "#/$defs/Vector3"
+            },
+            "center": {
+              "description": "Torus center.",
+              "$ref": "#/$defs/Point3"
+            },
+            "kind": {
+              "type": "string",
+              "const": "torus"
+            },
+            "major_radius": {
+              "description": "Distance from the center to the tube center.",
+              "type": "number",
+              "format": "double"
+            },
+            "minor_radius": {
+              "description": "Signed tube radius.",
+              "type": "number",
+              "format": "double"
+            },
+            "ref_direction": {
+              "description": "Frame reference direction, perpendicular to `axis`.",
+              "$ref": "#/$defs/Vector3"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "center",
+            "axis",
+            "ref_direction",
+            "major_radius",
+            "minor_radius"
+          ]
+        },
+        {
+          "description": "Free-form NURBS surface.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "nurbs"
+            }
+          },
+          "$ref": "#/$defs/NurbsSurface",
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "Source-native polygonal surface with an explicit chordal error bound.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "polygonal"
+            }
+          },
+          "$ref": "#/$defs/PolygonalSurface",
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "Exact affine placement of an inline basis surface.",
+          "type": "object",
+          "properties": {
+            "basis": {
+              "description": "Unplaced basis geometry with unchanged parameterization.",
+              "$ref": "#/$defs/InlineSurface"
+            },
+            "kind": {
+              "type": "string",
+              "const": "transformed"
+            },
+            "transform": {
+              "description": "Affine map from basis coordinates to model coordinates.",
+              "$ref": "#/$defs/Transform"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "basis",
+            "transform"
+          ]
+        }
       ]
     },
     "InnerWireTaper": {
@@ -40289,7 +40894,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -40299,7 +40904,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -42174,7 +42779,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -42199,7 +42804,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -45060,10 +45665,10 @@
           ]
         },
         "scale": {
-          "description": "A uniform scale of the copy.",
+          "description": "The uniform factor the source stores as such, applied about the\nsource definition's origin before `transform`.",
           "anyOf": [
             {
-              "$ref": "#/$defs/FiniteReal"
+              "$ref": "#/$defs/PositiveReal"
             },
             {
               "type": "null"
@@ -45340,7 +45945,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -45365,7 +45970,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -47438,6 +48043,28 @@
         "from"
       ]
     },
+    "MeshColors": {
+      "description": "The colours a source stores per element of a mesh.",
+      "type": "object",
+      "properties": {
+        "addressing": {
+          "description": "The mesh element of each value.",
+          "$ref": "#/$defs/ColorAddressing"
+        },
+        "values": {
+          "description": "The values: one per element `addressing` names.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Color"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "addressing",
+        "values"
+      ]
+    },
     "MeshConversion": {
       "description": "Ordered inputs and construction method of a mesh-to-body conversion.",
       "type": "object",
@@ -47652,7 +48279,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -47666,7 +48293,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -48768,7 +49395,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -48793,7 +49420,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -49866,7 +50493,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -49876,7 +50503,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -51503,7 +52130,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -51524,7 +52151,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -53665,6 +54292,20 @@
             "kind",
             "value"
           ]
+        },
+        {
+          "description": "The source holds the parameter with no value and no definition of it.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "unset"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
         }
       ]
     },
@@ -54517,7 +55158,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -54564,7 +55205,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -55258,7 +55899,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -55272,7 +55913,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -58372,7 +59013,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -58404,7 +59045,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -58427,7 +59068,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -58444,7 +59085,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -59359,7 +60000,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -59376,7 +60017,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -61180,6 +61821,17 @@
           "description": "Layer name.",
           "type": "string"
         },
+        "parent": {
+          "description": "The layer this layer is a sublayer of. A hidden layer hides the items\nof the layers below it.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LayerId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "visible": {
           "description": "Explicit layer visibility; `false` means the layer is hidden.",
           "type": [
@@ -61332,7 +61984,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -61361,7 +62013,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -65651,8 +66303,15 @@
       "type": "object",
       "properties": {
         "geometry": {
-          "description": "The curve.",
-          "$ref": "#/$defs/SolvedCurveGeometry"
+          "description": "The curve. `None` where the decoder did not read its carrier.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BoundedCurve"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "source": {
           "description": "The model entities the curve was taken from, where the source records\nthem.",
@@ -65666,10 +66325,7 @@
           ]
         }
       },
-      "additionalProperties": false,
-      "required": [
-        "geometry"
-      ]
+      "additionalProperties": false
     },
     "ProfileFit": {
       "description": "An offset of a profile in its plane before the operation uses it. A\npositive value moves a loop outward from itself, so a region grows and its\nholes grow. An offset of 0 states no fit.",
@@ -66456,7 +67112,7 @@
           ]
         },
         {
-          "description": "A source propagation whose meaning is not established.",
+          "description": "A source propagation whose meaning is not established, written\n`codec:propagation`.",
           "type": "object",
           "properties": {
             "kind": {
@@ -66464,7 +67120,7 @@
               "const": "native"
             },
             "value": {
-              "$ref": "#/$defs/NonBlankString"
+              "$ref": "#/$defs/CodecName"
             }
           },
           "additionalProperties": false,
@@ -67696,6 +68352,81 @@
           ]
         },
         {
+          "description": "A drawing record, as a whole or in part.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "drawing"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "drawing": {
+                  "description": "The drawing record.",
+                  "$ref": "#/$defs/DrawingId"
+                },
+                "part": {
+                  "description": "The part of the record; `None` names the record as a whole.",
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/DrawingPart"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "drawing"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A semantic annotation.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "annotation"
+            },
+            "value": {
+              "$ref": "#/$defs/SemanticAnnotationId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A PMI annotation.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "pmi"
+            },
+            "value": {
+              "$ref": "#/$defs/PmiId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
           "description": "An object of a document that was not read.",
           "type": "object",
           "properties": {
@@ -67729,7 +68460,7 @@
           ]
         },
         {
-          "description": "A target the decoder cannot resolve to an object the document holds.",
+          "description": "A target the decoder did not resolve, or one that no other arm names\n(a mesh, a record kept only as native).",
           "type": "object",
           "properties": {
             "kind": {
@@ -68066,7 +68797,7 @@
               "const": "native"
             },
             "value": {
-              "$ref": "#/$defs/NonBlankString"
+              "$ref": "#/$defs/CodecName"
             }
           },
           "additionalProperties": false,
@@ -68215,7 +68946,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -68229,7 +68960,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -69356,7 +70087,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -69374,7 +70105,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -69634,7 +70365,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -69659,7 +70390,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -69986,7 +70717,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -69996,7 +70727,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -73155,7 +73886,7 @@
               "const": "native"
             },
             "value": {
-              "$ref": "#/$defs/NonBlankString"
+              "$ref": "#/$defs/CodecName"
             }
           },
           "additionalProperties": false,
@@ -73734,7 +74465,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -73744,7 +74475,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -75304,7 +76035,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -75325,7 +76056,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -75563,7 +76294,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -75577,7 +76308,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -75897,7 +76628,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -75926,7 +76657,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -76171,7 +76902,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -76196,7 +76927,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -76242,7 +76973,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -76267,7 +76998,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -78057,7 +78788,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -78085,7 +78816,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -78143,7 +78874,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -78171,7 +78902,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -83974,7 +84705,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -83984,7 +84715,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -84014,8 +84745,8 @@
           ]
         },
         "format": {
-          "description": "Source format identifier.",
-          "$ref": "#/$defs/CodecFormat"
+          "description": "The codec of the source format.",
+          "$ref": "#/$defs/CodecId"
         },
         "geometry_role": {
           "description": "Source ownership, when it can be established independently of projection.",
@@ -84660,7 +85391,7 @@
           ]
         },
         {
-          "description": "A curve carrier with its parameter range.",
+          "description": "A curve carrier with the interval of its parameter that the piece\nuses.",
           "type": "object",
           "properties": {
             "kind": {
@@ -84668,29 +85399,7 @@
               "const": "bounded"
             },
             "value": {
-              "type": "object",
-              "properties": {
-                "carrier": {
-                  "description": "The carrier.",
-                  "$ref": "#/$defs/SolvedCurveGeometry"
-                },
-                "range": {
-                  "description": "The parameter range. `None` is the full curve.",
-                  "type": [
-                    "array",
-                    "null"
-                  ],
-                  "items": {
-                    "$ref": "#/$defs/FiniteReal"
-                  },
-                  "maxItems": 2,
-                  "minItems": 2
-                }
-              },
-              "additionalProperties": false,
-              "required": [
-                "carrier"
-              ]
+              "$ref": "#/$defs/BoundedCurve"
             }
           },
           "additionalProperties": false,
@@ -84771,7 +85480,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -84796,7 +85505,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -86141,7 +86850,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -86151,7 +86860,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -88627,10 +89336,10 @@
               ]
             },
             "scale": {
-              "description": "A uniform scale of the copy.",
+              "description": "The uniform factor the source stores as such, applied about the\nsource definition's origin before `transform`.",
               "anyOf": [
                 {
-                  "$ref": "#/$defs/FiniteReal"
+                  "$ref": "#/$defs/PositiveReal"
                 },
                 {
                   "type": "null"
@@ -89969,7 +90678,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -90002,7 +90711,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -92580,7 +93289,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -92597,7 +93306,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -92689,6 +93398,17 @@
             "null"
           ],
           "format": "double"
+        },
+        "colors": {
+          "description": "Colours the source stores per vertex, corner, or triangle.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MeshColors"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "feature_edges": {
           "description": "Undirected geometric feature edges.",
@@ -93773,7 +94493,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -93783,7 +94503,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -93990,7 +94710,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -94000,7 +94720,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -95729,7 +96449,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -95739,7 +96459,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -96162,7 +96882,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -97145,7 +97865,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -97155,7 +97875,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -97181,7 +97901,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -97191,7 +97911,7 @@
           "type": "object",
           "additionalProperties": false,
           "patternProperties": {
-            "[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
+            "^[a-z0-9]+:[\\s\\S]*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]": {
               "$ref": "#/$defs/NativeOption"
             }
           }
@@ -99630,7 +100350,7 @@
           "description": "The chain curves.",
           "type": "array",
           "items": {
-            "$ref": "#/$defs/SolvedCurveGeometry"
+            "$ref": "#/$defs/InlineCurve"
           }
         },
         "direction": {
@@ -99682,7 +100402,7 @@
           "description": "A surface.",
           "anyOf": [
             {
-              "$ref": "#/$defs/SolvedSurfaceGeometry"
+              "$ref": "#/$defs/InlineSurface"
             },
             {
               "type": "null"

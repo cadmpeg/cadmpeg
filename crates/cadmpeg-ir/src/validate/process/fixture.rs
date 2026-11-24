@@ -9,7 +9,7 @@ use cadmpeg_core::text::NonBlankString;
 
 use crate::design::dimension::{Dimension, ParamRef, ParameterRef, RefTarget};
 use crate::design::evaluation::{EvaluationStatus, StateBase, StateDelta};
-use crate::design::names::{CodecId, NativeName, NativeNameValue};
+use crate::design::names::{NativeName, NativeNameValue};
 use crate::design::parameter::ParameterValue;
 use crate::design::selection::{Anchor, OccurrencePath, PathStep, Picks, Selection, StepRef};
 use crate::design::units::{Quantity, ValueKind};
@@ -52,7 +52,7 @@ pub(super) fn text(value: &str) -> NonBlankString {
 
 pub(super) fn native(value: &str) -> NativeName {
     NativeName {
-        codec: CodecId::from(text("f3d")),
+        codec: crate::codec_id!("f3d"),
         value: NativeNameValue::Text(text(value)),
     }
 }
