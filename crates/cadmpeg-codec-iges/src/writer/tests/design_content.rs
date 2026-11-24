@@ -17,7 +17,7 @@ use crate::test_support::test_solids_and_structure::explicit_tetrahedron_solid_f
 use crate::{IgesCodec, IgesVersion};
 
 /// A tetrahedron solid as a document of another codec states it: with no
-/// IGES native records.
+/// IGES native records and no entity labels or levels.
 fn tetrahedron() -> CadIr {
     let mut ir = IgesCodec
         .decode(
@@ -28,6 +28,8 @@ fn tetrahedron() -> CadIr {
         .ir()
         .clone();
     ir.native = cadmpeg_ir::native::Native::default();
+    ir.model.attributes.clear();
+    ir.model.presentation_layers.clear();
     ir
 }
 

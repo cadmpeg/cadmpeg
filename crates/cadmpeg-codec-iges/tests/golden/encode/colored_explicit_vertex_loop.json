@@ -113,6 +113,30 @@
         },
         "message": "the iges write does not represent model arena `appearance_bindings`: 2 record(s) omitted: iges:model:appearance-binding#body-D11, iges:model:appearance-binding#face-D9",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "arena.omitted",
+            "kind": "attributes_not_transferred",
+            "namespace": "export"
+          }
+        },
+        "message": "the iges write does not represent model arena `attributes`: 1 record(s) omitted",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "arena.omitted",
+            "kind": "attributes_not_transferred",
+            "namespace": "export"
+          }
+        },
+        "message": "the iges write does not represent model arena `presentation_layers`: 1 record(s) omitted",
+        "severity": "warning"
       }
     ],
     "notes": [

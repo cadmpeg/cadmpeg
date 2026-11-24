@@ -914,3 +914,80 @@ fn standalone_support_points_and_curves_are_withheld_with_counted_export_loss() 
     );
     assert!(decoded.ir().geometry.curves.is_empty());
 }
+
+#[test]
+fn free_curve_decodes_with_its_layer_and_display_and_rewrites() {
+    let mut ir = CadIr::empty();
+    ir.geometry.curves.push(cadmpeg_ir::geometry::Curve {
+        parameter_range: None,
+        id: cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#circle").expect("identity grammar"),
+        geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .unwrap(),
+        )),
+        source_object: None,
+        native_ref: None,
+    });
+    let write = |ir: &CadIr| {
+        let mut bytes = Vec::new();
+        RhinoCodec
+            .plan(
+                EncodeInput::new(ir, None),
+                TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+            )
+            .and_then(|plan| plan.write_to(&mut bytes))
+            .map(|report| (bytes, report.losses))
+    };
+    let decoded = RhinoCodec
+        .decode(
+            &mut Cursor::new(write(&ir).expect("a free curve is writable").0),
+            &DecodeOptions::default(),
+        )
+        .expect("required invariant");
+    let decoded = decoded.ir();
+    let curve = decoded.geometry.curves[0].id.clone();
+
+    let [layer] = decoded.model.presentation_layers.as_slice() else {
+        panic!("{:#?}", decoded.model.presentation_layers);
+    };
+    assert_eq!(
+        layer
+            .items
+            .iter()
+            .map(|item| item.entity.clone())
+            .collect::<Vec<_>>(),
+        [cadmpeg_ir::presentation::PresentationItem::Curve {
+            curve: curve.clone()
+        }]
+    );
+    assert!(layer.native_ref.is_some());
+
+    let [binding] = decoded.model.appearance_bindings.as_slice() else {
+        panic!("{:#?}", decoded.model.appearance_bindings);
+    };
+    assert_eq!(
+        binding.target.entity,
+        cadmpeg_ir::appearance::AppearanceTarget::Curve(curve)
+    );
+    assert_eq!(binding.visible, Some(true));
+    assert!(decoded
+        .model
+        .appearances
+        .iter()
+        .any(|appearance| appearance.id == binding.appearance && appearance.base_color.is_some()));
+
+    let (_, losses) = write(decoded).expect("the writer omits the display it cannot write");
+    for arena in ["presentation_layers", "appearance_bindings", "appearances"] {
+        assert!(
+            losses
+                .iter()
+                .any(|loss| loss.message.contains(&format!("model arena `{arena}`"))),
+            "{arena}: {losses:#?}"
+        );
+    }
+}
