@@ -140,7 +140,56 @@
       "appearances": [],
       "articulations": [],
       "assets": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "iges:model:attribute#curve.D1",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D1"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "MEASURED"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#point.D1-end",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "point",
+              "value": "iges:model:point#D1-end"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "MEASURED"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#point.D1-start",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "point",
+              "value": "iges:model:point#D1-start"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "MEASURED"
+            }
+          ]
+        }
+      ],
       "colliders": [],
       "declared_measures": [],
       "drawings": [],
@@ -151,7 +200,32 @@
       "pmi": [],
       "point_clouds": [],
       "presentation_documents": [],
-      "presentation_layers": [],
+      "presentation_layers": [
+        {
+          "id": "iges:model:layer#0",
+          "items": [
+            {
+              "entity": {
+                "curve": "iges:model:curve#D1",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "kind": "point",
+                "point": "iges:model:point#D1-start"
+              }
+            },
+            {
+              "entity": {
+                "kind": "point",
+                "point": "iges:model:point#D1-end"
+              }
+            }
+          ],
+          "name": "0"
+        }
+      ],
       "product_definitions": [
         {
           "bodies": [

@@ -565,7 +565,120 @@
       "appearances": [],
       "articulations": [],
       "assets": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "iges:model:attribute#curve.D11",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D11"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "INPCURVE"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D3",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D3"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "OUTMODEL"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D5",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D5"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "OUTPCURV"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D9",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D9"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "INMODEL"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#point.D15:0:0",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "point",
+              "value": "iges:model:point#D15:0:0"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "ANNULUS"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#point.D15:1:0",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "point",
+              "value": "iges:model:point#D15:1:0"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "ANNULUS"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#surface.D1",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "surface",
+              "value": "iges:model:surface#D1"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "PLANE"
+            }
+          ]
+        }
+      ],
       "colliders": [],
       "declared_measures": [],
       "drawings": [],
@@ -576,7 +689,68 @@
       "pmi": [],
       "point_clouds": [],
       "presentation_documents": [],
-      "presentation_layers": [],
+      "presentation_layers": [
+        {
+          "id": "iges:model:layer#0",
+          "items": [
+            {
+              "entity": {
+                "body": "iges:model:body#D15",
+                "kind": "body"
+              }
+            },
+            {
+              "entity": {
+                "face": "iges:model:face#D15",
+                "kind": "face"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D3",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D5",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D9",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D11",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "kind": "surface",
+                "surface": "iges:model:surface#D1"
+              }
+            },
+            {
+              "entity": {
+                "kind": "point",
+                "point": "iges:model:point#D15:0:0"
+              }
+            },
+            {
+              "entity": {
+                "kind": "point",
+                "point": "iges:model:point#D15:1:0"
+              }
+            }
+          ],
+          "name": "0"
+        }
+      ],
       "product_definitions": [
         {
           "bodies": [

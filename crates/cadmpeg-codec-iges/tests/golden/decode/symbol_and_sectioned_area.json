@@ -258,7 +258,120 @@
       "appearances": [],
       "articulations": [],
       "assets": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "iges:model:attribute#curve.D11",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D11"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "ISLAND"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D3",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D3"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "SYMGEOM"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D9",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D9"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "BOUNDARY"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#point.D11-end",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "point",
+              "value": "iges:model:point#D11-end"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "ISLAND"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#point.D11-start",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "point",
+              "value": "iges:model:point#D11-start"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "ISLAND"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#point.D9-end",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "point",
+              "value": "iges:model:point#D9-end"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "BOUNDARY"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#point.D9-start",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "point",
+              "value": "iges:model:point#D9-start"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "BOUNDARY"
+            }
+          ]
+        }
+      ],
       "colliders": [],
       "declared_measures": [],
       "drawings": [],
@@ -269,7 +382,56 @@
       "pmi": [],
       "point_clouds": [],
       "presentation_documents": [],
-      "presentation_layers": [],
+      "presentation_layers": [
+        {
+          "id": "iges:model:layer#0",
+          "items": [
+            {
+              "entity": {
+                "curve": "iges:model:curve#D3",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D9",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D11",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "kind": "point",
+                "point": "iges:model:point#D9-start"
+              }
+            },
+            {
+              "entity": {
+                "kind": "point",
+                "point": "iges:model:point#D9-end"
+              }
+            },
+            {
+              "entity": {
+                "kind": "point",
+                "point": "iges:model:point#D11-start"
+              }
+            },
+            {
+              "entity": {
+                "kind": "point",
+                "point": "iges:model:point#D11-end"
+              }
+            }
+          ],
+          "name": "0"
+        }
+      ],
       "product_definitions": [
         {
           "bodies": [

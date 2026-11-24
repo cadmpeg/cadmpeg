@@ -379,7 +379,152 @@
       "appearances": [],
       "articulations": [],
       "assets": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "iges:model:attribute#curve.D11",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D11"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE3"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D13",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D13"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE4"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D7",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D7"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE1"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D9",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D9"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "EDGE2"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#point.D23:D15:1",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "point",
+              "value": "iges:model:point#D23:D15:1"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "SHELL"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#point.D23:D15:2",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "point",
+              "value": "iges:model:point#D23:D15:2"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "SHELL"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#point.D23:D15:3",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "point",
+              "value": "iges:model:point#D23:D15:3"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "SHELL"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#point.D23:D15:4",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "point",
+              "value": "iges:model:point#D23:D15:4"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "SHELL"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#surface.D5",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "surface",
+              "value": "iges:model:surface#D5"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "SURFACE"
+            }
+          ]
+        }
+      ],
       "colliders": [],
       "declared_measures": [],
       "drawings": [],
@@ -390,7 +535,80 @@
       "pmi": [],
       "point_clouds": [],
       "presentation_documents": [],
-      "presentation_layers": [],
+      "presentation_layers": [
+        {
+          "id": "iges:model:layer#0",
+          "items": [
+            {
+              "entity": {
+                "body": "iges:model:body#D23",
+                "kind": "body"
+              }
+            },
+            {
+              "entity": {
+                "face": "iges:model:face#D23:D21",
+                "kind": "face"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D7",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D9",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D11",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D13",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "kind": "surface",
+                "surface": "iges:model:surface#D5"
+              }
+            },
+            {
+              "entity": {
+                "kind": "point",
+                "point": "iges:model:point#D23:D15:1"
+              }
+            },
+            {
+              "entity": {
+                "kind": "point",
+                "point": "iges:model:point#D23:D15:2"
+              }
+            },
+            {
+              "entity": {
+                "kind": "point",
+                "point": "iges:model:point#D23:D15:3"
+              }
+            },
+            {
+              "entity": {
+                "kind": "point",
+                "point": "iges:model:point#D23:D15:4"
+              }
+            }
+          ],
+          "name": "0"
+        }
+      ],
       "product_definitions": [
         {
           "bodies": [

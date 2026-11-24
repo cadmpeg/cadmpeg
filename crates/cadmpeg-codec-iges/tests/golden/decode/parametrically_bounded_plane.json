@@ -338,7 +338,72 @@
       "appearances": [],
       "articulations": [],
       "assets": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "iges:model:attribute#curve.D3",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D3"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "MODEL"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#curve.D5",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "curve",
+              "value": "iges:model:curve#D5"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "PCURVE"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#point.D9:0:0",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "point",
+              "value": "iges:model:point#D9:0:0"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "BOUNDED"
+            }
+          ]
+        },
+        {
+          "id": "iges:model:attribute#surface.D1",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "surface",
+              "value": "iges:model:surface#D1"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "PLANE"
+            }
+          ]
+        }
+      ],
       "colliders": [],
       "declared_measures": [],
       "drawings": [],
@@ -349,7 +414,50 @@
       "pmi": [],
       "point_clouds": [],
       "presentation_documents": [],
-      "presentation_layers": [],
+      "presentation_layers": [
+        {
+          "id": "iges:model:layer#0",
+          "items": [
+            {
+              "entity": {
+                "body": "iges:model:body#D9",
+                "kind": "body"
+              }
+            },
+            {
+              "entity": {
+                "face": "iges:model:face#D9",
+                "kind": "face"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D3",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "curve": "iges:model:curve#D5",
+                "kind": "curve"
+              }
+            },
+            {
+              "entity": {
+                "kind": "surface",
+                "surface": "iges:model:surface#D1"
+              }
+            },
+            {
+              "entity": {
+                "kind": "point",
+                "point": "iges:model:point#D9:0:0"
+              }
+            }
+          ],
+          "name": "0"
+        }
+      ],
       "product_definitions": [
         {
           "bodies": [
