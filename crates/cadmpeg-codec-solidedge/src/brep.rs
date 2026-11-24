@@ -195,7 +195,8 @@ fn read_edge(nodes: &Nodes<'_>, edge: u32) -> Result<EdgeRead, &'static str> {
         .and_then(|index| nodes.get(&index))
         .copied()
         .ok_or("edge has no resolved fin")?;
-    let (first, previous) = loop_fin(nodes, halfedge).ok_or("edge fin has no resolved predecessor")?;
+    let (first, previous) =
+        loop_fin(nodes, halfedge).ok_or("edge fin has no resolved predecessor")?;
     let endpoints = match (ptr(previous, "vertex"), ptr(first, "vertex")) {
         (Some(start), Some(end)) => {
             let sense = sense(first).ok_or("edge fin has an invalid sense")?;
