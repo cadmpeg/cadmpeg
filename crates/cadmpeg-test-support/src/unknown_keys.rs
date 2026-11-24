@@ -464,7 +464,11 @@ pub(crate) fn object_at_mut<'a>(
 /// * `/model/view_presentations/#/properties` - `ViewPresentation::properties`;
 /// * `/source/identity/dialects/primary/declared` and
 ///   `/source/identity/dialects/extra/#/declared` - `DialectMatch::declared`,
-///   the version fields the source declared verbatim.
+///   the version fields the source declared verbatim;
+/// * `/model/product_definitions/#/storage/source/attributes`,
+///   `/model/product_definitions/#/storage/source/identity/dialects/primary/declared`
+///   and `.../extra/#/declared` - the same `SourceMeta` maps, on the source
+///   record of a component file an assembly decode merged in.
 ///
 /// Every other accepting node is a failure.
 pub const FREE_FORM_SHAPES: &[&str] = &[
@@ -481,6 +485,9 @@ pub const FREE_FORM_SHAPES: &[&str] = &[
     "/model/presentation_documents/#/states/#/attributes",
     "/model/presentation_documents/#/states/#/kind/value/properties",
     "/model/product_definitions/#/bom_properties",
+    "/model/product_definitions/#/storage/source/attributes",
+    "/model/product_definitions/#/storage/source/identity/dialects/extra/#/declared",
+    "/model/product_definitions/#/storage/source/identity/dialects/primary/declared",
     "/model/semantic_annotations/#/parameters",
     "/model/semantic_annotations/#/references",
     "/model/sketch_constraints/#/definition/native_properties",
