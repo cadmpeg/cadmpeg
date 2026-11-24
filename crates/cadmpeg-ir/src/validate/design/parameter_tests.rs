@@ -105,6 +105,33 @@ fn names_are_unique_per_scope_and_owner() {
 }
 
 #[test]
+fn a_parameter_a_sketch_dimension_binds_needs_no_name() {
+    let mut ir = with_width();
+    ir.design.parameters[0].name = None;
+    assert_finding(&ir, "states no name but is no spreadsheet cell's parameter");
+    ir.design.sketch_constraints.push(SketchConstraint {
+        id: id("sketch-constraint", "width"),
+        sketch: id("sketch", "profile"),
+        relation: SketchRelation::Weight {
+            pole: id("sketch-entity", "pole"),
+            value: Dimension::Parameter(id("parameter", "width")),
+        },
+        name: None,
+        active: None,
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+        native_ref: None,
+    });
+    let findings = design_findings(&ir);
+    assert!(
+        !findings
+            .iter()
+            .any(|finding| finding.message.contains("states no name")),
+        "{findings:#?}"
+    );
+}
+
+#[test]
 fn owners_belong_to_the_scope() {
     let mut ir = with_width();
     ir.design.parameters[0].owner = Some(ParameterOwner::Feature(feature("missing")));
