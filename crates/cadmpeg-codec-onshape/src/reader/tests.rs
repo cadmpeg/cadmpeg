@@ -192,6 +192,7 @@ fn part_studio_flattening_keeps_insertion_state_and_nested_ownership() {
         "representation",
         "nested",
         "shared",
+        "external",
     ] {
         let mut model = rooted_two_part_studio();
         let child = model.ir.model.occurrences[0].id.clone();
@@ -218,6 +219,19 @@ fn part_studio_flattening_keeps_insertion_state_and_nested_ownership() {
             "shared" => {
                 model.ir.model.occurrences[1].prototype =
                     model.ir.model.occurrences[0].prototype.clone();
+            }
+            "external" => {
+                let child = model.ir.model.occurrences[0].prototype.as_str().to_owned();
+                let definition = model
+                    .ir
+                    .model
+                    .product_definitions
+                    .iter_mut()
+                    .find(|d| d.id.as_str() == child)
+                    .unwrap();
+                definition.storage = cadmpeg_ir::products::Storage::External(
+                    cadmpeg_ir::products::ExternalDocument::default(),
+                );
             }
             _ => panic!("unknown synthetic insertion state"),
         }

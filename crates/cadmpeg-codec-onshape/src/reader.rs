@@ -178,7 +178,17 @@ pub(super) fn part_studio_bodies(model: &mut Model) {
             .product_definitions
             .iter()
             .filter(|d| Some(&d.id) != owner_id.as_ref())
-            .any(|d| !placed.contains(d.id.as_str()))
+            .any(|d| {
+                // A part body is an embedded leaf definition, active, with no own
+                // occurrences, instance bodies or representations; anything else is a
+                // real insertion and keeps its occurrence.
+                !placed.contains(d.id.as_str())
+                    || !matches!(d.storage, cadmpeg_ir::products::Storage::Embedded)
+                    || !d.occurrences.is_empty()
+                    || !d.instance_bodies.is_empty()
+                    || !d.representations.is_empty()
+                    || d.active == Some(false)
+            })
     {
         return;
     }
