@@ -9,9 +9,9 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use super::{AttributeExpression, AttributeJson, AttributeTarget, AttributeValue, SourceAttribute};
-use crate::design::dimension::{ParameterRef, RefTarget};
-use crate::design::expr::{Constant, Expression, MulOp, Neutral, Node};
+use super::{AttributeJson, AttributeTarget, AttributeValue, SourceAttribute};
+use crate::design::dimension::ParameterRef;
+use crate::design::expr::{Constant, Expression, Neutral, Node};
 use crate::features::ParameterId;
 
 fn read<T: DeserializeOwned>(wire: &Value) -> Result<T, CodecError> {
@@ -129,33 +129,17 @@ fn every_value_arm_reads_back() {
     .is_err());
 }
 
-fn mass() -> ParameterId {
-    ParameterId::mint("test:design:parameter#mass").unwrap()
-}
-
-fn expression() -> AttributeExpression {
-    AttributeExpression {
-        path: "Length".into(),
-        expression: Expression::Neutral(Neutral(Node::mul(
-            Node::Reference(ParameterRef {
-                target: RefTarget::Parameter(mass()),
-                through: None,
-            }),
-            MulOp::Multiply,
-            Node::Constant(Constant::Pi),
-        ))),
-        comment: Some("doubled".into()),
-    }
-}
-
 #[test]
-fn an_expression_value_reads_back() {
-    let value = AttributeValue::Expression(expression());
+fn a_parameter_value_reads_back_and_an_expression_value_is_refused() {
+    let value = AttributeValue::Parameter(ParameterId::mint("test:design:parameter#mass").unwrap());
     let wire = serde_json::to_value(&value).unwrap();
     assert_eq!(reads_back::<AttributeValue>(&wire), value);
-    let mut without_comment = wire.clone();
-    without_comment["value"]["comment"] = Value::Null;
-    refused::<AttributeValue>(&without_comment);
+    let expression = Expression::Neutral(Neutral(Node::<ParameterRef>::Constant(Constant::Pi)));
+    read::<Expression>(&serde_json::to_value(&expression).unwrap()).unwrap();
+    refused::<AttributeValue>(&json!({
+        "kind": "expression",
+        "value": {"path": "Length", "expression": expression}
+    }));
 }
 
 #[test]

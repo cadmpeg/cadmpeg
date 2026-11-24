@@ -14,7 +14,7 @@ use crate::document::CadIr;
 use crate::features::geometry::FinitePoint3;
 use crate::features::ParameterId;
 use crate::geometry::analytic::{CircleCurve, LineCurve};
-use crate::geometry::SolvedCurveGeometry;
+use crate::geometry::InlineCurve;
 use crate::ids::OccurrenceId;
 use crate::math::{Point3, Vector3};
 use crate::process::cycle::{Cycle, CycleKind, ProbeTarget};
@@ -563,7 +563,7 @@ fn motion_cycles() {
     );
 }
 
-fn profile(carrier: SolvedCurveGeometry, range: Option<[f64; 2]>) -> ProcessGeometry {
+fn profile(carrier: InlineCurve, range: Option<[f64; 2]>) -> ProcessGeometry {
     ProcessGeometry {
         role: GeometryRole::Machine,
         source: GeometrySource::Profile {
@@ -588,15 +588,15 @@ fn profile(carrier: SolvedCurveGeometry, range: Option<[f64; 2]>) -> ProcessGeom
     }
 }
 
-fn line() -> SolvedCurveGeometry {
-    SolvedCurveGeometry::Line(
+fn line() -> InlineCurve {
+    InlineCurve::Line(
         LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)).unwrap(),
     )
 }
 
 const UNBOUNDED: &str = "a profile curve on an unbounded carrier states no `range`";
 
-fn ranged(carrier: SolvedCurveGeometry, range: Option<[f64; 2]>) -> bool {
+fn ranged(carrier: InlineCurve, range: Option<[f64; 2]>) -> bool {
     let mut ir = document();
     ir.process.operations[2]
         .geometry
@@ -612,7 +612,7 @@ fn ranged(carrier: SolvedCurveGeometry, range: Option<[f64; 2]>) -> bool {
 fn a_profile_curve_on_an_unbounded_carrier_states_its_range() {
     assert!(!ranged(line(), None));
     assert!(ranged(line(), Some([0.0, 3.0])));
-    let circle = SolvedCurveGeometry::Circle(
+    let circle = InlineCurve::Circle(
         CircleCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -622,4 +622,9 @@ fn a_profile_curve_on_an_unbounded_carrier_states_its_range() {
         .unwrap(),
     );
     assert!(ranged(circle, None));
+    let placed = InlineCurve::Transformed {
+        basis: Box::new(line()),
+        transform: Transform::default(),
+    };
+    assert!(!ranged(placed, None));
 }

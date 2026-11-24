@@ -246,11 +246,11 @@ fn writer_reports_unrepresented_topology_metadata() {
         .into_parts()
         .0;
     ir.geometry.faces[0].tolerance =
-        Some(cadmpeg_ir::scalar::PositiveReal::new(0.01).expect("positive finite tolerance"));
+        Some(cadmpeg_ir::scalar::PositiveLength::new(0.01).expect("positive finite tolerance"));
     ir.geometry.edges[0].tolerance =
-        Some(cadmpeg_ir::scalar::PositiveReal::new(0.02).expect("positive finite tolerance"));
+        Some(cadmpeg_ir::scalar::PositiveLength::new(0.02).expect("positive finite tolerance"));
     ir.geometry.vertices[0].tolerance =
-        Some(cadmpeg_ir::scalar::PositiveReal::new(0.03).expect("positive finite tolerance"));
+        Some(cadmpeg_ir::scalar::PositiveLength::new(0.03).expect("positive finite tolerance"));
     let edge_curve = ir.geometry.edges[0].curve().cloned().expect("edge curve");
     let coedge = ir
         .geometry
@@ -1215,6 +1215,7 @@ fn ap203e1_reports_hidden_presentation_layer_visibility_loss() {
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#hidden").expect("identity grammar"),
         name: "hidden layer".into(),
+        parent: None,
         description: None,
         visible: Some(false),
         items: vec![PresentationItem::Body { body }.into()],

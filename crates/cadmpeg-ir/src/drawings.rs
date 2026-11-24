@@ -80,6 +80,16 @@ pub struct Drawing {
         deserialize_with = "deserialize_template"
     )]
     pub template: Option<DrawingId>,
+    /// The drawing records a page shows or a view collection holds, in
+    /// source order, or in id order where the source's list is a set.
+    pub views: Vec<DrawingId>,
+    /// The view a section or detail view is cut or magnified from.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_base_view"
+    )]
+    pub base_view: Option<DrawingId>,
     /// View origin on its page.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_position")]
@@ -192,6 +202,8 @@ impl Drawing {
             visible: None,
             relationships: BTreeMap::new(),
             template: None,
+            views: Vec::new(),
+            base_view: None,
             position: None,
             scale: None,
             direction: None,
@@ -342,7 +354,7 @@ mod tests {
             {"geometry": {"kind": "line", "start": [0.0, 1.0], "end": [2.0, 3.0]}, "visibility": "hidden", "source": "projected_model_edge"},
             {"geometry": {"kind": "circle", "center": [0.0, 0.0], "radius": 2.0}, "visibility": "visible", "source": "cosmetic"},
             {"geometry": {"kind": "arc", "center": [0.0, 0.0], "radius": 2.0, "start": [2.0, 0.0], "middle": [0.0, 2.0], "end": [-2.0, 0.0]}, "visibility": "visible", "source": "center_line"}
-        ], "relationships": {}, "parameters": {}, "assets": []});
+        ], "relationships": {}, "parameters": {}, "views": [], "assets": []});
         let drawing: Drawing = serde_json::from_value(wire.clone()).unwrap();
         assert!(drawing.sheet.as_ref().unwrap().is_valid());
         assert!(drawing.curves.iter().all(super::DrawingCurve::is_valid));
@@ -372,7 +384,7 @@ mod tests {
 
     #[test]
     fn template_reference_preserves_string_wire_and_rejects_invalid_ids() {
-        let value = serde_json::json!({"id": "synthetic:test:drawing#page", "object": "source", "kind": "page", "runtime_type": "Page", "order": 0, "template": "synthetic:test:drawing#template", "native_ref": "native", "relationships": {}, "curves": [], "parameters": {}, "assets": []});
+        let value = serde_json::json!({"id": "synthetic:test:drawing#page", "object": "source", "kind": "page", "runtime_type": "Page", "order": 0, "template": "synthetic:test:drawing#template", "native_ref": "native", "relationships": {}, "curves": [], "parameters": {}, "views": [], "assets": []});
         let drawing: Drawing = serde_json::from_value(value.clone()).expect("valid drawing");
         assert_eq!(
             drawing.template.as_ref().map(DrawingId::as_str),
@@ -389,8 +401,37 @@ mod tests {
         }
     }
     #[test]
+    fn views_are_required_and_a_base_view_is_written_only_where_stated() {
+        let wire = serde_json::json!({"id": "synthetic:test:drawing#section", "object": "source", "kind": "section", "runtime_type": "Section", "order": 0,
+            "relationships": {}, "views": ["synthetic:test:drawing#a", "synthetic:test:drawing#b"], "base_view": "synthetic:test:drawing#front",
+            "curves": [], "parameters": {}, "assets": []});
+        let drawing: Drawing = serde_json::from_value(wire.clone()).expect("valid drawing");
+        assert_eq!(drawing.views.len(), 2);
+        assert_eq!(
+            drawing.base_view.as_ref().map(DrawingId::as_str),
+            Some("synthetic:test:drawing#front")
+        );
+        assert_eq!(serde_json::to_value(drawing).expect("serialize"), wire);
+        let mut missing = wire.clone();
+        missing.as_object_mut().unwrap().remove("views");
+        let error = serde_json::from_value::<Drawing>(missing).expect_err("views are required");
+        assert!(error.to_string().contains("views"), "{error}");
+        for invalid in [serde_json::Value::Null, serde_json::json!("bad id")] {
+            let mut rejected = wire.clone();
+            rejected["base_view"] = invalid;
+            let error = serde_json::from_value::<Drawing>(rejected).expect_err("invalid base view");
+            assert!(error.to_string().contains("base_view"), "{error}");
+        }
+        for invalid in [serde_json::Value::Null, serde_json::json!(["bad id"])] {
+            let mut rejected = wire.clone();
+            rejected["views"] = invalid;
+            assert!(serde_json::from_value::<Drawing>(rejected).is_err());
+        }
+    }
+
+    #[test]
     fn numeric_admission_names_fields_and_preserves_valid_values() {
-        let wire = serde_json::json!({"id": "synthetic:test:drawing#view", "object": "source", "kind": "view", "runtime_type": "View", "order": 0, "native_ref": "native", "position": [-2.0, 0.0], "scale": 0.5, "direction": [0.0, 0.0, 2.0], "rotation": -0.5, "relationships": {}, "curves": [], "parameters": {}, "assets": []});
+        let wire = serde_json::json!({"id": "synthetic:test:drawing#view", "object": "source", "kind": "view", "runtime_type": "View", "order": 0, "native_ref": "native", "position": [-2.0, 0.0], "scale": 0.5, "direction": [0.0, 0.0, 2.0], "rotation": -0.5, "relationships": {}, "curves": [], "parameters": {}, "views": [], "assets": []});
         let drawing: Drawing = serde_json::from_value(wire.clone()).expect("valid drawing");
         assert_eq!(serde_json::to_value(drawing).expect("serialize"), wire);
         for (field, invalid) in [
@@ -410,7 +451,7 @@ mod tests {
     fn view_projection_fields_round_trip_and_name_their_fields() {
         let wire = serde_json::json!({"id": "synthetic:test:drawing#view", "object": "source", "kind": "view", "runtime_type": "View", "order": 0,
             "scale_from": "fit", "projection": "third", "perspective": 250.0, "hidden_line": "polygonal",
-            "relationships": {}, "curves": [], "parameters": {}, "assets": []});
+            "relationships": {}, "curves": [], "parameters": {}, "views": [], "assets": []});
         let drawing: Drawing = serde_json::from_value(wire.clone()).expect("valid drawing");
         assert!(drawing.native_ref.is_none());
         assert_eq!(drawing.scale_from, Some(super::ScaleFrom::Fit));
@@ -438,7 +479,7 @@ mod tests {
     fn edge_classes_round_trip_as_a_set() {
         let wire = serde_json::json!({"id": "synthetic:test:drawing#view", "object": "source", "kind": "view", "runtime_type": "View", "order": 0,
             "edge_classes": {"drawn": ["visible_smooth", "visible_iso", "hidden_hard"], "iso_count": 3},
-            "relationships": {}, "curves": [], "parameters": {}, "assets": []});
+            "relationships": {}, "curves": [], "parameters": {}, "views": [], "assets": []});
         let drawing: Drawing = serde_json::from_value(wire.clone()).expect("valid drawing");
         let classes = drawing.edge_classes.as_ref().expect("edge classes");
         assert_eq!(
@@ -478,7 +519,7 @@ mod tests {
             "runtime_type": "View",
             "order": 0,
             "native_ref": "native",
-            "parameters": {"   ": "value"}, "relationships": {}, "curves": [], "assets": []
+            "parameters": {"   ": "value"}, "relationships": {}, "curves": [], "views": [], "assets": []
         });
         let error = serde_json::from_value::<Drawing>(wire).expect_err("blank parameter role");
         assert!(error.to_string().contains("must not be blank"), "{error}");
@@ -490,7 +531,7 @@ mod tests {
             "runtime_type": "View",
             "order": 0,
             "native_ref": "native",
-            "relationships": {"": []}, "curves": [], "parameters": {}, "assets": []
+            "relationships": {"": []}, "curves": [], "parameters": {}, "views": [], "assets": []
         });
         let error =
             serde_json::from_value::<Drawing>(relationships).expect_err("blank relationship role");
@@ -503,7 +544,7 @@ mod tests {
             "runtime_type": "View",
             "order": 0,
             "native_ref": "native",
-            "parameters": {" scale ": "value"}, "relationships": {}, "curves": [], "assets": []
+            "parameters": {" scale ": "value"}, "relationships": {}, "curves": [], "views": [], "assets": []
         });
         let drawing: Drawing =
             serde_json::from_value(named).expect("a named role is kept verbatim");
@@ -514,6 +555,7 @@ mod tests {
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
 cadmpeg_core::named_optional_field!(deserialize_template, DrawingId, "template");
+cadmpeg_core::named_optional_field!(deserialize_base_view, DrawingId, "base_view");
 
 mod identity_rewrite;
 

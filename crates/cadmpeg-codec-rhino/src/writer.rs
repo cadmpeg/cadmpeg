@@ -31,7 +31,7 @@ const EPS_WRITE_DEGENERATE: f64 = 1.0e-10;
 /// route resolves, so the route refuses the document instead of widening the
 /// stated value.
 fn stated_write_tolerance(
-    stated: Option<cadmpeg_ir::scalar::PositiveReal>,
+    stated: Option<cadmpeg_ir::scalar::PositiveLength>,
     ir: &CadIr,
     owner: &str,
 ) -> Result<f64, CodecError> {
@@ -946,7 +946,7 @@ fn brep_payload(
                 vertex
                     .source
                     .tolerance
-                    .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
+                    .map_or(0.0, cadmpeg_ir::scalar::PositiveLength::get)
                     .to_le_bytes(),
             );
             Ok(record)
@@ -973,7 +973,7 @@ fn brep_payload(
             record.extend(
                 edge.source
                     .tolerance
-                    .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
+                    .map_or(0.0, cadmpeg_ir::scalar::PositiveLength::get)
                     .to_le_bytes(),
             );
             record.extend(
@@ -1442,7 +1442,7 @@ fn validate_nurbs_trim(
         .max(
             edge.source
                 .tolerance
-                .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get),
+                .map_or(0.0, cadmpeg_ir::scalar::PositiveLength::get),
         )
         .max(
             pcurve

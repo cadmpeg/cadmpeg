@@ -509,6 +509,7 @@ pub(super) fn append(
         ..
     } = stream;
     if carriers.is_empty()
+        && stream.selection.is_none()
         && !records
             .iter()
             .any(|frame| sheet_group::root(frame, data) || sheet_group::backward_root(frame, data))

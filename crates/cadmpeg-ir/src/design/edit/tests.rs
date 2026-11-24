@@ -1584,6 +1584,7 @@ fn removing_an_unordered_member_removes_its_own_result() {
     document.model.presentation_layers = vec![crate::presentation::PresentationLayer {
         id: id("layer", 1),
         name: "Layer".to_owned(),
+        parent: None,
         description: None,
         visible: None,
         items: [1, 2]

@@ -28,6 +28,9 @@ use crate::design::ops::shared::{
     PathAxisControl, PathPosition, PathReference, PathRollControl, PatternRun, RunSides,
     SlotPosition, Spacing, TableRow, TangentContact, UpToFill, WidthMode,
 };
+use crate::design::ops::shared::{
+    CircularLayout, CompositeStage, LinearLayout, MirrorLayout, ScaleLayout,
+};
 use crate::design::options::{NativeOption, SymmetricMeasure};
 use crate::design::read;
 use crate::design::selection::{
@@ -38,7 +41,8 @@ use crate::features::geometry::FinitePoint3;
 use crate::features::ParameterId;
 use crate::math::Point3;
 use crate::scalar::{
-    Angle, FiniteReal, Fraction, Length, NonNegativeLength, NonNegativeReal, PositiveReal,
+    Angle, FiniteReal, Fraction, Length, NonNegativeLength, NonNegativeReal, NonZeroReal,
+    PositiveReal,
 };
 use crate::units::UnitVector3;
 
@@ -478,28 +482,28 @@ fn pattern_layouts() -> Vec<PatternLayout> {
     let second = runs.pop();
     let first = runs.remove(0);
     vec![
-        PatternLayout::Linear {
+        PatternLayout::Linear(LinearLayout {
             first: first.clone(),
             second,
             seed_only: Some(literal(true)),
-        },
-        PatternLayout::Linear {
+        }),
+        PatternLayout::Linear(LinearLayout {
             first,
             second: None,
             seed_only: None,
-        },
-        PatternLayout::Circular {
+        }),
+        PatternLayout::Circular(CircularLayout {
             axis: axis_construction(),
             angular: pattern_runs(angle(0.5)).remove(0),
             radial: pattern_runs(length(4.0)).pop(),
             orientation: Some(InstanceOrientation::Follow),
-        },
-        PatternLayout::Circular {
+        }),
+        PatternLayout::Circular(CircularLayout {
             axis: axis_construction(),
             angular: pattern_runs(angle(0.25)).remove(1),
             radial: None,
             orientation: None,
-        },
+        }),
         PatternLayout::Path {
             path: selection(6),
             run: pattern_runs(length(3.0)).remove(0),
@@ -515,26 +519,26 @@ fn pattern_layouts() -> Vec<PatternLayout> {
         },
         PatternLayout::Dimensions(dimension_runs()),
         PatternLayout::Table(dimension_tables().remove(0)),
-        PatternLayout::Mirror {
+        PatternLayout::Mirror(MirrorLayout {
             plane: plane_construction(),
             stitch_tolerance: Some(literal(length(0.01))),
-        },
+        }),
         PatternLayout::Composite(vec![
-            PatternLayout::Mirror {
+            CompositeStage::Mirror(MirrorLayout {
                 plane: plane_construction(),
                 stitch_tolerance: None,
-            },
-            PatternLayout::Scale {
+            }),
+            CompositeStage::Scale(ScaleLayout {
                 factor: literal(positive_real(2.0)),
                 count: literal(3),
                 center: Locus::Centroid,
-            },
+            }),
         ]),
-        PatternLayout::Scale {
+        PatternLayout::Scale(ScaleLayout {
             factor: parameter(3),
             count: literal(2),
             center: Locus::Point(Box::new(point_construction())),
-        },
+        }),
         PatternLayout::Follow(selection(8)),
         PatternLayout::Chain(chain_layouts().remove(0)),
         PatternLayout::Native(text("nx:spiral")),
@@ -912,6 +916,7 @@ fn places() -> Vec<Place> {
         Place {
             occurrence: occurrence(1),
             placement: Some(frame_construction()),
+            scale: Some(ScaleFactors::Uniform(parameter(9))),
             base: Some(PlacementBase::OwnOccurrence),
             constraints: joints(),
             packaged: Some(false),
@@ -921,13 +926,50 @@ fn places() -> Vec<Place> {
         Place {
             occurrence: occurrence(2),
             placement: None,
+            scale: None,
             base: None,
             constraints: Vec::new(),
             packaged: None,
             native_options: NativeOptions::new(),
             source_settings: NativeOptions::new(),
         },
+        Place {
+            occurrence: occurrence(5),
+            placement: Some(frame_construction()),
+            scale: Some(ScaleFactors::PerAxis {
+                factors: [2.0, -1.0, 0.5].map(|factor| literal(NonZeroReal::new(factor).unwrap())),
+                frame: None,
+            }),
+            base: Some(PlacementBase::Parent),
+            constraints: Vec::new(),
+            packaged: None,
+            native_options: NativeOptions::new(),
+            source_settings: NativeOptions::new(),
+        },
     ]
+}
+
+/// §6.7: `Place.scale` is written after `placement`, a per-axis one with no
+/// frame is its factors alone, and `null` is refused.
+#[test]
+fn a_place_states_the_scale_composed_with_its_placement() {
+    let place = places().remove(2);
+    let value = to_value(&place);
+    let text = serde_json::to_string(&place).unwrap();
+    let at = |key: &str| text.find(&format!("\"{key}\":")).unwrap();
+    assert!(at("placement") < at("scale") && at("scale") < at("base"));
+    assert_eq!(
+        value["scale"],
+        json!({"kind": "per_axis", "value": {"factors": [
+            {"kind": "literal", "value": 2.0},
+            {"kind": "literal", "value": -1.0},
+            {"kind": "literal", "value": 0.5},
+        ]}})
+    );
+    assert!(to_value(&places().remove(1)).get("scale").is_none());
+    let mut text = value.clone();
+    text["scale"] = serde_json::Value::Null;
+    assert!(refuses::<Place>(&text.to_string()).contains("scale"));
 }
 
 fn place_sets() -> Vec<PlaceSet> {
