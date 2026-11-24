@@ -5429,7 +5429,7 @@
             "namespace": "alibre"
           }
         },
-        "message": "component asm_two: component asm_box: streams without a decoder: DESIGN_PARAMETER_DATA, AUTOGRAPH_DATA, PROP_DATA, VERSION, STEP_DATA, HOLE_OPERATIONS_DATA, CUSTOM_ITEM_PROP_DATA, GLOBAL_PARAMETER_DATA_CACHE, STANDARD_DESIGN_PROP_DATA, LIGHT_CONFIGURATION_DATA, EXTERNAL_THREAD_OPERATIONS_DATA",
+        "message": "component asm_two/asm_box: streams without a decoder: DESIGN_PARAMETER_DATA, AUTOGRAPH_DATA, PROP_DATA, VERSION, STEP_DATA, HOLE_OPERATIONS_DATA, CUSTOM_ITEM_PROP_DATA, GLOBAL_PARAMETER_DATA_CACHE, STANDARD_DESIGN_PROP_DATA, LIGHT_CONFIGURATION_DATA, EXTERNAL_THREAD_OPERATIONS_DATA",
         "severity": "warning"
       },
       {
@@ -5442,7 +5442,7 @@
             "strict_floor": "warning"
           }
         },
-        "message": "component asm_two: component asm_box: the SAB_DATA stream declares save format 33.0, which no verified Spatial ACIS band declares; its records were read with the grammar `acis:save-format-217` declares, and what they decoded is reported as it decoded",
+        "message": "component asm_two/asm_box: the SAB_DATA stream declares save format 33.0, which no verified Spatial ACIS band declares; its records were read with the grammar `acis:save-format-217` declares, and what they decoded is reported as it decoded",
         "severity": "warning"
       },
       {
@@ -5454,7 +5454,7 @@
             "namespace": "alibre"
           }
         },
-        "message": "component asm_two: component asm_cylinder: streams without a decoder: DESIGN_PARAMETER_DATA, AUTOGRAPH_DATA, PROP_DATA, VERSION, STEP_DATA, HOLE_OPERATIONS_DATA, CUSTOM_ITEM_PROP_DATA, GLOBAL_PARAMETER_DATA_CACHE, STANDARD_DESIGN_PROP_DATA, LIGHT_CONFIGURATION_DATA, EXTERNAL_THREAD_OPERATIONS_DATA",
+        "message": "component asm_two/asm_cylinder: streams without a decoder: DESIGN_PARAMETER_DATA, AUTOGRAPH_DATA, PROP_DATA, VERSION, STEP_DATA, HOLE_OPERATIONS_DATA, CUSTOM_ITEM_PROP_DATA, GLOBAL_PARAMETER_DATA_CACHE, STANDARD_DESIGN_PROP_DATA, LIGHT_CONFIGURATION_DATA, EXTERNAL_THREAD_OPERATIONS_DATA",
         "severity": "warning"
       },
       {
@@ -5467,7 +5467,7 @@
             "strict_floor": "warning"
           }
         },
-        "message": "component asm_two: component asm_cylinder: the SAB_DATA stream declares save format 33.0, which no verified Spatial ACIS band declares; its records were read with the grammar `acis:save-format-217` declares, and what they decoded is reported as it decoded",
+        "message": "component asm_two/asm_cylinder: the SAB_DATA stream declares save format 33.0, which no verified Spatial ACIS band declares; its records were read with the grammar `acis:save-format-217` declares, and what they decoded is reported as it decoded",
         "severity": "warning"
       }
     ],

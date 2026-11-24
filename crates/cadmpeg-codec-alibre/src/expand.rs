@@ -466,7 +466,12 @@ fn component(
             build
                 .losses
                 .extend(merged.losses.into_iter().map(|mut loss| {
-                    loss.message = format!("component {file}: {}", loss.message);
+                    // A loss that a subassembly restated already names its own
+                    // component: extend the path and do not repeat the word.
+                    loss.message = match loss.message.strip_prefix("component ") {
+                        Some(inner) => format!("component {file}/{inner}"),
+                        None => format!("component {file}: {}", loss.message),
+                    };
                     // The kernel layer belongs to the component, not to the
                     // assembly, whose own layers hold no kernel.
                     if loss.code == AlibreLossCode::SourceDialectUnverified.kind() {

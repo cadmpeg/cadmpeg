@@ -626,3 +626,26 @@ fn the_decode_is_deterministic_and_keeps_its_streams_in_the_loss_report() {
         assert_eq!(count_loss(&first, code), 0, "{code:?}");
     }
 }
+
+#[test]
+fn a_loss_of_a_subassembly_names_its_path_once() {
+    let result = decode_assembly(ASM_NESTED);
+    let messages: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .map(|loss| loss.message.as_str())
+        .collect();
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.starts_with("component asm_two/asm_box: ")),
+        "{messages:#?}"
+    );
+    assert!(
+        !messages
+            .iter()
+            .any(|message| message.contains("component asm_two: component ")),
+        "{messages:#?}"
+    );
+}
