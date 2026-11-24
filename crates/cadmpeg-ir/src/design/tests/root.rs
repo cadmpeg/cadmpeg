@@ -98,6 +98,7 @@ fn every_design_root_type_round_trips() {
 fn a_feature_definition_has_no_wrapper_level() {
     let definition = FeatureDefinition {
         operation: FeatureOperation::Sketch(id("sketch", 1)),
+        assembly: None,
         refine: None,
         fuzzy_tolerance: None,
     };
@@ -120,6 +121,42 @@ fn a_feature_definition_has_no_wrapper_level() {
         json!({"kind": "automatic"})
     );
     assert!(to_value(&fuzzy).get("refine").is_none());
+}
+
+/// §5.10 and §6.7: `assembly` sits beside `operation`, and its participants
+/// are `[effect, selection]` pairs in key order, `None` first and written
+/// `null`.
+#[test]
+fn an_assembly_context_is_pairs_beside_the_operation() {
+    let definition = root::feature_definitions().remove(2);
+    let wire = to_value(&definition);
+    let participants = &definition.assembly.as_ref().unwrap().participants;
+    let selections: Vec<_> = participants.values().map(to_value).collect();
+    assert_eq!(
+        wire,
+        json!({
+            "operation": {"kind": "unresolved", "value": {"family": "hole"}},
+            "assembly": {"participants": [
+                [null, selections[0]],
+                [{"kind": "definitions"}, selections[1]],
+            ]},
+        })
+    );
+    let mut reversed = wire.clone();
+    reversed["assembly"]["participants"] = json!([
+        [{"kind": "definitions"}, selections[1]],
+        [null, selections[0]],
+    ]);
+    assert!(refuses::<FeatureDefinition>(&reversed.to_string()).contains("out of key order"));
+    let mut repeated = wire.clone();
+    repeated["assembly"]["participants"] = json!([
+        [{"kind": "definitions"}, selections[1]],
+        [{"kind": "definitions"}, selections[0]],
+    ]);
+    assert!(refuses::<FeatureDefinition>(&repeated.to_string()).contains("stated twice"));
+    let mut null = wire;
+    null["assembly"] = json!(null);
+    assert!(refuses::<FeatureDefinition>(&null.to_string()).contains("assembly"));
 }
 
 #[test]

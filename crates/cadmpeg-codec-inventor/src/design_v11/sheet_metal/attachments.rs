@@ -79,7 +79,7 @@ pub(crate) fn definition<'a>(
             target: PickTarget::Native { within: None },
             context: None,
             native: Some(NativeName {
-                codec: cadmpeg_core::nonblank_literal!("inventor").into(),
+                codec: cadmpeg_ir::codec_id!("inventor"),
                 value: NativeNameValue::Integers(vec![
                     i64::from(state.ordinal),
                     state.state_id,
@@ -133,7 +133,7 @@ pub(crate) fn definition<'a>(
             rule: None,
         },
         native_options: BTreeMap::from([(
-            cadmpeg_core::nonblank_literal!("inventor:contour_controls"),
+            cadmpeg_ir::codec_name!("inventor:contour_controls"),
             NativeOption::Text(Dimension::Literal(controls)),
         )]),
         source_settings: BTreeMap::new(),

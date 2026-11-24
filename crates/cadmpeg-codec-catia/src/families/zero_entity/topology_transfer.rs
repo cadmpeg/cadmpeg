@@ -13,7 +13,7 @@ use cadmpeg_ir::ids::{
     SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{
     AnchoredVertexUse, Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Point, Region, Sense,
     Shell, Vertex,
@@ -28,10 +28,11 @@ use super::allocation::AllocationTopology;
 use super::records::{ZeroEntityLoopClass, ZeroEntityOwnershipRoot, ZeroEntitySupportRun};
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
-const MODEL_POINT_TOLERANCE: PositiveReal = match PositiveReal::new(2e-3) {
-    Some(tolerance) => tolerance,
-    None => panic!("zero-entity point tolerance must be positive and finite"),
-};
+const MODEL_POINT_TOLERANCE: cadmpeg_ir::scalar::PositiveLength =
+    match cadmpeg_ir::scalar::PositiveLength::new(2e-3) {
+        Some(tolerance) => tolerance,
+        None => panic!("zero-entity point tolerance must be positive and finite"),
+    };
 
 /// Minimum allowance for validating source-bound endpoint contributors.
 const MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS: usize = 1_000_000;

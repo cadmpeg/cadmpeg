@@ -101,7 +101,7 @@ fn instance_member_candidate_is_rejected_at_the_local_entity_limit() {
                         .expect("point"),
                     Some(cadmpeg_ir::SourceObjectAssociation {
                         geometry_role: None,
-                        format: cadmpeg_ir::CodecFormat::Rhino,
+                        format: cadmpeg_ir::codec_id!("rhino"),
                         object_id: cadmpeg_core::text::NonBlankString::new("one")
                             .expect("source identity"),
                         name: None,

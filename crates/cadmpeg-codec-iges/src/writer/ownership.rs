@@ -4,7 +4,7 @@
 use super::EntityStatus;
 use cadmpeg_ir::geometry::Surface;
 use cadmpeg_ir::ids::SurfaceId;
-use cadmpeg_ir::{CadIr, CodecFormat, SourceGeometryRole, SourceObjectAssociation};
+use cadmpeg_ir::{CadIr, SourceGeometryRole, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) struct SourceOwnership<'ir> {
@@ -58,7 +58,7 @@ impl<'ir> SourceOwnership<'ir> {
 
     pub(super) fn status(&self, source: Option<&SourceObjectAssociation>) -> EntityStatus {
         let status = source
-            .filter(|source| source.format == CodecFormat::Iges)
+            .filter(|source| source.format == cadmpeg_ir::codec_id!("iges"))
             .and_then(|source| source.object_id.as_str().strip_prefix('D'))
             .and_then(|sequence| sequence.parse::<u32>().ok())
             .and_then(|sequence| self.statuses.get(&sequence))

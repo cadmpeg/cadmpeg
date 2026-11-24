@@ -252,16 +252,19 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("STYLED_ITEM #52")));
-    assert_eq!(
-        result
-            .ir()
-            .model
-            .appearance_bindings
-            .iter()
-            .filter(|binding| binding.source_entity_id.as_deref() == Some("#47"))
-            .count(),
-        2
-    );
+    for set_member in ["#3", "#8"] {
+        assert_eq!(
+            result
+                .ir()
+                .model
+                .appearance_bindings
+                .iter()
+                .filter(|binding| binding.source_entity_id.as_deref() == Some(set_member))
+                .count(),
+            2,
+            "{set_member} is styled directly and through the styled curve set"
+        );
+    }
     assert!(result
         .ir()
         .model
@@ -269,8 +272,8 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .iter()
         .any(|binding| matches!(
             &binding.target.entity,
-            cadmpeg_ir::appearance::AppearanceTarget::Source { source_id } if source_id == "#6"
-        )));
+            cadmpeg_ir::appearance::AppearanceTarget::Unresolved
+        ) && binding.source_entity_id.as_deref() == Some("#6")));
     assert!(result.ir().geometry.curves.iter().any(|curve| matches!(
         &curve.geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
