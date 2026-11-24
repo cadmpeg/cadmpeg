@@ -215,6 +215,7 @@ fn a_state_feature_is_a_removal_states_feature_of_the_scope() {
     );
     ir.process.states[1].content = None;
     ir.process.states[1].feature = Some(design::feature("extrude"));
+    ir.design.features[0].definition.operation = FeatureOperation::MaterialRemoval;
     assert_no_process_finding(&ir);
     ir.process.states[1].feature = Some(design::feature("missing"));
     assert_error(&ir, "which is no feature of its setup's scope");
@@ -316,4 +317,31 @@ fn a_process_state_meets_the_rules_of_one_topology() {
         found[0].entity.as_deref(),
         Some(ir.process.states[stock].id.as_str())
     );
+}
+
+/// Part 10: `ProcessState.feature` names a `MaterialRemoval` feature.
+#[test]
+fn a_removal_states_feature_is_a_material_removal_feature() {
+    let removal = |operation: FeatureOperation| {
+        let mut ir = document();
+        ir.design.features[0].definition.operation = operation;
+        ir.process.states.insert(
+            1,
+            state(
+                "removal",
+                ProcessStateOf::Removal(id("operation", "mill")),
+                ProcessBase::Design(StateBase::Empty),
+            ),
+        );
+        ir.process.states[1].content = None;
+        ir.process.states[1].feature = Some(design::feature("extrude"));
+        ir
+    };
+    assert_error(
+        &removal(FeatureOperation::Unresolved {
+            family: crate::design::feature::OperationFamily::Extrude,
+        }),
+        "which is no `MaterialRemoval` feature",
+    );
+    assert_no_process_finding(&removal(FeatureOperation::MaterialRemoval));
 }

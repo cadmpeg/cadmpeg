@@ -28,7 +28,7 @@ mod linkage;
 mod matching;
 mod materials;
 mod names;
-mod ops;
+pub(super) mod ops;
 mod overrides;
 mod parameter_records;
 #[cfg(test)]
