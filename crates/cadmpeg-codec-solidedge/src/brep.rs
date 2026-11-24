@@ -13,6 +13,7 @@ use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, ProceduralCurveId, RegionId,
     ShellId, SurfaceId, VertexId,
 };
+use cadmpeg_ir::index::StandardIndex;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{Magnification, PositiveLength};
 use cadmpeg_ir::topology::{
@@ -41,6 +42,25 @@ ids! { body_id: BodyId, "body"; region_id: RegionId, "region"; shell_id: ShellId
 face_id: FaceId, "face"; loop_id: LoopId, "loop"; coedge_id: CoedgeId, "coedge";
 edge_id: EdgeId, "edge"; vertex_id: VertexId, "vertex"; point_id: PointId, "point";
 curve_id: CurveId, "curve"; construction_id: ProceduralCurveId, "curve-construction"; surface_id: SurfaceId, "surface"; }
+
+/// Identities already pushed to the model, so a repeated carrier or point is
+/// recognised without scanning the arena.
+#[derive(Default)]
+struct Emitted {
+    curves: BTreeMap<CurveId, usize>,
+    points: BTreeSet<PointId>,
+}
+
+impl Emitted {
+    fn push_curve(&mut self, ir: &mut CadIr, curve: Curve) {
+        self.curves
+            .insert(curve.id.clone(), ir.geometry.curves.len());
+        ir.geometry.curves.push(curve);
+    }
+    fn curve<'ir>(&self, ir: &'ir CadIr, id: &CurveId) -> Option<&'ir Curve> {
+        ir.geometry.curves.get(*self.curves.get(id)?)
+    }
+}
 
 fn malformed(message: &str) -> CodecError {
     CodecError::Malformed(message.into())
@@ -242,9 +262,13 @@ pub(crate) fn project(
     // Largest departure of a carrier from the faces it bounds, where it
     // exceeds the document tolerance.
     let mut departures: BTreeMap<CurveId, f64> = BTreeMap::new();
-    let document_linear = linear.map_or(ir.tolerances.linear.get(), PositiveLength::get);
+    if let Some(linear) = linear {
+        ir.tolerances.linear = linear;
+    }
+    let document_linear = ir.tolerances.linear.get();
     let mut vertices = BTreeSet::new();
     let mut surfaces = BTreeSet::new();
+    let mut emitted = Emitted::default();
     for face_index in faces {
         let face = *nodes
             .get(&face_index)
@@ -352,7 +376,8 @@ pub(crate) fn project(
         let node = *nodes
             .get(&surface)
             .ok_or_else(|| malformed("unresolved surface"))?;
-        if node.kind() == kind::SWEPT_SURF && swept_surface(&nodes, &mut ir, stream, surface, node)?
+        if node.kind() == kind::SWEPT_SURF
+            && swept_surface(&nodes, &mut ir, &mut emitted, stream, surface, node)?
         {
             continue;
         }
@@ -387,12 +412,7 @@ pub(crate) fn project(
             z * MM_PER_METRE,
         ))
         .ok_or_else(|| malformed("nonfinite point"))?;
-        if !ir
-            .geometry
-            .points
-            .iter()
-            .any(|value| value.id == point_id(stream, point))
-        {
+        if emitted.points.insert(point_id(stream, point)) {
             ir.geometry
                 .points
                 .push(Point::new(point_id(stream, point), position, None));
@@ -459,12 +479,7 @@ pub(crate) fn project(
             if source.char("sense") == Some(b'-') {
                 endpoints = endpoints.map(|[start, end]| [end, start]);
             }
-            if !ir
-                .geometry
-                .curves
-                .iter()
-                .any(|curve| curve.id == curve_id(stream, curve_index))
-            {
+            if !emitted.curves.contains_key(&curve_id(stream, curve_index)) {
                 let mut definition = None;
                 let mut reason = "carrier fields are unsupported";
                 let mut projected = geometry::curve(&nodes, source);
@@ -571,13 +586,16 @@ pub(crate) fn project(
                     CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None })
                 });
                 let owner = curve_id(stream, curve_index);
-                ir.geometry.curves.push(Curve {
-                    id: owner.clone(),
-                    geometry,
-                    parameter_range: None,
-                    source_object: None,
-                    native_ref: None,
-                });
+                emitted.push_curve(
+                    &mut ir,
+                    Curve {
+                        id: owner.clone(),
+                        geometry,
+                        parameter_range: None,
+                        source_object: None,
+                        native_ref: None,
+                    },
+                );
                 if let Some(definition) = definition {
                     cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.geometry)
                         .add_curve(&mut ir.geometry, &owner, definition)?
@@ -589,7 +607,7 @@ pub(crate) fn project(
             let target = crate::sp_curve::FIT_TOLERANCE_MM.min(0.5 * document_linear);
             if let Some(sampled) = crate::sp_curve::sample(ctx, &nodes, sp, range, target)? {
                 let owner = curve_id(stream, stated);
-                if !ir.geometry.curves.iter().any(|curve| curve.id == owner) {
+                if !emitted.curves.contains_key(&owner) {
                     fit_tolerances.insert(owner.clone(), sampled.fit_tolerance);
                     if sampled.departure > document_linear {
                         departures.insert(owner.clone(), sampled.departure);
@@ -597,13 +615,18 @@ pub(crate) fn project(
                             "a sampled tolerant-edge carrier departs from its curve by more than the document tolerance; the edge states that departure as its tolerance",
                         ));
                     }
-                    ir.geometry.curves.push(Curve {
-                        id: owner.clone(),
-                        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(sampled.curve)),
-                        parameter_range: None,
-                        source_object: None,
-                        native_ref: None,
-                    });
+                    emitted.push_curve(
+                        &mut ir,
+                        Curve {
+                            id: owner.clone(),
+                            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                                sampled.curve,
+                            )),
+                            parameter_range: None,
+                            source_object: None,
+                            native_ref: None,
+                        },
+                    );
                     losses.push(SolidEdgeLossCode::EdgeCarrierSampled.note(
                         "a tolerant edge states its curve in the parameter space of its support surface; the model-space carrier is that curve sampled through the support",
                     ));
@@ -616,7 +639,7 @@ pub(crate) fn project(
                 vertex_id(stream, start),
                 vertex_id(stream, end),
             )),
-            None => ring_vertex(ctx, &mut ir, stream, edge, &carrier)?,
+            None => ring_vertex(ctx, &mut ir, &mut emitted, stream, edge, &carrier)?,
         };
         let stated = tolerance(node, losses);
         let departure = carrier
@@ -630,10 +653,7 @@ pub(crate) fn project(
             native_ref: None,
         });
     }
-    trim_edges(ctx, &mut ir, &fit_tolerances, losses)?;
-    if let Some(linear) = linear {
-        ir.tolerances.linear = linear;
-    }
+    trim_edges(ctx, &mut ir, &fit_tolerances, document_linear, losses)?;
     Ok(ir)
 }
 
@@ -645,6 +665,7 @@ pub(crate) fn project(
 fn swept_surface(
     nodes: &Nodes<'_>,
     ir: &mut CadIr,
+    emitted: &mut Emitted,
     stream: u32,
     index: u32,
     node: Node<'_>,
@@ -659,20 +680,23 @@ fn swept_surface(
         return Ok(false);
     }
     let curve = curve_id(stream, section);
-    if !ir.geometry.curves.iter().any(|value| value.id == curve) {
+    if !emitted.curves.contains_key(&curve) {
         let Some(geometry) = nodes
             .get(&section)
             .and_then(|section| geometry::curve(nodes, *section))
         else {
             return Ok(false);
         };
-        ir.geometry.curves.push(Curve {
-            id: curve.clone(),
-            geometry,
-            parameter_range: None,
-            source_object: None,
-            native_ref: None,
-        });
+        emitted.push_curve(
+            ir,
+            Curve {
+                id: curve.clone(),
+                geometry,
+                parameter_range: None,
+                source_object: None,
+                native_ref: None,
+            },
+        );
     }
     let Ok(definition) =
         cadmpeg_ir::geometry::surface_payloads::LinearSweepSurfaceConstruction::try_new(
@@ -719,6 +743,7 @@ fn swept_surface(
 fn ring_vertex(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
+    emitted: &mut Emitted,
     stream: u32,
     edge: u32,
     carrier: &EdgeCarrier,
@@ -726,11 +751,8 @@ fn ring_vertex(
     let Some(curve) = carrier.curve() else {
         return Ok(None);
     };
-    let Some(geometry) = ir
-        .geometry
-        .curves
-        .iter()
-        .find(|value| &value.id == curve)
+    let Some(geometry) = emitted
+        .curve(ir, curve)
         .and_then(|value| value.geometry.solved())
     else {
         return Ok(None);
@@ -753,6 +775,7 @@ fn ring_vertex(
     };
     let point = point_id(stream, edge);
     let vertex = vertex_id(stream, edge);
+    emitted.points.insert(point.clone());
     ir.geometry
         .points
         .push(Point::new(point.clone(), position, None));
@@ -773,6 +796,7 @@ fn trim_edges(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     fit_tolerances: &BTreeMap<CurveId, f64>,
+    document_linear: f64,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
@@ -790,16 +814,10 @@ fn trim_edges(
         let positions: Option<Vec<_>> = [&ends.start, &ends.end]
             .into_iter()
             .map(|id| {
-                let vertex = ir
-                    .geometry
-                    .vertices
-                    .iter()
-                    .find(|vertex| &vertex.id == id)?;
+                let vertex = index.vertices(id.as_str(), StandardIndex)?;
                 Some(
-                    ir.geometry
-                        .points
-                        .iter()
-                        .find(|point| point.id == vertex.point)?
+                    index
+                        .points(vertex.point.as_str(), StandardIndex)?
                         .position()
                         .get(),
                 )
@@ -808,9 +826,7 @@ fn trim_edges(
         let range = if let Some(positions) = positions {
             let admitted = fit_tolerances
                 .get(curve)
-                .map_or(ir.tolerances.linear.get(), |fit| {
-                    fit.max(ir.tolerances.linear.get())
-                });
+                .map_or(document_linear, |fit| fit.max(document_linear));
             let start = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index_with_tolerance(
                 ctx,
                 &index,
@@ -832,11 +848,8 @@ fn trim_edges(
             None
         };
         let range = range.map(|[mut start, mut end]| {
-            let period = ir
-                .geometry
-                .curves
-                .iter()
-                .find(|value| &value.id == curve)
+            let period = index
+                .curves(curve.as_str(), StandardIndex)
                 .and_then(|value| match value.geometry.solved()? {
                     SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => {
                         Some([0.0, std::f64::consts::TAU])
@@ -861,7 +874,16 @@ fn trim_edges(
                     .note("edge endpoints could not be inverted on the carrier"),
             );
         }
-        carriers.push(EdgeCarrier::new(Some(curve.clone()), range).map_err(malformed)?);
+        carriers.push(
+            EdgeCarrier::new(Some(curve.clone()), range).unwrap_or_else(|_| {
+                // A closed or zero-length edge on a nonperiodic carrier has
+                // equal parameters at both ends; the carrier stays unbounded.
+                losses.push(SolidEdgeLossCode::EdgeTrimUnresolved.note(
+                    "edge endpoints give an empty parameter range on the carrier; the edge keeps the whole carrier",
+                ));
+                EdgeCarrier::Curve(curve.clone())
+            }),
+        );
     }
     for (edge, carrier) in ir.geometry.edges.iter_mut().zip(carriers) {
         edge.carrier = carrier;
@@ -895,7 +917,57 @@ fn periodic_range([start, end]: [f64; 2], lower: f64, period: f64) -> [f64; 2] {
 
 #[cfg(test)]
 mod tests {
-    use super::periodic_range;
+    use super::{curve_id, edge_id, periodic_range, point_id, trim_edges, vertex_id};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::features::geometry::FinitePoint3;
+    use cadmpeg_ir::geometry::analytic::LineCurve;
+    use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::topology::{Edge, EdgeCarrier, EdgeEnds, Point, Vertex};
+    use cadmpeg_ir::CadIr;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn closed_edge_on_a_nonperiodic_carrier_trims_without_failing() {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0; 4], &arena, &policy).expect("context");
+        let mut ir = CadIr::empty();
+        let point = point_id(0, 1);
+        ir.geometry.points.push(Point::new(
+            point.clone(),
+            FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).expect("finite"),
+            None,
+        ));
+        ir.geometry.vertices.push(Vertex {
+            id: vertex_id(0, 1),
+            point,
+            tolerance: None,
+            native_ref: None,
+        });
+        ir.geometry.curves.push(Curve {
+            id: curve_id(0, 1),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
+                    .expect("line"),
+            )),
+            parameter_range: None,
+            source_object: None,
+            native_ref: None,
+        });
+        ir.geometry.edges.push(Edge {
+            id: edge_id(0, 1),
+            carrier: EdgeCarrier::Curve(curve_id(0, 1)),
+            ends: Some(EdgeEnds::new(vertex_id(0, 1), vertex_id(0, 1))),
+            tolerance: None,
+            native_ref: None,
+        });
+        let mut losses = Vec::new();
+        trim_edges(&ctx, &mut ir, &BTreeMap::new(), 1.0e-6, &mut losses).expect("trim");
+        assert_eq!(ir.geometry.edges[0].carrier.curve(), Some(&curve_id(0, 1)));
+        assert!(losses.is_empty());
+        ctx.finish_session().expect("session");
+    }
     #[test]
     fn periodic_trim_starts_in_the_canonical_turn() {
         use std::f64::consts::{FRAC_PI_2, PI, TAU};
