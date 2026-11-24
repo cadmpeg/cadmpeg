@@ -16,7 +16,7 @@ use crate::units::UnitVector3;
 /// The two stored rows preserve the source coefficients. The bottom row
 /// `[0, 0, 1]` is a fact of the type: it is produced by [`Self::rows`] and is
 /// neither carried nor compared.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct Transform2 {
@@ -150,7 +150,7 @@ pub enum TransformError {
 /// The three stored rows preserve the source coefficients. The bottom row
 /// `[0, 0, 0, 1]` is a fact of the type: it is produced by [`Self::rows`] and
 /// is neither carried nor compared.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct Transform {
@@ -250,6 +250,26 @@ impl Transform {
             && dot(x, z).abs() <= EPSILON
             && dot(y, z).abs() <= EPSILON
             && (dot(cross, z) - 1.0).abs() <= EPSILON
+    }
+
+    /// Whether `self` agrees with `other`: their translations lie within
+    /// `linear` of each other, and each column of their linear parts within
+    /// `angular` times the length of `other`'s column.
+    pub(crate) fn agrees_with(self, other: Self, linear: f64, angular: f64) -> bool {
+        let column =
+            |transform: &Self, index: usize| [0, 1, 2].map(|row| transform.rows[row][index]);
+        let distance = |left: [f64; 3], right: [f64; 3]| {
+            left.into_iter()
+                .zip(right)
+                .map(|(left, right)| (left - right) * (left - right))
+                .sum::<f64>()
+                .sqrt()
+        };
+        distance(column(&self, 3), column(&other, 3)) <= linear
+            && (0..3).all(|index| {
+                let expected = column(&other, index);
+                distance(column(&self, index), expected) <= angular * distance(expected, [0.0; 3])
+            })
     }
 
     /// Composes transforms as `self * right` for column-vector application.

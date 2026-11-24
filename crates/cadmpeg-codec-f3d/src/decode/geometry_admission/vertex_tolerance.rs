@@ -10,7 +10,7 @@ use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
 use cadmpeg_ir::index::{ModelIndex, StandardIndex};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::units::coincidence_allowance;
+use cadmpeg_ir::units::binding_allowance;
 use cadmpeg_ir::CadIr;
 
 use crate::loss::F3dLossCode;
@@ -115,7 +115,7 @@ pub(super) fn admit(
                 .vertices(id.as_str(), StandardIndex)
                 .and_then(|vertex| vertex.tolerance)
                 .map(cadmpeg_ir::scalar::PositiveLength::get);
-            let allowance = coincidence_allowance(
+            let allowance = binding_allowance(
                 ir.tolerances.linear,
                 &[
                     edge.tolerance.map(cadmpeg_ir::scalar::PositiveLength::get),

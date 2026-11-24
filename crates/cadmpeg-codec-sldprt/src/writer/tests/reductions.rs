@@ -303,6 +303,60 @@ fn a_validation_error_in_the_written_document_is_record_invalid() {
     assert!(loss(&losses, "record.invalid").is_some(), "{losses:#?}");
 }
 
+/// An Error of a part 10 rule of the design layer, an `Unset` parameter
+/// that states a value, is a `record.invalid` loss, and the part is written.
+#[test]
+fn an_error_of_a_design_rule_writes_the_part_with_a_loss() {
+    use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition, ParameterValue};
+    let mut ir = written_cube();
+    ir.design.parameters.push(DesignParameter {
+        id: cadmpeg_ir::features::ParameterId::mint("other:design:parameter#unset").unwrap(),
+        scope: cadmpeg_ir::ids::ProductDefinitionId::mint("other:model:definition#part").unwrap(),
+        owner: None,
+        name: None,
+        kind: cadmpeg_ir::design::units::ValueKind::Boolean,
+        unit: None,
+        definition: ParameterDefinition::Unset,
+        value: Some(ParameterValue::Boolean(true)),
+        display: None,
+        tolerance: None,
+        decimals: None,
+        comment: None,
+        native_options: std::collections::BTreeMap::default(),
+        source_settings: std::collections::BTreeMap::default(),
+        native_ref: None,
+    });
+    let report = cadmpeg_ir::validate_neutral(&ir, Vec::new()).unwrap();
+    assert!(
+        report.findings.iter().any(|finding| {
+            finding.severity >= cadmpeg_ir::report::Severity::Error
+                && finding
+                    .message
+                    .contains("an `Unset` parameter states a `value`")
+        }),
+        "{:#?}",
+        report.findings
+    );
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let losses = plan.report().losses.clone();
+    let invalid = losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.invalid")
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    assert!(
+        invalid
+            .iter()
+            .any(|message| message.contains("an `Unset` parameter states a `value`")),
+        "{losses:#?}"
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    assert!(!bytes.is_empty());
+}
+
 #[test]
 fn a_generated_units_member_is_named() {
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
