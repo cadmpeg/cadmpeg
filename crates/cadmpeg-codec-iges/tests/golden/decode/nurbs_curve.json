@@ -185,38 +185,6 @@
               "value": "RNURBS"
             }
           ]
-        },
-        {
-          "id": "iges:model:attribute#point.D1-end",
-          "name": "name",
-          "target": {
-            "entity": {
-              "kind": "point",
-              "value": "iges:model:point#D1-end"
-            }
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "RNURBS"
-            }
-          ]
-        },
-        {
-          "id": "iges:model:attribute#point.D1-start",
-          "name": "name",
-          "target": {
-            "entity": {
-              "kind": "point",
-              "value": "iges:model:point#D1-start"
-            }
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "RNURBS"
-            }
-          ]
         }
       ],
       "colliders": [],
@@ -237,18 +205,6 @@
               "entity": {
                 "curve": "iges:model:curve#D1",
                 "kind": "curve"
-              }
-            },
-            {
-              "entity": {
-                "kind": "point",
-                "point": "iges:model:point#D1-start"
-              }
-            },
-            {
-              "entity": {
-                "kind": "point",
-                "point": "iges:model:point#D1-end"
               }
             }
           ],

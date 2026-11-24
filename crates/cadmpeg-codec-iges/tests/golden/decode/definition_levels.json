@@ -156,38 +156,6 @@
               "value": "LINE"
             }
           ]
-        },
-        {
-          "id": "iges:model:attribute#point.D3-end",
-          "name": "name",
-          "target": {
-            "entity": {
-              "kind": "point",
-              "value": "iges:model:point#D3-end"
-            }
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "LINE"
-            }
-          ]
-        },
-        {
-          "id": "iges:model:attribute#point.D3-start",
-          "name": "name",
-          "target": {
-            "entity": {
-              "kind": "point",
-              "value": "iges:model:point#D3-start"
-            }
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "LINE"
-            }
-          ]
         }
       ],
       "colliders": [],
@@ -209,18 +177,6 @@
                 "curve": "iges:model:curve#D3",
                 "kind": "curve"
               }
-            },
-            {
-              "entity": {
-                "kind": "point",
-                "point": "iges:model:point#D3-start"
-              }
-            },
-            {
-              "entity": {
-                "kind": "point",
-                "point": "iges:model:point#D3-end"
-              }
             }
           ],
           "name": "11"
@@ -233,18 +189,6 @@
                 "curve": "iges:model:curve#D3",
                 "kind": "curve"
               }
-            },
-            {
-              "entity": {
-                "kind": "point",
-                "point": "iges:model:point#D3-start"
-              }
-            },
-            {
-              "entity": {
-                "kind": "point",
-                "point": "iges:model:point#D3-end"
-              }
             }
           ],
           "name": "2"
@@ -256,18 +200,6 @@
               "entity": {
                 "curve": "iges:model:curve#D3",
                 "kind": "curve"
-              }
-            },
-            {
-              "entity": {
-                "kind": "point",
-                "point": "iges:model:point#D3-start"
-              }
-            },
-            {
-              "entity": {
-                "kind": "point",
-                "point": "iges:model:point#D3-end"
               }
             }
           ],

@@ -238,38 +238,6 @@
               "value": "OFFSET"
             }
           ]
-        },
-        {
-          "id": "iges:model:attribute#point.D3:end",
-          "name": "name",
-          "target": {
-            "entity": {
-              "kind": "point",
-              "value": "iges:model:point#D3:end"
-            }
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "OFFSET"
-            }
-          ]
-        },
-        {
-          "id": "iges:model:attribute#point.D3:start",
-          "name": "name",
-          "target": {
-            "entity": {
-              "kind": "point",
-              "value": "iges:model:point#D3:start"
-            }
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "OFFSET"
-            }
-          ]
         }
       ],
       "colliders": [],
@@ -296,18 +264,6 @@
               "entity": {
                 "curve": "iges:model:curve#D3",
                 "kind": "curve"
-              }
-            },
-            {
-              "entity": {
-                "kind": "point",
-                "point": "iges:model:point#D3:start"
-              }
-            },
-            {
-              "entity": {
-                "kind": "point",
-                "point": "iges:model:point#D3:end"
               }
             }
           ],

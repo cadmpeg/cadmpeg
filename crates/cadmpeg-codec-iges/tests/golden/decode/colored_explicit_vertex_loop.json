@@ -197,22 +197,6 @@
       "assets": [],
       "attributes": [
         {
-          "id": "iges:model:attribute#point.D11:D5:1",
-          "name": "name",
-          "target": {
-            "entity": {
-              "kind": "point",
-              "value": "iges:model:point#D11:D5:1"
-            }
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "SHELL"
-            }
-          ]
-        },
-        {
           "id": "iges:model:attribute#surface.D3",
           "name": "name",
           "target": {
@@ -259,12 +243,6 @@
               "entity": {
                 "kind": "surface",
                 "surface": "iges:model:surface#D3"
-              }
-            },
-            {
-              "entity": {
-                "kind": "point",
-                "point": "iges:model:point#D11:D5:1"
               }
             }
           ],

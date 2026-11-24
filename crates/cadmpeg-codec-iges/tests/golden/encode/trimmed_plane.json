@@ -87,7 +87,7 @@
             "namespace": "export"
           }
         },
-        "message": "the iges write does not represent model arena `attributes`: 4 record(s) omitted",
+        "message": "the iges write does not represent model arena `attributes`: 3 record(s) omitted",
         "severity": "warning"
       },
       {

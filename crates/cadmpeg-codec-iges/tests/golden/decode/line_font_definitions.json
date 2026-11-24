@@ -156,38 +156,6 @@
               "value": "LINE"
             }
           ]
-        },
-        {
-          "id": "iges:model:attribute#point.D7-end",
-          "name": "name",
-          "target": {
-            "entity": {
-              "kind": "point",
-              "value": "iges:model:point#D7-end"
-            }
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "LINE"
-            }
-          ]
-        },
-        {
-          "id": "iges:model:attribute#point.D7-start",
-          "name": "name",
-          "target": {
-            "entity": {
-              "kind": "point",
-              "value": "iges:model:point#D7-start"
-            }
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "LINE"
-            }
-          ]
         }
       ],
       "colliders": [],
@@ -208,18 +176,6 @@
               "entity": {
                 "curve": "iges:model:curve#D7",
                 "kind": "curve"
-              }
-            },
-            {
-              "entity": {
-                "kind": "point",
-                "point": "iges:model:point#D7-start"
-              }
-            },
-            {
-              "entity": {
-                "kind": "point",
-                "point": "iges:model:point#D7-end"
               }
             }
           ],

@@ -721,86 +721,6 @@
           ]
         },
         {
-          "id": "iges:model:attribute#point.D37:D21:1",
-          "name": "name",
-          "target": {
-            "entity": {
-              "kind": "point",
-              "value": "iges:model:point#D37:D21:1"
-            }
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "SHELL"
-            }
-          ]
-        },
-        {
-          "id": "iges:model:attribute#point.D37:D21:2",
-          "name": "name",
-          "target": {
-            "entity": {
-              "kind": "point",
-              "value": "iges:model:point#D37:D21:2"
-            }
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "SHELL"
-            }
-          ]
-        },
-        {
-          "id": "iges:model:attribute#point.D37:D21:3",
-          "name": "name",
-          "target": {
-            "entity": {
-              "kind": "point",
-              "value": "iges:model:point#D37:D21:3"
-            }
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "SHELL"
-            }
-          ]
-        },
-        {
-          "id": "iges:model:attribute#point.D37:D21:4",
-          "name": "name",
-          "target": {
-            "entity": {
-              "kind": "point",
-              "value": "iges:model:point#D37:D21:4"
-            }
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "SHELL"
-            }
-          ]
-        },
-        {
-          "id": "iges:model:attribute#point.D37:D21:5",
-          "name": "name",
-          "target": {
-            "entity": {
-              "kind": "point",
-              "value": "iges:model:point#D37:D21:5"
-            }
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "SHELL"
-            }
-          ]
-        },
-        {
           "id": "iges:model:attribute#surface.D5",
           "name": "name",
           "target": {
@@ -901,36 +821,6 @@
               "entity": {
                 "kind": "surface",
                 "surface": "iges:model:surface#D5"
-              }
-            },
-            {
-              "entity": {
-                "kind": "point",
-                "point": "iges:model:point#D37:D21:1"
-              }
-            },
-            {
-              "entity": {
-                "kind": "point",
-                "point": "iges:model:point#D37:D21:2"
-              }
-            },
-            {
-              "entity": {
-                "kind": "point",
-                "point": "iges:model:point#D37:D21:3"
-              }
-            },
-            {
-              "entity": {
-                "kind": "point",
-                "point": "iges:model:point#D37:D21:4"
-              }
-            },
-            {
-              "entity": {
-                "kind": "point",
-                "point": "iges:model:point#D37:D21:5"
               }
             }
           ],

@@ -455,70 +455,6 @@
           ]
         },
         {
-          "id": "iges:model:attribute#point.D13:0:0",
-          "name": "name",
-          "target": {
-            "entity": {
-              "kind": "point",
-              "value": "iges:model:point#D13:0:0"
-            }
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "BOUNDED"
-            }
-          ]
-        },
-        {
-          "id": "iges:model:attribute#point.D13:0:1",
-          "name": "name",
-          "target": {
-            "entity": {
-              "kind": "point",
-              "value": "iges:model:point#D13:0:1"
-            }
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "BOUNDED"
-            }
-          ]
-        },
-        {
-          "id": "iges:model:attribute#point.D13:0:2",
-          "name": "name",
-          "target": {
-            "entity": {
-              "kind": "point",
-              "value": "iges:model:point#D13:0:2"
-            }
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "BOUNDED"
-            }
-          ]
-        },
-        {
-          "id": "iges:model:attribute#point.D13:0:3",
-          "name": "name",
-          "target": {
-            "entity": {
-              "kind": "point",
-              "value": "iges:model:point#D13:0:3"
-            }
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "BOUNDED"
-            }
-          ]
-        },
-        {
           "id": "iges:model:attribute#surface.D1",
           "name": "name",
           "target": {
@@ -589,30 +525,6 @@
               "entity": {
                 "kind": "surface",
                 "surface": "iges:model:surface#D1"
-              }
-            },
-            {
-              "entity": {
-                "kind": "point",
-                "point": "iges:model:point#D13:0:0"
-              }
-            },
-            {
-              "entity": {
-                "kind": "point",
-                "point": "iges:model:point#D13:0:1"
-              }
-            },
-            {
-              "entity": {
-                "kind": "point",
-                "point": "iges:model:point#D13:0:2"
-              }
-            },
-            {
-              "entity": {
-                "kind": "point",
-                "point": "iges:model:point#D13:0:3"
               }
             }
           ],

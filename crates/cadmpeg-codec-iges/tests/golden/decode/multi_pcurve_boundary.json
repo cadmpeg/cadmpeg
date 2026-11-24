@@ -436,22 +436,6 @@
           ]
         },
         {
-          "id": "iges:model:attribute#point.D11:0:0",
-          "name": "name",
-          "target": {
-            "entity": {
-              "kind": "point",
-              "value": "iges:model:point#D11:0:0"
-            }
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "BOUNDED"
-            }
-          ]
-        },
-        {
           "id": "iges:model:attribute#surface.D1",
           "name": "name",
           "target": {
@@ -516,12 +500,6 @@
               "entity": {
                 "kind": "surface",
                 "surface": "iges:model:surface#D1"
-              }
-            },
-            {
-              "entity": {
-                "kind": "point",
-                "point": "iges:model:point#D11:0:0"
               }
             }
           ],

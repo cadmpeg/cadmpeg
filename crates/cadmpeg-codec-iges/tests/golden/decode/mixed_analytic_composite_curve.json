@@ -322,38 +322,6 @@
               "value": "COMPOSIT"
             }
           ]
-        },
-        {
-          "id": "iges:model:attribute#point.D5-end",
-          "name": "name",
-          "target": {
-            "entity": {
-              "kind": "point",
-              "value": "iges:model:point#D5-end"
-            }
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "COMPOSIT"
-            }
-          ]
-        },
-        {
-          "id": "iges:model:attribute#point.D5-start",
-          "name": "name",
-          "target": {
-            "entity": {
-              "kind": "point",
-              "value": "iges:model:point#D5-start"
-            }
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "COMPOSIT"
-            }
-          ]
         }
       ],
       "colliders": [],
@@ -386,18 +354,6 @@
               "entity": {
                 "curve": "iges:model:curve#D5",
                 "kind": "curve"
-              }
-            },
-            {
-              "entity": {
-                "kind": "point",
-                "point": "iges:model:point#D5-start"
-              }
-            },
-            {
-              "entity": {
-                "kind": "point",
-                "point": "iges:model:point#D5-end"
               }
             }
           ],
