@@ -48,7 +48,7 @@ pub(crate) fn cgm_source_key(
     })?;
     Ok(SourceObjectAssociation {
         geometry_role: None,
-        format: cadmpeg_ir::codec_format!(crate::dialect::FORMAT),
+        format: cadmpeg_ir::codec_id!(crate::dialect::FORMAT),
         object_id,
         name: None,
         color: None,

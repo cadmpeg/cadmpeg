@@ -662,7 +662,9 @@ fn check_cycles(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
 
 /// The strongly connected components of `graph` that hold a cycle, each
 /// sorted, by Kosaraju's two passes, each walked without recursion.
-pub(super) fn cycles<'a>(graph: &BTreeMap<&'a str, BTreeSet<&'a str>>) -> Vec<Vec<&'a str>> {
+pub(in crate::validate) fn cycles<'a>(
+    graph: &BTreeMap<&'a str, BTreeSet<&'a str>>,
+) -> Vec<Vec<&'a str>> {
     let mut order = Vec::with_capacity(graph.len());
     let mut visited = BTreeSet::new();
     for &start in graph.keys() {

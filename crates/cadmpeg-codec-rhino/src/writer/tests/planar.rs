@@ -399,7 +399,7 @@ fn sub_resolution_edge_tolerance_is_refused_before_output() {
         Point3::new(0.0, 2.0, 0.0),
     ]);
     ir.geometry.edges[0].tolerance = Some(
-        cadmpeg_ir::scalar::PositiveReal::new(EPS_BELOW_WRITE_BOUND)
+        cadmpeg_ir::scalar::PositiveLength::new(EPS_BELOW_WRITE_BOUND)
             .expect("positive finite tolerance"),
     );
     let mut output = vec![0xaa];
@@ -425,7 +425,7 @@ fn sub_resolution_face_tolerance_is_refused_before_output() {
         Point3::new(0.0, 2.0, 0.0),
     ]);
     ir.geometry.faces[0].tolerance = Some(
-        cadmpeg_ir::scalar::PositiveReal::new(EPS_BELOW_WRITE_BOUND)
+        cadmpeg_ir::scalar::PositiveLength::new(EPS_BELOW_WRITE_BOUND)
             .expect("positive finite tolerance"),
     );
     let mut output = vec![0xaa];

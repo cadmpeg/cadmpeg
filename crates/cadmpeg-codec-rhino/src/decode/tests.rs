@@ -189,7 +189,7 @@ fn candidate_validation_propagates_entity_limit() {
                         .expect("finite point"),
                     Some(SourceObjectAssociation {
                         geometry_role: None,
-                        format: cadmpeg_ir::CodecFormat::Rhino,
+                        format: cadmpeg_ir::codec_id!("rhino"),
                         object_id: cadmpeg_core::text::NonBlankString::new("point-limited")
                             .expect("nonblank source id"),
                         name: None,
@@ -696,7 +696,7 @@ fn tolerance_scaling_maps_unset_and_zero_to_none() {
     assert_eq!(
         scaled_tolerance(admitted(0.5), crate::test_support::millimeter_scale(25.4))
             .expect("required invariant")
-            .map(cadmpeg_ir::scalar::PositiveReal::get),
+            .map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(12.7)
     );
     assert_eq!(
@@ -1053,7 +1053,7 @@ fn cap_extrusion(caps: [bool; 2]) -> crate::extrusion::DecodedExtrusion {
 fn test_association() -> SourceObjectAssociation {
     SourceObjectAssociation {
         geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Rhino,
+        format: cadmpeg_ir::codec_id!("rhino"),
         object_id: cadmpeg_core::text::NonBlankString::new("extrusion".to_string())
             .expect("nonempty source identity"),
         name: Some("Extrusion".to_string()),
@@ -1209,7 +1209,7 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
                     .expect("a finite position is a point"),
                 Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Rhino,
+                    format: cadmpeg_ir::codec_id!("rhino"),
                     object_id: cadmpeg_core::text::NonBlankString::new(format!("point-{key}"))
                         .unwrap(),
                     name: None,

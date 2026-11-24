@@ -403,10 +403,10 @@ pub struct Face {
         deserialize_with = "deserialize_color"
     )]
     pub color: Option<Color>,
-    /// Optional geometric tolerance in the document's length unit.
+    /// The entity's tolerance in millimetres, overriding `tolerances.linear`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_tolerance")]
-    pub tolerance: Option<crate::scalar::PositiveReal>,
+    pub tolerance: Option<crate::scalar::PositiveLength>,
     /// The source record this face projects.
     #[serde(
         default,
@@ -1270,10 +1270,10 @@ pub struct Edge {
         deserialize_with = "deserialize_ends"
     )]
     pub ends: Option<EdgeEnds>,
-    /// Optional geometric tolerance in the document's length unit.
+    /// The entity's tolerance in millimetres, overriding `tolerances.linear`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_tolerance")]
-    pub tolerance: Option<crate::scalar::PositiveReal>,
+    pub tolerance: Option<crate::scalar::PositiveLength>,
     /// The source record this edge projects.
     #[serde(
         default,
@@ -1362,10 +1362,10 @@ pub struct Vertex {
     pub id: VertexId,
     /// Position carrier.
     pub point: PointId,
-    /// Optional geometric tolerance in the document's length unit.
+    /// The entity's tolerance in millimetres, overriding `tolerances.linear`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_tolerance")]
-    pub tolerance: Option<crate::scalar::PositiveReal>,
+    pub tolerance: Option<crate::scalar::PositiveLength>,
     /// The source record this vertex projects.
     #[serde(
         default,
@@ -1460,7 +1460,7 @@ impl TryFrom<PointWire> for Point {
 
 cadmpeg_core::named_optional_field!(
     deserialize_tolerance,
-    crate::scalar::PositiveReal,
+    crate::scalar::PositiveLength,
     "tolerance"
 );
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
@@ -2386,6 +2386,19 @@ mod tests {
         point.set_position(moved);
         assert_eq!(point.position(), moved);
         assert_eq!(point.position().get(), Point3::new(1.0, -2.0, 3.5));
+    }
+
+    #[test]
+    fn a_topology_tolerance_is_a_positive_length() {
+        let schema: serde_json::Value =
+            serde_json::from_str(crate::CADIR_JSON_SCHEMA).expect("the schema is JSON");
+        for record in ["Face", "Edge", "Vertex"] {
+            assert_eq!(
+                schema["$defs"][record]["properties"]["tolerance"]["anyOf"][0]["$ref"],
+                "#/$defs/PositiveLength",
+                "{record}.tolerance"
+            );
+        }
     }
 
     /// A positive scale keeps the endpoint order; endpoints that round to

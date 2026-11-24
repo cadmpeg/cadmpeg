@@ -17,7 +17,7 @@ use crate::design::ops::datum::DatumElement;
 use crate::design::refs::{EntityRef, Evaluated, Member, Position};
 use crate::design::selection::{
     Anchor, DatumPart, DefinitionRef, OccurrencePath, PickContext, PickDomain, PickTarget, Picked,
-    Propagation, SelectionRule, StepRef,
+    SelectionRule, StepRef,
 };
 use crate::document::CadIr;
 use crate::ids::ProductDefinitionId;
@@ -30,7 +30,7 @@ use super::names::derived_kinds;
 use super::records::{DesignRecords, MemberKey, PositionKey};
 use super::states::{Extent, States};
 use super::walk::{PicksView, SelectionView, TermView};
-use super::{native_text, record_finding, Held, Holder};
+use super::{record_finding, Held, Holder};
 
 /// Where a pick sits: its holder, its selection's anchor, and the definition
 /// it resolves in without a context.
@@ -247,9 +247,24 @@ fn check_rules(selection: &SelectionView<'_>, site: Site<'_>, findings: &mut Vec
             SelectionRule::All { .. } if seeded => {
                 record(format_args!("an All rule term has seeds"));
             }
-            SelectionRule::All { .. } => {}
-            _ if !seeded => record(format_args!("a rule term other than All has no seeds")),
+            SelectionRule::Affected if seeded => {
+                record(format_args!("an Affected rule term has seeds"));
+            }
+            SelectionRule::All { .. } | SelectionRule::Affected => {}
+            _ if !seeded => record(format_args!(
+                "a rule term other than All or Affected has no seeds"
+            )),
             _ => {}
+        }
+        if matches!(term.rule, SelectionRule::Affected) {
+            if term.propagation.is_some() {
+                record(format_args!("an Affected rule term states a propagation"));
+            }
+            if !selection.participants {
+                record(format_args!(
+                    "an Affected rule term is outside an assembly context's participants"
+                ));
+            }
         }
         if let SelectionRule::Region { boundary } = term.rule {
             let curves = boundary.as_slice().iter().any(picks_curve);
@@ -260,22 +275,6 @@ fn check_rules(selection: &SelectionView<'_>, site: Site<'_>, findings: &mut Vec
             if curves && !containing {
                 record(format_args!("a Region term whose boundary picks curves has no seed with a Containing domain"),
                 );
-            }
-        }
-        if let SelectionRule::Native(text) = term.rule {
-            if !native_text(text.as_str()) {
-                record(format_args!(
-                    "native selection rule {:?} is not written codec:name",
-                    text.as_str()
-                ));
-            }
-        }
-        if let Some(Propagation::Native(text)) = term.propagation {
-            if !native_text(text.as_str()) {
-                record(format_args!(
-                    "native propagation {:?} is not written codec:name",
-                    text.as_str()
-                ));
             }
         }
     }

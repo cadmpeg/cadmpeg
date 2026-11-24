@@ -2,9 +2,10 @@
 #![allow(clippy::unwrap_used)]
 
 use super::{
-    ChannelAddressing, Strip, Strips, Tessellation, TessellationChannel, TessellationError,
-    TessellationId, TessellationMesh, TessellationTextureAssignment, TessellationTriangleGroup,
-    TessellationWire, TextureCoordinateAddressing, TextureCoordinates,
+    ChannelAddressing, ColorAddressing, MeshColors, Strip, Strips, Tessellation,
+    TessellationChannel, TessellationError, TessellationId, TessellationMesh,
+    TessellationTextureAssignment, TessellationTriangleGroup, TessellationWire,
+    TextureCoordinateAddressing, TextureCoordinates,
 };
 use crate::features::geometry::{FinitePoint3, FiniteVector3};
 use crate::math::{Point3, Vector3};
@@ -817,6 +818,56 @@ fn texture_coordinates_hold_one_value_per_vertex_or_corner_under_unique_names() 
         assert!(mesh().with_texture_coordinates(invalid).is_err());
     }
     rejects_wire_field("texture_coordinates", vec![coordinates("st", Vertex, 3)]);
+}
+
+fn colors(addressing: ColorAddressing, count: usize) -> MeshColors {
+    let red = crate::topology::Color::new(1.0, 0.0, 0.0, 1.0).unwrap();
+    MeshColors {
+        addressing,
+        values: vec![red; count],
+    }
+}
+
+/// §8: `colors` holds one value per vertex, per triangle corner, or per
+/// triangle; `Corner` and `Triangle` occur only on a mesh that lists its
+/// triangles.
+#[test]
+fn colors_hold_one_value_per_element_of_their_addressing() {
+    use ColorAddressing::{Corner, Triangle, Vertex};
+    assert!(serde_json::to_value(mesh())
+        .unwrap()
+        .get("colors")
+        .is_none());
+    for valid in [colors(Vertex, 4), colors(Corner, 6), colors(Triangle, 2)] {
+        let value = mesh().with_colors(Some(valid.clone())).unwrap();
+        assert_eq!(value.colors(), Some(&valid));
+        let wire = serde_json::to_value(&value).unwrap();
+        assert_eq!(
+            wire["colors"]["addressing"],
+            serde_json::to_value(valid.addressing).unwrap()
+        );
+        assert_eq!(serde_json::from_value::<Tessellation>(wire).unwrap(), value);
+    }
+    for invalid in [colors(Vertex, 3), colors(Corner, 4), colors(Triangle, 6)] {
+        assert!(mesh().with_colors(Some(invalid)).is_err());
+    }
+    rejects_wire_field("colors", colors(Triangle, 3));
+    rejects_wire_field("colors", serde_json::Value::Null);
+
+    let strips = Tessellation::new(
+        TessellationId::mint("test:mesh:tessellation#strips").expect("valid identity"),
+        TessellationMesh::Strips {
+            strips: Strips::from_spans(square(), &[4]).unwrap(),
+        },
+        Vec::new(),
+    )
+    .unwrap();
+    assert!(strips.clone().with_colors(Some(colors(Vertex, 4))).is_ok());
+    assert!(strips
+        .clone()
+        .with_colors(Some(colors(Triangle, 2)))
+        .is_err());
+    assert!(strips.with_colors(Some(colors(Corner, 6))).is_err());
 }
 
 #[test]

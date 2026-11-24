@@ -59,6 +59,7 @@ pub(super) fn feature(name: &str, operation: FeatureOperation) -> Feature {
         suppressed: None,
         definition: FeatureDefinition {
             operation,
+            assembly: None,
             refine: None,
             fuzzy_tolerance: None,
         },

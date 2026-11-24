@@ -81,19 +81,19 @@ fn native_dimensions_keep_binding_state_flags_and_operands() {
         };
         assert_eq!(values, &[expected]);
         assert_eq!(
-            target.native_options[&cadmpeg_core::nonblank_literal!("inventor:flags")],
+            target.native_options["inventor:flags"],
             NativeOption::Text(Dimension::Literal(
                 cadmpeg_core::text::NonBlankString::new(u64::MAX.to_string()).expect("flags")
             ))
         );
         assert!(target
             .native_options
-            .contains_key(&cadmpeg_core::nonblank_literal!("inventor:operands")));
+            .contains_key(&cadmpeg_ir::codec_name!("inventor:operands")));
         assert!(loss(&source, &kinds).is_none());
         let fallback = project(&source, &BTreeMap::new()).expect("retained unresolved parameter");
         assert!(fallback
             .native_options
-            .contains_key(&cadmpeg_core::nonblank_literal!("inventor:relation")));
+            .contains_key(&cadmpeg_ir::codec_name!("inventor:relation")));
         assert_eq!(
             loss(&source, &BTreeMap::new()).expect("pinned loss").code,
             crate::loss::InventorLossCode::SketchDesignConstraintNative.kind()

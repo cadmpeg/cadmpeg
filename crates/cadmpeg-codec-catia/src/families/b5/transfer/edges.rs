@@ -497,7 +497,8 @@ pub(super) fn emit_edges(
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), edge_range)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             ends: Some(cadmpeg_ir::topology::EdgeEnds::new(start, end)),
-            tolerance: edge_tolerance,
+            tolerance: edge_tolerance
+                .map(cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real),
             native_ref: None,
         });
     }

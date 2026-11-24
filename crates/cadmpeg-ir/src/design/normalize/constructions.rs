@@ -23,12 +23,12 @@ use crate::design::evaluation::Evaluation;
 use crate::design::feature::{Feature, FeatureOperation};
 use crate::design::ops::datum::DatumElement;
 use crate::design::ops::sketch::{
-    EntityDefinition, Planar, PlanarCurve, SketchEntity, Spatial, SpatialCurve,
+    BoundedCurve, EntityDefinition, Planar, PlanarCurve, SketchEntity, Spatial, SpatialCurve,
 };
 use crate::design::refs::EntityRef;
 use crate::design::selection::{DatumPart, PickTarget, Picked, Picks, PrincipalEntity};
 use crate::document::Topology;
-use crate::geometry::{CurveGeometry, SolvedCurveGeometry};
+use crate::geometry::{CurveGeometry, InlineCurve, SolvedCurveGeometry};
 use crate::process::state::ProcessState;
 use crate::topology::EdgeCarrier;
 
@@ -205,7 +205,7 @@ impl ConstructionFacts for Facts<'_> {
         if witnessed.len() > 1 || resolved.len() > 1 {
             return false;
         }
-        let mut stated: Vec<bool> = witnessed.iter().map(solved_straight_or_circular).collect();
+        let mut stated: Vec<bool> = witnessed.iter().map(inline_straight_or_circular).collect();
         if !resolved.is_empty() {
             let carriers_index = self.carriers();
             for entity in resolved {
@@ -243,6 +243,10 @@ const fn solved_straight_or_circular(curve: &SolvedCurveGeometry) -> bool {
     )
 }
 
+const fn inline_straight_or_circular(curve: &InlineCurve) -> bool {
+    matches!(curve, InlineCurve::Line(_) | InlineCurve::Circle(_))
+}
+
 /// The curve an entity's definition states: a free curve, or a defining
 /// form's solved curve.
 fn stated_curve<S: crate::design::ops::sketch::SketchSpace>(
@@ -264,10 +268,10 @@ const fn planar_straight_or_circular(curve: &PlanarCurve) -> bool {
 const fn spatial_straight_or_circular(curve: &SpatialCurve) -> bool {
     matches!(
         curve,
-        SpatialCurve::Bounded {
-            carrier: SolvedCurveGeometry::Line(_) | SolvedCurveGeometry::Circle(_),
+        SpatialCurve::Bounded(BoundedCurve {
+            carrier: InlineCurve::Line(_) | InlineCurve::Circle(_),
             ..
-        }
+        })
     )
 }
 

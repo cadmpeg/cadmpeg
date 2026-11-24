@@ -18,8 +18,9 @@ use crate::design::ids::{
     MachineId, MachiningFeatureId, OperationId, PresetId, ProcessGroupId, ProcessParameterId,
     ProgramId, SetupId, ToolId,
 };
-use crate::design::names::{CodecId, NameKind, NativeName, NativeNameValue, TopoName};
+use crate::design::names::{NameKind, NativeName, NativeNameValue, TopoName};
 use crate::design::ops::shared::RadialDimension;
+use crate::design::ops::sketch::BoundedCurve;
 use crate::design::options::Hand;
 use crate::design::selection::{
     Anchor, MemberOrder, Members, PickTarget, Picked, Picks, Selection,
@@ -28,7 +29,7 @@ use crate::design::units::{AngularSpeed, Duration, Feed, UnitSymbol};
 use crate::features::geometry::FinitePoint3;
 use crate::features::{FeatureId, ParameterId};
 use crate::geometry::analytic::LineCurve;
-use crate::geometry::SolvedCurveGeometry;
+use crate::geometry::InlineCurve;
 use crate::math::{Point3, Vector3};
 use crate::process::cycle::{Cycle, CycleKind, CycleReturn, PlaneAxis, ProbeTarget};
 use crate::process::feature::{MachiningFeature, MachiningFeatureClass};
@@ -65,6 +66,7 @@ use crate::process::tool::{
 use crate::process::toolpath::{Heater, Motion, MotionClass, MotionValue, MovementClass};
 use crate::process::{Choice, ProcessConstruction, ProcessDimension, WorkpieceSelection};
 use crate::scalar::{Angle, FiniteReal, Fraction, Length};
+use crate::topology::IncreasingParameterInterval;
 use crate::transform::Transform;
 use crate::units::UnitVector3;
 
@@ -165,7 +167,7 @@ pub(super) fn design_ref(key: u32) -> ParamRef {
 
 pub(super) fn native_name(value: &str) -> NativeName {
     NativeName {
-        codec: CodecId::from(text("f3d")),
+        codec: crate::codec_id!("f3d"),
         value: NativeNameValue::Text(text(value)),
     }
 }
@@ -628,17 +630,27 @@ pub(super) fn tool_axis_controls() -> Vec<ToolAxisControl> {
 }
 
 pub(super) fn profile_curves() -> Vec<ProfileCurve> {
-    let line = SolvedCurveGeometry::Line(
+    let line = InlineCurve::Line(
         LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)).unwrap(),
     );
     vec![
         ProfileCurve {
-            geometry: line.clone(),
+            geometry: Some(BoundedCurve {
+                carrier: line.clone(),
+                range: IncreasingParameterInterval::new([0.0, 2.5]),
+            }),
             source: Some(selection()),
         },
         ProfileCurve {
-            geometry: line,
+            geometry: Some(BoundedCurve {
+                carrier: line,
+                range: IncreasingParameterInterval::new([-1.0, 1.0]),
+            }),
             source: None,
+        },
+        ProfileCurve {
+            geometry: None,
+            source: Some(selection()),
         },
     ]
 }

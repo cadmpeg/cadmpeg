@@ -74,7 +74,7 @@ pub(in crate::decode) fn transfer_active_boundary_planes(
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(geometry)),
                 source_object: Some(SourceObjectAssociation {
                     geometry_role: None,
-                    format: cadmpeg_ir::CodecFormat::Creo,
+                    format: cadmpeg_ir::codec_id!("creo"),
                     object_id: crate::identity::source_object_id_checked(format_args!(
                         "ActDatums:{}",
                         plane.row.id

@@ -296,7 +296,8 @@ impl Walk for SplitTool {
     fn walk<'a>(&'a self, into: &mut Collect<'a, '_>) -> Result<(), CodecError> {
         match self {
             Self::Plane(f0) => f0.walk(into),
-            Self::Geometry(f0) => f0.walk(into),
+            Self::Geometry { tools, extend: _ } => tools.walk(into),
+            Self::Silhouette(f0) => f0.walk(into),
         }
     }
 }
