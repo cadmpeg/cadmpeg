@@ -64,14 +64,7 @@ fn check_reference_anchors(
     findings: &mut Vec<Finding>,
 ) {
     let count = annotation.reference_anchors.len();
-    let admitted = if annotation.kind
-        == crate::semantic_annotations::SemanticAnnotationKind::Dimension
-        && annotation.dimension_kind.is_some()
-    {
-        2
-    } else {
-        1
-    };
+    let admitted = annotation.admitted_reference_anchors();
     if count > admitted {
         record_finding(
             findings,
