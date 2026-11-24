@@ -13193,6 +13193,10 @@
       "description": "A quantity that the source states for a target.",
       "type": "object",
       "properties": {
+        "basis": {
+          "description": "Whether the value can predate the bodies; `None` states neither.",
+          "$ref": "#/$defs/MeasureBasis"
+        },
         "id": {
           "description": "Globally unique record identity.",
           "$ref": "#/$defs/DeclaredMeasureId"
@@ -13205,17 +13209,13 @@
           "description": "Format-native record supplying the quantity.",
           "type": "string"
         },
-        "provenance": {
-          "description": "The evidence class of the stated quantity.",
-          "$ref": "#/$defs/DeclaredMeasureProvenance"
+        "precision": {
+          "description": "The bound within which the stored value holds the value the source\ncomputed, in the quantity's unit and for each coordinate of a\ncentroid.",
+          "$ref": "#/$defs/NonNegativeReal"
         },
         "quantity": {
           "description": "The stated quantity.",
           "$ref": "#/$defs/DeclaredQuantity"
-        },
-        "source_error": {
-          "description": "Absolute bound on source-value representation error, in the quantity's\nunits. For centroid quantities, this is a Euclidean-distance bound.",
-          "$ref": "#/$defs/NonNegativeReal"
         },
         "target": {
           "description": "The described bodies.",
@@ -13226,33 +13226,12 @@
       "required": [
         "id",
         "target",
-        "quantity",
-        "provenance"
+        "quantity"
       ]
     },
     "DeclaredMeasureId": {
       "description": "Identifies a [`crate::declared_measures::DeclaredMeasure`] record.",
       "$ref": "#/$defs/Identity"
-    },
-    "DeclaredMeasureProvenance": {
-      "description": "The evidence class of a source-stated quantity.",
-      "oneOf": [
-        {
-          "description": "A source-stated quantity without a more specific evidence class.",
-          "type": "string",
-          "const": "source_declaration"
-        },
-        {
-          "description": "A source validation property that states an expected geometric value.",
-          "type": "string",
-          "const": "validation_property"
-        },
-        {
-          "description": "A computed quantity retained by the source for later reuse.",
-          "type": "string",
-          "const": "saved_cache"
-        }
-      ]
     },
     "DeclaredQuantity": {
       "description": "One stated quantity.",
@@ -42664,6 +42643,21 @@
       "required": [
         "kind",
         "of"
+      ]
+    },
+    "MeasureBasis": {
+      "description": "Whether a stated value can predate the bodies it describes.",
+      "oneOf": [
+        {
+          "description": "A value written with the bodies for a reader to check a transfer\nagainst.",
+          "type": "string",
+          "const": "validation"
+        },
+        {
+          "description": "The source's own last computation, which an edit after it leaves\nstale.",
+          "type": "string",
+          "const": "cache"
+        }
       ]
     },
     "MeasureKind": {
