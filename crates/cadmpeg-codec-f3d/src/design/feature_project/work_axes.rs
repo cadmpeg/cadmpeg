@@ -74,7 +74,7 @@ fn native_input(
         target: PickTarget::Native { within: None },
         context: None,
         native: Some(NativeName {
-            codec: cadmpeg_core::nonblank_literal!("f3d").into(),
+            codec: cadmpeg_ir::codec_id!("f3d"),
             value: name,
         }),
         domain: None,
@@ -180,7 +180,7 @@ fn note_null(scope: &DesignParameterScope, run: &AxisReferenceRun, losses: &mut 
 
 fn scalar_option(
     options: &mut NativeOptions,
-    key: cadmpeg_core::text::NonBlankString,
+    key: cadmpeg_ir::design::names::CodecName,
     value: ReadField<FiniteReal>,
 ) {
     if let ReadField::Value(value) = value {
@@ -190,7 +190,7 @@ fn scalar_option(
 
 fn integer_option(
     options: &mut NativeOptions,
-    key: cadmpeg_core::text::NonBlankString,
+    key: cadmpeg_ir::design::names::CodecName,
     value: ReadField<u32>,
 ) {
     if let ReadField::Value(value) = value {
@@ -296,17 +296,17 @@ pub(super) fn project(
             geometry = *bounding_box_index == ReadField::Value(8);
             integer_option(
                 &mut axis.native_options,
-                cadmpeg_core::nonblank_literal!("f3d:bounding_box_index"),
+                cadmpeg_ir::codec_name!("f3d:bounding_box_index"),
                 *bounding_box_index,
             );
             integer_option(
                 &mut axis.native_options,
-                cadmpeg_core::nonblank_literal!("f3d:reference_type"),
+                cadmpeg_ir::codec_name!("f3d:reference_type"),
                 *reference_type,
             );
             for (key, value) in [
-                cadmpeg_core::nonblank_literal!("f3d:point_parameter_0"),
-                cadmpeg_core::nonblank_literal!("f3d:point_parameter_1"),
+                cadmpeg_ir::codec_name!("f3d:point_parameter_0"),
+                cadmpeg_ir::codec_name!("f3d:point_parameter_1"),
             ]
             .into_iter()
             .zip(point_parameters)
@@ -316,14 +316,14 @@ pub(super) fn project(
             if let ReadField::Value(prefix) = tangent_prefix {
                 integer_option(
                     &mut axis.native_options,
-                    cadmpeg_core::nonblank_literal!("f3d:tangent_prefix"),
+                    cadmpeg_ir::codec_name!("f3d:tangent_prefix"),
                     ReadField::Value(u32::from(*prefix)),
                 );
             }
             for ((index, value), key) in tangent.iter().enumerate().zip([
-                cadmpeg_core::nonblank_literal!("f3d:tangent_0"),
-                cadmpeg_core::nonblank_literal!("f3d:tangent_1"),
-                cadmpeg_core::nonblank_literal!("f3d:tangent_2"),
+                cadmpeg_ir::codec_name!("f3d:tangent_0"),
+                cadmpeg_ir::codec_name!("f3d:tangent_1"),
+                cadmpeg_ir::codec_name!("f3d:tangent_2"),
             ]) {
                 if let ReadField::Value(value) = value {
                     if let Some(length) = Length::new(value.get() * CM_TO_MM) {

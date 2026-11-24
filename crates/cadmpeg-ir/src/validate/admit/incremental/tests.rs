@@ -41,7 +41,7 @@ fn sourced_point(id: &str) -> crate::topology::Point {
         None,
     );
     point.source_object = Some(crate::provenance::SourceObjectAssociation {
-        format: crate::CodecFormat::Rhino,
+        format: crate::codec_id!("rhino"),
         geometry_role: None,
         object_id: cadmpeg_core::nonblank_literal!("synthetic"),
         name: None,
@@ -104,13 +104,16 @@ fn shared_references_and_rejected_identities_keep_combined_admission_guarantees(
                 region_id.clone(),
                 id.try_into().unwrap(),
             ));
-        candidate.geometry.regions.push(crate::topology::Region {
-            id: region_id.clone(),
-            body: body_id.clone(),
-            shells: vec![shell_id],
-            native_ref: None,
-        });
+        candidate
+            .geometry
+            .regions
+            .push(crate::topology::Region::new(
+                region_id.clone(),
+                body_id.clone(),
+                vec![shell_id],
+            ));
         candidate.geometry.bodies.push(crate::topology::Body {
+            unstated: None,
             id: body_id,
             kind: crate::topology::BodyKind::General,
             transform: None,

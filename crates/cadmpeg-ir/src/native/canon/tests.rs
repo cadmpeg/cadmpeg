@@ -480,7 +480,7 @@ fn malformed_raw_json_protocol_cannot_produce_a_native_value() {
 }
 
 #[test]
-fn native_float_keys_keep_the_scalar_json_spelling() {
+fn native_float_keys_keep_the_scalar_json_spelling_with_one_zero() {
     struct Keyed<T>(T);
     impl<T: Serialize> Serialize for Keyed<T> {
         fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -506,9 +506,13 @@ fn native_float_keys_keep_the_scalar_json_spelling() {
             keyed: Keyed(value),
         };
         let stored = super::super::NativeRecord::from_typed(&record).unwrap();
+        let one_zero = Record {
+            id: record.id,
+            keyed: Keyed(value + 0.0),
+        };
         assert_eq!(
             serde_json::to_value(&stored).unwrap(),
-            serde_json::to_value(&record).unwrap()
+            serde_json::to_value(&one_zero).unwrap()
         );
     }
     for value in [
@@ -523,9 +527,13 @@ fn native_float_keys_keep_the_scalar_json_spelling() {
             keyed: Keyed(value),
         };
         let stored = super::super::NativeRecord::from_typed(&record).unwrap();
+        let one_zero = Record {
+            id: record.id,
+            keyed: Keyed(value + 0.0),
+        };
         assert_eq!(
             serde_json::to_value(&stored).unwrap(),
-            serde_json::to_value(&record).unwrap()
+            serde_json::to_value(&one_zero).unwrap()
         );
     }
 }

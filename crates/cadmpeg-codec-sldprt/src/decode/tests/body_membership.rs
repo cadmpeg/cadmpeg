@@ -151,7 +151,7 @@ fn typed_ownership_keeps_distinct_bodies_separate() {
     assert!(result.ir().geometry.shells.iter().all(|shell| result
         .ir()
         .geometry
-        .shell_faces(&shell.id)
+        .stated_shell_faces(&shell.id)
         .count()
         == 1));
 }
@@ -243,7 +243,7 @@ fn distinct_faces_with_shared_metadata_head_retain_typed_body_membership() {
     assert!(result.ir().geometry.shells.iter().all(|shell| result
         .ir()
         .geometry
-        .shell_faces(&shell.id)
+        .stated_shell_faces(&shell.id)
         .count()
         == 1));
 }
@@ -266,7 +266,7 @@ fn a_void_region_without_faces_transfers_no_region_and_a_faceless_solid_region_s
         .geometry
         .regions
         .iter()
-        .map(|region| (region.id.as_str(), region.shells.len()))
+        .map(|region| (region.id.as_str(), region.stated_shells().count()))
         .collect();
     assert_eq!(
         regions,
@@ -275,7 +275,7 @@ fn a_void_region_without_faces_transfers_no_region_and_a_faceless_solid_region_s
     let body_regions: BTreeSet<_> = result
         .ir()
         .geometry
-        .body_regions(&result.ir().geometry.bodies[0].id)
+        .stated_body_regions(&result.ir().geometry.bodies[0].id)
         .map(|region| region.id.as_str())
         .collect();
     assert_eq!(

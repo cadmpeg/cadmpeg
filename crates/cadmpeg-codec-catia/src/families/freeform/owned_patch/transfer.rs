@@ -17,7 +17,6 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, EdgeCarrier, Face, FaceLoops, Loop, LoopBoundary, LoopRing,
     PcurveUse, Point, Region, Sense, Shell, Vertex,
@@ -608,7 +607,7 @@ fn append_component(
         }
     }
     admit(shell.as_str(), body, "bounded_face_subset")?;
-    let tolerance = PositiveReal::new(GAP_MM);
+    let tolerance = cadmpeg_ir::scalar::PositiveLength::new(GAP_MM);
     for (vertex, point) in vertices {
         let point_id = id!(PointId, "point", vertex);
         let vertex_id = id!(VertexId, "vertex", vertex);
@@ -625,7 +624,7 @@ fn append_component(
         ir.geometry.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,
-            tolerance: PositiveReal::new(vertex_gaps[&vertex].max(GAP_MM)),
+            tolerance: cadmpeg_ir::scalar::PositiveLength::new(vertex_gaps[&vertex].max(GAP_MM)),
             native_ref: None,
         });
     }
@@ -645,7 +644,7 @@ fn append_component(
                 admit(edge_id.as_str(), accuracy.source, "parameter_map_accuracy")?;
             }
         }
-        let tolerance = PositiveReal::new(edge_accuracy_mm);
+        let tolerance = cadmpeg_ir::scalar::PositiveLength::new(edge_accuracy_mm);
         if edge_accuracy_mm > GAP_MM {
             inferred_fields.push((edge_id.to_string(), "tolerance"));
         }
@@ -799,14 +798,11 @@ fn append_component(
         .iter_mut()
         .find(|owner| owner.id == region)
     {
-        owner.shells.push(shell);
+        owner.push_shell(shell);
     } else {
-        ir.geometry.regions.push(Region {
-            id: region,
-            body: body_id.clone(),
-            shells: vec![shell],
-            native_ref: None,
-        });
+        ir.geometry
+            .regions
+            .push(Region::new(region, body_id.clone(), vec![shell]));
     }
     if new_body {
         ir.geometry.bodies.push(Body {
@@ -817,6 +813,7 @@ fn append_component(
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
     }
     Ok(true)

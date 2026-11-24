@@ -19,7 +19,8 @@ use crate::design::names::{
 };
 use crate::design::ops::body::{PatternInstances, TransformMode};
 use crate::design::ops::shared::{
-    DimensionTable, PatternLayout, PatternRun, RunSides, Spacing, UpToFill,
+    CircularLayout, CompositeStage, DimensionTable, LinearLayout, PatternLayout, PatternRun,
+    RunSides, ScaleLayout, Spacing, UpToFill,
 };
 use crate::design::options::SymmetricMeasure;
 use crate::design::refs::{EntityRef, Evaluated};
@@ -407,6 +408,42 @@ impl Coordinate<'_> {
     }
 }
 
+impl LayoutCoordinates<'_> {
+    fn linear(&mut self, layout: &LinearLayout) {
+        if layout.second.is_some() && matches!(layout.seed_only, Some(Dimension::Literal(true))) {
+            self.seed_only.push(self.coordinates.len());
+        }
+        self.coordinates
+            .push(run_coordinate(&layout.first.run, false));
+        self.coordinates.extend(
+            layout
+                .second
+                .iter()
+                .map(|second| run_coordinate(&second.run, false)),
+        );
+    }
+
+    fn circular(&mut self, layout: &CircularLayout) {
+        self.coordinates
+            .push(run_coordinate(&layout.angular, false));
+        self.coordinates.extend(
+            layout
+                .radial
+                .iter()
+                .map(|radial| run_coordinate(radial, false)),
+        );
+    }
+
+    fn mirror(&mut self) {
+        self.coordinates.push(Coordinate::between(0, 1));
+    }
+
+    fn scale(&mut self, layout: &ScaleLayout) {
+        let last = literal(&layout.count).map(|count| i64::from(count) - 1);
+        self.coordinates.push(Coordinate::Range(Some(0), last));
+    }
+}
+
 /// The coordinates of an instance index of `layout`, in declaration order.
 /// `None` where the layout does not state its runs.
 fn layout_coordinates(layout: &PatternLayout) -> Option<LayoutCoordinates<'_>> {
@@ -414,56 +451,40 @@ fn layout_coordinates(layout: &PatternLayout) -> Option<LayoutCoordinates<'_>> {
         coordinates: Vec::new(),
         seed_only: Vec::new(),
     };
-    let mut stack = vec![layout];
-    while let Some(layout) = stack.pop() {
-        let coordinates = &mut found.coordinates;
-        match layout {
-            PatternLayout::Linear {
-                first,
-                second,
-                seed_only,
-            } => {
-                if second.is_some() && matches!(seed_only, Some(Dimension::Literal(true))) {
-                    found.seed_only.push(coordinates.len());
+    match layout {
+        PatternLayout::Linear(linear) => found.linear(linear),
+        PatternLayout::Circular(circular) => found.circular(circular),
+        PatternLayout::Path { run, .. } => found.coordinates.push(run_coordinate(run, true)),
+        PatternLayout::Points { points, .. } => {
+            let last = match &points.picks {
+                Picks::Named(picks) => i64::try_from(picks.as_slice().len()).ok(),
+                _ => None,
+            };
+            found.coordinates.push(Coordinate::Range(Some(1), last));
+        }
+        PatternLayout::Dimensions(runs) => {
+            found.coordinates.extend(runs.iter().map(|run| {
+                literal(&run.count).map_or(Coordinate::ANY, |count| {
+                    Coordinate::between(0, i64::from(count) - 1)
+                })
+            }));
+        }
+        PatternLayout::Table(table) => found.coordinates.push(Coordinate::Row(table)),
+        PatternLayout::Mirror(_) => found.mirror(),
+        PatternLayout::Scale(scale) => found.scale(scale),
+        PatternLayout::Composite(stages) => {
+            for stage in stages {
+                match stage {
+                    CompositeStage::Linear(linear) => found.linear(linear),
+                    CompositeStage::Circular(circular) => found.circular(circular),
+                    CompositeStage::Mirror(_) => found.mirror(),
+                    CompositeStage::Scale(scale) => found.scale(scale),
+                    CompositeStage::Native(_) => return None,
                 }
-                coordinates.push(run_coordinate(&first.run, false));
-                coordinates.extend(
-                    second
-                        .iter()
-                        .map(|second| run_coordinate(&second.run, false)),
-                );
             }
-            PatternLayout::Circular {
-                angular, radial, ..
-            } => {
-                coordinates.push(run_coordinate(angular, false));
-                coordinates.extend(radial.iter().map(|radial| run_coordinate(radial, false)));
-            }
-            PatternLayout::Path { run, .. } => coordinates.push(run_coordinate(run, true)),
-            PatternLayout::Points { points, .. } => {
-                let last = match &points.picks {
-                    Picks::Named(picks) => i64::try_from(picks.as_slice().len()).ok(),
-                    _ => None,
-                };
-                coordinates.push(Coordinate::Range(Some(1), last));
-            }
-            PatternLayout::Dimensions(runs) => {
-                coordinates.extend(runs.iter().map(|run| {
-                    literal(&run.count).map_or(Coordinate::ANY, |count| {
-                        Coordinate::between(0, i64::from(count) - 1)
-                    })
-                }));
-            }
-            PatternLayout::Table(table) => coordinates.push(Coordinate::Row(table)),
-            PatternLayout::Mirror { .. } => coordinates.push(Coordinate::between(1, 1)),
-            PatternLayout::Scale { count, .. } => {
-                let last = literal(count).map(|count| i64::from(count) - 1);
-                coordinates.push(Coordinate::Range(Some(1), last));
-            }
-            PatternLayout::Composite(stages) => stack.extend(stages.iter().rev()),
-            PatternLayout::Follow(_) | PatternLayout::Chain(_) | PatternLayout::Native(_) => {
-                return None
-            }
+        }
+        PatternLayout::Follow(_) | PatternLayout::Chain(_) | PatternLayout::Native(_) => {
+            return None
         }
     }
     Some(found)

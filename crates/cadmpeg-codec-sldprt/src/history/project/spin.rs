@@ -202,7 +202,7 @@ pub(super) fn project_sweep(
         shape: cadmpeg_ir::features::sweeps::SweepShape::sheet_sections(
             mode,
             profile.map_or(
-                cadmpeg_ir::features::sweeps::SweepSection::Unresolved(None),
+                cadmpeg_ir::features::sweeps::SweepSection::Unresolved,
                 cadmpeg_ir::features::sweeps::SweepSection::Profile,
             ),
             Vec::new(),

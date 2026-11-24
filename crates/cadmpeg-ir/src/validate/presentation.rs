@@ -88,7 +88,25 @@ pub(super) fn check_presentation(ids: &ModelIndex<'_>, findings: &mut Vec<Findin
             add(item.id.as_str(), ());
         }
     });
+    let layers = BorrowedIdentities::build(|add| {
+        for layer in &ir.model.presentation_layers {
+            add(layer.id.as_str(), ());
+        }
+    });
     for layer in &ir.model.presentation_layers {
+        if layer
+            .parent
+            .as_ref()
+            .is_some_and(|parent| !layers.contains(parent.as_str()))
+        {
+            record_finding(
+                findings,
+                Check::ReferentialIntegrity,
+                Severity::Error,
+                Some(layer.id.as_str()),
+                format_args!("{}", "unresolved presentation-layer parent"),
+            );
+        }
         for item in &layer.items {
             let resolved = match &item.entity {
                 PresentationItem::Body { body } => {

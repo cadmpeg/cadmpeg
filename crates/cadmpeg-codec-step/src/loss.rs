@@ -176,6 +176,8 @@ pub(crate) enum StepLossCode {
     NoExportableSolids,
     /// A layer item has no writable STEP carrier.
     LayerItemWithoutCarrier,
+    /// A sublayer is written as a top-level layer.
+    LayerHierarchyFlattened,
     /// An occurrence has an unresolved parent.
     OccurrenceUnresolvedParent,
     /// An occurrence has no local product definition.
@@ -510,6 +512,7 @@ impl StepLossCode {
         Self::ValidationItemUnsupported,
         Self::NoExportableSolids,
         Self::LayerItemWithoutCarrier,
+        Self::LayerHierarchyFlattened,
         Self::OccurrenceUnresolvedParent,
         Self::OccurrenceNoLocalProduct,
         Self::OccurrencePlacementNotRigid,
@@ -717,6 +720,7 @@ impl StepLossCode {
             Self::ValidationItemUnsupported => "validation.item-unsupported",
             Self::NoExportableSolids => "export.no-exportable-solids",
             Self::LayerItemWithoutCarrier => "layer.item-without-carrier",
+            Self::LayerHierarchyFlattened => "layer.hierarchy-flattened",
             Self::OccurrenceUnresolvedParent => "occurrence.unresolved-parent",
             Self::OccurrenceNoLocalProduct => "occurrence.no-local-product",
             Self::OccurrencePlacementNotRigid => "occurrence.placement-not-rigid",
@@ -958,6 +962,7 @@ impl StepLossCode {
             | Self::ValidationItemUnsupported => LossTaxonomy::MetadataNotTransferred,
             Self::AttributeStringInvalid
             | Self::LayerItemWithoutCarrier
+            | Self::LayerHierarchyFlattened
             | Self::HiddenBodyVisibilityUnsupported
             | Self::HiddenAppearanceVisibilityUnsupported
             | Self::HiddenPresentationLayerVisibilityUnsupported
@@ -1212,6 +1217,7 @@ mod tests {
                 "validation.item-unsupported",
                 "export.no-exportable-solids",
                 "layer.item-without-carrier",
+                "layer.hierarchy-flattened",
                 "occurrence.unresolved-parent",
                 "occurrence.no-local-product",
                 "occurrence.placement-not-rigid",

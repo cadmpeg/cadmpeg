@@ -209,7 +209,7 @@ impl<'a> Resolver<'a, '_, '_> {
                 .topology
                 .bodies
                 .get(located.index)
-                .map(|body| self.children.body_regions(&body.id))
+                .map(|body| self.children.stated_body_regions(&body.id))
                 .unwrap_or_default()
                 .iter()
                 .map(|region| region.id.as_str())
@@ -218,7 +218,7 @@ impl<'a> Resolver<'a, '_, '_> {
                 .topology
                 .shells
                 .get(located.index)
-                .map(|shell| self.children.shell_faces(&shell.id))
+                .map(|shell| self.children.stated_shell_faces(&shell.id))
                 .unwrap_or_default()
                 .iter()
                 .map(|face| face.id.as_str())

@@ -229,7 +229,7 @@ fn reversed_void_shell_measures_the_enclosed_volume_through_a_round_trip() {
     );
     let decoded = decode_inline(&records);
     assert_eq!(decoded.ir().geometry.regions.len(), 1);
-    assert_eq!(decoded.ir().geometry.regions[0].shells.len(), 2);
+    assert_eq!(decoded.ir().geometry.regions[0].stated_shells().count(), 2);
     let findings = orientation_findings(decoded.ir());
     assert!(findings.is_empty(), "{findings:#?}");
     let before = measured("solid with a void", decoded.ir()).expect("the document is measured");

@@ -1716,7 +1716,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             scheme: SubdScheme::TSpline,
             source_object: Some(SourceObjectAssociation {
                 geometry_role: None,
-                format: cadmpeg_ir::CodecFormat::F3d,
+                format: cadmpeg_ir::codec_id!("f3d"),
                 object_id: cadmpeg_core::text::NonBlankString::new(name.to_owned())
                     .ok_or_else(|| malformed(name, "source object_id must not be empty"))?,
                 name: None,

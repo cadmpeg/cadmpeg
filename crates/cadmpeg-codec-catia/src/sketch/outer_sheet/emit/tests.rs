@@ -93,14 +93,17 @@ fn disconnected_cycles_become_separate_open_sheet_bodies() {
     assert_eq!(ir.geometry.loops.len(), 2);
     assert_eq!(ir.geometry.regions.len(), 2);
     assert_eq!(ir.geometry.shells.len(), 2);
-    assert!(ir.geometry.bodies.iter().all(
-        |body| body.kind == BodyKind::Sheet && ir.geometry.body_regions(&body.id).count() == 1
-    ));
     assert!(ir
         .geometry
-        .shells
+        .bodies
         .iter()
-        .all(|shell| ir.geometry.shell_faces(&shell.id).count() == 1));
+        .all(|body| body.kind == BodyKind::Sheet
+            && ir.geometry.stated_body_regions(&body.id).count() == 1));
+    assert!(ir.geometry.shells.iter().all(|shell| ir
+        .geometry
+        .stated_shell_faces(&shell.id)
+        .count()
+        == 1));
     assert!(ir
         .geometry
         .coedges

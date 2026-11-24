@@ -75,6 +75,7 @@ fn fallback_discards_topology_and_unknown_record_self_link() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     staged = staged.free_carrier_fallback("C2 failure");
     assert_eq!(staged.kind, BrepTransferKind::FreeCarrierFallback);
@@ -91,7 +92,7 @@ fn failed_brep_retains_its_mathematics_as_support_geometry() {
     let (data, raw) = source_shaped_plane_brep();
     let brep = crate::brep::ValidatedRawBrep::try_new(raw).expect("source Brep");
     let association = SourceObjectAssociation {
-        format: cadmpeg_ir::CodecFormat::Rhino,
+        format: cadmpeg_ir::codec_id!("rhino"),
         geometry_role: None,
         object_id: cadmpeg_core::nonblank_literal!("failed-brep"),
         name: Some("source name".into()),
@@ -229,7 +230,7 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
     let brep = crate::brep::ValidatedRawBrep::try_new(raw).expect("validate source-shaped Brep");
     let association = SourceObjectAssociation {
         geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Rhino,
+        format: cadmpeg_ir::codec_id!("rhino"),
         object_id: cadmpeg_core::text::NonBlankString::new("plane-brep".to_string())
             .expect("nonempty source identity"),
         name: Some("plane".to_string()),
@@ -278,13 +279,13 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
     assert_eq!(
         geometry.vertices[0]
             .tolerance
-            .map(cadmpeg_ir::scalar::PositiveReal::get),
+            .map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(0.254)
     );
     assert_eq!(
         geometry.edges[0]
             .tolerance
-            .map(cadmpeg_ir::scalar::PositiveReal::get),
+            .map(cadmpeg_ir::scalar::PositiveLength::get),
         Some(0.254)
     );
     assert_eq!(
@@ -342,7 +343,7 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
     let brep = crate::brep::ValidatedRawBrep::try_new(raw).expect("validate Brep");
     let association = SourceObjectAssociation {
         geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Rhino,
+        format: cadmpeg_ir::codec_id!("rhino"),
         object_id: cadmpeg_core::text::NonBlankString::new("free-vertex-brep".to_string())
             .expect("nonempty source identity"),
         name: None,
@@ -413,7 +414,7 @@ fn failed_trim_pcurve_does_not_discard_brep_topology() {
     let brep = crate::brep::ValidatedRawBrep::try_new(raw).expect("validate source-shaped Brep");
     let association = SourceObjectAssociation {
         geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Rhino,
+        format: cadmpeg_ir::codec_id!("rhino"),
         object_id: cadmpeg_core::text::NonBlankString::new("plane-brep".to_string())
             .expect("nonempty source identity"),
         name: None,
@@ -591,7 +592,7 @@ fn brep_mesh_cache_stages_one_tessellation() {
         .expect("validate Brep with one mesh cache slot");
     let association = SourceObjectAssociation {
         geometry_role: None,
-        format: cadmpeg_ir::CodecFormat::Rhino,
+        format: cadmpeg_ir::codec_id!("rhino"),
         object_id: cadmpeg_core::text::NonBlankString::new("plane-brep".to_string())
             .expect("nonempty source identity"),
         name: Some("plane".to_string()),

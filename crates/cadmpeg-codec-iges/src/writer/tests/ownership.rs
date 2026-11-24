@@ -100,7 +100,7 @@ fn exact_surface_export_keeps_its_active_rectangle() {
 
 fn support_association() -> SourceObjectAssociation {
     SourceObjectAssociation {
-        format: cadmpeg_ir::CodecFormat::Step,
+        format: cadmpeg_ir::codec_id!("step"),
         geometry_role: Some(SourceGeometryRole::Support),
         object_id: cadmpeg_core::nonblank_literal!("support"),
         name: None,
@@ -413,7 +413,7 @@ fn free_points_and_vertices_on_brep_and_trimmed_sheet_paths_have_export_losses()
                 .geometry
                 .shells
                 .iter_mut()
-                .find(|shell| shell.id == region.shells[0])
+                .find(|shell| shell.id == region.stated_shells().cloned().collect::<Vec<_>>()[0])
                 .unwrap();
             let mut vertices = shell.free_vertices().cloned().collect::<Vec<_>>();
             vertices.push(vertex.id);

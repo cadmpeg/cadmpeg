@@ -34,7 +34,7 @@ use cadmpeg_ir::ids::{
     ProceduralSurfaceId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
+    Body, BodyKind, Coedge, Edge, Face, FaceBoundary, Loop, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::Exactness;
@@ -197,7 +197,7 @@ impl Brep {
         for region in &mut self.regions {
             region.id = qualified(&region.id, &tail)?;
             region.body = qualified(&region.body, &tail)?;
-            for id in &mut region.shells {
+            for id in region.stated_shells_mut() {
                 *id = qualified(id, &tail)?;
             }
         }
@@ -208,6 +208,7 @@ impl Brep {
             let free_vertices = qualified_ids(shell.free_vertices(), &tail)?;
             *shell = Shell {
                 native_ref: shell.native_ref.take(),
+                unstated: shell.unstated,
                 ..Shell::with_members(id, region, wire_edges, free_vertices)
             };
         }
@@ -224,6 +225,20 @@ impl Brep {
                         qualified(outer, &tail)?,
                         qualified_ids(inner, &tail)?,
                     )
+                }
+                cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops } => {
+                    cadmpeg_ir::topology::FaceLoops::PartialUnspecified {
+                        loops: qualified_ids(loops, &tail)?,
+                    }
+                }
+                cadmpeg_ir::topology::FaceLoops::PartialClassified { outer, inner } => {
+                    cadmpeg_ir::topology::FaceLoops::PartialClassified {
+                        outer: outer
+                            .as_ref()
+                            .map(|outer| qualified(outer, &tail))
+                            .transpose()?,
+                        inner: qualified_ids(inner, &tail)?,
+                    }
                 }
             };
         }
@@ -3843,7 +3858,7 @@ fn decode_graph_inner(
             tolerance: rec
                 .tolerance_m
                 .map(|value| {
-                    cadmpeg_ir::scalar::PositiveReal::new(value * LEN_TO_MM).ok_or_else(|| {
+                    cadmpeg_ir::scalar::PositiveLength::new(value * LEN_TO_MM).ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed(
                             "VERTEX tolerance is outside finite millimetres",
                         )
@@ -4158,7 +4173,7 @@ fn decode_graph_inner(
             .into_iter()
             .chain(tolerant_edge_tolerance_mm.get(&e).copied())
             .reduce(f64::max)
-            .and_then(cadmpeg_ir::scalar::PositiveReal::new),
+            .and_then(cadmpeg_ir::scalar::PositiveLength::new),
             native_ref: None,
         });
         edge_set.insert(e);
@@ -5208,12 +5223,11 @@ fn decode_graph_inner(
                 region_shells.push(shell_id);
             }
             admit_brep_entity(ctx)?;
-            out.regions.push(Region {
-                id: region_id.clone(),
-                body: body_id.clone(),
-                shells: region_shells,
-                native_ref: None,
-            });
+            out.regions.push(Region::new(
+                region_id.clone(),
+                body_id.clone(),
+                region_shells,
+            ));
             body_regions.push(region_id);
         } else {
             for region in native_regions {
@@ -5252,12 +5266,11 @@ fn decode_graph_inner(
                     }
                 }
                 admit_brep_entity(ctx)?;
-                out.regions.push(Region {
-                    id: region_id.clone(),
-                    body: body_id.clone(),
-                    shells: region_shells,
-                    native_ref: None,
-                });
+                out.regions.push(Region::new(
+                    region_id.clone(),
+                    body_id.clone(),
+                    region_shells,
+                ));
                 body_regions.push(region_id);
             }
         }
@@ -5270,6 +5283,7 @@ fn decode_graph_inner(
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
     }
 
@@ -5463,7 +5477,7 @@ fn prune_rejected_topology(out: &mut Brep) {
     let kept_loops = out
         .faces
         .iter()
-        .flat_map(|face| &face.loops)
+        .flat_map(|face| face.loops.stated())
         .map(cadmpeg_ir::ids::LoopId::as_str)
         .collect::<std::collections::HashSet<_>>();
     out.loops
@@ -9129,10 +9143,10 @@ fn synthesize_cylinder_seams(
             continue;
         };
         let ref_direction = *cylinder_surface.frame().reference().as_raw();
-        if face.loops.len() != 2 {
+        let Some(face_loops) = face.loops.boundary().filter(|loops| loops.len() == 2) else {
             continue;
-        }
-        let mut members = face.loops.iter();
+        };
+        let mut members = face_loops.iter();
         let (Some(a), Some(b)) = (
             members.next().and_then(|id| loops.get(id)),
             members.next().and_then(|id| loops.get(id)),
@@ -9413,7 +9427,9 @@ fn synthesize_sphere_seams(
         let center = sphere_surface.center().get();
         let axis = sphere_surface.frame().axis().as_raw();
         let radius = sphere_surface.radius().get();
-        let mut face_loops = face.loops.iter();
+        let Some(mut face_loops) = face.loops.boundary().map(FaceBoundary::iter) else {
+            continue;
+        };
         let (Some(loop_id), None) = (face_loops.next(), face_loops.next()) else {
             continue;
         };
@@ -9544,10 +9560,13 @@ fn synthesize_sphere_seams(
         };
         let center = sphere_surface.center().get();
         let radius = sphere_surface.radius().get();
-        if face.loops.len() != 1 {
-            continue;
-        }
-        let Some(lp) = face.loops.iter().next().and_then(|id| loops.get(id)) else {
+        let Some(lp) = face
+            .loops
+            .boundary()
+            .filter(|loops| loops.len() == 1)
+            .and_then(|face_loops| face_loops.iter().next())
+            .and_then(|id| loops.get(id))
+        else {
             continue;
         };
         if lp.coedges().len() != 3 {

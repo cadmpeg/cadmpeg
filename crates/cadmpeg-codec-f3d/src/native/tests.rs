@@ -258,7 +258,7 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
         decoded
             .ir()
             .geometry
-            .shell_faces(&decoded.ir().geometry.shells[0].id)
+            .stated_shell_faces(&decoded.ir().geometry.shells[0].id)
             .count(),
         1
     );
