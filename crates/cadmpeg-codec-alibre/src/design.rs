@@ -17,6 +17,7 @@ use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::expr::{Expression, Neutral, Node};
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::design::ids::ContainerId;
+use cadmpeg_ir::design::names::CodecName;
 use cadmpeg_ir::design::ops::datum::{Datum, DatumElement};
 use cadmpeg_ir::design::ops::dressup::{
     BlendControls, Bore, Fillet, FilletSection, FilletSet, FilletSize, Hole, HolePositions,
@@ -527,7 +528,7 @@ impl Projection<'_> {
                 source_settings: BTreeMap::new(),
             })),
             Operation::Unmapped(name) => FeatureOperation::Native {
-                kind: NonBlankString::new(format!("alibre:{}", name.to_ascii_lowercase()))
+                kind: CodecName::new(&cadmpeg_ir::codec_id!("alibre"), &name.to_ascii_lowercase())
                     .ok_or_else(|| invalid("an operation record has no name"))?,
                 native_options: BTreeMap::new(),
                 source_settings: BTreeMap::new(),
@@ -699,6 +700,7 @@ pub(crate) fn project(
                 operation: projection.operation(at, feature)?,
                 refine: None,
                 fuzzy_tolerance: None,
+                assembly: None,
             },
             placement: None,
             component: None,
