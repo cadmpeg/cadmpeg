@@ -6,6 +6,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::SourceMeta;
 use cadmpeg_ir::hash::digest::Sha256Digest;
+use cadmpeg_ir::ids::ProductDefinitionId;
+use cadmpeg_ir::products::{ExternalDocument, ProductDefinition};
 use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::{CadIr, SourceFidelity};
 
@@ -61,6 +63,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 let stream = u32::try_from(ordinal)
                     .map_err(|_| CodecError::Malformed("too many partition streams".into()))?;
                 let mut candidate = brep::project(ctx, &records, stream, &mut partition_losses)?;
+                // One partition is a fragment of the document: the document
+                // states its root definition, not the partition.
+                candidate.fragment = true;
                 candidate.finalize();
                 let report =
                     cadmpeg_ir::validate::validate_neutral_for_decode(ctx, &candidate, Vec::new())?;
@@ -108,6 +113,15 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 }
             }
         }
+        // The document is one product definition that owns every body.
+        let mut root = ProductDefinition::root(root_definition(), ExternalDocument::default());
+        root.bodies = ir
+            .geometry
+            .bodies
+            .iter()
+            .map(|body| body.id.clone())
+            .collect();
+        ir.model.product_definitions.push(root);
         if !found {
             body.losses.push(
                 SolidEdgeLossCode::BodiesPending.note("document has no primary partition stream"),
@@ -146,4 +160,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         body,
         source_fidelity: SourceFidelity::new(Sha256Digest::digest(root.window())),
     })
+}
+
+fn root_definition() -> ProductDefinitionId {
+    ProductDefinitionId::compose(
+        &cadmpeg_ir::identity_namespace!("solidedge", "model", "product-definition"),
+        cadmpeg_ir::identity_key!("root"),
+    )
 }
