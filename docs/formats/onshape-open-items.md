@@ -116,7 +116,6 @@ Known: The `sketchMatrix` normal sign and the face `orientation` value are both 
 
 Need: Place sketches on faces whose `orientation` is `false` and on faces whose surface normal points into the solid. Compare the matrix normal with the surface normal and the orientation value.
 
-## ONSHAPE-011 — Assembly mate parameter quantities
 ## ONSHAPE-011 — Assembly mate frames and parameter quantities
 
 Question: Which coordinate frame owns `matedCS` for a path through a

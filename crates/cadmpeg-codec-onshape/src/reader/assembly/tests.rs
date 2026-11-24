@@ -11,9 +11,7 @@ fn design(native: &str) -> Design {
     let entry = NameEntry {
         name: None,
         native: Some(NativeName {
-            codec: cadmpeg_core::text::NonBlankString::new("onshape")
-                .unwrap()
-                .into(),
+            codec: cadmpeg_ir::codec_id!("onshape"),
             value: NativeNameValue::Text(cadmpeg_core::text::NonBlankString::new(native).unwrap()),
         }),
     };
