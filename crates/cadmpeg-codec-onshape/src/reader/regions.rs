@@ -350,14 +350,14 @@ pub(super) fn filtered_profile(
                 for (edge, _) in &hole.edges {
                     budget.boundary(edge)?;
                 }
-                holes.push(hole.boundary());
+                holes.push(hole.oriented(false)?);
             }
         }
         for (edge, _) in &outer.edges {
             budget.boundary(edge)?;
         }
         regions.push(
-            json!({"kind":"trimmed", "outer_boundary":outer.boundary(), "hole_boundaries":holes}),
+            json!({"kind":"trimmed", "outer_boundary":outer.oriented(true)?, "hole_boundaries":holes}),
         );
     }
     Ok(json!({"kind":"sketch_regions", "value":{"sketch":sketch, "regions":regions}}))
@@ -1064,6 +1064,21 @@ impl Ring {
         self.edges.iter().map(|(e, r)| e.boundary(*r)).collect()
     }
 
+    /// The boundary uses in the requested sense about the sketch normal. A ring
+    /// stored in the other sense is traversed backwards: the edge order reverses
+    /// and every use flips.
+    fn oriented(&self, counterclockwise: bool) -> Mapping<Vec<Value>> {
+        if self.counterclockwise()? == counterclockwise {
+            return Ok(self.boundary());
+        }
+        Ok(self
+            .edges
+            .iter()
+            .rev()
+            .map(|(e, r)| e.boundary(!*r))
+            .collect())
+    }
+
     fn counterclockwise(&self) -> Mapping<bool> {
         let mut turns = 0.0;
         let mut previous = None;
@@ -1420,8 +1435,11 @@ fn exterior_region(
             budget.boundary(edge)?;
         }
     }
-    let holes: Vec<_> = holes.into_iter().map(Ring::boundary).collect();
-    Ok(json!({"kind":"trimmed","outer_boundary":outer.boundary(),"hole_boundaries":holes}))
+    let holes = holes
+        .into_iter()
+        .map(|hole| hole.oriented(false))
+        .collect::<Mapping<Vec<_>>>()?;
+    Ok(json!({"kind":"trimmed","outer_boundary":outer.oriented(true)?,"hole_boundaries":holes}))
 }
 
 fn segment_in_hole(edge: &Edge, hole: &Ring) -> Mapping<bool> {
@@ -1596,14 +1614,24 @@ mod tests {
     }
 
     fn frame_model() -> Model {
+        stored_frame_model(false)
+    }
+
+    fn stored_frame_model(clockwise: bool) -> Model {
         let mut model = cadmpeg_ir::CadIr::empty().model;
-        let mut geometries = vec![
-            json!({"kind":"line","start":{"u":-4.0,"v":-1.0},"end":{"u":-2.0,"v":-1.0}}),
-            json!({"kind":"line","start":{"u":-2.0,"v":-1.0},"end":{"u":-2.0,"v":1.0}}),
-            json!({"kind":"line","start":{"u":-2.0,"v":1.0},"end":{"u":-4.0,"v":1.0}}),
-            json!({"kind":"line","start":{"u":-4.0,"v":1.0},"end":{"u":-4.0,"v":-1.0}}),
-            json!({"kind":"circle","center":{"u":-3.25,"v":0.0},"radius":0.25}),
-        ];
+        let corners = if clockwise {
+            [[-4.0, -1.0], [-4.0, 1.0], [-2.0, 1.0], [-2.0, -1.0]]
+        } else {
+            [[-4.0, -1.0], [-2.0, -1.0], [-2.0, 1.0], [-4.0, 1.0]]
+        };
+        let mut geometries: Vec<Value> = (0..4)
+            .map(|i| {
+                let [su, sv] = corners[i];
+                let [eu, ev] = corners[(i + 1) % 4];
+                json!({"kind":"line","start":{"u":su,"v":sv},"end":{"u":eu,"v":ev}})
+            })
+            .collect();
+        geometries.push(json!({"kind":"circle","center":{"u":-3.25,"v":0.0},"radius":0.25}));
         let half = half_ring(false, 0.0, PI, false);
         geometries.extend(half.edges.into_iter().map(|(e, _)| e.geometry));
         for (i, g) in geometries.into_iter().enumerate() {
@@ -1722,6 +1750,103 @@ mod tests {
                 }
             }
             assert!(refused);
+        }
+    }
+
+    /// Twice the signed area of a boundary made of line uses and one full circle.
+    fn signed_area(model: &Model, boundary: &Value) -> f64 {
+        let uses = boundary.as_array().unwrap();
+        let find = |id: &Value| {
+            model
+                .sketch_entities
+                .iter()
+                .map(|e| serde_json::to_value(e).unwrap())
+                .find(|e| e["id"] == *id)
+                .map(|e| e["geometry"].clone())
+                .unwrap()
+        };
+        if let [one] = uses.as_slice() {
+            let radius = find(&one["entity"])["radius"].as_f64().unwrap();
+            let sign = if one["reversed"].as_bool().unwrap() {
+                -1.0
+            } else {
+                1.0
+            };
+            return sign * 2.0 * PI * radius * radius;
+        }
+        uses.iter()
+            .map(|u| {
+                let g = find(&u["entity"]);
+                let point =
+                    |key: &str| [g[key]["u"].as_f64().unwrap(), g[key]["v"].as_f64().unwrap()];
+                let (a, b) = if u["reversed"].as_bool().unwrap() {
+                    (point("end"), point("start"))
+                } else {
+                    (point("start"), point("end"))
+                };
+                a[0] * b[1] - a[1] * b[0]
+            })
+            .sum()
+    }
+
+    #[test]
+    fn exterior_region_orients_the_outer_ring_counterclockwise_and_the_hole_clockwise() {
+        for clockwise in [false, true] {
+            let model = stored_frame_model(clockwise);
+            let witness = edge(
+                "synthetic:model:sketch-entity#4",
+                json!({"kind":"circle","center":{"u":-3.25,"v":0.0},"radius":0.25}),
+            );
+            let region = exterior_region(
+                "synthetic:model:sketch#frame",
+                &[witness],
+                &model,
+                &mut Recovery::default(),
+            )
+            .unwrap();
+            let outer = signed_area(&model, &region["outer_boundary"]);
+            assert!((outer - 8.0).abs() < 1e-9, "outer {outer}");
+            let hole = signed_area(&model, &region["hole_boundaries"][0]);
+            assert!(hole < 0.0, "hole {hole}");
+            assert_eq!(region["hole_boundaries"][0][0]["reversed"], json!(true));
+        }
+    }
+
+    #[test]
+    fn oriented_returns_the_requested_sense_from_either_stored_sense() {
+        for stored_reverse in [false, true] {
+            let ring = half_ring(false, 0.0, PI, stored_reverse);
+            let stored_ccw = ring.counterclockwise().unwrap();
+            for want in [true, false] {
+                let uses = ring.oriented(want).unwrap();
+                let rebuilt = Ring {
+                    edges: uses
+                        .iter()
+                        .map(|u| {
+                            let (e, _) = ring
+                                .edges
+                                .iter()
+                                .find(|(e, _)| u["entity"].as_str() == Some(e.id.as_str()))
+                                .unwrap();
+                            (
+                                edge(&e.id, e.geometry.clone()),
+                                u["reversed"].as_bool().unwrap(),
+                            )
+                        })
+                        .collect(),
+                };
+                assert_eq!(rebuilt.counterclockwise().unwrap(), want);
+                if stored_ccw == want {
+                    assert_eq!(uses, ring.boundary());
+                } else {
+                    let flipped: Vec<_> = ring.boundary().into_iter().rev().collect();
+                    assert_eq!(uses.len(), flipped.len());
+                    for (got, old) in uses.iter().zip(&flipped) {
+                        assert_eq!(got["entity"], old["entity"]);
+                        assert_ne!(got["reversed"], old["reversed"]);
+                    }
+                }
+            }
         }
     }
 }
