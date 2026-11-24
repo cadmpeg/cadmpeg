@@ -52,8 +52,10 @@ const DEVIATIONAL_TOLERANCE: usize = 10;
 const BEND_DEDUCTION: usize = 11;
 const BEND_ALLOWANCE: usize = 12;
 const BEND_METHOD: usize = 13;
-/// The key of index `i` is `(i - 1) << 24 | 2` below this index and
-/// `i << 24` from it on (§10.1).
+/// The key of index `i` is `(i - 1) << 24 | 2` from this index up to
+/// [`KEY_GROUP_LIMIT`], and `i << 24` for the other indices (§10.1).
+const KEY_GROUP_FIRST: u32 = 2;
+/// The first index past the low key group.
 const KEY_GROUP_LIMIT: u32 = 4;
 /// The key of an index below [`KEY_GROUP_LIMIT`] stores this group.
 const KEY_LOW_GROUP: u32 = 2;
@@ -81,11 +83,13 @@ fn rule_id() -> SheetMetalRuleId {
     ))
 }
 
-/// The key §10.1 states for `index`; `None` for an index below 1 or above
+/// The key §10.1 states for `index`; `None` for index 0 or an index above
 /// [`KEY_ORDINAL_MAX`].
 fn expected_key(index: u32) -> Option<u32> {
-    if index < KEY_GROUP_LIMIT {
-        Some((index.checked_sub(1)? << KEY_ORDINAL_SHIFT) | KEY_LOW_GROUP)
+    if index == 0 {
+        None
+    } else if (KEY_GROUP_FIRST..KEY_GROUP_LIMIT).contains(&index) {
+        Some(((index - 1) << KEY_ORDINAL_SHIFT) | KEY_LOW_GROUP)
     } else {
         (index <= KEY_ORDINAL_MAX).then_some(index << KEY_ORDINAL_SHIFT)
     }

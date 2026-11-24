@@ -231,3 +231,15 @@ fn bad_side_keeps_the_feature_unresolved() {
     ));
     assert!(codes(&result).contains(&"sheet-metal.base-tab-unread".to_owned()));
 }
+
+#[test]
+fn keys_follow_the_low_group_only_for_indices_2_and_3() {
+    // §10.1: `(i - 1) << 24 | 2` for i = 2 or 3, `i << 24` otherwise.
+    assert_eq!(super::expected_key(0), None);
+    assert_eq!(super::expected_key(1), Some(0x0100_0000));
+    assert_eq!(super::expected_key(2), Some(0x0100_0002));
+    assert_eq!(super::expected_key(3), Some(0x0200_0002));
+    assert_eq!(super::expected_key(4), Some(0x0400_0000));
+    assert_eq!(super::expected_key(0xFF), Some(0xFF00_0000));
+    assert_eq!(super::expected_key(0x100), None);
+}
