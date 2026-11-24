@@ -47,10 +47,7 @@
             "format": "iges",
             "geometry_role": "independent",
             "instance_path": [],
-            "layer": "0",
-            "name": "ORDERED",
-            "object_id": "D1",
-            "visible": true
+            "object_id": "D1"
           }
         },
         {
@@ -64,10 +61,7 @@
             "format": "iges",
             "geometry_role": "independent",
             "instance_path": [],
-            "layer": "0",
-            "name": "UNORDER",
-            "object_id": "D5",
-            "visible": true
+            "object_id": "D5"
           }
         }
       ],

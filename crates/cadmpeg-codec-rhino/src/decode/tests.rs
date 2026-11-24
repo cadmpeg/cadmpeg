@@ -7,7 +7,7 @@ use super::{
     region_shell_groups, region_shell_groups_without_records, scaled_tolerance, seal_for_test,
     set_exactness, stage_brep, stage_extrusion_caps, transform_decoded_curve, transform_surface,
     with_expand, with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
-    CommittedExtrusionBoundary, DecodeContext, ReferenceFailure, ReportBuckets,
+    CommittedExtrusionBoundary, DecodeContext, ObjectDisplay, ReferenceFailure, ReportBuckets,
 };
 use crate::chunks::ArchiveVersion;
 use crate::loss::Diagnostics;
@@ -192,10 +192,6 @@ fn candidate_validation_propagates_entity_limit() {
                         format: cadmpeg_ir::codec_id!("rhino"),
                         object_id: cadmpeg_core::text::NonBlankString::new("point-limited")
                             .expect("nonblank source id"),
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                 ));
@@ -1011,6 +1007,7 @@ fn extrusion_cap_staging_preserves_pcurve_rejection_details() {
             &mut cadmpeg_ir::Annotations::default(),
             "caps",
             &test_association(),
+            &ObjectDisplay::default(),
             &extrusion,
             &boundaries,
         )
@@ -1056,10 +1053,6 @@ fn test_association() -> SourceObjectAssociation {
         format: cadmpeg_ir::codec_id!("rhino"),
         object_id: cadmpeg_core::text::NonBlankString::new("extrusion".to_string())
             .expect("nonempty source identity"),
-        name: Some("Extrusion".to_string()),
-        color: None,
-        visible: Some(true),
-        layer: None,
         instance_path: Vec::new(),
     }
 }
@@ -1216,10 +1209,6 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
                     format: cadmpeg_ir::codec_id!("rhino"),
                     object_id: cadmpeg_core::text::NonBlankString::new(format!("point-{key}"))
                         .unwrap(),
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
             )
@@ -1286,6 +1275,7 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
             &mut cadmpeg_ir::Annotations::default(),
             "caps",
             &association,
+            &ObjectDisplay::default(),
             &extrusion,
             &boundaries,
         )

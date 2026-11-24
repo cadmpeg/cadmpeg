@@ -51,10 +51,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "MEMBER",
-            "object_id": "D1",
-            "visible": true
+            "object_id": "D1"
           }
         }
       ],

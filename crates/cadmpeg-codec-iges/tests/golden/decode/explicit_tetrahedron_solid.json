@@ -154,10 +154,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "AB",
-            "object_id": "D21",
-            "visible": true
+            "object_id": "D21"
           }
         },
         {
@@ -186,10 +183,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "AC",
-            "object_id": "D23",
-            "visible": true
+            "object_id": "D23"
           }
         },
         {
@@ -218,10 +212,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "AD",
-            "object_id": "D25",
-            "visible": true
+            "object_id": "D25"
           }
         },
         {
@@ -250,10 +241,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "BC",
-            "object_id": "D27",
-            "visible": true
+            "object_id": "D27"
           }
         },
         {
@@ -282,10 +270,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "BD",
-            "object_id": "D29",
-            "visible": true
+            "object_id": "D29"
           }
         },
         {
@@ -314,10 +299,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "CD",
-            "object_id": "D31",
-            "visible": true
+            "object_id": "D31"
           }
         }
       ],
@@ -589,10 +571,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "SURF1",
-            "object_id": "D13",
-            "visible": true
+            "object_id": "D13"
           }
         },
         {
@@ -622,10 +601,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "SURF2",
-            "object_id": "D15",
-            "visible": true
+            "object_id": "D15"
           }
         },
         {
@@ -655,10 +631,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "SURF3",
-            "object_id": "D17",
-            "visible": true
+            "object_id": "D17"
           }
         },
         {
@@ -688,10 +661,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "SURF4",
-            "object_id": "D19",
-            "visible": true
+            "object_id": "D19"
           }
         }
       ],

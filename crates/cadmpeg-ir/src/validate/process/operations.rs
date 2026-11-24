@@ -723,24 +723,12 @@ fn check_technology(
     }
 }
 
-/// A `Cycle.expansion` holds no `Cycle`; probe values occur only in a probe
-/// cycle, and a probe target's widths, diameters, and spacing are positive.
+/// Probe values occur only in a probe cycle, and a probe target's widths,
+/// diameters, and spacing are positive.
 fn check_motions(holder: &str, motions: &[Motion], findings: &mut Vec<Finding>) {
-    let mut pending: Vec<(&Motion, bool)> = motions.iter().map(|motion| (motion, false)).collect();
-    while let Some((motion, expanded)) = pending.pop() {
-        let Motion::Cycle(cycle) = motion else {
-            continue;
-        };
-        if expanded {
-            super::error(
-                findings,
-                holder,
-                format_args!("a cycle's `expansion` holds a cycle"),
-            );
-        }
-        check_motion_cycle(holder, cycle, findings);
-        for inner in cycle.expansion.iter().flatten() {
-            pending.push((inner, true));
+    for motion in motions {
+        if let Motion::Cycle(cycle) = motion {
+            check_motion_cycle(holder, cycle, findings);
         }
     }
 }

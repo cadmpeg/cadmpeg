@@ -47,10 +47,7 @@
             "format": "iges",
             "geometry_role": "independent",
             "instance_path": [],
-            "layer": "0",
-            "name": "POINT",
-            "object_id": "D5",
-            "visible": true
+            "object_id": "D5"
           }
         }
       ],

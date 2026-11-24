@@ -1215,6 +1215,7 @@ fn ap203e1_reports_hidden_presentation_layer_visibility_loss() {
         description: None,
         visible: Some(false),
         items: vec![PresentationItem::Body { body }.into()],
+        native_ref: None,
     });
     let mut output = Vec::new();
     let report = write_step(
@@ -1388,10 +1389,6 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
         format: cadmpeg_ir::codec_id!("rhino"),
         object_id: cadmpeg_core::text::NonBlankString::new("object-0")
             .expect("nonempty source identity"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     };
     let mut ir = unit_cube().expect("unit cube fixture is admitted");

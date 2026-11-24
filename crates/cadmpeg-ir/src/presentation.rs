@@ -360,6 +360,13 @@ pub struct PresentationLayer {
     /// Assigned items, each in the placed instance and the state that hold
     /// it, in deterministic projection order; order has no semantic meaning.
     pub items: Vec<crate::references::InstanceTarget<PresentationItem>>,
+    /// Identifier of the full-fidelity source record.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
 cadmpeg_core::named_optional_field!(
@@ -545,6 +552,7 @@ mod tests {
                 source_id: cadmpeg_core::nonblank_literal!("#{}", 42),
             }
             .into()],
+            native_ref: None,
         });
 
         assert!(validate_neutral(&ir, Vec::new())
@@ -565,6 +573,7 @@ mod tests {
                 source_id: cadmpeg_core::nonblank_literal!("#{}", 42),
             }
             .into()],
+            native_ref: None,
         });
 
         assert!(validate_neutral(&ir, Vec::new())
@@ -585,6 +594,7 @@ mod tests {
                 face: FaceId::mint("test:model:face#missing").expect("valid identity"),
             }
             .into()],
+            native_ref: None,
         });
 
         assert!(validate_neutral(&ir, Vec::new())
@@ -603,6 +613,7 @@ mod tests {
             description: None,
             visible,
             items: Vec::new(),
+            native_ref: None,
         }
     }
 

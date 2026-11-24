@@ -47,10 +47,7 @@
             "format": "iges",
             "geometry_role": "independent",
             "instance_path": [],
-            "layer": "0",
-            "name": "CHILD",
-            "object_id": "D11",
-            "visible": true
+            "object_id": "D11"
           }
         },
         {
@@ -64,10 +61,7 @@
             "format": "iges",
             "geometry_role": "independent",
             "instance_path": [],
-            "layer": "0",
-            "name": "LABELED",
-            "object_id": "D5",
-            "visible": true
+            "object_id": "D5"
           }
         },
         {
@@ -81,10 +75,7 @@
             "format": "iges",
             "geometry_role": "independent",
             "instance_path": [],
-            "layer": "0",
-            "name": "PARENT",
-            "object_id": "D9",
-            "visible": true
+            "object_id": "D9"
           }
         }
       ],

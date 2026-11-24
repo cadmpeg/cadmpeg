@@ -12,7 +12,6 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::sync::Arc;
 
 use crate::design::names::CodecId;
-use crate::topology::Color;
 use std::fmt;
 
 /// Whether source geometry is a standalone object or a support of another object.
@@ -28,14 +27,14 @@ pub enum SourceGeometryRole {
     Support,
 }
 
-/// Native object identity and effective display metadata for a free carrier.
+/// The identity of the source object a point, carrier, cage, or tessellation
+/// was read from, and nothing else: its name, colour, visibility, and layer
+/// have their own homes (D21).
 ///
 /// `format` identifies the source format. `object_id` is the source format's
-/// native object identifier, not an IR arena identifier. `name`, `color`, and
-/// `visible` are the effective object display values. `layer` is the native
-/// layer identifier. `instance_path` contains native instance identifiers in
-/// outermost-to-innermost order; an empty path means that the object is not
-/// nested in an instance.
+/// native object identifier, not an IR arena identifier. `instance_path`
+/// contains native instance identifiers in outermost-to-innermost order; an
+/// empty path means that the object is not nested in an instance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -52,34 +51,6 @@ pub struct SourceObjectAssociation {
     /// Native source object identifier.
     #[serde(deserialize_with = "deserialize_object_id")]
     pub object_id: cadmpeg_core::text::NonBlankString,
-    /// Effective source object name, when present.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_name"
-    )]
-    pub name: Option<String>,
-    /// Effective source object color, when present.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_color"
-    )]
-    pub color: Option<Color>,
-    /// Effective source object visibility, when present.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_visible"
-    )]
-    pub visible: Option<bool>,
-    /// Native source layer identifier, when present.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_layer"
-    )]
-    pub layer: Option<String>,
     /// Native instance identifiers from outermost to innermost.
     pub instance_path: Vec<String>,
 }
@@ -573,10 +544,6 @@ cadmpeg_core::named_optional_field!(
     SourceGeometryRole,
     "geometry_role"
 );
-cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
-cadmpeg_core::named_optional_field!(deserialize_color, Color, "color");
-cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
-cadmpeg_core::named_optional_field!(deserialize_layer, String, "layer");
 cadmpeg_core::named_optional_field!(deserialize_tag, String, "tag");
 cadmpeg_core::named_optional_field!(deserialize_stream, StreamName, "stream");
 

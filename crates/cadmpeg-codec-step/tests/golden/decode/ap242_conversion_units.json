@@ -40,7 +40,6 @@
           "source_object": {
             "format": "step",
             "instance_path": [],
-            "name": "two inches",
             "object_id": "#6"
           }
         }
@@ -60,7 +59,24 @@
       "articulations": [],
       "assembly_joints": [],
       "assets": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "step:data:attribute#point.6",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "point",
+              "value": "step:data:point#6"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "two inches"
+            }
+          ]
+        }
+      ],
       "colliders": [],
       "configurations": [],
       "declared_measures": [],

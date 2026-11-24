@@ -130,10 +130,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "EDGE3",
-            "object_id": "D11",
-            "visible": true
+            "object_id": "D11"
           }
         },
         {
@@ -162,10 +159,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "EDGE4",
-            "object_id": "D13",
-            "visible": true
+            "object_id": "D13"
           }
         },
         {
@@ -194,10 +188,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "EDGE5",
-            "object_id": "D15",
-            "visible": true
+            "object_id": "D15"
           }
         },
         {
@@ -226,10 +217,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "EDGE6",
-            "object_id": "D17",
-            "visible": true
+            "object_id": "D17"
           }
         },
         {
@@ -258,10 +246,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "EDGE7",
-            "object_id": "D19",
-            "visible": true
+            "object_id": "D19"
           }
         },
         {
@@ -290,10 +275,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "EDGE1",
-            "object_id": "D7",
-            "visible": true
+            "object_id": "D7"
           }
         },
         {
@@ -322,10 +304,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "EDGE2",
-            "object_id": "D9",
-            "visible": true
+            "object_id": "D9"
           }
         }
       ],
@@ -595,10 +574,7 @@
             "format": "iges",
             "geometry_role": "support",
             "instance_path": [],
-            "layer": "0",
-            "name": "SURFACE",
-            "object_id": "D5",
-            "visible": true
+            "object_id": "D5"
           }
         }
       ],

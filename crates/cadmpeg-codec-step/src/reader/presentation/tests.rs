@@ -1406,6 +1406,7 @@ fn body_layers_and_visibility_cover_every_region_shape_item() {
         description: None,
         visible: None,
         items: vec![PresentationItem::Body { body }.into()],
+        native_ref: None,
     });
 
     let mut bytes = Vec::new();
@@ -1740,6 +1741,7 @@ fn point_presentation_layer_writes_the_cartesian_point_carrier() {
         description: Some("standalone points".to_string()),
         visible: None,
         items: vec![PresentationItem::Point { point }.into()],
+        native_ref: None,
     });
 
     let mut bytes = Vec::new();
@@ -1830,6 +1832,7 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
             PresentationItem::Occurrence { occurrence: child }.into(),
             PresentationItem::Pmi { annotation }.into(),
         ],
+        native_ref: None,
     });
 
     let mut bytes = Vec::new();

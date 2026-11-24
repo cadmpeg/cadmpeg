@@ -40,7 +40,6 @@
           "source_object": {
             "format": "fcstd",
             "instance_path": [],
-            "name": "Points",
             "object_id": "fcstd:native:object#PointCloud"
           }
         },
@@ -54,7 +53,6 @@
           "source_object": {
             "format": "fcstd",
             "instance_path": [],
-            "name": "Points",
             "object_id": "fcstd:native:object#PointCloud"
           }
         },
@@ -68,7 +66,6 @@
           "source_object": {
             "format": "fcstd",
             "instance_path": [],
-            "name": "Points",
             "object_id": "fcstd:native:object#PointCloud"
           }
         }
@@ -180,7 +177,6 @@
           "source_object": {
             "format": "fcstd",
             "instance_path": [],
-            "name": "Mesh",
             "object_id": "fcstd:native:object#Mesh"
           },
           "texture_assignments": [],
