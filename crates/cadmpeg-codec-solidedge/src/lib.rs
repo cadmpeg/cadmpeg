@@ -2,7 +2,7 @@
 //! Reads Solid Edge compound documents.
 //!
 //! <!-- generated: capability solidedge -->
-//! Support: L0 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#solid-edge-par-psm-and-asm)).
+//! Support: L3 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#solid-edge-par-psm-and-asm)).
 //! <!-- /generated: capability solidedge -->
 
 mod brep;

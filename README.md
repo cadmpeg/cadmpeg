@@ -93,7 +93,7 @@ Each format carries one support level from the ladder; `cadmpeg inspect <file>` 
 - **SolidWorks eDrawings `.eprt` and `.easm`** — L2 ([profile](docs/format-support.md#solidworks-edrawings-eprt-and-easm))
 - **OpenUSD layers** — L2 ([profile](docs/format-support.md#openusd-layers))
 - **STEP Part 21** — L8 ([profile](docs/format-support.md#step-part-21))
-- **Solid Edge `.par`, `.psm`, and `.asm`** — L0 ([profile](docs/format-support.md#solid-edge-par-psm-and-asm))
+- **Solid Edge `.par`, `.psm`, and `.asm`** — L3 ([profile](docs/format-support.md#solid-edge-par-psm-and-asm))
 - **Onshape bundle** — L0 ([profile](docs/format-support.md#onshape-bundle))
 
 <!-- /generated: capability-lines -->
