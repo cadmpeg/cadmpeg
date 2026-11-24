@@ -46,6 +46,7 @@ mod walk;
 #[cfg(test)]
 mod tests;
 
+use crate::report::check::Ruled;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
@@ -303,7 +304,7 @@ fn collect<'a>(
     Ok(held)
 }
 
-fn error(findings: &mut Vec<Finding>, entity: &str, message: std::fmt::Arguments<'_>) {
+fn error(findings: &mut Vec<Finding>, entity: &str, message: Ruled<'_>) {
     record_finding(
         findings,
         Check::Design,
@@ -313,7 +314,7 @@ fn error(findings: &mut Vec<Finding>, entity: &str, message: std::fmt::Arguments
     );
 }
 
-fn warning(findings: &mut Vec<Finding>, entity: &str, message: std::fmt::Arguments<'_>) {
+fn warning(findings: &mut Vec<Finding>, entity: &str, message: Ruled<'_>) {
     super::record_finding(
         findings,
         Check::Design,

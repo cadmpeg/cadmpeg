@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Assembly operations (§6.7).
 
+use crate::report::check::Ruled;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::picks::{self, Class};
@@ -60,7 +61,10 @@ fn check_owned(
         error(
             findings,
             site.entity,
-            format_args!("{field} names {occurrence}, which is no occurrence of the model"),
+            crate::rule!(
+                "design.names-no-occurrence-model",
+                "{field} names {occurrence}, which is no occurrence of the model"
+            ),
         );
         return;
     }
@@ -68,7 +72,10 @@ fn check_owned(
         error(
             findings,
             site.entity,
-            format_args!("{field} names {occurrence}, which no definition owns"),
+            crate::rule!(
+                "design.names-no-definition-owns",
+                "{field} names {occurrence}, which no definition owns"
+            ),
         );
         return;
     };
@@ -79,7 +86,7 @@ fn check_owned(
         error(
             findings,
             site.entity,
-            format_args!("{field} names {occurrence}, owned by {owner}, which the feature's scope does not span"),
+            crate::rule!("design.names-owned-feature-scope-does-not", "{field} names {occurrence}, owned by {owner}, which the feature's scope does not span"),
         );
     }
 }
@@ -97,19 +104,28 @@ pub(super) fn check_place(
         error(
             findings,
             site.entity,
-            format_args!("Place.base is present where placement is not, or absent where it is"),
+            crate::rule!(
+                "design.place-base-present-where-placement-not",
+                "Place.base is present where placement is not, or absent where it is"
+            ),
         );
     }
     match &place.scale {
         Some(_) if place.placement.is_none() => error(
             findings,
             site.entity,
-            format_args!("Place.scale is present where placement is not"),
+            crate::rule!(
+                "design.place-scale-present-where-placement-not",
+                "Place.scale is present where placement is not"
+            ),
         ),
         Some(ScaleFactors::PerAxis { frame: Some(_), .. }) => error(
             findings,
             site.entity,
-            format_args!("a PerAxis Place.scale states a frame"),
+            crate::rule!(
+                "design.peraxis-place-scale-states-frame",
+                "a PerAxis Place.scale states a frame"
+            ),
         ),
         _ => {}
     }
@@ -123,7 +139,10 @@ pub(super) fn check_place(
             error(
                 findings,
                 site.entity,
-                format_args!("a Place constraint has no connector that picks into {occurrence}"),
+                crate::rule!(
+                    "design.place-constraint-no-connector-picks",
+                    "a Place constraint has no connector that picks into {occurrence}"
+                ),
             );
         }
     }
@@ -141,7 +160,10 @@ pub(super) fn check_place_set(
         error(
             findings,
             site.entity,
-            format_args!("a PlaceSet lists an occurrence twice, or fewer than {least}"),
+            crate::rule!(
+                "design.placeset-lists-occurrence-twice-fewer",
+                "a PlaceSet lists an occurrence twice, or fewer than {least}"
+            ),
         );
     }
     for occurrence in &set.occurrences {
@@ -185,7 +207,11 @@ fn check_bounds<Q: Bound + Clone>(
     findings: &mut Vec<Finding>,
 ) {
     if bounds.min.is_none() && bounds.max.is_none() {
-        error(findings, site.entity, format_args!("Bounds holds no bound"));
+        error(
+            findings,
+            site.entity,
+            crate::rule!("design.bounds-holds-no-bound", "Bounds holds no bound"),
+        );
     }
     if let (Some(min), Some(max)) = (&bounds.min, &bounds.max) {
         site.bound(findings, |values| {
@@ -211,7 +237,7 @@ pub(super) fn check_joint(
                     error(
                         findings,
                         site.entity,
-                        format_args!("a PinSlot's slide is its axis"),
+                        crate::rule!("design.pinslot-slide-axis", "a PinSlot's slide is its axis"),
                     );
                 }
             }
@@ -239,7 +265,8 @@ pub(super) fn check_joint(
                     error(
                         findings,
                         site.entity,
-                        format_args!(
+                        crate::rule!(
+                            "design.axislimits-names-degree-freedom-motion-does",
                             "AxisLimits names a degree of freedom the motion does not leave"
                         ),
                     );
@@ -248,7 +275,10 @@ pub(super) fn check_joint(
                     error(
                         findings,
                         site.entity,
-                        format_args!("AxisLimits names one axis twice"),
+                        crate::rule!(
+                            "design.axislimits-names-one-axis-twice",
+                            "AxisLimits names one axis twice"
+                        ),
                     );
                 }
             }
@@ -268,7 +298,10 @@ pub(super) fn check_joint(
         } if pitch == roll => error(
             findings,
             site.entity,
-            format_args!("a Path joint's pitch_yaw and roll name one axis"),
+            crate::rule!(
+                "design.path-joint-pitch-yaw-roll-name",
+                "a Path joint's pitch_yaw and roll name one axis"
+            ),
         ),
         JointKind::Coupling {
             joints: Some(joints),
@@ -291,7 +324,10 @@ pub(super) fn check_joint(
                 error(
                     findings,
                     site.entity,
-                    format_args!("Coupling.joints picks other than two other Joint features"),
+                    crate::rule!(
+                        "design.coupling-joints-picks-other-two-other",
+                        "Coupling.joints picks other than two other Joint features"
+                    ),
                 );
             }
             for target in targets.unwrap_or_default() {
@@ -311,7 +347,10 @@ pub(super) fn check_joint(
                     error(
                         findings,
                         site.entity,
-                        format_args!("Coupling.joints picks {target}, which is no Joint feature"),
+                        crate::rule!(
+                            "design.coupling-joints-picks-no-joint-feature",
+                            "Coupling.joints picks {target}, which is no Joint feature"
+                        ),
                     );
                 }
             }
@@ -349,7 +388,10 @@ pub(super) fn check_connectors(
             error(
                 findings,
                 site.entity,
-                format_args!("a connector with no inputs and no steps has no resolved value"),
+                crate::rule!(
+                    "design.connector-no-inputs-no-steps-no",
+                    "a connector with no inputs and no steps has no resolved value"
+                ),
             );
         }
     }
@@ -375,7 +417,10 @@ pub(super) fn check_connectors(
         error(
             findings,
             site.entity,
-            format_args!("the joint's connectors are of a variant its kind does not take"),
+            crate::rule!(
+                "design.joint-connectors-variant-kind-does-not",
+                "the joint's connectors are of a variant its kind does not take"
+            ),
         );
     }
 }
@@ -390,7 +435,10 @@ pub(super) fn check_rigid_group(
         error(
             findings,
             site.entity,
-            format_args!("a RigidGroup has fewer than two members"),
+            crate::rule!(
+                "design.rigidgroup-fewer-two-members",
+                "a RigidGroup has fewer than two members"
+            ),
         );
     }
     for path in &group.members {
@@ -402,7 +450,10 @@ pub(super) fn check_rigid_group(
             error(
                 findings,
                 site.entity,
-                format_args!("a RigidGroup member path has a step other than an Occurrence"),
+                crate::rule!(
+                    "design.rigidgroup-member-path-step-other-occurrence",
+                    "a RigidGroup member path has a step other than an Occurrence"
+                ),
             );
         }
         if let Some(StepRef::Occurrence(first)) = path.0.first().map(|step| &step.occurrence) {
@@ -422,7 +473,10 @@ fn check_component_seeds(
         error(
             findings,
             site.entity,
-            format_args!("{field} picks {class}; it picks only Component targets"),
+            crate::rule!(
+                "design.picks-picks-only-component-targets",
+                "{field} picks {class}; it picks only Component targets"
+            ),
         );
     }
 }
@@ -444,7 +498,8 @@ pub(super) fn check_component_pattern(
                 error(
                     findings,
                     site.entity,
-                    format_args!(
+                    crate::rule!(
+                        "design.chainlinks-connected-holds-links-seeds",
                         "ChainLinks::Connected holds {} links for {seeds} seeds",
                         links.len()
                     ),
@@ -464,7 +519,8 @@ pub(super) fn check_component_pattern(
             error(
                 findings,
                 site.entity,
-                format_args!(
+                crate::rule!(
+                    "design.componentinstance-lists-occurrences-seeds",
                     "a ComponentInstance lists {} occurrences for {} seeds",
                     instance.occurrences.len(),
                     seeds.unwrap_or_default()
@@ -476,7 +532,8 @@ pub(super) fn check_component_pattern(
                 error(
                     findings,
                     site.entity,
-                    format_args!(
+                    crate::rule!(
+                        "design.occurrence-repeats-across-component-instances",
                         "occurrence {} repeats across component instances",
                         occurrence.as_str()
                     ),
@@ -504,7 +561,10 @@ pub(super) fn check_mirror(
         error(
             findings,
             site.entity,
-            format_args!("MirrorComponents.results has other than one result per seed"),
+            crate::rule!(
+                "design.mirrorcomponents-results-other-one-result-per",
+                "MirrorComponents.results has other than one result per seed"
+            ),
         );
     }
     for result in &mirror.results {
@@ -538,14 +598,14 @@ pub(super) fn check_assembly_feature(
         error(
             findings,
             site.entity,
-            format_args!("a definition that states assembly has the operation {excluded}, which an assembly feature does not run"),
+            crate::rule!("design.definition-states-assembly-operation-assembly-feature", "a definition that states assembly has the operation {excluded}, which an assembly feature does not run"),
         );
     }
     if let Some(operand) = stated_body_operand(operation) {
         error(
             findings,
             site.entity,
-            format_args!("a definition that states assembly states a body operand of its own, {operand}; assembly.participants states what the feature changes"),
+            crate::rule!("design.definition-states-assembly-states-body-operand", "a definition that states assembly states a body operand of its own, {operand}; assembly.participants states what the feature changes"),
         );
     }
     if matches!(
@@ -555,7 +615,10 @@ pub(super) fn check_assembly_feature(
         error(
             findings,
             site.entity,
-            format_args!("a definition that states assembly has a Boolean that is NewBody"),
+            crate::rule!(
+                "design.definition-states-assembly-boolean-newbody",
+                "a definition that states assembly has a Boolean that is NewBody"
+            ),
         );
     }
     check_participants(site, context, findings);
@@ -573,13 +636,14 @@ pub(super) fn check_assembly_feature(
 /// with every selection's rules.
 fn check_participants(site: Site<'_>, context: &AssemblyContext, findings: &mut Vec<Finding>) {
     let selections: Vec<&SetSelection> = context.participants.values().collect();
-    let mut record = |message: std::fmt::Arguments<'_>| error(findings, site.entity, message);
+    let mut record = |message: Ruled<'_>| error(findings, site.entity, message);
     if selections
         .iter()
         .flat_map(|selection| participant_picks(selection, true))
         .any(|pick| !matches!(pick.context, Some(PickContext::Occurrence(_))))
     {
-        record(format_args!(
+        record(crate::rule!(
+            "design.assembly-participant-pick-carries-no-occurrence",
             "an assembly participant pick carries no occurrence context"
         ));
     }
@@ -587,7 +651,7 @@ fn check_participants(site: Site<'_>, context: &AssemblyContext, findings: &mut 
         .iter()
         .any(|selection| matches!(&selection.picks, Picks::Named(members) if members.as_slice().is_empty()))
     {
-        record(format_args!(
+        record(crate::rule!("design.assembly-participant-selection-named-no-pick", 
             "an assembly participant selection is Named with no pick"
         ));
     }
@@ -596,7 +660,8 @@ fn check_participants(site: Site<'_>, context: &AssemblyContext, findings: &mut 
             .iter()
             .any(|selection| matches!(selection.picks, Picks::Unread))
     {
-        record(format_args!(
+        record(crate::rule!(
+            "design.assembly-participant-selection-unread-picks-not",
             "an assembly participant selection with Unread picks is not its context's only entry"
         ));
     }
@@ -604,7 +669,8 @@ fn check_participants(site: Site<'_>, context: &AssemblyContext, findings: &mut 
         .iter()
         .any(|selection| selection.at != selections[0].at)
     {
-        record(format_args!(
+        record(crate::rule!(
+            "design.selections-assembly-context-state-more-one",
             "the selections of an assembly context state more than one at"
         ));
     }
@@ -620,7 +686,8 @@ fn check_participants(site: Site<'_>, context: &AssemblyContext, findings: &mut 
         }
     }
     if repeated {
-        record(format_args!(
+        record(crate::rule!(
+            "design.pick-two-selections-assembly-context",
             "a pick is in two selections of an assembly context"
         ));
     }
@@ -636,7 +703,7 @@ fn check_participants(site: Site<'_>, context: &AssemblyContext, findings: &mut 
         } = &selection.picks
         {
             if affected(excluded) {
-                record(format_args!(
+                record(crate::rule!("design.affected-rule-term-among-excluded-terms", 
                     "an Affected rule term is among the excluded terms of an assembly participant selection"
                 ));
             }
@@ -646,7 +713,8 @@ fn check_participants(site: Site<'_>, context: &AssemblyContext, findings: &mut 
         }
     }
     if holding > 1 {
-        record(format_args!(
+        record(crate::rule!(
+            "design.more-one-selection-assembly-context-holds",
             "more than one selection of an assembly context holds an Affected rule term"
         ));
     }
@@ -787,7 +855,8 @@ pub(super) fn check_component(
         error(
             findings,
             feature.id.as_str(),
-            format_args!(
+            crate::rule!(
+                "design.feature-component-names-no-definition-scope",
                 "Feature.component names {}, which is no definition its scope spans beside its own",
                 component.as_str()
             ),
@@ -810,7 +879,8 @@ pub(super) fn check_driven_by(
         error(
             findings,
             feature.id.as_str(),
-            format_args!(
+            crate::rule!(
+                "design.feature-driven-feature-own-scope",
                 "the feature is driven by {}, a feature of its own scope",
                 driver.as_str()
             ),
@@ -893,7 +963,8 @@ pub(super) fn check_occurrence_creators(index: &DesignRecords<'_>, findings: &mu
             error(
                 findings,
                 places[0],
-                format_args!(
+                crate::rule!(
+                    "design.places-occurrence-not-members-one-ordered",
                     "Places of occurrence {occurrence} are not members of one ordered container"
                 ),
             );
@@ -911,7 +982,7 @@ pub(super) fn check_occurrence_creators(index: &DesignRecords<'_>, findings: &mu
                     error(
                         findings,
                         second,
-                        format_args!(
+                        crate::rule!("design.placements-occurrence-not-ordered-one-container", 
                             "the placements {first} and {second} of occurrence {occurrence} are not ordered in one container chain"
                         ),
                     );
@@ -931,7 +1002,7 @@ pub(super) fn check_occurrence_creators(index: &DesignRecords<'_>, findings: &mu
                 error(
                     findings,
                     combine,
-                    format_args!("occurrence {occurrence}, which this combine's new_component creates, is named by another combine, pattern, or mirror, or placed before the combine"),
+                    crate::rule!("design.occurrence-combine-new-component-creates-named", "occurrence {occurrence}, which this combine's new_component creates, is named by another combine, pattern, or mirror, or placed before the combine"),
                 );
             }
         }
@@ -946,7 +1017,10 @@ pub(super) fn check_occurrence_creators(index: &DesignRecords<'_>, findings: &mu
             error(
                 findings,
                 occurrence,
-                format_args!("occurrence has {creators} creating features; it has at most one"),
+                crate::rule!(
+                    "design.occurrence-creating-features-most-one",
+                    "occurrence has {creators} creating features; it has at most one"
+                ),
             );
         }
     }
@@ -978,7 +1052,7 @@ fn check_own_occurrence(
         error(
             findings,
             site.entity,
-            format_args!(
+            crate::rule!("design.place-base-ownoccurrence-no-occurrence-own", 
                 "Place.base is OwnOccurrence, but {prototype} has no occurrence of its own in the scope"
             ),
         );
@@ -1042,7 +1116,10 @@ fn check_coupling_connectors(site: Site<'_>, joint: &Joint, findings: &mut Vec<F
         error(
             findings,
             site.entity,
-            format_args!("a Coupling with no joints has a connector that picks no member"),
+            crate::rule!(
+                "design.coupling-no-joints-connector-picks-no",
+                "a Coupling with no joints has a connector that picks no member"
+            ),
         );
     }
 }
@@ -1123,7 +1200,10 @@ fn check_participant_operands(
                         error(
                             findings,
                             site.entity,
-                            format_args!("a series stage picks a part that is no participant"),
+                            crate::rule!(
+                                "design.series-stage-picks-part-no-participant",
+                                "a series stage picks a part that is no participant"
+                            ),
                         );
                     }
                 }
@@ -1148,7 +1228,7 @@ fn check_participant_operands(
                     error(
                         findings,
                         site.entity,
-                        format_args!(
+                        crate::rule!("design.stagehole-partfeature-names-no-feature-part", 
                             "StageHole::PartFeature names {}, which is no feature of the part's definition {definition}",
                             feature.as_str()
                         ),
@@ -1162,7 +1242,7 @@ fn check_participant_operands(
                     error(
                         findings,
                         site.entity,
-                        format_args!(
+                        crate::rule!("design.part-partfeature-stage-occurrences-among-participants", 
                             "{definition}, the part of a PartFeature stage, has {placed} occurrences among the participants; it has one"
                         ),
                     );
@@ -1188,7 +1268,10 @@ fn check_participant_operands(
                         error(
                             findings,
                             site.entity,
-                            format_args!("a piece pick targets an entity of no participant"),
+                            crate::rule!(
+                                "design.piece-pick-targets-entity-no-participant",
+                                "a piece pick targets an entity of no participant"
+                            ),
                         );
                     }
                 }
@@ -1262,7 +1345,7 @@ pub(super) fn check_driven_definition(
             error(
                 findings,
                 feature.id.as_str(),
-                format_args!(
+                crate::rule!("design.feature-driven-definitions-participants-resolve-no", 
                     "the feature is driven by {}, whose Definitions participants resolve in no definition it belongs to",
                     driver.as_str()
                 ),
@@ -1282,7 +1365,8 @@ pub(super) fn check_spans(index: &DesignRecords<'_>, findings: &mut Vec<Finding>
                     error(
                         findings,
                         own,
-                        format_args!(
+                        crate::rule!(
+                            "design.scope-spans-scope-spans",
                             "the scope spans {definition}, which the scope of {first} spans"
                         ),
                     );

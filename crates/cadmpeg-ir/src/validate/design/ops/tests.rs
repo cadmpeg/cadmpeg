@@ -1632,6 +1632,7 @@ mod assembly_rules;
 mod bounds;
 mod forms;
 mod pattern_coordinates;
+mod run_ranges;
 mod split_tools;
 
 #[test]

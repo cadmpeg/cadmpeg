@@ -1450,8 +1450,7 @@ fn admit(
     scratch.model.history_bodies.push(body);
     // A nest is unusable where its topology or its link to the origin
     // breaks; a finding of another check family does not drop it.
-    let valid =
-        cadmpeg_ir::admit(ctx, &scratch, cadmpeg_ir::DRAFT_CORE_CHECKS, Vec::new())?.is_ok();
+    let valid = cadmpeg_ir::admit(ctx, &scratch, cadmpeg_ir::DRAFT_CORE, Vec::new())?.is_ok();
     let Some(body) = scratch.model.history_bodies.pop() else {
         return Err(CodecError::malformed("history body admission"));
     };
