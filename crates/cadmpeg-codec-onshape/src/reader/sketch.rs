@@ -353,7 +353,16 @@ pub(super) fn map(
     let created_plane = std::cell::Cell::new(false);
     let mut plane = frame(
         feature,
-        &|face| inputs.load(ordinal, feature)?.face_frame(face),
+        &|face| {
+            let support = inputs.load(ordinal, feature)?.face_frame(face)?;
+            if feature.get("plane").is_some() {
+                return Ok(support);
+            }
+            let Some(stored) = inputs.sketch_plane(native)? else {
+                return Ok(support);
+            };
+            attachment_frame(&json!({"plane":stored}), &support)
+        },
         &|native| {
             let frame = super::planes::created(model, native)?;
             created_plane.set(true);

@@ -107,3 +107,11 @@ Need: Build offset planes on planar faces with each orientation value, attach as
 Conflict: Reversing the support normal changes the offset side. The surface normal and orientation value leave the in-plane axis unresolved.
 
 Note: A face-supported offset plane retains its feature as Native with `plane.not-supported` until its attachment frame is proved.
+
+## ONSHAPE-040 — Face sketch attachment sense against face orientation
+
+Question: Does the sign of the `sketchMatrix` normal of a face sketch follow the rollback face `orientation` value?
+
+Known: The matrix normal is parallel or anti-parallel to the `PLANE` surface normal.
+
+Need: Place sketches on faces whose `orientation` is `false` and on faces whose surface normal points into the solid. Compare the matrix normal with the surface normal and the orientation value.
