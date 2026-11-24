@@ -75,6 +75,7 @@ pub(crate) fn scan_history_boundary(
                 let terminal_name = matches!(lexed, Lexed::Ident(_));
                 match lexed {
                     Lexed::SubIdent(part) | Lexed::Ident(part) if !name_done => {
+                        let part = part.text().ok()?;
                         preamble_matches &= preamble
                             .and_then(|parts| parts.get(name_index))
                             .is_some_and(|expected| *expected == part);
@@ -266,7 +267,7 @@ pub fn payload_subtype_range(
                     else {
                         return None;
                     };
-                    if name != expected {
+                    if name.text().ok()? != expected {
                         return None;
                     }
                     pos = start;
@@ -362,8 +363,14 @@ pub(crate) fn lex_payload(
         };
         tokens.push(match lexed {
             Lexed::Value(token) => token,
-            Lexed::Ident(name) => Token::Ident(name.to_owned()),
-            Lexed::SubIdent(name) => Token::SubIdent(name.to_owned()),
+            Lexed::Ident(name) => match name.text() {
+                Ok(name) => Token::Ident(name.to_owned()),
+                Err(_) => break,
+            },
+            Lexed::SubIdent(name) => match name.text() {
+                Ok(name) => Token::SubIdent(name.to_owned()),
+                Err(_) => break,
+            },
             Lexed::Str(value) => Token::Str(value.into_owned()),
             Lexed::Terminator => break,
         });
@@ -380,14 +387,59 @@ pub(crate) enum Lexed<'a> {
     /// A payload token.
     Value(Token),
     /// `0x0d` identifier (name terminator).
-    Ident(&'a str),
+    Ident(RawIdent<'a>),
     /// `0x0e` sub-identifier (name component).
-    SubIdent(&'a str),
+    SubIdent(RawIdent<'a>),
     /// A `0x07`/`0x08`/`0x09`/`0x12` payload string: borrowed when it is UTF-8, else decoded as Windows-1252
     /// (German Inventor stores appearance names such as "Grün - poliert" in the system code page).
     Str(Cow<'a, str>),
     /// `0x11` record terminator.
     Terminator,
+}
+
+/// The bytes of a `0x0d` or `0x0e` identifier, not yet decoded.
+///
+/// A stream that interns identifiers ends a name with `%` and a raw
+/// little-endian `u32` table index, and an index can hold any byte value, so
+/// the whole identifier is not always UTF-8. Decoding is the consumer's step:
+/// [`RawIdent::text`] reads the whole identifier as text, and the intern table
+/// reads the name before the suffix.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct RawIdent<'a> {
+    bytes: &'a [u8],
+    /// Stream offset of the first identifier byte.
+    offset: usize,
+    tag: u8,
+}
+
+impl<'a> RawIdent<'a> {
+    fn utf8(&self, bytes: &'a [u8]) -> Result<&'a str, StreamError> {
+        std::str::from_utf8(bytes).map_err(|error| StreamError {
+            format: StreamFormat::Binary,
+            offset: self.offset + error.valid_up_to(),
+            reason: format!("payload for tag {:#04x} is not valid UTF-8", self.tag),
+        })
+    }
+
+    /// The whole identifier as UTF-8 text.
+    pub(crate) fn text(&self) -> Result<&'a str, StreamError> {
+        self.utf8(self.bytes)
+    }
+
+    /// The identifier split before a trailing `%` and four index bytes, when it
+    /// ends in one. The name part must be UTF-8; the index bytes are raw.
+    fn interned(&self) -> Result<Option<(&'a str, u32)>, StreamError> {
+        let Some(split) = self.bytes.len().checked_sub(5) else {
+            return Ok(None);
+        };
+        if self.bytes[split] != b'%' {
+            return Ok(None);
+        }
+        let Some(index) = View::u32_le_at(self.bytes, split + 1) else {
+            return Ok(None);
+        };
+        Ok(Some((self.utf8(&self.bytes[..split])?, index)))
+    }
 }
 
 /// One byte of Windows-1252 as a char (0x80-0x9F the code page's own letters, the rest Latin-1).
@@ -422,13 +474,13 @@ pub(crate) fn lex(
         offset: pos,
         reason: format!("truncated payload for tag {tag:#04x}"),
     };
-    let string = |start: usize, len: usize| {
+    let identifier = |start: usize, len: usize| {
         let end = start.checked_add(len).ok_or_else(truncated)?;
         let slice = bytes.get(start..end).ok_or_else(truncated)?;
-        std::str::from_utf8(slice).map_err(|error| StreamError {
-            format: StreamFormat::Binary,
-            offset: start + error.valid_up_to(),
-            reason: format!("payload for tag {tag:#04x} is not valid UTF-8"),
+        Ok::<_, StreamError>(RawIdent {
+            bytes: slice,
+            offset: start,
+            tag,
         })
     };
     // payload strings: UTF-8, else Windows-1252 - one appearance name ("Grün - poliert", "Türkis") written in the
@@ -492,11 +544,11 @@ pub(crate) fn lex(
         }
         0x0d => {
             let len = usize::from(*bytes.get(p).ok_or_else(truncated)?);
-            (Lexed::Ident(string(p + 1, len)?), p + 1 + len)
+            (Lexed::Ident(identifier(p + 1, len)?), p + 1 + len)
         }
         0x0e => {
             let len = usize::from(*bytes.get(p).ok_or_else(truncated)?);
-            (Lexed::SubIdent(string(p + 1, len)?), p + 1 + len)
+            (Lexed::SubIdent(identifier(p + 1, len)?), p + 1 + len)
         }
         0x0f => (Lexed::Value(Token::SubtypeOpen), p),
         0x10 => (Lexed::Value(Token::SubtypeClose), p),
@@ -585,21 +637,13 @@ struct NameTable {
 
 impl NameTable {
     /// The identifier text with its table suffix resolved.
-    fn resolve(&mut self, raw: &str, offset: usize) -> Result<String, StreamError> {
+    fn resolve(&mut self, raw: RawIdent<'_>, offset: usize) -> Result<String, StreamError> {
         if !self.enabled {
-            return Ok(raw.to_owned());
+            return raw.text().map(str::to_owned);
         }
-        let bytes = raw.as_bytes();
-        let Some(split) = bytes.len().checked_sub(5) else {
-            return Ok(raw.to_owned());
+        let Some((name, id)) = raw.interned()? else {
+            return raw.text().map(str::to_owned);
         };
-        if bytes[split] != b'%' {
-            return Ok(raw.to_owned());
-        }
-        let Some(id) = View::u32_le_at(bytes, split + 1) else {
-            return Ok(raw.to_owned());
-        };
-        let name = &raw[..split];
         if name.is_empty() {
             return self.entries.get(&id).cloned().ok_or_else(|| StreamError {
                 format: StreamFormat::Binary,
@@ -2164,5 +2208,60 @@ mod tests {
                 assert_eq!(timestamp[offset], tag);
             }
         }
+    }
+    /// One `0x0d` identifier of `name` followed by the intern suffix `%` and the
+    /// raw bytes of `index`, then the record terminator.
+    fn interned_record(name: &str, index: [u8; 4]) -> Vec<u8> {
+        let mut bytes = vec![0x0d, u8::try_from(name.len() + 5).expect("short name")];
+        bytes.extend_from_slice(name.as_bytes());
+        bytes.push(b'%');
+        bytes.extend_from_slice(&index);
+        bytes.push(0x11);
+        bytes
+    }
+
+    fn frame_interned(bytes: &[u8], intern_names: bool) -> Result<Vec<Record>, StreamFailure> {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("input fits");
+        super::frame_impl(
+            &ctx,
+            bytes,
+            0,
+            bytes.len(),
+            RefWidth::Four,
+            None,
+            super::FrameMode {
+                eof_terminates_final_record: false,
+                intern_names,
+            },
+        )
+    }
+
+    #[test]
+    fn name_table_indexes_that_are_not_utf8_resolve() {
+        // 0x80 is a continuation byte, and 0xa1 0xc3 0x28 0xa0 is not UTF-8 in any position.
+        for index in [[0x80, 0, 0, 0], [0xa1, 0xc3, 0x28, 0xa0], [0xff; 4]] {
+            let mut bytes = interned_record("shell", index);
+            bytes.extend(interned_record("", index));
+            let records = frame_interned(&bytes, true).expect("index of any value");
+            let names: Vec<&str> = records.iter().map(|record| record.name.as_str()).collect();
+            assert_eq!(names, ["shell", "shell"], "index {index:?}");
+        }
+    }
+
+    #[test]
+    fn name_table_refuses_an_undefined_or_non_utf8_name() {
+        let undefined = interned_record("", [0x80, 0, 0, 0]);
+        let error = frame_interned(&undefined, true).expect_err("undefined entry");
+        assert!(format!("{error:?}").contains("undefined name-table entry 128"));
+        // The name part before the suffix stays strict UTF-8.
+        let bad_name = vec![0x0d, 7, 0xff, 0xfe, b'%', 0x80, 0, 0, 0, 0x11];
+        let error = frame_interned(&bad_name, true).expect_err("name is not UTF-8");
+        assert!(format!("{error:?}").contains("not valid UTF-8"));
+        // A stream without the table reads the whole identifier as text.
+        let plain = interned_record("shell", [0x80, 0, 0, 0]);
+        let error = frame_interned(&plain, false).expect_err("no table, raw suffix");
+        assert!(format!("{error:?}").contains("not valid UTF-8"));
     }
 }
