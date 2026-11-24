@@ -19,6 +19,7 @@ use crate::loss::AlibreLossCode;
 use crate::AlibreCodec;
 
 pub(crate) mod assembly;
+mod synthetic;
 
 /// Allowance of a measured value beyond its stated numeric error, relative to
 /// the expected magnitude.

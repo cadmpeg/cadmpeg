@@ -106,7 +106,9 @@ The stream follows §4. Lengths are in centimetres, the API unit of Alibre; the 
 | `CARTESIAN_TRANSFORMATION_OPERATOR_3D` | 3: `DIRECTION` of the image of the x axis; 4: `DIRECTION` of the image of the y axis; 5: `CARTESIAN_POINT` of the local origin; 6: the scale; 7: `DIRECTION` of the image of the z axis. Attributes 0 to 2 are null. |
 | `DESIGNASSEMBLYCONFIGURATION` | 0: the configuration name; 8: the list of suppressed `DESIGNINCLUSION`; 9: the list of hidden `DESIGNMEMBER`. |
 
-The placement of an occurrence maps a point of the component by the three axis images, the scale, and the origin. The specimens place components with identity rotations. The occurrence name that Alibre shows, `asm_box<2>`, is not stored: it follows from the component name and the order of the inclusions of that component.
+The placement of an occurrence maps a point of the component by the three axis images and the origin.
+
+The decoder states a placement only when the operator is a rigid motion: the scale is 1, the three images have length 1 and are orthogonal, and `a3` is the cross product of `a1` and `a2`, all to 1e-6. A scaled, sheared, or mirrored operator, or a value that is not finite, gives an occurrence with no transform and the loss `assembly.placement-unreadable`. The specimens place components with identity rotations. The occurrence name that Alibre shows, `asm_box<2>`, is not stored: it follows from the component name and the order of the inclusions of that component.
 
 The configuration name `Config<1>` of an inclusion names a configuration of the component, not of the assembly.
 
@@ -119,25 +121,27 @@ The stream holds one record for each distinct component. A record carries the re
 The decoder reads one occurrence for each `DESIGNINCLUSION`, in list order:
 
 - The occurrence places the product definition of the component. Two inclusions of one component file place one definition, and the file is decoded once.
-- The transform is the rotation, scale, and translation of the operator, in millimetres.
+- The transform is the rotation and translation of the operator, in millimetres (§5.2).
 - The occurrence is suppressed when the active configuration lists its inclusion. It is not visible when one of its own members is hidden by the member flag or by the active configuration.
 - An anchored inclusion becomes a grounded joint at the occurrence.
 - The occurrence name is the file name of the path, an index starting at 1 for each component, in angle brackets.
 
-The decoder resolves a component by the file name of its path, with the extension `AD_PRT` and then `AD_ASM`, in the directory of the assembly, through the companion file source of the decode context. The drive and the directories of the stored path are not read. A part decodes as §3 states, and a subassembly decodes by this section, recursively. The decoder places the identities of each component file under the scope `alibre:xref/m<n>/`, so that two files do not share an identity. A component that is not available, does not decode, lies past the nesting limit, or is a file that is already being decoded stays an external product definition with the path and the document GUID of the inclusion.
+The decoder resolves a component by the file name of its path, in the directory of the assembly, through the companion file source of the decode context. It tries the extensions `AD_PRT`, `AD_ASM`, `ad_prt`, and `ad_asm`, in that order. The drive and the directories of the stored path are not read. The file name must be a bare name: a name that is empty, `.` or `..`, or that holds `%`, `:`, a control character, or a separator, is not looked up, because a companion file source can read `%XX` as an escape and a drive or a separator as a path that leaves the directory of the assembly. The inclusion is then external with `assembly.member-unavailable`. When no extension opens, the loss gives the reason of the attempt that says most (a refusal before a plain not-found), and names the extensions tried. The decoder compares the document GUID of the inclusion (§5.2) with the GUID that follows the first bar in the `VERSION` stream of the file it opened. A file of another document stays unmerged: the inclusion is external with `assembly.member-document-mismatch`. The decoder keeps one definition for each file name and document GUID, so two inclusions of one name that reference two documents place two definitions. A file that holds the same bytes as the assembly being decoded is a cycle. A part decodes as §3 states, and a subassembly decodes by this section, recursively. The decoder places the identities of each component file under the scope `alibre:xref/m<n>/`, so that two files do not share an identity. A component that is not available, does not decode, lies past the nesting limit, or is a file that is already being decoded stays an external product definition with the path and the document GUID of the inclusion.
 
 A decode reports these losses, each with the code `alibre/<code>`:
 
 | Code | Meaning |
 | --- | --- |
-| `assembly.member-unavailable` | A component file is not beside the assembly. |
+| `assembly.member-unavailable` | A component file is not beside the assembly, or its stored file name is not a bare name. |
+| `assembly.member-document-mismatch` | The file beside the assembly is a different document than the inclusion references. |
 | `assembly.member-undecoded` | A component file is available and does not decode. |
 | `assembly.member-cycle` | A component file contains the assembly that places it. |
 | `assembly.expansion-truncated` | A subassembly lies past the nesting limit, or occurrences lie past the occurrence limit. |
 | `assembly.member-design-unmerged` | A component carries design records that the merge leaves out. |
-| `assembly.placement-unreadable` | An inclusion has no readable placement. |
-| `assembly.inclusion-field-unmapped` | An inclusion states an attribute that the occurrence does not carry. |
-| `assembly.nested-member-state-unread` | An inclusion hides a component below its subassembly. |
+| `assembly.placement-unreadable` | An inclusion has no readable rigid placement. One loss counts all inclusions and lists the first 16 with the reason. |
+| `assembly.inclusion-field-unmapped` | An inclusion states an attribute that the occurrence does not carry, or an attribute past the fifteen of the schema. One loss counts all inclusions. |
+| `assembly.nested-member-state-unread` | An inclusion hides a component below its subassembly. One loss counts all inclusions. |
+| `assembly.record-unreadable` | An inclusion, a member, or a configuration does not read as its entity, the list of configurations is absent, or the active configuration is not one of the configurations that read. The decode leaves the record out and goes on. |
 | `assembly.configuration-unmapped` | An occurrence names a component configuration, or the assembly holds more than one configuration. The occurrences carry the state of the active configuration only. |
 | `assembly.member-dialect-unverified` | A component file declares an ACIS save format outside the verified bands, as `alibre/source.kernel-dialect-unverified` states for a part. The assembly has no kernel layer of its own. |
 | `assembly.entities-unread` | The stream holds an entity name that the reader does not know, or the relation lists of the assembly are not empty. |

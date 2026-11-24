@@ -63,6 +63,10 @@ pub(crate) enum AlibreLossCode {
     AssemblyConfigurationUnmapped,
     /// A component file declares an ACIS save format outside the verified bands.
     AssemblyMemberDialectUnverified,
+    /// The file beside the assembly is a different document than the one the inclusion references.
+    AssemblyMemberDocumentMismatch,
+    /// An assembly record that the reader needs is missing or does not read, and the decode goes on without it.
+    AssemblyRecordUnreadable,
 }
 
 impl AlibreLossCode {
@@ -91,6 +95,8 @@ impl AlibreLossCode {
         Self::AssemblyEntitiesUnread,
         Self::AssemblyConfigurationUnmapped,
         Self::AssemblyMemberDialectUnverified,
+        Self::AssemblyMemberDocumentMismatch,
+        Self::AssemblyRecordUnreadable,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -118,6 +124,8 @@ impl AlibreLossCode {
             Self::AssemblyEntitiesUnread => "assembly.entities-unread",
             Self::AssemblyConfigurationUnmapped => "assembly.configuration-unmapped",
             Self::AssemblyMemberDialectUnverified => "assembly.member-dialect-unverified",
+            Self::AssemblyMemberDocumentMismatch => "assembly.member-document-mismatch",
+            Self::AssemblyRecordUnreadable => "assembly.record-unreadable",
         }
     }
 
@@ -145,7 +153,9 @@ impl AlibreLossCode {
             | Self::AssemblyNestedStateUnread
             | Self::AssemblyEntitiesUnread
             | Self::AssemblyConfigurationUnmapped
-            | Self::AssemblyMemberDialectUnverified => Severity::Warning,
+            | Self::AssemblyMemberDialectUnverified
+            | Self::AssemblyMemberDocumentMismatch
+            | Self::AssemblyRecordUnreadable => Severity::Warning,
         }
     }
 
@@ -169,11 +179,13 @@ impl AlibreLossCode {
             | Self::AssemblyMemberUndecoded
             | Self::AssemblyMemberCycle
             | Self::AssemblyExpansionTruncated
-            | Self::AssemblyMemberDesignUnmerged => LossTaxonomy::AssemblyComponentsExternal,
+            | Self::AssemblyMemberDesignUnmerged
+            | Self::AssemblyMemberDocumentMismatch => LossTaxonomy::AssemblyComponentsExternal,
             Self::AssemblyPlacementUnreadable => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::AssemblyInclusionUnmapped
             | Self::AssemblyNestedStateUnread
-            | Self::AssemblyEntitiesUnread => LossTaxonomy::ObjectRecordsUntransferred,
+            | Self::AssemblyEntitiesUnread
+            | Self::AssemblyRecordUnreadable => LossTaxonomy::ObjectRecordsUntransferred,
             Self::AssemblyConfigurationUnmapped => LossTaxonomy::MetadataNotTransferred,
         }
     }
@@ -225,6 +237,8 @@ mod tests {
                 "assembly.entities-unread",
                 "assembly.configuration-unmapped",
                 "assembly.member-dialect-unverified",
+                "assembly.member-document-mismatch",
+                "assembly.record-unreadable",
             ]
         );
     }

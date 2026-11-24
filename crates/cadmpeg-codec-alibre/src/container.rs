@@ -92,6 +92,14 @@ impl<'a> AlibreContainer<'a> {
         self.snapshot.open(ctx, entry)
     }
 
+    /// The document GUID that the `VERSION` stream states, in upper case: the
+    /// first GUID after the first bar of the stream. `None` when the stream is
+    /// absent or states none.
+    pub(crate) fn document_guid(&self, ctx: &DecodeContext<'a>) -> Option<String> {
+        let view = self.stream(ctx, VERSION_STREAM).ok()?;
+        version_document_guid(view.window())
+    }
+
     /// One loss per noncanonical encoding the compound reader admitted.
     pub(crate) fn deviation_losses(&self) -> Vec<LossNote> {
         self.snapshot
@@ -195,6 +203,23 @@ fn insert_attribute(entry: &mut ContainerEntry, key: &str, value: impl std::fmt:
     entry.attributes.insert(key.to_owned(), value.to_string());
 }
 
+/// The GUID after the first bar of the text of a `VERSION` stream.
+fn version_document_guid(bytes: &[u8]) -> Option<String> {
+    let bar = bytes.iter().position(|byte| *byte == b'|')?;
+    let candidate = bytes.get(bar + 1..bar + 1 + 36)?;
+    let shaped = candidate.iter().enumerate().all(|(at, byte)| match at {
+        8 | 13 | 18 | 23 => *byte == b'-',
+        _ => byte.is_ascii_hexdigit(),
+    });
+    shaped.then(|| {
+        candidate
+            .to_ascii_uppercase()
+            .iter()
+            .map(|b| char::from(*b))
+            .collect()
+    })
+}
+
 fn classify(entry: &CompoundEntry) -> ContainerRole {
     let path = entry.path();
     if path.eq_ignore_ascii_case(SAB_STREAM) {
@@ -220,7 +245,22 @@ fn classify(entry: &CompoundEntry) -> ContainerRole {
 
 #[cfg(test)]
 mod tests {
-    use super::has_alibre_evidence;
+    use super::{has_alibre_evidence, version_document_guid};
+
+    #[test]
+    fn the_document_guid_follows_the_first_bar_of_the_version_text() {
+        let text = b"\x00\xa5<Repository Guid=\"0\" Name=\"C\"/>:/p/asm_box|58f88938-2D66-43CA-BFF8-892C49CE60A9||1|1";
+        assert_eq!(
+            version_document_guid(text).as_deref(),
+            Some("58F88938-2D66-43CA-BFF8-892C49CE60A9")
+        );
+        assert_eq!(version_document_guid(b"no bar here"), None);
+        assert_eq!(
+            version_document_guid(b"a|not-a-guid-not-a-guid-not-a-guid-xx"),
+            None
+        );
+        assert_eq!(version_document_guid(b"a|58F88938-2D66"), None);
+    }
 
     fn paths(names: &[&str]) -> Vec<String> {
         names.iter().map(|name| (*name).to_owned()).collect()

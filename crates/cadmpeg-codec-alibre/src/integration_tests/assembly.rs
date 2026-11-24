@@ -73,10 +73,26 @@ impl Companions for Files {
 }
 
 /// Serves the assembly `asm_two` for every box request, each under a new
-/// identity, so that the assembly nests below itself without a repeated file.
-#[derive(Debug, Default)]
+/// identity, so that an assembly nests below itself without a repeated file.
+#[derive(Debug)]
 struct Endless {
     served: Cell<usize>,
+    /// `asm_two` stating the document GUID that the inclusions of the box
+    /// reference.
+    two: Vec<u8>,
+}
+
+impl Endless {
+    fn new() -> Self {
+        Self {
+            served: Cell::new(0),
+            two: swap(
+                ASM_TWO,
+                "66949A14-F5DB-4970-BCD4-C5E4FD3F0BEA",
+                "58F88938-2D66-43CA-BFF8-892C49CE60A9",
+            ),
+        }
+    }
 }
 
 impl Companions for Endless {
@@ -86,7 +102,7 @@ impl Companions for Endless {
                 self.served.set(self.served.get() + 1);
                 Ok(Companion {
                     id: format!("level-{}", self.served.get()),
-                    bytes: ASM_TWO.to_vec(),
+                    bytes: self.two.clone(),
                 })
             }
             "asm_cylinder.AD_PRT" => Ok(Companion {
@@ -113,7 +129,26 @@ fn decode_assembly(bytes: &[u8]) -> DecodeResult {
     decode_with(bytes, &Files::corpus())
 }
 
-fn named<'a>(ir: &'a CadIr, name: &str) -> &'a Occurrence {
+/// `bytes` with every `from` replaced by `to` of the same length.
+pub(super) fn swap(bytes: &[u8], from: &str, to: &str) -> Vec<u8> {
+    assert_eq!(from.len(), to.len());
+    let mut bytes = bytes.to_vec();
+    let mut at = 0;
+    while let Some(found) = find(&bytes[at..], from.as_bytes()) {
+        let found = at + found;
+        bytes[found..found + from.len()].copy_from_slice(to.as_bytes());
+        at = found + to.len();
+    }
+    bytes
+}
+
+fn find(bytes: &[u8], needle: &[u8]) -> Option<usize> {
+    bytes
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+pub(super) fn named<'a>(ir: &'a CadIr, name: &str) -> &'a Occurrence {
     ir.model
         .occurrences
         .iter()
@@ -121,7 +156,7 @@ fn named<'a>(ir: &'a CadIr, name: &str) -> &'a Occurrence {
         .unwrap_or_else(|| panic!("no occurrence {name}"))
 }
 
-fn definition<'a>(ir: &'a CadIr, occurrence: &Occurrence) -> &'a ProductDefinition {
+pub(super) fn definition<'a>(ir: &'a CadIr, occurrence: &Occurrence) -> &'a ProductDefinition {
     ir.model
         .product_definitions
         .iter()
@@ -156,7 +191,7 @@ fn assert_at(ir: &CadIr, name: &str, expected: [f64; 3]) {
     }
 }
 
-fn assert_valid(result: &DecodeResult, name: &str) {
+pub(super) fn assert_valid(result: &DecodeResult, name: &str) {
     let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).unwrap();
     let errors: Vec<_> = report
         .findings
@@ -255,7 +290,7 @@ fn twin_extent(bytes: &[u8], keep: impl Fn(&Occurrence) -> bool) -> Extent {
     assembled_extent(result.ir(), keep)
 }
 
-fn loss_codes(result: &DecodeResult) -> Vec<cadmpeg_ir::report::loss::LossKind> {
+pub(super) fn loss_codes(result: &DecodeResult) -> Vec<cadmpeg_ir::report::loss::LossKind> {
     result
         .report()
         .losses
@@ -264,7 +299,7 @@ fn loss_codes(result: &DecodeResult) -> Vec<cadmpeg_ir::report::loss::LossKind> 
         .collect()
 }
 
-fn count_loss(result: &DecodeResult, code: AlibreLossCode) -> usize {
+pub(super) fn count_loss(result: &DecodeResult, code: AlibreLossCode) -> usize {
     loss_codes(result)
         .iter()
         .filter(|kind| **kind == code.kind())
@@ -516,14 +551,16 @@ fn components_that_are_not_available_stay_external() {
 #[test]
 fn a_component_that_does_not_decode_stays_external() {
     let files = Files(vec![
-        ("asm_box.AD_PRT", ASM_CYLINDER),
+        ("asm_box.AD_PRT", ASM_BOX),
         ("asm_cylinder.AD_PRT", &ASM_TWO[..64]),
     ]);
     let result = decode_with(ASM_TWO, &files);
     assert_valid(&result, "asm_two with a truncated component");
     assert_eq!(
         count_loss(&result, AlibreLossCode::AssemblyMemberUndecoded),
-        1
+        1,
+        "{:?}",
+        result.report().losses
     );
     assert_eq!(result.ir().geometry.bodies.len(), 1);
 }
@@ -555,8 +592,10 @@ fn an_assembly_that_places_itself_is_cut_at_the_cycle() {
 
 #[test]
 fn nesting_is_cut_at_the_limit() {
-    let result = decode_with(ASM_TWO, &Endless::default());
-    assert_valid(&result, "asm_two endless");
+    // The root is not asm_two, whose bytes every box request serves: a
+    // component equal to the root would be cut as a cycle at once.
+    let result = decode_with(ASM_REPEAT, &Endless::new());
+    assert_valid(&result, "asm_repeat endless");
     let truncated: Vec<_> = result
         .report()
         .losses
@@ -581,6 +620,7 @@ fn the_decode_is_deterministic_and_keeps_its_streams_in_the_loss_report() {
     );
     // The reader maps everything else the specimens state.
     for code in [
+        AlibreLossCode::AssemblyRecordUnreadable,
         AlibreLossCode::AssemblyEntitiesUnread,
         AlibreLossCode::AssemblyInclusionUnmapped,
         AlibreLossCode::AssemblyPlacementUnreadable,

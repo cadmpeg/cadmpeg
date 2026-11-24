@@ -26,7 +26,8 @@ const ASSEMBLY_RELATION_LISTS: [usize; 3] = [21, 22, 23];
 const ASSEMBLY_CONFIGURATIONS: usize = 25;
 const ASSEMBLY_ACTIVE: usize = 26;
 
-/// The attribute indices of the `DESIGNINCLUSION` entity.
+/// The attribute count of the `DESIGNINCLUSION` entity that the reader maps.
+/// Attributes past it are reported as unmapped.
 const INCLUSION_ARITY: usize = 15;
 /// Attributes whose non-default value the occurrence does not carry, with the
 /// value each holds in every specimen.
@@ -173,8 +174,10 @@ pub(crate) struct Inclusion {
     /// The configuration of the component that the occurrence uses.
     pub(crate) configuration: Option<String>,
     pub(crate) members: Vec<Member>,
+    /// The members of the list that do not read as a `DESIGNMEMBER`.
+    pub(crate) unreadable_members: usize,
     /// The indices of the attributes that state a non-default value that the
-    /// occurrence does not carry.
+    /// occurrence does not carry, and of the attributes past the schema.
     pub(crate) unmapped: Vec<usize>,
 }
 
@@ -203,6 +206,8 @@ pub(crate) struct Assembly {
     pub(crate) unread: BTreeMap<String, usize>,
     /// The references in the relation lists of the assembly entity.
     pub(crate) relation_references: usize,
+    /// The records that the reader needs and could not read, one text each.
+    pub(crate) unreadable: Vec<String>,
 }
 
 impl Assembly {
@@ -257,16 +262,19 @@ fn member(part: &Part21, id: u32) -> Option<Member> {
 }
 
 fn inclusion(part: &Part21, record: &Instance) -> Option<Inclusion> {
-    if record.args.len() != INCLUSION_ARITY {
+    if record.args.len() < INCLUSION_ARITY {
         return None;
     }
-    let reference = part.of(record.arg(3)?.as_ref()?, "REPOSITORYVERSIONREFERENCE");
-    let members = record
-        .arg(1)?
-        .refs()?
-        .into_iter()
-        .map(|id| member(part, id))
-        .collect::<Option<Vec<_>>>()?;
+    let reference = record
+        .arg(3)
+        .and_then(Value::as_ref)
+        .and_then(|id| part.of(id, "REPOSITORYVERSIONREFERENCE"));
+    let member_ids = record.arg(1)?.refs()?;
+    let members = member_ids
+        .iter()
+        .filter_map(|id| member(part, *id))
+        .collect::<Vec<_>>();
+    let unreadable_members = member_ids.len() - members.len();
     let unmapped = INCLUSION_UNMAPPED
         .iter()
         .filter(|(index, default)| {
@@ -275,6 +283,7 @@ fn inclusion(part: &Part21, record: &Instance) -> Option<Inclusion> {
                 .is_some_and(|value| !default.holds(value))
         })
         .map(|(index, _)| *index)
+        .chain(INCLUSION_ARITY..record.args.len())
         .collect();
     Some(Inclusion {
         id: record.id,
@@ -295,6 +304,7 @@ fn inclusion(part: &Part21, record: &Instance) -> Option<Inclusion> {
             .filter(|name| !name.is_empty())
             .map(str::to_owned),
         members,
+        unreadable_members,
         unmapped,
     })
 }
@@ -322,11 +332,6 @@ pub(crate) fn read(part: &Part21) -> Result<Assembly, CodecError> {
             "STEP_DATA holds no single DESIGNASSEMBLY entity",
         ));
     };
-    if root.args.len() <= ASSEMBLY_ACTIVE {
-        return Err(CodecError::malformed(
-            "the DESIGNASSEMBLY entity is shorter than the Alibre schema states",
-        ));
-    }
     let list = |index: usize| -> Result<Vec<u32>, CodecError> {
         root.arg(index)
             .and_then(Value::refs)
@@ -351,29 +356,54 @@ pub(crate) fn read(part: &Part21) -> Result<Assembly, CodecError> {
         ..Assembly::default()
     };
     for id in list(ASSEMBLY_INCLUSIONS)? {
-        let record = part.of(id, "DESIGNINCLUSION").ok_or_else(|| {
-            CodecError::malformed("an assembly inclusion is not a DESIGNINCLUSION")
-        })?;
-        let inclusion = inclusion(part, record).ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "DESIGNINCLUSION #{id} does not match the Alibre schema"
-            ))
-        })?;
-        assembly.inclusions.push(inclusion);
+        match part
+            .of(id, "DESIGNINCLUSION")
+            .and_then(|record| inclusion(part, record))
+        {
+            Some(inclusion) => assembly.inclusions.push(inclusion),
+            None => assembly.unreadable.push(format!(
+                "#{id} is not a DESIGNINCLUSION of the Alibre schema; its occurrence is left out"
+            )),
+        }
     }
-    let configurations = list(ASSEMBLY_CONFIGURATIONS)?;
-    for id in &configurations {
-        let configuration = configuration(part, *id).ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "DESIGNASSEMBLYCONFIGURATION #{id} does not match the Alibre schema"
-            ))
-        })?;
-        assembly.configurations.push(configuration);
+    let mut read_ids = Vec::new();
+    match root.arg(ASSEMBLY_CONFIGURATIONS).and_then(Value::refs) {
+        Some(ids) => {
+            for id in ids {
+                match configuration(part, id) {
+                    Some(configuration) => {
+                        read_ids.push(id);
+                        assembly.configurations.push(configuration);
+                    }
+                    None => assembly.unreadable.push(format!(
+                        "#{id} is not a DESIGNASSEMBLYCONFIGURATION of the Alibre schema"
+                    )),
+                }
+            }
+        }
+        None => assembly
+            .unreadable
+            .push("the DESIGNASSEMBLY entity has no list of configurations".to_owned()),
     }
     assembly.active = root
         .arg(ASSEMBLY_ACTIVE)
         .and_then(Value::as_ref)
-        .and_then(|active| configurations.iter().position(|id| *id == active));
+        .and_then(|active| read_ids.iter().position(|id| *id == active));
+    if assembly.active.is_none() {
+        assembly.unreadable.push(
+            "the active configuration of the assembly is not one of its readable configurations; \
+             the occurrences carry no suppressed state"
+                .to_owned(),
+        );
+    }
+    for inclusion in &assembly.inclusions {
+        if inclusion.unreadable_members > 0 {
+            assembly.unreadable.push(format!(
+                "inclusion #{} lists {} member(s) that are not a DESIGNMEMBER of the Alibre schema",
+                inclusion.id, inclusion.unreadable_members
+            ));
+        }
+    }
     for index in ASSEMBLY_RELATION_LISTS {
         assembly.relation_references += root
             .arg(index)
