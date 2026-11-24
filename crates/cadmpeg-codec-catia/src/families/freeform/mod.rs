@@ -3403,7 +3403,6 @@ fn append_resolved_consolidated_surface_curves(
                 "resolved_surface_curve_bound_to_standard_edge",
                 Exactness::Derived,
             )?;
-            annotations.derived(&procedural.id, "curve")?;
             annotations.derived(&procedural.id, "definition")?;
         } else {
             let curve_id = crate::resource::compose_index_id(
@@ -3441,7 +3440,6 @@ fn append_resolved_consolidated_surface_curves(
                 "resolved_surface_curve",
                 Exactness::Derived,
             )?;
-            annotations.derived(&procedural_id, "curve")?;
             annotations.derived(&procedural_id, "definition")?;
             admission.charge()?;
             let _attached = ir
