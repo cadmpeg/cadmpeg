@@ -1967,6 +1967,7 @@ fn disconnected_wire_edges_export_in_separate_connected_sets() {
     }
     ir.geometry.shells[0].add_wire_edge(second.id.clone());
     ir.geometry.edges.push(second);
+    cadmpeg_ir::examples::add_document_root(&mut ir);
     assert!(cadmpeg_ir::validate_neutral(&ir, Vec::new())
         .expect("neutral validation")
         .is_ok());

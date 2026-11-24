@@ -195,7 +195,17 @@ fn history_records_are_native_members_of_one_group_holding_their_descendants() {
         panic!("one root definition");
     };
     assert!(root.is_root());
-    assert!(root.bodies.is_empty());
+    // The root lists every body the file holds at its top (§8.1).
+    let mut listed = root.bodies.clone();
+    listed.sort();
+    let mut held = ir
+        .geometry
+        .bodies
+        .iter()
+        .map(|body| body.id.clone())
+        .collect::<Vec<_>>();
+    held.sort();
+    assert_eq!(listed, held);
 
     let [scope] = ir.design.scopes.as_slice() else {
         panic!("one design scope");
@@ -256,6 +266,11 @@ fn history_records_are_native_members_of_one_group_holding_their_descendants() {
     assert!(bodies_of(ir, plain)
         .iter()
         .all(|body| !current.bodies.contains(body)));
+    // No record produces the plain object: its body is unproduced (§5.5).
+    assert_eq!(
+        scope.unproduced.iter().cloned().collect::<Vec<_>>(),
+        bodies_of(ir, plain)
+    );
 
     assert_eq!(design_errors(ir), Vec::<String>::new());
 }

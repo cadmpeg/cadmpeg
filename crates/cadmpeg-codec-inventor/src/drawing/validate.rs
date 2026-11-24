@@ -276,6 +276,7 @@ fn finding(message: String, entity: Option<String>) -> Finding {
     Finding {
         related: Vec::new(),
         check: Check::NativeLinks,
+        rule: cadmpeg_ir::rule_name!("inventor/validate.drawing-records"),
         severity: Severity::Error,
         message,
         entity,

@@ -54,7 +54,7 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
                 Check::Tessellation,
                 Severity::Error,
                 Some(mesh.id.as_str()),
-                format_args!("{message}"),
+                crate::rule!("geometry_payloads.tessellation-targets", "{message}"),
             );
         }
         if let Some(message) = triangle_group_face_error(mesh, &face_bodies) {
@@ -63,7 +63,10 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
                 Check::Tessellation,
                 Severity::Error,
                 Some(mesh.id.as_str()),
-                format_args!("{message}"),
+                crate::rule!(
+                    "geometry_payloads.tessellation-triangle-group-faces",
+                    "{message}"
+                ),
             );
         }
         for assignment in mesh.texture_assignments() {
@@ -73,7 +76,10 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
                     Check::Tessellation,
                     Severity::Error,
                     Some(mesh.id.as_str()),
-                    format_args!("references a missing tessellation texture asset"),
+                    crate::rule!(
+                        "geometry_payloads.references-missing-tessellation-texture-asset",
+                        "references a missing tessellation texture asset"
+                    ),
                 );
                 break;
             }

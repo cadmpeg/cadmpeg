@@ -667,10 +667,11 @@ fn named_constraint_recipe_profiles_constraints_and_body_measures() {
                 );
                 assert!(pad_length.dependencies.is_empty(), "{label}");
             }
-            let [body_id] = pad.evaluation.outputs().as_slice() else {
+            let (state, bodies) = crate::test_support::result_of(decoded.ir(), pad);
+            let [body_id] = bodies.as_slice() else {
                 panic!("{label}: expected one pad result")
             };
-            let report = measured(&label, decoded.ir()).unwrap();
+            let report = measured(&label, &state).unwrap();
             let body = report
                 .bodies()
                 .iter()

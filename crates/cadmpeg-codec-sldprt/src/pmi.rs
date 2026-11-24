@@ -377,17 +377,32 @@ fn patch_bytes(
     Ok(())
 }
 
+/// A parameter whose bare Keywords number `apply_to_parameters` typed as a
+/// length: the number and the millimetres in the unit it is displayed in.
+#[derive(Debug, Clone)]
+pub(crate) struct RefinedLength {
+    pub(crate) parameter: cadmpeg_ir::features::ParameterId,
+    pub(crate) displayed: crate::design_v11::DisplayedLength,
+}
+
+/// Bind the agreed PMI records to parameters. Returns the parameters whose
+/// bare Keywords number became a length, for the configurations that hold
+/// that parameter's other values. `length_unit` and `length_places` are the
+/// document's.
 pub(crate) fn apply_to_parameters(
     parameters: &mut Vec<cadmpeg_ir::features::parameters::DesignParameter>,
     features: &[cadmpeg_ir::features::Feature],
     records: &[PmiDimension],
-) -> Result<(), cadmpeg_core::CodecError> {
+    length_unit: Option<cadmpeg_ir::design::units::UnitSymbol>,
+    length_places: Option<u32>,
+) -> Result<Vec<RefinedLength>, cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::parameters::{
         DesignParameter, DimensionDisplay, ParameterPmi, ParameterValue, PmiDimensionSubtype,
     };
     use cadmpeg_ir::features::ParameterId;
     use cadmpeg_ir::scalar::Length;
 
+    let mut refined = Vec::new();
     let mut feature_names = BTreeMap::<&str, Vec<&cadmpeg_ir::features::Feature>>::new();
     for feature in features {
         if let Some(name) = feature.name.as_deref() {
@@ -487,7 +502,32 @@ pub(crate) fn apply_to_parameters(
         if let Some(parameter) = existing_parameter.map(|index| &mut parameters[index]) {
             // Keywords is the authoritative design value when it already
             // supplied this parameter. PMI still contributes its semantic
-            // annotation and source identity.
+            // annotation and source identity. A bare number Keywords shows
+            // for a length is the record's value in the document's unit, so
+            // the record supplies the length.
+            if matches!(
+                semantic.subtype,
+                PmiDimensionSubtype::Linear | PmiDimensionSubtype::Ordinate
+            ) && matches!(
+                parameter.value,
+                None | Some(ParameterValue::Real(_) | ParameterValue::Integer(_))
+            ) {
+                if let Some((displayed, length)) = crate::design_v11::displayed_length(
+                    &parameter.expression,
+                    record.value.get(),
+                    length_unit,
+                    length_places,
+                )
+                .zip(Length::new(millimetres))
+                {
+                    parameter.expression = crate::history::literals::format_length_mm(length);
+                    parameter.value = Some(ParameterValue::Length(length));
+                    refined.push(RefinedLength {
+                        parameter: parameter.id.clone(),
+                        displayed,
+                    });
+                }
+            }
             parameter.pmi = Some(semantic);
             continue;
         }
@@ -531,7 +571,7 @@ pub(crate) fn apply_to_parameters(
             native_ref: None,
         });
     }
-    Ok(())
+    Ok(refined)
 }
 
 /// Parse work one `PMISemanticDataDB` section may spend per payload byte. One
