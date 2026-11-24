@@ -16,6 +16,8 @@ mod container;
 mod coverage;
 mod decode;
 mod dialect;
+#[doc(hidden)]
+pub mod fuzz;
 mod loss;
 
 use cadmpeg_container::compound::CompoundPrefixProbe;

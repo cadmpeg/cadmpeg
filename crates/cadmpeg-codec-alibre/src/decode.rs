@@ -59,7 +59,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     from_kernel(ctx, classification, &kernel, brep, losses, digest)
 }
 
-fn decode_kernel_stream(
+pub(crate) fn decode_kernel_stream(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     kernel: &KernelStream,
