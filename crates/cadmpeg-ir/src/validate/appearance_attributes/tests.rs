@@ -320,3 +320,43 @@ fn an_attribute_on_a_design_record_or_reading_a_parameter_needs_the_design_class
     );
     assert_eq!(scoped(AttributeTarget::Document, vec![None]), Ok(()));
 }
+
+/// The messages of the design Warnings on `entity`.
+fn design_warnings(ir: &CadIr, entity: &str) -> Vec<String> {
+    validate_neutral(ir, Vec::new())
+        .unwrap()
+        .findings
+        .into_iter()
+        .filter(|finding| {
+            finding.check == Check::Design
+                && finding.severity == crate::report::Severity::Warning
+                && finding.entity.as_deref() == Some(entity)
+        })
+        .map(|finding| finding.message)
+        .collect()
+}
+
+/// Part 10: no two bindings name one target, path, and state with different
+/// appearances (Warning); two that agree on the appearance are no finding.
+#[test]
+fn two_bindings_of_one_target_with_different_appearances_are_a_warning() {
+    let second_id = "test:model:appearance-binding#2";
+    let build = |stated: &str| {
+        let mut ir = unit_cube().unwrap();
+        let body = ir.geometry.bodies[0].id.clone();
+        let mut other = appearance();
+        other.id = AppearanceId::mint("test:model:appearance#2").unwrap();
+        ir.model.appearances.extend([appearance(), other]);
+        let first = binding(AppearanceTarget::Body(body.clone()));
+        let mut second = binding(AppearanceTarget::Body(body));
+        second.id = second_id.try_into().unwrap();
+        second.appearance = AppearanceId::mint(stated).unwrap();
+        ir.model.appearance_bindings.extend([first, second]);
+        ir
+    };
+    assert_eq!(
+        design_warnings(&build("test:model:appearance#2"), second_id),
+        ["another binding names the same target, path, and state with another appearance"]
+    );
+    assert!(design_warnings(&build("test:model:appearance#1"), second_id).is_empty());
+}

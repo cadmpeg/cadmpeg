@@ -27,8 +27,22 @@ pub(super) fn check_appearance_attributes(
     }
     let records = DesignRecords::of(ir);
     let model = ModelRecords::of(ir);
+    let mut stated = std::collections::HashMap::new();
     for binding in &ir.model.appearance_bindings {
         let owner = binding.id.as_str();
+        if let Some(other) = stated.insert(&binding.target, &binding.appearance) {
+            if other != &binding.appearance {
+                super::record_finding(
+                    findings,
+                    Check::Design,
+                    Severity::Warning,
+                    Some(owner),
+                    format_args!(
+                        "another binding names the same target, path, and state with another appearance"
+                    ),
+                );
+            }
+        }
         match &binding.target.entity {
             AppearanceTarget::Occurrence(id) if !model.occurrences.contains(id.as_str()) => {
                 missing(findings, owner, "occurrence", id.as_str());
