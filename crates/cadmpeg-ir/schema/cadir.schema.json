@@ -1951,31 +1951,17 @@
           ]
         },
         {
-          "description": "Native presentation carrier without a neutral geometry arena.",
+          "description": "An object the source assigns the appearance to that the decoder did\nnot join to a record of the document. The binding's\n`source_entity_id` or `native_ref` states what the decoder read of it.",
           "type": "object",
           "properties": {
             "kind": {
               "type": "string",
-              "const": "source"
-            },
-            "value": {
-              "type": "object",
-              "properties": {
-                "source_id": {
-                  "description": "Native source entity identity.",
-                  "type": "string"
-                }
-              },
-              "additionalProperties": false,
-              "required": [
-                "source_id"
-              ]
+              "const": "unresolved"
             }
           },
           "additionalProperties": false,
           "required": [
-            "kind",
-            "value"
+            "kind"
           ]
         }
       ]
@@ -2278,34 +2264,39 @@
       "description": "Identifies a [`crate::physics::Articulation`] record.",
       "$ref": "#/$defs/Identity"
     },
-    "AssemblyFeature": {
-      "description": "An operation (an extrude or revolve cut, a hole, a split, a fillet) run in\nthe assembly over the occurrences, or bodies through occurrence contexts,\nthat it modifies.",
+    "AssemblyContext": {
+      "description": "The context of an assembly feature: the occurrences, or bodies through\noccurrence contexts, that the feature's operation changes, keyed by what it\nchanges for them. `None` keys the participants whose effect the source does\nnot state. On the wire it is an array of `[effect, selection]` pairs in key\norder.",
       "type": "object",
       "properties": {
-        "effect": {
-          "description": "What the feature changes. `None`, not stated.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ContextEffect"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "operation": {
-          "description": "The operation the feature runs.",
-          "$ref": "#/$defs/FeatureOperation2"
-        },
         "participants": {
-          "description": "What the feature modifies, its picks carrying occurrence contexts: the\nonly statement of it, since the operation states no body operand of\nits own.",
-          "$ref": "#/$defs/Selection2"
+          "description": "The participants, one selection per effect.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ContextEffect"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              {
+                "$ref": "#/$defs/Selection2"
+              }
+            ]
+          },
+          "uniqueItems": true
         }
       },
       "additionalProperties": false,
       "required": [
-        "participants",
-        "operation"
+        "participants"
       ]
     },
     "AssemblyJoint": {
@@ -2464,32 +2455,6 @@
     "AssetId": {
       "description": "Stable identity of one document asset.",
       "$ref": "#/$defs/Identity"
-    },
-    "AttributeExpression": {
-      "description": "An expression that a source states on a property.",
-      "type": "object",
-      "properties": {
-        "comment": {
-          "description": "The source's comment on the expression.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "expression": {
-          "description": "The expression.",
-          "$ref": "#/$defs/Expression"
-        },
-        "path": {
-          "description": "The source's path of the property the expression drives.",
-          "type": "string"
-        }
-      },
-      "additionalProperties": false,
-      "required": [
-        "path",
-        "expression"
-      ]
     },
     "AttributeId": {
       "description": "Identifies a linked [`crate::attributes::SourceAttribute`] record.",
@@ -3213,7 +3178,7 @@
           ]
         },
         {
-          "description": "The design parameter that a property linked to a dimension or a\nmeasure is.",
+          "description": "The design parameter that a property is where the source states its\nvalue by an expression.",
           "type": "object",
           "properties": {
             "kind": {
@@ -3265,24 +3230,6 @@
               "items": {
                 "$ref": "#/$defs/AttributeMapEntry"
               }
-            }
-          },
-          "additionalProperties": false,
-          "required": [
-            "kind",
-            "value"
-          ]
-        },
-        {
-          "description": "An expression the source states on the property that no parameter\nholds.",
-          "type": "object",
-          "properties": {
-            "kind": {
-              "type": "string",
-              "const": "expression"
-            },
-            "value": {
-              "$ref": "#/$defs/AttributeExpression"
             }
           },
           "additionalProperties": false,
@@ -8914,6 +8861,47 @@
         }
       ]
     },
+    "CircularLayout": {
+      "description": "An angular run about `axis` and an optional radial run outward from it.",
+      "type": "object",
+      "properties": {
+        "angular": {
+          "description": "The run about the axis.",
+          "$ref": "#/$defs/PatternRun2"
+        },
+        "axis": {
+          "description": "The axis of the angular run.",
+          "$ref": "#/$defs/Construction3"
+        },
+        "orientation": {
+          "description": "Whether an instance keeps the seed's orientation or turns with the\nlayout.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InstanceOrientation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "radial": {
+          "description": "The run outward from the axis.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PatternRun"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "axis",
+        "angular"
+      ]
+    },
     "CodecId": {
       "description": "A codec id: one or more lower-case ASCII letters and digits.",
       "type": "string",
@@ -9863,6 +9851,101 @@
       "items": {
         "$ref": "#/$defs/PatternStage"
       }
+    },
+    "CompositeStage": {
+      "description": "One stage of a `Composite` layout: the layout of that name, with the same\nmeaning.",
+      "oneOf": [
+        {
+          "description": "A linear layout.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "linear"
+            },
+            "value": {
+              "$ref": "#/$defs/LinearLayout"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A circular layout.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "circular"
+            },
+            "value": {
+              "$ref": "#/$defs/CircularLayout"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A mirror layout.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "mirror"
+            },
+            "value": {
+              "$ref": "#/$defs/MirrorLayout"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A scale layout.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "scale"
+            },
+            "value": {
+              "$ref": "#/$defs/ScaleLayout"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A stage whose meaning is not established.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "native"
+            },
+            "value": {
+              "$ref": "#/$defs/NonBlankString"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        }
+      ]
     },
     "CompoundComponent": {
       "description": "One component and its native construction scalar.",
@@ -11255,7 +11338,7 @@
       ]
     },
     "ContextEffect": {
-      "description": "What an assembly feature changes.",
+      "description": "What an assembly feature changes for the participants under it.",
       "oneOf": [
         {
           "description": "Only the participating instances: the result is `instance_bodies` of\nthe assembly definition at each participant's path.",
@@ -11272,7 +11355,7 @@
           ]
         },
         {
-          "description": "The participants' definitions: each changed definition's scope holds a\nresulting feature with `driven_by` naming the assembly feature.",
+          "description": "The participants' definitions: each changed definition's scope holds a\nresulting feature with `driven_by` naming the feature whose definition\nstates the context.",
           "type": "object",
           "properties": {
             "kind": {
@@ -20556,10 +20639,10 @@
           ]
         },
         "tolerance": {
-          "description": "Optional geometric tolerance in the document's length unit.",
+          "description": "The entity's tolerance in millimetres, overriding `tolerances.linear`.",
           "anyOf": [
             {
-              "$ref": "#/$defs/PositiveReal"
+              "$ref": "#/$defs/PositiveLength"
             },
             {
               "type": "null"
@@ -23605,10 +23688,10 @@
           "$ref": "#/$defs/SurfaceId"
         },
         "tolerance": {
-          "description": "Optional geometric tolerance in the document's length unit.",
+          "description": "The entity's tolerance in millimetres, overriding `tolerances.linear`.",
           "anyOf": [
             {
-              "$ref": "#/$defs/PositiveReal"
+              "$ref": "#/$defs/PositiveLength"
             },
             {
               "type": "null"
@@ -24362,9 +24445,20 @@
       ]
     },
     "FeatureDefinition2": {
-      "description": "A feature's one operation and the cleanup the source states for its\nresult. On the wire it has no wrapper level.",
+      "description": "A feature's one operation, the assembly context it runs in, and the\ncleanup the source states for its result. On the wire it has no wrapper\nlevel.",
       "type": "object",
       "properties": {
+        "assembly": {
+          "description": "The participants of an assembly feature, which runs its operation in\nan assembly over them. `None` on every other feature.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AssemblyContext"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "fuzzy_tolerance": {
           "description": "The Boolean tolerance the feature carries.",
           "anyOf": [
@@ -30149,24 +30243,6 @@
             },
             "value": {
               "$ref": "#/$defs/MirrorComponents"
-            }
-          },
-          "additionalProperties": false,
-          "required": [
-            "kind",
-            "value"
-          ]
-        },
-        {
-          "description": "An operation run in the assembly over its participants (§6.7).",
-          "type": "object",
-          "properties": {
-            "kind": {
-              "type": "string",
-              "const": "assembly_feature"
-            },
-            "value": {
-              "$ref": "#/$defs/AssemblyFeature"
             }
           },
           "additionalProperties": false,
@@ -45364,6 +45440,42 @@
         }
       ]
     },
+    "LinearLayout": {
+      "description": "One or two runs, each along its own direction.",
+      "type": "object",
+      "properties": {
+        "first": {
+          "description": "The first run.",
+          "$ref": "#/$defs/LinearRun"
+        },
+        "second": {
+          "description": "The second run.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LinearRun"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "seed_only": {
+          "description": "Whether the second run repeats only the seed, not the first run's\ninstances: the instances that then exist are `[i, 0]` and\n`[0, j]`. It occurs only with a `second` run.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Dimension3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "first"
+      ]
+    },
     "LinearPatternDirection": {
       "description": "Complete secondary direction of a two-direction linear pattern.",
       "type": "object",
@@ -49435,6 +49547,31 @@
         "source_settings"
       ]
     },
+    "MirrorLayout": {
+      "description": "The seeds reflected across `plane`. Its one instance is the reflection.",
+      "type": "object",
+      "properties": {
+        "plane": {
+          "description": "The mirror plane.",
+          "$ref": "#/$defs/Construction4"
+        },
+        "stitch_tolerance": {
+          "description": "The tolerance with which the mirror stitches the reflection to its\nseed, whatever the seeds are.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Dimension2"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "plane"
+      ]
+    },
     "MirrorOrientation": {
       "description": "The orientation of a mirror result that is a copy of its seed.",
       "oneOf": [
@@ -53259,11 +53396,6 @@
           "const": "mirror_components"
         },
         {
-          "description": "An assembly feature.",
-          "type": "string",
-          "const": "assembly_feature"
-        },
-        {
           "description": "A material removal.",
           "type": "string",
           "const": "material_removal"
@@ -56370,39 +56502,7 @@
               "const": "linear"
             },
             "value": {
-              "type": "object",
-              "properties": {
-                "first": {
-                  "description": "The first run.",
-                  "$ref": "#/$defs/LinearRun"
-                },
-                "second": {
-                  "description": "The second run.",
-                  "anyOf": [
-                    {
-                      "$ref": "#/$defs/LinearRun"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "seed_only": {
-                  "description": "Whether the second run repeats only the seed, not the first run's\ninstances: the instances that then exist are `[i, 0]` and\n`[0, j]`. It occurs only with a `second` run.",
-                  "anyOf": [
-                    {
-                      "$ref": "#/$defs/Dimension3"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
-              },
-              "additionalProperties": false,
-              "required": [
-                "first"
-              ]
+              "$ref": "#/$defs/LinearLayout"
             }
           },
           "additionalProperties": false,
@@ -56412,7 +56512,7 @@
           ]
         },
         {
-          "description": "An angular run about `axis` and an optional radial run outward from\nit.",
+          "description": "An angular run about an axis and an optional radial run outward from\nit.",
           "type": "object",
           "properties": {
             "kind": {
@@ -56420,44 +56520,7 @@
               "const": "circular"
             },
             "value": {
-              "type": "object",
-              "properties": {
-                "angular": {
-                  "description": "The run about the axis.",
-                  "$ref": "#/$defs/PatternRun2"
-                },
-                "axis": {
-                  "description": "The axis of the angular run.",
-                  "$ref": "#/$defs/Construction3"
-                },
-                "orientation": {
-                  "description": "Whether an instance keeps the seed's orientation or turns with the\nlayout.",
-                  "anyOf": [
-                    {
-                      "$ref": "#/$defs/InstanceOrientation"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "radial": {
-                  "description": "The run outward from the axis.",
-                  "anyOf": [
-                    {
-                      "$ref": "#/$defs/PatternRun"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
-              },
-              "additionalProperties": false,
-              "required": [
-                "axis",
-                "angular"
-              ]
+              "$ref": "#/$defs/CircularLayout"
             }
           },
           "additionalProperties": false,
@@ -56589,7 +56652,7 @@
           ]
         },
         {
-          "description": "The seeds reflected across `plane`. Its one instance is the\nreflection.",
+          "description": "The seeds reflected across a plane. Its one instance is the\nreflection.",
           "type": "object",
           "properties": {
             "kind": {
@@ -56597,28 +56660,7 @@
               "const": "mirror"
             },
             "value": {
-              "type": "object",
-              "properties": {
-                "plane": {
-                  "description": "The mirror plane.",
-                  "$ref": "#/$defs/Construction4"
-                },
-                "stitch_tolerance": {
-                  "description": "The tolerance with which the mirror stitches the reflection to its\nseed, whatever the seeds are.",
-                  "anyOf": [
-                    {
-                      "$ref": "#/$defs/Dimension2"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
-              },
-              "additionalProperties": false,
-              "required": [
-                "plane"
-              ]
+              "$ref": "#/$defs/MirrorLayout"
             }
           },
           "additionalProperties": false,
@@ -56628,7 +56670,7 @@
           ]
         },
         {
-          "description": "Stages applied in order, each to every instance the earlier stages\nproduced, except that a `Scale` stage after the first splits the\ninstances made so far into `count` consecutive slices of equal length\nand scales every instance of slice j by slice j's factor about that\ninstance's own transformed centre. No stage is a `Composite`.",
+          "description": "Stages applied in order, each to every instance the earlier stages\nproduced, except that a `Scale` stage after the first splits the\ninstances made so far into `count` consecutive slices of equal length\nand scales every instance of slice j by slice j's factor about that\ninstance's own transformed centre.",
           "type": "object",
           "properties": {
             "kind": {
@@ -56638,7 +56680,7 @@
             "value": {
               "type": "array",
               "items": {
-                "$ref": "#/$defs/PatternLayout"
+                "$ref": "#/$defs/CompositeStage"
               }
             }
           },
@@ -56649,7 +56691,7 @@
           ]
         },
         {
-          "description": "`count` instances, the seed included: instance i, for i from 0 to\ncount − 1, is the seed scaled uniformly by 1 + i (factor − 1)/(count −\n1) about `center`, so the last is scaled by `factor`.",
+          "description": "Instances of the seed scaled about a point.",
           "type": "object",
           "properties": {
             "kind": {
@@ -56657,27 +56699,7 @@
               "const": "scale"
             },
             "value": {
-              "type": "object",
-              "properties": {
-                "center": {
-                  "description": "The point the instances are scaled about.",
-                  "$ref": "#/$defs/Locus"
-                },
-                "count": {
-                  "description": "The number of instances, the seed included.",
-                  "$ref": "#/$defs/Dimension14"
-                },
-                "factor": {
-                  "description": "The scale of the last instance.",
-                  "$ref": "#/$defs/Dimension10"
-                }
-              },
-              "additionalProperties": false,
-              "required": [
-                "factor",
-                "count",
-                "center"
-              ]
+              "$ref": "#/$defs/ScaleLayout"
             }
           },
           "additionalProperties": false,
@@ -59034,6 +59056,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/Construction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "scale": {
+          "description": "The scale the source composes with `placement` on the occurrence,\napplied in the placed definition's own axes before `placement`, with\nfactors an expression can bind. A `PerAxis` scale states no `frame`.\n`None` where the source stores no scale, or a scale of one on every\naxis.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScaleFactors2"
             },
             {
               "type": "null"
@@ -72448,6 +72481,30 @@
         }
       ]
     },
+    "ScaleLayout": {
+      "description": "`count` instances, the seed included: instance i, for i from 0 to count −\n1, is the seed scaled uniformly by 1 + i (factor − 1)/(count − 1) about\n`center`, so the last is scaled by `factor`.",
+      "type": "object",
+      "properties": {
+        "center": {
+          "description": "The point the instances are scaled about.",
+          "$ref": "#/$defs/Locus"
+        },
+        "count": {
+          "description": "The number of instances, the seed included.",
+          "$ref": "#/$defs/Dimension14"
+        },
+        "factor": {
+          "description": "The scale of the last instance.",
+          "$ref": "#/$defs/Dimension10"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "factor",
+        "count",
+        "center"
+      ]
+    },
     "ScaledCompoundLoftBranch": {
       "description": "Structurally selected middle branch of a scaled compound loft.",
       "oneOf": [
@@ -73875,6 +73932,20 @@
           "required": [
             "kind",
             "value"
+          ]
+        },
+        {
+          "description": "Every component instance below the owner's definition that exists in\nthe anchored state and whose bodies differ when the operation of the\nselection's feature is applied to that instance alone. It takes no\nseeds and no propagation, and occurs only as a term of an assembly\nfeature's participants.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "affected"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
           ]
         },
         {
@@ -87223,8 +87294,15 @@
               ]
             },
             "targets": {
-              "description": "The bodies or faces cut.",
-              "$ref": "#/$defs/Selection2"
+              "description": "The bodies or faces cut. `None` where the definition states\n`assembly`, whose participants are cut.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Selection2"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "tools": {
               "description": "The tools that cut them.",
@@ -87234,7 +87312,6 @@
           "additionalProperties": false,
           "required": [
             "kind",
-            "targets",
             "tools"
           ]
         },
@@ -87380,38 +87457,105 @@
           ]
         },
         {
-          "description": "Faces, sheet or solid bodies, curves, or sketches.",
+          "description": "Faces, sheet or solid bodies, curves, or sketches, and datum or\norigin planes beside them, each plane cutting as its whole plane.",
           "type": "object",
           "properties": {
-            "at": {
-              "description": "The state the picks resolve in.",
-              "$ref": "#/$defs/Anchor"
-            },
-            "kind": {
-              "type": "string",
-              "const": "geometry"
-            },
-            "native": {
-              "description": "The source's group-level selection record, where it has one.",
+            "extend": {
+              "description": "Whether the cut continues past where a tool reaches until it\ndivides the targets. `None` where the source does not state it.",
               "anyOf": [
                 {
-                  "$ref": "#/$defs/NativeSelections"
+                  "$ref": "#/$defs/ToolExtension"
                 },
                 {
                   "type": "null"
                 }
               ]
             },
-            "picks": {
-              "description": "The picks, or the rule that gives them.",
-              "$ref": "#/$defs/Picks2"
+            "kind": {
+              "type": "string",
+              "const": "geometry"
+            },
+            "tools": {
+              "description": "The tools.",
+              "$ref": "#/$defs/Selection2"
             }
           },
           "additionalProperties": false,
           "required": [
             "kind",
-            "at",
-            "picks"
+            "tools"
+          ]
+        },
+        {
+          "description": "Each target's outline seen along the direction: on each target face,\nthe curves where the face's normal is perpendicular to the direction.",
+          "type": "object",
+          "properties": {
+            "after": {
+              "description": "The source's own steps on the result after the inputs, in the\nsource's order.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/PostStep"
+              }
+            },
+            "inputs": {
+              "description": "The constraints the source stores, in the source's priority order.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ConstructionInput"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "silhouette"
+            },
+            "mode": {
+              "description": "The source's name for its construction method, with the method\noptions the source stores beside it.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SourceMode"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "resolved": {
+              "description": "The construction's value in its anchored state, for the active\nconfiguration, after the steps of `after`.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/UnitVector3"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "resolved_in": {
+              "description": "The construction's value in each other configuration for which the\nsource stores one.",
+              "type": "object",
+              "additionalProperties": false,
+              "patternProperties": {
+                "^(?:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+:){2}[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+#[^#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])": {
+                  "$ref": "#/$defs/UnitVector3"
+                }
+              }
+            },
+            "solution": {
+              "description": "The selector the source stores for its choice among the solutions\nthat the inputs admit.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "inputs",
+            "after",
+            "resolved_in"
           ]
         }
       ]
@@ -95749,6 +95893,50 @@
         }
       ]
     },
+    "ToolExtension": {
+      "description": "Whether a split's cut continues past where its tool reaches.",
+      "oneOf": [
+        {
+          "description": "The cut stops where the tool reaches.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "off"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "The cut continues until it divides the targets.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "extended"
+            },
+            "method": {
+              "description": "The law by which the cut continues. `None` where the source\nstores no law.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ExtendMethod"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        }
+      ]
+    },
     "ToolId": {
       "description": "Identifies a cutting tool.",
       "$ref": "#/$defs/Identity"
@@ -99247,10 +99435,10 @@
           "$ref": "#/$defs/PointId"
         },
         "tolerance": {
-          "description": "Optional geometric tolerance in the document's length unit.",
+          "description": "The entity's tolerance in millimetres, overriding `tolerances.linear`.",
           "anyOf": [
             {
-              "$ref": "#/$defs/PositiveReal"
+              "$ref": "#/$defs/PositiveLength"
             },
             {
               "type": "null"

@@ -3417,10 +3417,7 @@ fn retain_unresolved_appearance(
     }
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: binding_id,
-        target: AppearanceTarget::Source {
-            source_id: unresolved.identity.clone(),
-        }
-        .into(),
+        target: AppearanceTarget::Unresolved.into(),
         appearance: appearance_id,
         source_entity_id: Some(unresolved.identity.clone()),
         object_type: Some(unresolved.owner_class.clone()),

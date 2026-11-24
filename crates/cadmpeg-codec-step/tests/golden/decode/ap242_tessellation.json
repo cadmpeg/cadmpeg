@@ -321,7 +321,7 @@
           "appearance": "step:presentation:appearance#70",
           "channels": {},
           "id": "step:presentation:binding#77:0-0",
-          "source_entity_id": "#77",
+          "source_entity_id": "#7",
           "target": {
             "entity": {
               "kind": "tessellation",

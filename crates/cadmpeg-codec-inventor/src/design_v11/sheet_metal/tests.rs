@@ -729,6 +729,7 @@ fn equal_style_relief_forms_admit_both_boolean_values() {
         suppressed: None,
         definition: FeatureDefinition {
             operation,
+            assembly: None,
             refine: None,
             fuzzy_tolerance: None,
         },

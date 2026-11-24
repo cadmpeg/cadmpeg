@@ -31,7 +31,6 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, FaceId, LoopId, PcurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::tessellation::Meshed;
 use cadmpeg_ir::topology::{
     AnchoredVertexUse, BodyKind, Coedge, Edge, EdgeCarrier, Face, FaceLoops, Loop, LoopBoundary,
@@ -689,7 +688,7 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
         let tolerance = record
             .tolerance
             .filter(|tolerance| *tolerance > brep.tolerance)
-            .and_then(|tolerance| PositiveReal::new(tolerance * scale));
+            .and_then(|tolerance| cadmpeg_ir::scalar::PositiveLength::new(tolerance * scale));
         out.edges.push(Edge {
             id: edge_id.clone(),
             carrier,

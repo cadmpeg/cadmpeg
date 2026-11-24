@@ -753,7 +753,7 @@
           "appearance": "step:presentation:appearance#30",
           "channels": {},
           "id": "step:presentation:binding#37:0-0",
-          "source_entity_id": "#37",
+          "source_entity_id": "#8",
           "target": {
             "entity": {
               "kind": "curve",
@@ -765,7 +765,7 @@
           "appearance": "step:presentation:appearance#30",
           "channels": {},
           "id": "step:presentation:binding#38:0-0",
-          "source_entity_id": "#38",
+          "source_entity_id": "#11",
           "target": {
             "entity": {
               "kind": "surface",
@@ -777,7 +777,7 @@
           "appearance": "step:presentation:appearance#30",
           "channels": {},
           "id": "step:presentation:binding#39:0-0",
-          "source_entity_id": "#39",
+          "source_entity_id": "#3",
           "target": {
             "entity": {
               "kind": "point",
@@ -789,7 +789,7 @@
           "appearance": "step:presentation:appearance#30",
           "channels": {},
           "id": "step:presentation:binding#47:0-0",
-          "source_entity_id": "#47",
+          "source_entity_id": "#3",
           "target": {
             "entity": {
               "kind": "point",
@@ -801,7 +801,7 @@
           "appearance": "step:presentation:appearance#30",
           "channels": {},
           "id": "step:presentation:binding#47:1-0",
-          "source_entity_id": "#47",
+          "source_entity_id": "#8",
           "target": {
             "entity": {
               "kind": "curve",
@@ -813,7 +813,7 @@
           "appearance": "step:presentation:appearance#30",
           "channels": {},
           "id": "step:presentation:binding#49:0-0",
-          "source_entity_id": "#49",
+          "source_entity_id": "#48",
           "target": {
             "entity": {
               "kind": "curve",
@@ -825,13 +825,10 @@
           "appearance": "step:presentation:appearance#30",
           "channels": {},
           "id": "step:presentation:binding#50:0-0",
-          "source_entity_id": "#50",
+          "source_entity_id": "#6",
           "target": {
             "entity": {
-              "kind": "source",
-              "value": {
-                "source_id": "#6"
-              }
+              "kind": "unresolved"
             }
           }
         }

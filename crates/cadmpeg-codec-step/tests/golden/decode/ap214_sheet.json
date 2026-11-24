@@ -350,7 +350,7 @@
           "appearance": "step:presentation:appearance#40",
           "channels": {},
           "id": "step:presentation:binding#47:0-0",
-          "source_entity_id": "#47",
+          "source_entity_id": "#29",
           "target": {
             "entity": {
               "kind": "face",
@@ -362,7 +362,7 @@
           "appearance": "step:presentation:appearance#60",
           "channels": {},
           "id": "step:presentation:binding#68:0-0",
-          "source_entity_id": "#68",
+          "source_entity_id": "#19",
           "target": {
             "entity": {
               "kind": "edge",
