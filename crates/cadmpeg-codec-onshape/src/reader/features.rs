@@ -201,9 +201,6 @@ pub(super) fn profile(
     ) {
         return Err("the sketch query is not supported yet".into());
     }
-    if super::boolean_field(query, "filterInnerLoops")? {
-        return Err("filtered inner sketch regions are not supported yet".into());
-    }
     let sketch_id = id("sketch", text(query, "featureId")?);
     if !model.sketches.iter().any(|s| s.id.as_str() == sketch_id) {
         return Err("the selected sketch has no resolved geometry and plane".into());
@@ -216,6 +213,9 @@ pub(super) fn profile(
             )
     }) {
         return Err("the selected sketch contains unresolved geometry".into());
+    }
+    if super::boolean_field(query, "filterInnerLoops")? {
+        return super::regions::filtered_profile(&sketch_id, model, inputs);
     }
     Ok(json!({"kind": "sketch", "value": sketch_id}))
 }

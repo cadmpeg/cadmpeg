@@ -276,6 +276,115 @@ pub(super) fn profile(
         json!({"kind": "sketch_regions", "value": {"sketch": sketch.ok_or("the sketch-region selection is empty")?, "regions": regions}}),
     )
 }
+
+/// The regions `qSketchRegion(sketch, true)` selects: every region not contained in another
+/// region, each with the loops directly inside it as holes. The whole sketch when none is
+/// contained.
+pub(super) fn filtered_profile(
+    sketch: &str,
+    model: &Model,
+    inputs: &topology::Inputs<'_>,
+) -> Mapping<Value> {
+    let mut recovery = inputs
+        .regions
+        .try_borrow_mut()
+        .map_err(|_| "the sketch-region recovery state is already in use")?;
+    let Recovery { budget, loops } = &mut *recovery;
+    let topology = loops
+        .entry(sketch.to_owned())
+        .or_insert_with(|| source_loops(sketch, model, budget))
+        .as_ref()
+        .map_err(Clone::clone)?;
+    if topology.open.is_empty() {
+        if let [first, second] = topology.rings.as_slice() {
+            if has_exterior_vertex(first, second, budget)?
+                && has_exterior_vertex(second, first, budget)?
+            {
+                return Ok(json!({"kind":"sketch", "value":sketch}));
+            }
+        }
+    }
+    let mut containers: Vec<Vec<usize>> = topology.rings.iter().map(|_| Vec::new()).collect();
+    for (i, ring) in topology.rings.iter().enumerate() {
+        let point = ring.edges.first().ok_or("the sketch region is empty")?.0.a;
+        for (j, other) in topology.rings.iter().enumerate() {
+            if i == j {
+                continue;
+            }
+            budget.work(
+                ring.edges
+                    .len()
+                    .checked_mul(other.edges.len())
+                    .ok_or(BUDGET_LOSS)?,
+            )?;
+            admit_separate_rings(ring, other)?;
+            budget.work(other.edges.len())?;
+            if other.contains(point)? {
+                containers.get_mut(i).ok_or(BUDGET_LOSS)?.push(j);
+            }
+        }
+    }
+    if containers.iter().all(Vec::is_empty) {
+        return Ok(json!({"kind":"sketch", "value":sketch}));
+    }
+    for edge in &topology.open {
+        if !isolated(edge, topology, budget)? {
+            return Err("the filtered sketch regions have an unresolved open divider".into());
+        }
+    }
+    let mut regions = Vec::new();
+    for (i, outer) in topology.rings.iter().enumerate() {
+        if !containers.get(i).ok_or(BUDGET_LOSS)?.is_empty() {
+            continue;
+        }
+        let mut holes = Vec::new();
+        for (j, hole) in topology.rings.iter().enumerate() {
+            budget.work(1)?;
+            if containers.get(j).ok_or(BUDGET_LOSS)?.as_slice() == [i] {
+                for (edge, _) in &hole.edges {
+                    budget.boundary(edge)?;
+                }
+                holes.push(hole.boundary());
+            }
+        }
+        for (edge, _) in &outer.edges {
+            budget.boundary(edge)?;
+        }
+        regions.push(
+            json!({"kind":"trimmed", "outer_boundary":outer.boundary(), "hole_boundaries":holes}),
+        );
+    }
+    Ok(json!({"kind":"sketch_regions", "value":{"sketch":sketch, "regions":regions}}))
+}
+
+fn has_exterior_vertex(inner: &Ring, outer: &Ring, budget: &mut Budget) -> Mapping<bool> {
+    for axis in [[1.0, 0.0], [0.0, 1.0]] {
+        let mut low = f64::INFINITY;
+        let mut high = f64::NEG_INFINITY;
+        for (edge, _) in &outer.edges {
+            budget.work(1)?;
+            let [from, to] = edge.projection(axis, edge.conic()?);
+            low = low.min(from);
+            high = high.max(to);
+        }
+        if !low.is_finite() || !high.is_finite() {
+            return Ok(false);
+        }
+        for (edge, _) in &inner.edges {
+            budget.work(1)?;
+            for point in [edge.a, edge.b] {
+                let value = dot(point, axis);
+                let scale = low.abs().max(high.abs()).max(value.abs()).max(1.0);
+                let roundoff = BOUNDARY_ROUNDOFF_FACTOR * f64::EPSILON * scale;
+                if value < low - roundoff || value > high + roundoff {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+    Ok(false)
+}
+
 fn ellipse_interval(
     edge: &Value,
     native: &str,

@@ -97,9 +97,12 @@ intersection and containment of closed boundaries establish hole nesting.
 Directed carrier turns establish loop sense.
 A `BTMIndividualSketchRegionQuery-140` whose `queryString` is
 `query = qSketchRegion(id + "<featureId>", <filterInnerLoops>);` selects
-every region of that sketch. Its `deterministicIds` list the regions that
-string resolved to at the last regeneration and do not restrict the
-selection.
+every region of that sketch when `filterInnerLoops` is `false`. When
+`filterInnerLoops` is `true`, the selection excludes regions contained in
+an inner loop of another region. A region with a boundary vertex or edge
+on the outside boundary remains selected. An outer region retains its
+hole boundaries. The query's `deterministicIds` list the regions resolved
+at the last regeneration. The query string determines the selection.
 
 A sketch's optional `plane` object stores its attachment frame. `origin` uses
 metres; `normal` and `x` store its normal and x axis. The axes are orthogonal.

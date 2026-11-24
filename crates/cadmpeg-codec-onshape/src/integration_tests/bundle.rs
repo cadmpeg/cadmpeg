@@ -1599,3 +1599,80 @@ fn a_whole_sketch_region_query_maps_despite_its_resolved_region_ids() {
         }
     }
 }
+
+#[test]
+fn whole_sketch_inner_loop_filter_selects_the_ring_and_preserves_unfiltered_queries() {
+    for nested in [false, true] {
+        for filter in [false, true] {
+            let bytes = changed(&fixture("default-plane-regions"), |path, value| {
+                if !path.ends_with("features.json") {
+                    return;
+                }
+                region_fixture::frame(value, false);
+                if !nested {
+                    value["features"][0]["entities"]
+                        .as_array_mut()
+                        .unwrap()
+                        .pop();
+                }
+                let query = &mut value["features"][1]["parameters"][2]["queries"][0];
+                *query = json!({"btType":"BTMIndividualSketchRegionQuery-140",
+                    "featureId":"drawn-profile", "deterministicIds":["outer-region", "inner-region"],
+                    "filterInnerLoops":filter,
+                    "queryString":format!("query = qSketchRegion(id + \"drawn-profile\", {filter});")});
+            });
+            let (model, report) = read(&bytes).unwrap();
+            assert_eq!(kinds(&model)[1], "extrude", "{:?}", report.losses());
+            let wire = timeline(&model);
+            let profile =
+                &wire["model"]["features"][1]["definition"]["value"]["value"]["profile"]["value"];
+            if nested && filter {
+                assert_eq!(profile["kind"], "sketch_regions");
+                let regions = profile["value"]["regions"].as_array().unwrap();
+                assert_eq!(regions.len(), 1);
+                assert_eq!(regions[0]["outer_boundary"].as_array().unwrap().len(), 4);
+                let holes = regions[0]["hole_boundaries"].as_array().unwrap();
+                assert_eq!(holes.len(), 1);
+                assert_eq!(holes[0].as_array().unwrap().len(), 1);
+                assert!(holes[0][0]["entity"].as_str().unwrap().ends_with("/hole"));
+            } else {
+                assert_eq!(profile["kind"], "sketch");
+            }
+        }
+    }
+}
+
+#[test]
+fn overlapping_source_loops_keep_all_sketch_regions() {
+    for filter in [false, true] {
+        let bytes = changed(&fixture("default-plane-regions"), |path, value| {
+            if !path.ends_with("features.json") {
+                return;
+            }
+            region_fixture::frame(value, false);
+            let entities = value["features"][0]["entities"].as_array_mut().unwrap();
+            entities.pop();
+            let mut shifted = entities.clone();
+            for (i, entity) in shifted.iter_mut().enumerate() {
+                entity["entityId"] = json!(format!("shifted{i}"));
+                for coordinate in ["pntX", "pntY"] {
+                    let origin = entity["geometry"][coordinate].as_f64().unwrap();
+                    entity["geometry"][coordinate] = json!(origin + 0.01);
+                }
+            }
+            entities.extend(shifted);
+            value["features"][1]["parameters"][2]["queries"][0] = json!({
+                "btType":"BTMIndividualSketchRegionQuery-140", "featureId":"drawn-profile",
+                "deterministicIds":["left-region", "overlap-region", "right-region"],
+                "filterInnerLoops":filter,
+                "queryString":format!("query = qSketchRegion(id + \"drawn-profile\", {filter});")});
+        });
+        let (model, report) = read(&bytes).unwrap();
+        assert_eq!(kinds(&model)[1], "extrude", "{:?}", report.losses());
+        assert_eq!(
+            timeline(&model)["model"]["features"][1]["definition"]["value"]["value"]["profile"]
+                ["value"]["kind"],
+            "sketch"
+        );
+    }
+}
