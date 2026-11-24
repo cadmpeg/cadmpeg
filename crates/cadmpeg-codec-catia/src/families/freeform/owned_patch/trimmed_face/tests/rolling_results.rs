@@ -42,7 +42,7 @@ fn with_carrier<T>(
     bytes: &[u8],
     index: usize,
     cached: bool,
-    run: impl FnOnce(Carrier<'_>) -> T,
+    run: impl FnOnce(Carrier<'_>, Vec<cadmpeg_ir::report::loss::LossNote>) -> T,
 ) -> Option<T> {
     let records = consolidated_records(bytes);
     let source = Source {
@@ -66,14 +66,14 @@ fn with_carrier<T>(
         let definition = a5_owned_rolling_curves(&native_bytes, &native_records)
             .next()?
             .definition()?;
-        let construction = ProceduralSurfaceId::mint("catia:test:cached-result").expect("ID");
+        let construction = ProceduralSurfaceId::mint("catia:test:cached-result#0").expect("ID");
         ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
             construction.clone(),
             definition,
             None,
         ));
         ir.geometry.surfaces.push(Surface {
-            id: SurfaceId::mint("catia:test:cached-support").expect("ID"),
+            id: SurfaceId::mint("catia:test:cached-support#0").expect("ID"),
             geometry: SurfaceGeometry::Procedural {
                 construction,
                 cache: None,
@@ -83,9 +83,9 @@ fn with_carrier<T>(
         });
         carriers.insert(records[1].byte_offset(), 0);
     }
-    source
-        .carrier(&ir, index, &carriers, &mut LaneRefusals::new())
-        .map(run)
+    let mut refusal = LaneRefusals::new();
+    let carrier = source.carrier(&ir, index, &carriers, &mut refusal)?;
+    Some(run(carrier, refusal.take_notes()))
 }
 fn result_stream(bounds: [[f64; 2]; 2]) -> Vec<u8> {
     let mut bytes = jet(0.75, 0.0);
@@ -106,8 +106,9 @@ fn cropped_rolling_results_keep_the_native_transverse_parameterization() {
     for cached in [false, true] {
         for v in [[0.0, 2.0], [0.0, 1.5], [0.5, 1.5], [1.0, 1.5]] {
             let bytes = result_stream([[0.2, 0.8], v]);
-            with_carrier(&bytes, 3, cached, |carrier| {
+            with_carrier(&bytes, 3, cached, |carrier, notes| {
                 assert_eq!(carrier.bounds(), Some([[0.0, 1.0], [0.0, 2.0]]));
+                assert!(notes.is_empty());
                 for u in [0.0, 0.5, 1.0] {
                     let point = carrier
                         .evaluate(carrier.point([u, 1.0]))
@@ -131,8 +132,16 @@ fn rolling_result_windows_do_not_reject_native_supports() {
             [[0.0, 1.0], [0.0, f64::from_bits(2.0_f64.to_bits() + 1)]],
         ] {
             let bytes = result_stream(bounds);
-            with_carrier(&bytes, 3, cached, |carrier| {
+            with_carrier(&bytes, 3, cached, |carrier, notes| {
                 assert_eq!(carrier.bounds(), Some([[0.0, 1.0], [0.0, 2.0]]));
+                let discrepancy = bounds[1][0] < 0.0 || bounds[1][1] == 2.1;
+                assert_eq!(notes.len(), usize::from(discrepancy));
+                if discrepancy {
+                    assert_eq!(
+                        notes[0].code.local_code(),
+                        "geometry.rolling-result-window-inferred"
+                    );
+                }
                 let endpoint = carrier
                     .evaluate(carrier.point([1.0, 2.0]))
                     .expect("native endpoint");
@@ -153,7 +162,8 @@ fn cached_rolling_result_survives_unavailable_native_sites() {
         a5_owned_rolling_curves(&bytes, &consolidated_records(&bytes))
             .all(|j| j.pos != records[1].byte_offset())
     );
-    with_carrier(&bytes, 3, true, |carrier| {
+    with_carrier(&bytes, 3, true, |carrier, notes| {
+        assert!(notes.is_empty());
         assert_eq!(carrier.bounds(), Some([[0.0, 1.0], [0.0, 2.0]]));
     })
     .expect("cached support remains available");

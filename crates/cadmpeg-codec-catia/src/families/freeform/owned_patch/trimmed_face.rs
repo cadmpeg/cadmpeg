@@ -187,20 +187,33 @@ where
                             let Some(radius) = self.rolling_support_radius(basis, distance) else {
                                 continue;
                             };
-                            if let Some(definition) =
+                            let carrier = if let Some(definition) =
                                 cached.and_then(|&i| rolling_ball(ir, i, radius))
                             {
-                                return Some(Carrier::OwnedRollingBall {
+                                Some(Carrier::OwnedRollingBall {
                                     definition: Box::new(Cow::Borrowed(definition)),
                                     chart_end,
                                     native_v_upper: None,
                                     variable_radius: false,
                                     max_rail_shift_mm: 0.0,
-                                });
-                            }
-                            if let Some(carrier) =
-                                Carrier::rolling_ball_at_radius(native.clone()?, radius, chart_end)
-                            {
+                                })
+                            } else {
+                                native.as_ref().and_then(|jet| {
+                                    Carrier::rolling_ball_at_radius(jet.clone(), radius, chart_end)
+                                })
+                            };
+                            if let Some(carrier) = carrier {
+                                if native.is_some()
+                                    && ((bounds[1][0] < 0.0 && !super::near(bounds[1][0], 0.0))
+                                        || (bounds[1][1] > chart_end
+                                            && !super::near(bounds[1][1], chart_end)))
+                                {
+                                    refusal.push_rolling_result_window(
+                                        record.byte_offset(),
+                                        bounds[1],
+                                        chart_end,
+                                    );
+                                }
                                 return Some(carrier);
                             }
                         }
