@@ -61,6 +61,12 @@ pub(crate) enum AlibreLossCode {
     HistoryLoftSettingsUnmapped,
     /// An end condition holds a logical that the history reads as the reversal of the sketch normal.
     HistoryDirectionFlagAssumed,
+    /// A state of the list is unreadable and gives no feature.
+    HistoryStateUnread,
+    /// A state stores an index that disagrees with its position in the state list.
+    HistoryStateIndexMismatch,
+    /// A hole has a sketch with no point, so its positions are not read.
+    HistoryHolePositionUnresolved,
     /// The `STEP_DATA` stream holds no Alibre feature history.
     HistoryStreamUnread,
     /// The document profile and presentation records of the stream carry no decoded content in the IR.
@@ -92,6 +98,9 @@ impl AlibreLossCode {
         Self::HistoryFaceSelectionUnresolved,
         Self::HistoryLoftSettingsUnmapped,
         Self::HistoryDirectionFlagAssumed,
+        Self::HistoryStateUnread,
+        Self::HistoryStateIndexMismatch,
+        Self::HistoryHolePositionUnresolved,
         Self::HistoryStreamUnread,
         Self::HistoryPresentationUnmapped,
     ];
@@ -120,6 +129,9 @@ impl AlibreLossCode {
             Self::HistoryFaceSelectionUnresolved => "history.face-selection-unresolved",
             Self::HistoryLoftSettingsUnmapped => "history.loft-settings-unmapped",
             Self::HistoryDirectionFlagAssumed => "history.direction-flag-assumed",
+            Self::HistoryStateUnread => "history.state-unread",
+            Self::HistoryStateIndexMismatch => "history.state-index-mismatch",
+            Self::HistoryHolePositionUnresolved => "history.hole-position-unresolved",
             Self::HistoryStreamUnread => "history.stream-unread",
             Self::HistoryPresentationUnmapped => "history.presentation-unmapped",
         }
@@ -149,6 +161,9 @@ impl AlibreLossCode {
             | Self::HistoryFaceSelectionUnresolved
             | Self::HistoryLoftSettingsUnmapped
             | Self::HistoryDirectionFlagAssumed
+            | Self::HistoryStateUnread
+            | Self::HistoryStateIndexMismatch
+            | Self::HistoryHolePositionUnresolved
             | Self::HistoryStreamUnread
             | Self::HistoryPresentationUnmapped => Severity::Warning,
         }
@@ -178,6 +193,9 @@ impl AlibreLossCode {
             | Self::HistoryFaceSelectionUnresolved
             | Self::HistoryLoftSettingsUnmapped
             | Self::HistoryDirectionFlagAssumed
+            | Self::HistoryStateUnread
+            | Self::HistoryStateIndexMismatch
+            | Self::HistoryHolePositionUnresolved
             | Self::HistoryStreamUnread
             | Self::HistoryPresentationUnmapped => LossTaxonomy::FeatureHistoryRetained,
         }
