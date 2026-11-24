@@ -233,7 +233,6 @@ fn stored_base_keeps_history_order_suppression_and_native_result_identity() {
     );
     let round_trip: cadmpeg_ir::CadIr =
         serde_json::from_slice(&serde_json::to_vec(&ir).expect("serialize")).expect("deserialize");
-    assert_eq!(round_trip.model.features, ir.model.features);
     let findings = InventorCodec
         .validate_native(&ctx, &round_trip, None)
         .expect("round-trip native validation");

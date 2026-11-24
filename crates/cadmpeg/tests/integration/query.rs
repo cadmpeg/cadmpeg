@@ -1256,7 +1256,7 @@ fn schema_lists_model_arenas_with_element_types() {
     assert!(stdout.starts_with("arena\telement\trequired\n"), "{stdout}");
     assert!(stdout.contains("geometry.faces\tFace\tyes"), "{stdout}");
     assert!(
-        stdout.contains("model.assembly_joints\tAssemblyJoint\tyes"),
+        stdout.contains("model.occurrences\tOccurrence\tyes"),
         "{stdout}"
     );
     let stderr = String::from_utf8_lossy(&output.stderr);

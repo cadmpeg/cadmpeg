@@ -44,7 +44,7 @@ fn model(native: &F3dNative) -> Model {
         model.product_definitions.push(
             serde_json::from_value(serde_json::json!({
                 "id": crate::ids::neutral_component_id(&space.context_uuid), "kind": "part",
-                "bom_properties": {}, "storage": {"kind": "embedded"}, "tessellations": [], "occurrences": [], "instance_bodies": [], "representations": [], "bodies": [], "sketches": []
+                "bom_properties": {}, "storage": {"kind": "embedded"}, "tessellations": [], "occurrences": [], "instance_bodies": [], "representations": [], "bodies": []
             }))
             .unwrap(),
         );
@@ -126,7 +126,7 @@ fn product_history_owner_reports_missing_and_multiple_definitions() {
         .push(space(30, "33333333-3333-3333-3333-333333333333"));
     model.product_definitions.push(serde_json::from_value(serde_json::json!({
         "id": crate::ids::neutral_component_id(&native.design_component_naming_spaces[2].context_uuid), "kind": "part",
-                "bom_properties": {}, "storage": {"kind": "embedded"}, "tessellations": [], "occurrences": [], "instance_bodies": [], "representations": [], "bodies": [], "sketches": []
+                "bom_properties": {}, "storage": {"kind": "embedded"}, "tessellations": [], "occurrences": [], "instance_bodies": [], "representations": [], "bodies": []
     })).unwrap());
     losses.clear();
     attach(&native, &mut model, &mut losses).unwrap();

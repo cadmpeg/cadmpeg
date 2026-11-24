@@ -172,6 +172,10 @@ pub(crate) fn validate_operations(
     parameters: &[crate::design::PmDcParameter],
     units: &[crate::design::PmDcUnit],
 ) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
+    // The projection reads the arenas the CADIR wire omits.
+    if !ir.model.omitted_arenas_held() {
+        return Ok(Vec::new());
+    }
     let mut expected = CadIr::empty();
     expected
         .model

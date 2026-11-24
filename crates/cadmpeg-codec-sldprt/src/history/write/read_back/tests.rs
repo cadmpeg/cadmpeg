@@ -185,10 +185,44 @@ fn a_change_with_no_written_edit_left_is_unexplained() {
 /// `ir` with every id that names block `from` naming block `to`, as a write
 /// that moves the block re-lays it.
 fn moved(ir: &CadIr, from: &str, to: &str) -> CadIr {
-    let text = serde_json::to_string(ir)
-        .unwrap()
-        .replace(&format!("#{from}:"), &format!("#{to}:"));
-    serde_json::from_str(&text).unwrap()
+    let replace = |text: String| text.replace(&format!("#{from}:"), &format!("#{to}:"));
+    let mut written: CadIr =
+        serde_json::from_str(&replace(serde_json::to_string(ir).unwrap())).unwrap();
+    let model = &mut written.model;
+    model.features = moved_records(&ir.model.features, &replace);
+    model.feature_input_topologies = moved_records(&ir.model.feature_input_topologies, &replace);
+    model.feature_result_topologies = moved_records(&ir.model.feature_result_topologies, &replace);
+    model.configurations = moved_records(&ir.model.configurations, &replace);
+    model.parameters = moved_records(&ir.model.parameters, &replace);
+    model.sketches = moved_records(&ir.model.sketches, &replace);
+    model.sketch_entities = moved_records(&ir.model.sketch_entities, &replace);
+    model.sketch_constraints = moved_records(&ir.model.sketch_constraints, &replace);
+    model.spatial_sketches = moved_records(&ir.model.spatial_sketches, &replace);
+    model.spatial_sketch_entities = moved_records(&ir.model.spatial_sketch_entities, &replace);
+    model.spatial_sketch_constraints =
+        moved_records(&ir.model.spatial_sketch_constraints, &replace);
+    model.spreadsheets = moved_records(&ir.model.spreadsheets, &replace);
+    model.assembly_joints = moved_records(&ir.model.assembly_joints, &replace);
+    model.history_bodies = moved_records(&ir.model.history_bodies, &replace);
+    for feature in &ir.model.features {
+        if let Some(parent) = ir.model.feature_regeneration_parent(&feature.id) {
+            let child = FeatureId::mint(replace(feature.id.to_string())).unwrap();
+            let parent = FeatureId::mint(replace(parent.to_string())).unwrap();
+            written
+                .model
+                .set_feature_regeneration_parent(&child, &parent)
+                .unwrap();
+        }
+    }
+    written
+}
+
+/// `records` read back from their JSON form with `replace` applied to it.
+fn moved_records<T: serde::Serialize + serde::de::DeserializeOwned>(
+    records: &[T],
+    replace: &dyn Fn(String) -> String,
+) -> Vec<T> {
+    serde_json::from_str(&replace(serde_json::to_string(records).unwrap())).unwrap()
 }
 
 /// The block that holds the feature history: the offset in the id of the

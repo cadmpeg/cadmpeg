@@ -1091,9 +1091,12 @@ fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() 
                 "--reject-lossy",
             ])
             .assert();
-        refused_command.code(1).stderr(
+        // A SolidWorks document read from CADIR without its retained part has
+        // no history to write from; the writer refuses it.
+        refused_command.failure().stderr(
             predicate::str::contains("Preserved")
-                .or(predicate::str::contains("source image is unavailable")),
+                .or(predicate::str::contains("source image is unavailable"))
+                .or(predicate::str::contains("read from CADIR")),
         );
         assert!(!refused.exists());
     }

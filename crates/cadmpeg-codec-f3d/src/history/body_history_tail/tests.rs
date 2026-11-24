@@ -123,7 +123,7 @@ fn definition() -> ProductDefinition {
     serde_json::from_value(serde_json::json!({
         "id": "test:model:component#panel", "kind": "part", "bodies": [body(1)],
         "bom_properties": {}, "storage": {"kind": "embedded"}, "tessellations": [],
-        "occurrences": [], "instance_bodies": [], "representations": [], "sketches": []
+        "occurrences": [], "instance_bodies": [], "representations": []
     }))
     .unwrap()
 }
