@@ -1632,6 +1632,7 @@ mod assembly_rules;
 mod bounds;
 mod forms;
 mod pattern_coordinates;
+mod split_tools;
 
 #[test]
 fn an_assembly_feature_operation_states_no_body_operand() {

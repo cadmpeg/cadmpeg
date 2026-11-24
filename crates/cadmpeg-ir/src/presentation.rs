@@ -689,6 +689,29 @@ mod tests {
     }
 
     #[test]
+    fn documents_and_view_orders_may_repeat_across_sources() {
+        let mut ir = CadIr::empty();
+        for key in ["assembly", "part"] {
+            ir.model
+                .presentation_documents
+                .push(PresentationDocument::new(
+                    PresentationId::mint(format!("test:presentation:document#{key}"))
+                        .expect("valid identity"),
+                ));
+            ir.model.view_presentations.push(
+                serde_json::from_value(serde_json::json!({
+                    "id": format!("test:presentation:view#{key}"),
+                    "order": 1,
+                    "properties": {}
+                }))
+                .expect("valid wire"),
+            );
+        }
+        let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
+        assert!(report.is_ok(), "{:?}", report.findings);
+    }
+
+    #[test]
     fn document_state_orders_are_checked_without_reordering_or_partial_updates() {
         let state = |order| PresentationState {
             kind: PresentationStateKind::Native("View".into()),
