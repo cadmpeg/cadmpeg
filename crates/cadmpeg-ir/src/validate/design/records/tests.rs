@@ -135,3 +135,41 @@ fn a_multi_definition_scope_spans_file_children_and_their_embedded_children() {
         ])
     );
 }
+
+#[test]
+fn the_span_of_every_scope_comes_from_one_index() {
+    let mut ir = document();
+    ir.model.product_definitions[0].storage = Storage::File {
+        document: ExternalDocument::document_id("part"),
+        source: None,
+    };
+    ir.model.product_definitions.push(ProductDefinition::new(
+        id("definition", "unplaced"),
+        Storage::Embedded,
+    ));
+    let mut other = ir.design.scopes[0].clone();
+    other.definition = id("definition", "other");
+    other.roots.clear();
+    ir.design.scopes.push(other);
+    ir.model.product_definitions.push(ProductDefinition::new(
+        id("definition", "other"),
+        Storage::Embedded,
+    ));
+    let spans = ir.spanned_definitions_of_scopes();
+    assert_eq!(spans.len(), 2);
+    for scope in &ir.design.scopes {
+        let expected = ir
+            .spanned_definitions(&scope.definition)
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(spans[scope.definition.as_str()], expected);
+    }
+    assert_eq!(
+        spans["test:design:definition#part"],
+        BTreeSet::from([
+            "test:design:definition#part".to_owned(),
+            "test:design:definition#unplaced".to_owned(),
+        ])
+    );
+}

@@ -191,19 +191,8 @@ pub(crate) fn project(
         .map(|(feature, owner)| (feature.clone(), owner.clone()))
         .collect::<HashMap<_, _>>();
     let mut scoped_features = Vec::new();
-    for (prefix, (definition, mut projected)) in scopes {
-        let Span {
-            definitions: spanned,
-            bodies,
-        } = spans.remove(&prefix).unwrap_or_default();
-        if spanned.len() > 1 {
-            for feature in &mut projected.features {
-                feature.component = owners
-                    .get(&feature.id)
-                    .filter(|owner| spanned.contains(*owner))
-                    .cloned();
-            }
-        }
+    for (prefix, (definition, projected)) in scopes {
+        let Span { bodies, .. } = spans.remove(&prefix).unwrap_or_default();
         let Some(Container::Ordered {
             id,
             members,
@@ -272,24 +261,28 @@ const SETTLE_ROUNDS: usize = 4;
 /// Sets `Feature.component` of each scope's features from the definitions the
 /// scope spans by the occurrence walk of §5.1, the set a reader of the
 /// document computes: a feature names its owner where the scope spans several
-/// definitions and the owner is one of them, and names none otherwise.
+/// definitions and the owner is one of them, and names none otherwise. Each
+/// round computes the span of every scope once and stops when no span changed.
+/// A scope whose span still changes after `SETTLE_ROUNDS` rounds has no
+/// established owner for its features: their component is `None`, the value
+/// that states the decoder did not establish the owner (§5.1).
 fn settle_components(
     ir: &mut CadIr,
     scoped: &[(ProductDefinitionId, BTreeSet<FeatureId>)],
     owners: &HashMap<FeatureId, ProductDefinitionId>,
 ) {
-    for (definition, members) in scoped {
-        let mut spanned = BTreeSet::<String>::new();
-        for _ in 0..SETTLE_ROUNDS {
-            let now = ir
-                .spanned_definitions(definition)
-                .into_iter()
-                .map(str::to_owned)
-                .collect::<BTreeSet<_>>();
-            if now == spanned {
-                break;
+    let mut spans = vec![BTreeSet::<String>::new(); scoped.len()];
+    let mut unsettled = Vec::new();
+    for _ in 0..SETTLE_ROUNDS {
+        let mut now = ir.spanned_definitions_of_scopes();
+        unsettled.clear();
+        for (index, (definition, members)) in scoped.iter().enumerate() {
+            let span = now.remove(definition.as_str()).unwrap_or_default();
+            if span == spans[index] {
+                continue;
             }
-            spanned = now;
+            spans[index] = span;
+            unsettled.push(index);
             for feature in ir
                 .design
                 .features
@@ -298,9 +291,22 @@ fn settle_components(
             {
                 feature.component = owners
                     .get(&feature.id)
-                    .filter(|owner| spanned.len() > 1 && spanned.contains(owner.as_str()))
+                    .filter(|owner| spans[index].len() > 1 && spans[index].contains(owner.as_str()))
                     .cloned();
             }
+        }
+        if unsettled.is_empty() {
+            return;
+        }
+    }
+    for index in unsettled {
+        for feature in ir
+            .design
+            .features
+            .iter_mut()
+            .filter(|feature| scoped[index].1.contains(&feature.id))
+        {
+            feature.component = None;
         }
     }
 }
@@ -397,10 +403,9 @@ fn root_definition(definitions: &[ProductDefinition]) -> ProductDefinitionId {
         })
 }
 
-/// The definitions a scope spans and the bodies of its current state.
+/// The bodies of a scope's current state.
 #[derive(Default)]
 struct Span {
-    definitions: BTreeSet<ProductDefinitionId>,
     bodies: BTreeSet<BodyId>,
 }
 
@@ -429,7 +434,6 @@ fn span<T>(
         };
         if let Some(prefix) = prefix {
             let span = out.entry(prefix).or_default();
-            span.definitions.insert(definition.id.clone());
             span.bodies.extend(definition.bodies.iter().cloned());
         }
     }

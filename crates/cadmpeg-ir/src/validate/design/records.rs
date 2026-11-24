@@ -522,6 +522,27 @@ impl CadIr {
     pub fn spanned_definitions(&self, scope: &crate::ids::ProductDefinitionId) -> BTreeSet<&str> {
         DesignRecords::new(self).spanned_definitions(scope.as_str())
     }
+
+    /// The span of every design scope, keyed by the scope's definition, from
+    /// one index of the document; each value is what `spanned_definitions`
+    /// returns for that scope.
+    #[must_use]
+    pub fn spanned_definitions_of_scopes(&self) -> BTreeMap<String, BTreeSet<String>> {
+        let records = DesignRecords::new(self);
+        self.design
+            .scopes
+            .iter()
+            .map(|scope| {
+                let definition = scope.definition.as_str();
+                let span = records
+                    .spanned_definitions(definition)
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect();
+                (definition.to_owned(), span)
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]

@@ -729,14 +729,6 @@ fn a_definition_and_its_bodies_belong_to_the_scope_that_spans_it() {
         ),
     ]);
     let spans = super::span(&definitions, &super::Placers::new(&definitions), &scopes);
-    let spanned = spans
-        .iter()
-        .map(|(prefix, span)| (prefix.clone(), span.definitions.len()))
-        .collect::<BTreeMap<_, _>>();
-    assert_eq!(
-        spanned,
-        BTreeMap::from([(String::new(), 2), (XREF.to_owned(), 2)])
-    );
     let bodies = spans
         .into_iter()
         .map(|(prefix, span)| {
@@ -893,6 +885,59 @@ fn a_feature_names_a_component_the_scope_reaches_through_an_occurrence() {
 }
 
 #[test]
+fn a_component_named_in_one_round_widens_the_span_of_the_next() {
+    const XREF: &str = "f3d:xref/role-1/reference-0/occurrence-0/";
+    let scope = format!("{XREF}archive:product-definition#0");
+    let embedded = format!("{XREF}model:component#embedded");
+    let child = format!("{XREF}archive:product-definition#1");
+    let occurrence = |key: &str| {
+        cadmpeg_ir::ids::OccurrenceId::mint(format!("{XREF}model:occurrence#{key}")).unwrap()
+    };
+    let mut member = file_definition(&scope);
+    member.occurrences = vec![occurrence("embedded"), occurrence("child")];
+    let (mut ir, ids, owners) = component_document(
+        &scope,
+        vec![
+            member,
+            definition(&embedded, Storage::Embedded, &[]),
+            file_definition(&child),
+        ],
+        &[("a", &scope), ("b", &embedded), ("c", &child)],
+    );
+    for (key, prototype) in [("embedded", &embedded), ("child", &child)] {
+        ir.model
+            .occurrences
+            .push(cadmpeg_ir::products::Occurrence::new(
+                occurrence(key),
+                ProductDefinitionId::mint(prototype).unwrap(),
+                None,
+            ));
+    }
+    for feature in &mut ir.design.features {
+        feature.component = None;
+    }
+    super::settle_components(
+        &mut ir,
+        &[(ProductDefinitionId::mint(&scope).unwrap(), ids)],
+        &owners,
+    );
+    let components = ir
+        .design
+        .features
+        .iter()
+        .map(|feature| feature.component.as_ref().map(ProductDefinitionId::as_str))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        components,
+        [
+            Some(scope.as_str()),
+            Some(embedded.as_str()),
+            Some(child.as_str())
+        ]
+    );
+}
+
+#[test]
 fn a_scope_that_reaches_no_other_definition_names_no_component() {
     const XREF: &str = "f3d:xref/role-1/reference-0/occurrence-0/";
     let scope = format!("{XREF}archive:product-definition#0");
@@ -939,13 +984,6 @@ fn the_root_scope_is_the_root_component_where_its_record_stands_for_the_root() {
     let span = super::span(&definitions, &super::Placers::new(&definitions), &scopes)
         .remove("")
         .unwrap();
-    assert_eq!(
-        span.definitions
-            .iter()
-            .map(ProductDefinitionId::as_str)
-            .collect::<Vec<_>>(),
-        ["f3d:model:component#a", root]
-    );
     assert_eq!(
         span.bodies.iter().map(BodyId::as_str).collect::<Vec<_>>(),
         ["f3d:brep:entity#1", "f3d:brep:entity#2"]
