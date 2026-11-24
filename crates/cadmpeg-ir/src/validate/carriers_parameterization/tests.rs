@@ -534,6 +534,7 @@ fn carrier_reachability_follows_composite_segments_through_cycles_and_repeats() 
     super::check_carrier_reachability(
         &ctx,
         crate::native::view::NativeView::new(&ir, None),
+        &ir.geometry,
         &mut findings,
     )
     .unwrap();
@@ -566,6 +567,7 @@ fn carrier_reachability_preserves_orphan_arena_order() {
     super::check_carrier_reachability(
         &ctx,
         crate::native::view::NativeView::new(&ir, None),
+        &ir.geometry,
         &mut findings,
     )
     .unwrap();
