@@ -319,6 +319,14 @@ pub(crate) enum ConversionRefusal {
         /// Completed decode report bound to the loss that caused refusal.
         rejection: cadmpeg_ir::codec::StrictDecodeRejection,
     },
+    /// A CADIR read completed, but `--reject-lossy=decode` refused an entry
+    /// of its report.
+    StrictReadRejected {
+        /// The completed read report.
+        report: Vec<cadmpeg_ir::report::loss::LossNote>,
+        /// The index of the entry that refused the read.
+        entry: usize,
+    },
     /// The check found errors under `--reject-errors`.
     CheckFailed {
         /// Operation rejected by validation.
@@ -512,6 +520,18 @@ impl ConversionRefusal {
                 detail: Some(RefusalDetail::Dialects(dialects)),
                 reports: RefusalReports::default(),
             },
+            Self::StrictReadRejected { report, entry } => {
+                let loss = &report[*entry];
+                RefusalEvidence {
+                    code: RefusalCode::StrictDecodeRejected,
+                    message: Cow::Owned(format!(
+                        "strict mode rejects {}: {}",
+                        loss.code, loss.message
+                    )),
+                    detail: None,
+                    reports: RefusalReports::default(),
+                }
+            }
             Self::StrictDecodeRejected { rejection } => {
                 let loss = rejection.loss();
                 RefusalEvidence {

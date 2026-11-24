@@ -8,7 +8,10 @@ use anyhow::{anyhow, Result as AnyResult};
 use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::codec::DecodeOptions;
-use cadmpeg_ir::report::{check::ValidationReport, decode::DecodeReport, export::ExportReport};
+use cadmpeg_ir::report::strictness::Strictness;
+use cadmpeg_ir::report::{
+    check::ValidationReport, decode::DecodeReport, export::ExportReport, Severity,
+};
 use clap::ValueEnum;
 
 use cadmpeg_registry::{ForcedInput, Format, InputCatalog};
@@ -370,9 +373,7 @@ pub(crate) fn prepare(
         .map_err(ApplicationError::from)?;
 
     let loaded = loader::load_artifact(inputs, source.path, source.options, source.forced)?;
-    let decode_report = loaded.decode_report().cloned();
-
-    if let Some(refusal) = decode_lossy_refusal(policy.losses, decode_report.as_ref(), format) {
+    if let Some(refusal) = decode_lossy_refusal(policy.losses, &loaded, format) {
         return Err(refusal.into());
     }
 
@@ -524,20 +525,37 @@ fn plan_refusal(
     }
 }
 
+/// The refusal `--reject-lossy=decode` makes of this invocation's decode, or
+/// of the CADIR read; a restored sidecar's report describes an earlier decode
+/// and never decides.
 fn decode_lossy_refusal(
     policy: LossPolicy,
-    report: Option<&DecodeReport>,
+    loaded: &LoadedDocument,
     format: Format,
 ) -> Option<ConversionRefusal> {
     if !policy.rejects_decode() {
         return None;
     }
-    let report = report?;
-    let count = report.losses.len();
-    (count > 0).then(|| ConversionRefusal::DecodeLossRejected {
-        format,
-        decode_report: report.clone(),
-    })
+    match &loaded.origin {
+        LoadOrigin::Decoded { report, .. } => {
+            (!report.losses.is_empty()).then(|| ConversionRefusal::DecodeLossRejected {
+                format,
+                decode_report: report.clone(),
+            })
+        }
+        LoadOrigin::Neutral | LoadOrigin::Restored { .. } => {
+            let strictness = Strictness {
+                floor: Some(Severity::Info),
+                ..Strictness::default()
+            };
+            strictness.first_refused(&loaded.read_report).map(|entry| {
+                ConversionRefusal::StrictReadRejected {
+                    report: loaded.read_report.clone(),
+                    entry,
+                }
+            })
+        }
+    }
 }
 
 /// Emits one built plan to its destination and maintains CADIR sidecars.
