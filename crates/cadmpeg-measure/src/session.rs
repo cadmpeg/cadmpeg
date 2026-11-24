@@ -317,7 +317,7 @@ impl<'ir> Measurer<'ir> {
         }
         for face in &needed_faces {
             if let Some(face) = self.owners.face(face) {
-                for loop_id in &face.loops {
+                for loop_id in face.loops.stated() {
                     if let Some(face_loop) = self.owners.loop_(loop_id.as_str()) {
                         for coedge in face_loop.coedges() {
                             if let Some(coedge) = self.owners.coedge(coedge.as_str()) {
@@ -626,7 +626,7 @@ impl<'ir> Measurer<'ir> {
             return Vec::new();
         }
         self.owners
-            .shell_faces(&face.shell)
+            .stated_shell_faces(&face.shell)
             .iter()
             .map(|face| face.id.as_str())
             .collect()
@@ -940,7 +940,7 @@ fn inverted_boundary_poles(owners: &Owners<'_>, face: &cadmpeg_ir::topology::Fac
         return 0;
     }
     face.loops
-        .iter()
+        .stated()
         .filter_map(|id| owners.loop_(id.as_str()))
         .flat_map(cadmpeg_ir::topology::Loop::coedges)
         .filter_map(|id| owners.coedge(id.as_str()))

@@ -195,7 +195,7 @@ impl<'ir> CombinedPass<'_, 'ir> {
         let mut needed_edges: BTreeSet<&'ir str> = declared_edges.clone();
         for face in &self.measurer.input.ir.geometry.faces {
             let in_declared = declared_faces.contains(face.id.as_str());
-            for loop_id in &face.loops {
+            for loop_id in face.loops.stated() {
                 if let Some(face_loop) = self.measurer.owners.loop_(loop_id.as_str()) {
                     for coedge in face_loop.coedges() {
                         if let Some(coedge) = self.measurer.owners.coedge(coedge.as_str()) {
@@ -286,15 +286,17 @@ impl<'ir> CombinedPass<'_, 'ir> {
             .bodies
             .iter()
             .filter(|body| {
-                let shells: Vec<_> = owners
-                    .body_regions(&body.id)
-                    .iter()
-                    .flat_map(|region| &region.shells)
+                let Some(regions) = owners.complete_body_shells(&body.id) else {
+                    return false;
+                };
+                let shells: Vec<_> = regions
+                    .into_iter()
+                    .flatten()
                     .filter_map(|shell| owners.shell(shell.as_str()))
                     .collect();
                 !shells.is_empty()
                     && shells.iter().all(|shell| {
-                        !owners.shell_faces(&shell.id).is_empty()
+                        !owners.stated_shell_faces(&shell.id).is_empty()
                             && closure(owners, &no_faces, edges, shell).closed()
                     })
             })
@@ -317,7 +319,7 @@ impl<'ir> CombinedPass<'_, 'ir> {
     ) -> bool {
         let owners = &self.measurer.owners;
         face.loops
-            .iter()
+            .stated()
             .filter_map(|loop_id| owners.loop_(loop_id.as_str()))
             .flat_map(cadmpeg_ir::topology::Loop::coedges)
             .filter_map(|coedge| owners.coedge(coedge.as_str()))
@@ -542,7 +544,7 @@ impl<'ir> Measurer<'ir> {
 
         let mut needed_edges: BTreeSet<&'ir str> = BTreeSet::new();
         for face in &geometry.faces {
-            for loop_id in &face.loops {
+            for loop_id in face.loops.stated() {
                 if let Some(face_loop) = self.owners.loop_(loop_id.as_str()) {
                     for coedge in face_loop.coedges() {
                         if let Some(coedge) = self.owners.coedge(coedge.as_str()) {
@@ -576,16 +578,17 @@ impl<'ir> Measurer<'ir> {
             .bodies
             .iter()
             .filter(|body| {
-                let shells: Vec<_> = self
-                    .owners
-                    .body_regions(&body.id)
-                    .iter()
-                    .flat_map(|region| &region.shells)
+                let Some(regions) = self.owners.complete_body_shells(&body.id) else {
+                    return false;
+                };
+                let shells: Vec<_> = regions
+                    .into_iter()
+                    .flatten()
                     .filter_map(|shell| self.owners.shell(shell.as_str()))
                     .collect();
                 !shells.is_empty()
                     && shells.iter().all(|shell| {
-                        !self.owners.shell_faces(&shell.id).is_empty()
+                        !self.owners.stated_shell_faces(&shell.id).is_empty()
                             && closure(&self.owners, &no_faces, &edges, shell).closed()
                     })
             })
@@ -706,7 +709,7 @@ impl<'ir> Measurer<'ir> {
                     for (face, result, slice_exhausted) in chunk_results {
                         let uses_starved = face
                             .loops
-                            .iter()
+                            .stated()
                             .filter_map(|loop_id| self.owners.loop_(loop_id.as_str()))
                             .flat_map(cadmpeg_ir::topology::Loop::coedges)
                             .filter_map(|coedge| self.owners.coedge(coedge.as_str()))
@@ -746,7 +749,7 @@ impl<'ir> Measurer<'ir> {
                 let result = input.measure(&eval, face)?;
                 let uses_starved = face
                     .loops
-                    .iter()
+                    .stated()
                     .filter_map(|loop_id| self.owners.loop_(loop_id.as_str()))
                     .flat_map(cadmpeg_ir::topology::Loop::coedges)
                     .filter_map(|coedge| self.owners.coedge(coedge.as_str()))
@@ -852,7 +855,7 @@ impl<'ir> Measurer<'ir> {
         let mut unchecked = BTreeSet::new();
         for face in &self.input.ir.geometry.faces {
             let slice = pass.face_slice();
-            for loop_id in &face.loops {
+            for loop_id in face.loops.stated() {
                 let Some(face_loop) = self.owners.loop_(loop_id.as_str()) else {
                     continue;
                 };

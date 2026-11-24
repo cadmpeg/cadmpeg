@@ -345,7 +345,7 @@ pub(super) fn check_references(
         {
             ref_error(findings, l.id.as_str(), "body", l.body.as_str());
         }
-        for s in &l.shells {
+        for s in l.stated_shells() {
             if ids
                 .shells(s.as_str(), crate::index::StandardIndex)
                 .is_none()
@@ -388,7 +388,7 @@ pub(super) fn check_references(
         {
             ref_error(findings, f.id.as_str(), "surface", f.surface.as_str());
         }
-        for lp in &f.loops {
+        for lp in f.loops.stated() {
             if ids
                 .loops(lp.as_str(), crate::index::StandardIndex)
                 .is_none()

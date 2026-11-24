@@ -629,15 +629,13 @@ fn transfer_closed_wire_loops(
                     color: None,
                     visible: None,
                     native_ref: None,
+                    unstated: None,
                 });
                 let shells = vec![shell_id.clone()];
                 admission.charge()?;
-                ir.geometry.regions.push(Region {
-                    id: region_id.clone(),
-                    body: body_id,
-                    shells,
-                    native_ref: None,
-                });
+                ir.geometry
+                    .regions
+                    .push(Region::new(region_id.clone(), body_id, shells));
                 admission.charge()?;
                 if edge_ids.is_empty() {
                     return Ok(counts);
@@ -707,15 +705,13 @@ fn transfer_closed_wire_loops(
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
         let shells = vec![shell_id.clone()];
         admission.charge()?;
-        ir.geometry.regions.push(Region {
-            id: region_id.clone(),
-            body: body_id,
-            shells,
-            native_ref: None,
-        });
+        ir.geometry
+            .regions
+            .push(Region::new(region_id.clone(), body_id, shells));
         admission.charge()?;
         if owned_edge_ids.is_empty() {
             return Ok(counts);

@@ -1540,10 +1540,10 @@ fn decode_projects_legacy_single_parent_plane_holes_in_v4_and_v5_profiles() {
             face.surface,
             "iges:model:surface#D1".try_into().expect("valid identity")
         );
-        assert_eq!(face.loops.len(), 2, "IGES {version}");
+        assert_eq!(face.loops.stated().count(), 2, "IGES {version}");
         let loop_roles = face
             .loops
-            .iter()
+            .stated()
             .map(|loop_id| face.loop_role(loop_id))
             .collect::<Vec<_>>();
         assert_eq!(

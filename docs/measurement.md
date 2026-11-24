@@ -102,6 +102,7 @@ cites.
 | `placement.non-similarity` | placement | The composed placement is not a similarity; radii and angles are not invariant. |
 | `placement.non-finite` | placement | Transform composition left the finite range. |
 | `boundary.unbounded-face` | undefined | The face's region is unbounded. |
+| `boundary.partial-face` | undefined | The face does not state every loop (CADIR §5.6, Unstated children), so its extent is not stated. |
 | `boundary.ring-chain-failed` | input | The ring's coedges do not form one closed traversal by oriented vertex identity, or an anchored pole use is not at the end of its coedge. |
 | `boundary.ring-chain-ambiguous` | input | The ring is not continuous as listed and its coedges form more than one closed traversal. |
 | `boundary.coedge-unresolved` | input | A coedge has no pcurve, no edge curve and no use-curve, and is not degenerate. |

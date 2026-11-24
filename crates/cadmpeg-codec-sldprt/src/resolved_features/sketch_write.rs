@@ -402,12 +402,11 @@ pub(super) fn sketch_brep(
     ir.geometry
         .shells
         .push(Shell::new(shell_id.clone(), region_id.clone()));
-    ir.geometry.regions.push(Region {
-        id: region_id.clone(),
-        body: body_id.clone(),
-        shells: vec![shell_id],
-        native_ref: None,
-    });
+    ir.geometry.regions.push(Region::new(
+        region_id.clone(),
+        body_id.clone(),
+        vec![shell_id],
+    ));
     ir.geometry.bodies.push(Body {
         id: body_id,
         kind: BodyKind::Sheet,
@@ -416,6 +415,7 @@ pub(super) fn sketch_brep(
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     ir.finalize();
     Ok(ir)

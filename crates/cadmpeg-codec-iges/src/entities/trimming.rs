@@ -3187,12 +3187,11 @@ pub(super) fn project(
         candidate.geometry_mut().shells.push(shell);
         let region_shells = vec![shell_id];
         ctx.charge_entities(1, "iges_geometry_trimming")?;
-        candidate.geometry_mut().regions.push(Region {
-            id: region_id.clone(),
-            body: body_id.clone(),
-            shells: region_shells,
-            native_ref: None,
-        });
+        candidate.geometry_mut().regions.push(Region::new(
+            region_id.clone(),
+            body_id.clone(),
+            region_shells,
+        ));
         ctx.charge_entities(1, "iges_geometry_trimming")?;
         candidate.geometry_mut().bodies.push(Body {
             id: body_id,
@@ -3202,6 +3201,7 @@ pub(super) fn project(
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
         candidate.model_mut().finalize();
 
