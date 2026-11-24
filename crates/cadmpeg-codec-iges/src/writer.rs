@@ -181,8 +181,9 @@ fn body(
 
 /// What [`synthesize`] does with each model arena.
 ///
-/// Arenas refused by `reject_unsupported_model` are `Dropped`; procedural
-/// curves are also `Dropped` because only their solved carriers are written and
+/// Arenas IGES has no place for are `Omitted`: the file is written without
+/// them, and the export wrapper charges each non-empty one. Procedural curves
+/// are `Dropped` because only their solved carriers are written and
 /// `procedural_reduction_losses` charges for their definitions. Topology and
 /// geometry go through the B-rep, trimmed-sheet or free-geometry entity graph.
 /// `points`, `curves`, `surfaces`, `edges` and `vertices` are `Reported` because
@@ -204,38 +205,38 @@ const SYNTHESIS_COVERAGE: ArenaDispositions = {
         points: Reported,
         surfaces: Reported,
         curves: Reported,
-        subds: Dropped,
+        subds: Omitted,
         pcurves: Written,
         procedural_surfaces: Reported,
         procedural_curves: Dropped,
-        assets: Dropped,
-        features: Dropped,
-        feature_input_topologies: Dropped,
-        feature_result_topologies: Dropped,
-        configurations: Dropped,
-        parameters: Dropped,
-        sketches: Dropped,
-        sketch_entities: Dropped,
-        sketch_constraints: Dropped,
-        spatial_sketches: Dropped,
-        spatial_sketch_entities: Dropped,
-        spatial_sketch_constraints: Dropped,
-        spreadsheets: Dropped,
-        product_definitions: Dropped,
-        occurrences: Dropped,
-        assembly_joints: Dropped,
-        drawings: Dropped,
-        semantic_annotations: Dropped,
-        presentation_documents: Dropped,
-        view_presentations: Dropped,
-        tessellations: Dropped,
+        assets: Omitted,
+        features: Omitted,
+        feature_input_topologies: Omitted,
+        feature_result_topologies: Omitted,
+        configurations: Omitted,
+        parameters: Omitted,
+        sketches: Omitted,
+        sketch_entities: Omitted,
+        sketch_constraints: Omitted,
+        spatial_sketches: Omitted,
+        spatial_sketch_entities: Omitted,
+        spatial_sketch_constraints: Omitted,
+        spreadsheets: Omitted,
+        product_definitions: Omitted,
+        occurrences: Omitted,
+        assembly_joints: Omitted,
+        drawings: Omitted,
+        semantic_annotations: Omitted,
+        presentation_documents: Omitted,
+        view_presentations: Omitted,
+        tessellations: Omitted,
         point_clouds: Omitted,
         history_bodies: Ignored,
-        appearances: Dropped,
-        appearance_bindings: Dropped,
-        attributes: Dropped,
-        pmi: Dropped,
-        presentation_layers: Dropped,
+        appearances: Omitted,
+        appearance_bindings: Omitted,
+        attributes: Omitted,
+        pmi: Omitted,
+        presentation_layers: Omitted,
         physical_materials: Omitted,
         mass_properties: Omitted,
         rigid_bodies: Omitted,
@@ -4833,76 +4834,10 @@ fn entity_counts(entities: &[Entity]) -> BTreeMap<String, usize> {
     counts
 }
 
+/// Refuses a body the writer cannot place and a vertex whose point is
+/// missing. Model content the file has no place for is not refused: the
+/// coverage declares it `Omitted`, and the export wrapper charges it.
 fn reject_unsupported_model(ir: &CadIr) -> Result<(), CodecError> {
-    let unsupported = [
-        ("subds", !ir.geometry.subds.is_empty()),
-        ("assets", !ir.model.assets.is_empty()),
-        ("features", !ir.model.features.is_empty()),
-        (
-            "feature_input_topologies",
-            !ir.model.feature_input_topologies.is_empty(),
-        ),
-        (
-            "feature_result_topologies",
-            !ir.model.feature_result_topologies.is_empty(),
-        ),
-        ("configurations", !ir.model.configurations.is_empty()),
-        ("parameters", !ir.model.parameters.is_empty()),
-        ("sketches", !ir.model.sketches.is_empty()),
-        ("sketch_entities", !ir.model.sketch_entities.is_empty()),
-        (
-            "sketch_constraints",
-            !ir.model.sketch_constraints.is_empty(),
-        ),
-        ("spatial_sketches", !ir.model.spatial_sketches.is_empty()),
-        (
-            "spatial_sketch_entities",
-            !ir.model.spatial_sketch_entities.is_empty(),
-        ),
-        (
-            "spatial_sketch_constraints",
-            !ir.model.spatial_sketch_constraints.is_empty(),
-        ),
-        ("spreadsheets", !ir.model.spreadsheets.is_empty()),
-        (
-            "product_definitions",
-            cadmpeg_ir::products::stated_definitions(&ir.model.product_definitions)
-                .next()
-                .is_some(),
-        ),
-        ("occurrences", !ir.model.occurrences.is_empty()),
-        ("assembly_joints", !ir.model.assembly_joints.is_empty()),
-        ("drawings", !ir.model.drawings.is_empty()),
-        (
-            "semantic_annotations",
-            !ir.model.semantic_annotations.is_empty(),
-        ),
-        (
-            "presentation_documents",
-            !ir.model.presentation_documents.is_empty(),
-        ),
-        (
-            "view_presentations",
-            !ir.model.view_presentations.is_empty(),
-        ),
-        ("tessellations", !ir.model.tessellations.is_empty()),
-        ("appearances", !ir.model.appearances.is_empty()),
-        (
-            "appearance_bindings",
-            !ir.model.appearance_bindings.is_empty(),
-        ),
-        ("attributes", !ir.model.attributes.is_empty()),
-        ("pmi", !ir.model.pmi.is_empty()),
-        (
-            "presentation_layers",
-            !ir.model.presentation_layers.is_empty(),
-        ),
-    ];
-    if let Some((arena, _)) = unsupported.into_iter().find(|(_, present)| *present) {
-        return Err(CodecError::NotImplemented(format!(
-            "IGES semantic writer does not encode model arena {arena}"
-        )));
-    }
     for body in &ir.geometry.bodies {
         if body
             .transform

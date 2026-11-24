@@ -3,8 +3,8 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
-    EncodeInput, ExportBody, WritePath,
+    output_empty, target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions,
+    Consumption, EncodeInput, ExportBody, WritePath,
 };
 
 use crate::loss::RhinoLossCode;
@@ -78,7 +78,7 @@ pub(crate) fn plan(
     let ir = complete.as_ref().unwrap_or(input.ir);
     let mut bytes = Vec::new();
     let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(ir)?;
-    super::write(&recovered.document, version, &mut bytes)?;
+    let wrote_object = super::write(&recovered.document, version, &mut bytes)?;
     let vertex_quantization = !version.stores_mesh_vertices_as_f64()
         && input
             .ir
@@ -103,6 +103,12 @@ pub(crate) fn plan(
                 || cadmpeg_core::convert::f32_from_f64(normal.z).map(f64::from) != Some(normal.z)
         });
     let mut losses = partial_losses;
+    if !wrote_object {
+        losses.push(output_empty(
+            "the written 3DM archive holds no object: the document states no geometry or mesh \
+             this writer encodes",
+        ));
+    }
     if !recovered.sampled_agreements.is_empty() {
         losses.push(RhinoLossCode::EdgePcurveAgreementSampled.note(format!(
             "{} recovered edge(s) have coedge curves compared at five parameters; agreement between samples is not established",
@@ -185,15 +191,15 @@ pub(crate) fn plan(
 
 /// What `prepare_write` does with each model arena.
 ///
-/// `subds`, procedural surfaces and curves, features, configurations, parameters,
-/// sketches, sketch entities and constraints, appearances, appearance bindings
-/// and attributes are `Dropped` because `prepare_write` refuses non-empty arenas.
-/// Topology is written as Brep and point objects or refused as orphaned;
+/// Arenas 3DM is not written with are `Omitted`: the archive is written
+/// without them, and the export wrapper charges each non-empty one. Procedural
+/// surfaces and curves are definitions beside the solved carriers the archive
+/// holds. Topology is written as Brep and point objects or refused as orphaned;
 /// unowned pcurves are refused.
 /// `points` and `curves` are `Reported` because
 /// `WriterSupportGeometryWithheld` accounts for withheld support records.
 const COVERAGE: ArenaDispositions = {
-    use ArenaDisposition::{Dropped, Ignored, Omitted, Reported, Written};
+    use ArenaDisposition::{Ignored, Omitted, Reported, Written};
     ArenaDispositions {
         bodies: Written,
         regions: Written,
@@ -206,19 +212,19 @@ const COVERAGE: ArenaDispositions = {
         points: Reported,
         surfaces: Written,
         curves: Reported,
-        subds: Dropped,
+        subds: Omitted,
         pcurves: Written,
-        procedural_surfaces: Dropped,
-        procedural_curves: Dropped,
+        procedural_surfaces: Omitted,
+        procedural_curves: Omitted,
         assets: Omitted,
-        features: Dropped,
+        features: Omitted,
         feature_input_topologies: Omitted,
         feature_result_topologies: Omitted,
-        configurations: Dropped,
-        parameters: Dropped,
-        sketches: Dropped,
-        sketch_entities: Dropped,
-        sketch_constraints: Dropped,
+        configurations: Omitted,
+        parameters: Omitted,
+        sketches: Omitted,
+        sketch_entities: Omitted,
+        sketch_constraints: Omitted,
         spatial_sketches: Omitted,
         spatial_sketch_entities: Omitted,
         spatial_sketch_constraints: Omitted,
@@ -233,9 +239,9 @@ const COVERAGE: ArenaDispositions = {
         tessellations: Written,
         point_clouds: Omitted,
         history_bodies: Ignored,
-        appearances: Dropped,
-        appearance_bindings: Dropped,
-        attributes: Dropped,
+        appearances: Omitted,
+        appearance_bindings: Omitted,
+        attributes: Omitted,
         pmi: Omitted,
         presentation_layers: Omitted,
         physical_materials: Omitted,
