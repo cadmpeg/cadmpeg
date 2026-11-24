@@ -626,7 +626,7 @@ impl_entity_schema!(
     crate::presentation::PresentationLayer,
     PresentationLayer,
     id;
-    id, name, description, visible, items
+    id, name, parent, description, visible, items
 );
 impl_entity_schema!(crate::physics::PhysicalMaterial, PhysicalMaterial, id; id, name, density, static_friction, dynamic_friction, restitution, native_ref);
 impl_entity_schema!(crate::physics::MassProperties, MassProperties, id; id, target, mass, density, center_of_mass, inertia, material, native_ref);
