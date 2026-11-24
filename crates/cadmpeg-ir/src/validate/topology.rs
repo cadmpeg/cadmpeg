@@ -26,7 +26,6 @@ mod composite;
 mod datums;
 pub(super) mod graphs;
 pub(super) mod nested;
-pub(super) mod procedural_owners;
 mod sheet_metal;
 
 fn check_split_face_input_run(
