@@ -292,6 +292,40 @@ fn region_whose_faces_cannot_be_transferred_charges_a_loss() {
     assert_geometry_valid(ir);
 }
 
+fn surfaceless_face(sense: u8) -> cadmpeg_ir::codec::DecodeResult {
+    let mut partition = test_support::sphere_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
+        .unwrap()
+        .unwrap();
+    let face = records
+        .nodes()
+        .find(|node| node.kind() == cadmpeg_parasolid::records::node_type::FACE)
+        .unwrap();
+    let surface = face.field_range("surface").unwrap();
+    let sense_range = face.field_range("sense").unwrap();
+    partition[surface].copy_from_slice(&1u16.to_be_bytes());
+    partition[sense_range].copy_from_slice(&[sense]);
+    decode_partition(partition)
+}
+
+#[test]
+fn face_without_a_surface_keeps_its_stored_orientation() {
+    for (sense, expected) in [
+        (b'-', cadmpeg_ir::topology::Sense::Reversed),
+        (b'+', cadmpeg_ir::topology::Sense::Forward),
+    ] {
+        let result = surfaceless_face(sense);
+        let ir = result.ir();
+        assert_eq!(ir.geometry.faces.len(), 1);
+        assert_eq!(ir.geometry.faces[0].sense, expected);
+        assert!(charged(
+            &result,
+            crate::loss::SolidEdgeLossCode::SurfaceUnresolved
+        ));
+        assert_geometry_valid(ir);
+    }
+}
+
 #[test]
 fn unreadable_partition_preserves_another_partition() {
     let bytes =

@@ -709,9 +709,7 @@ pub(crate) fn project(
                         Err(crate::chart::ChartError::Refusal(error)) => return Err(error),
                     }
                 } else if source.kind() == kind::INTERSECTION {
-                    if crate::intersection::frame_from_chart(&nodes, source) {
-                        losses.push(SolidEdgeLossCode::IntersectionFrameFromChart.note("intersection support surfaces determine the exact carrier; chart order determines its parameter direction"));
-                    } else {
+                    if !crate::intersection::frame_from_chart(&nodes, source) {
                         losses.push(SolidEdgeLossCode::IntersectionFrameFromSupportsAssumed.note(
                             "ordered oriented support normals set the curve direction because its chart is unresolved",
                         ));
@@ -871,7 +869,13 @@ pub(crate) fn project(
                 .map(|(fin, loop_index, edge)| (fin, (loop_index, edge))),
         );
         let mut face_sense = face.sense;
-        if let Some(carrier) = nodes.get(&face.surface).copied() {
+        // The surface index is the face's own index when the face states no
+        // surface, and the face then has no carrier sense to compose.
+        let carrier = nodes
+            .get(&face.surface)
+            .copied()
+            .filter(|_| face.surface != face.index);
+        if let Some(carrier) = carrier {
             let negative_major = matches!(
                 geometry::analytic(carrier),
                 Some(cadmpeg_parasolid::geometry::Analytic::Surface {
