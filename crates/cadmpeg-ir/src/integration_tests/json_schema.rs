@@ -1,11 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The committed JSON Schema files are the schemas that the `JsonSchema`
-//! derives generate. `UPDATE_GOLDEN=1` rewrites them from the derives.
+//! derives generate. Under the `schema-order` feature, which lists each
+//! object's `properties` in declared order, the test compares their text and
+//! `UPDATE_GOLDEN=1` rewrites them; under `schema` alone it compares their
+//! content.
 
 use std::collections::BTreeSet;
 use std::path::Path;
 
 use serde_json::{Map, Value};
+
+const REGENERATE: &str =
+    "UPDATE_GOLDEN=1 cargo test -p cadmpeg-ir --features schema-order --lib -- committed_json_schemas";
 
 #[test]
 fn committed_json_schemas_equal_the_derived_schemas() {
@@ -22,10 +28,19 @@ fn committed_json_schemas_equal_the_derived_schemas() {
             crate::decode_sidecar_json_schema(),
         ),
     ] {
-        let derived = serde_json::to_string_pretty(&derived).unwrap() + "\n";
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("schema")
             .join(file);
+        if !cfg!(feature = "schema-order") {
+            let committed: Value = serde_json::from_str(committed).unwrap();
+            assert!(
+                committed == serde_json::to_value(&derived).unwrap(),
+                "{} differs from the derived schema. Run `{REGENERATE}` and commit the file.",
+                path.display()
+            );
+            continue;
+        }
+        let derived = serde_json::to_string_pretty(&derived).unwrap() + "\n";
         if update {
             std::fs::write(&path, &derived).unwrap();
             continue;
@@ -38,9 +53,8 @@ fn committed_json_schemas_equal_the_derived_schemas() {
             + 1;
         assert!(
             committed == derived,
-            "{} differs from the derived schema at line {line}. Run \
-             `UPDATE_GOLDEN=1 cargo test -p cadmpeg-ir --features schema --lib -- \
-             committed_json_schemas` and commit the file.",
+            "{} differs from the derived schema at line {line}. Run `{REGENERATE}` and commit \
+             the file.",
             path.display()
         );
     }
@@ -192,6 +206,56 @@ impl<'a> NullWalk<'a> {
         {
             self.value(member, &format!("{at}[{position}]"), true);
         }
+    }
+}
+
+/// Each member name and each string a schema node fixes (`const`, `enum`) in
+/// `node` and the schemas below it.
+fn wire_names<'a>(node: &'a Value, names: &mut BTreeSet<&'a str>) {
+    match node {
+        Value::Object(node) => {
+            for (keyword, value) in node {
+                match (keyword.as_str(), value) {
+                    ("properties" | "$defs" | "patternProperties", Value::Object(members)) => {
+                        for (name, member) in members {
+                            if keyword == "properties" {
+                                names.insert(name);
+                            }
+                            wire_names(member, names);
+                        }
+                    }
+                    ("const", Value::String(name)) => {
+                        names.insert(name);
+                    }
+                    ("enum", Value::Array(values)) => {
+                        names.extend(values.iter().filter_map(Value::as_str));
+                    }
+                    ("description" | "title" | "pattern" | "$ref" | "$schema", _) => {}
+                    (_, value) => wire_names(value, names),
+                }
+            }
+        }
+        Value::Array(values) => values.iter().for_each(|value| wire_names(value, names)),
+        _ => {}
+    }
+}
+
+/// §2.5: field and variant names are snake_case.
+#[test]
+fn every_wire_name_is_snake_case() {
+    for committed in [crate::CADIR_JSON_SCHEMA, crate::DECODE_SIDECAR_JSON_SCHEMA] {
+        let schema: Value = serde_json::from_str(committed).unwrap();
+        let mut names = BTreeSet::new();
+        wire_names(&schema, &mut names);
+        let other: Vec<&str> = names
+            .into_iter()
+            .filter(|name| {
+                !name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+            })
+            .collect();
+        assert!(other.is_empty(), "{other:?}");
     }
 }
 

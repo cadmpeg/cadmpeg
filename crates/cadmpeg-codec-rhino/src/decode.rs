@@ -386,6 +386,8 @@ struct InstanceDisplay {
     visible: bool,
 }
 
+mod object_presentation;
+
 /// Mutable decode state shared by metadata and geometry phases.
 pub(crate) struct DecodeContext<'a> {
     scan: &'a Scan<'a>,
@@ -410,6 +412,9 @@ pub(crate) struct DecodeContext<'a> {
     /// the root, stated with its own name, colour, and visibility once the
     /// root exists.
     mesh_bodies: HashMap<String, MeshBody>,
+    /// The display state of each object decoded, by the key its source
+    /// associations carry.
+    object_presentations: object_presentation::ObjectPresentations,
 }
 
 /// A mesh object's own display name, colour, and visibility flag.
@@ -462,6 +467,7 @@ impl<'a> DecodeContext<'a> {
             expansion_budget: ExpansionBudget::new(),
             expansion_undo: None,
             mesh_bodies: HashMap::new(),
+            object_presentations: HashMap::new(),
         };
         context.retain_object_records()?;
         context.retain_opaque_records()?;
@@ -788,6 +794,7 @@ impl<'a> DecodeContext<'a> {
             if self.instance_selection.is_none() && self.is_definition_member(object) {
                 continue;
             }
+            self.record_presentation(&object.identity);
             if crate::instances::is_reference_class(object.class_uuid) {
                 self.expand_reference(source_order)?;
                 continue;
@@ -2026,6 +2033,24 @@ impl<'a> DecodeContext<'a> {
         )
     }
 
+    /// Records the display state `identity` is decoded with at the current
+    /// instance path.
+    fn record_presentation(&mut self, identity: &crate::objects::SourceIdentity) {
+        let path = self
+            .instance_selection
+            .as_ref()
+            .map_or_else(Vec::new, |selected| selected.path.clone());
+        let presentation = object_presentation::ObjectPresentation {
+            display: self.object_display(identity),
+            layer_index: identity.layer.as_ref().map(|_| identity.layer_index),
+        };
+        object_presentation::record(
+            &mut self.object_presentations,
+            (format!("{}", identity.object_id), path),
+            presentation,
+        );
+    }
+
     fn object_display(&self, identity: &crate::objects::SourceIdentity) -> ObjectDisplay {
         object_display(
             identity,
@@ -2698,6 +2723,12 @@ impl<'a> DecodeContext<'a> {
             }
             document.display_unresolved_meshes(&root);
         }
+        self.report.typed_losses.extend(object_presentation::state(
+            ctx,
+            document,
+            &self.scan.metadata.layers,
+            &self.object_presentations,
+        )?);
         document.finalize();
         let mut losses: Vec<LossNote> = Vec::new();
         let outcomes = self.class_outcomes()?;
@@ -6408,7 +6439,7 @@ fn source_association(
 
 /// The display name, colour, and visibility that the bodies and faces made
 /// from one Rhino object state.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 struct ObjectDisplay {
     name: Option<String>,
     color: Option<Color>,
