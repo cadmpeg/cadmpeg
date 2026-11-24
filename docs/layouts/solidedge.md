@@ -462,3 +462,17 @@ Parsed by:
 | 0 | 16 | `clsid` | `bytes[16]` | little | spec | \| 0 \| the file moniker CLSID `{00000303-0000-0000-C000-000000000046}` \| · value `[3, 3, 0, 0, 0, 0, 0, 0, 192, 0, 0, 0, 0, 0, 0, 70]` |
 | 16 | 2 | `up_level` | `u16` | little | spec | \| 16 \| `u16` up-level count, `0` \| |
 | 18 | 4 | `path_len` | `u32` | little | spec | \| 18 \| `u32` byte count `n` \| |
+
+## `file_moniker_extension`
+
+Spec §9.3 · layout: byte offsets · size: 30 B
+
+Parsed by:
+- `crates/cadmpeg-codec-solidedge/src/assembly.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 20 | `reserved` | `bytes[20]` | little | spec | \| 0 \| 20 reserved bytes \| |
+| 20 | 4 | `size` | `u32` | little | spec | \| 20 \| `u32` size `s` of the remaining extension, `0` when the moniker stores no Unicode path \| |
+| 24 | 4 | `path_bytes` | `u32` | little | spec | \| 24 \| `u32` byte count `m` of the Unicode path; `s` is `m` + 6 \| |
+| 28 | 2 | `key` | `u16` | little | spec | \| 28 \| `u16` key value \| |

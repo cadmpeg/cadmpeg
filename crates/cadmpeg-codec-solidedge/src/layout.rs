@@ -358,3 +358,15 @@ pub(crate) mod file_moniker {
     /// Offset of `path_len` (`u32`, little-endian). Spec §9.3.
     pub(crate) const PATH_LEN: usize = 18;
 }
+
+/// Byte offsets for the `file_moniker_extension` record.
+///
+/// Spec §9.3. Record length 30 B.
+pub(crate) mod file_moniker_extension {
+    /// Record length in bytes. Spec §9.3.
+    pub(crate) const LEN: usize = 30;
+    /// Offset of `size` (`u32`, little-endian). Spec §9.3.
+    pub(crate) const SIZE: usize = 20;
+    /// Offset of `path_bytes` (`u32`, little-endian). Spec §9.3.
+    pub(crate) const PATH_BYTES: usize = 24;
+}

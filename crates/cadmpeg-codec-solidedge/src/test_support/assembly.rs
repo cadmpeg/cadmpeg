@@ -56,11 +56,14 @@ pub(crate) struct SiteSpec<'a> {
     /// The absolute and relative paths of the two monikers, or `None` for a
     /// site with no link stream.
     pub(crate) links: Option<[&'a str; 2]>,
+    /// The Unicode path of each moniker's extension, or `None` for a moniker
+    /// that stores no Unicode path.
+    pub(crate) long: [Option<&'a str>; 2],
 }
 
 /// One file moniker: the CLSID, the up-level count, the counted path and the
 /// terminating words.
-fn moniker(up_level: u16, path: &str) -> Vec<u8> {
+fn moniker(up_level: u16, path: &str, long: Option<&str>) -> Vec<u8> {
     let mut bytes = MONIKER_CLSID.to_vec();
     bytes.extend_from_slice(&up_level.to_le_bytes());
     let length = u32::try_from(path.len() + 1).unwrap();
@@ -69,16 +72,32 @@ fn moniker(up_level: u16, path: &str) -> Vec<u8> {
     bytes.push(0);
     bytes.extend_from_slice(&0xFFFF_u16.to_le_bytes());
     bytes.extend_from_slice(&0xDEAD_u16.to_le_bytes());
+    bytes.extend_from_slice(&[0; 20]);
+    match long {
+        None => bytes.extend_from_slice(&0_u32.to_le_bytes()),
+        Some(long) => {
+            let units: Vec<u8> = long
+                .encode_utf16()
+                .chain([0])
+                .flat_map(u16::to_le_bytes)
+                .collect();
+            let count = u32::try_from(units.len()).unwrap();
+            bytes.extend_from_slice(&(count + 6).to_le_bytes());
+            bytes.extend_from_slice(&count.to_le_bytes());
+            bytes.extend_from_slice(&3_u16.to_le_bytes());
+            bytes.extend_from_slice(&units);
+        }
+    }
     bytes
 }
 
 /// The link stream of a site: a 12-byte header, the absolute moniker, other
 /// bytes, then the relative moniker.
-fn link_stream(links: [&str; 2]) -> Vec<u8> {
+pub(crate) fn link_stream(links: [&str; 2], long: [Option<&str>; 2]) -> Vec<u8> {
     let mut bytes = vec![0_u8; 12];
-    bytes.extend_from_slice(&moniker(0, links[0]));
+    bytes.extend_from_slice(&moniker(0, links[0], long[0]));
     bytes.extend_from_slice(&[0x11; 6]);
-    bytes.extend_from_slice(&moniker(1, links[1]));
+    bytes.extend_from_slice(&moniker(1, links[1], long[1]));
     bytes
 }
 
@@ -156,7 +175,10 @@ pub(crate) fn assembly_document_with_structure(
             body: vec![0; 16],
         });
         if let Some(links) = site.links {
-            streams.push((format!("JSite{}/\u{1}Ole", site.id), link_stream(links)));
+            streams.push((
+                format!("JSite{}/\u{1}Ole", site.id),
+                link_stream(links, site.long),
+            ));
         }
     }
     objects.sort_by_key(|object| object.id);

@@ -36,8 +36,8 @@ use cadmpeg_ir::transform::Transform;
 
 use crate::extents::MM_PER_M;
 use crate::layout::{
-    assembly_reference, file_moniker, occurrence_structure_entry, occurrence_structure_header,
-    references_collection,
+    assembly_reference, file_moniker, file_moniker_extension, occurrence_structure_entry,
+    occurrence_structure_header, references_collection,
 };
 use crate::loss::SolidEdgeLossCode;
 use crate::psm::{Cluster, SpaceMap, TypeTable, SPACE_MAP_STREAM, TYPE_TABLE_STREAM};
@@ -56,6 +56,11 @@ const ABSOLUTE_UP_LEVEL: u16 = 0;
 const RELATIVE_UP_LEVEL: u16 = 1;
 /// The word that follows a moniker path (§9.3).
 const PATH_END: u16 = 0xFFFF;
+/// The word that follows `PATH_END` and precedes the Unicode extension (§9.3).
+const MONIKER_VERSION: u16 = 0xDEAD;
+/// Bytes of the Unicode extension counted by its size word besides the path:
+/// the byte count and the key value (§9.3).
+const EXTENSION_FIXED: usize = 6;
 /// The stream that lists the occurrences of an assembly (§9.4).
 const STRUCTURE_STREAM: &str = "Preview/Structure/IOT";
 /// The flag of a structure entry that marks a hidden occurrence (§9.4).
@@ -232,8 +237,49 @@ fn moniker(bytes: &[u8], at: usize, up_level: u16) -> Option<(NonBlankString, us
     if View::u16_le_at(bytes, end)? != PATH_END {
         return None;
     }
-    let path = NonBlankString::new(String::from_utf8(text.to_vec()).ok()?)?;
-    Some((path, end.checked_add(2)?))
+    let after = end.checked_add(2)?;
+    let ansi = String::from_utf8(text.to_vec()).ok()?;
+    if let Some((long, next)) = unicode_path(bytes, after) {
+        return Some((long, next));
+    }
+    Some((NonBlankString::new(ansi)?, after))
+}
+
+/// The Unicode path of the extension that follows the word at `at`, and the
+/// offset after the extension (§9.3). `None` where the word is not `0xDEAD`,
+/// the moniker stores no Unicode path, or the extension does not read.
+fn unicode_path(bytes: &[u8], at: usize) -> Option<(NonBlankString, usize)> {
+    if View::u16_le_at(bytes, at)? != MONIKER_VERSION {
+        return None;
+    }
+    let base = at.checked_add(2)?;
+    let size = usize::try_from(View::u32_le_at(
+        bytes,
+        base.checked_add(file_moniker_extension::SIZE)?,
+    )?)
+    .ok()?;
+    let count = usize::try_from(View::u32_le_at(
+        bytes,
+        base.checked_add(file_moniker_extension::PATH_BYTES)?,
+    )?)
+    .ok()?;
+    if size != count.checked_add(EXTENSION_FIXED)? || count % 2 != 0 {
+        return None;
+    }
+    let start = base.checked_add(file_moniker_extension::LEN)?;
+    let end = start.checked_add(count)?;
+    let mut units = Vec::with_capacity(count / 2);
+    for pair in bytes.get(start..end)?.chunks_exact(2) {
+        units.push(View::u16_le_at(pair, 0)?);
+    }
+    while units.last() == Some(&0) {
+        units.pop();
+    }
+    if units.contains(&0) {
+        return None;
+    }
+    let path = NonBlankString::new(String::from_utf16(&units).ok()?)?;
+    Some((path, end))
 }
 
 /// The document path of a site's link stream: the first moniker's path, or

@@ -1048,3 +1048,39 @@ offset = 18
 type = "u32"
 source = "spec"
 anchor = "| 18 | `u32` byte count `n` |"
+
+[[record]]
+name = "file_moniker_extension"
+kind = "byte"
+parsed_by = "crates/cadmpeg-codec-solidedge/src/assembly.rs"
+section = "9.3"
+anchor = "`0xDEAD`:"
+size = 30
+
+[[record.field]]
+name = "reserved"
+offset = 0
+type = "bytes[20]"
+source = "spec"
+anchor = "| 0 | 20 reserved bytes |"
+
+[[record.field]]
+name = "size"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "| 20 | `u32` size `s` of the remaining extension, `0` when the moniker stores no Unicode path |"
+
+[[record.field]]
+name = "path_bytes"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "| 24 | `u32` byte count `m` of the Unicode path; `s` is `m` + 6 |"
+
+[[record.field]]
+name = "key"
+offset = 28
+type = "u16"
+source = "spec"
+anchor = "| 28 | `u16` key value |"

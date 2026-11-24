@@ -559,9 +559,26 @@ header, then a file moniker at offset 12:
 | 22 + `n` | `u16` `0xFFFF` |
 | 24 + `n` | `u16` `0xDEAD` |
 
+The ANSI path is the short (8.3) form of the path where a component of the
+long path exceeds eight characters. A Unicode extension follows the word
+`0xDEAD`:
+
+| Offset | Field |
+| ---: | --- |
+| 0 | 20 reserved bytes |
+| 20 | `u32` size `s` of the remaining extension, `0` when the moniker stores no Unicode path |
+| 24 | `u32` byte count `m` of the Unicode path; `s` is `m` + 6 |
+| 28 | `u16` key value |
+| 30 | `m` bytes of UTF-16LE path |
+
+The offsets count from the first byte after `0xDEAD`. The Unicode path is the
+long form of the ANSI path. Its last character may be a zero code unit. A
+reader states the Unicode path when the extension is present and the ANSI path
+otherwise.
+
 A second file moniker of the same layout follows in the stream. Its up-level
 count is `1` and its path is relative to the folder of the assembly
-document.
+document. It carries the Unicode extension by the same rule.
 
 ### 9.4 Occurrence structure list
 

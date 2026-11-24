@@ -7,9 +7,11 @@ use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::products::{Occurrence, ProductDefinition, Storage};
 
+use super::link_path;
+use crate::layout::file_moniker;
 use crate::test_support::{
-    assembly_document, assembly_document_with_structure, mirror_document, structure_stream,
-    MirrorSpec, OccurrenceSpec, SiteSpec,
+    assembly_document, assembly_document_with_structure, link_stream, mirror_document,
+    structure_stream, MirrorSpec, OccurrenceSpec, SiteSpec,
 };
 use crate::SolidEdgeCodec;
 
@@ -78,6 +80,7 @@ fn site() -> SiteSpec<'static> {
     SiteSpec {
         id: SITE,
         links: Some([ABSOLUTE, RELATIVE]),
+        long: [None, None],
     }
 }
 
@@ -151,6 +154,7 @@ fn occurrences_of_one_site_share_a_definition() {
     let other = SiteSpec {
         id: 11,
         links: Some(["C:\\x\\b.par", "b.par"]),
+        long: [None, None],
     };
     let result = decode(assembly_document(
         &[20, 21, 22],
@@ -209,6 +213,7 @@ fn missing_moniker_keeps_the_occurrence_without_a_path() {
     let bare = SiteSpec {
         id: SITE,
         links: None,
+        long: [None, None],
     };
     let result = decode(assembly_document(
         &[20],
@@ -340,4 +345,54 @@ fn document_without_a_collection_adds_nothing() {
     assert!(codes(&result)
         .iter()
         .all(|code| !code.starts_with("assembly.")));
+}
+
+#[test]
+fn unicode_extension_states_the_long_path() {
+    let long = SiteSpec {
+        id: SITE,
+        links: Some(["C:\\x\\LONGNA~1.PAR", "LONGNA~1.PAR"]),
+        long: [Some("C:\\x\\long name.par"), Some("long name.par")],
+    };
+    let result = decode(assembly_document(
+        &[20],
+        &[OccurrenceSpec::at_identity(20, SITE)],
+        &[long],
+    ));
+    let [occurrence] = occurrences(&result) else {
+        panic!("one occurrence")
+    };
+    assert_eq!(path(&result, occurrence), Some("C:\\x\\long name.par"));
+}
+
+#[test]
+fn moniker_without_extension_keeps_the_ansi_path() {
+    let short = SiteSpec {
+        id: SITE,
+        links: Some(["C:\\x\\SHORT~1.PAR", "SHORT~1.PAR"]),
+        long: [None, None],
+    };
+    let result = decode(assembly_document(
+        &[20],
+        &[OccurrenceSpec::at_identity(20, SITE)],
+        &[short],
+    ));
+    let [occurrence] = occurrences(&result) else {
+        panic!("one occurrence")
+    };
+    assert_eq!(path(&result, occurrence), Some("C:\\x\\SHORT~1.PAR"));
+}
+
+#[test]
+fn relative_moniker_states_its_long_path() {
+    let mut bytes = link_stream(
+        ["C:\\x\\LONGNA~1.PAR", "LONGNA~1.PAR"],
+        [Some("C:\\x\\long name.par"), Some("long name.par")],
+    );
+    // An absolute moniker that does not read leaves the relative one.
+    bytes[12 + file_moniker::UP_LEVEL] = 7;
+    assert_eq!(
+        link_path(&bytes).as_ref().map(NonBlankString::as_str),
+        Some("long name.par")
+    );
 }
