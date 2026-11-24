@@ -831,6 +831,23 @@ pub(crate) fn own_once(
             if chain.is_empty() || instances[&nodes[top].canonical].len() != 1 {
                 continue;
             }
+            // The frame of an operand that names the occurrence is in the
+            // space of its prototype; the operand is restated in the space of
+            // the outer insertion, so the frame takes each nested placement,
+            // innermost first.
+            let mut nested_pose = Some(Transform::identity());
+            for &at in &chain {
+                nested_pose = nested_pose.and_then(|pose| {
+                    occurrences[nodes[at].occurrence]
+                        .transform
+                        .unwrap_or_else(Transform::identity)
+                        .compose(pose)
+                        .ok()
+                });
+            }
+            let Some(nested_pose) = nested_pose else {
+                continue;
+            };
             let keys = chain
                 .into_iter()
                 .rev()
@@ -846,7 +863,11 @@ pub(crate) fn own_once(
             if let Some(keys) = keys {
                 selections.insert(
                     occurrences[node.occurrence].id.clone(),
-                    (occurrences[nodes[top].occurrence].id.clone(), keys),
+                    (
+                        occurrences[nodes[top].occurrence].id.clone(),
+                        keys,
+                        nested_pose,
+                    ),
                 );
             }
         }
@@ -861,11 +882,15 @@ pub(crate) fn own_once(
                 occurrence_path,
             } = &mut connector.operand.container
             {
-                if let Some((top, keys)) = selections.get(occurrence) {
+                if let Some((top, keys, nested_pose)) = selections.get(occurrence) {
+                    let Ok(frame) = nested_pose.compose(connector.frame) else {
+                        continue;
+                    };
                     let mut path = keys.clone();
                     path.append(occurrence_path);
                     *occurrence = top.clone();
                     *occurrence_path = path;
+                    connector.frame = frame;
                 }
             }
         }

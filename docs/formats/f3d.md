@@ -2549,7 +2549,7 @@ operand-path locators are wide operand-path locators; their marked references
 are at offsets 534 and 545 in the 806- and 861-byte scopes and at offsets 556
 and 567 in the 850-byte scope, after the count 2.
 
-A frame-sense byte uses the facing term of the version-3 mate equation. An operand frame that names an occurrence path is in the space of the path's innermost occurrence. The frame sense is the projected joint's `operands.frame_sense`.
+A frame-sense byte uses the facing term of the version-3 mate equation. An operand frame that names an occurrence path is in the space of the path's innermost occurrence. The projected connector frame is in the space of the container occurrence: it is the local transform of each occurrence on the path applied to the stored frame, the innermost occurrence first, and an external occurrence on the path counts with its placement. The frame sense is the projected joint's `operands.frame_sense`.
 
 A wide version-five locator has prefix word 2 or 3. A null construction reference occupies one zero byte at 56. With flag 0 at 57, the rigid matrix starts at 58, the separator is at 186, the scope backlink at 187, the wrapper reference at 198, the discriminator at 209, and the two-byte zero tail at 213. This null-construction matrix locator spans 215 bytes. For version-three, version-four and version-five Assemble scopes, the scope connector supplies the operand frame; the locator path supplies its occurrence qualifier.
 

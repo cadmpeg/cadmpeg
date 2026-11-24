@@ -559,10 +559,24 @@ fn a_two_level_reference_keeps_the_outer_insertion_and_native_keys() {
         occurrence("f3d:model:occurrence#b:bolt:washer", WASHER, 2.0),
     ]);
     reference_bolt(&mut ir, "f3d:model:occurrence#b:bolt:washer");
+    ir.model.assembly_joints[0]
+        .connectors_mut()
+        .nth(1)
+        .unwrap()
+        .frame = translated(0.5);
     let original = selected_world_pose(&ir);
     assert_eq!(original, translated(29.0));
     let losses = own_once(&mut ir, &BTreeMap::new());
     assert!(losses.is_empty(), "{losses:?}");
+    // The bolt (7) and washer (2) placements apply to the frame.
+    assert_eq!(
+        ir.model.assembly_joints[0]
+            .connectors()
+            .nth(1)
+            .unwrap()
+            .frame,
+        translated(9.5)
+    );
     assert_eq!(
         ir.model.assembly_joints[0]
             .connectors()
@@ -619,19 +633,34 @@ fn an_operand_names_an_external_instance_by_its_identity_segment() {
         .set_arena(&ctx, "xref_references", &[reference])
         .unwrap();
     reference_bolt(&mut ir, "f3d:model:occurrence#a:xref-0-0");
+    // The frame is in the space of the inserted document, which the external
+    // placement (translation 3) maps into the space of the outer insertion.
+    ir.model.assembly_joints[0]
+        .connectors_mut()
+        .nth(1)
+        .unwrap()
+        .frame = translated(2.0);
     let losses = own_once(&mut ir, &BTreeMap::new());
     assert!(losses.is_empty(), "{losses:?}");
+    let connector = ir.model.assembly_joints[0].connectors().nth(1).unwrap();
     assert_eq!(
-        ir.model.assembly_joints[0]
-            .connectors()
-            .nth(1)
-            .unwrap()
-            .operand
-            .container,
+        connector.operand.container,
         cadmpeg_ir::products::OperandContainer::Occurrence {
             occurrence: occurrence_id("f3d:model:occurrence#a"),
             occurrence_path: vec!["xref-0-0".to_owned()],
         }
+    );
+    // The container's own space: the nested placement applied to the frame.
+    assert_eq!(connector.frame, translated(5.0));
+    // The model-space frame is the placement of the container (10) applied to
+    // it, which is the world frame through the whole path.
+    assert_eq!(
+        placed(&ir, "f3d:model:occurrence#a")
+            .transform
+            .unwrap()
+            .compose(connector.frame)
+            .unwrap(),
+        translated(15.0)
     );
 }
 
