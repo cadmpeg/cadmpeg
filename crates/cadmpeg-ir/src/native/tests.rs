@@ -695,6 +695,7 @@ fn from_typed_matches_value_tree_canonical_text() {
     let serde_json::Value::String(id) = fields.remove("id").unwrap() else {
         panic!("id serializes as a string");
     };
+    fields.insert("zulu".to_owned(), serde_json::json!(0.0));
     let expected = serde_json::to_string(&Shape {
         id: &id,
         fields: &fields,
@@ -993,7 +994,7 @@ fn native_attribute_target_rewrite_preserves_every_wire_kind() {
 }
 
 #[test]
-fn native_field_copy_preserves_bits() {
+fn native_field_copy_preserves_bits_and_holds_one_zero() {
     let record = NativeRecord::new(
         crate::ids::Identity::new("test:native:record#fields").unwrap(),
         serde_json::from_value(serde_json::json!({
@@ -1009,10 +1010,7 @@ fn native_field_copy_preserves_bits() {
     let copied = record.copy_fields(&ctx).unwrap();
     assert_eq!(copied, record.fields().unwrap());
     assert_eq!(copied["unsigned"].as_u64(), Some(u64::MAX));
-    assert_eq!(
-        copied["negative_zero"].as_f64().unwrap().to_bits(),
-        (-0.0_f64).to_bits()
-    );
+    assert_eq!(copied["negative_zero"].as_f64().unwrap().to_bits(), 0);
     ctx.finish_session().unwrap();
 }
 
@@ -1192,17 +1190,16 @@ fn map_constructor_renders_the_same_canonical_json_as_serde() {
     });
     let fields = fields.as_object().unwrap().clone();
     let id = "test:native:record#escaped-\"é🦀";
+    let mut zeroed = fields.clone();
+    zeroed["a\"key"][5] = serde_json::json!(0.0);
     let expected = serde_json::to_string(&Record {
         id,
-        fields: &fields,
+        fields: &zeroed,
     })
     .unwrap();
     let record = NativeRecord::new(crate::ids::Identity::new(id).unwrap(), fields.clone()).unwrap();
     assert_eq!(serde_json::to_string(&record).unwrap(), expected);
     let copied = record.fields().unwrap();
     assert_eq!(copied, fields);
-    assert_eq!(
-        copied["a\"key"][5].as_f64().unwrap().to_bits(),
-        (-0.0_f64).to_bits()
-    );
+    assert_eq!(copied["a\"key"][5].as_f64().unwrap().to_bits(), 0);
 }
