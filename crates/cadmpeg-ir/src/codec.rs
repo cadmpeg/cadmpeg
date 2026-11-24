@@ -398,7 +398,7 @@ impl DecodeResult {
                     "the decoder emitted {} {} times in arena {}, and the copies differ, so the \
                      document states none of them; record={}; {}",
                     seed.id,
-                    copies.get(seed).copied().unwrap_or(released.copies),
+                    copies.get(seed).copied().unwrap_or_default(),
                     seed.arena,
                     retained.stub,
                     released.tail(&[&seed.id])

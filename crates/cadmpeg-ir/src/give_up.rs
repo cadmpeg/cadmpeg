@@ -13,7 +13,7 @@
 //! position states no value of the design (§3.3). The CADIR writer drops a
 //! record past a bound by the same removal, without the part (§3.4).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::{ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
@@ -21,11 +21,12 @@ use serde::Serialize;
 
 use crate::document::{ArenaHome, ArenaName, CadIr};
 use crate::report::loss::LossNote;
+use crate::schema::ArenaRecord;
 use crate::source_fidelity::SourceFidelity;
 use crate::unknown::part::GivenUpPart;
 
 /// The arena that holds a record.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum Arena {
     /// The arena `field` of the home `home` (`geometry`, `model`, `design`,
     /// or `process`).
@@ -93,8 +94,6 @@ pub(crate) struct Seed {
 pub(crate) struct Released {
     /// The record's path in the document.
     pub(crate) path: String,
-    /// The copies of the id the arena held.
-    pub(crate) copies: usize,
     /// The records dropped because they need the removed record, sorted.
     pub(crate) dropped: BTreeSet<String>,
     /// The records kept in a partial form or with a mark, sorted.
@@ -141,14 +140,14 @@ pub(crate) struct Holder {
 }
 
 impl Holder {
-    /// The holder `entity` is, where it names an id of `gone` other than its
-    /// own. A record that has no JSON value names nothing.
-    pub(crate) fn of<T: Serialize>(
+    /// The holder `entity` is, where it names an id that `lookup` finds,
+    /// other than its own. A record that has no JSON value names nothing.
+    pub(crate) fn of<'k, T: Serialize>(
         home: &'static str,
         field: &'static str,
         id: &str,
         entity: &T,
-        gone: &BTreeSet<String>,
+        lookup: impl Fn(&str) -> Option<&'k str>,
     ) -> Option<Self> {
         let value = crate::hash::finite_json::to_json_value(entity).ok()?;
         let mut names = Vec::new();
@@ -156,7 +155,7 @@ impl Holder {
             &value,
             "",
             true,
-            &|text| gone.get(text).map(String::as_str).into_iter().collect(),
+            &|text| lookup(text).into_iter().collect(),
             &mut |path, target: &str| {
                 names.push((path.to_owned(), target.to_owned()));
                 true
@@ -176,6 +175,64 @@ impl Holder {
                 .iter()
                 .any(|prefix| path == prefix || path.starts_with(&format!("{prefix}.")))
         })
+    }
+}
+
+/// The references of a document, from one walk of its records: the number
+/// of records that hold each id, and the records that name each id.
+#[derive(Debug, Default)]
+pub(crate) struct References {
+    held: HashMap<String, usize>,
+    holders: Vec<(Arena, String)>,
+    named_by: HashMap<String, Vec<usize>>,
+}
+
+impl References {
+    /// Counts one record, neutral or native, that holds `id`.
+    pub(crate) fn hold(&mut self, id: &str) {
+        *self.held.entry(id.to_owned()).or_default() += 1;
+    }
+
+    /// Adds the names `entity` holds of the ids counted so far. The caller
+    /// counts every record first.
+    pub(crate) fn add<T: Serialize>(
+        &mut self,
+        home: &'static str,
+        field: &'static str,
+        id: &str,
+        entity: &T,
+    ) {
+        let held = &self.held;
+        let Some(holder) = Holder::of(home, field, id, entity, |text| {
+            held.get_key_value(text).map(|(key, _)| key.as_str())
+        }) else {
+            return;
+        };
+        let slot = self.holders.len();
+        let targets: BTreeSet<String> =
+            holder.names.into_iter().map(|(_, target)| target).collect();
+        self.holders.push((holder.arena, holder.id));
+        for target in targets {
+            self.named_by.entry(target).or_default().push(slot);
+        }
+    }
+
+    /// Counts `copies` fewer records of `id` and returns whether none is
+    /// left.
+    fn release(&mut self, id: &str, copies: usize) -> bool {
+        self.held.get_mut(id).is_none_or(|held| {
+            *held = held.saturating_sub(copies);
+            *held == 0
+        })
+    }
+
+    /// Each record that names an id of `gone`, once.
+    fn naming(&self, gone: &BTreeSet<String>) -> BTreeSet<&(Arena, String)> {
+        gone.iter()
+            .filter_map(|id| self.named_by.get(id))
+            .flatten()
+            .map(|slot| &self.holders[*slot])
+            .collect()
     }
 }
 
@@ -213,12 +270,14 @@ pub(crate) fn give_up(
     seeds: Vec<Seed>,
     mut loss: impl FnMut(&Seed, &Released, &Retained) -> LossNote,
 ) -> Result<Vec<LossNote>, CodecError> {
+    ir.finalize();
+    let mut references = ir.references();
     let mut losses = Vec::new();
     for seed in seeds {
         let Some(text) = text(ir, &seed.arena, &seed.id) else {
             continue;
         };
-        let Some(released) = remove(ctx, ir, &seed)? else {
+        let Some(released) = remove(ctx, ir, &mut references, &seed)? else {
             continue;
         };
         ctx.retain_bytes(
@@ -259,9 +318,11 @@ pub(crate) fn drop_records(
     ir: &mut CadIr,
     seeds: Vec<Seed>,
 ) -> Result<Vec<(Seed, Released)>, CodecError> {
+    ir.finalize();
+    let mut references = ir.references();
     let mut removed = Vec::new();
     for seed in seeds {
-        if let Some(released) = remove(ctx, ir, &seed)? {
+        if let Some(released) = remove(ctx, ir, &mut references, &seed)? {
             removed.push((seed, released));
         }
     }
@@ -273,6 +334,7 @@ pub(crate) fn drop_records(
 fn remove(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
+    references: &mut References,
     seed: &Seed,
 ) -> Result<Option<Released>, CodecError> {
     let parents = parents(ir, &seed.arena, &seed.id);
@@ -282,12 +344,18 @@ fn remove(
     }
     let mut released = Released {
         path: format!("{}/{}", seed.arena, seed.id),
-        copies,
         dropped: BTreeSet::new(),
         marked: BTreeSet::new(),
     };
     mark_parents(ir, &parents, &mut released.marked);
-    release(ctx, ir, &seed.id, &mut released)?;
+    let gone = references.release(&seed.id, copies);
+    release(
+        ctx,
+        ir,
+        references,
+        gone.then(|| seed.id.clone()),
+        &mut released,
+    )?;
     Ok(Some(released))
 }
 
@@ -308,6 +376,26 @@ fn take(ir: &mut CadIr, arena: &Arena, id: &str) -> usize {
     }
 }
 
+/// The records of `id` in `records`, which are in identity order.
+pub(crate) fn records<'a, T: ArenaRecord>(records: &'a [T], id: &str) -> &'a [T] {
+    let start = records.partition_point(|record| record.record_identity() < id);
+    let length = records[start..]
+        .iter()
+        .take_while(|record| record.record_identity() == id)
+        .count();
+    &records[start..start + length]
+}
+
+/// The records of `id` in `records`, which are in identity order, to change.
+pub(crate) fn records_mut<'a, T: ArenaRecord>(records: &'a mut [T], id: &str) -> &'a mut [T] {
+    let start = records.partition_point(|record| record.record_identity() < id);
+    let length = records[start..]
+        .iter()
+        .take_while(|record| record.record_identity() == id)
+        .count();
+    &mut records[start..start + length]
+}
+
 /// The parents a copy of `id` in `arena` names by its parent pointer: a
 /// face's shell and a region's body.
 fn parents(ir: &CadIr, arena: &Arena, id: &str) -> Vec<String> {
@@ -319,18 +407,12 @@ fn parents(ir: &CadIr, arena: &Arena, id: &str) -> Vec<String> {
         return Vec::new();
     };
     match *field {
-        "faces" => ir
-            .geometry
-            .faces
+        "faces" => records(&ir.geometry.faces, id)
             .iter()
-            .filter(|face| face.id.as_str() == id)
             .map(|face| face.shell.as_str().to_owned())
             .collect(),
-        "regions" => ir
-            .geometry
-            .regions
+        "regions" => records(&ir.geometry.regions, id)
             .iter()
-            .filter(|region| region.id.as_str() == id)
             .map(|region| region.body.as_str().to_owned())
             .collect(),
         _ => Vec::new(),
@@ -341,70 +423,79 @@ fn parents(ir: &CadIr, arena: &Arena, id: &str) -> Vec<String> {
 /// states each of its children (§5.6, Unstated children).
 fn mark_parents(ir: &mut CadIr, parents: &[String], marked: &mut BTreeSet<String>) {
     for parent in parents {
-        for shell in ir
-            .geometry
-            .shells
-            .iter_mut()
-            .filter(|shell| shell.id.as_str() == parent)
-        {
+        for shell in records_mut(&mut ir.geometry.shells, parent) {
             shell.unstated = Some(crate::topology::Unstated::Members);
             marked.insert(parent.clone());
         }
-        for body in ir
-            .geometry
-            .bodies
-            .iter_mut()
-            .filter(|body| body.id.as_str() == parent)
-        {
+        for body in records_mut(&mut ir.geometry.bodies, parent) {
             body.unstated = Some(crate::topology::Unstated::Members);
             marked.insert(parent.clone());
         }
     }
 }
 
-/// Drops, transitively, each record that needs `id`, which `ir` no longer
-/// holds, and marks each record that only lists it, recording both in
-/// `released`. An id another arena still holds names that record, so
-/// nothing needs it.
+/// Drops, transitively, each record that needs `gone`, an id no record of
+/// `ir` holds, and marks each record that holds it in a form that keeps
+/// the rest, recording both in `released`. Then removes every id it
+/// dropped from the collections keyed by id and from the stubs' links,
+/// which no record needs.
 fn release(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    id: &str,
+    references: &mut References,
+    gone: Option<String>,
     released: &mut Released,
 ) -> Result<(), CodecError> {
-    let mut gone: BTreeSet<String> = BTreeSet::new();
-    if !ir.holds_id(id) {
-        gone.insert(id.to_owned());
-    }
+    let mut gone: BTreeSet<String> = gone.into_iter().collect();
+    let mut all_gone = gone.clone();
     while !gone.is_empty() {
-        ir.release_keyed(&gone);
-        release_stub_links(ctx, ir, &gone)?;
-        let holders = ir.arenas().holders(&gone);
-        let mut next = BTreeSet::new();
-        for holder in holders {
-            if released.dropped.contains(&holder.id) {
+        let mut drops: BTreeMap<Arena, BTreeSet<String>> = BTreeMap::new();
+        for (arena, id) in references.naming(&gone) {
+            let Some(mut holder) = ir.holder(arena, id, &gone) else {
                 continue;
-            }
-            if keep_partial(ir, &holder) {
+            };
+            if clear_native_refs(ir, &mut holder) || keep_partial(ir, &holder) {
                 released.marked.insert(holder.id);
-                continue;
+            } else {
+                drops.entry(holder.arena).or_default().insert(holder.id);
             }
-            let parents = parents(ir, &holder.arena, &holder.id);
-            if take(ir, &holder.arena, &holder.id) == 0 {
-                continue;
+        }
+        let mut next = BTreeSet::new();
+        for (arena, ids) in drops {
+            let parents: Vec<String> = ids.iter().flat_map(|id| parents(ir, &arena, id)).collect();
+            for (id, copies) in ir.remove_ids(&arena, &ids) {
+                if references.release(&id, copies) {
+                    next.insert(id.clone());
+                }
+                released.dropped.insert(id);
             }
             mark_parents(ir, &parents, &mut released.marked);
-            if !ir.holds_id(&holder.id) {
-                next.insert(holder.id.clone());
-            }
-            released.dropped.insert(holder.id);
         }
+        all_gone.extend(next.iter().cloned());
         gone = next;
     }
+    ir.release_keyed(&all_gone);
+    release_stub_links(ctx, ir, &all_gone)?;
     released
         .marked
         .retain(|record| !released.dropped.contains(record));
     Ok(())
+}
+
+/// Clears each `native_ref` of `holder`'s records that names a lost record:
+/// the field states the source record a record projects, which no value of
+/// the design needs. Removes those names from `holder` and returns whether
+/// it names nothing else. A record whose JSON does not read back keeps its
+/// names.
+fn clear_native_refs(ir: &mut CadIr, holder: &mut Holder) -> bool {
+    if !holder.names.iter().any(|(path, _)| path == "native_ref") {
+        return false;
+    }
+    if !ir.clear_native_ref(&holder.arena, &holder.id) {
+        return false;
+    }
+    holder.names.retain(|(path, _)| path != "native_ref");
+    holder.names.is_empty()
 }
 
 /// States `holder` in the form that holds what is left where it names the
@@ -421,12 +512,7 @@ fn keep_partial(ir: &mut CadIr, holder: &Holder) -> bool {
     let lost = || holder.names.iter().map(|(_, target)| target.as_str());
     match (*home, *field) {
         ("geometry", "regions") if holder.names_only_under(&["shells", "unstated"]) => {
-            for region in ir
-                .geometry
-                .regions
-                .iter_mut()
-                .filter(|r| r.id.as_str() == id)
-            {
+            for region in records_mut(&mut ir.geometry.regions, id) {
                 for shell in lost() {
                     region.lose_shell(shell);
                 }
@@ -434,12 +520,7 @@ fn keep_partial(ir: &mut CadIr, holder: &Holder) -> bool {
             true
         }
         ("geometry", "shells") if holder.names_only_under(&["members"]) => {
-            for shell in ir
-                .geometry
-                .shells
-                .iter_mut()
-                .filter(|s| s.id.as_str() == id)
-            {
+            for shell in records_mut(&mut ir.geometry.shells, id) {
                 for member in lost() {
                     shell.lose_member(member);
                 }
@@ -447,7 +528,7 @@ fn keep_partial(ir: &mut CadIr, holder: &Holder) -> bool {
             true
         }
         ("geometry", "faces") if holder.names_only_under(&["loops"]) => {
-            for face in ir.geometry.faces.iter_mut().filter(|f| f.id.as_str() == id) {
+            for face in records_mut(&mut ir.geometry.faces, id) {
                 for lost_loop in lost() {
                     face.loops.lose(lost_loop);
                 }
@@ -455,20 +536,19 @@ fn keep_partial(ir: &mut CadIr, holder: &Holder) -> bool {
             true
         }
         ("design", "features") if holder.names_only_under(&["definition.operation"]) => {
-            let mut unresolved = false;
-            for feature in ir
-                .design
-                .features
-                .iter_mut()
-                .filter(|f| f.id.as_str() == id)
-            {
-                if let Some(family) = feature.definition.operation.family() {
-                    feature.definition.operation =
-                        crate::design::feature::FeatureOperation::Unresolved { family };
-                    unresolved = true;
-                }
+            let features = records_mut(&mut ir.design.features, id);
+            let families: Vec<_> = features
+                .iter()
+                .map(|feature| feature.definition.operation.family())
+                .collect();
+            let Some(families) = families.into_iter().collect::<Option<Vec<_>>>() else {
+                return false;
+            };
+            for (feature, family) in features.iter_mut().zip(families) {
+                feature.definition.operation =
+                    crate::design::feature::FeatureOperation::Unresolved { family };
             }
-            unresolved
+            true
         }
         _ => false,
     }
@@ -481,6 +561,9 @@ fn release_stub_links(
     ir: &mut CadIr,
     gone: &BTreeSet<String>,
 ) -> Result<(), CodecError> {
+    if gone.is_empty() {
+        return Ok(());
+    }
     let namespaces: Vec<String> = ir
         .native
         .0

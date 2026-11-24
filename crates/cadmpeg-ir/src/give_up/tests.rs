@@ -70,15 +70,34 @@ fn gone(ir: &CadIr, seed: &str, outcome: &Outcome) -> BTreeSet<String> {
         .dropped
         .iter()
         .chain([&seed.to_owned()])
-        .filter(|id| !ir.holds_id(id))
+        .filter(|id| !holds(ir, id))
         .cloned()
         .collect()
 }
 
+fn holds(ir: &CadIr, id: &str) -> bool {
+    ir.references().held.contains_key(id)
+}
+
 #[track_caller]
 fn assert_closed(ir: &CadIr, seed: &str, outcome: &Outcome) {
-    let holders = ir.arenas().holders(&gone(ir, seed, outcome));
-    assert!(holders.is_empty(), "records name a removed id: {holders:?}");
+    let gone = gone(ir, seed, outcome);
+    let document = crate::hash::finite_json::to_json_value(ir).unwrap();
+    let mut names = Vec::new();
+    crate::reference_walk::visit_edges(
+        &document,
+        "",
+        true,
+        &|text| gone.get(text).map(String::as_str).into_iter().collect(),
+        &mut |path, target: &str| {
+            names.push(format!("{path} -> {target}"));
+            true
+        },
+    );
+    assert!(
+        names.is_empty(),
+        "the document names a removed id: {names:?}"
+    );
 }
 
 #[test]
@@ -88,7 +107,7 @@ fn a_given_up_point_leaves_its_part_and_drops_each_record_that_needs_it() {
     let vertex = ir.geometry.vertices[0].id.as_str().to_owned();
     let (outcome, fidelity) = run(&mut ir, seed("geometry", "points", point.id.as_str()));
 
-    assert!(!ir.holds_id(point.id.as_str()));
+    assert!(!holds(&ir, point.id.as_str()));
     assert!(outcome.dropped.contains(&vertex));
     let lost_edges: BTreeSet<String> = crate::examples::unit_cube()
         .unwrap()
@@ -325,4 +344,42 @@ fn an_id_another_arena_holds_keeps_the_records_that_name_it() {
     assert!(outcome.dropped.is_empty());
     assert!(outcome.marked.is_empty());
     assert_eq!(ir.geometry.vertices, vertices);
+}
+
+#[test]
+fn a_record_that_projects_a_given_up_native_record_keeps_its_values() {
+    let mut ir = crate::examples::unit_cube().unwrap();
+    let native = "test:native:face#1";
+    let record =
+        crate::NativeRecord::new(Identity::new(native).unwrap(), serde_json::Map::new()).unwrap();
+    ir.native
+        .namespace_mut(crate::design::names::CodecId::new("test").unwrap())
+        .set_arena_records("faces", vec![record])
+        .unwrap();
+    ir.geometry.faces[0].native_ref = Some(native.to_owned());
+    let face = ir.geometry.faces[0].clone();
+    let (outcome, _) = run(
+        &mut ir,
+        Seed {
+            arena: Arena::Native {
+                codec: "test".to_owned(),
+                arena: "faces".to_owned(),
+            },
+            id: native.to_owned(),
+        },
+    );
+    assert!(outcome.dropped.is_empty());
+    assert_eq!(
+        outcome.marked,
+        BTreeSet::from([face.id.as_str().to_owned()])
+    );
+    let kept = ir
+        .geometry
+        .faces
+        .iter()
+        .find(|kept| kept.id == face.id)
+        .expect("the face stays");
+    assert_eq!(kept.native_ref, None);
+    assert_eq!(kept.loops, face.loops);
+    assert_closed(&ir, native, &outcome);
 }

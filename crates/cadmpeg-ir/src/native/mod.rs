@@ -1169,15 +1169,15 @@ impl Native {
         before - records.len()
     }
 
-    /// Whether a record of any namespace arena has the id `id`.
-    pub(crate) fn holds_id(&self, id: &str) -> bool {
-        self.0.values().any(|namespace| {
-            namespace
-                .arenas
-                .values()
-                .flatten()
-                .any(|record| record.id() == id)
-        })
+    /// Counts each namespace record in `references`.
+    pub(crate) fn hold_ids(&self, references: &mut crate::give_up::References) {
+        for record in self
+            .0
+            .values()
+            .flat_map(|namespace| namespace.arenas.values().flatten())
+        {
+            references.hold(record.id());
+        }
     }
 
     /// Sort every arena into canonical identity order.

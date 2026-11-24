@@ -1121,17 +1121,6 @@ macro_rules! declare_document_arenas {
                     + self.process.entity_count()
             }
 
-            /// Each record that names an id of `gone` other than by its own
-            /// id, with the paths at which it names one (§3.3).
-            pub(crate) fn holders(self, gone: &std::collections::BTreeSet<String>) -> Vec<crate::give_up::Holder> {
-                use crate::schema::ArenaRecord;
-                let mut found = Vec::new();
-                $(found.extend(self.$home.$field.iter().filter_map(|entity| {
-                    crate::give_up::Holder::of(stringify!($home), stringify!($field), entity.record_identity(), entity, gone)
-                }));)*
-                found
-            }
-
             pub(crate) fn repro_graph(self, finding: &crate::report::check::Finding) -> Result<crate::repro::selection::Graph<'a>, CodecError> {
                 use crate::schema::ArenaRecord;
                 let roots: std::collections::BTreeSet<&str> = finding.entity.iter().chain(&finding.related).map(String::as_str).collect();
@@ -1183,12 +1172,105 @@ macro_rules! declare_document_arenas {
                 0
             }
 
-            /// Whether a record of any arena, neutral or native, has the id
-            /// `id`.
-            pub(crate) fn holds_id(&self, id: &str) -> bool {
+            /// The references of the document, from one walk of its records
+            /// (§3.3).
+            pub(crate) fn references(&self) -> crate::give_up::References {
                 use crate::schema::ArenaRecord;
-                $(self.$home.$field.iter().any(|entity| entity.record_identity() == id) ||)*
-                    self.native.holds_id(id)
+                let mut references = crate::give_up::References::default();
+                $(for entity in &self.$home.$field {
+                    references.hold(entity.record_identity());
+                })*
+                self.native.hold_ids(&mut references);
+                $(for entity in &self.$home.$field {
+                    references.add(stringify!($home), stringify!($field), entity.record_identity(), entity);
+                })*
+                references
+            }
+
+            /// The holder the records of `id` in `arena` are, where they name
+            /// an id of `gone`. The arena is in identity order.
+            pub(crate) fn holder(
+                &self,
+                arena: &crate::give_up::Arena,
+                id: &str,
+                gone: &std::collections::BTreeSet<String>,
+            ) -> Option<crate::give_up::Holder> {
+                let crate::give_up::Arena::Home { home, field } = arena else {
+                    return None;
+                };
+                $(if *home == stringify!($home) && *field == stringify!($field) {
+                    let names: Vec<(String, String)> = crate::give_up::records(&self.$home.$field, id)
+                        .iter()
+                        .filter_map(|entity| {
+                            crate::give_up::Holder::of(stringify!($home), stringify!($field), id, entity, |text| {
+                                gone.get(text).map(String::as_str)
+                            })
+                        })
+                        .flat_map(|holder| holder.names)
+                        .collect();
+                    return (!names.is_empty()).then(|| crate::give_up::Holder {
+                        arena: arena.clone(),
+                        id: id.to_owned(),
+                        names,
+                    });
+                })*
+                None
+            }
+
+            /// Removes every record of `arena` whose id is in `ids`,
+            /// returning the number removed of each id.
+            pub(crate) fn remove_ids(
+                &mut self,
+                arena: &crate::give_up::Arena,
+                ids: &std::collections::BTreeSet<String>,
+            ) -> std::collections::BTreeMap<String, usize> {
+                use crate::schema::ArenaRecord;
+                let mut removed = std::collections::BTreeMap::new();
+                let crate::give_up::Arena::Home { home, field } = arena else {
+                    return removed;
+                };
+                $(if *home == stringify!($home) && *field == stringify!($field) {
+                    self.$home.$field.retain(|entity| {
+                        let id = entity.record_identity();
+                        if ids.contains(id) {
+                            *removed.entry(id.to_owned()).or_insert(0) += 1;
+                            false
+                        } else {
+                            true
+                        }
+                    });
+                })*
+                removed
+            }
+
+            /// Clears the `native_ref` of each record of `id` in `arena`, and
+            /// returns whether every such record reads back without it. The
+            /// arena is in identity order.
+            pub(crate) fn clear_native_ref(&mut self, arena: &crate::give_up::Arena, id: &str) -> bool {
+                let crate::give_up::Arena::Home { home, field } = arena else {
+                    return false;
+                };
+                $(if *home == stringify!($home) && *field == stringify!($field) {
+                    let records = crate::give_up::records_mut(&mut self.$home.$field, id);
+                    let mut cleared: Vec<$ty> = Vec::with_capacity(records.len());
+                    for entity in records.iter() {
+                        let Ok(mut value) = crate::hash::finite_json::to_json_value(entity) else {
+                            return false;
+                        };
+                        if let Some(object) = value.as_object_mut() {
+                            object.remove("native_ref");
+                        }
+                        let Ok(entity) = serde_json::from_value(value) else {
+                            return false;
+                        };
+                        cleared.push(entity);
+                    }
+                    for (record, entity) in records.iter_mut().zip(cleared) {
+                        *record = entity;
+                    }
+                    return true;
+                })*
+                false
             }
         }
     };
