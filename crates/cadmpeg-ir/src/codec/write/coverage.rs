@@ -234,8 +234,6 @@ macro_rules! declare_arena_dispositions {
                     .collect()
             }
 
-            /// Each arena of `ir` whose records the write omits and charges: its
-            /// kind, label and record count.
             /// The identities of the `design` records the payload writes.
             fn written_design_ids<'ir>(&self, ir: &'ir CadIr) -> std::collections::HashSet<&'ir str> {
                 let mut ids = std::collections::HashSet::new();
@@ -243,6 +241,8 @@ macro_rules! declare_arena_dispositions {
                 ids
             }
 
+            /// Each arena of `ir` whose records the write omits and charges: its
+            /// kind, label and record count.
             fn charged_omissions(&self, ir: &CadIr) -> Vec<(EntityKind, &'static str, usize)> {
                 // While the document holds a v10 design record, the v11 design
                 // arenas with a v10 counterpart restate content the v10 path
