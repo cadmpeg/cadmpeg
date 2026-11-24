@@ -2,7 +2,9 @@
 //! Project planar and spatial sketch geometry.
 
 use crate::design::dimensions::{planar_point, sketch_normal_sign};
-use crate::design::face_resolve::{placement_origin_scale, sketch_curve_is_spatial};
+use crate::design::face_resolve::{
+    placement_origin, placement_point, placement_vector, sketch_curve_is_spatial,
+};
 use crate::design::feature_project::sweep_loft::closed_spatial_sketch_profiles;
 use crate::design::feature_project::SpatialProfileSearch;
 use crate::design::geometry::closed_sketch_profiles;
@@ -268,31 +270,6 @@ pub(crate) struct SketchProjectInputs<'a, 's, 'c> {
     pub(crate) curves: &'a [SketchCurveIdentity],
     pub(crate) relations: &'a [SketchRelation],
     pub(crate) texts: &'a [SketchText],
-    /// Placement matrices whose sketches measure their coordinates from the
-    /// foot of the perpendicular from the design origin to the sketch plane.
-    pub(crate) foot_origin_frames: &'a [[[f64; 4]; 4]],
-}
-
-/// Largest coefficient difference at which a sketch placement matrix equals a
-/// plane placement matrix.
-const EPS_FRAME_MATCH: f64 = 1.0e-9;
-
-fn frame_matches(left: &[[f64; 4]; 4], right: &[[f64; 4]; 4]) -> bool {
-    left.iter()
-        .flatten()
-        .zip(right.iter().flatten())
-        .all(|(a, b)| (a - b).abs() <= EPS_FRAME_MATCH)
-}
-
-/// The frame origin of a sketch placed at `origin` on the plane with unit
-/// `normal`: the foot of the perpendicular from the design origin.
-fn plane_foot(origin: Point3, normal: Vector3) -> Point3 {
-    let distance = origin.x * normal.x + origin.y * normal.y + origin.z * normal.z;
-    Point3::new(
-        distance * normal.x,
-        distance * normal.y,
-        distance * normal.z,
-    )
 }
 
 impl<'a, 's, 'c> SketchProjectInputs<'a, 's, 'c> {
@@ -310,13 +287,7 @@ impl<'a, 's, 'c> SketchProjectInputs<'a, 's, 'c> {
             curves,
             relations,
             texts,
-            foot_origin_frames: &[],
         }
-    }
-
-    pub(crate) fn with_foot_origin_frames(mut self, frames: &'a [[[f64; 4]; 4]]) -> Self {
-        self.foot_origin_frames = frames;
-        self
     }
 
     pub(crate) fn with_scan(mut self, scan: &'s crate::container::ContainerScan<'c>) -> Self {
@@ -364,28 +335,13 @@ pub(crate) fn project_sketch_design(
         }) {
             continue;
         }
-        let stored_origin = Point3::new(
-            placement.transform()[0][3] * placement_origin_scale(placement),
-            placement.transform()[1][3] * placement_origin_scale(placement),
-            placement.transform()[2][3] * placement_origin_scale(placement),
-        );
-        let normal = Vector3::new(
-            placement.transform()[0][2],
-            placement.transform()[1][2],
-            placement.transform()[2][2],
-        );
-        let origin = if inputs
-            .foot_origin_frames
-            .iter()
-            .any(|frame| frame_matches(frame, placement.transform()))
-        {
-            plane_foot(stored_origin, normal)
-        } else {
-            stored_origin
-        };
         let Ok(resolved) = cadmpeg_ir::sketches::SketchPlacement::try_resolved(
-            origin,
-            normal,
+            placement_origin(placement),
+            Vector3::new(
+                placement.transform()[0][2],
+                placement.transform()[1][2],
+                placement.transform()[2][2],
+            ),
             Vector3::new(
                 placement.transform()[0][0],
                 placement.transform()[1][0],
@@ -787,36 +743,8 @@ pub(crate) fn project_spatial_sketch_design(
             record_spline_segment(&mut spline_segments, scope, record, points);
         }
     }
-    let transform_point = |placement: &DesignSketchPlacement, point: &Point3| {
-        let origin_scale = placement_origin_scale(placement);
-        Point3::new(
-            placement.transform()[0][0] * point.x
-                + placement.transform()[0][1] * point.y
-                + placement.transform()[0][2] * point.z
-                + placement.transform()[0][3] * origin_scale,
-            placement.transform()[1][0] * point.x
-                + placement.transform()[1][1] * point.y
-                + placement.transform()[1][2] * point.z
-                + placement.transform()[1][3] * origin_scale,
-            placement.transform()[2][0] * point.x
-                + placement.transform()[2][1] * point.y
-                + placement.transform()[2][2] * point.z
-                + placement.transform()[2][3] * origin_scale,
-        )
-    };
-    let transform_vector = |placement: &DesignSketchPlacement, vector: &Vector3| {
-        Vector3::new(
-            placement.transform()[0][0] * vector.x
-                + placement.transform()[0][1] * vector.y
-                + placement.transform()[0][2] * vector.z,
-            placement.transform()[1][0] * vector.x
-                + placement.transform()[1][1] * vector.y
-                + placement.transform()[1][2] * vector.z,
-            placement.transform()[2][0] * vector.x
-                + placement.transform()[2][1] * vector.y
-                + placement.transform()[2][2] * vector.z,
-        )
-    };
+    let transform_point = placement_point;
+    let transform_vector = placement_vector;
 
     let shared_identities = shared_curve_identities(curves);
     let mut entities = Vec::new();

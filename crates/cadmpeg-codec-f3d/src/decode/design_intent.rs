@@ -593,6 +593,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         );
     }
 
+    crate::design::decode::placement_construction::work_planes::mark_foot_origin_sketches(
+        &mut design.design_sketch_placements,
+        &design.design_parameter_scopes,
+        &design.design_placement_constructions,
+    );
     losses.extend(
         crate::design::decode::placement_construction::work_planes::bind(
             &mut design.design_parameter_scopes,
@@ -1116,11 +1121,6 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         (geometry.faces, geometry.surfaces),
         &prereqs.design_types,
     );
-    let foot_origin_frames =
-        crate::design::decode::placement_construction::work_planes::foot_origin_frames(
-            &design.design_parameter_scopes,
-            &design.design_placement_constructions,
-        );
     let planar = crate::design::sketch_project::project_sketch_design(
         ctx,
         &crate::design::sketch_project::SketchProjectInputs::new(
@@ -1130,7 +1130,6 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &design.sketch_relations,
             &design.sketch_texts,
         )
-        .with_foot_origin_frames(&foot_origin_frames)
         .with_scan(inputs.scan),
         geometry.tolerances.linear.get(),
     )?;

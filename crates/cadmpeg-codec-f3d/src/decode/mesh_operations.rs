@@ -22,7 +22,7 @@ use cadmpeg_ir::features::selections::{
     BodySelection, FaceSelection, NativeSelections, SelectionReference,
 };
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Fraction, Length, NonNegativeLength, PositiveLength, PositiveReal};
 use cadmpeg_ir::sketches::Sketch;
@@ -420,13 +420,8 @@ fn section_binding(
         });
         let placement = placements.next().filter(|_| placements.next().is_none())?;
         let matrix = placement.transform();
-        let scale = crate::design::face_resolve::placement_origin_scale(placement);
         FeatureSupportPlaneFrame::new(
-            Point3::new(
-                matrix[0][3] * scale,
-                matrix[1][3] * scale,
-                matrix[2][3] * scale,
-            ),
+            crate::design::face_resolve::placement_origin(placement),
             Vector3::new(matrix[0][2], matrix[1][2], matrix[2][2]),
             Vector3::new(matrix[0][0], matrix[1][0], matrix[2][0]),
         )

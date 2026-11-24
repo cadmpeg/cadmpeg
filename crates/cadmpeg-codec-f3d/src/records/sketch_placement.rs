@@ -269,14 +269,24 @@ pub(crate) enum DesignSketchFrameForm {
 pub(crate) struct DesignSketchFrame {
     byte_offset: u64,
     form: DesignSketchFrameForm,
+    /// The sketch measures its coordinates from the foot of the perpendicular
+    /// from the design origin to its plane instead of from the stored origin.
+    foot_origin: bool,
 }
 
 impl DesignSketchFrame {
     pub(crate) fn form(&self) -> &DesignSketchFrameForm {
         &self.form
     }
+    pub(crate) fn foot_origin(&self) -> bool {
+        self.foot_origin
+    }
     pub(crate) fn new(byte_offset: u64, form: DesignSketchFrameForm) -> Result<Self, String> {
-        let value = Self { byte_offset, form };
+        let value = Self {
+            byte_offset,
+            form,
+            foot_origin: false,
+        };
         byte_offset
             .checked_add(value.frame_length())
             .ok_or("byte_offset overflows the sketch frame extent")?;
@@ -366,6 +376,11 @@ impl DesignSketchFrame {
 }
 
 impl DesignSketchPlacement {
+    /// Mark the sketch as measuring its coordinates from the foot of the
+    /// perpendicular from the design origin to its plane.
+    pub(crate) fn set_foot_origin(&mut self) {
+        self.frame.foot_origin = true;
+    }
     pub(crate) fn byte_offset(&self) -> u64 {
         self.frame.byte_offset
     }

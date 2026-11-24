@@ -1672,18 +1672,18 @@ fn scope_placement_accepts_typed_container_and_frame_references() {
     assert!(parse(&bytes[..scope_end - 1]).is_none());
 }
 
-#[test]
-fn a_sketch_on_a_foot_origin_plane_measures_from_the_foot_of_the_design_origin() {
+fn foot_origin_test_placement(foot_origin: bool) -> DesignSketchPlacement {
     use crate::records::sketch_placement::{
         DesignSketchFrame, DesignSketchFrameForm, SketchPlacementMatrix,
     };
+    // u = +x, v = -z, normal = +y; the stored translation is (5, 10, 2.5) mm.
     let rows = [
         [1.0, 0.0, 0.0, 0.5],
         [0.0, 0.0, 1.0, 1.0],
         [0.0, -1.0, 0.0, 0.25],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    let placement = DesignSketchPlacement {
+    let mut placement = DesignSketchPlacement {
         frame: DesignSketchFrame::new(
             0,
             DesignSketchFrameForm::ScopeExplicit(SketchPlacementMatrix::try_from(rows).unwrap()),
@@ -1700,12 +1700,20 @@ fn a_sketch_on_a_foot_origin_plane_measures_from_the_foot_of_the_design_origin()
         paired_class_tag: crate::records::references::DesignClassTag::try_from("261".to_owned())
             .unwrap(),
     };
-    let origin_of = |frames: &[[[f64; 4]; 4]]| {
+    if foot_origin {
+        placement.set_foot_origin();
+    }
+    placement
+}
+
+#[test]
+fn a_sketch_on_a_foot_origin_plane_measures_from_the_foot_of_the_design_origin() {
+    let origin_of = |foot_origin: bool| {
+        let placement = foot_origin_test_placement(foot_origin);
         let (sketches, _) = crate::test_support::with_decode_context(|decode_ctx| {
             project_sketch_design(
                 decode_ctx,
-                &SketchProjectInputs::new(std::slice::from_ref(&placement), &[], &[], &[], &[])
-                    .with_foot_origin_frames(frames),
+                &SketchProjectInputs::new(std::slice::from_ref(&placement), &[], &[], &[], &[]),
                 1.0e-6,
             )
         })
@@ -1715,11 +1723,6 @@ fn a_sketch_on_a_foot_origin_plane_measures_from_the_foot_of_the_design_origin()
             .resolved_placement()
             .map(|(origin, _, _)| origin.get())
     };
-    // The plane entity's origin stays the frame origin unless the plane's
-    // construction measures sketch coordinates from the foot.
-    assert_eq!(origin_of(&[]), Some(Point3::new(5.0, 10.0, 2.5)));
-    assert_eq!(origin_of(&[rows]), Some(Point3::new(0.0, 10.0, 0.0)));
-    let mut other = rows;
-    other[1][3] = 2.0;
-    assert_eq!(origin_of(&[other]), Some(Point3::new(5.0, 10.0, 2.5)));
+    assert_eq!(origin_of(false), Some(Point3::new(5.0, 10.0, 2.5)));
+    assert_eq!(origin_of(true), Some(Point3::new(0.0, 10.0, 0.0)));
 }
