@@ -283,7 +283,7 @@ fn complete_document_refuses_duplicate_native_keys_at_every_depth() {
     let empty = serde_json::to_string(&crate::CadIr::empty()).unwrap();
     assert_eq!(empty.matches("\"native\":{}").count(), 1);
     let document = |native: &str| empty.replace("\"native\":{}", &format!("\"native\":{native}"));
-    let control = r#"{"future":{"records":[{"id":"test:native:record#first","fields":{"name":"value"}}]},"another_future":{"different_records":[]}}"#;
+    let control = r#"{"future":{"records":[{"id":"test:native:record#first","fields":{"name":"value"}}]},"anotherfuture":{"different_records":[]}}"#;
     let wire = document(control);
     let admitted = crate::CadIr::from_json(&wire).unwrap();
     assert_eq!(

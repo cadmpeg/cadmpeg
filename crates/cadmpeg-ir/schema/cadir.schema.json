@@ -30350,7 +30350,7 @@
           "properties": {
             "format": {
               "description": "Registry format namespace.",
-              "type": "string"
+              "$ref": "#/$defs/CodecId"
             },
             "kind": {
               "type": "string",
@@ -45285,10 +45285,13 @@
       "uniqueItems": true
     },
     "Native": {
-      "description": "Native records grouped by source-format namespace id.",
+      "description": "Native records grouped by the codec id of their namespace.",
       "type": "object",
-      "additionalProperties": {
-        "$ref": "#/$defs/NativeNamespace"
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[a-z0-9]+$": {
+          "$ref": "#/$defs/NativeNamespace"
+        }
       }
     },
     "NativeFeatureKind": {
