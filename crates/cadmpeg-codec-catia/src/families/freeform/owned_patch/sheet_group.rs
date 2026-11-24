@@ -172,6 +172,12 @@ fn allocation_run_start(
     (position == seed).then_some(start)
 }
 
+struct ScopedMembers {
+    members: Vec<(usize, usize, bool)>,
+    end_anchored: bool,
+    inferred: bool,
+}
+
 struct Allocations {
     starts: Vec<usize>,
     records: Vec<ConsolidatedRecord>,
@@ -253,7 +259,12 @@ impl Allocations {
         self.starts.get(index + 1).copied().unwrap_or(self.limit)
     }
 
-    fn faces(&self, bytes: &[u8], shells: &[usize]) -> Option<Vec<(usize, usize, bool)>> {
+    fn faces(
+        &self,
+        bytes: &[u8],
+        shells: &[usize],
+        governing: bool,
+    ) -> Option<Vec<(usize, usize, bool)>> {
         let mut output = Vec::new();
         for (s, &slot) in shells.iter().enumerate() {
             let shell = self.starts.binary_search(&slot).ok()?;
@@ -265,13 +276,14 @@ impl Allocations {
             let first = self.after(shell);
             let end = shells.get(s + 1).copied().unwrap_or(self.limit);
             let end_index = self.starts.partition_point(|&start| start < end);
-            if self
-                .records
-                .get(shell + 1..end_index)?
-                .iter()
-                .filter(|f| f.class() == 0x5f)
-                .count()
-                != members.len()
+            if !governing
+                && self
+                    .records
+                    .get(shell + 1..end_index)?
+                    .iter()
+                    .filter(|f| f.class() == 0x5f)
+                    .count()
+                    != members.len()
             {
                 return None;
             }
@@ -294,6 +306,46 @@ impl Allocations {
             }
         }
         Some(output)
+    }
+
+    fn members_with_preceding_supports(
+        &self,
+        bytes: &[u8],
+        local: &Self,
+        group_end: usize,
+        members: &[(usize, usize, bool)],
+    ) -> Option<ScopedMembers> {
+        let global_index = |index: usize| {
+            let start = local.records.get(index)?.source_range().start;
+            self.records
+                .binary_search_by_key(&start, |record| record.source_range().start)
+                .ok()
+        };
+        let mut preceding = 0;
+        let mut same_supports = true;
+        let resolved = members
+            .iter()
+            .map(|&(shell, face, forward)| {
+                let face = global_index(face)?;
+                let mut at = 1;
+                let support = allocation_reference(payload(bytes, &self.records[face])?, &mut at)?;
+                let target = self.resolve(face, support, true)?;
+                if self.records[target].source_range().start < group_end {
+                    preceding += 1;
+                }
+                same_supports &= self.resolve(face, support, false) == Some(target);
+                Some((global_index(shell)?, face, forward))
+            })
+            .collect::<Option<Vec<_>>>()?;
+        if preceding == 0 {
+            return None;
+        }
+        let all_precede = preceding == members.len();
+        (all_precede || same_supports).then_some(ScopedMembers {
+            members: resolved,
+            end_anchored: all_precede,
+            inferred: all_precede && !same_supports,
+        })
     }
 
     fn backward_faces(
@@ -417,6 +469,7 @@ fn add_site(sites: &mut Sites, body: (usize, usize), id: usize, point: Point3) {
 pub(super) struct SelectedGroups {
     pub(super) source: usize,
     groups: BTreeSet<usize>,
+    allocation: Rc<Allocations>,
     pub(super) legacy_bodies: BTreeSet<super::roster::RecordKey>,
     legacy_roots: BodyRoots,
 }
@@ -450,8 +503,13 @@ fn selected_groups(
     let bytes = logical_bytes(ctx, data, extents)?;
     let mut selected = None;
     let mut end = 0;
-    for candidate in records.iter().filter(|r| r.source_index() == source) {
-        let start = candidate.source_range().start;
+    let starts = std::iter::once(0).chain(
+        records
+            .iter()
+            .filter(|r| r.source_index() == source)
+            .map(|r| r.source_range().start),
+    );
+    for start in starts {
         if start < end {
             continue;
         }
@@ -497,6 +555,7 @@ fn selected_groups(
         selected = Some(SelectedGroups {
             source,
             groups,
+            allocation: Rc::new(alloc),
             legacy_bodies,
             legacy_roots,
         });
@@ -533,6 +592,7 @@ pub(super) fn patches(
     let mut allocation_starts = BTreeMap::new();
     let mut source_bytes = BTreeMap::new();
     let mut mixed_allocations = BTreeMap::new();
+    let mut governing_tensors = BTreeMap::new();
     let mut groups = records
         .iter()
         .filter(|frame| {
@@ -570,15 +630,16 @@ pub(super) fn patches(
         if !root(group, bytes) && !backward_root(group, bytes) {
             continue;
         }
-        if selected
+        let governing = selected
             .as_ref()
-            .is_some_and(|selected| selected.source == source && !selected.groups.contains(&start))
-        {
+            .filter(|selected| selected.source == source);
+        if governing.is_some_and(|selected| !selected.groups.contains(&start)) {
             excluded_groups += 1;
             continue;
         }
         let backward = backward_root(group, bytes);
         let mut end_anchored = backward;
+        let mut preceding_supports = false;
         let (alloc, members) = if backward {
             let Some(seed) = records.windows(3).find(|frames| {
                 frames[0].source_index() == source
@@ -602,9 +663,27 @@ pub(super) fn patches(
             let alloc = Rc::new(Allocations::read(bytes, group.source_range().end, None));
             let members = payload(bytes, group)
                 .and_then(shell_slots)
-                .and_then(|shells| alloc.faces(bytes, &shells));
-            if members.is_some() {
-                (alloc, members)
+                .and_then(|shells| alloc.faces(bytes, &shells, governing.is_some()));
+            if let Some(members) = members {
+                let extended = governing.and_then(|selected| {
+                    let resolved = selected.allocation.members_with_preceding_supports(
+                        bytes,
+                        &alloc,
+                        group.source_range().end,
+                        &members,
+                    )?;
+                    Some((Rc::clone(&selected.allocation), resolved))
+                });
+                if let Some((alloc, resolved)) = extended {
+                    if resolved.inferred {
+                        refusal.push_governing_support_scope(group_position);
+                    }
+                    preceding_supports = true;
+                    end_anchored = resolved.end_anchored;
+                    (alloc, Some(resolved.members))
+                } else {
+                    (alloc, Some(members))
+                }
             } else {
                 let mixed = alloc.records.first().is_some_and(|frame| {
                     frame.class() == 0x61
@@ -652,28 +731,76 @@ pub(super) fn patches(
             (frame.family() == family && frame.class() == class).then_some(target)
         };
         let physical = |position| file_offset(extents, position);
-        let uncached = alloc
-            .records
-            .iter()
-            .filter(|frame| {
-                frame.family() == Family::A
-                    && frame.class() == 0x34
-                    && physical(frame.byte_offset()).is_some_and(|pos| !carriers.contains_key(&pos))
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        let tensors = crate::families::a5a8::records::a5_owned_surfaces_from_records(
-            bytes, &uncached, refusal,
-        )?
-        .into_iter()
-        .map(|surface| (surface.pos, surface.geometry))
-        .collect();
+        let mut load_tensors = || {
+            let uncached = alloc
+                .records
+                .iter()
+                .filter(|frame| {
+                    frame.family() == Family::A
+                        && frame.class() == 0x34
+                        && physical(frame.byte_offset())
+                            .is_some_and(|pos| !carriers.contains_key(&pos))
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            Ok::<_, cadmpeg_core::CodecError>(
+                crate::families::a5a8::records::a5_owned_surfaces_from_records(
+                    bytes, &uncached, refusal,
+                )?
+                .into_iter()
+                .map(|surface| (surface.pos, surface.geometry))
+                .collect(),
+            )
+        };
+        let local_tensors;
+        let tensors: &BTreeMap<_, _> = if preceding_supports {
+            match governing_tensors.entry(source) {
+                Entry::Occupied(entry) => entry.into_mut(),
+                Entry::Vacant(entry) => entry.insert(load_tensors()?),
+            }
+        } else {
+            local_tensors = load_tensors()?;
+            &local_tensors
+        };
         let trim_source = Source {
             bytes,
             records: &alloc.records,
             resolve: |index, reference| alloc.resolve(index, reference, end_anchored),
             physical,
-            tensors: &tensors,
+            tensors,
+        };
+        let end_source = Source {
+            bytes,
+            records: &alloc.records,
+            resolve: |index, reference| alloc.resolve(index, reference, true),
+            physical,
+            tensors,
+        };
+        let decode_face = |face, member, refusal: &mut crate::nurbs::LaneRefusals| {
+            let mut first_notes = crate::nurbs::LaneRefusals::new();
+            let first = trim_source.decode(ir, face, member, carriers, &mut first_notes);
+            if first.is_some() || end_anchored || governing.is_none() {
+                refusal.append(first_notes);
+                return first;
+            }
+            let mut alternate_notes = crate::nurbs::LaneRefusals::new();
+            let alternate = (|| {
+                let mut at = 1;
+                let reference =
+                    allocation_reference(payload(bytes, alloc.records.get(face)?)?, &mut at)?;
+                let support = alloc.resolve(face, reference, false)?;
+                if alloc.resolve(face, reference, true)? != support {
+                    return None;
+                }
+                end_source.decode(ir, face, member, carriers, &mut alternate_notes)
+            })();
+            if alternate.is_some() {
+                refusal.push_governing_support_scope(group_position);
+            } else {
+                refusal.append(first_notes);
+            }
+            refusal.append(alternate_notes);
+            alternate
         };
         let start = output.len();
         let mut pending = Vec::new();
@@ -713,7 +840,7 @@ pub(super) fn patches(
                 output.push(patch);
                 continue;
             }
-            let Some(decoded) = trim_source.decode(ir, face, member, carriers, refusal) else {
+            let Some(decoded) = decode_face(face, member, refusal) else {
                 continue;
             };
             for site @ (vertex, _, point, explicit, _) in decoded.endpoint_sites() {
@@ -804,8 +931,7 @@ pub(super) fn patches(
                     continue;
                 }
                 let (face, member) = native_faces[&patch.face];
-                let recovered = trim_source
-                    .decode(ir, face, member, carriers, refusal)
+                let recovered = decode_face(face, member, refusal)
                     .and_then(|face| {
                         face.patch(ir, Some(sites))
                             .filter(|refitted| !witnesses::disagrees(refitted, sites))
@@ -854,6 +980,7 @@ mod tests {
     use crate::wire::records::parse_consolidated_record;
 
     mod governing_roots;
+    mod governing_supports;
 
     #[test]
     fn wide_vertex_roster_crosses_weighted_allocations_and_stays_in_source() {
@@ -1130,7 +1257,7 @@ mod tests {
             .expect("valid fixture sheet group");
         let alloc = Allocations::read(&bytes, start, None);
         assert_eq!(
-            alloc.faces(&bytes, &slots),
+            alloc.faces(&bytes, &slots, false),
             Some(vec![(0, 1, false), (0, 3, true), (4, 5, true)])
         );
         let backward = AllocationReference {
@@ -1139,6 +1266,6 @@ mod tests {
         };
         assert_eq!(alloc.resolve(3, backward, false), Some(1));
         bytes[start + 11] = 0x0b;
-        assert!(alloc.faces(&bytes, &slots).is_none());
+        assert!(alloc.faces(&bytes, &slots, false).is_none());
     }
 }

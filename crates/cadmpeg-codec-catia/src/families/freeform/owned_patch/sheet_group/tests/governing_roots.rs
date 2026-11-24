@@ -2,7 +2,7 @@
 use super::super::*;
 use crate::wire::records::{consolidated_records_in_sources, parse_consolidated_record};
 
-fn group(reference: u8) -> Vec<u8> {
+pub(super) fn group(reference: u8) -> Vec<u8> {
     let mut payload = vec![0x81, reference, 5, 1];
     for value in [-1.0_f32, 1.0, -1.0, 1.0, -1.0, 1.0] {
         payload.extend(value.to_le_bytes());
