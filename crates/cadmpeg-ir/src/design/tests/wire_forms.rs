@@ -11,7 +11,7 @@ use super::fixtures::{self, feature, id, length, parameter_ref, picked};
 use super::{read_desktop, refuses, to_value};
 use crate::design::construction::SourceMode;
 use crate::design::dimension::Dimension;
-use crate::design::expr::{self, BinaryOp, Expression, ExpressionDialect, Neutral, Node};
+use crate::design::expr::{self, AddOp, Expression, ExpressionDialect, MulOp, Neutral, Node};
 use crate::design::names::{NameTable, TopoName};
 use crate::design::options::{Boolean, BooleanOp, Hand};
 use crate::design::refs::{Evaluated, StateRef};
@@ -48,15 +48,15 @@ fn the_examples_of_section_2_5() {
 #[test]
 fn a_neutral_expression_is_text_with_side_lists() {
     let reference = parameter_ref(1);
-    let tree = Node::Binary {
-        op: BinaryOp::Add,
-        left: Box::new(Node::Binary {
-            op: BinaryOp::Multiply,
-            left: Box::new(Node::Reference(reference.clone())),
-            right: Box::new(fixtures::number(2.0, Unit::default())),
-        }),
-        right: Box::new(fixtures::number(10.0, fixtures::mm())),
-    };
+    let tree = Node::add(
+        Node::mul(
+            Node::Reference(reference.clone()),
+            MulOp::Multiply,
+            fixtures::number(2.0, Unit::default()),
+        ),
+        AddOp::Add,
+        fixtures::number(10.0, fixtures::mm()),
+    );
     let value = to_value(&Expression::Neutral(Neutral(tree)));
     assert_eq!(value["kind"], json!("neutral"));
     assert_eq!(value["value"]["text"], json!("$0 * 2 + 10[mm]"));

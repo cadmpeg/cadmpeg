@@ -395,7 +395,7 @@ fn native_design_validation_uses_the_decoder_projection() {
     )
     .expect("projection");
     ir.native
-        .namespace_mut("inventor")
+        .namespace_mut(cadmpeg_ir::codec_id!("inventor"))
         .set_arena(
             &ctx,
             "pm_dc_features",

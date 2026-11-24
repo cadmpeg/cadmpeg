@@ -354,10 +354,6 @@ pub(in super::super) fn transfer_saved_spline_curves(
                         object_id: crate::identity::source_object_id_checked(format_args!(
                             "FeatDefs:saved_spline#{suffix}"
                         ))?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                     native_ref: None,
@@ -625,10 +621,6 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                         object_id: crate::identity::source_object_id_checked(format_args!(
                             "VisibGeom:{surface_id}"
                         ))?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                     native_ref: None,
@@ -692,10 +684,6 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                         object_id: crate::identity::source_object_id_checked(format_args!(
                             "VisibGeom:{native_surface_id}"
                         ))?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                     native_ref: None,
@@ -817,10 +805,6 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                             object_id: crate::identity::source_object_id_checked(format_args!(
                                 "FeatDefs:saved_spline#{internal_id}"
                             ))?,
-                            name: None,
-                            color: None,
-                            visible: None,
-                            layer: None,
                             instance_path: Vec::new(),
                         }),
                         native_ref: None,
@@ -872,10 +856,6 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                         object_id: crate::identity::source_object_id_checked(format_args!(
                             "VisibGeom:{native_surface_id}"
                         ))?,
-                        name: None,
-                        color: None,
-                        visible: None,
-                        layer: None,
                         instance_path: Vec::new(),
                     }),
                     native_ref: None,
@@ -1184,10 +1164,6 @@ pub(in crate::decode) fn transfer_envelope_replay_surfaces(
                         section.name(),
                         row.id
                     ))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,
@@ -1719,10 +1695,6 @@ pub(in crate::decode) fn transfer_sampled_sweep_circles(
                         "VisibGeom:{}",
                         record.curve_id
                     ))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,
@@ -2265,10 +2237,6 @@ pub(in crate::decode) fn transfer_hole_generators(
                     object_id: crate::identity::source_object_id_checked(format_args!(
                         "VisibGeom:{curve}"
                     ))?,
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
                     instance_path: Vec::new(),
                 }),
                 native_ref: None,

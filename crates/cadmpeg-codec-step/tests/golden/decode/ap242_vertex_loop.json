@@ -199,8 +199,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -332,6 +331,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "11619e3fabddf67f1f1ccf87e047a8cbff553a6e2a187afb530043b6da72fd26",
     "file_digests": {},
     "retained_records": {},

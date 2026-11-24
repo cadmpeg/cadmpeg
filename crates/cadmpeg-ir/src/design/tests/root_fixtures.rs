@@ -23,6 +23,7 @@ use crate::design::feature::{
     Driver, Feature, FeatureDefinition, FeatureOperation, FuzzyTolerance, Link, LinkState,
     OperationFamily, StoredOrigin,
 };
+use crate::design::ops::assembly::{AssemblyContext, ContextEffect};
 use crate::design::ops::body::TransformStep;
 use crate::design::ops::sheet_metal::{BendAllowance, BendSpec, RadiusSide, SheetMetalRule};
 use crate::design::options::{NativeOption, NativeOptions};
@@ -363,7 +364,6 @@ pub(super) fn operation_families() -> Vec<OperationFamily> {
         RigidGroup,
         ComponentPattern,
         MirrorComponents,
-        AssemblyFeature,
         MaterialRemoval,
     ]
 }
@@ -406,6 +406,7 @@ pub(super) fn feature_definitions() -> Vec<FeatureDefinition> {
     vec![
         FeatureDefinition {
             operation: FeatureOperation::Sketch(id("sketch", 1)),
+            assembly: None,
             refine: None,
             fuzzy_tolerance: None,
         },
@@ -413,8 +414,22 @@ pub(super) fn feature_definitions() -> Vec<FeatureDefinition> {
             operation: FeatureOperation::Unresolved {
                 family: OperationFamily::Extrude,
             },
+            assembly: None,
             refine: Some(false),
             fuzzy_tolerance: Some(FuzzyTolerance::Automatic),
+        },
+        FeatureDefinition {
+            operation: FeatureOperation::Unresolved {
+                family: OperationFamily::Hole,
+            },
+            assembly: Some(AssemblyContext {
+                participants: BTreeMap::from([
+                    (None, selections().remove(0)),
+                    (Some(ContextEffect::Definitions), selections().remove(1)),
+                ]),
+            }),
+            refine: None,
+            fuzzy_tolerance: None,
         },
     ]
 }
@@ -599,7 +614,10 @@ pub(super) fn arrangement_appearances() -> Vec<ArrangementAppearance> {
     vec![
         ArrangementAppearance {
             path: occurrence_path(),
-            appearance: Some(id("appearance", 1)),
+            appearance: Some(super::super::configuration::InstanceAppearance {
+                appearance: id("appearance", 1),
+                precedence: crate::appearance::AppearancePrecedence::Outer,
+            }),
             transparency: Some(Fraction::new(0.25).unwrap()),
         },
         ArrangementAppearance {

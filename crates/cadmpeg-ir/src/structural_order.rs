@@ -14,7 +14,7 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::num::{NonZeroI64, NonZeroU32};
 
-use cadmpeg_core::text::NonBlankString;
+use cadmpeg_core::text::{CodecId, NonBlankString};
 
 /// A total order on a value of a wire type, in §2.5's derived structural
 /// order.
@@ -65,6 +65,12 @@ impl StructuralOrd for Cow<'_, str> {
 }
 
 impl StructuralOrd for NonBlankString {
+    fn structural_cmp(&self, other: &Self) -> Ordering {
+        self.as_str().structural_cmp(other.as_str())
+    }
+}
+
+impl StructuralOrd for CodecId {
     fn structural_cmp(&self, other: &Self) -> Ordering {
         self.as_str().structural_cmp(other.as_str())
     }

@@ -26,7 +26,7 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, EdgeCarrier, Face, FaceLoops, Loop, LoopBoundary, LoopRing,
     ParameterInterval, PcurveUse, Point, Region, Sense, Shell, Vertex,
@@ -667,7 +667,7 @@ impl Writer<'_, '_, '_, '_> {
                 )),
                 tolerance: merged
                     .then(|| {
-                        PositiveReal::new(
+                        cadmpeg_ir::scalar::PositiveLength::new(
                             ENDPOINT_TOLERANCE * SPREAD_MARGIN * MILLIMETRES_PER_METRE,
                         )
                     })
@@ -722,7 +722,7 @@ impl Writer<'_, '_, '_, '_> {
             self.sink.geometry.vertices.push(Vertex {
                 id: id.clone(),
                 point: point_id,
-                tolerance: PositiveReal::new(tolerance),
+                tolerance: cadmpeg_ir::scalar::PositiveLength::new(tolerance),
                 native_ref: None,
             });
             self.derived(&id);
@@ -892,7 +892,9 @@ impl Writer<'_, '_, '_, '_> {
                 };
                 let tolerance = if residual > ENDPOINT_TOLERANCE {
                     mismatched += 1;
-                    PositiveReal::new(residual * RESIDUAL_MARGIN * MILLIMETRES_PER_METRE)
+                    cadmpeg_ir::scalar::PositiveLength::new(
+                        residual * RESIDUAL_MARGIN * MILLIMETRES_PER_METRE,
+                    )
                 } else {
                     None
                 };
@@ -1106,12 +1108,11 @@ impl Writer<'_, '_, '_, '_> {
                 .shells
                 .push(Shell::new(shell_id.clone(), region_id.clone()));
             self.derived(&shell_id);
-            self.sink.geometry.regions.push(Region {
-                id: region_id.clone(),
-                body: body.clone(),
-                shells: vec![shell_id],
-                native_ref: None,
-            });
+            self.sink.geometry.regions.push(Region::new(
+                region_id.clone(),
+                body.clone(),
+                vec![shell_id],
+            ));
             self.derived(&region_id);
             regions[usize::from(!closed[shell])].push(region_id);
         }
@@ -1143,6 +1144,7 @@ impl Writer<'_, '_, '_, '_> {
                 color: None,
                 visible: None,
                 native_ref: None,
+                unstated: None,
             });
             self.derived(&id);
             bodies.push(id);

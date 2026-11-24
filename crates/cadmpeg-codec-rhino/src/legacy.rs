@@ -1858,7 +1858,7 @@ fn append_legacy_brep(
             point: point_id,
             tolerance: (tolerance > 0.0)
                 .then(|| {
-                    cadmpeg_ir::scalar::PositiveReal::new(tolerance)
+                    cadmpeg_ir::scalar::PositiveLength::new(tolerance)
                         .ok_or_else(|| CodecError::malformed("vertex tolerance must be finite"))
                 })
                 .transpose()?,
@@ -1924,7 +1924,7 @@ fn append_legacy_brep(
                 .copied()
                 .filter(|value| *value > 0.0)
                 .map(|value| {
-                    cadmpeg_ir::scalar::PositiveReal::new(value)
+                    cadmpeg_ir::scalar::PositiveLength::new(value)
                         .ok_or_else(|| CodecError::malformed("edge tolerance must be finite"))
                 })
                 .transpose()?,
@@ -2142,12 +2142,11 @@ fn append_legacy_brep(
     geometry
         .shells
         .push(Shell::new(shell_id.clone(), region_id.clone()));
-    geometry.regions.push(Region {
-        id: region_id.clone(),
-        body: body_id.clone(),
-        shells: vec![shell_id],
-        native_ref: None,
-    });
+    geometry.regions.push(Region::new(
+        region_id.clone(),
+        body_id.clone(),
+        vec![shell_id],
+    ));
     geometry.bodies.push(Body {
         id: body_id,
         kind: BodyKind::General,
@@ -2156,6 +2155,7 @@ fn append_legacy_brep(
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     draft.commit_model(ir, ctx)?.map_err(CodecError::malformed)
 }
@@ -2696,12 +2696,11 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 region_id.clone(),
                 vertex_id,
             ));
-            ir.geometry.regions.push(Region {
-                id: region_id.clone(),
-                body: body_id.clone(),
-                shells: vec![shell_id],
-                native_ref: None,
-            });
+            ir.geometry.regions.push(Region::new(
+                region_id.clone(),
+                body_id.clone(),
+                vec![shell_id],
+            ));
             ir.geometry.bodies.push(Body {
                 id: body_id,
                 kind: BodyKind::General,
@@ -2710,6 +2709,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 color: None,
                 visible: None,
                 native_ref: None,
+                unstated: None,
             });
             push_v1_record(
                 ctx,
@@ -2877,12 +2877,11 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                             region_id.clone(),
                             edge_id,
                         ));
-                        ir.geometry.regions.push(Region {
-                            id: region_id.clone(),
-                            body: body_id.clone(),
-                            shells: vec![shell_id],
-                            native_ref: None,
-                        });
+                        ir.geometry.regions.push(Region::new(
+                            region_id.clone(),
+                            body_id.clone(),
+                            vec![shell_id],
+                        ));
                         ir.geometry.bodies.push(Body {
                             id: body_id,
                             kind: BodyKind::General,
@@ -2891,6 +2890,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                             color: None,
                             visible: None,
                             native_ref: None,
+                            unstated: None,
                         });
                         decoded_curves += 1;
                     }
@@ -2951,7 +2951,11 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 Ok(mesh) => {
                     ctx.charge_entities(1, "Rhino V1 mesh")?;
 
-                    ir.model.tessellations.push(mesh);
+                    ir.model.tessellations.push(mesh.with_of(
+                        cadmpeg_ir::tessellation::Meshed::definition(
+                            crate::product::root_definition_id(),
+                        ),
+                    ));
                     push_v1_record(
                         ctx,
                         &mut typed_source_records,
@@ -2978,7 +2982,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
         offset = chunk.next_offset();
     }
     if !direct_records.is_empty() {
-        let namespace = ir.native.namespace_mut("rhino");
+        let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("rhino"));
         namespace
             .set_arena(ctx, "legacy_v1_records", &direct_records)
             .map_err(CodecError::malformed)?;

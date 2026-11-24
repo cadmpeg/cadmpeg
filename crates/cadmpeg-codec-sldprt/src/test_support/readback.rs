@@ -198,15 +198,10 @@ pub(crate) fn baseline(part: &cadmpeg_ir::codec::DecodeResult) -> Vec<Entry> {
     use std::sync::Mutex;
 
     static BASELINES: Mutex<Vec<(String, Vec<Entry>)>> = Mutex::new(Vec::new());
-    let key = part
-        .ir()
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("document_local_sha256"))
-        .cloned();
-    if let Some(key) = &key {
+    let key = part.source_fidelity().content_digest.to_string();
+    {
         let baselines = BASELINES.lock().expect("baseline cache");
-        if let Some((_, entries)) = baselines.iter().find(|(cached, _)| cached == key) {
+        if let Some((_, entries)) = baselines.iter().find(|(cached, _)| *cached == key) {
             return entries.clone();
         }
     }
@@ -219,6 +214,7 @@ pub(crate) fn baseline(part: &cadmpeg_ir::codec::DecodeResult) -> Vec<Entry> {
     let entries = crate::writer::write_semantic_with_records(
         part.ir(),
         &part.source_fidelity().annotations,
+        &part.source_fidelity().codec_digests,
         &records,
         &[],
         &mut bytes,
@@ -230,12 +226,10 @@ pub(crate) fn baseline(part: &cadmpeg_ir::codec::DecodeResult) -> Vec<Entry> {
         diff(part.ir(), written.ir())
     })
     .unwrap_or_default();
-    if let Some(key) = key {
-        BASELINES
-            .lock()
-            .expect("baseline cache")
-            .push((key, entries.clone()));
-    }
+    BASELINES
+        .lock()
+        .expect("baseline cache")
+        .push((key, entries.clone()));
     entries
 }
 

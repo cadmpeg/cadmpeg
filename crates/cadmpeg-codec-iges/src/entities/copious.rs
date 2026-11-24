@@ -472,7 +472,7 @@ pub(super) fn project(
             continue;
         }
         let topology_tolerance = if entry.form == 63 && resolution > 0.0 {
-            let Some(value) = cadmpeg_ir::scalar::PositiveReal::new(resolution) else {
+            let Some(value) = cadmpeg_ir::scalar::PositiveLength::new(resolution) else {
                 push_copious_loss(
                     &mut losses,
                     entry,

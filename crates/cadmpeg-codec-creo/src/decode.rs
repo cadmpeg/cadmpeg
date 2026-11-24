@@ -102,6 +102,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 cadmpeg_ir::products::ProductDefinitionKind::Part
             },
         );
+        let root = definition.id.clone();
+        ir.display_unresolved_meshes(&root);
     }
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::for_root(root);
     source_fidelity.annotations = annotations;

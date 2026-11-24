@@ -46,6 +46,7 @@ fn datum_axis_witness_validation_uses_local_typed_arenas_and_distinct_identities
         let region: crate::ids::RegionId = "test:witness:region#one".try_into().unwrap();
         let shell: crate::ids::ShellId = "test:witness:shell#one".try_into().unwrap();
         body.bodies.push(crate::topology::Body {
+            unstated: None,
             id: body_id.clone(),
             kind: crate::topology::BodyKind::General,
             transform: None,
@@ -54,12 +55,11 @@ fn datum_axis_witness_validation_uses_local_typed_arenas_and_distinct_identities
             visible: None,
             native_ref: None,
         });
-        body.regions.push(crate::topology::Region {
-            id: region.clone(),
-            body: body_id,
-            shells: vec![shell.clone()],
-            native_ref: None,
-        });
+        body.regions.push(crate::topology::Region::new(
+            region.clone(),
+            body_id,
+            vec![shell.clone()],
+        ));
         body.shells.push(crate::topology::Shell::with_free_vertex(
             shell,
             region,

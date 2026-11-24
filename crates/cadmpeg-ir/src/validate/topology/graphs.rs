@@ -9,6 +9,7 @@ use crate::report::{
     check::{Check, Finding},
     Severity,
 };
+use crate::topology::RegionUnstated;
 use crate::validate::record_finding;
 
 #[derive(Clone, Copy)]
@@ -276,7 +277,24 @@ pub(in crate::validate) fn check_child_list_reciprocity(ir: &CadIr, findings: &m
     });
     let mut listed_shells = BorrowedIdentities::new();
     for region in &ir.geometry.regions {
-        for shell in &region.shells {
+        let marked = matches!(
+            region.unstated,
+            Some(RegionUnstated::Exterior { .. } | RegionUnstated::Unclassified { .. })
+        );
+        let mut seen = BorrowedIdentities::new();
+        for shell in region.stated_shells() {
+            if marked && seen.insert(shell.as_str(), ()).is_some() {
+                record_finding(
+                    findings,
+                    Check::ReferentialIntegrity,
+                    Severity::Error,
+                    Some(region.id.as_str()),
+                    format_args!(
+                        "region's mark names shell `{}` twice, or one its `shells` names",
+                        shell.as_str()
+                    ),
+                );
+            }
             listed_shells.insert(shell.as_str(), region.id.as_str());
             if shell_regions
                 .get(shell.as_str())
@@ -289,7 +307,7 @@ pub(in crate::validate) fn check_child_list_reciprocity(ir: &CadIr, findings: &m
     let mut listed_loops = BorrowedIdentities::new();
     for face in &ir.geometry.faces {
         let mut seen = BorrowedIdentities::new();
-        for loop_ in &face.loops {
+        for loop_ in face.loops.stated() {
             listed_loops.insert(loop_.as_str(), face.id.as_str());
             if seen.insert(loop_.as_str(), ()).is_some() {
                 record_finding(
@@ -526,8 +544,16 @@ pub(in crate::validate) fn check_shell_connectivity(ir: &CadIr, findings: &mut V
     }
     let child_lists = ir.geometry.child_lists();
     for shell in &ir.geometry.shells {
-        let shell_faces = child_lists.shell_faces(&shell.id);
-        if shell_faces.len() < 2 || shell_faces.iter().any(|face| face.loops.is_empty()) {
+        let Some(shell_faces) = child_lists.complete_shell_faces(&shell.id) else {
+            continue;
+        };
+        if shell_faces.len() < 2
+            || shell_faces.iter().any(|face| {
+                face.loops
+                    .boundary()
+                    .is_none_or(crate::topology::FaceBoundary::is_empty)
+            })
+        {
             continue;
         }
         let mut owned = BorrowedIdentities::new();
@@ -541,6 +567,47 @@ pub(in crate::validate) fn check_shell_connectivity(ir: &CadIr, findings: &mut V
                 format_args!("shell faces are disconnected through shared edges or vertices"),
             );
         }
+    }
+}
+
+/// A partial face and a marked region, shell, or body are reported at
+/// Warning (part 10, Topology and model records).
+pub(in crate::validate) fn check_partial_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
+    let geometry = &ir.geometry;
+    let partial = geometry
+        .bodies
+        .iter()
+        .filter(|body| body.unstated.is_some())
+        .map(|body| (body.id.as_str(), "body does not state every region"))
+        .chain(
+            geometry
+                .regions
+                .iter()
+                .filter(|region| region.unstated.is_some())
+                .map(|region| (region.id.as_str(), "region does not state every shell")),
+        )
+        .chain(
+            geometry
+                .shells
+                .iter()
+                .filter(|shell| shell.unstated.is_some())
+                .map(|shell| (shell.id.as_str(), "shell does not state every member")),
+        )
+        .chain(
+            geometry
+                .faces
+                .iter()
+                .filter(|face| face.loops.is_partial())
+                .map(|face| (face.id.as_str(), "face does not state every loop")),
+        );
+    for (id, message) in partial {
+        record_finding(
+            findings,
+            Check::TopologyPartial,
+            Severity::Warning,
+            Some(id),
+            format_args!("{message}"),
+        );
     }
 }
 

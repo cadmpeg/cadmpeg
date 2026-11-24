@@ -9,6 +9,7 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::digest::Sha256Digest;
@@ -1055,6 +1056,15 @@ fn retain_unowned_carriers(
     ir.geometry
         .procedural_surfaces
         .retain(|surface| retains_carrier(surface.id.as_str(), &removed_closure, &protected));
+    ir.model.attributes.retain(|attribute| {
+        let carrier = match &attribute.target.entity {
+            AttributeTarget::Point(id) => id.as_str(),
+            AttributeTarget::Curve(id) => id.as_str(),
+            AttributeTarget::Surface(id) => id.as_str(),
+            _ => return true,
+        };
+        retains_carrier(carrier, &removed_closure, &protected)
+    });
     typed_records.retain(&mut |id| {
         !unowned_pcurves.contains(id) && (!removed_closure.contains(*id) || protected.contains(*id))
     });
@@ -1075,7 +1085,7 @@ fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
             continue;
         };
         if ids.contains(&id) && point.source_object.is_none() {
-            point.source_object = Some(step_source_association(id, None));
+            point.source_object = Some(step_source_association(id));
         }
     }
     for curve in &mut ir.geometry.curves {
@@ -1083,7 +1093,7 @@ fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
             continue;
         };
         if ids.contains(&id) && curve.source_object.is_none() {
-            curve.source_object = Some(step_source_association(id, None));
+            curve.source_object = Some(step_source_association(id));
         }
     }
     for surface in &mut ir.geometry.surfaces {
@@ -1091,7 +1101,7 @@ fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
             continue;
         };
         if ids.contains(&id) && surface.source_object.is_none() {
-            surface.source_object = Some(step_source_association(id, None));
+            surface.source_object = Some(step_source_association(id));
         }
     }
 }
@@ -1102,15 +1112,11 @@ fn step_source_id(id: u64) -> cadmpeg_core::text::NonBlankString {
 }
 
 /// A source association for a STEP record.
-fn step_source_association(id: u64, name: Option<String>) -> SourceObjectAssociation {
+fn step_source_association(id: u64) -> SourceObjectAssociation {
     SourceObjectAssociation {
         geometry_role: None,
         format: cadmpeg_ir::codec_id!(crate::dialect::FORMAT),
         object_id: step_source_id(id),
-        name,
-        color: None,
-        visible: None,
-        layer: None,
         instance_path: Vec::new(),
     }
 }

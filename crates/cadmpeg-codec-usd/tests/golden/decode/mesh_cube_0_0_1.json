@@ -22,19 +22,7 @@
     },
     "fragment": false,
     "geometry": {
-      "bodies": [
-        {
-          "color": {
-            "a": 1.0,
-            "b": 0.10000000149011612,
-            "g": 0.20000000298023224,
-            "r": 0.800000011920929
-          },
-          "id": "usd:stage:body#/Cube/Box",
-          "kind": "general",
-          "name": "Box"
-        }
-      ],
+      "bodies": [],
       "coedges": [],
       "curves": [],
       "edges": [],
@@ -146,13 +134,10 @@
           "source_name": "Cube",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
-          "bodies": [
-            "usd:stage:body#/Cube/Box"
-          ],
+          "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Cube/Box",
           "instance_bodies": [],
@@ -164,8 +149,7 @@
           "source_name": "Box",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         },
         {
           "bodies": [],
@@ -180,8 +164,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -196,9 +179,7 @@
       "spreadsheets": [],
       "tessellations": [
         {
-          "body": "usd:stage:body#/Cube/Box",
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "usd:stage:tessellation#/Cube/Box",
           "mesh": {
@@ -536,6 +517,16 @@
               }
             ]
           },
+          "of": {
+            "color": {
+              "a": 1.0,
+              "b": 0.10000000149011612,
+              "g": 0.20000000298023224,
+              "r": 0.800000011920929
+            },
+            "definition": "usd:stage:definition#/Cube/Box",
+            "kind": "definition"
+          },
           "texture_assignments": [],
           "texture_coordinates": [
             {
@@ -778,6 +769,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "4a5a14afc252c41429a98d142e55e08e3dfe8f732a265fa66c4198c135c23ad4",
     "file_digests": {},
     "retained_records": {},

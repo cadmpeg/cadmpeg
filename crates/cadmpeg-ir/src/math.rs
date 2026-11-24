@@ -19,16 +19,35 @@ pub mod portable;
 pub mod solve;
 pub(crate) mod sum;
 
+/// Writes a float, negative zero as zero: a number has one zero (§2.5).
+pub(crate) fn serialize_one_zero<T: Copy + Into<f64>, S: serde::Serializer>(
+    value: &T,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_f64((*value).into() + 0.0)
+}
+
+/// Writes a binary32 float, negative zero as zero (§2.5).
+pub(crate) fn serialize_one_zero_f32<T: Copy + Into<f32>, S: serde::Serializer>(
+    value: &T,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_f32((*value).into() + 0.0)
+}
+
 /// A point in 3D model space, in the document's length unit.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Point3 {
     /// X coordinate.
+    #[serde(serialize_with = "serialize_one_zero")]
     pub x: f64,
     /// Y coordinate.
+    #[serde(serialize_with = "serialize_one_zero")]
     pub y: f64,
     /// Z coordinate.
+    #[serde(serialize_with = "serialize_one_zero")]
     pub z: f64,
 }
 
@@ -100,10 +119,13 @@ impl Point3 {
 #[serde(deny_unknown_fields)]
 pub struct Vector3 {
     /// X component.
+    #[serde(serialize_with = "serialize_one_zero")]
     pub x: f64,
     /// Y component.
+    #[serde(serialize_with = "serialize_one_zero")]
     pub y: f64,
     /// Z component.
+    #[serde(serialize_with = "serialize_one_zero")]
     pub z: f64,
 }
 
@@ -201,8 +223,10 @@ impl std::ops::Sub for Vector3 {
 #[serde(deny_unknown_fields)]
 pub struct Point2 {
     /// U parameter.
+    #[serde(serialize_with = "serialize_one_zero")]
     pub u: f64,
     /// V parameter.
+    #[serde(serialize_with = "serialize_one_zero")]
     pub v: f64,
 }
 

@@ -4037,7 +4037,7 @@
               "normal": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "origin": {
                 "x": 0.0,
@@ -4076,7 +4076,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -4106,7 +4106,7 @@
                 "u_axis": {
                   "x": 1.0,
                   "y": 0.0,
-                  "z": -0.0
+                  "z": 0.0
                 }
               },
               "kind": "transformed",
@@ -4234,7 +4234,7 @@
               "normal": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               },
               "origin": {
                 "x": 0.0,
@@ -4273,7 +4273,7 @@
               "u_axis": {
                 "x": 1.0,
                 "y": 0.0,
-                "z": -0.0
+                "z": 0.0
               }
             }
           },
@@ -4303,7 +4303,7 @@
                 "u_axis": {
                   "x": 1.0,
                   "y": 0.0,
-                  "z": -0.0
+                  "z": 0.0
                 }
               },
               "kind": "transformed",
@@ -4714,8 +4714,7 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -5710,7 +5709,6 @@
       "attributes": {
         "application_domains": "App,PartDesign,Sketcher",
         "document_kind": "part-design",
-        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
         "program_version": "0.21R33771 (Git)"
       },
@@ -5785,6 +5783,10 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {
+      "fcstd_uncarried_local_sha256": "<elided: digest over tolerantly compared geometry>"
+    },
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "d1f9225bfdf31d9708fc8fc8f94261edc9479d01d6a09c720ae70c16a5aa2362",
     "file_digests": {},
     "retained_records": {},

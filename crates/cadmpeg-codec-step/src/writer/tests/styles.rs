@@ -62,7 +62,7 @@ fn coloured_wire_bodies_ir(count: usize) -> CadIr {
         let mut region = template.geometry.regions[0].clone();
         region.id = region_id.clone();
         region.body = body_id.clone();
-        region.shells = vec![shell_id];
+        region.set_shells(vec![shell_id]);
         let mut body = template.geometry.bodies[0].clone();
         body.id = body_id;
         let red = f64::from(u8::try_from(index + 1).expect("small count")) / 10.0;

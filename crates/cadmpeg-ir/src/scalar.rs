@@ -83,7 +83,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
-pub struct FiniteBinary32(f32);
+pub struct FiniteBinary32(#[serde(serialize_with = "crate::math::serialize_one_zero_f32")] f32);
 
 impl FiniteBinary32 {
     /// Zero in source precision.
@@ -109,7 +109,7 @@ impl<'de> Deserialize<'de> for FiniteBinary32 {
     where
         D: serde::Deserializer<'de>,
     {
-        Self::new(f32::deserialize(deserializer)?)
+        Self::new(f32::deserialize(deserializer)? + 0.0)
             .ok_or_else(|| serde::de::Error::custom("FiniteBinary32 must be finite"))
     }
 }
@@ -139,7 +139,7 @@ impl From<FiniteBinary32> for FiniteReal {
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
-pub struct UnitBinary32(f32);
+pub struct UnitBinary32(#[serde(serialize_with = "crate::math::serialize_one_zero_f32")] f32);
 
 impl UnitBinary32 {
     /// Admit a binary32 fraction in the closed unit interval.
@@ -181,7 +181,7 @@ impl<'de> Deserialize<'de> for UnitBinary32 {
     where
         D: serde::Deserializer<'de>,
     {
-        Self::new(f32::deserialize(deserializer)?)
+        Self::new(f32::deserialize(deserializer)? + 0.0)
             .ok_or_else(|| serde::de::Error::custom("UnitBinary32 must be in [0, 1]"))
     }
 }
@@ -253,7 +253,7 @@ macro_rules! checked_scalar {
         #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, cadmpeg_derive::StructuralOrd)]
         #[cfg_attr(feature = "schema", derive(JsonSchema))]
         #[serde(transparent)]
-        pub struct $name(f64);
+        pub struct $name(#[serde(serialize_with = "crate::math::serialize_one_zero")] f64);
         rewrite_scalar!($name);
 
         impl $name {
@@ -272,7 +272,7 @@ macro_rules! checked_scalar {
             fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
             where D: serde::Deserializer<'de>,
             {
-                Self::new(f64::deserialize(deserializer)?)
+                Self::new(f64::deserialize(deserializer)? + 0.0)
                     .ok_or_else(|| serde::de::Error::custom($error))
             }
         }

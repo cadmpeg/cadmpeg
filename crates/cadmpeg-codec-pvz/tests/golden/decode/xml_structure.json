@@ -22,13 +22,7 @@
     },
     "fragment": false,
     "geometry": {
-      "bodies": [
-        {
-          "id": "pvz:model:body#bracket.ol",
-          "kind": "general",
-          "name": "bracket.ol"
-        }
-      ],
+      "bodies": [],
       "coedges": [],
       "curves": [],
       "edges": [],
@@ -156,13 +150,10 @@
           "storage": {
             "document": {},
             "kind": "file"
-          },
-          "tessellations": []
+          }
         },
         {
-          "bodies": [
-            "pvz:model:body#bracket.ol"
-          ],
+          "bodies": [],
           "bom_properties": {},
           "id": "pvz:model:definition#1",
           "instance_bodies": [],
@@ -174,8 +165,7 @@
           "source_name": "BRACKET.PRT",
           "storage": {
             "kind": "embedded"
-          },
-          "tessellations": []
+          }
         }
       ],
       "rigid_bodies": [],
@@ -190,9 +180,7 @@
       "spreadsheets": [],
       "tessellations": [
         {
-          "body": "pvz:model:body#bracket.ol",
           "channels": [],
-          "faces": [],
           "feature_edges": [],
           "id": "pvz:model:tessellation#bracket.ol:0",
           "mesh": {
@@ -241,6 +229,15 @@
                 "z": 9.999999776482582
               }
             ]
+          },
+          "of": {
+            "definition": "pvz:model:definition#1",
+            "kind": "definition"
+          },
+          "source_object": {
+            "format": "pvz",
+            "instance_path": [],
+            "object_id": "bracket.ol"
           },
           "texture_assignments": [],
           "texture_coordinates": [],
@@ -402,6 +399,8 @@
       "exactness": {},
       "provenance": {}
     },
+    "codec_digests": {},
+    "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "1f25c2e5fb7c871174759f60c56be036de203180513e0aee28ce1dd86e46d469",
     "file_digests": {},
     "retained_records": {},
