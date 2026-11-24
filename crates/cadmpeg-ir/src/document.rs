@@ -1432,12 +1432,7 @@ macro_rules! declare_model_wire {
             where
                 D: Deserializer<'de>,
             {
-                let mut wire = ModelReadWire::deserialize(deserializer).map_err(|error| {
-                    match legacy::omitted_arena_refusal(&error.to_string()) {
-                        Some(refusal) => serde::de::Error::custom(refusal),
-                        None => error,
-                    }
-                })?;
+                let mut wire = ModelReadWire::deserialize(deserializer)?;
                 Ok(Self {
                     $($field: model_read_value!(wire, $field),)*
                     omitted: OmittedArenas::NotRead,
@@ -2772,7 +2767,12 @@ impl CadIr {
 
         let probe = serde_json::from_str::<VersionProbe>(s)?;
         check_ir_version(probe.ir_version.as_ref())?;
-        serde_json::from_str::<Self>(s)
+        serde_json::from_str::<Self>(s).map_err(|error| {
+            match legacy::omitted_arena_refusal(&error.to_string()) {
+                Some(refusal) => serde::de::Error::custom(refusal),
+                None => error,
+            }
+        })
     }
 
     /// Sorts every arena of the document's homes and native namespaces by
