@@ -796,7 +796,7 @@ fn the_sealed_wrapper_records_the_digest_of_the_document_it_returns() {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert_eq!(
         result.source_fidelity().content_digest,
-        crate::hash::content_digest(&ctx, result.ir()).unwrap()
+        Some(crate::hash::content_digest(&ctx, result.ir()).unwrap())
     );
     assert!(!result.source_fidelity().edited(result.ir()).unwrap());
 
@@ -817,10 +817,7 @@ fn a_document_without_canonical_json_keeps_no_content_digest_and_reads_as_edited
     let result = RepeatedIdentityCodec { differ: false }
         .decode(&mut Cursor::new(Vec::new()), &options)
         .expect("a digest the depth limit refuses does not refuse the decode");
-    assert_eq!(
-        result.source_fidelity().content_digest,
-        crate::hash::digest::Sha256Digest::digest(&[])
-    );
+    assert_eq!(result.source_fidelity().content_digest, None);
     assert!(result.source_fidelity().edited(result.ir()).unwrap());
     let unavailable = result
         .report()

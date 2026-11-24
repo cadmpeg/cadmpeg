@@ -535,7 +535,7 @@ fn a_retained_partition_keeps_a_body_on_a_torus_the_compact_records_cannot_hold(
         )
     ));
     let (ir, _, mut fidelity) = decoded.into_parts();
-    fidelity.content_digest = cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]);
+    fidelity.content_digest = None;
     let plan = SldprtCodec
         .plan(
             EncodeInput::new(&ir, Some(&fidelity)),
@@ -573,7 +573,7 @@ fn a_faceless_part_keeps_its_swift_annotations() {
     let expected = annotations(decoded.ir());
     assert_eq!(expected.len(), 1);
     let (ir, _, mut fidelity) = decoded.into_parts();
-    fidelity.content_digest = cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]);
+    fidelity.content_digest = None;
     let plan = SldprtCodec
         .plan(
             EncodeInput::new(&ir, Some(&fidelity)),
