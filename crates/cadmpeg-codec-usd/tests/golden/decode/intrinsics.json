@@ -2789,17 +2789,11 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [
         {
@@ -3019,7 +3013,6 @@
           ]
         }
       ],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -3044,7 +3037,6 @@
             "usd:stage:occurrence#/World/Sheet"
           ],
           "representations": [],
-          "sketches": [],
           "source_name": "World",
           "storage": {
             "kind": "embedded"
@@ -3061,7 +3053,6 @@
           "native_ref": "/World/Ball",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Ball",
           "storage": {
             "kind": "embedded"
@@ -3078,7 +3069,6 @@
           "native_ref": "/World/Box",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Box",
           "storage": {
             "kind": "embedded"
@@ -3095,7 +3085,6 @@
           "native_ref": "/World/Can",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Can",
           "storage": {
             "kind": "embedded"
@@ -3112,7 +3101,6 @@
           "native_ref": "/World/Frustum",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Frustum",
           "storage": {
             "kind": "embedded"
@@ -3129,7 +3117,6 @@
           "native_ref": "/World/Funnel",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Funnel",
           "storage": {
             "kind": "embedded"
@@ -3146,7 +3133,6 @@
           "native_ref": "/World/Pill",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Pill",
           "storage": {
             "kind": "embedded"
@@ -3163,7 +3149,6 @@
           "native_ref": "/World/Sheet",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "source_name": "Sheet",
           "storage": {
             "kind": "embedded"
@@ -3178,7 +3163,6 @@
             "usd:stage:occurrence#/World"
           ],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
@@ -3187,14 +3171,7 @@
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },

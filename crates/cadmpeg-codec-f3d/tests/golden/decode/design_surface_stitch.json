@@ -254,46 +254,6 @@
     },
     "model": {
       "assets": [],
-      "features": [
-        {
-          "id": "f3d:model:feature#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat13:SurfaceStitch1:1400",
-          "ordinal": 0,
-          "name": "SurfaceStitch 1",
-          "suppressed": false,
-          "dependencies": [],
-          "source_properties": {},
-          "source_tag": "SurfaceStitch",
-          "source_content": [],
-          "outputs": [],
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "knit_surface",
-              "value": {
-                "faces": {
-                  "kind": "native",
-                  "value": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#3026"
-                },
-                "merge_entities": true,
-                "create_solid": true,
-                "gap_tolerance": 0.1
-              }
-            }
-          },
-          "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#3026"
-        }
-      ],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "configurations": [],
-      "parameters": [],
-      "sketches": [],
-      "sketch_entities": [],
-      "sketch_constraints": [],
-      "spatial_sketches": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketch_constraints": [],
-      "spreadsheets": [],
       "product_definitions": [
         {
           "id": "f3d:model:product-definition#root",
@@ -307,12 +267,10 @@
           ],
           "occurrences": [],
           "instance_bodies": [],
-          "representations": [],
-          "sketches": []
+          "representations": []
         }
       ],
       "occurrences": [],
-      "assembly_joints": [],
       "drawings": [],
       "semantic_annotations": [],
       "presentation_documents": [],
@@ -370,8 +328,7 @@
       "physics_scenes": [],
       "solver_settings": [],
       "declared_measures": [],
-      "point_clouds": [],
-      "history_bodies": []
+      "point_clouds": []
     },
     "design": {
       "scopes": [],

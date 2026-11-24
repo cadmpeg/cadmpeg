@@ -5110,127 +5110,13 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [
-        {
-          "definition": {
-            "kind": "post_process",
-            "value": {
-              "fuzzy_tolerance": {
-                "kind": "kernel_default"
-              },
-              "operation": {
-                "kind": "primitive",
-                "value": {
-                  "op": "new_body",
-                  "placement": [
-                    [
-                      1.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    [
-                      0.0,
-                      1.0,
-                      0.0,
-                      0.0
-                    ],
-                    [
-                      0.0,
-                      0.0,
-                      1.0,
-                      0.0
-                    ]
-                  ],
-                  "solid": {
-                    "height": 10.0,
-                    "kind": "box",
-                    "length": 20.0,
-                    "width": 30.0
-                  }
-                }
-              },
-              "refine": false
-            }
-          },
-          "dependencies": [
-            "fcstd:design:feature#Body"
-          ],
-          "id": "fcstd:design:feature#AdditiveBox",
-          "name": "AdditiveBox",
-          "native_ref": "fcstd:native:object#AdditiveBox",
-          "ordinal": 8,
-          "outputs": [
-            "fcstd:model:body#AdditiveBox:Shape:PartShape2.brp:34%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "MapMode": "0",
-            "Support": "<Property name=\"Support\" type=\"App::PropertyLinkSubList\">\n                    <LinkSubList count=\"0\">\n                    </LinkSubList>\n                </Property>",
-            "Visibility": "true"
-          },
-          "source_tag": "PartDesign::AdditiveBox"
-        },
-        {
-          "definition": {
-            "kind": "operation",
-            "value": {
-              "kind": "tree_node",
-              "value": {
-                "children": {
-                  "active_child": "fcstd:design:feature#AdditiveBox",
-                  "children": [
-                    "fcstd:design:feature#AdditiveBox"
-                  ]
-                },
-                "role": "solid_bodies"
-              }
-            }
-          },
-          "dependencies": [],
-          "id": "fcstd:design:feature#Body",
-          "name": "Body",
-          "native_ref": "fcstd:native:object#Body",
-          "ordinal": 0,
-          "outputs": [
-            "fcstd:model:body#Body:Shape:PartShape.brp:34%40location1"
-          ],
-          "source_content": [],
-          "source_properties": {
-            "Tip": "fcstd:native:object#AdditiveBox",
-            "Visibility": "true"
-          },
-          "source_tag": "PartDesign::Body"
-        }
-      ],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [
-        {
-          "dependencies": [],
-          "expression": "20.0000000000000000",
-          "id": "fcstd:design:parameter#AdditiveBox:Length",
-          "name": "Length",
-          "native_ref": "fcstd:native:property#AdditiveBox:Length",
-          "ordinal": 8,
-          "owner": "fcstd:design:feature#AdditiveBox",
-          "properties": {},
-          "value": {
-            "kind": "length",
-            "value": 20.0
-          }
-        }
-      ],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -5247,7 +5133,6 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
@@ -5256,14 +5141,7 @@
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },

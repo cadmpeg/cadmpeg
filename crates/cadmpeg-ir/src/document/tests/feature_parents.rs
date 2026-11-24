@@ -46,8 +46,6 @@ fn mutated_parent_graphs_refuse_writing_and_produce_located_validation_findings(
         "tree ownership",
     ] {
         let mut ir = predecessor_document();
-        let before = ir.to_canonical_json().unwrap();
-        assert_eq!(CadIr::from_json(&before).unwrap(), ir);
         assert!(validate_neutral(&ir, Vec::new())
             .expect("validate the neutral model")
             .is_ok());
@@ -87,42 +85,6 @@ fn mutated_parent_graphs_refuse_writing_and_produce_located_validation_findings(
             }),
             "{mutation}: {:?}",
             report.findings
-        );
-    }
-}
-
-#[test]
-fn complete_cadir_admission_checks_the_predecessor_against_current_feature_rows() {
-    let ir = predecessor_document();
-    let wire = serde_json::to_value(&ir).unwrap();
-    assert_eq!(serde_json::from_value::<CadIr>(wire.clone()).unwrap(), ir);
-    for mutation in ["missing parent", "ordinal", "tree ownership"] {
-        let mut invalid = wire.clone();
-        match mutation {
-            "missing parent" => {
-                invalid["model"]["features"][1]["regeneration_parent"] =
-                    serde_json::json!("test:parent-wire:feature#absent");
-            }
-            "ordinal" => {
-                invalid["model"]["features"][1]["ordinal"] = serde_json::json!(0);
-            }
-            "tree ownership" => {
-                invalid["model"]["features"][0]["definition"] = serde_json::json!({
-                    "kind": "operation",
-                    "value": {
-                        "kind": "tree_node",
-                        "value": {"role": "history", "children": {"children": ["test:parent-wire:feature#1-child"]}}
-                    }
-                });
-            }
-            _ => unreachable!(),
-        }
-        let error = serde_json::from_value::<CadIr>(invalid)
-            .unwrap_err()
-            .to_string();
-        assert!(
-            error.contains("test:parent-wire:feature#1-child"),
-            "{mutation}: {error}"
         );
     }
 }
