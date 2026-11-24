@@ -46,10 +46,7 @@ pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &m
         if refs_valid {
             'groups: for targets in drawing.relationships.values() {
                 for target in targets {
-                    if !target
-                        .target
-                        .resolves(&records, &named, |id| all_ids.contains(id))
-                    {
+                    if !target.resolves(&records, &named, |id| all_ids.contains(id)) {
                         refs_valid = false;
                         break 'groups;
                     }
@@ -300,6 +297,36 @@ mod tests {
                 native_ref: None,
             });
         assert_eq!(findings(&design), 0);
+    }
+
+    /// Part 10: an `Unresolved` reference target carries `native`.
+    #[test]
+    fn an_unresolved_reference_carries_the_sources_name() {
+        use crate::references::{ReferenceSelection, ReferenceTarget};
+
+        let ids = crate::index::identities::BorrowedIdentities::build(|add| {
+            add("test:source:unknown#record", ());
+        });
+        let with = |reference: ReferenceSelection| {
+            let mut ir = fixture();
+            ir.model.drawings.truncate(1);
+            ir.model.drawings[0].relationships.insert(
+                cadmpeg_core::text::NonBlankString::new("Source".to_owned()).unwrap(),
+                vec![reference],
+            );
+            let mut findings = Vec::new();
+            check_drawings(&ir, &ids, &mut findings);
+            findings.len()
+        };
+        let native = serde_json::from_value(
+            serde_json::json!({"codec": "fcstd", "value": {"kind": "text", "value": "View.Edge1"}}),
+        )
+        .unwrap();
+        assert_eq!(with(ReferenceSelection::unresolved(native)), 0);
+        assert_eq!(
+            with(ReferenceSelection::new(ReferenceTarget::Unresolved)),
+            1
+        );
     }
 
     fn graph(kinds: &[(&str, crate::drawings::DrawingKind)]) -> CadIr {
