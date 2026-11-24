@@ -19,7 +19,7 @@ fn combine_operands(bytes: &[u8]) -> (serde_json::Value, Vec<String>) {
         .iter()
         .map(|loss| loss.code.local_code().to_owned())
         .collect();
-    let ir = serde_json::to_value(result.ir()).expect("serialize the IR");
+    let ir = cadmpeg_test_support::wire::in_memory_json(result.ir());
     let mut combines = ir["model"]["features"]
         .as_array()
         .expect("feature list")

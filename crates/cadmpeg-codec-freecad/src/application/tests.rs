@@ -109,7 +109,7 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
     let mut edited = result.ir().clone();
     edited
         .native
-        .namespace_mut("fcstd")
+        .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
         .set_arena(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             "applications",

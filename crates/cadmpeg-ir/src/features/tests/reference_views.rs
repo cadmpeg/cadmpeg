@@ -53,7 +53,7 @@ fn sweep_profile_reference_view_borrows_in_primary_and_additional_order() {
             mode,
             SweepSection::Profile(primary.clone()),
             vec![
-                SweepSection::Unresolved(None),
+                SweepSection::Unresolved,
                 SweepSection::Profile(additional.clone()),
             ],
         );

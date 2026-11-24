@@ -1188,7 +1188,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 SurfaceBoundary::Edges(edges) => edge_selection_is_resolved(edges),
                 SurfaceBoundary::Path(path) => loft_path_is_resolved(path),
             };
-            let continuity_is_resolved = !continuity.is_unresolved();
+            let continuity_is_resolved = continuity.is_some();
             let needs_support = |continuity| {
                 matches!(
                     continuity,
@@ -1197,7 +1197,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 )
             };
             let support_is_required = continuity
-                .resolved()
+                .as_ref()
                 .is_some_and(|continuity| {
                     continuity
                         .conditions
@@ -3934,20 +3934,6 @@ impl<'a> F3dDecodeSession<'a> {
             prereqs.xref_table(),
             self.scan.manifest_lineage_urn.as_deref(),
         );
-        let mesh_projection = match &finalize_path {
-            FinalizePath::Geometry(index) => &index.mesh_projection,
-            FinalizePath::Bodyless(inputs) => &inputs.mesh_projection,
-        };
-        if matches!(
-            self.report_scope,
-            crate::report::ReportScope::ArchiveMember(_)
-        ) {
-            list_member_scopeless_tessellations(
-                self.ctx,
-                &mut self.ir.model,
-                &mesh_projection.scopeless_tessellations,
-            )?;
-        }
         let parents = crate::tree::parent_ids(
             &self.ir.model.product_definitions,
             &self.ir.model.occurrences,
@@ -4167,8 +4153,10 @@ impl<'a> F3dDecodeSession<'a> {
                     Err(error) => report_xref_parse_loss(&mut self.report, &error),
                 }
                 self.note_uninterpreted_design();
-                self.native
-                    .store(ctx, self.ir.native.namespace_mut("f3d"))?;
+                self.native.store(
+                    ctx,
+                    self.ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")),
+                )?;
                 let annotations =
                     populate_annotations(&self.ir, scan, &self.native, None, &self.unknowns)?;
                 let source_image = preserve_source_image(scan);
@@ -4198,7 +4186,8 @@ impl<'a> F3dDecodeSession<'a> {
             "admit F3D entities",
         )?;
         self.note_uninterpreted_design();
-        let mut f3d_namespace = std::mem::take(self.ir.native.namespace_mut("f3d"));
+        let mut f3d_namespace =
+            std::mem::take(self.ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")));
         let (store_res, annotations_res) = std::thread::scope(|scope| {
             let ir = &self.ir;
             let native = &self.native;
@@ -4224,7 +4213,7 @@ impl<'a> F3dDecodeSession<'a> {
             };
             (store_res, annotations_res)
         });
-        *self.ir.native.namespace_mut("f3d") = f3d_namespace;
+        *self.ir.native.namespace_mut(cadmpeg_ir::codec_id!("f3d")) = f3d_namespace;
         store_res?;
         let annotations = annotations_res?;
         let source_image = preserve_source_image(scan);
@@ -4330,17 +4319,6 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 |ir, losses| crate::design_v11::project(ctx, ir, depth, losses),
             )?;
             decoded.ir.finalize();
-            let hash = cadmpeg_ir::hash::document_local_sha256(
-                ctx,
-                &decoded.ir,
-                Some(&decoded.source),
-                "f3d",
-                crate::ids::FILE_SOURCE_IMAGE_ID,
-            )?;
-            decoded.source.attributes.insert(
-                cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-                hash,
-            );
             Ok(decoded.into_decoded())
         }
     }
@@ -4622,8 +4600,6 @@ struct MeshProjection {
     unjoined: usize,
     /// Tessellation identities grouped by their Design stream and feature scope record.
     tessellations_by_scope: std::collections::HashMap<(String, u32), Vec<String>>,
-    /// Tessellation identities of mesh bodies that name no feature scope.
-    scopeless_tessellations: Vec<String>,
 }
 
 fn extend_unique_assets(
@@ -4790,7 +4766,6 @@ fn project_mesh_bodies(
                 count: 0,
                 unjoined: 0,
                 tessellations_by_scope: std::collections::HashMap::new(),
-                scopeless_tessellations: Vec::new(),
             });
         }
     };
@@ -4901,7 +4876,6 @@ fn project_mesh_bodies(
         count: bodies.len(),
         unjoined,
         tessellations_by_scope: std::collections::HashMap::new(),
-        scopeless_tessellations: Vec::new(),
     };
     for mut body in bodies {
         let texture_table = texture_tables.remove(&body.id).ok_or_else(|| {
@@ -4956,7 +4930,10 @@ fn project_mesh_bodies(
         .with_feature_edges(body.feature_edges)
         .and_then(|mesh| mesh.with_triangle_groups(triangle_groups))
         .and_then(|mesh| mesh.with_texture_assignments(texture_assignments))
-        .map_err(|err| CodecError::Malformed(err.to_string()))?;
+        .map_err(|err| CodecError::Malformed(err.to_string()))?
+        .with_of(cadmpeg_ir::tessellation::Meshed::definition(
+            crate::tree::file_root_id(),
+        ));
         ir.model.tessellations.push(tessellation);
     }
     if !texture_tables.is_empty() {
@@ -4982,45 +4959,9 @@ fn project_mesh_bodies(
                     .filter_map(|body| body.tessellation_id.as_deref()),
             )?;
         }
-        projection.scopeless_tessellations.extend(
-            feature
-                .bodies()
-                .iter()
-                .filter(|body| body.scope_record_index.is_none())
-                .filter_map(|body| body.tessellation_id.clone()),
-        );
     }
     report_unresolved_mesh_attributes(report, &unresolved);
     Ok(projection)
-}
-
-/// List the meshes of scope-less mesh bodies among the tessellations of an
-/// F3Z member's file root, which `define_member` makes the member definition.
-/// They represent no body and no mesh feature.
-fn list_member_scopeless_tessellations(
-    ctx: &DecodeContext<'_>,
-    model: &mut cadmpeg_ir::document::Model,
-    tessellations: &[String],
-) -> Result<(), CodecError> {
-    if tessellations.is_empty() {
-        return Ok(());
-    }
-    let root_id = crate::tree::file_root_id();
-    if model
-        .product_definitions
-        .iter()
-        .all(|definition| definition.id != root_id)
-    {
-        ctx.charge_entities(1, "F3D member file root")?;
-    }
-    let root = crate::tree::file_root(model);
-    for tessellation in tessellations {
-        root.tessellations.push(
-            cadmpeg_ir::tessellation::TessellationId::mint(tessellation.clone())
-                .map_err(CodecError::malformed)?,
-        );
-    }
-    Ok(())
 }
 
 /// Resolve one-based `tid` values through a Design texture table. Zero leaves
@@ -5586,30 +5527,13 @@ fn decode_result(
             .losses
             .extend(crate::tree::state_root_definition(ctx, &mut ir)?);
     }
-    let mut source = crate::report::classify_document(
+    let source = crate::report::classify_document(
         scan,
         report_scope,
         retained.source_attributes,
         &mut report,
     )?;
-    // Stamped on the finalized, classified document, so the write path
-    // compares against the exact document the sealed wrapper returns.
-    // Standalone decodes apply post-passes and stamp `document_local_sha256`
-    // in `decode`, so skip the discarded intermediate digest here.
     ir.finalize();
-    if archive_member {
-        let hash = cadmpeg_ir::hash::document_local_sha256(
-            ctx,
-            &ir,
-            Some(&source),
-            "f3d",
-            crate::ids::FILE_SOURCE_IMAGE_ID,
-        )?;
-        source.attributes.insert(
-            cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-            hash,
-        );
-    }
     Ok(AuthoredDecoded {
         scene_sources: crate::scene::Sources::new(),
         operation_poses: std::collections::BTreeMap::new(),
@@ -5712,9 +5636,8 @@ pub(crate) fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {
     )
 }
 
-/// Machine-local `document_local_sha256` for the F3D write-path edit oracle.
-///
-/// See [`cadmpeg_ir::hash::document_local_sha256`].
+/// The machine-local digest by which the F3D patch path compares two documents
+/// it holds; see [`cadmpeg_ir::hash::document_local_sha256`].
 pub(crate) fn document_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
@@ -6122,7 +6045,7 @@ fn build_geometry_ir(
         creation_timestamps,
         sketch_region_bodies_omitted: _,
     } = brep;
-    let (namespace, remainder) = transfer_into_ir(ctx, &mut ir, "f3d", asm)?;
+    let (namespace, remainder) = transfer_into_ir(ctx, &mut ir, cadmpeg_ir::codec_id!("f3d"), asm)?;
     let mut native = F3dNative::load_inner(ctx, namespace)?;
     native.sketch_curve_links = sketch_curve_links;
     native.persistent_design_links = persistent_design_links;
@@ -6754,6 +6677,7 @@ pub(crate) fn resolve_face_appearance_bindings(
                 id,
                 target: target.into(),
                 appearance: appearance_id,
+                precedence: None,
                 source_entity_id: None,
                 object_type: None,
                 visible: None,

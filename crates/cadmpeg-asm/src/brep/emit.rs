@@ -5224,12 +5224,11 @@ pub fn emit_containers(
             "region" | "lump" => {
                 let Some(owner) = r.ref_at(5) else { continue };
                 let shells = shell_chain(r, by_index, &emitted_shells, format);
-                out.regions.push(Region {
-                    id: <RegionId>::from(id(format, i)),
-                    body: <BodyId>::from(id(format, owner)),
+                out.regions.push(Region::new(
+                    <RegionId>::from(id(format, i)),
+                    <BodyId>::from(id(format, owner)),
                     shells,
-                    native_ref: None,
-                });
+                ));
             }
             "body" => {
                 out.chain_order
@@ -5292,6 +5291,7 @@ pub fn emit_containers(
                     color: attribute_color(r),
                     visible: None,
                     native_ref: None,
+                    unstated: None,
                 });
             }
             _ => {}
@@ -5309,13 +5309,13 @@ pub fn emit_containers(
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         });
-        out.regions.push(Region {
-            id: region_id.clone(),
-            body: body_id,
-            shells: vec![shell_id.clone()],
-            native_ref: None,
-        });
+        out.regions.push(Region::new(
+            region_id.clone(),
+            body_id,
+            vec![shell_id.clone()],
+        ));
         out.shells.push(Shell::with_wire_edge(
             shell_id,
             region_id,

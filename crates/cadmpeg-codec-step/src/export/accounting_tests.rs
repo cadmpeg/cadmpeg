@@ -25,14 +25,17 @@ fn pmi_dropped_by_schema_does_not_skip_later_losses() {
         .expect("decode semantic PMI")
         .into_parts()
         .0;
-    ir.native.namespace_mut("f3d").arenas_mut().insert(
-        "asm_histories".into(),
-        vec![cadmpeg_ir::NativeRecord::new(
-            cadmpeg_ir::ids::Identity::new("f3d:test:asm-history#0").expect("valid identity"),
-            serde_json::Map::default(),
-        )
-        .expect("valid native identity")],
-    );
+    ir.native
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::nonblank_literal!("asm_histories"),
+            vec![cadmpeg_ir::NativeRecord::new(
+                cadmpeg_ir::ids::Identity::new("f3d:test:asm-history#0").expect("valid identity"),
+                serde_json::Map::default(),
+            )
+            .expect("valid native identity")],
+        );
 
     let report = write_step(
         &ir,
@@ -61,7 +64,6 @@ fn product(ir: &mut cadmpeg_ir::CadIr) {
         .push(cadmpeg_ir::products::ProductDefinition {
             sketches: Vec::default(),
 
-            tessellations: Vec::new(),
             id: "test:model:product-definition#empty".try_into().unwrap(),
             kind: Some(cadmpeg_ir::products::ProductDefinitionKind::Part),
             source_name: None,

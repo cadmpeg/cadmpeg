@@ -61,6 +61,7 @@ fn segment_body_index_groups_bodies_by_object_and_binding() {
         color: None,
         visible: None,
         native_ref: None,
+        unstated: None,
     });
     let binding = crate::native::segments::SegmentBodyBinding {
         id: "binding".into(),

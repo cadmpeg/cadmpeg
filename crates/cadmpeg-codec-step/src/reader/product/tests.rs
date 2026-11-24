@@ -85,7 +85,6 @@ fn product_descriptions_transfer_from_product_and_definition() {
         .push(cadmpeg_ir::products::ProductDefinition {
             sketches: Vec::default(),
 
-            tessellations: Vec::new(),
             id: "test:model:product#described"
                 .try_into()
                 .expect("valid identity"),

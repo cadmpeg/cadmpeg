@@ -60,7 +60,7 @@ pub(crate) fn feature_name_changes(
 }
 
 pub(crate) fn native_parameters_match_source(
-    ir: &cadmpeg_ir::CadIr,
+    digests: &cadmpeg_ir::source_fidelity::CodecDigests,
     native: Option<&crate::native::SldprtNative>,
 ) -> Result<bool, CodecError> {
     let hash_arena = cadmpeg_core::decode::DecodeArena::new();
@@ -73,12 +73,11 @@ pub(crate) fn native_parameters_match_source(
     Ok(native
         .map(|native| native_parameter_hash(&hash_ctx, &native.feature_histories))
         .transpose()?
-        .zip(
-            ir.source
-                .as_ref()
-                .and_then(|source| source.attributes.get("sldprt_native_parameter_sha256")),
-        )
-        .is_some_and(|(current, baseline)| &current == baseline))
+        .zip(crate::codec_digests::baseline(
+            digests,
+            "sldprt_native_parameter_sha256",
+        ))
+        .is_some_and(|(current, baseline)| current == baseline))
 }
 
 pub(crate) fn apply_feature_name_changes(
@@ -129,11 +128,11 @@ pub(crate) fn apply_feature_name_changes(
 
 /// Resolve neutral/native feature edit authority and update the write history.
 ///
-/// Bitwise comparison against the machine-local document baseline; see
-/// [`cadmpeg_ir::hash::document_local_sha256`]. Absent baseline: sync lanes from
-/// the neutral side.
+/// Bitwise comparison against the codec digests the decode recorded in
+/// `digests`. Absent digest: sync lanes from the neutral side.
 pub(crate) fn prepare_features_for_write(
     ir: &cadmpeg_ir::CadIr,
+    digests: &cadmpeg_ir::source_fidelity::CodecDigests,
     native: &mut Option<crate::native::SldprtNative>,
     edits: &mut SourceEdits<'_>,
 ) -> Result<features::PreparedFeatures, CodecError> {
@@ -149,15 +148,10 @@ pub(crate) fn prepare_features_for_write(
         .as_ref()
         .map(|value| history_hash(&hash_ctx, &value.feature_histories))
         .transpose()?;
-    let baseline_neutral = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("sldprt_neutral_feature_local_sha256"));
-    let baseline_native = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("sldprt_native_history_sha256"));
-    let neutral_changed = baseline_neutral.is_none_or(|hash| hash != &neutral_hash);
+    let baseline_neutral =
+        crate::codec_digests::baseline(digests, "sldprt_neutral_feature_local_sha256");
+    let baseline_native = crate::codec_digests::baseline(digests, "sldprt_native_history_sha256");
+    let neutral_changed = baseline_neutral.is_none_or(|hash| hash != neutral_hash);
     let native_changed = !edits.native_unedited()
         && match (&native_hash, baseline_native) {
             (Some(current), Some(baseline)) => current != baseline,

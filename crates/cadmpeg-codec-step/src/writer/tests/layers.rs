@@ -28,6 +28,7 @@ fn a_sublayer_of_a_hidden_layer_is_written_hidden() {
         description: None,
         visible: Some(false),
         items: Vec::new(),
+        native_ref: None,
     });
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#child").expect("identity grammar"),
@@ -36,6 +37,7 @@ fn a_sublayer_of_a_hidden_layer_is_written_hidden() {
         description: None,
         visible: None,
         items: vec![PresentationItem::Body { body }.into()],
+        native_ref: None,
     });
 
     let mut output = Vec::new();

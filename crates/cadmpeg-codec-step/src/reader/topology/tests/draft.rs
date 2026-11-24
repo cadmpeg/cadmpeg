@@ -739,12 +739,7 @@ fn shared_surface_carrier_is_staged_once() {
         curves: Vec::new(),
         surfaces: vec![surface.clone(), surface],
         shells: Vec::new(),
-        region: Region {
-            id: region_id.clone(),
-            body: body_id.clone(),
-            shells: Vec::new(),
-            native_ref: None,
-        },
+        region: Region::new(region_id.clone(), body_id.clone(), Vec::new()),
         body: Body {
             id: body_id,
             kind: BodyKind::Sheet,
@@ -753,6 +748,7 @@ fn shared_surface_carrier_is_staged_once() {
             color: None,
             visible: None,
             native_ref: None,
+            unstated: None,
         },
     })
     .expect("duplicate references to one source surface must stage");
