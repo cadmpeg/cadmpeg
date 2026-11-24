@@ -241,8 +241,14 @@ fn read_profile(cluster: &Cluster<'_>, types: &TypeTable, id: u32) -> Result<Pro
         unstated: 0,
         unread: 0,
     };
+    let mut seen = BTreeSet::new();
     for member_id in ids {
         if member_id == NO_MEMBER {
+            continue;
+        }
+        if !seen.insert(member_id) {
+            // A member listed twice states its curve once.
+            profile.unread += 1;
             continue;
         }
         match member(cluster, types, member_id) {
