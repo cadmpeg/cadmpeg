@@ -25,6 +25,8 @@ pub(crate) enum AlibreLossCode {
     GeometryFramedWithoutCarriers,
     /// A face rests on a procedural surface construction without a decoded carrier.
     GeometryProceduralSurfaceUntyped,
+    /// A coedge names a pcurve record with no decodable 2D carrier.
+    GeometryPcurveUndecoded,
     /// A header tolerance cannot supply a positive finite document tolerance.
     HeaderToleranceUnresolved,
     /// A tolerant vertex has no positive finite evaluated tolerance.
@@ -52,6 +54,7 @@ impl AlibreLossCode {
         Self::ContainerNoncanonical,
         Self::GeometryFramedWithoutCarriers,
         Self::GeometryProceduralSurfaceUntyped,
+        Self::GeometryPcurveUndecoded,
         Self::HeaderToleranceUnresolved,
         Self::VertexToleranceUnresolved,
         Self::EdgeToleranceUnresolved,
@@ -69,6 +72,7 @@ impl AlibreLossCode {
             Self::ContainerNoncanonical => "container.noncanonical",
             Self::GeometryFramedWithoutCarriers => "geometry.framed-without-carriers",
             Self::GeometryProceduralSurfaceUntyped => "geometry.procedural-surface-untyped",
+            Self::GeometryPcurveUndecoded => "geometry.pcurve-undecoded",
             Self::HeaderToleranceUnresolved => "header.tolerance-unresolved",
             Self::VertexToleranceUnresolved => "vertex.tolerance-unresolved",
             Self::EdgeToleranceUnresolved => "edge.tolerance-unresolved",
@@ -87,6 +91,7 @@ impl AlibreLossCode {
             Self::GeometryFramedWithoutCarriers => Severity::Blocking,
             Self::ContainerNoncanonical
             | Self::GeometryProceduralSurfaceUntyped
+            | Self::GeometryPcurveUndecoded
             | Self::HeaderToleranceUnresolved
             | Self::VertexToleranceUnresolved
             | Self::EdgeToleranceUnresolved
@@ -103,6 +108,7 @@ impl AlibreLossCode {
         match self {
             Self::GeometryFramedWithoutCarriers
             | Self::GeometryProceduralSurfaceUntyped
+            | Self::GeometryPcurveUndecoded
             | Self::HeaderToleranceUnresolved
             | Self::VertexToleranceUnresolved
             | Self::EdgeToleranceUnresolved
@@ -145,6 +151,7 @@ mod tests {
                 "container.noncanonical",
                 "geometry.framed-without-carriers",
                 "geometry.procedural-surface-untyped",
+                "geometry.pcurve-undecoded",
                 "header.tolerance-unresolved",
                 "vertex.tolerance-unresolved",
                 "edge.tolerance-unresolved",

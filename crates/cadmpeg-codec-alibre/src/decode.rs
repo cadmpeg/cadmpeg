@@ -160,27 +160,8 @@ fn from_kernel(
         }
     }
     for record in &brep.unknowns {
-        let id = record.id().as_str();
-        let note = if id.contains(":brep:tvertex#") {
-            Some((AlibreLossCode::VertexToleranceUnresolved,
-                "evaluated vertex tolerance is not positive and finite; tolerance left unset; source record retained"))
-        } else if id.contains(":brep:tedge#") {
-            Some((AlibreLossCode::EdgeToleranceUnresolved,
-                "edge tolerance is not positive and finite; tolerance left unset; source record retained"))
-        } else if id.contains(":brep:shell#") {
-            Some((AlibreLossCode::TopologyShellUnprojected,
-                "shell has no admissible members or owner; shell omitted from region references; source record retained"))
-        } else if id.contains(":brep:face#") {
-            Some((AlibreLossCode::TopologyFaceOwnerUnprojected,
-                "standalone source face has no shell owner required by the IR; face omitted; source record retained"))
-        } else if id.contains(":brep:untyped-record#") {
-            Some((AlibreLossCode::SourceRecordNameUnresolved,
-                "record name has no leading component; identity uses its record-table index; source record retained"))
-        } else {
-            None
-        };
-        if let Some((code, message)) = note {
-            losses.push(code.note(message));
+        if let Some(note) = unknown_record_loss(record.id().as_str()) {
+            losses.push(note);
         }
     }
     let (
@@ -217,6 +198,18 @@ fn from_kernel(
             "{count} surface construction(s) are untyped; solved caches and source records retained"
         )),
         );
+    }
+    if stats.undecoded_pcurve_refs() > 0 {
+        let kinds = stats
+            .undecoded_pcurve_kinds
+            .iter()
+            .map(|(kind, count)| format!("{kind}={count}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        losses.push(AlibreLossCode::GeometryPcurveUndecoded.note(format!(
+            "{} coedge(s) name a pcurve record with no decodable 2D carrier; those coedges carry no pcurve. Source kinds: {kinds}",
+            stats.undecoded_pcurve_refs()
+        )));
     }
     let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
     coverage.record(crate::coverage::UNKNOWN_RECORDS, unknowns.len());
@@ -276,8 +269,65 @@ fn from_kernel(
     })
 }
 
+/// The loss a retained source record states, by the class of the record the
+/// shared decoder could not project.
+fn unknown_record_loss(id: &str) -> Option<LossNote> {
+    let (code, message) = if id.contains(":brep:tvertex#") {
+        (AlibreLossCode::VertexToleranceUnresolved,
+            "evaluated vertex tolerance is not positive and finite; tolerance left unset; source record retained")
+    } else if id.contains(":brep:tedge#") {
+        (AlibreLossCode::EdgeToleranceUnresolved,
+            "edge tolerance is not positive and finite; tolerance left unset; source record retained")
+    } else if id.contains(":brep:shell#") {
+        (AlibreLossCode::TopologyShellUnprojected,
+            "shell has no admissible members or owner; shell omitted from region references; source record retained")
+    } else if id.contains(":brep:face#") {
+        (AlibreLossCode::TopologyFaceOwnerUnprojected,
+            "standalone source face has no shell owner required by the IR; face omitted; source record retained")
+    } else if id.contains(":brep:untyped-record#") {
+        (AlibreLossCode::SourceRecordNameUnresolved,
+            "record name has no leading component; identity uses its record-table index; source record retained")
+    } else {
+        return None;
+    };
+    Some(code.note(message))
+}
+
 fn unresolved_tolerance(name: &str, value: f64) -> LossNote {
     AlibreLossCode::HeaderToleranceUnresolved.note(format!(
         "header {name} tolerance {value} does not yield a positive finite IR value; keeping the default"
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::unknown_record_loss;
+    use crate::loss::AlibreLossCode;
+
+    /// Each retained-record class the shared decoder reports maps to its own
+    /// code, and any other record states no loss.
+    #[test]
+    fn retained_records_map_to_their_loss_codes() {
+        for (id, code) in [
+            (
+                "alibre:brep:tvertex#4",
+                AlibreLossCode::VertexToleranceUnresolved,
+            ),
+            ("alibre:brep:tedge#7", AlibreLossCode::EdgeToleranceUnresolved),
+            ("alibre:brep:shell#3", AlibreLossCode::TopologyShellUnprojected),
+            (
+                "alibre:brep:face#9",
+                AlibreLossCode::TopologyFaceOwnerUnprojected,
+            ),
+            (
+                "alibre:brep:untyped-record#12",
+                AlibreLossCode::SourceRecordNameUnresolved,
+            ),
+        ] {
+            let note = unknown_record_loss(id).expect(id);
+            assert_eq!(note.code, code.kind(), "{id}");
+            assert_eq!(note.severity, code.note("").severity, "{id}");
+        }
+        assert!(unknown_record_loss("alibre:brep:lump#2").is_none());
+    }
 }
