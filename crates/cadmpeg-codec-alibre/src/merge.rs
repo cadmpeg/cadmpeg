@@ -128,6 +128,9 @@ pub(crate) struct Merged {
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Whether the component holds design records that the merge leaves out.
     pub(crate) design_left_out: bool,
+    /// The document tolerances of the component when they differ from the
+    /// tolerances of the assembly, which the assembly keeps.
+    pub(crate) tolerances_left_out: Option<cadmpeg_ir::units::Tolerances>,
 }
 
 /// Merges a decoded component into `parent` under `scope`.
@@ -148,6 +151,8 @@ pub(crate) fn merge_component(
         source_fidelity,
     } = child;
     let design_left_out = child_ir.design.entity_count() > 0 || child_ir.process.entity_count() > 0;
+    let tolerances_left_out =
+        (child_ir.tolerances != parent.tolerances).then_some(child_ir.tolerances);
     let source = child_ir.source.clone();
     let Some(root) = child_ir
         .model
@@ -192,6 +197,7 @@ pub(crate) fn merge_component(
         geometry_transferred: body.transfer.geometry_transferred(),
         losses: body.losses,
         design_left_out,
+        tolerances_left_out,
     })
 }
 

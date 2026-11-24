@@ -4353,6 +4353,18 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "assembly.member-tolerance-unmerged",
+            "kind": "metadata_not_transferred",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_box: states the document tolerances linear 0.000009999999999999999 mm and angular 0.0000000001 rad; the assembly keeps linear 0.000001 mm and angular 0.0000000001 rad",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "source.record-extensions-unprojected",
             "kind": "metadata_not_transferred",
             "namespace": "alibre"
@@ -4384,6 +4396,18 @@
           }
         },
         "message": "component asm_cylinder: the SAB_DATA stream declares save format 33.0, which no verified Spatial ACIS band declares; its records were read with the grammar `acis:save-format-217` declares, and what they decoded is reported as it decoded",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "assembly.member-tolerance-unmerged",
+            "kind": "metadata_not_transferred",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_cylinder: states the document tolerances linear 0.000009999999999999999 mm and angular 0.0000000001 rad; the assembly keeps linear 0.000001 mm and angular 0.0000000001 rad",
         "severity": "warning"
       }
     ],

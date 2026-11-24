@@ -75,6 +75,12 @@ pub(crate) enum AlibreLossCode {
     AssemblyRecordUnreadable,
     /// An inclusion lists members that state a GUID which the occurrence does not carry.
     AssemblyMemberGuidUnmapped,
+    /// The default units of the assembly are not the centimetre that the decoder reads lengths in, or are not stated.
+    AssemblyUnitUnverified,
+    /// The origin datums of the assembly are missing or are not the standard frame at the origin.
+    AssemblyDatumsUnread,
+    /// A component states document tolerances that differ from those of the assembly, which keeps its own.
+    AssemblyMemberToleranceUnmerged,
 }
 
 impl AlibreLossCode {
@@ -109,6 +115,9 @@ impl AlibreLossCode {
         Self::AssemblyMemberDocumentMismatch,
         Self::AssemblyRecordUnreadable,
         Self::AssemblyMemberGuidUnmapped,
+        Self::AssemblyUnitUnverified,
+        Self::AssemblyDatumsUnread,
+        Self::AssemblyMemberToleranceUnmerged,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -142,6 +151,9 @@ impl AlibreLossCode {
             Self::AssemblyMemberDocumentMismatch => "assembly.member-document-mismatch",
             Self::AssemblyRecordUnreadable => "assembly.record-unreadable",
             Self::AssemblyMemberGuidUnmapped => "assembly.member-guid-unmapped",
+            Self::AssemblyUnitUnverified => "assembly.unit-unverified",
+            Self::AssemblyDatumsUnread => "assembly.datums-unread",
+            Self::AssemblyMemberToleranceUnmerged => "assembly.member-tolerance-unmerged",
         }
     }
 
@@ -174,7 +186,10 @@ impl AlibreLossCode {
             | Self::AssemblyMemberDialectUnverified
             | Self::AssemblyMemberDocumentMismatch
             | Self::AssemblyRecordUnreadable
-            | Self::AssemblyMemberGuidUnmapped => Severity::Warning,
+            | Self::AssemblyMemberGuidUnmapped
+            | Self::AssemblyUnitUnverified
+            | Self::AssemblyDatumsUnread
+            | Self::AssemblyMemberToleranceUnmerged => Severity::Warning,
         }
     }
 
@@ -209,8 +224,11 @@ impl AlibreLossCode {
             | Self::AssemblyNestedStateUnread
             | Self::AssemblyEntitiesUnread
             | Self::AssemblyRecordUnreadable
-            | Self::AssemblyMemberGuidUnmapped => LossTaxonomy::ObjectRecordsUntransferred,
-            Self::AssemblyConfigurationUnmapped => LossTaxonomy::MetadataNotTransferred,
+            | Self::AssemblyMemberGuidUnmapped
+            | Self::AssemblyDatumsUnread => LossTaxonomy::ObjectRecordsUntransferred,
+            Self::AssemblyConfigurationUnmapped
+            | Self::AssemblyUnitUnverified
+            | Self::AssemblyMemberToleranceUnmerged => LossTaxonomy::MetadataNotTransferred,
         }
     }
 
@@ -267,6 +285,9 @@ mod tests {
                 "assembly.member-document-mismatch",
                 "assembly.record-unreadable",
                 "assembly.member-guid-unmapped",
+                "assembly.unit-unverified",
+                "assembly.datums-unread",
+                "assembly.member-tolerance-unmerged",
             ]
         );
     }

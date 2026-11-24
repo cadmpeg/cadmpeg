@@ -89,6 +89,20 @@ struct Synth {
     /// Lists an inclusion and a configuration that are not records of their
     /// kind.
     broken: bool,
+    /// The `Default Units` of the workspace; `None` writes no workspace.
+    units: Option<String>,
+    datums: Datums,
+}
+
+/// The origin datums of a synthetic assembly.
+#[derive(Clone, Copy, PartialEq)]
+enum Datums {
+    /// A plane through the origin.
+    Origin,
+    /// A plane through (1, 0, 0) cm.
+    Off,
+    /// No list.
+    Absent,
 }
 
 impl Synth {
@@ -102,6 +116,8 @@ impl Synth {
             entities: Vec::new(),
             suppressed: Vec::new(),
             broken: false,
+            units: Some("cm".to_owned()),
+            datums: Datums::Origin,
         }
     }
 
@@ -246,10 +262,38 @@ impl Synth {
         let active = self
             .active
             .map_or("$".to_owned(), |at| format!("#{}", config_ids[at]));
-        let nulls = vec!["$"; 18].join(",");
+        let datums = match self.datums {
+            Datums::Absent => "$".to_owned(),
+            kind => {
+                let x = if kind == Datums::Off { "1." } else { "0." };
+                let point = id();
+                let direction = id();
+                let axis = id();
+                let plane = id();
+                writeln!(
+                    out,
+                    "#{point}=CARTESIAN_POINT($,({x},0.,0.));\n#{direction}=DIRECTION($,(0.,0.,1.));\n\
+                     #{axis}=AXIS2_PLACEMENT_3D($,#{point},#{direction},#{direction});\n#{plane}=PLANE($,#{axis});"
+                )
+                .unwrap();
+                format!("(#{plane})")
+            }
+        };
+        if let Some(units) = &self.units {
+            let pair = id();
+            let profile = id();
+            writeln!(
+                out,
+                "#{pair}=STRINGVALUEPAIR('Default Units','{units}');\n#{profile}=PROFILE((#{pair}));\n\
+                 #{}=DESIGNWORKSPACE(#{profile},1,$,#9000,$);",
+                id()
+            )
+            .unwrap();
+        }
+        let nulls = vec!["$"; 16].join(",");
         writeln!(
             out,
-            "#9000=DESIGNASSEMBLY({nulls},#{product},$,({}),(),(),(),$,({}),{active});",
+            "#9000=DESIGNASSEMBLY($,{datums},{nulls},#{product},$,({}),(),(),(),$,({}),{active});",
             list(&inclusion_ids),
             list(&config_ids)
         )
@@ -352,6 +396,8 @@ fn a_synthetic_assembly_decodes_like_the_specimens() {
         AlibreLossCode::AssemblyRecordUnreadable,
         AlibreLossCode::AssemblyPlacementUnreadable,
         AlibreLossCode::AssemblyInclusionUnmapped,
+        AlibreLossCode::AssemblyUnitUnverified,
+        AlibreLossCode::AssemblyDatumsUnread,
     ] {
         assert_eq!(count_loss(&result, code), 0, "{code:?}");
     }
@@ -664,4 +710,39 @@ fn a_profile_that_is_not_empty_and_an_entity_that_is_no_profile_are_reported() {
         named(result.ir(), "asm_box<1>").native_ref.is_some()
             && named(result.ir(), "asm_box<4>").native_ref.is_none()
     );
+}
+
+#[test]
+fn units_other_than_the_centimetre_or_none_are_reported() {
+    for units in [Some("mm".to_owned()), None] {
+        let mut synth = Synth::new(vec![Inc::new("a/asm_box", BOX_GUID)]);
+        synth.units = units.clone();
+        let result = decode_synth(&synth, &Beside::parts());
+        let losses = losses_of(&result, AlibreLossCode::AssemblyUnitUnverified);
+        assert_eq!(losses.len(), 1, "{units:?}: {losses:?}");
+    }
+}
+
+#[test]
+fn datums_off_the_origin_or_absent_are_reported() {
+    for datums in [Datums::Off, Datums::Absent] {
+        let mut synth = Synth::new(vec![Inc::new("a/asm_box", BOX_GUID)]);
+        synth.datums = datums;
+        let result = decode_synth(&synth, &Beside::parts());
+        let losses = losses_of(&result, AlibreLossCode::AssemblyDatumsUnread);
+        assert_eq!(losses.len(), 1, "{losses:?}");
+    }
+}
+
+#[test]
+fn a_component_with_other_tolerances_than_the_assembly_is_reported() {
+    let synth = Synth::new(vec![
+        Inc::new("a/asm_box", BOX_GUID),
+        Inc::new("a/asm_box", BOX_GUID),
+    ]);
+    let result = decode_synth(&synth, &Beside::parts());
+    let losses = losses_of(&result, AlibreLossCode::AssemblyMemberToleranceUnmerged);
+    // The component is merged once.
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert!(losses[0].starts_with("component asm_box: states the document tolerances"));
 }

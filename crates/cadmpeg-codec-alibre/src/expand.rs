@@ -23,7 +23,7 @@ use cadmpeg_ir::products::{
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
 
-use crate::assembly::{self, Assembly, Inclusion, Placement, DEFAULT_CONFIGURATION};
+use crate::assembly::{self, Assembly, Inclusion, Placement, DEFAULT_CONFIGURATION, DEFAULT_UNITS};
 use crate::container::{AlibreContainer, DocumentKind, STEP_STREAM};
 use crate::dialect::classify_assembly;
 use crate::loss::AlibreLossCode;
@@ -349,6 +349,22 @@ fn model_losses(model: &Assembly) -> Vec<LossNote> {
             first.unmapped
         )));
     }
+    match model.default_units.as_deref() {
+        Some(DEFAULT_UNITS) => {}
+        Some(other) => losses.push(AlibreLossCode::AssemblyUnitUnverified.note(format!(
+            "the assembly states the default units {other:?}, and the decoder reads every length in \
+             the {DEFAULT_UNITS:?} that the specimens state; lengths may be off by the ratio"
+        ))),
+        None => losses.push(AlibreLossCode::AssemblyUnitUnverified.note(format!(
+            "the assembly states no default units; the decoder reads every length in {DEFAULT_UNITS:?}"
+        ))),
+    }
+    if let Some(problem) = &model.datum_problem {
+        losses.push(AlibreLossCode::AssemblyDatumsUnread.note(format!(
+            "the origin datums of the assembly are not the standard frame at the origin: {problem}; \
+             the occurrences are placed in the frame the inclusions state"
+        )));
+    }
     let guided = model
         .inclusions
         .iter()
@@ -499,6 +515,18 @@ fn component(
                     }
                     loss
                 }));
+            if let Some(tolerances) = merged.tolerances_left_out {
+                build
+                    .losses
+                    .push(AlibreLossCode::AssemblyMemberToleranceUnmerged.note(format!(
+                        "component {file}: states the document tolerances linear {} mm and angular {} rad; \
+                         the assembly keeps linear {} mm and angular {} rad",
+                        tolerances.linear.get(),
+                        tolerances.angular.get(),
+                        build.ir.tolerances.linear.get(),
+                        build.ir.tolerances.angular.get()
+                    )));
+            }
             if merged.design_left_out {
                 build
                     .losses

@@ -23,7 +23,18 @@ pub(crate) const MM_PER_UNIT: f64 = 10.0;
 /// document, which every specimen inclusion selects.
 pub(crate) const DEFAULT_CONFIGURATION: &str = "Config<1>";
 
+/// The default unit that the specimens state and that the decoder reads
+/// lengths in.
+pub(crate) const DEFAULT_UNITS: &str = "cm";
+/// Deepest chain of references that the datum check follows, and the most
+/// instances it visits.
+const DATUM_DEPTH: usize = 6;
+const DATUM_VISITS: usize = 256;
+/// A coordinate this close to zero is at the origin, in the stream unit.
+const ORIGIN_TOLERANCE: f64 = 1e-9;
+
 /// The attribute indices of the `DESIGNASSEMBLY` entity that the reader uses.
+const ASSEMBLY_DATUMS: usize = 1;
 const ASSEMBLY_PRODUCT: usize = 18;
 const ASSEMBLY_INCLUSIONS: usize = 20;
 const ASSEMBLY_RELATION_LISTS: [usize; 3] = [21, 22, 23];
@@ -226,6 +237,11 @@ pub(crate) struct Assembly {
     pub(crate) relation_references: usize,
     /// The records that the reader needs and could not read, one text each.
     pub(crate) unreadable: Vec<String>,
+    /// The `Default Units` of the workspace profile, if it states one.
+    pub(crate) default_units: Option<String>,
+    /// Why the origin datums are not the standard frame at the origin; `None`
+    /// when they are.
+    pub(crate) datum_problem: Option<String>,
 }
 
 impl Assembly {
@@ -354,6 +370,87 @@ fn configuration(part: &Part21, id: u32) -> Option<Configuration> {
     })
 }
 
+/// The `Default Units` string of the profile of the workspace.
+fn default_units(part: &Part21) -> Option<String> {
+    let workspace = part
+        .instances
+        .values()
+        .find(|instance| instance.name == "DESIGNWORKSPACE")?;
+    let profile = part.of(workspace.arg(0)?.as_ref()?, "PROFILE")?;
+    profile
+        .arg(0)?
+        .refs()?
+        .into_iter()
+        .filter_map(|id| part.of(id, "STRINGVALUEPAIR"))
+        .find(|pair| pair.arg(0).and_then(Value::as_str) == Some("Default Units"))
+        .and_then(|pair| pair.arg(1)?.as_str().map(str::to_owned))
+}
+
+/// Collects the references of a parameter, lists and typed parameters
+/// included.
+fn collect_refs(value: &Value, out: &mut Vec<u32>) {
+    match value {
+        Value::Ref(id) => out.push(*id),
+        Value::List(items) | Value::Typed(_, items) => {
+            items.iter().for_each(|item| collect_refs(item, out));
+        }
+        _ => {}
+    }
+}
+
+/// Why the origin datums of the assembly (attribute 1) are not the standard
+/// frame at the origin: the list is absent or empty, or a point that a datum
+/// reaches is off the origin. `None` when every point that the datums reach
+/// is at the origin and at least one is reached.
+fn datum_problem(part: &Part21, root: &Instance) -> Option<String> {
+    let Some(datums) = root.arg(ASSEMBLY_DATUMS).and_then(Value::refs) else {
+        return Some("the DESIGNASSEMBLY entity lists no datums".to_owned());
+    };
+    if datums.is_empty() {
+        return Some("the DESIGNASSEMBLY entity lists no datums".to_owned());
+    }
+    let mut seen = BTreeSet::new();
+    let mut points = 0_usize;
+    let mut level: Vec<u32> = datums;
+    for _ in 0..DATUM_DEPTH {
+        let mut next = Vec::new();
+        for id in level {
+            if !seen.insert(id) || seen.len() > DATUM_VISITS {
+                continue;
+            }
+            let Some(instance) = part.get(id) else {
+                continue;
+            };
+            if instance.name == "CARTESIAN_POINT" {
+                let coordinates = instance
+                    .arg(1)
+                    .and_then(Value::as_list)
+                    .map(|list| list.iter().map(Value::as_real).collect::<Vec<_>>());
+                if let Some(coordinates) = coordinates.filter(|list| list.len() == 3) {
+                    points += 1;
+                    let off = coordinates
+                        .iter()
+                        .any(|value| value.is_none_or(|value| value.abs() > ORIGIN_TOLERANCE));
+                    if off {
+                        return Some(format!("datum point #{id} is not at the origin"));
+                    }
+                }
+                continue;
+            }
+            // Do not follow back into the assembly or the feature model.
+            if instance.name == "DESIGNASSEMBLY" {
+                continue;
+            }
+            instance
+                .args
+                .iter()
+                .for_each(|value| collect_refs(value, &mut next));
+        }
+        level = next;
+    }
+    (points == 0).then(|| "no datum reaches a point".to_owned())
+}
+
 /// Reads the assembly records of a parsed `STEP_DATA` stream.
 pub(crate) fn read(part: &Part21) -> Result<Assembly, CodecError> {
     let mut assemblies = part
@@ -437,6 +534,8 @@ pub(crate) fn read(part: &Part21) -> Result<Assembly, CodecError> {
             ));
         }
     }
+    assembly.default_units = default_units(part);
+    assembly.datum_problem = datum_problem(part, root);
     for index in ASSEMBLY_RELATION_LISTS {
         assembly.relation_references += root
             .arg(index)
