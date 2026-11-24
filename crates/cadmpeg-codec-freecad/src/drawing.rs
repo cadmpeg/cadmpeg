@@ -6,12 +6,14 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::design::names::{CodecId, NativeName, NativeNameValue};
+use cadmpeg_ir::design::names::{NativeName, NativeNameValue};
 use cadmpeg_ir::document::Model;
 use cadmpeg_ir::drawings::{
     Drawing, DrawingId, DrawingKind, HiddenLineMethod, ProjectionAngle, ScaleFrom,
 };
+use cadmpeg_ir::references::DrawingPart;
 use cadmpeg_ir::scalar::{Angle, FiniteReal, PositiveLength, PositiveReal};
+use cadmpeg_ir::semantic_annotations::SemanticAnnotationId;
 use cadmpeg_ir::units::{FiniteVector, NonzeroVector};
 use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 
@@ -19,7 +21,8 @@ use crate::annotation::{
     bool_property, enumeration_entry, enumeration_property, optional_scalar_property,
 };
 use crate::native::{
-    sole_named_property, DrawingRecord, ObjectRecord, PropertyRecord, TechDrawKind, ValueRecord,
+    sole_named_property, DrawingRecord, ObjectRecord, PropertyRecord, SemanticAnnotationRecord,
+    TechDrawKind, ValueRecord,
 };
 
 pub(crate) fn transfer(
@@ -112,13 +115,81 @@ pub(crate) fn transfer(
     Ok(drawings)
 }
 
+/// The neutral records that local `FreeCAD` objects become: drawing records
+/// and semantic annotations, by source object id.
+pub(crate) struct LinkTargets {
+    drawings: HashMap<String, (DrawingId, DrawingKind)>,
+    annotations: HashMap<String, SemanticAnnotationId>,
+}
+
+impl LinkTargets {
+    pub(crate) fn new(
+        drawings: &[DrawingRecord],
+        annotations: &[SemanticAnnotationRecord],
+    ) -> Result<Self, CodecError> {
+        let mut targets = Self {
+            drawings: HashMap::new(),
+            annotations: HashMap::new(),
+        };
+        for record in drawings {
+            targets.drawings.insert(
+                record.object.clone(),
+                (
+                    neutral_drawing_id(&record.object)?,
+                    classify(record.kind.as_str()),
+                ),
+            );
+        }
+        for record in annotations {
+            targets.annotations.insert(
+                record.object.clone(),
+                crate::annotation::neutral_annotation_id(&record.object)?,
+            );
+        }
+        Ok(targets)
+    }
+
+    /// The drawing record a local link names, with its kind.
+    fn drawing(&self, link: &crate::native::LinkTarget) -> Option<&(DrawingId, DrawingKind)> {
+        if link.document().is_some() {
+            return None;
+        }
+        self.drawings.get(link.object()?)
+    }
+
+    /// The target a local object is: a drawing record, which a source object
+    /// that is also a semantic annotation is named as, or a semantic
+    /// annotation.
+    fn local(&self, object: &str) -> Option<ReferenceTarget> {
+        if let Some((drawing, _)) = self.drawings.get(object) {
+            return Some(ReferenceTarget::Drawing {
+                drawing: drawing.clone(),
+                part: None,
+            });
+        }
+        self.annotations
+            .get(object)
+            .cloned()
+            .map(ReferenceTarget::Annotation)
+    }
+}
+
+fn neutral_drawing_id(object: &str) -> Result<DrawingId, CodecError> {
+    DrawingId::mint(crate::native::model_id("drawing", object, "entity"))
+        .map_err(CodecError::malformed)
+}
+
 /// The references a native link states: the explicit empty reference, an
-/// object of a document that was not read, or one unresolved reference per
-/// selected sub-element of a local object, which the decoder does not
-/// resolve to the geometry it decoded. A reference that names a sub-element
-/// keeps it in its native name after the object's source name and a `.`.
+/// object of a document that was not read, a drawing record or a semantic
+/// annotation, or one unresolved reference per selected sub-element of
+/// another local object, which the decoder does not resolve to the geometry
+/// it decoded. A reference that names a sub-element keeps it in its native
+/// name after the object's source name and a `.`. A sub-element of a drawing
+/// record is `Unread`: the projected edges and vertices that `TechDraw`
+/// numbers are runtime geometry no `curves` entry holds.
 pub(crate) fn link_references(
     link: Option<&crate::native::LinkTarget>,
+    targets: &LinkTargets,
 ) -> Result<Vec<ReferenceSelection>, CodecError> {
     let Some(link) = link else {
         return Ok(vec![ReferenceSelection::new(ReferenceTarget::Null)]);
@@ -140,18 +211,33 @@ pub(crate) fn link_references(
             .map(|subelement| native_name(&format!("{name}.{subelement}")).map(Some))
             .collect::<Result<Vec<_>, _>>()?
     };
+    let local = match link.document_name() {
+        Some(_) => None,
+        None => targets.local(object),
+    };
     names
         .into_iter()
         .map(|native| {
-            Ok(match link.document_name() {
-                Some(document) => ReferenceSelection {
+            Ok(match (link.document_name(), &local) {
+                (Some(document), _) => ReferenceSelection {
                     target: ReferenceTarget::External {
                         document: document.to_owned(),
                         object: object.to_owned(),
                     },
                     native,
                 },
-                None => ReferenceSelection::unresolved(match native {
+                (None, Some(ReferenceTarget::Drawing { drawing, .. })) => ReferenceSelection {
+                    target: ReferenceTarget::Drawing {
+                        drawing: drawing.clone(),
+                        part: native.as_ref().map(|_| DrawingPart::Unread),
+                    },
+                    native,
+                },
+                (None, Some(target)) => ReferenceSelection {
+                    target: target.clone(),
+                    native,
+                },
+                (None, None) => ReferenceSelection::unresolved(match native {
                     Some(native) => native,
                     None => native_name(name)?,
                 }),
@@ -163,7 +249,7 @@ pub(crate) fn link_references(
 fn native_name(text: &str) -> Result<NativeName, CodecError> {
     let blank = || CodecError::malformed("drawing reference has an empty source name");
     Ok(NativeName {
-        codec: CodecId::from(NonBlankString::new("fcstd").ok_or_else(blank)?),
+        codec: cadmpeg_ir::codec_id!("fcstd"),
         value: NativeNameValue::Text(NonBlankString::new(text).ok_or_else(blank)?),
     })
 }
@@ -173,15 +259,8 @@ pub(crate) fn transfer_neutral(
     model: &mut Model,
     records: &[DrawingRecord],
     properties: &[PropertyRecord],
+    targets: &LinkTargets,
 ) -> Result<(), CodecError> {
-    let mut neutral_ids = HashMap::new();
-    for record in records {
-        neutral_ids.insert(
-            record.object.as_str(),
-            DrawingId::mint(crate::native::model_id("drawing", &record.object, "entity"))
-                .map_err(CodecError::malformed)?,
-        );
-    }
     for (order, record) in records.iter().enumerate() {
         let mut owned = Vec::new();
         owned.extend(
@@ -230,31 +309,20 @@ pub(crate) fn transfer_neutral(
         } else {
             position.map(FiniteVector::from)
         };
+        let kind = classify(record.kind.as_str());
+        let fields = TypedLinks::of(record, &kind, targets);
         let mut relationships = BTreeMap::new();
-        for (role, targets) in &record.relationships {
+        for (role, links) in &record.relationships {
             let mut selections = Vec::new();
-            for link in targets {
-                selections.extend(link_references(link.as_ref())?);
+            for (index, link) in links.iter().enumerate() {
+                if !fields.holds(role, index) {
+                    selections.extend(link_references(link.as_ref(), targets)?);
+                }
             }
-            relationships.insert(role.to_owned(), selections);
+            if !selections.is_empty() {
+                relationships.insert(role.to_owned(), selections);
+            }
         }
-        let template_id = if matches!(record.kind, TechDrawKind::Page { .. }) {
-            record
-                .relationships
-                .get("Template")
-                .and_then(|targets| targets.first())
-                .and_then(Option::as_ref)
-                .and_then(|link| {
-                    if link.document().is_some() {
-                        return None;
-                    }
-                    let object = link.object()?;
-                    neutral_ids.get(object)
-                })
-        } else {
-            None
-        };
-        let template = template_id.cloned();
         let mut parameters = BTreeMap::new();
         for (name, value) in &record.parameters {
             parameters.insert(name.to_owned(), value.to_owned());
@@ -266,7 +334,9 @@ pub(crate) fn transfer_neutral(
         model.drawings.push(Drawing {
             visible: None,
             relationships: cadmpeg_core::text::named_entries(&record.object, relationships)?,
-            template,
+            template: fields.template,
+            views: fields.views,
+            base_view: fields.base_view,
             position,
             scale,
             direction,
@@ -278,17 +348,9 @@ pub(crate) fn transfer_neutral(
             parameters: cadmpeg_core::text::named_entries(&record.object, parameters)?,
             assets,
             ..Drawing::new(
-                neutral_ids
-                    .get(record.object.as_str())
-                    .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
-                            "drawing {} has no admitted neutral identity",
-                            record.id
-                        ))
-                    })
-                    .cloned()?,
+                neutral_drawing_id(&record.object)?,
                 record.object.clone(),
-                classify(record.kind.as_str()),
+                kind,
                 record.kind.as_str().to_owned(),
                 u32::try_from(order).map_err(|_| {
                     CodecError::malformed(format_args!("FreeCAD ordinal {order} exceeds u32"))
@@ -298,6 +360,86 @@ pub(crate) fn transfer_neutral(
         });
     }
     Ok(())
+}
+
+/// The source links that `template`, `views`, and `base_view` state, which
+/// leave `relationships`: a page's `Template` naming a template record, the
+/// `Views` entries of a page or a view collection naming a drawing record
+/// that is no page and no template, and a section's or detail's `BaseView`
+/// naming a view, projection, section, or detail record.
+struct TypedLinks {
+    template: Option<DrawingId>,
+    views: Vec<DrawingId>,
+    base_view: Option<DrawingId>,
+    held: BTreeSet<(&'static str, usize)>,
+}
+
+impl TypedLinks {
+    fn of(record: &DrawingRecord, kind: &DrawingKind, targets: &LinkTargets) -> Self {
+        let mut fields = Self {
+            template: None,
+            views: Vec::new(),
+            base_view: None,
+            held: BTreeSet::new(),
+        };
+        let single = |role: &str, admits: fn(&DrawingKind) -> bool| match record
+            .relationships
+            .get(role)
+            .map(Vec::as_slice)
+        {
+            Some([Some(link)]) => targets
+                .drawing(link)
+                .filter(|(_, target)| admits(target))
+                .map(|(id, _)| id.clone()),
+            _ => None,
+        };
+        if *kind == DrawingKind::Page {
+            fields.template = single("Template", |kind| *kind == DrawingKind::Template);
+            if fields.template.is_some() {
+                fields.held.insert(("Template", 0));
+            }
+        }
+        if matches!(kind, DrawingKind::Section | DrawingKind::Detail) {
+            fields.base_view = single("BaseView", |kind| {
+                matches!(
+                    kind,
+                    DrawingKind::View
+                        | DrawingKind::Projection
+                        | DrawingKind::Section
+                        | DrawingKind::Detail
+                )
+            });
+            if fields.base_view.is_some() {
+                fields.held.insert(("BaseView", 0));
+            }
+        }
+        for (index, link) in record
+            .relationships
+            .get("Views")
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            let Some((id, target)) = link.as_ref().and_then(|link| targets.drawing(link)) else {
+                continue;
+            };
+            if !matches!(target, DrawingKind::Page | DrawingKind::Template)
+                && !fields.views.contains(id)
+            {
+                fields.views.push(id.clone());
+                fields.held.insert(("Views", index));
+            }
+        }
+        fields
+    }
+
+    /// Whether the link at `index` of property `role` is stated by a typed
+    /// field.
+    fn holds(&self, role: &str, index: usize) -> bool {
+        self.held
+            .iter()
+            .any(|&(name, held)| name == role && held == index)
+    }
 }
 
 /// How a view or a page projects the model: `TechDraw` 1.1.4 `DrawView`,

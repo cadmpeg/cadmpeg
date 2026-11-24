@@ -97,7 +97,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                 vertices[1].clone(),
             )),
             tolerance: Some(
-                cadmpeg_ir::scalar::PositiveReal::new(0.03).expect("positive finite tolerance"),
+                cadmpeg_ir::scalar::PositiveLength::new(0.03).expect("positive finite tolerance"),
             ),
             native_ref: None,
         });
@@ -149,7 +149,8 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                 name: None,
                 color: None,
                 tolerance: Some(
-                    cadmpeg_ir::scalar::PositiveReal::new(0.03).expect("positive finite tolerance"),
+                    cadmpeg_ir::scalar::PositiveLength::new(0.03)
+                        .expect("positive finite tolerance"),
                 ),
                 native_ref: None,
             });

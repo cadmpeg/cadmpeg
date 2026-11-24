@@ -312,7 +312,7 @@ fn decode_closes_form_63_with_the_global_minimum_resolution() {
             assert_eq!(
                 result.ir().geometry.edges[0]
                     .tolerance
-                    .map(cadmpeg_ir::scalar::PositiveReal::get),
+                    .map(cadmpeg_ir::scalar::PositiveLength::get),
                 Some(0.001)
             );
             assert_eq!(

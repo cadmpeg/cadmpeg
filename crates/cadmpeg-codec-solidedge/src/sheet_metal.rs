@@ -11,11 +11,11 @@ use std::collections::BTreeMap;
 
 use crate::container::DocStreams;
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ids::SheetMetalRuleId;
+use cadmpeg_ir::design::names::CodecName;
 use cadmpeg_ir::design::ops::sheet_metal::{
     BendAllowance, BendSpec, NormalSide, Relief, SheetMetal, SheetMetalKind, SheetMetalRule,
 };
@@ -154,8 +154,8 @@ fn positive(metres: f64) -> Option<Dimension<PositiveLength>> {
     PositiveLength::new(metres * MM_PER_M).map(Dimension::Literal)
 }
 
-fn option_key(name: &str) -> Option<NonBlankString> {
-    NonBlankString::new(name.to_owned())
+fn option_key(name: &str) -> Option<CodecName> {
+    CodecName::new(&cadmpeg_ir::codec_id!("solidedge"), name)
 }
 
 /// The rule the variables state, with a loss for a bend method it does not
