@@ -400,7 +400,7 @@ fn construction_inputs_are_checked_against_their_kind_and_relation() {
 }
 
 #[test]
-fn a_built_centroid_reference_is_a_warning() {
+fn a_built_centroid_reference_is_admitted() {
     let point = |inputs: Vec<Value>| {
         json!({"kind": "datum", "value": {
             "element": {"kind": "points", "value": [construction(inputs)]},
@@ -424,14 +424,11 @@ fn a_built_centroid_reference_is_a_warning() {
     let mut features = planes();
     features[1] = feature("b", point(vec![built]));
     let ir = timeline(features);
-    let message = "a nested construction is the reference of a Centroid input";
-    assert_finding(&ir, Check::Design, Severity::Warning, message);
     let findings = findings(&ir);
     assert!(
         !findings
             .iter()
-            .any(|finding| finding.severity == Severity::Error
-                && finding.message.contains("nested construction")),
+            .any(|finding| finding.message.contains("nested construction")),
         "{findings:#?}"
     );
 }

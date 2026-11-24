@@ -134,7 +134,24 @@
       "appearances": [],
       "articulations": [],
       "assets": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "iges:model:attribute#surface.D1",
+          "name": "name",
+          "target": {
+            "entity": {
+              "kind": "surface",
+              "value": "iges:model:surface#D1"
+            }
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "SURFACE"
+            }
+          ]
+        }
+      ],
       "colliders": [],
       "declared_measures": [],
       "drawings": [],
@@ -145,7 +162,20 @@
       "pmi": [],
       "point_clouds": [],
       "presentation_documents": [],
-      "presentation_layers": [],
+      "presentation_layers": [
+        {
+          "id": "iges:model:layer#0",
+          "items": [
+            {
+              "entity": {
+                "kind": "surface",
+                "surface": "iges:model:surface#D1"
+              }
+            }
+          ],
+          "name": "0"
+        }
+      ],
       "product_definitions": [
         {
           "bodies": [],
