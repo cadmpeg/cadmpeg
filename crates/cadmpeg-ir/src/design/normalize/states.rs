@@ -28,9 +28,9 @@ use crate::document::{CadIr, Design, Model, Process};
 use crate::features::ConfigurationId;
 use crate::ids::ProductDefinitionId;
 use crate::physics::solver::SolverValue;
-use crate::pmi::PmiDefinition;
+use crate::pmi::{PmiDefinition, PmiTarget};
 use crate::process::state::ProcessBase;
-use crate::references::ReferenceTarget;
+use crate::references::{InstanceTarget, ReferenceTarget};
 
 /// What the position and target rules read of the design, gathered before
 /// any record changes.
@@ -53,9 +53,11 @@ pub(crate) struct States {
 /// targets of appearance bindings, attributes, PMI, presentation layers,
 /// physics and solver records, and the `Entity` arm of drawing and semantic
 /// annotation references. `$visit` takes the id of the record that holds
-/// the target, its path, and its `state`, borrowed with `$mutability`.
+/// the target, its path, and its `state`, borrowed with `$mutability`;
+/// `$definition_targets` lists the targets of a PMI definition with the same
+/// borrow.
 macro_rules! instance_targets {
-    ($model:expr, $visit:ident $(, $mutability:tt)?) => {{
+    ($model:expr, $visit:ident, $definition_targets:ident $(, $mutability:tt)?) => {{
         let model = $model;
         for record in & $($mutability)? model.appearance_bindings {
             $visit(record.id.as_str(), record.target.path.as_ref(), & $($mutability)? record.target.state);
@@ -68,30 +70,8 @@ macro_rules! instance_targets {
             for target in & $($mutability)? annotation.targets {
                 $visit(owner, target.path.as_ref(), & $($mutability)? target.state);
             }
-            match & $($mutability)? annotation.definition {
-                PmiDefinition::DatumTarget { basis, .. } => {
-                    for target in basis {
-                        $visit(owner, target.path.as_ref(), & $($mutability)? target.state);
-                    }
-                }
-                PmiDefinition::GeometricTolerance { zones, .. } => {
-                    for zone in zones {
-                        for projection in & $($mutability)? zone.projections {
-                            for target in & $($mutability)? projection.boundaries {
-                                $visit(owner, target.path.as_ref(), & $($mutability)? target.state);
-                            }
-                            $visit(
-                                owner,
-                                projection.end.path.as_ref(),
-                                & $($mutability)? projection.end.state,
-                            );
-                        }
-                    }
-                }
-                PmiDefinition::Datum { .. }
-                | PmiDefinition::DatumSystem { .. }
-                | PmiDefinition::Dimension(_)
-                | PmiDefinition::Presentation { .. } => {}
+            for target in $definition_targets(& $($mutability)? annotation.definition) {
+                $visit(owner, target.path.as_ref(), & $($mutability)? target.state);
             }
         }
         for layer in & $($mutability)? model.presentation_layers {
@@ -151,7 +131,7 @@ pub(crate) fn each_target(
     model: &Model,
     mut visit: impl FnMut(&str, Option<&OccurrencePath>, &Option<StateRef>),
 ) {
-    instance_targets!(model, visit);
+    instance_targets!(model, visit, definition_targets);
 }
 
 /// Visits every instance target of `model`, its `state` mutably.
@@ -159,7 +139,45 @@ fn each_target_mut(
     model: &mut Model,
     mut visit: impl FnMut(&str, Option<&OccurrencePath>, &mut Option<StateRef>),
 ) {
-    instance_targets!(model, visit, mut);
+    instance_targets!(model, visit, definition_targets_mut, mut);
+}
+
+/// The instance targets a PMI definition holds: a datum target's basis and
+/// the boundaries and end of each tolerance-zone projection.
+fn definition_targets(definition: &PmiDefinition) -> Vec<&InstanceTarget<PmiTarget>> {
+    match definition {
+        PmiDefinition::DatumTarget { basis, .. } => basis.iter().collect(),
+        PmiDefinition::GeometricTolerance { zones, .. } => zones
+            .iter()
+            .flat_map(|zone| &zone.projections)
+            .flat_map(|projection| projection.boundaries.iter().chain([&projection.end]))
+            .collect(),
+        PmiDefinition::Datum { .. }
+        | PmiDefinition::DatumSystem { .. }
+        | PmiDefinition::Dimension(_)
+        | PmiDefinition::Presentation { .. } => Vec::new(),
+    }
+}
+
+/// [`definition_targets`], borrowed mutably.
+fn definition_targets_mut(definition: &mut PmiDefinition) -> Vec<&mut InstanceTarget<PmiTarget>> {
+    match definition {
+        PmiDefinition::DatumTarget { basis, .. } => basis.iter_mut().collect(),
+        PmiDefinition::GeometricTolerance { zones, .. } => zones
+            .iter_mut()
+            .flat_map(|zone| &mut zone.projections)
+            .flat_map(|projection| {
+                projection
+                    .boundaries
+                    .iter_mut()
+                    .chain([&mut projection.end])
+            })
+            .collect(),
+        PmiDefinition::Datum { .. }
+        | PmiDefinition::DatumSystem { .. }
+        | PmiDefinition::Dimension(_)
+        | PmiDefinition::Presentation { .. } => Vec::new(),
+    }
 }
 
 /// What `state: None` reaches for an instance target of one document.
