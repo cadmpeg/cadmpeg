@@ -427,6 +427,59 @@ impl Shown {
     }
 }
 
+/// A bare number Keywords shows for a length, and the millimetres in one of
+/// the unit it is in.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct DisplayedLength {
+    pub(crate) number: f64,
+    pub(crate) mm_per_unit: f64,
+}
+
+/// Millimetres per unit of the units a length display can be in where the
+/// document states none: millimetre, inch and metre.
+const UNSTATED_UNIT_MM: [f64; 3] = [1.0, 25.4, 1000.0];
+
+/// The unit and number of the bare display `text` of a length whose
+/// `Linear` or `Ordinate` record states `metres` (`docs/formats/sldprt.md`).
+/// Where the document's `unit` is known, the record's value in that unit,
+/// rounded to the places the text shows (and no coarser than the part's
+/// `places`), is the number. Where it is unknown, exactly one of the
+/// millimetre, inch and metre readings is. `None` where the text is not a
+/// nonzero bare number without an exponent, the record is zero, or the
+/// readings do not decide one unit.
+pub(crate) fn displayed_length(
+    text: &str,
+    metres: f64,
+    unit: Option<UnitSymbol>,
+    places: Option<u32>,
+) -> Option<DisplayedLength> {
+    let text = text.trim();
+    if text.contains(['e', 'E']) || display_body(text) != text {
+        return None;
+    }
+    let shown = Shown::of(text)?.at_places(places);
+    if shown.number == 0.0 || metres == 0.0 {
+        return None;
+    }
+    let millimetres = metres * 1000.0;
+    let reads = |mm_per_unit: f64| shown.shows(millimetres / mm_per_unit);
+    let mm_per_unit = match unit {
+        Some(unit) => {
+            let (quantity, factor) = canonical(unit)?;
+            (quantity == Quantity::LENGTH && reads(factor)).then_some(factor)?
+        }
+        None => {
+            let mut readings = UNSTATED_UNIT_MM.into_iter().filter(|factor| reads(*factor));
+            let only = readings.next()?;
+            readings.next().is_none().then_some(only)?
+        }
+    };
+    Some(DisplayedLength {
+        number: shown.number,
+        mm_per_unit,
+    })
+}
+
 /// Whether two stored values are one number within [`EPS_STORED_DISPLAY`],
 /// relative to the larger.
 fn same_stored(a: f64, b: f64) -> bool {

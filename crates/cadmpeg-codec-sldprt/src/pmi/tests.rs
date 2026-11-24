@@ -8,7 +8,10 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::SldprtCodec;
 
-use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue, PmiDimensionSubtype};
+use cadmpeg_ir::design::units::UnitSymbol;
+use cadmpeg_ir::features::parameters::{
+    DesignConfiguration, DesignParameter, ParameterValue, PmiDimensionSubtype,
+};
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId};
 use cadmpeg_ir::scalar::{FiniteReal, Length};
 
@@ -204,7 +207,7 @@ fn explicit_keywords_dimension_precedes_pmi_value() {
     }];
     let record = dimension("Linear", 0.034);
 
-    super::apply_to_parameters(&mut parameters, &[feature], &[record]).unwrap();
+    super::apply_to_parameters(&mut parameters, &[feature], &[record], None, None).unwrap();
 
     let parameter = &parameters[0];
     assert_eq!(parameter.expression, "12mm");
@@ -225,13 +228,16 @@ fn explicit_keywords_dimension_precedes_pmi_value() {
 }
 
 /// One Keywords parameter `D1` of the feature `Pattern1` with `expression`
-/// and `value`, and the `Linear` record `metres` for it, applied.
-fn bare_keywords_length(
+/// and `value`, and the record `metres` of `subtype` for it, applied in a
+/// document of `unit` and `places`. The parameter and the lengths refined.
+fn bare_keywords_length_in(
     expression: &str,
     value: Option<ParameterValue>,
     subtype: &str,
     metres: f64,
-) -> DesignParameter {
+    unit: Option<UnitSymbol>,
+    places: Option<u32>,
+) -> (DesignParameter, Vec<super::RefinedLength>) {
     let owner = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
     let feature = named_feature("synthetic:test:id#feature", "Pattern1");
     let mut parameters = vec![DesignParameter {
@@ -248,15 +254,42 @@ fn bare_keywords_length(
         pmi: None,
         native_ref: None,
     }];
-    super::apply_to_parameters(&mut parameters, &[feature], &[dimension(subtype, metres)]).unwrap();
-    parameters.remove(0)
+    let refined = super::apply_to_parameters(
+        &mut parameters,
+        &[feature],
+        &[dimension(subtype, metres)],
+        unit,
+        places,
+    )
+    .unwrap();
+    (parameters.remove(0), refined)
+}
+
+/// [`bare_keywords_length_in`] in a document that states no unit or places.
+fn bare_keywords_length(
+    expression: &str,
+    value: Option<ParameterValue>,
+    subtype: &str,
+    metres: f64,
+) -> DesignParameter {
+    bare_keywords_length_in(expression, value, subtype, metres, None, None).0
+}
+
+fn real(number: f64) -> ParameterValue {
+    ParameterValue::Real(FiniteReal::new(number).unwrap())
+}
+
+fn length_of(parameter: &DesignParameter) -> Option<f64> {
+    match parameter.value {
+        Some(ParameterValue::Length(length)) => Some(length.get()),
+        _ => None,
+    }
 }
 
 #[test]
 fn a_bare_inch_display_takes_the_length_of_its_record() {
-    let real = |number: f64| Some(ParameterValue::Real(FiniteReal::new(number).unwrap()));
     // 0.08 in is the displayed 2 mm; the display is no reading in millimetres.
-    let parameter = bare_keywords_length("0.08", real(0.08), "Linear", 0.002);
+    let parameter = bare_keywords_length("0.08", Some(real(0.08)), "Linear", 0.002);
     assert_eq!(parameter.expression, "2mm");
     assert_eq!(
         parameter.value,
@@ -283,24 +316,169 @@ fn a_bare_millimetre_display_takes_the_length_of_its_record() {
 
 #[test]
 fn a_display_that_no_unit_explains_keeps_keywords() {
-    let real = |number: f64| Some(ParameterValue::Real(FiniteReal::new(number).unwrap()));
     // The record's metres do not give the text in any unit.
-    let kept = bare_keywords_length("0.08", real(0.08), "Linear", 0.01);
+    let kept = bare_keywords_length("0.08", Some(real(0.08)), "Linear", 0.01);
     assert_eq!(kept.expression, "0.08");
-    assert_eq!(kept.value, real(0.08));
+    assert_eq!(kept.value, Some(real(0.08)));
     // A count and a record of another subtype are no length.
-    let kept = bare_keywords_length("0.08", real(0.08), "", 0.002);
+    let kept = bare_keywords_length("0.08", Some(real(0.08)), "", 0.002);
     assert_eq!(kept.expression, "0.08");
     // A display of one place shows 3 mm as 0.1 in.
-    let parameter = bare_keywords_length("0.1", real(0.1), "Linear", 0.003);
+    let parameter = bare_keywords_length("0.1", Some(real(0.1)), "Linear", 0.003);
     assert_eq!(parameter.expression, "3mm");
     // Zero is no unit's reading.
-    let kept = bare_keywords_length("0", real(0.0), "Linear", 0.0);
+    let kept = bare_keywords_length("0", Some(real(0.0)), "Linear", 0.0);
     assert_eq!(kept.expression, "0");
     // A typed length stays as Keywords gave it.
     let typed = Some(ParameterValue::Length(Length::new(12.0).unwrap()));
     let kept = bare_keywords_length("0.08", typed.clone(), "Linear", 0.002);
     assert_eq!(kept.value, typed);
+}
+
+/// Absolute tolerance of a millimetre value derived by one multiplication.
+const EPS_TEST_MM: f64 = 1.0e-9;
+
+#[test]
+fn an_ordinate_record_types_a_bare_display() {
+    // 0.002 m is 2 mm, which is 0.0787 in and shows as 0.08 in.
+    let (parameter, refined) =
+        bare_keywords_length_in("0.08", Some(real(0.08)), "Ordinate", 0.002, None, None);
+    assert_eq!(parameter.expression, "2mm");
+    assert!((length_of(&parameter).unwrap() - 2.0).abs() < EPS_TEST_MM);
+    assert_eq!(refined.len(), 1);
+}
+
+#[test]
+fn a_metre_document_reads_the_display_in_metres() {
+    // 0.002 m is the display 0.002 in metres.
+    let (parameter, refined) = bare_keywords_length_in(
+        "0.002",
+        Some(real(0.002)),
+        "Linear",
+        0.002,
+        Some(UnitSymbol::M),
+        None,
+    );
+    assert!((length_of(&parameter).unwrap() - 2.0).abs() < EPS_TEST_MM);
+    assert!((refined[0].displayed.mm_per_unit - 1000.0).abs() < EPS_TEST_MM);
+}
+
+#[test]
+fn a_millimetre_document_does_not_read_a_display_in_inches() {
+    // 0.0762 m is 76.2 mm, which is 3 in. A millimetre document shows 76.2.
+    let declined = bare_keywords_length_in(
+        "3",
+        Some(ParameterValue::Integer(3)),
+        "Linear",
+        0.0762,
+        Some(UnitSymbol::Mm),
+        None,
+    );
+    assert_eq!(declined.0.expression, "3");
+    assert_eq!(declined.0.value, Some(ParameterValue::Integer(3)));
+    assert!(declined.1.is_empty());
+    // The branch declining leaves the semantic annotation.
+    assert_eq!(
+        declined.0.pmi.as_ref().map(|pmi| &pmi.subtype),
+        Some(&PmiDimensionSubtype::Linear)
+    );
+    // With no unit stated, only the inch reading shows 3.
+    let (parameter, _) = bare_keywords_length_in(
+        "3",
+        Some(ParameterValue::Integer(3)),
+        "Linear",
+        0.0762,
+        None,
+        None,
+    );
+    assert!((length_of(&parameter).unwrap() - 76.2).abs() < EPS_TEST_MM);
+}
+
+#[test]
+fn a_display_that_rounds_the_record_to_another_number_is_declined() {
+    // 0.0026 m is 2.6 mm; a display of no places shows 3, not 2.
+    let (parameter, refined) = bare_keywords_length_in(
+        "2",
+        Some(ParameterValue::Integer(2)),
+        "Linear",
+        0.0026,
+        Some(UnitSymbol::Mm),
+        None,
+    );
+    assert_eq!(parameter.expression, "2");
+    assert!(refined.is_empty());
+}
+
+#[test]
+fn a_display_that_no_two_units_share_is_taken_and_exponent_text_is_not() {
+    // 0.0254 m is 25.4 mm: "1" reads only in inches, but "1e0" is no display.
+    let (parameter, _) = bare_keywords_length_in("1", None, "Linear", 0.0254, None, None);
+    assert!((length_of(&parameter).unwrap() - 25.4).abs() < EPS_TEST_MM);
+    let (parameter, refined) = bare_keywords_length_in("1e0", None, "Linear", 0.0254, None, None);
+    assert_eq!(parameter.value, None);
+    assert!(refined.is_empty());
+}
+
+/// `D1` as a bare inch display of `0.08` refined to 2 mm by the record
+/// 0.002 m, and configurations holding `values` for it, converted.
+fn configuration_values_after_refinement(values: &[ParameterValue]) -> Vec<ParameterValue> {
+    let (parameter, refined) = bare_keywords_length_in(
+        "0.08",
+        Some(real(0.08)),
+        "Linear",
+        0.002,
+        Some(UnitSymbol::In),
+        Some(2),
+    );
+    assert_eq!(refined.len(), 1);
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    for (ordinal, value) in values.iter().enumerate() {
+        ir.model.configurations.push(DesignConfiguration {
+            id: cadmpeg_ir::features::ConfigurationId::mint(format!(
+                "synthetic:test:id#configuration{ordinal}"
+            ))
+            .expect("identity grammar"),
+            ordinal: u32::try_from(ordinal).unwrap(),
+            active: false,
+            source_index: None,
+            name: None,
+            material: None,
+            properties: BTreeMap::new(),
+            bodies: None,
+            parameter_values: BTreeMap::from([(parameter.id.clone(), value.clone())]),
+            parameter_overrides: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
+            native_ref: None,
+        });
+    }
+    ir.model.parameters.push(parameter.clone());
+    crate::history::configuration::convert_refined_configuration_values(&mut ir, &refined);
+    ir.model
+        .configurations
+        .iter()
+        .map(|configuration| configuration.parameter_values[&parameter.id].clone())
+        .collect()
+}
+
+#[test]
+fn a_configuration_value_of_a_refined_parameter_converts_from_the_display_unit() {
+    let [equal, other, integer] = configuration_values_after_refinement(&[
+        ParameterValue::Real(FiniteReal::new(0.08).unwrap()),
+        ParameterValue::Real(FiniteReal::new(0.1).unwrap()),
+        ParameterValue::Integer(2),
+    ])
+    .try_into()
+    .unwrap();
+    let mm = |value: ParameterValue| match value {
+        ParameterValue::Length(length) => length.get(),
+        other => panic!("not a length: {other:?}"),
+    };
+    // The displayed 0.08 in is the refined 2 mm, not 0.08 * 25.4 = 2.032.
+    assert!((mm(equal) - 2.0).abs() < EPS_TEST_MM);
+    // 0.1 in is 0.1 * 25.4 = 2.54 mm.
+    assert!((mm(other) - 2.54).abs() < EPS_TEST_MM);
+    // 2 in is 50.8 mm.
+    assert!((mm(integer) - 50.8).abs() < EPS_TEST_MM);
 }
 
 #[test]
@@ -312,7 +490,7 @@ fn conflicting_pmi_dimensions_do_not_bind_a_parameter() {
     second.guid = "guid-2".into();
     let mut parameters = Vec::new();
 
-    super::apply_to_parameters(&mut parameters, &[feature], &[first, second]).unwrap();
+    super::apply_to_parameters(&mut parameters, &[feature], &[first, second], None, None).unwrap();
 
     assert!(parameters.is_empty());
 }
@@ -326,7 +504,8 @@ fn equivalent_pmi_dimensions_bind_once_to_lowest_record_id() {
     alias.guid = "guid-2".into();
     let mut parameters = Vec::new();
 
-    super::apply_to_parameters(&mut parameters, &[feature], &[canonical, alias]).unwrap();
+    super::apply_to_parameters(&mut parameters, &[feature], &[canonical, alias], None, None)
+        .unwrap();
 
     let [parameter] = parameters.as_slice() else {
         panic!("one PMI-backed parameter");
@@ -1181,9 +1360,14 @@ fn pmi_parameter_ordinal_overflow_is_refused_not_saturated() {
         pmi: None,
         native_ref: Some("other-dimension".into()),
     }];
-    let error =
-        super::apply_to_parameters(&mut parameters, &[feature], &[dimension("Linear", 0.034)])
-            .unwrap_err();
+    let error = super::apply_to_parameters(
+        &mut parameters,
+        &[feature],
+        &[dimension("Linear", 0.034)],
+        None,
+        None,
+    )
+    .unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
     assert_eq!(parameters.len(), 1);
 }

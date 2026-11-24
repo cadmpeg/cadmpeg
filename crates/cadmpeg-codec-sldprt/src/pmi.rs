@@ -67,44 +67,6 @@ fn neutral_parameter_is_count(
             ))
 }
 
-/// Relative tolerance of two stored numbers that state one value.
-const EPS_DISPLAY_SAME_VALUE: f64 = 1.0e-9;
-/// Millimetres per metre.
-const MM_PER_M: f64 = 1000.0;
-/// Millimetres per inch.
-const MM_PER_INCH: f64 = 25.4;
-
-/// The length in millimetres that a `Linear` or `Ordinate` record of `metres`
-/// gives a dimension whose Keywords `expression` is a bare number: the
-/// record's value in millimetres, inches or metres rounded to the decimal
-/// places the text shows is that number. The value is the record's whichever
-/// unit the text is in. `None` where the text is not a nonzero bare number or
-/// the record does not show as it.
-fn displayed_length_mm(expression: &str, metres: f64) -> Option<f64> {
-    let text = expression.trim();
-    if text.is_empty()
-        || !text
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'.' | b'-' | b'+'))
-    {
-        return None;
-    }
-    let number = text
-        .parse::<f64>()
-        .ok()
-        .filter(|number| number.is_finite())?;
-    if number == 0.0 || metres == 0.0 {
-        return None;
-    }
-    let places = text.split_once('.').map_or(0, |(_, places)| places.len());
-    let half_unit = 0.5 * 10f64.powi(-i32::try_from(places).ok()?);
-    let shows = |value: f64| {
-        (value - number).abs() <= half_unit + EPS_DISPLAY_SAME_VALUE * value.abs().max(number.abs())
-    };
-    let millimetres = metres * MM_PER_M;
-    (shows(millimetres) || shows(millimetres / MM_PER_INCH) || shows(metres)).then_some(millimetres)
-}
-
 #[cfg(test)]
 mod tests;
 
@@ -415,17 +377,32 @@ fn patch_bytes(
     Ok(())
 }
 
+/// A parameter whose bare Keywords number `apply_to_parameters` typed as a
+/// length: the number and the millimetres in the unit it is displayed in.
+#[derive(Debug, Clone)]
+pub(crate) struct RefinedLength {
+    pub(crate) parameter: cadmpeg_ir::features::ParameterId,
+    pub(crate) displayed: crate::design_v11::DisplayedLength,
+}
+
+/// Bind the agreed PMI records to parameters. Returns the parameters whose
+/// bare Keywords number became a length, for the configurations that hold
+/// that parameter's other values. `length_unit` and `length_places` are the
+/// document's.
 pub(crate) fn apply_to_parameters(
     parameters: &mut Vec<cadmpeg_ir::features::parameters::DesignParameter>,
     features: &[cadmpeg_ir::features::Feature],
     records: &[PmiDimension],
-) -> Result<(), cadmpeg_core::CodecError> {
+    length_unit: Option<cadmpeg_ir::design::units::UnitSymbol>,
+    length_places: Option<u32>,
+) -> Result<Vec<RefinedLength>, cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::parameters::{
         DesignParameter, DimensionDisplay, ParameterPmi, ParameterValue, PmiDimensionSubtype,
     };
     use cadmpeg_ir::features::ParameterId;
     use cadmpeg_ir::scalar::Length;
 
+    let mut refined = Vec::new();
     let mut feature_names = BTreeMap::<&str, Vec<&cadmpeg_ir::features::Feature>>::new();
     for feature in features {
         if let Some(name) = feature.name.as_deref() {
@@ -535,11 +512,20 @@ pub(crate) fn apply_to_parameters(
                 parameter.value,
                 None | Some(ParameterValue::Real(_) | ParameterValue::Integer(_))
             ) {
-                if let Some(length) = displayed_length_mm(&parameter.expression, record.value.get())
-                    .and_then(Length::new)
+                if let Some((displayed, length)) = crate::design_v11::displayed_length(
+                    &parameter.expression,
+                    record.value.get(),
+                    length_unit,
+                    length_places,
+                )
+                .zip(Length::new(millimetres))
                 {
                     parameter.expression = crate::history::literals::format_length_mm(length);
                     parameter.value = Some(ParameterValue::Length(length));
+                    refined.push(RefinedLength {
+                        parameter: parameter.id.clone(),
+                        displayed,
+                    });
                 }
             }
             parameter.pmi = Some(semantic);
@@ -585,7 +571,7 @@ pub(crate) fn apply_to_parameters(
             native_ref: None,
         });
     }
-    Ok(())
+    Ok(refined)
 }
 
 /// Parse work one `PMISemanticDataDB` section may spend per payload byte. One
