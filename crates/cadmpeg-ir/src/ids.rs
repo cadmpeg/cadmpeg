@@ -7,7 +7,7 @@
 //! only be unique within their owning state.
 //!
 //! Entity IDs follow `<format>:<scope>:<kind>#<key>` (exactly three colon
-//! components before `#`). Compose typed IDs from an [`IdentityNamespace`]
+//! components before `#`, the first a codec id). Compose typed IDs from an [`IdentityNamespace`]
 //! and an [`IdentityKey`]; validate existing strings with [`is_valid_identity`].
 
 pub mod comparison;
@@ -28,9 +28,14 @@ use std::fmt::{self, Display};
 
 /// True when `id` matches `<format>:<scope>:<kind>#<key>`.
 ///
-/// The key is non-empty, contains no `#`, and the whole id has no whitespace.
+/// The format is a codec id (§2.2), the key is non-empty and contains no
+/// `#`, and the whole id has no whitespace.
 #[must_use]
 pub fn is_valid_identity(id: &str) -> bool {
+    let format = id.split_once(':').map_or(id, |(format, _)| format);
+    if !cadmpeg_core::text::is_codec_id(format.as_bytes()) {
+        return false;
+    }
     let mut separators = 0_u8;
     let mut key = false;
     let mut nonempty = false;
@@ -124,7 +129,7 @@ impl schemars::JsonSchema for Identity {
     fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
         // A strict end assertion also refuses a trailing line break.
         let pattern = format!(
-            r"^(?:[^:#{SCHEMA_WHITESPACE}]+:){{2}}[^:#{SCHEMA_WHITESPACE}]+#[^#{SCHEMA_WHITESPACE}]+(?![\s\S])"
+            r"^[a-z0-9]+:[^:#{SCHEMA_WHITESPACE}]+:[^:#{SCHEMA_WHITESPACE}]+#[^#{SCHEMA_WHITESPACE}]+(?![\s\S])"
         );
         schemars::json_schema!({"type": "string", "pattern": pattern})
     }
@@ -781,14 +786,17 @@ pub struct StaticIdentityNamespace {
 }
 
 impl StaticIdentityNamespace {
-    /// Admit a static namespace, returning `None` for invalid grammar.
+    /// Admit a static namespace whose format is a codec id, returning
+    /// `None` for invalid grammar.
     #[must_use]
     pub const fn new(
         format: &'static str,
         scope: &'static str,
         kind: &'static str,
     ) -> Option<Self> {
-        if valid_component_text(format) && valid_component_text(scope) && valid_component_text(kind)
+        if cadmpeg_core::text::is_codec_id(format.as_bytes())
+            && valid_component_text(scope)
+            && valid_component_text(kind)
         {
             Some(Self {
                 format,
@@ -810,7 +818,8 @@ pub struct IdentityNamespace {
 }
 
 impl IdentityNamespace {
-    /// Admit a namespace assembled from runtime text.
+    /// Admit a namespace assembled from runtime text whose format is a
+    /// codec id.
     pub fn new(
         format: impl Into<String>,
         scope: impl Into<String>,
@@ -819,6 +828,12 @@ impl IdentityNamespace {
         let format = format.into();
         let scope = scope.into();
         let kind = kind.into();
+        if !cadmpeg_core::text::is_codec_id(format.as_bytes()) {
+            return Err(IdentityError::InvalidComponent {
+                label: "format",
+                value: format,
+            });
+        }
         let format_component = Self::component("format", format)?;
         let scope_component = Self::component("scope", scope)?;
         let kind_component = Self::component("kind", kind)?;
@@ -839,15 +854,15 @@ impl IdentityNamespace {
         }
     }
 
-    /// Combine three already-admitted runtime components.
+    /// Combine a codec's format id with two admitted runtime components.
     #[must_use]
     pub fn from_components(
-        format: &IdentityComponent,
+        format: crate::codec::FormatId,
         scope: &IdentityComponent,
         kind: &IdentityComponent,
     ) -> Self {
         Self {
-            format: format.clone(),
+            format: IdentityComponent(std::borrow::Cow::Borrowed(format.as_str())),
             scope: scope.clone(),
             kind: kind.clone(),
         }
@@ -1238,7 +1253,8 @@ impl Identity {
 /// Failure to mint an entity identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IdentityError {
-    /// A colon-separated namespace component is empty or contains separators.
+    /// A colon-separated namespace component is empty or contains separators,
+    /// or the format component is not a codec id.
     InvalidComponent {
         /// Component name (`format`, `scope`, or `kind`).
         label: &'static str,
