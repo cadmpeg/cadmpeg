@@ -48,7 +48,7 @@ pub(in crate::validate) fn check_position(
             super::error(
                 findings,
                 entity,
-                crate::rule!("design.names-unordered-container-members-own-results", 
+                crate::rule!("design.position-after-unordered-container",
                     "{position} names unordered container {id}, whose members have their own results; it names no state"
                 ),
             );
@@ -159,7 +159,7 @@ pub(in crate::validate) fn check_resulting_position(
         super::error(
             findings,
             entity,
-            crate::rule!("design.after-member-unordered-container-no-result", 
+            crate::rule!("design.position-after-member-without-result",
                 "{position} is after {id}, a member of an unordered container with no result of its own in any configuration of its scope; it names no state"
             ),
         );
@@ -314,7 +314,7 @@ pub(super) fn check_evaluations(
                 super::error(
                     findings,
                     id,
-                    crate::rule!("design.evaluation-evaluates-no-result-own-evaluation", 
+                    crate::rule!("design.evaluation-after-member-without-result",
                         "evaluation evaluates {position}, but {} has no result of its own in the evaluation's configuration",
                         member.id.as_str()
                     ),
@@ -714,7 +714,7 @@ fn check_current_position(
             super::error(
                 findings,
                 entity,
-                crate::rule!("design.current-state-no-result-own-active", 
+                crate::rule!("design.current-state-after-member-without-result",
                     "current state is at {at}, but {} has no result of its own in the active configuration",
                     member.id.as_str()
                 ),

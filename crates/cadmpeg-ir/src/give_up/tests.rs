@@ -610,3 +610,58 @@ fn a_native_record_that_names_a_lost_record_is_dropped() {
     assert!(!holds(&ir, native));
     assert_closed(&ir, &point, &outcome);
 }
+
+#[test]
+fn the_schema_states_each_definition_a_partial_form_keys_on() {
+    use super::restate::{
+        family, EXPRESSION, NAME_ENTRY, NAME_TABLE, ORDERED_MEMBERS, PICKED, PROCEDURAL_CURVE,
+        PROCEDURAL_SURFACE, UNORDERED_MEMBERS, UNORDERED_PICKS,
+    };
+    let schema: serde_json::Value = serde_json::from_str(crate::CADIR_JSON_SCHEMA).unwrap();
+    let definitions = schema["$defs"]
+        .as_object()
+        .expect("the schema's definitions");
+    for keyed in [
+        PICKED,
+        EXPRESSION,
+        PROCEDURAL_CURVE,
+        PROCEDURAL_SURFACE,
+        NAME_ENTRY,
+        UNORDERED_MEMBERS,
+        ORDERED_MEMBERS,
+        NAME_TABLE,
+    ] {
+        assert!(
+            definitions.keys().any(|name| family(name) == keyed),
+            "the CADIR schema has no definition of the family {keyed}"
+        );
+    }
+    assert!(
+        definitions.contains_key(UNORDERED_PICKS),
+        "the CADIR schema has no definition {UNORDERED_PICKS}"
+    );
+}
+
+#[test]
+fn a_construction_goes_with_the_carrier_that_owns_it() {
+    let mut ir = crate::examples::unit_cube().unwrap();
+    let spine: crate::geometry::ProceduralCurve = serde_json::from_value(json!({
+        "id": "test:geometry:procedural-curve#spine",
+        "definition": {"kind": "unknown"}
+    }))
+    .unwrap();
+    let owner = ir.geometry.curves.last_mut().unwrap();
+    let crate::geometry::CurveGeometry::Solved(solved) = owner.geometry.clone() else {
+        panic!("the unit cube's curves are solved");
+    };
+    owner.geometry = crate::geometry::CurveGeometry::Procedural {
+        construction: spine.id.clone(),
+        cache: Some(solved),
+    };
+    let owner = owner.id.as_str().to_owned();
+    ir.geometry.procedural_curves.push(spine.clone());
+    let (outcome, _) = run(&mut ir, seed("geometry", "curves", &owner));
+    assert!(outcome.dropped.contains(spine.id.as_str()));
+    assert!(ir.geometry.procedural_curves.is_empty());
+    assert_closed(&ir, &owner, &outcome);
+}

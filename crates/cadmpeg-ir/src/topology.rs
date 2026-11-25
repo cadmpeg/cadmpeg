@@ -12,7 +12,7 @@ use crate::features::geometry::FinitePoint3;
 use crate::features::selections::NonEmptyMembers;
 use crate::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey, IdentityNamespace, LoopId, PcurveId,
-    PointId, RegionId, ShellId, SurfaceId, VertexId,
+    PointId, RegionId, ShellId, SubdId, SurfaceId, VertexId,
 };
 use crate::math::Point3;
 use crate::scalar::{Fraction, UnitBinary32};
@@ -424,12 +424,30 @@ pub enum ShellMember {
         /// Arena id of the vertex.
         id: VertexId,
     },
+    /// The subdivision cage that is the shell's only member (§5.6).
+    Subd {
+        /// Arena id of the cage.
+        id: SubdId,
+    },
+}
+
+impl ShellMember {
+    /// The member's arena id.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::WireEdge { id } => id.as_str(),
+            Self::FreeVertex { id } => id.as_str(),
+            Self::Subd { id } => id.as_str(),
+        }
+    }
 }
 
 /// An oriented boundary of a region.
 ///
 /// Its faces are the faces whose [`Face::shell`] names it; `members` lists
-/// only the wire edges and free vertices, which name no parent.
+/// only the wire edges, free vertices, and subdivision cages, which name no
+/// parent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -438,7 +456,8 @@ pub struct Shell {
     pub id: ShellId,
     /// Owning region.
     pub region: RegionId,
-    /// Wire edges and free vertices owned by the shell.
+    /// Wire edges, free vertices, and the subdivision cage owned by the
+    /// shell.
     pub members: Vec<ShellMember>,
     /// Marks a shell a face, wire edge, free vertex, or cage of which the
     /// document does not state (§5.6, Unstated children).
@@ -492,15 +511,12 @@ impl Shell {
         shell
     }
 
-    /// States the shell without the wire edge or free vertex `member`, which
-    /// the document no longer holds, and marks it (§5.6, Unstated children).
-    /// Returns whether it listed `member`.
+    /// States the shell without its member `member`, which the document no
+    /// longer holds, and marks it (§5.6, Unstated children). Returns whether
+    /// it listed `member`.
     pub(crate) fn lose_member(&mut self, member: &str) -> bool {
         let before = self.members.len();
-        self.members.retain(|listed| match listed {
-            ShellMember::WireEdge { id } => id.as_str() != member,
-            ShellMember::FreeVertex { id } => id.as_str() != member,
-        });
+        self.members.retain(|listed| listed.as_str() != member);
         let lost = self.members.len() != before;
         if lost {
             self.unstated = Some(Unstated::Members);
@@ -524,7 +540,7 @@ impl Shell {
     pub fn wire_edges(&self) -> impl Iterator<Item = &EdgeId> {
         self.members.iter().filter_map(|member| match member {
             ShellMember::WireEdge { id } => Some(id),
-            ShellMember::FreeVertex { .. } => None,
+            ShellMember::FreeVertex { .. } | ShellMember::Subd { .. } => None,
         })
     }
 
@@ -532,7 +548,15 @@ impl Shell {
     pub fn free_vertices(&self) -> impl Iterator<Item = &VertexId> {
         self.members.iter().filter_map(|member| match member {
             ShellMember::FreeVertex { id } => Some(id),
-            ShellMember::WireEdge { .. } => None,
+            ShellMember::WireEdge { .. } | ShellMember::Subd { .. } => None,
+        })
+    }
+
+    /// Subdivision cages belonging directly to the shell.
+    pub fn subds(&self) -> impl Iterator<Item = &SubdId> {
+        self.members.iter().filter_map(|member| match member {
+            ShellMember::Subd { id } => Some(id),
+            ShellMember::WireEdge { .. } | ShellMember::FreeVertex { .. } => None,
         })
     }
 

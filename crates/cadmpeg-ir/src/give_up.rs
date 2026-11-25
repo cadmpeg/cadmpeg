@@ -341,6 +341,7 @@ fn remove(
     seed: &Seed,
 ) -> Result<Option<Released>, CodecError> {
     let parents = parents(ir, &seed.arena, &seed.id);
+    let owned = owned(ir, &seed.arena, &seed.id);
     let copies = take(ir, &seed.arena, &seed.id);
     if copies == 0 {
         return Ok(None);
@@ -358,6 +359,7 @@ fn remove(
         references,
         schema,
         gone.then(|| seed.id.clone()),
+        owned,
         &mut released,
     )?;
     Ok(Some(released))
@@ -423,6 +425,35 @@ fn parents(ir: &CadIr, arena: &Arena, id: &str) -> Vec<String> {
     }
 }
 
+/// The procedural constructions that the copies of `id` in `arena` carry:
+/// the document states no construction without its owning carrier.
+fn owned(ir: &CadIr, arena: &Arena, id: &str) -> Vec<(Arena, String)> {
+    let Arena::Home {
+        home: "geometry",
+        field,
+    } = arena
+    else {
+        return Vec::new();
+    };
+    let constructions: Vec<(&str, String)> = match *field {
+        "curves" => records(&ir.geometry.curves, id)
+            .iter()
+            .filter_map(|curve| curve.geometry.procedural_construction())
+            .map(|construction| ("procedural_curves", construction.as_str().to_owned()))
+            .collect(),
+        "surfaces" => records(&ir.geometry.surfaces, id)
+            .iter()
+            .filter_map(|surface| surface.geometry.procedural_construction())
+            .map(|construction| ("procedural_surfaces", construction.as_str().to_owned()))
+            .collect(),
+        _ => Vec::new(),
+    };
+    constructions
+        .into_iter()
+        .filter_map(|(field, id)| Some((Arena::home("geometry", field)?, id)))
+        .collect()
+}
+
 /// Marks each shell and body of `parents` the document holds: it no longer
 /// states each of its children (§5.6, Unstated children).
 fn mark_parents(ir: &mut CadIr, parents: &[String], marked: &mut BTreeSet<String>) {
@@ -439,8 +470,9 @@ fn mark_parents(ir: &mut CadIr, parents: &[String], marked: &mut BTreeSet<String
 }
 
 /// Drops, transitively, each record that needs `gone`, an id no record of
-/// `ir` holds, and marks each record that holds it in a form that keeps
-/// the rest, recording both in `released`. Then removes every id it
+/// `ir` holds, with `carried` and each construction a dropped carrier owns,
+/// and marks each record that holds it in a form that keeps the rest,
+/// recording both in `released`. Then removes every id it
 /// dropped from the collections keyed by id and from the stubs' links,
 /// which no record needs. `schema` holds the CADIR schema once a record
 /// needs it.
@@ -450,12 +482,16 @@ fn release(
     references: &mut References,
     schema: &OnceCell<Option<Schema>>,
     gone: Option<String>,
+    mut carried: Vec<(Arena, String)>,
     released: &mut Released,
 ) -> Result<(), CodecError> {
     let mut gone: BTreeSet<String> = gone.into_iter().collect();
     let mut all_gone = gone.clone();
-    while !gone.is_empty() {
+    while !gone.is_empty() || !carried.is_empty() {
         let mut drops: BTreeMap<Arena, BTreeSet<String>> = BTreeMap::new();
+        for (arena, id) in carried.drain(..) {
+            drops.entry(arena).or_default().insert(id);
+        }
         for (arena, id) in references.naming(&gone) {
             let Some(mut holder) = ir.holder(arena, id, &gone) else {
                 continue;
@@ -473,6 +509,7 @@ fn release(
         let mut next = BTreeSet::new();
         for (arena, ids) in drops {
             let parents: Vec<String> = ids.iter().flat_map(|id| parents(ir, &arena, id)).collect();
+            carried.extend(ids.iter().flat_map(|id| owned(ir, &arena, id)));
             for (id, copies) in ir.remove_ids(&arena, &ids) {
                 if references.release(&id, copies) {
                     next.insert(id.clone());

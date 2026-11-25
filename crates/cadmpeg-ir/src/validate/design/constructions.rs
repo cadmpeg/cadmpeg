@@ -442,7 +442,7 @@ fn check_ratio_spelling(
     if let Some(Dimension::Literal(ratio)) = parameter_ratio {
         if ratio.get() == 0.0 || ratio.get() == 1.0 {
             error(crate::rule!(
-                "design.parameterratio-value-literal-end-curve",
+                "design.parameter-ratio-literal-at-curve-end",
                 "a ParameterRatio value is a literal {}, an end of the curve",
                 ratio.get()
             ));
@@ -456,10 +456,10 @@ fn check_ratio_spelling(
     };
     for pick in picks.as_slice() {
         match stated_curve(index, pick) {
-            StatedCurve::Endless => error(crate::rule!("design.ratio-parameterratio-value-picks-datum-axis", 
+            StatedCurve::Endless => error(crate::rule!("design.ratio-on-endless-line",
                 "a Ratio or ParameterRatio value picks a datum axis, a principal axis, or an infinite line, which has no ends"
             )),
-            StatedCurve::Conic if parameter_ratio.is_some() => error(crate::rule!("design.parameterratio-value-picks-curve-document-states", 
+            StatedCurve::Conic if parameter_ratio.is_some() => error(crate::rule!("design.parameter-ratio-on-line-or-circle",
                 "a ParameterRatio value picks a curve the document states as a line, a circle, or an arc; it is a Ratio"
             )),
             StatedCurve::Conic | StatedCurve::Other => {}

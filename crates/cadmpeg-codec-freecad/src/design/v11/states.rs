@@ -517,6 +517,12 @@ const CARRIERS: [&str; 9] = [
     "vertices",
     "edges",
 ];
+/// The construction arenas, each with the field that names the carrier a
+/// construction produces.
+const PRODUCERS: [(&str, &str); 2] = [
+    ("procedural_surfaces", "surface"),
+    ("procedural_curves", "curve"),
+];
 /// The arenas whose records refer to one another and match together.
 const COUPLED: [&str; 3] = ["loops", "coedges", "faces"];
 /// The carrier arenas whose records name one another: a procedural carrier
@@ -648,6 +654,29 @@ fn compared(value: &Value) -> Value {
     value
 }
 
+/// What carrier matching compares of `value` under `map`: its compared
+/// fields, and those of each construction in `producers` but the field that
+/// names the carrier it produces.
+fn content(
+    value: &Value,
+    producers: Option<&Vec<(&str, &Value)>>,
+    map: &HashMap<String, String>,
+) -> String {
+    let mut constructions = producers
+        .into_iter()
+        .flatten()
+        .map(|&(link, construction)| {
+            let mut construction = compared(&mapped(construction, map));
+            if let Value::Object(fields) = &mut construction {
+                fields.remove(link);
+            }
+            construction.to_string()
+        })
+        .collect::<Vec<_>>();
+    constructions.sort_unstable();
+    serde_json::json!([compared(&mapped(value, map)), constructions]).to_string()
+}
+
 /// `value` with every string that `map` maps replaced by its image.
 fn mapped(value: &Value, map: &HashMap<String, String>) -> Value {
     match value {
@@ -711,9 +740,10 @@ struct Snapshot {
 /// is `Empty`), with ids minted by the full-snapshot procedure (§5.4): a
 /// body keeps its base body's id by position, and so do the regions of that
 /// body and the shells of those regions; every other record that equals a
-/// base record but for `source_object` once the ids it holds are mapped
-/// keeps the base record's id and `source_object` and is shared; every other
-/// record is new and keeps the key of the shape that holds it.
+/// base record but for `source_object` once the ids it holds are mapped,
+/// a carrier with the constructions that produce it, keeps the base record's
+/// id and `source_object` and is shared; every other record is new and keeps
+/// the key of the shape that holds it.
 fn snapshot(topology: &Topology, base: Option<&Base>) -> Result<Snapshot, CodecError> {
     let empty = Resolved::default();
     let base = base.map_or(&empty, |base| &base.resolved);
@@ -765,7 +795,26 @@ fn snapshot(topology: &Topology, base: Option<&Base>) -> Result<Snapshot, CodecE
         }
     }
 
-    // Carriers, vertices, and edges, by content, until no further match.
+    // Carriers, vertices, and edges, by content, until no further match. A
+    // carrier's content holds the constructions that produce it.
+    let mut producers = HashMap::<&str, Vec<(&str, &Value)>>::new();
+    let mut base_producers = HashMap::<&str, Vec<(&str, &Value)>>::new();
+    for (arena, link) in PRODUCERS {
+        for (_, value) in rows(arena) {
+            if let Some(carrier) = value.get(link).and_then(Value::as_str) {
+                producers.entry(carrier).or_default().push((link, value));
+            }
+        }
+        for value in base_rows(arena).into_iter().flat_map(BTreeMap::values) {
+            if let Some(carrier) = value.get(link).and_then(Value::as_str) {
+                base_producers
+                    .entry(carrier)
+                    .or_default()
+                    .push((link, value));
+            }
+        }
+    }
+    let unmapped = HashMap::new();
     loop {
         let mut matched = false;
         for arena in CARRIERS {
@@ -776,7 +825,7 @@ fn snapshot(topology: &Topology, base: Option<&Base>) -> Result<Snapshot, CodecE
             for (id, value) in base_records {
                 if !used.contains(id) {
                     by_content
-                        .entry(compared(value).to_string())
+                        .entry(content(value, base_producers.get(id.as_str()), &unmapped))
                         .or_default()
                         .push(id);
                 }
@@ -785,7 +834,7 @@ fn snapshot(topology: &Topology, base: Option<&Base>) -> Result<Snapshot, CodecE
                 if map.contains_key(id) {
                     continue;
                 }
-                let content = compared(&mapped(value, &map)).to_string();
+                let content = content(value, producers.get(id.as_str()), &map);
                 let Some(old) = by_content.get_mut(&content).and_then(|candidates| {
                     candidates.retain(|candidate| !used.contains(*candidate));
                     candidates.first().copied()

@@ -74,7 +74,7 @@
             "namespace": "export"
           }
         },
-        "message": "the iges write does not represent model arena `attributes`: 5 record(s) omitted",
+        "message": "the iges write does not represent model arena `attributes`: 5 record(s) omitted: iges:model:attribute#curve.D3, iges:model:attribute#curve.D5, iges:model:attribute#curve.D7, iges:model:attribute#curve.D9, iges:model:attribute#surface.D1",
         "severity": "warning"
       },
       {
@@ -86,7 +86,7 @@
             "namespace": "export"
           }
         },
-        "message": "the iges write does not represent model arena `presentation_layers`: 1 record(s) omitted",
+        "message": "the iges write does not represent model arena `presentation_layers`: 1 record(s) omitted: iges:model:layer#0",
         "severity": "warning"
       }
     ],

@@ -59,10 +59,22 @@ impl Schema {
     }
 }
 
+/// The schema definition families the rewrite gives a partial form or a
+/// collection rule, and the one definition it sorts again.
+pub(super) const PICKED: &str = "Picked";
+pub(super) const EXPRESSION: &str = "Expression";
+pub(super) const PROCEDURAL_CURVE: &str = "ProceduralCurveDefinition";
+pub(super) const PROCEDURAL_SURFACE: &str = "ProceduralSurfaceDefinition";
+pub(super) const NAME_ENTRY: &str = "NameEntry";
+pub(super) const UNORDERED_MEMBERS: &str = "UnorderedMembers";
+pub(super) const ORDERED_MEMBERS: &str = "OrderedMembers";
+pub(super) const NAME_TABLE: &str = "NameTable";
+pub(super) const UNORDERED_PICKS: &str = "UnorderedMembers_Picked";
+
 /// The family of a schema definition: its name without the type argument
 /// after `_` and without the digits that tell apart instances of one
 /// generic type.
-fn family(name: &str) -> &str {
+pub(super) fn family(name: &str) -> &str {
     let base = name.split('_').next().unwrap_or(name);
     base.trim_end_matches(|c: char| c.is_ascii_digit())
 }
@@ -129,12 +141,12 @@ impl<'a> Restate<'a> {
     fn walk(&self, schema: &Value, value: &mut Value) -> Fate {
         let (node, name) = self.schema.resolve(schema);
         match name.map(family) {
-            Some("Picked") => return self.pick(value),
-            Some("Expression") => return self.expression(value),
-            Some(carrier @ ("ProceduralCurveDefinition" | "ProceduralSurfaceDefinition")) => {
+            Some(PICKED) => return self.pick(value),
+            Some(EXPRESSION) => return self.expression(value),
+            Some(carrier @ (PROCEDURAL_CURVE | PROCEDURAL_SURFACE)) => {
                 return self.carrier(carrier, value);
             }
-            Some("NameEntry") => return self.name_entry(value),
+            Some(NAME_ENTRY) => return self.name_entry(value),
             _ => {}
         }
         if let Some(branches) = ["oneOf", "anyOf", "allOf"]
@@ -255,15 +267,15 @@ impl<'a> Restate<'a> {
             return Fate::Clean;
         }
         if fates.contains(&Fate::Lost) {
-            let unordered = family == Some("UnorderedMembers")
+            let unordered = family == Some(UNORDERED_MEMBERS)
                 || (node.get("uniqueItems") == Some(&Value::Bool(true))
-                    && family != Some("OrderedMembers"));
+                    && family != Some(ORDERED_MEMBERS));
             let pairs = members
                 .is_some_and(|schema| self.schema.resolve(schema).0.get("prefixItems").is_some());
             let removable = |item: &Value| {
                 unordered
                     && (!pairs
-                        || family == Some("NameTable")
+                        || family == Some(NAME_TABLE)
                         || item.get(0).is_some_and(|key| names(key, self.gone)))
             };
             if items
@@ -276,7 +288,7 @@ impl<'a> Restate<'a> {
             let mut fates = fates.iter();
             items.retain(|_| fates.next() != Some(&Fate::Lost));
         }
-        if name == Some("UnorderedMembers_Picked") && !Self::sort_picks(items) {
+        if name == Some(UNORDERED_PICKS) && !Self::sort_picks(items) {
             return Fate::Lost;
         }
         Fate::Kept
@@ -374,7 +386,7 @@ impl<'a> Restate<'a> {
             .map(|cache| serde_json::json!({"kind": "unknown", "cache": cache}))
             .filter(|unknown| {
                 let unknown = unknown.clone();
-                if carrier == "ProceduralCurveDefinition" {
+                if carrier == PROCEDURAL_CURVE {
                     serde_json::from_value::<ProceduralCurveDefinition>(unknown).is_ok()
                 } else {
                     serde_json::from_value::<ProceduralSurfaceDefinition>(unknown).is_ok()

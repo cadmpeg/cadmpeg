@@ -134,7 +134,7 @@ pub(super) fn plan(target: &CadIr, items: usize) -> Result<BaseFeaturePlan<'_>, 
                 edges.extend(shells.get(shell).into_iter().flat_map(|shell| {
                     shell.members.iter().filter_map(|member| match member {
                         ShellMember::WireEdge { id } => Some(id),
-                        ShellMember::FreeVertex { .. } => None,
+                        ShellMember::FreeVertex { .. } | ShellMember::Subd { .. } => None,
                     })
                 }));
             }
