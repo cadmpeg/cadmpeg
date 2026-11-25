@@ -220,12 +220,6 @@ pub(super) fn document_prefix(stream: &str) -> &str {
         .map_or("", |(key, _)| &local[..=key.len()])
 }
 
-/// Whether the document at `outer` can hold the records of the document at
-/// `prefix`: it is that document, or the root document.
-pub(super) fn within(prefix: &str, outer: &str) -> bool {
-    outer.is_empty() || prefix == outer
-}
-
 /// The v10 feature of the item whose record is `record`, among the features
 /// the v10 projection placed at the item's position: the one keyed by that
 /// record, else the first by id.
