@@ -11,6 +11,7 @@ use cadmpeg_ir::products::{ExternalDocument, Occurrence, ProductDefinition, Stor
 use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 use cadmpeg_ir::{Codec, DecodeOptions};
 
+use crate::loss::SldprtLossCode;
 use crate::SldprtCodec;
 
 /// Moves each identity of the unit cube into the `part` namespace.
@@ -238,7 +239,7 @@ fn each_design_of_an_archive_is_written_with_its_own_features() {
         report
             .losses
             .iter()
-            .all(|loss| loss.code.local_code() != "writer.feature-result-absent"),
+            .all(|loss| loss.code != SldprtLossCode::WriterFeatureResultAbsent.kind()),
         "{:?}",
         report.losses
     );
@@ -280,7 +281,7 @@ fn a_feature_whose_result_body_the_output_does_not_hold_is_left_out_and_named() 
     let absent = report
         .losses
         .iter()
-        .find(|loss| loss.code.local_code() == "writer.feature-result-absent")
+        .find(|loss| loss.code == SldprtLossCode::WriterFeatureResultAbsent.kind())
         .unwrap_or_else(|| panic!("{:?}", report.losses));
     assert!(
         absent.message.contains("test:model:feature#1"),

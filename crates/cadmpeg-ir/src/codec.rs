@@ -414,7 +414,7 @@ impl DecodeResult {
         policy: &DecodePolicy,
         format: FormatId,
     ) -> Result<(), CodecError> {
-        let repeated = self.ir.repeated_ids();
+        let repeated = self.ir.repeated_ids(crate::document::DifferingCopies::Keep);
         if repeated.is_empty() {
             return Ok(());
         }

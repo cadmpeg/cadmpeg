@@ -679,7 +679,7 @@ pub(crate) fn emit_export_plan(
     let needs_sidecar = format == Format::Cadir
         && matches!(
             origin,
-            LoadOrigin::Decoded { .. } | LoadOrigin::Restored { .. }
+            LoadOrigin::Decoded { .. } | LoadOrigin::Restored { .. } | LoadOrigin::Read { .. }
         );
     if let ResolvedDestination::File(path) = destination {
         let (report, cadir_sha256, others) = artifact_store::write_plan_atomic(path, plan)?;
