@@ -784,7 +784,9 @@ fn a_thin_wall_side_and_corners_fit_whether_its_profile_closes() {
     with(&mut ir, |ir| revolve(ir, three, WallSide::Left, round));
     assert!(ruled(&ir, lines).is_empty());
     round_edge(&mut ir, three[0]);
-    assert_eq!(ruled(&ir, lines).len(), 1);
+    let found = ruled(&ir, lines);
+    assert_eq!(found.len(), 1);
+    assert!(found[0].contains("picks edge "), "{found:?}");
 }
 
 #[test]
