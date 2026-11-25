@@ -727,8 +727,8 @@ and NURBS. Void regions that own faces transfer as regions. Unreadable
 partitions, untransferred faces, and unresolved carriers produce losses, and a
 shell that does not state every member is marked. The primary-state selection
 carries an assumption loss. The headline is L2: placed analytic and NURBS
-carriers transfer, and structural validation still reports the undecoded
-product root on every document.
+carriers transfer, and the decoded document states one root definition over
+the bodies its admitted partitions hold.
 The codec is read-only. Feature history, display attributes, and assembly placements are pending.
 
 See [`formats/solidedge.md`](formats/solidedge.md) and

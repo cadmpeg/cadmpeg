@@ -181,6 +181,33 @@ fn primary_partition_projects_an_exact_sphere_in_millimetres() {
 }
 
 #[test]
+fn the_document_root_lists_the_bodies_of_every_partition() {
+    let bytes = test_support::with_partitions(&[
+        test_support::sphere_partition(),
+        test_support::two_solid_regions_partition(),
+    ]);
+    let result = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let ir = result.ir();
+    assert_eq!(ir.geometry.bodies.len(), 2);
+    let [root] = ir.model.product_definitions.as_slice() else {
+        panic!("one product definition");
+    };
+    assert!(root.is_root());
+    let bodies: std::collections::BTreeSet<_> =
+        ir.geometry.bodies.iter().map(|body| &body.id).collect();
+    assert_eq!(root.bodies.len(), bodies.len());
+    assert_eq!(
+        root.bodies
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>(),
+        bodies
+    );
+    assert_geometry_valid(ir);
+}
+
+#[test]
 fn one_body_with_two_solid_regions_stays_one_body() {
     let bytes = test_support::with_partitions(&[test_support::two_solid_regions_partition()]);
     let result = SolidEdgeCodec
