@@ -107,6 +107,10 @@
     "notes": [
       "IGES Fixed ASCII container regenerated from supported neutral geometry"
     ],
+    "synthesis_cause": {
+      "kind": "patch_declined",
+      "reason": "the source fidelity holds no IGES source image"
+    },
     "write_path": {
       "fidelity": {
         "kind": "not_provided"
