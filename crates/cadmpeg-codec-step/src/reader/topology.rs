@@ -3099,6 +3099,16 @@ fn build_one(
     let mut surfaces = Vec::new();
     let mut shells = Vec::new();
     let mut region = Region::new(rid.clone(), bid.clone(), Vec::new());
+    let name = root_name_value(root).and_then(|value| {
+        super::decode_text(
+            exchange,
+            value,
+            losses,
+            id,
+            "body name",
+            StepLossCode::MetadataStringInvalid,
+        )
+    });
     let body = Body {
         id: bid,
         kind: if solid {
@@ -3107,7 +3117,7 @@ fn build_one(
             BodyKind::Sheet
         },
         transform: None,
-        name: None,
+        name,
         color: None,
         visible: None,
         native_ref: None,
@@ -5844,6 +5854,17 @@ fn face_attributes_inner<'a>(
         _ => None,
     };
     Ok(result)
+}
+
+/// The `REPRESENTATION_ITEM.name` of a topology root, unless it is empty.
+fn root_name_value(root: &RawRecord) -> Option<&Value> {
+    let value = if root.partials.len() == 1 {
+        root.parameter(0)
+    } else {
+        root.partial("REPRESENTATION_ITEM")
+            .and_then(|partial| partial.parameters.first())
+    };
+    value.filter(|value| !matches!(value, Value::String(bytes) if bytes.is_empty()))
 }
 
 fn face_name_value(record: &RawRecord) -> Option<&Value> {
