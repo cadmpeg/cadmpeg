@@ -34,8 +34,8 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
         .expect("distinct retained source image");
     let plan = Encoder::plan(
         &F3dCodec,
-        EncodeInput::new(&ir, Some(&fidelity)),
-        TargetRequest::Explicit("f3d:manifest-3-2-0-0"),
+        EncodeInput::new(&ir, Some(&fidelity))
+            .with_target(TargetRequest::Explicit("f3d:manifest-3-2-0-0")),
     )
     .expect("explicit transcode plans");
 
@@ -67,8 +67,8 @@ fn cross_format_write_has_no_dialect_displacement() {
     let fidelity = SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(b""));
     let plan = Encoder::plan(
         &F3dCodec,
-        EncodeInput::new(&ir, Some(&fidelity)),
-        TargetRequest::Explicit("f3d:manifest-3-2-0-0"),
+        EncodeInput::new(&ir, Some(&fidelity))
+            .with_target(TargetRequest::Explicit("f3d:manifest-3-2-0-0")),
     )
     .expect("cross-format synthesis plans");
     assert_eq!(
@@ -86,12 +86,8 @@ fn cross_format_write_has_no_dialect_displacement() {
 #[test]
 fn inherit_with_missing_image_charges_preserved_image_unavailable() {
     let ir = sourced_ir("f3d:manifest-3-2-0-0");
-    let plan = Encoder::plan(
-        &F3dCodec,
-        EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
-    )
-    .expect("inherit synthesizes the catalog source dialect");
+    let plan = Encoder::plan(&F3dCodec, EncodeInput::new(&ir, None))
+        .expect("inherit synthesizes the catalog source dialect");
 
     // No fidelity was offered, so the sealed wrapper owns this state and
     // stamps `NotProvided`; the missing-image fact survives as the typed loss.

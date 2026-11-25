@@ -13,7 +13,6 @@ use cadmpeg_core::convert::f64_from_index;
 
 use cadmpeg_ir::geometry::CurveGeometry;
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::Cursor;
 
@@ -143,7 +142,7 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
             ));
             let mut encoded = Vec::new();
             F3dCodec
-                .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+                .plan(EncodeInput::new(&source_less, None))
                 .and_then(|plan| plan.write_to(&mut encoded))
                 .expect("source-less G2 encode");
             let round_trip = F3dCodec
@@ -348,7 +347,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         ));
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&source_less, None))
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less rolling-ball encode");
         let round_trip = F3dCodec
@@ -1041,7 +1040,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         }
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&source_less, None))
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less variable-blend encode");
         let round_trip = F3dCodec
@@ -1155,7 +1154,7 @@ fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("two-radii variable-blend source-less encode");
     let round_trip = F3dCodec
@@ -1205,7 +1204,7 @@ fn generated_two_radii_variable_blend_decodes_explicit_circular_cross_section() 
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("selector-zero source-less encode");
     let round_trip = F3dCodec

@@ -160,8 +160,8 @@ fn f3z_archive_merges_identity_occurrences() {
     let mut displaced = Vec::new();
     let report = F3dCodec
         .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Explicit("f3d:f3z-multi-document"),
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity()))
+                .with_target(TargetRequest::Explicit("f3d:f3z-multi-document")),
         )
         .and_then(|plan| plan.write_to(&mut displaced))
         .expect("an explicit F3Z request writes the single-document row");
@@ -185,8 +185,8 @@ fn f3z_archive_merges_identity_occurrences() {
     let mut regenerated = Vec::new();
     let report = F3dCodec
         .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Explicit("f3d:manifest-3-2-0-0"),
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity()))
+                .with_target(TargetRequest::Explicit("f3d:manifest-3-2-0-0")),
         )
         .and_then(|plan| plan.write_to(&mut regenerated))
         .expect("merged F3Z regenerates at the named row");
@@ -361,10 +361,10 @@ fn f3z_archive_without_merged_components_preserves_root_replay() {
         .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
         .is_some());
     let plan = F3dCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(
+            decoded.ir(),
+            Some(decoded.source_fidelity()),
+        ))
         .expect("unmerged F3Z archive remains replayable");
     let reported = wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
         plan.report(),
@@ -403,7 +403,13 @@ fn f3z_container_only_records_the_outer_document_digest() {
     )
     .unwrap();
 
-    assert!(!decoded.source_fidelity().edited(decoded.ir()).unwrap());
+    assert!(!decoded
+        .source_fidelity()
+        .edited(
+            decoded.ir(),
+            cadmpeg_core::decode::ResourceLimits::desktop()
+        )
+        .unwrap());
 }
 
 #[test]

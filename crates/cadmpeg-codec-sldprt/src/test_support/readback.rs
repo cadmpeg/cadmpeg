@@ -222,6 +222,7 @@ pub(crate) fn baseline(part: &cadmpeg_ir::codec::DecodeResult) -> Vec<Entry> {
         &part.source_fidelity().codec_digests,
         &records,
         &[],
+        cadmpeg_core::decode::ResourceLimits::desktop(),
         &mut bytes,
     )
     .map(|_| {

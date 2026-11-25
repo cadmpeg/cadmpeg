@@ -6,6 +6,7 @@ use cadmpeg_ir::codec::write::{
     carried_source_losses, edit_unverified, target::ResolvedWrite, EncodeInput, ExportBody,
     WritePath,
 };
+use cadmpeg_ir::report::export::SynthesisCause;
 use cadmpeg_ir::source_fidelity::CodecDigests;
 use cadmpeg_ir::Annotations;
 
@@ -41,7 +42,7 @@ pub(crate) fn plan(
     let (digests, unverified) = match input.fidelity {
         Some(fidelity) => (&fidelity.codec_digests, false),
         None if input.ir.source.is_some() && crate::codec_digests::holds_history(input.ir) => {
-            of_document = crate::codec_digests::of_document(input.ir)?;
+            of_document = crate::codec_digests::of_document(input.ir, input.limits)?;
             (&of_document, true)
         }
         None => {
@@ -98,6 +99,7 @@ fn write(
                 value,
                 &records,
                 resolved.target_id(),
+                input.limits,
                 &mut bytes,
             )?
         }
@@ -107,6 +109,7 @@ fn write(
             digests,
             &[],
             SemanticFidelity::NotConsumed,
+            input.limits,
             &mut bytes,
         )?,
         None => SldprtCodec::write_semantic(
@@ -119,6 +122,7 @@ fn write(
             } else {
                 SemanticFidelity::NotConsumed
             },
+            input.limits,
             &mut bytes,
         )?,
     };
@@ -190,6 +194,11 @@ fn finish(
     if let Written::Stored { loss } = written {
         losses.push(loss.clone());
     }
+    let synthesis_cause = displacement.as_ref().and_then(|message| {
+        matches!(write_path, WritePath::Synthesized { .. }).then(|| SynthesisCause::PatchDeclined {
+            reason: message.clone(),
+        })
+    });
     if let Some(message) = displacement {
         losses.push(SldprtLossCode::SourceDialectDisplaced.note(message));
     }
@@ -206,6 +215,7 @@ fn finish(
     let cageless = cadmpeg_ir::codec::write::without_cage_bodies(input.ir);
     ExportBody {
         bytes,
+        synthesis_cause,
         census: cadmpeg_ir::report::export::EntityCensus {
             basis: cadmpeg_ir::report::export::CensusBasis::IrArenas,
             counts: cageless.as_ref().unwrap_or(input.ir).census(),

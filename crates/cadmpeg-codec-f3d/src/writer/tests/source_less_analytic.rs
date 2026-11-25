@@ -15,7 +15,6 @@ use cadmpeg_core::convert::f64_from_index;
 
 use cadmpeg_test_support::EditableDecodeResult;
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::{Cursor, Read};
 
@@ -221,7 +220,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less configuration encode");
     let mut inconsistent = source_less.clone();
@@ -468,7 +467,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     let mut encoded = Vec::new();
     crate::native::reset_load_count();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less F3D encode");
     assert_eq!(crate::native::load_count(), 1);
@@ -714,7 +713,7 @@ fn generated_source_less_f3d_drops_subds() {
     cadmpeg_test_support::cages::assert_cage_body_dropped(&report, &cage, "bodies", ordinary);
     let mut bytes = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut bytes))
         .unwrap();
     let written = F3dCodec
@@ -857,7 +856,7 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less document parameter encode");
     let decoded = F3dCodec
@@ -911,7 +910,7 @@ fn generated_source_less_writes_document_tolerance_contract() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less tolerance encode");
     let round_trip = F3dCodec
@@ -952,7 +951,7 @@ fn generated_source_less_preserves_supported_topology_tolerances_or_reports_loss
         Some(cadmpeg_ir::scalar::PositiveLength::new(0.03).expect("positive finite tolerance"));
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("supported tolerant edge encode");
     let round_trip = F3dCodec
@@ -970,7 +969,7 @@ fn generated_source_less_preserves_supported_topology_tolerances_or_reports_loss
         Some(cadmpeg_ir::scalar::PositiveLength::new(0.04).expect("positive finite tolerance"));
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("supported tolerant vertex encode");
     let round_trip = F3dCodec
@@ -1188,7 +1187,7 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less polygon encode");
     let round_trip = F3dCodec
@@ -1300,7 +1299,7 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
         .collect::<Vec<_>>();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less line-carrier encode");
     let round_trip = F3dCodec
@@ -1378,7 +1377,7 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less circle-carrier encode");
     let round_trip = F3dCodec
@@ -1465,7 +1464,7 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less ellipse-carrier encode");
     let round_trip = F3dCodec
@@ -1517,7 +1516,7 @@ fn generated_source_less_face_writes_cylinder_surface_carrier() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less cylinder encode");
     let round_trip = F3dCodec
@@ -1686,7 +1685,7 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less closed cylinder band encode");
     let round_trip = F3dCodec
@@ -1750,7 +1749,7 @@ fn generated_source_less_face_writes_signed_sphere_surface_carrier() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less sphere encode");
     let round_trip = F3dCodec
@@ -1791,7 +1790,7 @@ fn generated_source_less_face_writes_cone_surface_carrier() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less cone encode");
     let round_trip = F3dCodec
@@ -1834,7 +1833,7 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
 
     let mut initial = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut initial))
         .expect("source-less cone encode");
     let retained_decode = F3dCodec

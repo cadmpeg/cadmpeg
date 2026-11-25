@@ -9,8 +9,9 @@
 pub(crate) mod target;
 
 use std::collections::{HashMap, HashSet};
-use std::io::{Seek, SeekFrom, Write};
+use std::io::{Seek, Write};
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
 use cadmpeg_core::CodecError;
 use zip::write::SimpleFileOptions;
 
@@ -23,12 +24,12 @@ use target::Resolution;
 trait WriteSeek: Write + Seek {}
 impl<T: Write + Seek> WriteSeek for T {}
 
-fn write(output: &mut dyn Write, resolution: &Resolution<'_>) -> Result<WriteOutcome, CodecError> {
-    let mut staged = tempfile::tempfile()?;
-    let report = write_seekable(&mut staged, resolution)?;
-    staged.seek(SeekFrom::Start(0))?;
-    std::io::copy(&mut staged, output)?;
-    Ok(report)
+fn write(
+    output: &mut Vec<u8>,
+    resolution: &Resolution<'_>,
+    limits: ResourceLimits,
+) -> Result<WriteOutcome, CodecError> {
+    write_seekable(&mut std::io::Cursor::new(output), resolution, limits)
 }
 
 /// Repack the retained entry set with a patched `Document.xml`.
@@ -40,17 +41,22 @@ fn write(output: &mut dyn Write, resolution: &Resolution<'_>) -> Result<WriteOut
 fn write_seekable(
     output: &mut dyn WriteSeek,
     resolution: &Resolution<'_>,
+    limits: ResourceLimits,
 ) -> Result<WriteOutcome, CodecError> {
     let target = resolution.target();
     let ir = resolution.ir();
     let namespace = resolution.namespace();
     let document = resolution.document();
     let schema_version = resolution.schema_version();
-    let mut entries = namespace.arena_as::<EntryRecord>("entries")?;
-    let physical_ledger = namespace.arena_as::<ArchiveSpan>("physical_ledger")?;
-    let mut objects = namespace.arena_as::<ObjectRecord>("objects")?;
-    let extensions = namespace.arena_as::<ExtensionRecord>("extensions")?;
-    let properties = namespace.arena_as::<PropertyRecord>("properties")?;
+    let policy = DecodePolicy { limits };
+    let records_arena = DecodeArena::new();
+    let (records, _) = DecodeContext::from_root_bytes(&[], &records_arena, &policy)?;
+    let mut entries = namespace.arena_as_for_decode::<EntryRecord>(&records, "entries")?;
+    let physical_ledger =
+        namespace.arena_as_for_decode::<ArchiveSpan>(&records, "physical_ledger")?;
+    let mut objects = namespace.arena_as_for_decode::<ObjectRecord>(&records, "objects")?;
+    let extensions = namespace.arena_as_for_decode::<ExtensionRecord>(&records, "extensions")?;
+    let properties = namespace.arena_as_for_decode::<PropertyRecord>(&records, "properties")?;
     validate_entry_names(&entries)?;
     let source_document = entries
         .iter()
@@ -77,11 +83,9 @@ fn write_seekable(
                 .insert("Touched".to_owned(), "1".to_owned());
         }
     }
-    let document_xml = patch_object_touches(&property_xml, &objects)?;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&document_xml, &arena, &policy)?;
+    let document_xml = patch_object_touches(&property_xml, &objects, policy)?;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&document_xml, &arena, &policy)?;
     let written_xml = crate::container::admit_document(&ctx, &document_xml)?;
     let mut written_graph = crate::persistence::parse_document(
         &written_xml,
@@ -337,12 +341,15 @@ fn same_property_semantics(left: &PropertyRecord, right: &PropertyRecord) -> boo
     }
 }
 
-fn patch_object_touches(source: &[u8], objects: &[ObjectRecord]) -> Result<Vec<u8>, CodecError> {
+fn patch_object_touches(
+    source: &[u8],
+    objects: &[ObjectRecord],
+    policy: DecodePolicy,
+) -> Result<Vec<u8>, CodecError> {
     let text = std::str::from_utf8(source)
         .map_err(|_| CodecError::Malformed("retained Document.xml is not UTF-8".into()))?;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)?;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)?;
     let xml = ctx.parse_xml(text, "FreeCAD object declarations")?;
     let by_name = objects
         .iter()

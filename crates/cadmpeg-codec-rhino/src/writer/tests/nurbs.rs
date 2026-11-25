@@ -50,8 +50,9 @@ fn nonclamped_nurbs_edge_uses_evaluated_endpoints() {
     let mut output = Vec::new();
     RhinoCodec
         .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                RhinoArchiveVersion::V8.descriptor().id.as_str(),
+            )),
         )
         .and_then(|plan| plan.write_to(&mut output))
         .expect("evaluated edge endpoints are writable");
@@ -89,8 +90,8 @@ fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
         let mut bytes = Vec::new();
         RhinoCodec
             .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
+                EncodeInput::new(&ir, None)
+                    .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
@@ -219,8 +220,8 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
         let mut bytes = Vec::new();
         RhinoCodec
             .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
+                EncodeInput::new(&ir, None)
+                    .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
@@ -413,8 +414,8 @@ fn explicit_line_pcurve_round_trips_as_native_c2() {
         let mut bytes = Vec::new();
         RhinoCodec
             .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
+                EncodeInput::new(&ir, None)
+                    .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
@@ -465,8 +466,8 @@ fn rational_nurbs_surface_patch_round_trips_exact_boundaries() {
         let mut bytes = Vec::new();
         RhinoCodec
             .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
+                EncodeInput::new(&ir, None)
+                    .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
@@ -515,8 +516,8 @@ fn mixed_plane_and_nurbs_faces_round_trip_shared_edge() {
         let mut bytes = Vec::new();
         RhinoCodec
             .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
+                EncodeInput::new(&ir, None)
+                    .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");
@@ -663,8 +664,8 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
         let mut bytes = Vec::new();
         RhinoCodec
             .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
+                EncodeInput::new(&ir, None)
+                    .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");

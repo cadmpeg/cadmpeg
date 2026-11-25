@@ -230,8 +230,9 @@ fn a_package_holds_the_images_that_its_asset_source_reads() {
     let write = |assets: &Files| {
         let plan = crate::UsdCodec
             .plan(
-                EncodeInput::new(first.ir(), None).with_assets(assets),
-                TargetRequest::Explicit("usdz"),
+                EncodeInput::new(first.ir(), None)
+                    .with_assets(assets)
+                    .with_target(TargetRequest::Explicit("usdz")),
             )
             .expect("plan the write");
         let mut bytes = Vec::new();

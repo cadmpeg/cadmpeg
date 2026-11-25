@@ -75,8 +75,9 @@ fn a_solid_with_design_content_is_written_and_the_content_reported() {
 
     let plan = IgesCodec
         .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                IgesVersion::V5_3.descriptor().id.as_str(),
+            )),
         )
         .expect("the solid is writable");
     let mut bytes = Vec::new();
@@ -118,8 +119,9 @@ fn a_native_record_synthesis_does_not_encode_is_named_not_refused() {
 
     let plan = IgesCodec
         .plan(
-            EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            EncodeInput::new(decoded.ir(), None).with_target(TargetRequest::Explicit(
+                IgesVersion::V5_3.descriptor().id.as_str(),
+            )),
         )
         .expect("the loop is written without its native color records");
     assert!(

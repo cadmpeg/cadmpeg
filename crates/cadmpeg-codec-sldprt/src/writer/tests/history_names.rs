@@ -6,7 +6,7 @@
 use std::io::Cursor;
 
 use cadmpeg_core::text::NonBlankString;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::loss::LossNote;
 
@@ -474,10 +474,10 @@ fn a_refused_history_keeps_the_stored_blocks_of_its_member_for_every_history_of_
     crate::test_support::make_source_image_unavailable(decoded.source_fidelity_mut());
     let mut bytes = Vec::new();
     let output = SldprtCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(
+            decoded.ir(),
+            Some(decoded.source_fidelity()),
+        ))
         .unwrap()
         .write_to(&mut bytes)
         .unwrap();

@@ -2,7 +2,6 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_test_support::EditableDecodeResult;
@@ -51,10 +50,10 @@ fn module_edition_2_source_converts_as_ap242_edition_2() {
         .any(|loss| loss.code == StepLossCode::SourceDialectUnverified.kind()));
 
     let plan = codec
-        .plan(
-            EncodeInput::new(result.ir(), Some(result.source_fidelity())),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(
+            result.ir(),
+            Some(result.source_fidelity()),
+        ))
         .expect("same-format plan");
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("same-format write");

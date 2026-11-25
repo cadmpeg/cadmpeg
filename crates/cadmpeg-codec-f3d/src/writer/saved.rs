@@ -32,7 +32,15 @@ pub(crate) fn restore(
         return Ok(None);
     };
     let restored = F3dCodec
-        .decode(&mut Cursor::new(image), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(image),
+            &DecodeOptions {
+                policy: cadmpeg_core::decode::DecodePolicy {
+                    limits: input.limits,
+                },
+                ..DecodeOptions::default()
+            },
+        )
         .map_err(|failure| match failure {
             DecodeFailure::Codec(error) => error,
             other => CodecError::malformed(format!(

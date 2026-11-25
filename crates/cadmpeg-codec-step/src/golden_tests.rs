@@ -154,8 +154,7 @@ fn encode_arm(
 ) -> serde_json::Value {
     let outcome = Encoder::plan(
         &StepCodec::default(),
-        EncodeInput::new(decoded.ir(), None),
-        request,
+        EncodeInput::new(decoded.ir(), None).with_target(request),
     )
     .and_then(|plan| {
         let mut produced = Vec::new();

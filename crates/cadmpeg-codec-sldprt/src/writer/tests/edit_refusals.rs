@@ -5,7 +5,7 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
@@ -23,10 +23,10 @@ use crate::SldprtCodec;
 fn write(decoded: &EditableDecodeResult) -> (ExportReport, Vec<u8>) {
     let mut output = Vec::new();
     let report = SldprtCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(
+            decoded.ir(),
+            Some(decoded.source_fidelity()),
+        ))
         .unwrap()
         .write_to(&mut output)
         .unwrap();

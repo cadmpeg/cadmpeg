@@ -23,7 +23,7 @@ fn source_in(dialect: &'static str) -> CadIr {
 /// The resolved target `plan` reports for one request.
 fn resolved(ir: &CadIr, encoder: RhinoCodec, request: TargetRequest<'_>) -> String {
     wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
-        &(Encoder::plan(&encoder, EncodeInput::new(ir, None), request)
+        &(Encoder::plan(&encoder, EncodeInput::new(ir, None).with_target(request))
             .expect("the request resolves")
             .report()),
         "identity/target",
@@ -94,12 +94,8 @@ fn inherit_refuses_a_source_that_records_no_dialect() {
         }))
         .unwrap(),
     );
-    let error = Encoder::plan(
-        &RhinoCodec,
-        EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
-    )
-    .expect_err("a source with no recorded dialect is refused");
+    let error = Encoder::plan(&RhinoCodec, EncodeInput::new(&ir, None))
+        .expect_err("a source with no recorded dialect is refused");
 
     let EncodeError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
@@ -133,8 +129,7 @@ fn a_dialect_changing_explicit_write_charges_displacement_by_name() {
     let ir = source_in("rhino:archive-50");
     let plan = Encoder::plan(
         &RhinoCodec,
-        EncodeInput::new(&ir, None),
-        TargetRequest::Explicit("rhino:archive-70"),
+        EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit("rhino:archive-70")),
     )
     .expect("archive 70 is in the catalog");
     assert_eq!(
@@ -161,8 +156,7 @@ fn an_explicit_write_at_the_source_dialect_is_not_degraded() {
     let ir = source_in("rhino:archive-50");
     let plan = Encoder::plan(
         &RhinoCodec,
-        EncodeInput::new(&ir, None),
-        TargetRequest::Explicit("rhino:archive-50"),
+        EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit("rhino:archive-50")),
     )
     .expect("archive 50 is in the catalog");
     assert_eq!(
@@ -185,12 +179,8 @@ fn an_explicit_write_at_the_source_dialect_is_not_degraded() {
 fn inherit_refuses_a_source_archive_version_outside_the_catalog() {
     let ir = source_in("rhino:archive-3");
     let encoder = RhinoCodec;
-    let error = Encoder::plan(
-        &encoder,
-        EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
-    )
-    .expect_err("a source dialect outside the catalog is refused");
+    let error = Encoder::plan(&encoder, EncodeInput::new(&ir, None))
+        .expect_err("a source dialect outside the catalog is refused");
 
     let EncodeError::UnsupportedTarget(refusal) = &error else {
         panic!("expected a target refusal, got {error}");
@@ -250,8 +240,8 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
     ] {
         let plan = Encoder::plan(
             &RhinoCodec,
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(version.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None)
+                .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
         )
         .unwrap_or_else(|error| panic!("{version:?} is a catalog row, got {error}"));
         let claimed = wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(

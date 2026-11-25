@@ -81,8 +81,8 @@ pub(crate) fn write_step(
         options: opts.clone(),
     }
     .plan(
-        EncodeInput::new(ir, None),
-        TargetRequest::Explicit(schema.descriptor().id.as_str()),
+        EncodeInput::new(ir, None)
+            .with_target(TargetRequest::Explicit(schema.descriptor().id.as_str())),
     )
     .map_err(std::io::Error::other)?;
     plan.write_to(w).map_err(std::io::Error::other)
@@ -108,6 +108,7 @@ pub(crate) fn write_step_outcome(
     schema: StepSchema,
     opts: &StepWriteOptions,
     recovered_edges: HashSet<EdgeId>,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<StepWriteOutcome, cadmpeg_core::CodecError> {
     // STEP holds no cage, so a cage body is not written as an empty shell
     // either (§5.6); the cage's `geometry.subd-omitted` loss names both.
@@ -148,15 +149,12 @@ pub(crate) fn write_step_outcome(
             None => {}
         }
     }
-    let mut b = Builder::new(ir, schema, recovered_edges)?;
+    let mut b = Builder::new(ir, schema, recovered_edges, limits)?;
     b.model_name = &opts.product_name;
     b.cage_bodies = cage_bodies;
     b.build();
     if let Some(error) = b.edge_split_error.take() {
         return Err(error);
-    }
-    if let Some(limit) = b.approximations.resource_limit() {
-        return Err(limit.into());
     }
     let outcome = b.finish_outcome();
     let lines = b.emitter.into_lines()?;
@@ -335,6 +333,7 @@ pub(crate) struct Builder<'a> {
     edge_refs: HashMap<String, Vec<Ref>>,
     edge_midpoints: HashMap<String, Ref>,
     edge_split_index: cadmpeg_ir::index::ModelIndex<'a>,
+    limits: cadmpeg_core::decode::ResourceLimits,
     edge_split_error: Option<cadmpeg_core::CodecError>,
     /// Written edge occurrence of each coedge whose edge a closed shell uses
     /// more than twice. A STEP closed shell admits two uses per edge, so each
@@ -485,8 +484,9 @@ impl<'a> Builder<'a> {
         ir: &'a CadIr,
         schema: StepSchema,
         recovered_edges: HashSet<EdgeId>,
+        limits: cadmpeg_core::decode::ResourceLimits,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        let construction_supports = ownership::construction_supports(ir)?;
+        let construction_supports = ownership::construction_supports(ir, limits)?;
         let loop_faces = ir
             .geometry
             .faces
@@ -630,6 +630,7 @@ impl<'a> Builder<'a> {
             edge_refs: HashMap::new(),
             edge_midpoints: HashMap::new(),
             edge_split_index: cadmpeg_ir::index::ModelIndex::new_model_only(ir),
+            limits,
             edge_split_error: None,
             coedge_edge_occurrences: HashMap::new(),
             edge_occurrence_pcurves: HashMap::new(),
@@ -695,10 +696,10 @@ impl<'a> Builder<'a> {
             geometry_emission_depth: 0,
             construction_supports,
         };
-        builder.pcurve_period_shifts = builder.loop_pcurve_period_shifts()?;
+        builder.pcurve_period_shifts = builder.loop_pcurve_period_shifts();
         builder.implicit_outer_bounds = builder.implicit_outer_bounds()?;
-        builder.seam_rings = builder.seam_rings()?;
-        builder.collapsed_curveless_coedges = builder.collapsed_curveless_coedges()?;
+        builder.seam_rings = builder.seam_rings();
+        builder.collapsed_curveless_coedges = builder.collapsed_curveless_coedges();
         Ok(builder)
     }
 
@@ -3688,27 +3689,23 @@ impl<'a> Builder<'a> {
     }
 
     /// The rings that are only a seam and edges collapsed at its poles.
-    fn seam_rings(
-        &self,
-    ) -> Result<HashMap<&'a str, SeamRing<'a>>, cadmpeg_core::decode::ResourceLimit> {
+    fn seam_rings(&self) -> HashMap<&'a str, SeamRing<'a>> {
         let mut rings = HashMap::new();
         for (loop_id, lp) in &self.loops {
             if matches!(lp.boundary, cadmpeg_ir::topology::LoopBoundary::Ring(_))
                 && self.point_loop(lp).is_none()
             {
-                if let Some(ring) = self.seam_loop(lp)? {
+                if let Some(ring) = self.seam_loop(lp) {
                     rings.insert(*loop_id, ring);
                 }
             }
         }
-        Ok(rings)
+        rings
     }
 
     /// The coedges of edges with no 3D curve that start and end at one vertex
     /// and whose pcurves lift to it.
-    fn collapsed_curveless_coedges(
-        &self,
-    ) -> Result<BTreeSet<&'a str>, cadmpeg_core::decode::ResourceLimit> {
+    fn collapsed_curveless_coedges(&self) -> BTreeSet<&'a str> {
         let mut collapsed = BTreeSet::new();
         for (coedge_id, coedge) in &self.coedges {
             let Some(edge) = self.edges.get(coedge.edge.as_str()).copied() else {
@@ -3716,12 +3713,12 @@ impl<'a> Builder<'a> {
             };
             if edge.curve().is_none()
                 && single_vertex(edge).is_some()
-                && self.pcurves_collapse_to(coedge, edge)?
+                && self.pcurves_collapse_to(coedge, edge)
             {
                 collapsed.insert(*coedge_id);
             }
         }
-        Ok(collapsed)
+        collapsed
     }
 
     /// The pole, carriers, and other pole points of a ring made only of seam
@@ -3729,20 +3726,13 @@ impl<'a> Builder<'a> {
     /// singular points of the surface, as on a sphere face that keeps its
     /// poles. STEP writes it as a `VERTEX_LOOP` at the first pole: the seam
     /// alone bounds no area.
-    fn seam_loop(
-        &self,
-        lp: &Loop,
-    ) -> Result<Option<SeamRing<'a>>, cadmpeg_core::decode::ResourceLimit> {
+    fn seam_loop(&self, lp: &Loop) -> Option<SeamRing<'a>> {
         let mut poles: Vec<&'a VertexId> = Vec::new();
         let mut uses: HashMap<&str, [usize; 2]> = HashMap::new();
         let mut curves = Vec::new();
         for coedge_id in lp.coedges() {
-            let Some(coedge) = self.coedges.get(coedge_id.as_str()).copied() else {
-                return Ok(None);
-            };
-            let Some(edge) = self.edges.get(coedge.edge.as_str()).copied() else {
-                return Ok(None);
-            };
+            let coedge = self.coedges.get(coedge_id.as_str()).copied()?;
+            let edge = self.edges.get(coedge.edge.as_str()).copied()?;
             let curve = edge
                 .curve()
                 .and_then(|curve_id| self.curves.get(curve_id.as_str()).copied());
@@ -3755,7 +3745,7 @@ impl<'a> Builder<'a> {
             let pole = single_vertex(edge);
             let collapsed = pole.is_some()
                 && (degenerate
-                    || (edge.curve().is_none() && self.pcurves_collapse_to(coedge, edge)?));
+                    || (edge.curve().is_none() && self.pcurves_collapse_to(coedge, edge)));
             if let (true, Some(pole)) = (collapsed, pole) {
                 if !poles.contains(&pole) {
                     poles.push(pole);
@@ -3767,39 +3757,32 @@ impl<'a> Builder<'a> {
             curves.extend(curve.map(|curve| curve.id.as_str()));
         }
         if uses.is_empty() || uses.values().any(|count| *count != [1, 1]) {
-            return Ok(None);
+            return None;
         }
-        let Some((pole, others)) = poles.split_first() else {
-            return Ok(None);
-        };
+        let (pole, others) = poles.split_first()?;
         let other_points = others
             .iter()
             .filter_map(|vertex| self.vertices.get(vertex.as_str()))
             .map(|vertex| vertex.point.as_str())
             .collect();
-        Ok(Some(SeamRing {
+        Some(SeamRing {
             pole,
             curves,
             other_points,
-        }))
+        })
     }
 
     /// Whether every pcurve of `coedge` on its face lifts, at the middle of
     /// its use interval or else its own interval, to `edge`'s one vertex: the
     /// edge has no length.
-    fn pcurves_collapse_to(
-        &self,
-        coedge: &Coedge,
-        edge: &Edge,
-    ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+    fn pcurves_collapse_to(&self, coedge: &Coedge, edge: &Edge) -> bool {
         use cadmpeg_ir::eval::admission::EvaluationAdmission;
-        use cadmpeg_ir::eval::finite_or_refusal;
         let Some(surface) = self
             .coedge_faces
             .get(coedge.id.as_str())
             .and_then(|(surface, _)| self.surfaces.get(surface))
         else {
-            return Ok(false);
+            return false;
         };
         let Some(vertex) = edge
             .start()
@@ -3807,18 +3790,18 @@ impl<'a> Builder<'a> {
             .and_then(|vertex| self.points.get(vertex.point.as_str()))
             .map(|point| point.position().get())
         else {
-            return Ok(false);
+            return false;
         };
         let tolerance = edge
             .tolerance
             .map_or(0.0, cadmpeg_ir::scalar::PositiveLength::get)
             .max(self.ir.tolerances.linear.get());
         if coedge.pcurves.is_empty() {
-            return Ok(false);
+            return false;
         }
         for use_ in &coedge.pcurves {
             let Some(pcurve) = self.pcurves.get(use_.pcurve.as_str()) else {
-                return Ok(false);
+                return false;
             };
             let Some([first, second]) = use_
                 .parameter_range
@@ -3829,32 +3812,32 @@ impl<'a> Builder<'a> {
                         .map(cadmpeg_ir::units::FiniteVector::get)
                 })
             else {
-                return Ok(false);
+                return false;
             };
-            let Some(uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
+            let Some(uv) = cadmpeg_ir::eval::decode::pcurve_uv(
                 EvaluationAdmission::Standard,
                 &pcurve.geometry,
                 0.5 * (first + second),
-            ))?
-            else {
-                return Ok(false);
+            )
+            .ok() else {
+                return false;
             };
             let uv = uv.get();
-            let Some(point) = finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
+            let Some(point) = cadmpeg_ir::eval::model_surface_point(
                 EvaluationAdmission::Standard,
                 self.ir,
                 &surface.geometry,
                 uv.u,
                 uv.v,
-            ))?
-            else {
-                return Ok(false);
+            )
+            .ok() else {
+                return false;
             };
             if point.get().distance(vertex) > tolerance {
-                return Ok(false);
+                return false;
             }
         }
-        Ok(true)
+        true
     }
 
     fn ordered_loop_coedges(&mut self, loop_id: &str, lp: &Loop) -> Option<Vec<String>> {
@@ -4196,7 +4179,7 @@ impl<'a> Builder<'a> {
         let midpoint = if let Some(vertex) = self.edge_midpoints.get(edge_id) {
             Some(*vertex)
         } else {
-            match edge_split::midpoint(&self.edge_split_index, edge) {
+            match edge_split::midpoint(&self.edge_split_index, edge, self.limits) {
                 Ok(Some(point)) => {
                     let point = geometry::point(&mut self.emitter, point);
                     let vertex = self.emitter.emit("VERTEX_POINT", &format!("'',{point}"));
@@ -4240,15 +4223,12 @@ impl<'a> Builder<'a> {
         if self.surface_is_fitted_helix(surface_id) {
             return None;
         }
-        let range = self
-            .directed_use_range(
-                &pcurve.geometry,
-                use_.use_.parameter_range,
-                surface_id,
-                edge,
-            )
-            .ok()
-            .flatten();
+        let range = self.directed_use_range(
+            &pcurve.geometry,
+            use_.use_.parameter_range,
+            surface_id,
+            edge,
+        );
         let lowered = pcurves::lower_placed_conic(&pcurve.geometry, use_.use_.parameter_range);
         let aligned = match lowered.as_ref() {
             cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line)
@@ -4332,9 +4312,7 @@ impl<'a> Builder<'a> {
     }
 
     /// The nonzero pcurve period shifts of every loop on a periodic surface.
-    fn loop_pcurve_period_shifts(
-        &self,
-    ) -> Result<HashMap<&'a str, [f64; 2]>, cadmpeg_core::decode::ResourceLimit> {
+    fn loop_pcurve_period_shifts(&self) -> HashMap<&'a str, [f64; 2]> {
         let mut shifts = HashMap::new();
         for face in self.faces.values() {
             let Some(surface) = self
@@ -4356,7 +4334,7 @@ impl<'a> Builder<'a> {
                     .coedges()
                     .iter()
                     .map(|coedge_id| self.coedge_pcurve_ends(coedge_id.as_str()))
-                    .collect::<Result<Option<Vec<_>>, _>>()?
+                    .collect::<Option<Vec<_>>>()
                 else {
                     continue;
                 };
@@ -4371,64 +4349,52 @@ impl<'a> Builder<'a> {
                 }
             }
         }
-        Ok(shifts)
+        shifts
     }
 
     /// The parameter-space start and end of `coedge`'s spline pcurve on its
     /// edge's range, in the coedge's direction.
-    fn coedge_pcurve_ends(
-        &self,
-        coedge: &str,
-    ) -> Result<Option<PcurveEnds>, cadmpeg_core::decode::ResourceLimit> {
-        let Some(coedge) = self.coedges.get(coedge).copied() else {
-            return Ok(None);
-        };
+    fn coedge_pcurve_ends(&self, coedge: &str) -> Option<PcurveEnds> {
+        let coedge = self.coedges.get(coedge).copied()?;
         let (Some(use_), Some(edge)) = (
             coedge.pcurves.first(),
             self.edges.get(coedge.edge.as_str()).copied(),
         ) else {
-            return Ok(None);
+            return None;
         };
-        let Some(pcurve) = self.pcurves.get(use_.pcurve.as_str()).copied() else {
-            return Ok(None);
-        };
-        let Some(range) = edge.param_range() else {
-            return Ok(None);
-        };
+        let pcurve = self.pcurves.get(use_.pcurve.as_str()).copied()?;
+        let range = edge.param_range()?;
         let lowered = pcurves::lower_placed_conic(&pcurve.geometry, use_.parameter_range);
         if !matches!(
             lowered.as_ref(),
             cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { .. }
         ) {
-            return Ok(None);
+            return None;
         }
-        let Some((surface, _)) = self.coedge_faces.get(coedge.id.as_str()).copied() else {
-            return Ok(None);
-        };
+        let (surface, _) = self.coedge_faces.get(coedge.id.as_str()).copied()?;
         let directed =
-            self.directed_use_range(&pcurve.geometry, use_.parameter_range, surface, edge)?;
+            self.directed_use_range(&pcurve.geometry, use_.parameter_range, surface, edge);
         let aligned = pcurves::align_spline_to_edge(&lowered, directed, edge);
         let at = |parameter: f64| {
-            Ok::<_, cadmpeg_core::decode::ResourceLimit>(
-                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
-                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                    aligned.as_ref(),
-                    parameter,
-                ))?
-                .map(|point| {
-                    let point = point.get();
-                    [point.u, point.v]
-                }),
+            cadmpeg_ir::eval::decode::pcurve_uv(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                aligned.as_ref(),
+                parameter,
             )
+            .ok()
+            .map(|point| {
+                let point = point.get();
+                [point.u, point.v]
+            })
         };
         let [start, end] = range.get();
-        let (Some(start), Some(end)) = (at(start)?, at(end)?) else {
-            return Ok(None);
+        let (Some(start), Some(end)) = (at(start), at(end)) else {
+            return None;
         };
-        Ok(Some(match coedge.sense {
+        Some(match coedge.sense {
             Sense::Forward => (start, end),
             Sense::Reversed => (end, start),
-        }))
+        })
     }
 
     /// A pcurve use interval directed from `edge`'s start to its end. The IR
@@ -4442,14 +4408,10 @@ impl<'a> Builder<'a> {
         range: Option<cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange>,
         surface: &str,
         edge: &Edge,
-    ) -> Result<Option<[f64; 2]>, cadmpeg_core::decode::ResourceLimit> {
+    ) -> Option<[f64; 2]> {
         use cadmpeg_ir::eval::admission::EvaluationAdmission;
-        use cadmpeg_ir::eval::finite_or_refusal;
-        let Some([first, second]) =
-            range.map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints)
-        else {
-            return Ok(None);
-        };
+        let [first, second] = range
+            .map(cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange::endpoints)?;
         let position = |vertex: &cadmpeg_ir::ids::VertexId| {
             let vertex = self.vertices.get(vertex.as_str())?;
             Some(self.points.get(vertex.point.as_str())?.position().get())
@@ -4459,39 +4421,38 @@ impl<'a> Builder<'a> {
             edge.start().and_then(position),
             edge.end().and_then(position),
         ) else {
-            return Ok(None);
+            return None;
         };
         let lift = |parameter: f64| {
-            let Some(uv) = finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
+            let uv = cadmpeg_ir::eval::decode::pcurve_uv(
                 EvaluationAdmission::Standard,
                 pcurve,
                 parameter,
-            ))?
-            else {
-                return Ok(None);
-            };
-            let uv = uv.get();
-            finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
+            )
+            .ok()?
+            .get();
+            cadmpeg_ir::eval::model_surface_point(
                 EvaluationAdmission::Standard,
                 self.ir,
                 &surface.geometry,
                 uv.u,
                 uv.v,
-            ))
-            .map(|point| point.map(cadmpeg_ir::features::geometry::FinitePoint3::get))
+            )
+            .ok()
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get)
         };
-        let (Some(at_first), Some(at_second)) = (lift(first)?, lift(second)?) else {
-            return Ok(None);
+        let (Some(at_first), Some(at_second)) = (lift(first), lift(second)) else {
+            return None;
         };
         let forward = at_first.distance(start).max(at_second.distance(end));
         let backward = at_first.distance(end).max(at_second.distance(start));
-        Ok(if forward < backward {
+        if forward < backward {
             Some([first, second])
         } else if backward < forward {
             Some([second, first])
         } else {
             (first <= second).then_some([first, second])
-        })
+        }
     }
 
     fn emit_vertex(&mut self, vertex_id: &str) -> Option<Ref> {

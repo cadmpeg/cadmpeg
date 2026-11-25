@@ -8,7 +8,8 @@ fn reopened(native: &crate::native::F3dNative) -> crate::native::F3dNative {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&ctx, &mut namespace).unwrap();
-    crate::native::F3dNative::load(&namespace).unwrap()
+    crate::native::F3dNative::load(&namespace, cadmpeg_core::decode::ResourceLimits::desktop())
+        .unwrap()
 }
 
 #[test]
@@ -116,7 +117,8 @@ fn reject_mutation_of(config: Config, arena: &str, mutate: impl FnOnce(&mut serd
         .set_arena(&ctx, arena, values.as_array().unwrap())
         .unwrap();
     assert!(
-        crate::native::F3dNative::load(&namespace).is_err(),
+        crate::native::F3dNative::load(&namespace, cadmpeg_core::decode::ResourceLimits::desktop())
+            .is_err(),
         "native mutation in {arena}"
     );
 }
@@ -263,7 +265,7 @@ fn pipe_new_body_rejects_a_body_role_with_complete_generic_links() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&ctx, &mut namespace).unwrap();
     assert!(matches!(
-        crate::native::F3dNative::load(&namespace),
+        crate::native::F3dNative::load(&namespace, cadmpeg_core::decode::ResourceLimits::desktop()),
         Err(cadmpeg_ir::NativeConvertError::InvalidCollection(_))
     ));
 }
@@ -278,7 +280,7 @@ fn pipe_native_load_rejects_an_empty_new_body_path() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&ctx, &mut namespace).unwrap();
     assert!(matches!(
-        crate::native::F3dNative::load(&namespace),
+        crate::native::F3dNative::load(&namespace, cadmpeg_core::decode::ResourceLimits::desktop()),
         Err(cadmpeg_ir::NativeConvertError::InvalidCollection(_))
     ));
 }

@@ -134,10 +134,7 @@ fn decode_encode_decode_reaches_fixpoint() {
 
     let mut reencoded = Vec::new();
     SldprtCodec
-        .plan(
-            EncodeInput::new(first.ir(), Some(first.source_fidelity())),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(first.ir(), Some(first.source_fidelity())))
         .and_then(|plan| plan.write_to(&mut reencoded))
         .expect("re-encode");
 
@@ -256,9 +253,7 @@ fn authored_with_retained_native_envelope_cube_reaches_encode_decode_fixpoint() 
 #[test]
 fn source_less_cube_writes_a_synthesized_native_envelope() {
     let ir = source_less_cube();
-    let plan = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .unwrap();
+    let plan = SldprtCodec.plan(EncodeInput::new(&ir, None)).unwrap();
     let residual = plan
         .report()
         .losses

@@ -46,6 +46,7 @@ fn semantic_writer_reclassifies_the_final_retained_envelope() {
         &fidelity.codec_digests,
         &records,
         &[],
+        cadmpeg_core::decode::ResourceLimits::desktop(),
         &mut written,
     )
     .expect("semantic write succeeds")
@@ -120,8 +121,8 @@ fn explicit_cross_dialect_transcode_synthesizes_without_consuming_present_image(
         .is_some());
     let plan = Encoder::plan(
         &SldprtCodec,
-        EncodeInput::new(&ir, Some(&fidelity)),
-        TargetRequest::Explicit("sldprt:unknown"),
+        EncodeInput::new(&ir, Some(&fidelity))
+            .with_target(TargetRequest::Explicit("sldprt:unknown")),
     )
     .expect("the cross-dialect route synthesizes its Native framing");
     assert!(plan
@@ -138,12 +139,8 @@ fn explicit_cross_dialect_transcode_synthesizes_without_consuming_present_image(
 #[test]
 fn inherit_without_native_image_synthesizes_the_envelope() {
     let ir = sourced_ir("sldprt:unknown");
-    let plan = Encoder::plan(
-        &SldprtCodec,
-        EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
-    )
-    .expect("a missing source image leaves the envelope to synthesis");
+    let plan = Encoder::plan(&SldprtCodec, EncodeInput::new(&ir, None))
+        .expect("a missing source image leaves the envelope to synthesis");
     assert!(plan.report().losses.iter().any(|loss| {
         loss.code == crate::loss::SldprtLossCode::SourcePreservedImageUnavailable.kind()
     }));

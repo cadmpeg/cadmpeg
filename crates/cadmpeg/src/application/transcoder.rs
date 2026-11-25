@@ -5,7 +5,7 @@ use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result as AnyResult};
-use cadmpeg_core::decode::DecodeDepth;
+use cadmpeg_core::decode::{DecodeDepth, ResourceLimits};
 use cadmpeg_ir::codec::write::{
     target::TargetRequest, EncodeError, EncodeInput, Encoder, ExportPlan, MissingStateForm,
 };
@@ -415,6 +415,8 @@ pub(crate) struct PreparedConversion {
     destination: ResolvedDestination,
     write_strictness: Strictness,
     missing_states: MissingStateForm,
+    /// The session ceilings, which the write takes as the decode does.
+    limits: ResourceLimits,
 }
 
 /// The outcome of the conversion's check.
@@ -474,6 +476,7 @@ pub(crate) fn prepare(
         destination,
         write_strictness: policy.strictness.write(),
         missing_states: policy.missing_states,
+        limits: source.options.policy.limits,
     })
 }
 
@@ -495,12 +498,14 @@ impl PreparedConversion {
         // second vocabulary to keep in step with the first.
         let mut input = EncodeInput::new(&self.document.ir, self.document.fidelity())
             .with_assets(&self.assets)
+            .with_target(self.selection.request())
+            .with_limits(self.limits)
             .with_missing_states(self.missing_states)
             .with_strictness(&self.write_strictness);
         if let Some(report) = self.validation.report() {
             input = input.with_validation(report);
         }
-        let plan = match self.encoder.plan(input, self.selection.request()) {
+        let plan = match self.encoder.plan(input) {
             Ok(plan) => plan,
             Err(error) => {
                 return Err(plan_refusal(

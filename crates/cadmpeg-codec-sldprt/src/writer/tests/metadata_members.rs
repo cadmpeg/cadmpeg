@@ -1076,13 +1076,10 @@ fn digest_only_owner_beside_a_patchable_owner_is_named_without_an_edit() {
     crate::test_support::make_source_image_unavailable(decoded.source_fidelity_mut());
     crate::test_support::make_retained_record_unavailable(decoded.source_fidelity_mut(), &block);
     let plan = SldprtCodec
-        .plan(
-            cadmpeg_ir::codec::write::EncodeInput::new(
-                decoded.ir(),
-                Some(decoded.source_fidelity()),
-            ),
-            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
-        )
+        .plan(cadmpeg_ir::codec::write::EncodeInput::new(
+            decoded.ir(),
+            Some(decoded.source_fidelity()),
+        ))
         .unwrap();
     let losses: Vec<String> = plan
         .report()

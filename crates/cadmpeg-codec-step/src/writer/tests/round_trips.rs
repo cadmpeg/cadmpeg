@@ -1834,6 +1834,7 @@ fn replica_written_with(
         StepSchema::Ap242Edition3,
         &StepWriteOptions::default(),
         std::collections::HashSet::new(),
+        cadmpeg_core::decode::ResourceLimits::desktop(),
     )?;
     Ok(String::from_utf8(bytes).expect("STEP output is UTF-8"))
 }

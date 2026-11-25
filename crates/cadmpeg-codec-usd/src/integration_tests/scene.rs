@@ -525,11 +525,12 @@ fn metres_per_unit_is_a_finite_positive_number() {
     let r#box = decode(&fixture("brep_array_box.usda"));
     for metres in [0.0, -1.0, f64::NAN, f64::INFINITY] {
         let result = crate::UsdCodec.plan(
-            EncodeInput::new(r#box.ir(), None).with_scene(SceneOptions {
-                meters_per_unit: Some(metres),
-                ..SceneOptions::DEFAULT
-            }),
-            TargetRequest::Explicit("usda-1.0"),
+            EncodeInput::new(r#box.ir(), None)
+                .with_scene(SceneOptions {
+                    meters_per_unit: Some(metres),
+                    ..SceneOptions::DEFAULT
+                })
+                .with_target(TargetRequest::Explicit("usda-1.0")),
         );
         assert!(
             matches!(

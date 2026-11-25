@@ -35,7 +35,7 @@ fn inherit(
     ir: &CadIr,
     fidelity: Option<&cadmpeg_ir::SourceFidelity>,
 ) -> Result<cadmpeg_ir::codec::write::ExportPlan, EncodeError> {
-    IgesCodec.plan(EncodeInput::new(ir, fidelity), TargetRequest::Inherit)
+    IgesCodec.plan(EncodeInput::new(ir, fidelity))
 }
 
 /// The flagship case: `convert in.igs -o out.igs` on a file that is not the
@@ -250,8 +250,8 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
     for version in IgesVersion::ALL {
         let plan = IgesCodec
             .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
+                EncodeInput::new(&ir, None)
+                    .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
             )
             .unwrap_or_else(|error| panic!("{version:?} is a catalog row, got {error}"));
         let claimed = wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(

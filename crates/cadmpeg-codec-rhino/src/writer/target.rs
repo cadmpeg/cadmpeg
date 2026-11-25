@@ -70,8 +70,14 @@ pub(crate) fn plan(
     };
     let ir = complete.as_ref().unwrap_or(source);
     let mut bytes = Vec::new();
-    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(ir)?;
-    let written = super::write(&recovered.document, version, &unjoined, &mut bytes)?;
+    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(ir);
+    let written = super::write(
+        &recovered.document,
+        version,
+        &unjoined,
+        input.limits,
+        &mut bytes,
+    )?;
     let withheld_meshes = super::withheld_body_meshes(ir);
     let written_meshes = || {
         ir.model
@@ -216,6 +222,7 @@ pub(crate) fn plan(
     }
     Ok(ExportBody {
         bytes,
+        synthesis_cause: None,
         census: cadmpeg_ir::report::export::EntityCensus {
             basis: cadmpeg_ir::report::export::CensusBasis::IrArenas,
             counts: source.census(),

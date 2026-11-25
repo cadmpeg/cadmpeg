@@ -200,10 +200,10 @@ fn a_stored_configuration_state_writes_its_partition() {
 fn write_without_source(
     ir: &cadmpeg_ir::CadIr,
 ) -> (Vec<cadmpeg_ir::report::loss::LossNote>, Vec<u8>) {
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
     let mut written = Vec::new();
     let report = crate::SldprtCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None))
         .unwrap()
         .write_to(&mut written)
         .unwrap();
@@ -615,14 +615,14 @@ fn a_part_written_without_its_source_counts_the_outputs_and_names_it_drops() {
 /// and charges no such note.
 #[test]
 fn a_part_written_with_its_partition_charges_no_producer_note() {
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
     let result = decode(native_envelope_fixture(&stored_producers(true)));
     let mut written = Vec::new();
     let report = crate::SldprtCodec
-        .plan(
-            EncodeInput::new(result.ir(), Some(result.source_fidelity())),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(
+            result.ir(),
+            Some(result.source_fidelity()),
+        ))
         .unwrap()
         .write_to(&mut written)
         .unwrap();

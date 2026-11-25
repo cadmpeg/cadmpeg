@@ -462,8 +462,9 @@ pub(in crate::writer::generate) fn plan(
 pub(in crate::writer::generate) fn native_or_neutral(
     target: &CadIr,
     native: &F3dNative,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<ParameterSource, CodecError> {
-    if target.model.parameters == native_projection(native)? {
+    if target.model.parameters == native_projection(native, limits)? {
         return Ok(ParameterSource::Native);
     }
     let mut plan = super::root_scope(target).map_or_else(
@@ -494,12 +495,13 @@ pub(in crate::writer::generate) fn native_or_neutral(
 /// The native records' parameters as the decoder projects them.
 fn native_projection(
     native: &F3dNative,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<Vec<cadmpeg_ir::features::parameters::DesignParameter>, CodecError> {
     let decode_arena = cadmpeg_core::decode::DecodeArena::new();
     let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
         &decode_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
+        &cadmpeg_core::decode::DecodePolicy { limits },
     )?;
     Ok(
         crate::design::feature_project::project_parameter_design_with_edge_identities(

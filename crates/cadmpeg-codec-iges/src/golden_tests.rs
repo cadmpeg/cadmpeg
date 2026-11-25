@@ -85,8 +85,9 @@ fn encode_snapshot(bytes: &[u8]) -> String {
         };
     let outcome = Encoder::plan(
         &IgesCodec,
-        EncodeInput::new(decoded.ir(), None),
-        TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        EncodeInput::new(decoded.ir(), None).with_target(TargetRequest::Explicit(
+            IgesVersion::V5_3.descriptor().id.as_str(),
+        )),
     )
     .and_then(|plan| {
         let mut produced = Vec::new();

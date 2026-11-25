@@ -3,7 +3,7 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::laws::{LawExpression, LawFormula};
 use cadmpeg_ir::geometry::lofts::LoftPathCurve;
@@ -85,7 +85,7 @@ fn text(value: &str) -> LawExpression {
 fn assert_round_trip(ir: &CadIr) {
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("representable law construction writes");
     let decoded = F3dCodec

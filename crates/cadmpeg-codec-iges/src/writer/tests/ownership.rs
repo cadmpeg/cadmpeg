@@ -43,8 +43,9 @@ fn rectangle() -> CadIr {
 fn round_trip(ir: &CadIr) -> cadmpeg_ir::codec::DecodeResult {
     let plan = IgesCodec
         .plan(
-            EncodeInput::new(ir, None),
-            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            EncodeInput::new(ir, None).with_target(TargetRequest::Explicit(
+                IgesVersion::V5_3.descriptor().id.as_str(),
+            )),
         )
         .unwrap();
     let mut bytes = Vec::new();
@@ -119,7 +120,12 @@ fn unowned_support_surface_and_point_are_withheld_with_loss() {
         cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(2.0, 3.0, 4.0)).unwrap(),
         Some(support_association()),
     ));
-    let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+    let generated = super::super::synthesize(
+        &ir,
+        IgesVersion::V5_3,
+        cadmpeg_core::decode::ResourceLimits::desktop(),
+    )
+    .unwrap();
     assert_eq!(
         generated
             .losses
@@ -157,7 +163,12 @@ fn unowned_support_surface_and_point_are_withheld_with_loss() {
 fn support_only_surface_export_writes_the_empty_file() {
     let mut ir = rectangle();
     ir.geometry.surfaces[0].source_object = Some(support_association());
-    let synthesis = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+    let synthesis = super::super::synthesize(
+        &ir,
+        IgesVersion::V5_3,
+        cadmpeg_core::decode::ResourceLimits::desktop(),
+    )
+    .unwrap();
     assert!(synthesis.counts.is_empty());
     assert!(synthesis
         .losses
@@ -173,7 +184,12 @@ fn support_only_point_export_writes_the_empty_file() {
         cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(2.0, 3.0, 4.0)).unwrap(),
         Some(support_association()),
     ));
-    let synthesis = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+    let synthesis = super::super::synthesize(
+        &ir,
+        IgesVersion::V5_3,
+        cadmpeg_core::decode::ResourceLimits::desktop(),
+    )
+    .unwrap();
     assert!(synthesis
         .losses
         .iter()
@@ -193,7 +209,12 @@ fn face_owned_support_surface_remains_available_to_its_owner() {
     ir.geometry.surfaces[0].source_object = Some(support_association());
     ir.native = cadmpeg_ir::native::Native::default();
     let support = ir.geometry.surfaces[0].id.to_string();
-    let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+    let generated = super::super::synthesize(
+        &ir,
+        IgesVersion::V5_3,
+        cadmpeg_core::decode::ResourceLimits::desktop(),
+    )
+    .unwrap();
     assert!(!generated.losses.iter().any(|loss| loss.code
         == crate::loss::IgesLossCode::WriterSupportGeometryNotRepresented.kind()
         && loss.message.contains(&support)));
@@ -230,7 +251,12 @@ fn support_curve_without_topology_is_withheld_with_loss() {
     assert!(curve.parameter_range.is_some());
     curve.source_object = Some(support_association());
     ir.geometry.curves.push(curve);
-    let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+    let generated = super::super::synthesize(
+        &ir,
+        IgesVersion::V5_3,
+        cadmpeg_core::decode::ResourceLimits::desktop(),
+    )
+    .unwrap();
     assert!(generated.losses.iter().any(|loss| loss.code
         == crate::loss::IgesLossCode::WriterSupportGeometryNotRepresented.kind()
         && loss.message.starts_with("1 support geometry record")));
@@ -253,7 +279,12 @@ fn dependent_iges_curve_is_withheld_and_the_empty_file_is_written() {
         .unwrap();
     assert_eq!(decoded.ir().geometry.curves.len(), 1);
     assert!(decoded.ir().geometry.edges.is_empty());
-    let synthesis = super::super::synthesize(decoded.ir(), IgesVersion::V5_3).unwrap();
+    let synthesis = super::super::synthesize(
+        decoded.ir(),
+        IgesVersion::V5_3,
+        cadmpeg_core::decode::ResourceLimits::desktop(),
+    )
+    .unwrap();
     assert!(!synthesis.counts.contains_key("110_line"));
     assert!(synthesis
         .losses
@@ -276,9 +307,7 @@ fn standalone_edge_with_support_curve_is_withheld_with_counted_export_loss() {
         .as_mut()
         .unwrap()
         .geometry_role = Some(SourceGeometryRole::Support);
-    let plan = IgesCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .unwrap();
+    let plan = IgesCodec.plan(EncodeInput::new(&ir, None)).unwrap();
     assert!(plan.report().losses.iter().any(|loss| loss.code
         == crate::loss::IgesLossCode::WriterSupportEdgeNotRepresented.kind()
         && loss.message.starts_with("1 standalone edge record")));
@@ -312,7 +341,12 @@ fn topology_owned_curve_preserves_support_and_independent_roles() {
             source.geometry_role = Some(role);
             curve.source_object = Some(source);
         }
-        let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+        let generated = super::super::synthesize(
+            &ir,
+            IgesVersion::V5_3,
+            cadmpeg_core::decode::ResourceLimits::desktop(),
+        )
+        .unwrap();
         let expected_status = match role {
             SourceGeometryRole::Support => b"00010000",
             SourceGeometryRole::Independent => b"00000000",
@@ -357,7 +391,12 @@ fn topology_owned_curve_without_a_role_is_support_of_its_edge() {
     let ownership = super::super::ownership::SourceOwnership::build(&ir);
     assert!(ownership.topology_status(None).is_physically_dependent());
     assert!(!ownership.status(None).is_physically_dependent());
-    let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+    let generated = super::super::synthesize(
+        &ir,
+        IgesVersion::V5_3,
+        cadmpeg_core::decode::ResourceLimits::desktop(),
+    )
+    .unwrap();
     let curve_entries: Vec<_> = generated
         .bytes
         .chunks_exact(81)
@@ -439,7 +478,12 @@ fn free_points_and_vertices_on_brep_and_trimmed_sheet_paths_have_export_losses()
                     vec![vertex.id],
                 ));
         }
-        let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+        let generated = super::super::synthesize(
+            &ir,
+            IgesVersion::V5_3,
+            cadmpeg_core::decode::ResourceLimits::desktop(),
+        )
+        .unwrap();
         assert!(generated.losses.iter().any(|loss| loss.code
             == crate::loss::IgesLossCode::WriterFreeGeometryOmitted.kind()
             && loss.message.contains("free vertex record(s)")));
@@ -478,10 +522,15 @@ fn duplicate_carriers_on_brep_and_trimmed_sheet_paths_have_export_losses() {
             .clone();
         duplicate.id = "test:model:edge#duplicate".try_into().unwrap();
         ir.geometry.edges.push(duplicate);
-        let ignored = super::super::ignored_carrier_geometry(&ir).unwrap();
+        let ignored = super::super::ignored_carrier_geometry(&ir);
         assert!(ignored.edges.contains("test:model:edge#duplicate"));
 
-        let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+        let generated = super::super::synthesize(
+            &ir,
+            IgesVersion::V5_3,
+            cadmpeg_core::decode::ResourceLimits::desktop(),
+        )
+        .unwrap();
         let notes: Vec<_> = generated
             .losses
             .iter()
@@ -552,10 +601,15 @@ fn free_curve_duplicating_a_written_parameter_curve_has_an_export_loss() {
     duplicate.carrier =
         cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some(range)).unwrap();
     ir.geometry.edges.push(duplicate);
-    let ignored = super::super::ignored_carrier_geometry(&ir).unwrap();
+    let ignored = super::super::ignored_carrier_geometry(&ir);
     assert!(ignored.curves.contains("test:model:curve#duplicate"));
 
-    let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+    let generated = super::super::synthesize(
+        &ir,
+        IgesVersion::V5_3,
+        cadmpeg_core::decode::ResourceLimits::desktop(),
+    )
+    .unwrap();
     let notes: Vec<_> = generated
         .losses
         .iter()
@@ -586,7 +640,12 @@ fn parameter_space_carriers_are_not_exported_as_unowned_model_curves() {
         let decoded = IgesCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .unwrap();
-        let generated = super::super::synthesize(decoded.ir(), IgesVersion::V5_3).unwrap();
+        let generated = super::super::synthesize(
+            decoded.ir(),
+            IgesVersion::V5_3,
+            cadmpeg_core::decode::ResourceLimits::desktop(),
+        )
+        .unwrap();
         let curve_entries: Vec<_> = generated
             .bytes
             .chunks_exact(81)
@@ -634,7 +693,12 @@ fn unowned_parameter_curve_is_withheld_on_the_free_geometry_path() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
-    let generated = super::super::synthesize(decoded.ir(), IgesVersion::V5_3).unwrap();
+    let generated = super::super::synthesize(
+        decoded.ir(),
+        IgesVersion::V5_3,
+        cadmpeg_core::decode::ResourceLimits::desktop(),
+    )
+    .unwrap();
     assert!(generated.losses.iter().any(|loss| loss.code
         == crate::loss::IgesLossCode::WriterSupportGeometryNotRepresented.kind()
         && loss.message.contains("parameter-space carrier")));

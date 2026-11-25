@@ -56,6 +56,33 @@ fn every_arc_of_a_prim_is_one_reference_list() {
 }
 
 #[test]
+fn a_definition_no_occurrence_places_is_a_prototype_with_no_reference() {
+    let source = decode(&format!(
+        "#usda 1.0\ndef Mesh \"A\"\n{{\n        {MESH}\n}}\n"
+    ));
+    let mut ir = source.ir().clone();
+    let mut spare = cadmpeg_ir::products::ProductDefinition::new(
+        cadmpeg_ir::ids::ProductDefinitionId::try_from("test:definition#spare".to_owned()).unwrap(),
+        cadmpeg_ir::products::Storage::Embedded,
+    );
+    spare.source_name = Some("Spare".into());
+    let mut mesh = ir.model.tessellations[0].clone();
+    mesh.id =
+        cadmpeg_ir::tessellation::TessellationId::try_from("test:tessellation#spare".to_owned())
+            .unwrap();
+    mesh.of = cadmpeg_ir::tessellation::Meshed::definition(spare.id.clone());
+    ir.model.tessellations.push(mesh);
+    ir.model.product_definitions.push(spare);
+    let (text, _) = encode(&ir);
+    let prototypes = text
+        .split("class \"Prototypes\"")
+        .nth(1)
+        .unwrap_or_else(|| panic!("a Prototypes prim: {text}"));
+    assert!(prototypes.contains("\"Spare\""), "{text}");
+    assert!(!text.contains("references = </Prototypes/"), "{text}");
+}
+
+#[test]
 fn a_shared_definition_is_one_prototype_with_references() {
     let source = decode(&format!(
         "#usda 1.0\nclass \"Proto\"\n{{\n    def Mesh \"Part\"\n    {{\n        {MESH}\n    }}\n}}\ndef Xform \"Asm\"\n{{\n    def \"I1\" (\n        instanceable = true\n        references = </Proto>\n    )\n    {{\n    }}\n    def \"I2\" (\n        instanceable = true\n        references = </Proto>\n    )\n    {{\n    }}\n}}\n"

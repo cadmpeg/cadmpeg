@@ -18,7 +18,7 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::edge_ranges::{open_edge_ranges, vertex_positions};
 use cadmpeg_ir::codec::write::{
@@ -27,7 +27,6 @@ use cadmpeg_ir::codec::write::{
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::decode::curve_point_solved;
-use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::legacy_cache::FitTolerance;
 use cadmpeg_ir::geometry::{
@@ -135,6 +134,8 @@ impl Failure {
 /// The document the generator writes, and the losses taken to reach it.
 pub(super) struct Reduction<'a> {
     ir: Cow<'a, CadIr>,
+    /// The caller's session ceilings.
+    limits: ResourceLimits,
     losses: Vec<LossNote>,
     design_dropped: bool,
     neutral_dropped: bool,
@@ -149,9 +150,10 @@ pub(super) struct Reduction<'a> {
 }
 
 impl<'a> Reduction<'a> {
-    pub(super) fn new(ir: &'a CadIr) -> Self {
+    pub(super) fn new(ir: &'a CadIr, limits: ResourceLimits) -> Self {
         Self {
             ir: Cow::Borrowed(ir),
+            limits,
             losses: Vec::new(),
             design_dropped: false,
             neutral_dropped: false,
@@ -267,7 +269,7 @@ impl<'a> Reduction<'a> {
         }
         self.drop_unwritten_arenas();
         self.strip_carrier_metadata();
-        self.complete_vertex_free_edges()?;
+        self.complete_vertex_free_edges();
         self.drop_pole_loops();
         self.write_point_edges_curveless();
         self.state_open_edge_ranges()?;
@@ -503,7 +505,7 @@ impl<'a> Reduction<'a> {
             .ir
             .native
             .namespace("f3d")
-            .and_then(|namespace| crate::native::F3dNative::load(namespace).ok())
+            .and_then(|namespace| crate::native::F3dNative::load(namespace, self.limits).ok())
         else {
             return HashSet::new();
         };
@@ -645,6 +647,7 @@ impl<'a> Reduction<'a> {
         let owners = ProceduralOwners::new(&self.ir);
         let Some(plan) = open_edge_ranges(
             &self.ir,
+            self.limits,
             |curve| {
                 owners
                     .curve(curve)
@@ -770,7 +773,7 @@ impl<'a> Reduction<'a> {
             .map(|body| body.id.to_string())
             .collect::<Vec<_>>();
         let kept = kept.iter().map(String::as_str).collect::<BTreeSet<_>>();
-        let unreachable = retain_bodies(self.ir.to_mut(), &kept)?;
+        let unreachable = retain_bodies(self.ir.to_mut(), &kept, self.limits)?;
         self.losses.extend(losses);
         self.charge_removed(
             &unreachable,
@@ -855,10 +858,10 @@ impl<'a> Reduction<'a> {
     /// A vertex-free edge (§5.6) is written in the exact form F3D stores, one
     /// vertex at its closed curve's start. An edge whose curve does not close
     /// there is omitted with a loss, with the loop it alone bounds.
-    fn complete_vertex_free_edges(&mut self) -> Result<(), CodecError> {
+    fn complete_vertex_free_edges(&mut self) {
         let geometry = &self.ir.geometry;
         if geometry.edges.iter().all(|edge| edge.ends.is_some()) {
-            return Ok(());
+            return;
         }
         let tolerance = self.ir.tolerances.linear.get();
         let curves = geometry
@@ -872,7 +875,7 @@ impl<'a> Reduction<'a> {
             if edge.ends.is_some() {
                 continue;
             }
-            let start = closed_curve_start(edge, &curves, tolerance)?.and_then(|position| {
+            let start = closed_curve_start(edge, &curves, tolerance).and_then(|position| {
                 let point = PointId::mint(format!("{}/start-point", edge.id))
                     .map_err(|error| error.to_string())?;
                 let vertex = VertexId::mint(format!("{}/start-vertex", edge.id))
@@ -905,7 +908,6 @@ impl<'a> Reduction<'a> {
                 )));
             }
         }
-        Ok(())
     }
 
     /// A procedural carrier whose construction has no native encoding is
@@ -1105,7 +1107,7 @@ impl<'a> Reduction<'a> {
             .map(|body| body.id.to_string())
             .collect::<Vec<_>>();
         let kept = bodies.iter().map(String::as_str).collect::<BTreeSet<_>>();
-        let unreachable = retain_bodies(self.ir.to_mut(), &kept)?;
+        let unreachable = retain_bodies(self.ir.to_mut(), &kept, self.limits)?;
         split_disconnected_shells(&mut self.ir.to_mut().geometry, &touched)?;
         let kinds = super::preconditions::derived_body_kinds(&self.ir.geometry);
         for (body, kind) in self.ir.to_mut().geometry.bodies.iter_mut().zip(kinds) {
@@ -1364,12 +1366,12 @@ impl<'a> Reduction<'a> {
         if bodies.is_empty() {
             return Ok(false);
         }
-        let reach = Reach::new(&self.ir.geometry)?;
+        let reach = Reach::new(&self.ir.geometry, self.limits)?;
         let native = self
             .ir
             .native
             .namespace("f3d")
-            .and_then(|namespace| crate::native::F3dNative::load(namespace).ok());
+            .and_then(|namespace| crate::native::F3dNative::load(namespace, self.limits).ok());
         let without_native = crate::native::F3dNative::default();
         let writes = |group: &[String], native: &crate::native::F3dNative| {
             let mut alone = CadIr::empty();
@@ -1467,7 +1469,7 @@ impl<'a> Reduction<'a> {
         kept: &BTreeSet<&str>,
         reason: &str,
     ) -> Result<BTreeSet<String>, CodecError> {
-        let removed = retain_bodies(self.ir.to_mut(), kept)?;
+        let removed = retain_bodies(self.ir.to_mut(), kept, self.limits)?;
         self.charge_removed(&removed, &BTreeSet::new(), reason);
         Ok(removed)
     }
@@ -1542,48 +1544,39 @@ impl<'a> Reduction<'a> {
 }
 
 /// The start of `edge`'s curve, where the curve closes over the edge's range
-/// (or its closed traversal) within `tolerance`, or why it has none. A
-/// resource refusal of the evaluation is the outer error.
+/// (or its closed traversal) within `tolerance`, or why it has none.
 fn closed_curve_start(
     edge: &cadmpeg_ir::topology::Edge,
     curves: &HashMap<&str, &cadmpeg_ir::geometry::Curve>,
     tolerance: f64,
-) -> Result<Result<FinitePoint3, String>, CodecError> {
+) -> Result<FinitePoint3, String> {
     let Some(curve) = edge.curve() else {
-        return Ok(Err("it has no curve".into()));
+        return Err("it has no curve".into());
     };
     let Some(solved) = curves
         .get(curve.as_str())
         .and_then(|curve| curve.geometry.solved())
     else {
-        return Ok(Err(format!("its curve {curve} has no solved form")));
+        return Err(format!("its curve {curve} has no solved form"));
     };
     let [start, end] = match edge.param_range() {
         Some(range) => range.get(),
         None => match solved.closed_traversal_range() {
             Some(range) => range.endpoints(),
-            None => return Ok(Err(format!("its curve {curve} has no closed traversal"))),
+            None => return Err(format!("its curve {curve} has no closed traversal")),
         },
     };
     let point =
-        |parameter| match curve_point_solved(EvaluationAdmission::Standard, solved, parameter) {
-            Ok(point) => Ok(Some(point)),
-            Err(EvaluationFailure::ResourceLimit(limit)) => Err(CodecError::ResourceLimit(limit)),
-            Err(_) => Ok(None),
-        };
-    let (Some(first), Some(last)) = (point(start)?, point(end)?) else {
-        return Ok(Err(format!(
-            "its curve {curve} does not evaluate at its ends"
-        )));
+        |parameter| curve_point_solved(EvaluationAdmission::Standard, solved, parameter).ok();
+    let (Some(first), Some(last)) = (point(start), point(end)) else {
+        return Err(format!("its curve {curve} does not evaluate at its ends"));
     };
     let (a, b) = (first.get(), last.get());
     let gap = ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt();
     if gap > tolerance {
-        return Ok(Err(format!(
-            "its curve {curve} does not close over the edge"
-        )));
+        return Err(format!("its curve {curve} does not close over the edge"));
     }
-    Ok(Ok(first))
+    Ok(first)
 }
 
 /// Remove a vertex-free edge, its coedges, the pcurves only they use, and the
@@ -2159,9 +2152,12 @@ fn unranged_open_edges(geometry: &cadmpeg_ir::document::Topology) -> Option<Loss
 }
 
 impl Reach {
-    fn new(geometry: &cadmpeg_ir::document::Topology) -> Result<Self, CodecError> {
+    fn new(
+        geometry: &cadmpeg_ir::document::Topology,
+        limits: ResourceLimits,
+    ) -> Result<Self, CodecError> {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy { limits })?;
         let mut adjacency = HashMap::<String, Vec<String>>::new();
         let mut every = BTreeSet::new();
         let mut rows = HashMap::new();
@@ -2255,8 +2251,12 @@ impl Reach {
 
 /// Keep the bodies in `kept` and every topology and geometry record they
 /// reach; remove the rest. Returns the removed ids.
-fn retain_bodies(ir: &mut CadIr, kept: &BTreeSet<&str>) -> Result<BTreeSet<String>, CodecError> {
-    let reach = Reach::new(&ir.geometry)?;
+fn retain_bodies(
+    ir: &mut CadIr,
+    kept: &BTreeSet<&str>,
+    limits: ResourceLimits,
+) -> Result<BTreeSet<String>, CodecError> {
+    let reach = Reach::new(&ir.geometry, limits)?;
     let reachable = reach.from(kept.iter().copied());
     let removed = reach
         .every

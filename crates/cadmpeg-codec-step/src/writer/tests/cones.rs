@@ -160,8 +160,9 @@ fn zero_angle_cone_of_zero_radius_is_refused_at_planning() {
     let (ir, _) = zero_angle_cone_cube(0.0, 1.0);
     let error = StepCodec::default()
         .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(StepSchema::Ap214.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                StepSchema::Ap214.descriptor().id.as_str(),
+            )),
         )
         .expect_err("a semi-angle 0 cone of radius 0 is a line");
     assert!(
@@ -342,10 +343,9 @@ fn circular_cone_plan(
         .unwrap(),
     ));
 
-    crate::StepCodec::default().plan(
-        EncodeInput::new(&ir, None),
+    crate::StepCodec::default().plan(EncodeInput::new(&ir, None).with_target(
         TargetRequest::Explicit(crate::StepSchema::Ap214.descriptor().id.as_str()),
-    )
+    ))
 }
 
 #[test]

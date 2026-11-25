@@ -2,7 +2,6 @@
 //! Typed F3D native-namespace helpers for crate tests.
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::io::Write;
@@ -63,17 +62,17 @@ impl TestEncode for F3dCodec {
         output: &mut dyn Write,
     ) -> Result<cadmpeg_ir::report::export::ExportReport, cadmpeg_ir::codec::write::EncodeError>
     {
-        self.plan(
-            cadmpeg_ir::codec::write::EncodeInput::new(ir, None),
-            TargetRequest::Inherit,
-        )?
-        .write_to(output)
+        self.plan(cadmpeg_ir::codec::write::EncodeInput::new(ir, None))?
+            .write_to(output)
     }
 }
 
 pub(crate) fn f3d_native(ir: &cadmpeg_ir::document::CadIr) -> crate::native::F3dNative {
-    crate::native::F3dNative::load(ir.native.namespace("f3d").expect("F3D native namespace"))
-        .unwrap()
+    crate::native::F3dNative::load(
+        ir.native.namespace("f3d").expect("F3D native namespace"),
+        cadmpeg_core::decode::ResourceLimits::desktop(),
+    )
+    .unwrap()
 }
 
 pub(crate) struct F3dNativeMut<'a> {
@@ -110,7 +109,12 @@ pub(crate) fn f3d_native_mut(ir: &mut cadmpeg_ir::document::CadIr) -> F3dNativeM
     let native = ir
         .native
         .namespace("f3d")
-        .map(crate::native::F3dNative::load)
+        .map(|namespace| {
+            crate::native::F3dNative::load(
+                namespace,
+                cadmpeg_core::decode::ResourceLimits::desktop(),
+            )
+        })
         .transpose()
         .unwrap()
         .unwrap_or_default();

@@ -76,7 +76,7 @@ pub(crate) fn plan_at(
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 
     crate::RhinoCodec.plan(
-        EncodeInput::new(ir, None),
-        TargetRequest::Explicit(version.descriptor().id.as_str()),
+        EncodeInput::new(ir, None)
+            .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
     )
 }

@@ -355,10 +355,7 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_configurations(
         .iter_mut()
         .for_each(|configuration| configuration.active = false);
     let report = SldprtCodec
-        .plan(
-            EncodeInput::new(&inactive, Some(&fidelity)),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(&inactive, Some(&fidelity)))
         .unwrap()
         .report()
         .clone();
@@ -729,10 +726,10 @@ fn semantic_writer_reassigns_a_repeated_configuration_source_index() {
     decoded.ir_mut().model.configurations.push(duplicate);
 
     let report = SldprtCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(
+            decoded.ir(),
+            Some(decoded.source_fidelity()),
+        ))
         .unwrap()
         .report()
         .clone();
@@ -758,10 +755,10 @@ fn semantic_writer_names_empty_and_repeated_configuration_names() {
         .clear();
     let assigned = |decoded: &EditableDecodeResult| {
         SldprtCodec
-            .plan(
-                EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-                TargetRequest::Inherit,
-            )
+            .plan(EncodeInput::new(
+                decoded.ir(),
+                Some(decoded.source_fidelity()),
+            ))
             .unwrap()
             .report()
             .losses
@@ -1165,7 +1162,7 @@ fn semantic_writer_omits_a_body_whose_face_names_a_missing_surface() {
     ir.geometry.faces[0].surface =
         cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#missing").expect("identity grammar");
     let report = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None))
         .unwrap()
         .report()
         .clone();
@@ -1190,10 +1187,10 @@ pub(crate) fn semantic_writer_omits_subds_and_names_them() {
 
     let mut bytes = Vec::new();
     let report = SldprtCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(
+            decoded.ir(),
+            Some(decoded.source_fidelity()),
+        ))
         .and_then(|plan| plan.write_to(&mut bytes))
         .unwrap();
     assert!(report.losses.iter().any(|loss| {
@@ -1290,7 +1287,7 @@ fn semantic_writer_omits_bodies_on_cones_compact_records_cannot_hold() {
             .as_str()
             .to_owned();
         let report = SldprtCodec
-            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&ir, None))
             .unwrap()
             .report()
             .clone();

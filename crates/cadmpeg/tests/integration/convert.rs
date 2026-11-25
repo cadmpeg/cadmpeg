@@ -1341,6 +1341,60 @@ fn a_same_format_convert_replays_a_non_default_iges_version() {
     assert_ne!(fs::read(&upgraded).unwrap(), original_bytes);
 }
 
+#[test]
+#[cfg(feature = "iges")]
+fn a_same_format_synthesis_prints_why_the_patch_was_declined_once() {
+    let dir = tempdir().unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
+        cadmpeg_ir::ids::PointId::mint("cadir:model:point#declined").expect("identity grammar"),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            1.0, 2.0, 3.0,
+        ))
+        .expect("a finite position is a point"),
+        None,
+    ));
+    let input = fixture(dir.path(), "point.cadir.json", &ir);
+    let original = dir.path().join("v51.igs");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-o",
+            original.to_str().unwrap(),
+            "--to",
+            "5.1",
+        ])
+        .assert()
+        .success();
+    let upgraded = dir.path().join("upgraded.igs");
+    let report = dir.path().join("upgraded.report.json");
+    let stderr = Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            original.to_str().unwrap(),
+            "-o",
+            upgraded.to_str().unwrap(),
+            "--to",
+            "5.3",
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stderr
+        .clone();
+    let stderr = String::from_utf8(stderr).unwrap();
+    let report: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    let reason = report["export"]["synthesis_cause"]["reason"]
+        .as_str()
+        .unwrap_or_else(|| panic!("a patch-declined reason: {report}"));
+    assert_eq!(stderr.matches(reason).count(), 1, "{stderr}");
+}
+
 /// A `--to` that names only a format states no dialect, so a same-format
 /// conversion still inherits.
 ///

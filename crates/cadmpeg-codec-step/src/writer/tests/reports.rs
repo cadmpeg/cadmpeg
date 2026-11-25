@@ -1757,8 +1757,9 @@ fn transformed_cone_basis_outside_wr2_is_refused_at_planning() {
     let ir = transformed_surface_ir(transformed_cone_basis(1.0, std::f64::consts::FRAC_PI_2));
     let error = StepCodec::default()
         .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(StepSchema::Ap214.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                StepSchema::Ap214.descriptor().id.as_str(),
+            )),
         )
         .expect_err("transformed cone basis remains outside WR2");
     assert!(
@@ -1904,8 +1905,9 @@ fn a_cone_cache_for_an_unwritable_construction_is_refused_at_planning() {
 
     let error = StepCodec::default()
         .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(StepSchema::Ap214.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                StepSchema::Ap214.descriptor().id.as_str(),
+            )),
         )
         .expect_err("a cached cone outside WR2 cannot be written");
     assert!(

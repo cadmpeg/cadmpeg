@@ -9,7 +9,8 @@
 //! `Xform` prim with a `matrix4d` transform. A definition that more than one
 //! occurrence places is written once, with its bodies and the occurrences it
 //! owns, under the abstract `Prototypes` prim, and each placement references
-//! it. Bodies become geometry prims: tessellations as
+//! it. A definition that no occurrence places, other than the root, is
+//! written there with no reference. Bodies become geometry prims: tessellations as
 //! `Mesh` prims; for a body with faces and no tessellation, each untrimmed
 //! face on a NURBS surface as a `NurbsPatch` prim and the other faces as one
 //! `Mesh` prim; and wire edges as one `NurbsCurves` prim. A placement whose content is one geometry prim of a
@@ -240,6 +241,7 @@ pub(crate) fn plan(
     let members = writer.package.take().unwrap_or_default();
     let body = ExportBody {
         bytes: text.into_bytes(),
+        synthesis_cause: None,
         census: cadmpeg_ir::report::export::EntityCensus {
             basis: cadmpeg_ir::report::export::CensusBasis::IrArenas,
             counts: written.census(),
@@ -405,7 +407,8 @@ struct Writer<'ir> {
     bindings: BTreeMap<String, String>,
     /// Faces whose bound material a written prim carries.
     face_bindings: BTreeSet<String>,
-    /// Definitions placed more than once, with their prototype prim names.
+    /// Definitions placed more than once or, other than the root, by nothing,
+    /// with their prototype prim names.
     shared: BTreeMap<ProductDefinitionId, String>,
     /// Bodies some definition owns.
     owned: BTreeSet<BodyId>,
@@ -512,7 +515,13 @@ impl<'ir> Writer<'ir> {
             .product_definitions
             .iter()
             .filter(|definition| {
-                uses.get(&definition.id).copied().unwrap_or_default() > 1
+                // A definition nothing places, other than the root, is a
+                // top-level definition the layer holds unplaced.
+                let placements = uses.get(&definition.id).copied().unwrap_or_default();
+                let unplaced = placements == 0
+                    && !definition.is_root()
+                    && !matches!(definition.storage, Storage::External(_));
+                (placements > 1 || unplaced)
                     && (!definition.bodies.is_empty()
                         || !definition.occurrences.is_empty()
                         || definition_meshes.contains_key(&definition.id))

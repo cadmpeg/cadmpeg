@@ -147,8 +147,9 @@ fn nonempty_user_string_presentation_is_omitted_and_named() {
     let mut bytes = Vec::new();
     RhinoCodec
         .plan(
-            EncodeInput::new(&source, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+            EncodeInput::new(&source, None).with_target(TargetRequest::Explicit(
+                RhinoArchiveVersion::V8.descriptor().id.as_str(),
+            )),
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
@@ -201,8 +202,9 @@ fn nonempty_mesh_modifier_presentation_is_omitted_and_named() {
     let mut bytes = Vec::new();
     RhinoCodec
         .plan(
-            EncodeInput::new(&source, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+            EncodeInput::new(&source, None).with_target(TargetRequest::Explicit(
+                RhinoArchiveVersion::V8.descriptor().id.as_str(),
+            )),
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");
@@ -255,8 +257,9 @@ fn nonempty_layer_per_viewport_settings_are_omitted_and_named() {
     let mut bytes = Vec::new();
     RhinoCodec
         .plan(
-            EncodeInput::new(&source, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+            EncodeInput::new(&source, None).with_target(TargetRequest::Explicit(
+                RhinoArchiveVersion::V8.descriptor().id.as_str(),
+            )),
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("required invariant");

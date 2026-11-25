@@ -26,7 +26,6 @@ use crate::test_support::tessellation::display_list_payload;
 use crate::test_support::tessellation::sldprt_with_body_and_display_list;
 const EPS_SKETCH_ANGLE: f64 = 1.0e-12;
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::Cursor;
 
@@ -70,13 +69,19 @@ fn semantic_writer_rejects_retained_sketch_constraint_edits() {
             metadata: None,
             native_ref: None,
         });
-    assert!(decoded.source_fidelity().edited(decoded.ir()).unwrap());
+    assert!(decoded
+        .source_fidelity()
+        .edited(
+            decoded.ir(),
+            cadmpeg_core::decode::ResourceLimits::desktop()
+        )
+        .unwrap());
 
     let error = SldprtCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(
+            decoded.ir(),
+            Some(decoded.source_fidelity()),
+        ))
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .unwrap_err();
     assert!(matches!(
@@ -949,10 +954,10 @@ fn semantic_writer_writes_default_channels_for_more_auxiliary_channels_than_the_
     decoded.ir_mut().model.tessellations[0] = extended;
 
     let report = SldprtCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(
+            decoded.ir(),
+            Some(decoded.source_fidelity()),
+        ))
         .unwrap()
         .report()
         .clone();

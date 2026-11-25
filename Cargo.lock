@@ -300,7 +300,6 @@ dependencies = [
  "serde-value",
  "serde_json",
  "sha2",
- "tempfile",
  "zip",
 ]
 
@@ -317,7 +316,6 @@ dependencies = [
  "roxmltree",
  "serde",
  "serde_json",
- "tempfile",
  "zip",
 ]
 
@@ -415,7 +413,6 @@ dependencies = [
  "serde_json",
  "sha1",
  "sha2",
- "tempfile",
 ]
 
 [[package]]

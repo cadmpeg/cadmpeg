@@ -35,13 +35,14 @@ pub(crate) fn plan(
         resolved.unavailable("the resolved target index is outside the STEP schema catalog")
     })?;
     let mut bytes = Vec::new();
-    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
+    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir);
     let outcome = write_step_outcome(
         &recovered.document,
         &mut bytes,
         schema,
         &codec.options,
         recovered.recovered_edges,
+        input.limits,
     )?;
     let mut losses = outcome.losses;
     if !recovered.sampled_agreements.is_empty() {
@@ -61,6 +62,7 @@ pub(crate) fn plan(
     }
     Ok(ExportBody {
         bytes,
+        synthesis_cause: None,
         census: outcome.census,
         write_path: WritePath::Synthesized {
             // STEP has no retained image: a provided fidelity is never replayed.

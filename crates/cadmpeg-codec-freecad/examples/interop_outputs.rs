@@ -7,14 +7,13 @@ use std::path::Path;
 use cadmpeg_codec_freecad::{
     FcstdCodec, FcstdDocumentBuilder, FcstdPropertyOwner, FcstdPropertyValue,
 };
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::CadIr;
 
 fn write(ir: &CadIr, output: &Path) -> Result<(), Box<dyn std::error::Error>> {
     FcstdCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)?
+        .plan(EncodeInput::new(ir, None))?
         .write_to(&mut File::create(output)?)?;
     Ok(())
 }

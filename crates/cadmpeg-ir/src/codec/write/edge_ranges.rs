@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
 use cadmpeg_core::CodecError;
 
 use crate::document::{CadIr, Topology};
@@ -117,9 +117,11 @@ pub fn vertex_positions(geometry: &Topology) -> HashMap<&str, (Point3, Option<f6
 ///
 /// # Errors
 ///
-/// Returns a resource-limit error where curve evaluation exhausts a ceiling.
+/// Returns a resource-limit error where curve evaluation exhausts a ceiling
+/// of `limits`.
 pub fn open_edge_ranges(
     ir: &CadIr,
+    limits: ResourceLimits,
     fit: impl Fn(&CurveId) -> Option<f64>,
     names_edge_uses: impl Fn(&Edge) -> bool,
 ) -> Result<Option<EdgeRangePlan>, CodecError> {
@@ -143,7 +145,7 @@ pub fn open_edge_ranges(
         return Ok(None);
     }
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy { limits })?;
     let index = crate::index::ModelIndex::new_model_only(ir);
     let mut vertices = vertex_positions(geometry);
     let curves = geometry

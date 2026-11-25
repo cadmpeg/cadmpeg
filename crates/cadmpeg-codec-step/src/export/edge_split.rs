@@ -1,18 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Preserve open edge topology at the representation uncertainty.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::{
-    curve_endpoints_coincident, finite_or_refusal,
-    model_curve_parameter_near_point_in_index_with_tolerance, model_curve_point_by_id,
+    curve_endpoints_coincident, model_curve_parameter_near_point_in_index_with_tolerance,
+    model_curve_point_by_id,
 };
 use cadmpeg_ir::index::{ModelIndex, StandardIndex};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::Edge;
 
-pub(super) fn midpoint(index: &ModelIndex<'_>, edge: &Edge) -> Result<Option<Point3>, CodecError> {
+pub(super) fn midpoint(
+    index: &ModelIndex<'_>,
+    edge: &Edge,
+    limits: ResourceLimits,
+) -> Result<Option<Point3>, CodecError> {
     let Some(ends) = edge.ends.as_ref().filter(|ends| ends.start != ends.end) else {
         return Ok(None);
     };
@@ -55,7 +59,7 @@ pub(super) fn midpoint(index: &ModelIndex<'_>, edge: &Edge) -> Result<Option<Poi
         Some(range) => range,
         None => {
             let arena = DecodeArena::new();
-            let policy = DecodePolicy::service();
+            let policy = DecodePolicy { limits };
             let ctx = DecodeContext::for_loaded_input(&arena, &policy, 0)?;
             let parameter = |point, seed| {
                 model_curve_parameter_near_point_in_index_with_tolerance(
@@ -87,13 +91,9 @@ pub(super) fn midpoint(index: &ModelIndex<'_>, edge: &Edge) -> Result<Option<Poi
     if middle == first || middle == last {
         return Err(refused());
     }
-    let point = finite_or_refusal(model_curve_point_by_id(
-        EvaluationAdmission::Standard,
-        index,
-        curve_id,
-        middle,
-    ))?
-    .ok_or_else(refused)?;
+    let point = model_curve_point_by_id(EvaluationAdmission::Standard, index, curve_id, middle)
+        .ok()
+        .ok_or_else(refused)?;
     Ok(Some(point.get()))
 }
 

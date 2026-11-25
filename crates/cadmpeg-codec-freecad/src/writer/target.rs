@@ -95,8 +95,8 @@ pub(crate) fn plan(
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
     let resolution = resolve(input.ir, resolved)?;
-    let baseline = admit_unedited(input.ir, input.fidelity)?;
-    finish(&resolution, input.fidelity, baseline)
+    let baseline = admit_unedited(input.ir, input.fidelity, input.limits)?;
+    finish(&resolution, input.fidelity, input.limits, baseline)
 }
 
 /// Native `fcstd` arenas this writer handles itself: property values patch
@@ -149,7 +149,11 @@ enum Baseline {
 /// a neutral edit has no serializer here and would otherwise be dropped. A
 /// document whose sidecar records no digest (no sidecar, or every decode
 /// below `Full`) is admitted as [`Baseline::Unrecorded`].
-fn admit_unedited(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Baseline, CodecError> {
+fn admit_unedited(
+    ir: &CadIr,
+    fidelity: Option<&SourceFidelity>,
+    limits: cadmpeg_core::decode::ResourceLimits,
+) -> Result<Baseline, CodecError> {
     let Some(expected) = fidelity.and_then(|fidelity| fidelity.codec_digests.get(UNCARRIED_DIGEST))
     else {
         return Ok(Baseline::Unrecorded);
@@ -158,7 +162,7 @@ fn admit_unedited(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Basel
     let (ctx, _) = DecodeContext::from_root_bytes(
         &[],
         &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
+        &cadmpeg_core::decode::DecodePolicy { limits },
     )?;
     let current = uncarried_digest(&ctx, ir)?;
     ctx.finish_session()?;
@@ -181,10 +185,11 @@ fn admit_unedited(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Basel
 fn finish(
     resolution: &Resolution<'_>,
     fidelity: Option<&cadmpeg_ir::SourceFidelity>,
+    limits: cadmpeg_core::decode::ResourceLimits,
     baseline: Baseline,
 ) -> Result<ExportBody, CodecError> {
     let mut bytes = Vec::new();
-    let outcome = write(&mut bytes, resolution)?;
+    let outcome = write(&mut bytes, resolution, limits)?;
     let write_path = WritePath::Patched {
         consumption: PatchConsumption::Independent(Consumption::NotConsumed),
     };
@@ -198,6 +203,7 @@ fn finish(
     }
     Ok(ExportBody {
         bytes,
+        synthesis_cause: None,
         census: outcome.census,
         losses,
         write_path,

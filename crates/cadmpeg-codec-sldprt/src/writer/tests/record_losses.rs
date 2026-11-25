@@ -270,9 +270,7 @@ fn a_body_on_an_opaque_carrier_without_a_retained_partition_is_omitted() {
         .id
         .as_str()
         .to_owned();
-    let plan = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .unwrap();
+    let plan = SldprtCodec.plan(EncodeInput::new(&ir, None)).unwrap();
     assert!(plan.report().losses.iter().any(|loss| {
         loss.code.local_code() == "writer.bodies-omitted"
             && loss.message.contains(&format!("edge {edge}"))

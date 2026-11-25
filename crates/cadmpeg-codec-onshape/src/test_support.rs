@@ -17,10 +17,7 @@ fn step() -> &'static [u8] {
     STEP.get_or_init(|| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let plan = cadmpeg_codec_step::StepCodec::default()
-            .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit("step:ap214"),
-            )
+            .plan(EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit("step:ap214")))
             .unwrap();
         let mut bytes = Vec::new();
         plan.write_to(&mut bytes).unwrap();

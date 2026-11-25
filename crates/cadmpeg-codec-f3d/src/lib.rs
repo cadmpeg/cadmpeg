@@ -39,7 +39,6 @@
 //!
 //! ```no_run
 //! use cadmpeg_codec_f3d::F3dCodec;
-//! use cadmpeg_ir::codec::write::target::TargetRequest;
 //! use cadmpeg_ir::codec::write::Encoder;
 //! use cadmpeg_ir::{CodecBackend, Codec, DecodeOptions};
 //! use std::fs::File;
@@ -51,10 +50,7 @@
 //! // Edit supported fields in `ir`.
 //! let mut output = File::create("part-edited.f3d")?;
 //! F3dCodec
-//!     .plan(
-//!         cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(&fidelity)),
-//!         TargetRequest::Inherit,
-//!     )?
+//!     .plan(cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(&fidelity)))?
 //!     .write_to(&mut output)?;
 //! # Ok(())
 //! # }
@@ -156,12 +152,13 @@ impl F3dCodec {
     fn write_preserved_bytes(
         ir: &CadIr,
         fidelity: &cadmpeg_ir::SourceFidelity,
+        limits: cadmpeg_core::decode::ResourceLimits,
         data: &[u8],
         writer: &mut dyn Write,
         notes: &mut Vec<String>,
     ) -> Result<PreservedWritePath, CodecError> {
-        if fidelity.edited(ir)? {
-            writer::patch::write_semantic(ir, data, writer, notes)?;
+        if fidelity.edited(ir, limits)? {
+            writer::patch::write_semantic(ir, data, limits, writer, notes)?;
             return Ok(PreservedWritePath::Patched);
         }
         writer.write_all(data)?;
@@ -244,6 +241,7 @@ impl EncoderBackend for F3dCodec {
     /// Patches the retained source, so it plans from the history and design
     /// records it rewrites.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REUSES_SOURCE: bool = true;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(dialect::TARGETS, Some(0))
         .with_replay_rows(dialect::REPLAY_ROWS)

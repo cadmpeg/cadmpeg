@@ -898,7 +898,6 @@ fn inconsistent_configuration_local_edits_are_refused_and_consistent_ones_writte
     let report = cadmpeg_ir::codec::write::Encoder::plan(
         &SldprtCodec,
         cadmpeg_ir::codec::write::EncodeInput::new(&edited, Some(&unavailable_fidelity)),
-        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
     )
     .unwrap()
     .write_to(&mut Vec::new())

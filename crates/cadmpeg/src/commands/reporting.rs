@@ -253,15 +253,31 @@ pub(super) fn print_export_emission(
         }
         EmittedArtifact::Stdout => {}
     }
+    let declined = emission.report.synthesis_cause().map(|cause| {
+        let cadmpeg_ir::report::export::SynthesisCause::PatchDeclined { reason } = cause;
+        reason.as_str()
+    });
+    if let Some(cause) = emission.report.synthesis_cause() {
+        writeln!(
+            writer,
+            "note: {} file synthesized from the document; {cause}",
+            emission.report.format()
+        )?;
+    }
     if !emission.report.losses.is_empty() {
         writeln!(writer, "{} export losses:", emission.report.format())?;
         for loss in &emission.report.losses {
+            // The note above prints the patch-declined reason once.
+            let message = if declined == Some(loss.message.as_str()) {
+                "the patch-declined reason above"
+            } else {
+                &loss.message
+            };
             writeln!(
                 writer,
-                "  [{}/{}] {}",
+                "  [{}/{}] {message}",
                 loss.severity,
                 loss.code.category(),
-                loss.message
             )?;
         }
     }

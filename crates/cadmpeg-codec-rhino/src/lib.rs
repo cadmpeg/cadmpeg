@@ -173,6 +173,7 @@ impl EncoderBackend for RhinoCodec {
     /// Writes B-rep, meshes and placements only; design arenas are refused, not
     /// read.
     const REQUEST: DecodeDepth = DecodeDepth::Geometry;
+    const REUSES_SOURCE: bool = false;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(RhinoArchiveVersion::TARGETS, Some(3));
 

@@ -150,8 +150,9 @@ fn drops_a_mixed_unclassified_bounded_surface_representation() {
 
     let plan = IgesCodec
         .plan(
-            EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            EncodeInput::new(decoded.ir(), None).with_target(TargetRequest::Explicit(
+                IgesVersion::V5_3.descriptor().id.as_str(),
+            )),
         )
         .expect("the representable part is written");
     let losses = &plan.report().losses;
@@ -328,10 +329,7 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
 
     let expected = 2_000_001.0 * WRITER_ENDPOINT_RELATIVE_TOLERANCE;
     assert!(
-        (generated_minimum_resolution(&TopologyIndex::new(&ir))
-            .expect("compute the generated minimum resolution")
-            - expected)
-            .abs()
+        (generated_minimum_resolution(&TopologyIndex::new(&ir)) - expected).abs()
             <= f64::EPSILON * 64.0
     );
 }
@@ -348,8 +346,9 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
 
     let plan = crate::IgesCodec
         .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                IgesVersion::V5_3.descriptor().id.as_str(),
+            )),
         )
         .expect("NURBS curve has a supported semantic writer profile");
     let mut written = Vec::new();
@@ -445,8 +444,9 @@ fn encode_uses_neutral_linear_tolerance_as_global_floor() {
 
     let plan = crate::IgesCodec
         .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                IgesVersion::V5_3.descriptor().id.as_str(),
+            )),
         )
         .expect("neutral tolerance floor is writable");
     let mut written = Vec::new();
@@ -480,8 +480,9 @@ fn encode_reports_when_source_resolution_is_raised_for_geometry() {
 
     let plan = crate::IgesCodec
         .plan(
-            EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            EncodeInput::new(decoded.ir(), None).with_target(TargetRequest::Explicit(
+                IgesVersion::V5_3.descriptor().id.as_str(),
+            )),
         )
         .expect("source resolution witness is writable");
     let mut written = Vec::new();
@@ -614,8 +615,9 @@ fn generated_boundary_records_use_the_declared_dependent_status() {
             .expect("fixture decodes");
         let plan = IgesCodec
             .plan(
-                EncodeInput::new(decoded.ir(), None),
-                TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+                EncodeInput::new(decoded.ir(), None).with_target(TargetRequest::Explicit(
+                    IgesVersion::V5_3.descriptor().id.as_str(),
+                )),
             )
             .expect("fixture has a semantic writer profile");
         let mut written = Vec::new();

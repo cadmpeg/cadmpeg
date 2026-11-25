@@ -25,7 +25,9 @@ pub(crate) use accounting::{Held, Unwritten, UnwrittenAttributes};
 
 use crate::native::SldprtNative;
 use cadmpeg_core::convert::f32_from_f64;
-use cadmpeg_core::decode::{index_from_u32, DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{
+    index_from_u32, DecodeArena, DecodeContext, DecodePolicy, ResourceLimits,
+};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::attributes::AttributeValue;
@@ -108,11 +110,12 @@ pub(crate) fn write_semantic_with_records(
     digests: &CodecDigests,
     retained_records: &[SourceRecord<'_>],
     withheld: &[(cadmpeg_ir::features::FeatureId, String)],
+    limits: ResourceLimits,
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, CodecError> {
+    let policy = DecodePolicy { limits };
     let digest_arena = DecodeArena::new();
-    let (digest_ctx, _) =
-        DecodeContext::from_root_bytes(&[], &digest_arena, &DecodePolicy::desktop())?;
+    let (digest_ctx, _) = DecodeContext::from_root_bytes(&[], &digest_arena, &policy)?;
     let mut native = ir
         .native
         .namespace("sldprt")
@@ -159,7 +162,7 @@ pub(crate) fn write_semantic_with_records(
     }
     let source_arena = DecodeArena::new();
     let source_context = source_image(retained_records)
-        .map(|bytes| DecodeContext::from_root_bytes(bytes, &source_arena, &DecodePolicy::desktop()))
+        .map(|bytes| DecodeContext::from_root_bytes(bytes, &source_arena, &policy))
         .transpose()?;
     let source_scan = source_context
         .as_ref()
@@ -188,7 +191,9 @@ pub(crate) fn write_semantic_with_records(
     let mut losses = content_losses;
     // `export:value.unwritable` entries: texts cut to their field's width.
     let mut cut = Vec::new();
-    for (id, held) in default_properties::unwritten(&normalized, retained_records, annotations)? {
+    for (id, held) in
+        default_properties::unwritten(&normalized, retained_records, annotations, &policy)?
+    {
         unwritten.record(&id, Unwritten::SavedProperty, held);
     }
     let retained_partition =
@@ -207,6 +212,7 @@ pub(crate) fn write_semantic_with_records(
             annotations,
             retained_records,
             length_scale,
+            &policy,
         )?
     } else {
         None
@@ -282,9 +288,7 @@ pub(crate) fn write_semantic_with_records(
     let ir = &normalized;
     losses.extend(reduce::invalid_records(ir, &validation));
     if !retain_native_brep {
-        losses.extend(
-            reduce::edge_ranges_omitted(ir, annotations).map_err(CodecError::ResourceLimit)?,
-        );
+        losses.extend(reduce::edge_ranges_omitted(ir, annotations));
         losses.extend(reduce::producer_attributes_omitted(ir));
     }
     losses.extend(reduce::empty_output(ir));

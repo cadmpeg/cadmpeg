@@ -5,6 +5,7 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::ResourceLimits;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::without_faces_and_bodies;
 use cadmpeg_ir::report::loss::LossNote;
@@ -28,11 +29,12 @@ pub(super) fn ends_the_write(error: &CodecError) -> bool {
 pub(super) fn synthesize_dropping(
     ir: &CadIr,
     version: crate::IgesVersion,
+    limits: ResourceLimits,
 ) -> Result<Synthesis, CodecError> {
     let mut document = Cow::Borrowed(ir);
     let mut dropped = Vec::new();
     loop {
-        let error = match super::synthesize(&document, version) {
+        let error = match super::synthesize(&document, version, limits) {
             Ok(mut synthesis) => {
                 dropped.append(&mut synthesis.losses);
                 synthesis.losses = dropped;
@@ -41,8 +43,8 @@ pub(super) fn synthesize_dropping(
             Err(error) if ends_the_write(&error) => return Err(error),
             Err(error) => error,
         };
-        let Some(culprits) = culprits(&document, version, &error)? else {
-            return empty_file(&document, version, &error, dropped);
+        let Some(culprits) = culprits(&document, version, limits, &error)? else {
+            return empty_file(&document, version, limits, &error, dropped);
         };
         dropped.extend(culprits.losses(&error));
         document = Cow::Owned(without_faces_and_bodies(
@@ -58,12 +60,13 @@ pub(super) fn synthesize_dropping(
 fn empty_file(
     ir: &CadIr,
     version: crate::IgesVersion,
+    limits: ResourceLimits,
     error: &CodecError,
     mut dropped: Vec<LossNote>,
 ) -> Result<Synthesis, CodecError> {
     let mut empty = ir.clone();
     empty.geometry = cadmpeg_ir::document::Topology::default();
-    let mut synthesis = super::synthesize(&empty, version)?;
+    let mut synthesis = super::synthesize(&empty, version, limits)?;
     if ir.geometry.bodies.is_empty() {
         dropped.push(
             IgesLossCode::WriterFreeGeometryOmitted
@@ -113,6 +116,7 @@ impl Culprits {
 fn culprits(
     ir: &CadIr,
     version: crate::IgesVersion,
+    limits: ResourceLimits,
     error: &CodecError,
 ) -> Result<Option<Culprits>, CodecError> {
     let uses = Uses::new(ir);
@@ -158,7 +162,7 @@ fn culprits(
             &faces.iter().copied().collect(),
             &bodies.iter().copied().collect(),
         )?;
-        Ok(match super::synthesize(&smaller, version) {
+        Ok(match super::synthesize(&smaller, version, limits) {
             Ok(_) => true,
             Err(other) => other.to_string() != message,
         })

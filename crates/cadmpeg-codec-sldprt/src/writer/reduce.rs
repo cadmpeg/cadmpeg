@@ -5,7 +5,6 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_core::decode::ResourceLimit;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{edit_dropped, output_empty, record_invalid, rule_invalid};
 use cadmpeg_ir::design::refs::EntityRef;
@@ -38,10 +37,7 @@ const DOMAIN_END_ROUNDOFF_RELATIVE: f64 = 1.0e-9;
 /// decode derives from those vertices is stated by them; any other range is
 /// not written. A line edge decodes with no range, so its range is not
 /// written either.
-pub(super) fn edge_ranges_omitted(
-    ir: &CadIr,
-    annotations: &Annotations,
-) -> Result<Option<LossNote>, ResourceLimit> {
+pub(super) fn edge_ranges_omitted(ir: &CadIr, annotations: &Annotations) -> Option<LossNote> {
     let points = ir
         .geometry
         .points
@@ -80,7 +76,7 @@ pub(super) fn edge_ranges_omitted(
         let stated = match curves.get(curve.as_str()) {
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_))) | None => false,
             Some(CurveGeometry::Solved(geometry)) => {
-                range_stated_by_vertices(edge, geometry, &vertices)?
+                range_stated_by_vertices(edge, geometry, &vertices)
             }
             Some(_) => false,
         };
@@ -88,14 +84,14 @@ pub(super) fn edge_ranges_omitted(
             omitted.push(edge.id.as_str());
         }
     }
-    Ok((!omitted.is_empty()).then(|| {
+    (!omitted.is_empty()).then(|| {
         SldprtLossCode::WriterEdgeRangesOmitted.note(format!(
             "{} edge(s) carry a parameter range the written edge does not state; each is written \
              bounded by its vertices, without its range: {}",
             omitted.len(),
             omitted.join(", ")
         ))
-    }))
+    })
 }
 
 /// The generated partitions carry no `FACE_ID_2001`,
@@ -169,47 +165,46 @@ fn range_stated_by_vertices(
     edge: &Edge,
     geometry: &SolvedCurveGeometry,
     vertices: &HashMap<&str, (Point3, f64)>,
-) -> Result<bool, ResourceLimit> {
+) -> bool {
     let (Some(range), Some(ends)) = (edge.param_range(), edge.ends.as_ref()) else {
-        return Ok(false);
+        return false;
     };
     let [start_t, end_t] = range.get();
     let (Some(&(start, start_bound)), Some(&(end, end_bound))) = (
         vertices.get(ends.start.as_str()),
         vertices.get(ends.end.as_str()),
     ) else {
-        return Ok(false);
+        return false;
     };
-    // A point the carrier states no finite value for fixes no range end.
-    let at =
-        |parameter| match curve_point_solved(EvaluationAdmission::Standard, geometry, parameter) {
-            Ok(point) => Ok(Some(point.get())),
-            Err(failure) => failure.non_finite().map(|_| None),
-        };
-    let (Some(at_start), Some(at_end)) = (at(start_t)?, at(end_t)?) else {
-        return Ok(false);
+    // A point the carrier states no finite value for, or that its evaluation
+    // runs out of work before, fixes no range end.
+    let at = |parameter| {
+        curve_point_solved(EvaluationAdmission::Standard, geometry, parameter)
+            .ok()
+            .map(cadmpeg_ir::features::geometry::FinitePoint3::get)
+    };
+    let (Some(at_start), Some(at_end)) = (at(start_t), at(end_t)) else {
+        return false;
     };
     if Point3::distance(at_start, start) > start_bound || Point3::distance(at_end, end) > end_bound
     {
-        return Ok(false);
+        return false;
     }
     let SolvedCurveGeometry::Nurbs(nurbs) = geometry else {
-        return Ok(true);
+        return true;
     };
     let Some(domain) = cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs) else {
-        return Ok(false);
+        return false;
     };
     let [low, high] = domain.endpoints();
-    let (Some(first), Some(last)) = (at(low)?, at(high)?) else {
-        return Ok(false);
+    let (Some(first), Some(last)) = (at(low), at(high)) else {
+        return false;
     };
     if Point3::distance(first, last) > start_bound.max(end_bound) {
-        return Ok(true);
+        return true;
     }
     let roundoff = (high - low) * DOMAIN_END_ROUNDOFF_RELATIVE;
-    Ok(ends.start == ends.end
-        && (start_t - low).abs() <= roundoff
-        && (end_t - high).abs() <= roundoff)
+    ends.start == ends.end && (start_t - low).abs() <= roundoff && (end_t - high).abs() <= roundoff
 }
 
 /// Remove the content the `SolidWorks` form has no field for from the document

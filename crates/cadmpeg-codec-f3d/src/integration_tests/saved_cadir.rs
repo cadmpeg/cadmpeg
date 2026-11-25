@@ -49,10 +49,7 @@ fn held(decoded: &DecodeResult) -> CadIr {
 
 fn write(ir: &CadIr, decoded: &DecodeResult) -> (Vec<u8>, ExportReport) {
     let plan = F3dCodec
-        .plan(
-            EncodeInput::new(ir, Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(ir, Some(decoded.source_fidelity())))
         .expect("plan");
     let mut bytes = Vec::new();
     let report = plan.write_to(&mut bytes).expect("write");
@@ -187,8 +184,8 @@ fn a_saved_design_synthesizes_as_its_decode_does() {
     let synthesized = |ir: &CadIr| {
         let plan = F3dCodec
             .plan(
-                EncodeInput::new(ir, Some(decoded.source_fidelity())),
-                TargetRequest::Explicit("f3d:manifest-3-2-0-0"),
+                EncodeInput::new(ir, Some(decoded.source_fidelity()))
+                    .with_target(TargetRequest::Explicit("f3d:manifest-3-2-0-0")),
             )
             .expect("plan");
         assert!(matches!(

@@ -9,7 +9,6 @@ use reporting::{
     print_source_diff, write_command_report, write_json_report, CommandReportBody, Payload,
 };
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::Path;
@@ -380,8 +379,8 @@ pub(crate) fn dump(
         let encoder = build_encoder(Format::Cadir);
         let plan = encoder
             .plan(
-                cadmpeg_ir::codec::write::EncodeInput::new(&loaded.ir, loaded.fidelity()),
-                TargetRequest::Inherit,
+                cadmpeg_ir::codec::write::EncodeInput::new(&loaded.ir, loaded.fidelity())
+                    .with_limits(args.options().policy.limits),
             )
             .map_err(|error| ApplicationError::from(error).at_stage(RefusalStage::Plan))?;
         let emission = emit_export_plan(

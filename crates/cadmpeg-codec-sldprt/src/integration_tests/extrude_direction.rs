@@ -458,11 +458,11 @@ fn edit_and_write(
 fn write_editable(
     decoded: &cadmpeg_test_support::EditableDecodeResult,
 ) -> Result<Written, cadmpeg_ir::codec::write::EncodeError> {
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
-    let plan = SldprtCodec.plan(
-        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-        TargetRequest::Inherit,
-    )?;
+    use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
+    let plan = SldprtCodec.plan(EncodeInput::new(
+        decoded.ir(),
+        Some(decoded.source_fidelity()),
+    ))?;
     let losses = plan
         .report()
         .losses

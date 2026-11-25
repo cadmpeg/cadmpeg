@@ -64,8 +64,9 @@ fn try_lossless_round_trip(
 ) -> bool {
     let Ok(plan) = Encoder::plan(
         &IgesCodec,
-        EncodeInput::new(ir, fidelity),
-        TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        EncodeInput::new(ir, fidelity).with_target(TargetRequest::Explicit(
+            IgesVersion::V5_3.descriptor().id.as_str(),
+        )),
     ) else {
         return false;
     };
@@ -135,8 +136,8 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
             .expect("line revolution fixture decodes");
         let plan = Encoder::plan(
             &IgesCodec,
-            EncodeInput::new(original.ir(), None),
-            TargetRequest::Explicit(version.descriptor().id.as_str()),
+            EncodeInput::new(original.ir(), None)
+                .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
         )
         .expect("normalized line revolution has a semantic writer path");
         let mut produced = Vec::new();
@@ -291,8 +292,8 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
             .expect("source line carrier interval");
         let plan = Encoder::plan(
             &IgesCodec,
-            EncodeInput::new(original.ir(), None),
-            TargetRequest::Explicit(version.descriptor().id.as_str()),
+            EncodeInput::new(original.ir(), None)
+                .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
         )
         .expect("normalized line extrusion has a semantic writer path");
         let mut produced = Vec::new();
@@ -449,8 +450,8 @@ fn semantic_writer_round_trips_a_degree_zero_bspline_curve() {
     for version in [IgesVersion::V4_0, IgesVersion::V5_0, IgesVersion::V5_3] {
         let plan = Encoder::plan(
             &IgesCodec,
-            EncodeInput::new(original.ir(), None),
-            TargetRequest::Explicit(version.descriptor().id.as_str()),
+            EncodeInput::new(original.ir(), None)
+                .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
         )
         .expect("degree-zero B-spline is writable");
         let mut produced = Vec::new();
@@ -512,8 +513,8 @@ fn assert_degree_zero_surface_round_trip(input: Vec<u8>, expected_counts: (usize
     for version in [IgesVersion::V4_0, IgesVersion::V5_0, IgesVersion::V5_3] {
         let plan = Encoder::plan(
             &IgesCodec,
-            EncodeInput::new(original.ir(), None),
-            TargetRequest::Explicit(version.descriptor().id.as_str()),
+            EncodeInput::new(original.ir(), None)
+                .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
         )
         .expect("degree-zero B-spline surface is writable");
         let mut produced = Vec::new();
@@ -592,8 +593,8 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
             .expect("hyperbola tabulated fixture decodes");
         let plan = Encoder::plan(
             &IgesCodec,
-            EncodeInput::new(original.ir(), None),
-            TargetRequest::Explicit(version.descriptor().id.as_str()),
+            EncodeInput::new(original.ir(), None)
+                .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
         )
         .expect("cache-less extrusion has an exact Type 122 writer path");
         let mut produced = Vec::new();
@@ -741,8 +742,8 @@ fn semantic_writer_round_trips_a_placed_type122_directrix() {
             .expect("placed hyperbola tabulated fixture decodes");
         let plan = Encoder::plan(
             &IgesCodec,
-            EncodeInput::new(original.ir(), None),
-            TargetRequest::Explicit(version.descriptor().id.as_str()),
+            EncodeInput::new(original.ir(), None)
+                .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
         )
         .expect("placed Type 122 has an exact semantic writer path");
         let mut produced = Vec::new();
@@ -875,8 +876,8 @@ fn semantic_writer_writes_a_placed_nurbs_type122_directrix() {
             .expect("placed line tabulated fixture decodes");
         let plan = Encoder::plan(
             &IgesCodec,
-            EncodeInput::new(original.ir(), None),
-            TargetRequest::Explicit(version.descriptor().id.as_str()),
+            EncodeInput::new(original.ir(), None)
+                .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
         )
         .expect("placed NURBS Type 122 has an exact semantic writer path");
         let mut produced = Vec::new();
@@ -943,8 +944,8 @@ fn assert_type120_round_trip(version: IgesVersion) {
         .expect("hyperbola revolution fixture decodes");
     let plan = Encoder::plan(
         &IgesCodec,
-        EncodeInput::new(original.ir(), None),
-        TargetRequest::Explicit(version.descriptor().id.as_str()),
+        EncodeInput::new(original.ir(), None)
+            .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
     )
     .expect("cache-less revolution has an exact Type 120 writer path");
     let mut produced = Vec::new();

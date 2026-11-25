@@ -12,7 +12,7 @@ use model::{
     WritablePcurve, WritableVertex,
 };
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{native_records_omitted, value_unwritable};
 use cadmpeg_ir::document::CadIr;
@@ -166,22 +166,26 @@ fn write(
     ir: &CadIr,
     version: RhinoArchiveVersion,
     unjoined: &BTreeSet<&str>,
-    output: &mut dyn Write,
+    limits: ResourceLimits,
+    output: &mut Vec<u8>,
 ) -> Result<Written, CodecError> {
-    let mut staged = tempfile::tempfile()?;
-    let written = write_seekable(ir, version, unjoined, &mut staged)?;
-    staged.seek(SeekFrom::Start(0))?;
-    std::io::copy(&mut staged, output)?;
-    Ok(written)
+    write_seekable(
+        ir,
+        version,
+        unjoined,
+        limits,
+        &mut std::io::Cursor::new(output),
+    )
 }
 
 fn write_seekable(
     ir: &CadIr,
     version: RhinoArchiveVersion,
     unjoined: &BTreeSet<&str>,
+    limits: ResourceLimits,
     output: &mut dyn WriteSeek,
 ) -> Result<Written, CodecError> {
-    let mut plan = prepare_write(ir, version, unjoined)?;
+    let mut plan = prepare_write(ir, version, unjoined, limits)?;
     write_archive_prefix(ir.tolerances.linear.get(), plan.angular, version, output)?;
     let table_start = output.stream_position()?;
     output.write_all(&TCODE_OBJECT_TABLE.to_le_bytes())?;
@@ -271,7 +275,7 @@ struct BrepPayload {
 
 struct WritePlan {
     /// The object records, in object-table order.
-    records: std::fs::File,
+    records: std::io::Cursor<Vec<u8>>,
     /// The angular tolerance the settings table states.
     angular: f64,
     losses: Vec<LossNote>,
@@ -280,7 +284,7 @@ struct WritePlan {
 /// The object records the writer encodes, and each record it leaves out with
 /// the reason.
 struct Records {
-    file: std::fs::File,
+    file: std::io::Cursor<Vec<u8>>,
     omitted: Vec<(String, String)>,
 }
 
@@ -702,12 +706,13 @@ fn prepare_write(
     ir: &CadIr,
     archive_version: RhinoArchiveVersion,
     unjoined: &BTreeSet<&str>,
+    limits: ResourceLimits,
 ) -> Result<WritePlan, CodecError> {
     use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
     use cadmpeg_ir::topology::BodyKind;
 
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy { limits })?;
     let mut losses = Vec::new();
     let angular = if ir.tolerances.angular.get() > std::f64::consts::PI {
         losses.extend(value_unwritable(
@@ -751,7 +756,7 @@ fn prepare_write(
     }
 
     let mut records = Records {
-        file: tempfile::tempfile()?,
+        file: std::io::Cursor::new(Vec::new()),
         omitted: Vec::new(),
     };
     let mut cut_names = Vec::new();

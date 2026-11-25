@@ -3,7 +3,7 @@
 //! `CadIr` with no retained source.
 
 use std::collections::BTreeSet;
-use std::io::{Seek, SeekFrom, Write};
+use std::io::{Seek, Write};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{ArenaDisposition, ArenaDispositions};
@@ -46,30 +46,36 @@ pub(super) struct Generated {
 
 /// Write a source-less F3D archive of everything in `target` the generator
 /// can encode, and report the rest as losses (see [`reduce`]).
-pub(super) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<Generated, CodecError> {
+pub(super) fn write_new(
+    target: &CadIr,
+    limits: cadmpeg_core::decode::ResourceLimits,
+    writer: &mut dyn Write,
+) -> Result<Generated, CodecError> {
     // `subset_int_cur` states its interval and cache on the parameter of the
     // curve it trims.
     let lowered = cadmpeg_ir::codec::write::subset_lowering::lower_subset_curves(target, |_| true)?;
-    let mut reduction = Reduction::new(lowered.as_ref());
+    let mut reduction = Reduction::new(lowered.as_ref(), limits);
     reduction.prepare()?;
-    let (mut staged, mut coverage, design_losses) = loop {
-        let mut staged = tempfile::tempfile()?;
+    let (staged, mut coverage, design_losses) = loop {
+        let mut staged = std::io::Cursor::new(Vec::new());
         match attempt(
             reduction.ir(),
             reduction.writes_design(),
             reduction.writes_neutral_design(),
             reduction.fallback(),
+            limits,
             &mut staged,
         ) {
             Ok((coverage, losses)) => break (staged, coverage, losses),
-            Err(failure) => reduction.degrade(failure, writes_alone)?,
+            Err(failure) => reduction.degrade(failure, |target, native, stage| {
+                writes_alone(target, native, stage, limits)
+            })?,
         }
     };
     if reduction.drops_neutral_design() {
         coverage.design = design::DROPPED;
     }
-    staged.seek(SeekFrom::Start(0))?;
-    std::io::copy(&mut staged, writer)?;
+    writer.write_all(staged.get_ref())?;
     let mut losses = reduction.finish();
     losses.extend(design_losses);
     Ok(Generated { coverage, losses })
@@ -77,7 +83,12 @@ pub(super) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<Genera
 
 /// Whether `stage` writes `target` (one body of the document, without its
 /// native namespace) on its own, with `native` for the B-rep stream.
-fn writes_alone(target: &CadIr, native: &crate::native::F3dNative, stage: Stage) -> bool {
+fn writes_alone(
+    target: &CadIr,
+    native: &crate::native::F3dNative,
+    stage: Stage,
+    limits: cadmpeg_core::decode::ResourceLimits,
+) -> bool {
     match stage {
         Stage::Brep => {
             let attributes = attributes::AttributeIndex::new(target, native);
@@ -88,6 +99,7 @@ fn writes_alone(target: &CadIr, native: &crate::native::F3dNative, stage: Stage)
             false,
             false,
             &design::Fallback::default(),
+            limits,
             &mut std::io::Cursor::new(Vec::new()),
         )
         .is_ok(),
@@ -115,6 +127,7 @@ fn attempt<W: Write + Seek>(
     write_design: bool,
     write_neutral: bool,
     fallback: &design::Fallback,
+    limits: cadmpeg_core::decode::ResourceLimits,
     staged: W,
 ) -> Result<(ArenaDispositions, Vec<LossNote>), Failure> {
     #[cfg(test)]
@@ -133,7 +146,7 @@ fn attempt<W: Write + Seek>(
     } else {
         Failure::design
     };
-    let loaded_native = f3d_native(target).map_err(Failure::design)?;
+    let loaded_native = f3d_native(target, limits).map_err(Failure::design)?;
     let has_native = loaded_native.is_some();
     let mut native = loaded_native.unwrap_or_default();
     let stamped = neutral
@@ -145,7 +158,7 @@ fn attempt<W: Write + Seek>(
             .map_err(Failure::neutral_design)?;
     }
     if write_design {
-        validate_assembly_projection(target, Some(&native)).map_err(Failure::design)?;
+        validate_assembly_projection(target, Some(&native), limits).map_err(Failure::design)?;
     }
     // A Base Feature design keys its history stream's bodies from `0`.
     let attributes = attributes::AttributeIndex::new(target, &native);
@@ -163,7 +176,12 @@ fn attempt<W: Write + Seek>(
         // without them.
         Err(error)
             if stamped
-                && writes_alone(target, &crate::native::F3dNative::default(), Stage::Brep) =>
+                && writes_alone(
+                    target,
+                    &crate::native::F3dNative::default(),
+                    Stage::Brep,
+                    limits,
+                ) =>
         {
             return Err(Failure::neutral_design(error));
         }
@@ -180,7 +198,7 @@ fn attempt<W: Write + Seek>(
         let native_design = || -> Result<design::parameters::ParameterSource, CodecError> {
             validate_configuration_projection(target, &native)?;
             validate_source_less_history_graph(target, &native)?;
-            let parameters = design::parameters::native_or_neutral(target, &native)?;
+            let parameters = design::parameters::native_or_neutral(target, &native, limits)?;
             validate_source_less_design_ownership(&native)?;
             validate_source_less_sketch_graph(&native)?;
             validate_source_less_recipes(&native)?;

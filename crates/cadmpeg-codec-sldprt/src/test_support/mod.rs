@@ -18,7 +18,7 @@ pub(crate) fn plan_inherited_write(
     fidelity: &SourceFidelity,
     writer: &mut dyn Write,
 ) -> Result<WritePath, cadmpeg_ir::codec::write::EncodeError> {
-    let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)?;
+    let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)))?;
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
@@ -77,7 +77,7 @@ pub(crate) fn write_with_unwritten_attributes(
     ir: &CadIr,
     fidelity: &SourceFidelity,
 ) -> Result<(Vec<u8>, UnwrittenLosses), cadmpeg_ir::codec::write::EncodeError> {
-    let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)?;
+    let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)))?;
     let losses = UnwrittenLosses::of(&plan.report().losses);
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes)?;
@@ -90,7 +90,7 @@ pub(crate) fn plan_fixture_with_native_envelope(
     request: TargetRequest<'_>,
 ) -> Result<cadmpeg_ir::codec::write::ExportPlan, EncodeError> {
     let (ir, fidelity) = fixture_native_envelope_context(input).map_err(EncodeError::Backend)?;
-    SldprtCodec.plan(EncodeInput::new(&ir, Some(&fidelity)), request)
+    SldprtCodec.plan(EncodeInput::new(&ir, Some(&fidelity)).with_target(request))
 }
 
 fn fixture_native_envelope_context(
@@ -322,10 +322,7 @@ pub(crate) fn write_history_over_stale_solid(
     let (ir, fidelity) = fixture_native_envelope_context(EncodeInput::new(ir, Some(fidelity)))
         .map_err(cadmpeg_ir::codec::write::EncodeError::Backend)?;
     let report = SldprtCodec
-        .plan(
-            EncodeInput::new(&ir, Some(&fidelity)),
-            TargetRequest::Inherit,
-        )?
+        .plan(EncodeInput::new(&ir, Some(&fidelity)))?
         .write_to(writer)?;
     assert!(
         report
@@ -353,6 +350,7 @@ pub(crate) fn write_in_native_envelope(
         &fidelity.codec_digests,
         &records,
         &[],
+        cadmpeg_core::decode::ResourceLimits::desktop(),
         writer,
     )
 }

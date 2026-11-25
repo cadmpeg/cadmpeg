@@ -61,7 +61,6 @@
 //! use std::fs::File;
 //!
 //! use cadmpeg_codec_sldprt::SldprtCodec;
-//! use cadmpeg_ir::codec::write::target::TargetRequest;
 //! use cadmpeg_ir::codec::write::Encoder;
 //! use cadmpeg_ir::{Codec, DecodeOptions};
 //!
@@ -71,10 +70,7 @@
 //! let (ir, _report, fidelity) = decoded.into_parts();
 //! let mut output = File::create("part-edited.sldprt")?;
 //! SldprtCodec
-//!     .plan(
-//!         cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(&fidelity)),
-//!         TargetRequest::Inherit,
-//!     )?
+//!     .plan(cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(&fidelity)))?
 //!     .write_to(&mut output)?;
 //! # Ok(())
 //! # }
@@ -137,7 +133,7 @@ mod writer;
 mod writer_patch;
 mod writer_transform;
 
-use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth, ResourceLimits, View};
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ContainerSummary;
@@ -198,6 +194,7 @@ impl SldprtCodec {
         fidelity: &SourceFidelity,
         records: &[SourceRecord<'_>],
         target: &DialectId,
+        limits: ResourceLimits,
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
         let image = records
@@ -205,7 +202,7 @@ impl SldprtCodec {
             .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
             .and_then(|record| record.data);
         let (annotations, digests) = (&fidelity.annotations, &fidelity.codec_digests);
-        if fidelity.edited(ir)? {
+        if fidelity.edited(ir, limits)? {
             let reason = ReplaySkipped::DigestMismatch;
             if let Some(image) = image.filter(|image| container::is_compound_file(image)) {
                 let mut bytes = Vec::new();
@@ -215,6 +212,7 @@ impl SldprtCodec {
                     digests,
                     records,
                     SemanticFidelity::ReplaySkipped(reason),
+                    limits,
                     &mut bytes,
                 ) {
                     Ok(Written::Semantic { dialect, .. }) if dialect != *target => {
@@ -246,6 +244,7 @@ impl SldprtCodec {
                 digests,
                 records,
                 SemanticFidelity::ReplaySkipped(reason),
+                limits,
                 writer,
             );
         }
@@ -256,6 +255,7 @@ impl SldprtCodec {
                 digests,
                 records,
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing),
+                limits,
                 writer,
             );
         };
@@ -287,6 +287,7 @@ impl SldprtCodec {
         digests: &CodecDigests,
         records: &[SourceRecord<'_>],
         fidelity: SemanticFidelity,
+        limits: ResourceLimits,
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
         if !ir.model.omitted_arenas_held()
@@ -315,6 +316,7 @@ impl SldprtCodec {
                 &source.source_fidelity.codec_digests,
                 records,
                 &[],
+                limits,
                 &mut bytes,
             )
             .ok()?;
@@ -331,6 +333,7 @@ impl SldprtCodec {
                     digests,
                     records,
                     withheld,
+                    limits,
                     &mut bytes,
                 )?;
                 Ok((bytes, output))
@@ -559,6 +562,7 @@ impl EncoderBackend for SldprtCodec {
     /// Patches the retained source, so it plans from the design records it
     /// rewrites.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REUSES_SOURCE: bool = true;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(dialect::TARGETS, Some(0));
 

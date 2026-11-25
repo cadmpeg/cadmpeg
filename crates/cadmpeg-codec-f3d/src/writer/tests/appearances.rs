@@ -13,7 +13,6 @@
 
 use cadmpeg_test_support::EditableDecodeResult;
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::Cursor;
 
@@ -66,7 +65,7 @@ fn generated_source_less_writes_unassigned_protein_appearance() {
     }];
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less Protein appearance encode");
     let round_trip = F3dCodec
@@ -399,9 +398,7 @@ fn synthesized_appearance_properties_report_each_unwritten_key() {
             textures: Vec::new(),
             native_ref: None,
         });
-        let plan = F3dCodec
-            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-            .unwrap();
+        let plan = F3dCodec.plan(EncodeInput::new(&ir, None)).unwrap();
         let loss = plan
             .report()
             .losses
@@ -425,9 +422,7 @@ fn synthesized_appearance_properties_report_each_unwritten_key() {
         ir.model.appearances[0]
             .properties
             .retain(|key, _| supported.contains(&key.as_str()));
-        let plan = F3dCodec
-            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-            .unwrap();
+        let plan = F3dCodec.plan(EncodeInput::new(&ir, None)).unwrap();
         assert!(!plan
             .report()
             .losses
@@ -466,7 +461,7 @@ fn appearances_sharing_a_guid_with_different_assets_take_distinct_guids() {
     ];
     let mut encoded = Vec::new();
     let report = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less Protein appearances encode");
     let round_trip = F3dCodec
@@ -521,7 +516,7 @@ fn an_appearance_with_no_guid_is_written_under_an_allocated_guid_with_a_loss() {
     }];
     let mut encoded = Vec::new();
     let report = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("a source-less Protein appearance encodes");
     let round_trip = F3dCodec

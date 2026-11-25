@@ -87,7 +87,7 @@ ambiguity.
 use std::fs::File;
 
 use cadmpeg_codec_sldprt::SldprtCodec;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::{Codec, DecodeOptions};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -98,10 +98,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut output = File::create("part-edited.sldprt")?;
     SldprtCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )?
+        .plan(EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())))?
         .write_to(&mut output)?;
     Ok(())
 }

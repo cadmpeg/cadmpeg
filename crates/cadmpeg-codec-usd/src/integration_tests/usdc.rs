@@ -108,8 +108,9 @@ fn a_written_package_reads_back() {
         .unwrap();
     let plan = cadmpeg_ir::codec::write::Encoder::plan(
         &UsdCodec,
-        cadmpeg_ir::codec::write::EncodeInput::new(decoded.ir(), None),
-        cadmpeg_ir::codec::write::target::TargetRequest::Explicit("usdz"),
+        cadmpeg_ir::codec::write::EncodeInput::new(decoded.ir(), None).with_target(
+            cadmpeg_ir::codec::write::target::TargetRequest::Explicit("usdz"),
+        ),
     )
     .unwrap();
     let mut bytes = Vec::new();

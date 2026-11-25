@@ -2,15 +2,18 @@
 //! Referenced construction carriers cannot become independent export roots.
 
 use cadmpeg_core::{
-    decode::{DecodeArena, DecodeContext, DecodePolicy},
+    decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits},
     CodecError,
 };
 use cadmpeg_ir::{geometry::SolvedCurveGeometry, schema::EntitySchema, CadIr};
 use std::collections::BTreeSet;
 
-pub(super) fn construction_supports(ir: &CadIr) -> Result<BTreeSet<String>, CodecError> {
+pub(super) fn construction_supports(
+    ir: &CadIr,
+    limits: ResourceLimits,
+) -> Result<BTreeSet<String>, CodecError> {
     let arena = DecodeArena::new();
-    let policy = DecodePolicy::desktop();
+    let policy = DecodePolicy { limits };
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)?;
     let mut supports = BTreeSet::new();
     let mut visit = |id: &str| {

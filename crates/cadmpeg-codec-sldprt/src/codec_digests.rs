@@ -8,7 +8,7 @@
 //! returns, so the document holds none. A write of a part given no sidecar
 //! takes them from the document it writes.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::Decoded;
@@ -78,7 +78,7 @@ pub(crate) fn holds_history(ir: &CadIr) -> bool {
 /// The codec digests a decode of the part `ir` states records, taken from `ir`
 /// itself. A write given no sidecar compares against them, so it reads the
 /// document as unedited (§3.4, Paths: the patch that holds no digest).
-pub(crate) fn of_document(ir: &CadIr) -> Result<CodecDigests, CodecError> {
+pub(crate) fn of_document(ir: &CadIr, limits: ResourceLimits) -> Result<CodecDigests, CodecError> {
     use crate::history::hash::{
         configuration_feature_state_hash, configuration_hash, configuration_parameter_value_hash,
         feature_hash, history_hash, native_configuration_hash, native_parameter_hash,
@@ -87,7 +87,7 @@ pub(crate) fn of_document(ir: &CadIr) -> Result<CodecDigests, CodecError> {
     use crate::resolved_features::hashes::{constraint_hash, lane_hash, sketch_hash};
 
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())?;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy { limits })?;
     let native = ir
         .native
         .namespace("sldprt")

@@ -5,7 +5,7 @@
 use std::io::Cursor;
 use std::path::Path;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::report::export::WritePath;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use cadmpeg_measure::test_support::round_trip::{measured, measures_agree_with, measures_decide};
@@ -182,7 +182,7 @@ fn patched_corpus_documents_keep_measured_geometry() {
                             });
                         let mut encoded = Vec::new();
                         let plan = FcstdCodec
-                            .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+                            .plan(EncodeInput::new(&edited, None))
                             .unwrap_or_else(|_| panic!("{label}: the edit is not planned"));
                         assert!(
                             matches!(plan.report().write_path(), WritePath::Patched { .. }),

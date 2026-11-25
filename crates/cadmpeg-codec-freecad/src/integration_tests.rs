@@ -30,7 +30,7 @@ use crate::test_support::test_archive::{
     archive, archive_entries, assert_valid_document, rewrite_schema_version, streaming_archive,
     streaming_archive_with_options, CORE_OPERATIONS,
 };
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use std::io::Cursor;
 use zip::write::SimpleFileOptions;
@@ -223,7 +223,7 @@ fn typed_graph_pipeline_builds_mutates_writes_and_reloads_side_entries() {
 
     let mut bytes = Vec::new();
     FcstdCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None))
         .and_then(|plan| plan.write_to(&mut bytes))
         .unwrap();
     let round_trip = decode(bytes);

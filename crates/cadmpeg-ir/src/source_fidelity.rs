@@ -565,10 +565,14 @@ impl SourceFidelity {
     ///
     /// # Errors
     ///
-    /// The digest's session could not be opened.
-    pub fn edited(&self, ir: &CadIr) -> Result<bool, CodecError> {
+    /// The digest's session could not be opened under `limits`.
+    pub fn edited(
+        &self,
+        ir: &CadIr,
+        limits: cadmpeg_core::decode::ResourceLimits,
+    ) -> Result<bool, CodecError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let policy = cadmpeg_core::decode::DecodePolicy { limits };
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
         let same = self.content_digest.as_ref().is_some_and(|stored| {
             crate::hash::content_digest(&ctx, ir).is_ok_and(|digest| digest == *stored)

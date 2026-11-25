@@ -20,7 +20,7 @@ pub(crate) mod shell_slots;
 
 use std::io::Write;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::{report::export::WritePath, CadIr, SourceFidelity};
 
 use crate::F3dCodec;
@@ -75,7 +75,7 @@ pub(crate) fn plan_inherited_write(
     fidelity: &SourceFidelity,
     writer: &mut dyn Write,
 ) -> Result<WritePath, cadmpeg_ir::codec::write::EncodeError> {
-    let plan = F3dCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)?;
+    let plan = F3dCodec.plan(EncodeInput::new(ir, Some(fidelity)))?;
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
@@ -91,7 +91,7 @@ pub(crate) fn assert_written_with_loss(
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     let mut bytes = Vec::new();
     let report = F3dCodec
-        .plan(EncodeInput::new(ir, fidelity), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, fidelity))
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("the writer writes what it can encode");
     let decoded = F3dCodec

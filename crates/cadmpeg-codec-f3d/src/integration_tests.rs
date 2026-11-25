@@ -272,7 +272,7 @@ fn source_less_writer_pipeline_emits_a_fresh_valid_archive() {
     drop(f3d_native_mut(&mut ir));
     let mut bytes = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None))
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("source-less F3D encode");
     assert_eq!(
@@ -498,8 +498,8 @@ fn plan(
     request: TargetRequest<'_>,
 ) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_ir::codec::write::EncodeError> {
     F3dCodec.plan(
-        EncodeInput::new(result.ir(), fidelity.then(|| result.source_fidelity())),
-        request,
+        EncodeInput::new(result.ir(), fidelity.then(|| result.source_fidelity()))
+            .with_target(request),
     )
 }
 
@@ -647,10 +647,7 @@ fn the_patch_path_names_the_preserved_dialect() {
     );
 
     let plan = F3dCodec
-        .plan(
-            EncodeInput::new(&edited, Some(result.source_fidelity())),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(&edited, Some(result.source_fidelity())))
         .expect("an edited archive still preserves its dialect");
     assert!(matches!(
         plan.report().write_path(),

@@ -95,7 +95,7 @@ fn a_reemitted_lane_keeps_unchanged_coordinates_in_their_layout() {
 /// from `Contents/Config-0-ResolvedFeatures`.
 #[test]
 fn a_config_objects_lane_is_written_to_its_own_member() {
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
     let lanes = |bytes: &[u8]| {
@@ -131,10 +131,7 @@ fn a_config_objects_lane_is_written_to_its_own_member() {
     fidelity.content_digest = None;
     let mut written = Vec::new();
     crate::SldprtCodec
-        .plan(
-            EncodeInput::new(&ir, Some(&fidelity)),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(&ir, Some(&fidelity)))
         .unwrap()
         .write_to(&mut written)
         .unwrap();
@@ -180,10 +177,7 @@ fn a_config_objects_lane_without_provenance_is_written_to_its_own_member() {
     let (ir, _, _) = decoded.into_parts();
     let mut written = Vec::new();
     crate::SldprtCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit("sldprt:unknown"),
-        )
+        .plan(EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit("sldprt:unknown")))
         .unwrap()
         .write_to(&mut written)
         .unwrap();

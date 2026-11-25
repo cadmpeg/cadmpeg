@@ -18,7 +18,7 @@ use std::path::Path;
 
 use cadmpeg_codec_step::StepCodec;
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::compare::texts_agree;
 use cadmpeg_test_support::golden::{
@@ -247,7 +247,6 @@ fn encode_once(
     let report = Encoder::plan(
         &FcstdCodec,
         EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-        TargetRequest::Inherit,
     )
     .and_then(|plan| plan.write_to(&mut produced))
     .map_err(|error| error.to_string())?;
@@ -335,7 +334,6 @@ fn step_snapshot(bytes: &[u8]) -> String {
     match Encoder::plan(
         &StepCodec::default(),
         EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-        TargetRequest::Inherit,
     )
     .and_then(|plan| plan.write_to(&mut exported))
     {

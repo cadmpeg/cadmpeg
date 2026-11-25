@@ -1351,6 +1351,7 @@ impl EncoderBackend for FcstdCodec {
     /// Writes the feature tree and patches retained sources, so it plans from
     /// the design records.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REUSES_SOURCE: bool = true;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(dialect::TARGETS, None);
 

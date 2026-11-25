@@ -8,7 +8,7 @@
 
 use cadmpeg_codec_step::StepCodec;
 use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::report::decode::DecodeReport;
 use cadmpeg_ir::validate::validate_neutral_with_source_fidelity_for_decode;
@@ -58,10 +58,7 @@ pub(crate) fn convert_to_step(bytes: &[u8]) -> StepConversion {
     ctx.finish_session().expect("the validation session closes");
 
     let plan = StepCodec::default()
-        .plan(
-            EncodeInput::new(&ir, Some(&fidelity)),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(&ir, Some(&fidelity)))
         .expect("plan the STEP export");
     let carried = plan.carried_errors(&ir, &validation);
     assert!(carried.is_empty(), "the export carries errors: {carried:?}");

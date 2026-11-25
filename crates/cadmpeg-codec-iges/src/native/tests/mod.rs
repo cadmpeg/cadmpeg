@@ -264,7 +264,10 @@ fn decode_preserves_native_entities_and_graph() {
     );
 
     assert_eq!(result.ir().source.as_ref().unwrap().format(), "iges");
-    assert!(!result.source_fidelity().edited(result.ir()).unwrap());
+    assert!(!result
+        .source_fidelity()
+        .edited(result.ir(), cadmpeg_core::decode::ResourceLimits::desktop())
+        .unwrap());
     assert_eq!(
         result
             .source_fidelity()

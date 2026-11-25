@@ -2127,6 +2127,7 @@ mod tests {
         crate::writer::primitives::validate_assembly_projection(
             &cadmpeg_ir::document::CadIr::empty(),
             Some(&native),
+            cadmpeg_core::decode::ResourceLimits::desktop(),
         )
         .expect("the writer re-projects the same skipped joint");
     }

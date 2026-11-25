@@ -10,9 +10,7 @@ use std::collections::HashMap;
 
 use cadmpeg_core::decode::ResourceLimit;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
-use cadmpeg_ir::eval::{
-    finite_or_refusal, model_surface_point, nurbs_surface_isoline, IsolineDirection,
-};
+use cadmpeg_ir::eval::{model_surface_point, nurbs_surface_isoline, IsolineDirection};
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, PcurveGeometry};
 use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
@@ -172,14 +170,14 @@ impl<'a> Builder<'a> {
             .iter_mut()
             .zip([(u0, v0), (u1, v0), (u1, v1), (u0, v1)])
         {
-            let Some(point) = finite_or_refusal(model_surface_point(
+            let Some(point) = model_surface_point(
                 EvaluationAdmission::Standard,
                 self.ir,
                 &surface.geometry,
                 u,
                 v,
-            ))?
-            else {
+            )
+            .ok() else {
                 return Ok(Err("a parameter rectangle corner does not evaluate"));
             };
             *corner = point.get();

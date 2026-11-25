@@ -2,7 +2,6 @@
 
 use cadmpeg_test_support::EditableDecodeResult;
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::{Cursor, Write};
 
@@ -113,7 +112,9 @@ fn native_load_refuses_orphan_history_row_with_child_and_parent() {
         )
         .unwrap(),
     );
-    let error = crate::native::F3dNative::load(&namespace).unwrap_err();
+    let error =
+        crate::native::F3dNative::load(&namespace, cadmpeg_core::decode::ResourceLimits::desktop())
+            .unwrap_err();
     let message = error.to_string();
     assert!(message.contains("f3d:native:bulletin#1"));
     assert!(message.contains("f3d:native:missing-state#1"));
@@ -146,7 +147,9 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         )
         .unwrap();
     let original = decoded.ir().native.namespace("f3d").unwrap();
-    let typed = crate::native::F3dNative::load(original).unwrap();
+    let typed =
+        crate::native::F3dNative::load(original, cadmpeg_core::decode::ResourceLimits::desktop())
+            .unwrap();
     let mut round_trip = cadmpeg_ir::NativeNamespace::default();
     typed
         .store(
@@ -154,7 +157,14 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
             &mut round_trip,
         )
         .unwrap();
-    assert_eq!(typed, crate::native::F3dNative::load(&round_trip).unwrap());
+    assert_eq!(
+        typed,
+        crate::native::F3dNative::load(
+            &round_trip,
+            cadmpeg_core::decode::ResourceLimits::desktop()
+        )
+        .unwrap()
+    );
     for name in crate::native::F3D_ARENA_NAMES {
         assert_eq!(
             round_trip.arenas().get(*name),
@@ -580,7 +590,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
         }];
     let mut generated = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut generated))
         .expect("source-less embedded use curves");
     let generated = F3dCodec
@@ -858,7 +868,7 @@ fn generated_cache_first_spring_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less cache-first spring encode");
     let round_trip = F3dCodec
@@ -924,7 +934,7 @@ fn generated_cache_first_parametric_curve_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less cache-first parametric encode");
     let round_trip = F3dCodec
@@ -1004,7 +1014,7 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less cache-first surface-offset encode");
     let round_trip = F3dCodec
@@ -1455,6 +1465,7 @@ fn oversized_nested_protein_entry_is_rejected_before_allocation() {
         &protein,
         &std::collections::BTreeMap::new(),
         &mut Vec::new(),
+        cadmpeg_core::decode::ResourceLimits::desktop(),
     )
     .expect_err("oversized nested Protein entry must be rejected");
     assert!(error.to_string().contains("inflated bytes"));

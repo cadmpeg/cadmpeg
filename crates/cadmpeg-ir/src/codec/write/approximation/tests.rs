@@ -493,7 +493,7 @@ fn a_kinked_curve_on_a_plane_becomes_the_exact_spline_through_the_plane() {
 }
 
 #[test]
-fn fitting_retains_an_evaluation_resource_refusal() {
+fn an_evaluation_past_the_depth_ceiling_leaves_the_carrier_unwritten() {
     let mut ir = crate::examples::unit_cube().unwrap();
     let mut pcurve = PcurveGeometry::Line(
         LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)).unwrap(),
@@ -541,13 +541,6 @@ fn fitting_retains_an_evaluation_resource_refusal() {
     });
     let mut approximator = Approximator::new(&ir);
     assert!(approximator.curve(curve.as_str()).is_none());
-    let refusal = approximator
-        .resource_limit()
-        .expect("recursion refusal is retained");
-    assert_eq!(
-        refusal.dimension,
-        cadmpeg_core::decode::ResourceDimension::RecursionDepth
-    );
 }
 
 /// The sampled residual limit of a model whose linear tolerance is `1e-6`.

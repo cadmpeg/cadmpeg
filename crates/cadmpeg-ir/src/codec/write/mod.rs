@@ -7,23 +7,26 @@
 //! identity and fidelity resolution: a backend cannot report a format, a
 //! target, or a fidelity state other than the one it was given.
 
+use std::collections::BTreeMap;
 use std::io::Write;
 
 use crate::codec::FormatId;
 use crate::document::CadIr;
+use crate::ids::ProductDefinitionId;
 use crate::report::{
     check::{Finding, ValidationReport},
     export::{
         CensusBasis, EntityCensus, ExportReport, FidelityResolution, ReplayFidelity,
-        SynthesisFidelity, WritePath as ReportWritePath,
+        SynthesisCause, SynthesisFidelity, WritePath as ReportWritePath,
     },
     loss::LossNote,
     strictness::Strictness,
     Severity,
 };
 use crate::source_fidelity::SourceFidelity;
-use cadmpeg_core::decode::{Companions, DecodeDepth, ResourceLimit};
+use cadmpeg_core::decode::{Companions, DecodeDepth, ResourceLimit, ResourceLimits};
 use cadmpeg_core::target::{TargetCatalog, TargetRefusal};
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 
 pub mod approximation;
@@ -70,6 +73,11 @@ pub trait EncoderBackend {
     /// [`Encoder::plan`] refuses no document for its scope; a shallower one
     /// is planned with a note.
     const REQUEST: DecodeDepth;
+
+    /// Whether the writer has a patch or replay path (§3.4, Paths). For such
+    /// a writer [`ExportReport::synthesis_cause`] records why a file of a
+    /// same-format source was synthesized.
+    const REUSES_SOURCE: bool;
 
     /// The domain this backend's targets come from.
     type Target: TargetDomain;
@@ -128,19 +136,18 @@ pub trait Encoder: encoder_sealed::Sealed {
     /// The decode depth this encoder plans from, [`EncoderBackend::REQUEST`].
     fn request(&self) -> DecodeDepth;
 
-    /// Plans one export without writing to the destination.
+    /// Plans one export of [`EncodeInput::target`] without writing to the
+    /// destination.
     ///
-    /// Never refuses on scope. A document that records less depth than
+    /// Refuses with [`EncodeError::OutputUnnamed`] before planning where
+    /// [`EncodeInput::outputs`] names no output the writer produces. Never
+    /// refuses on scope. A document that records less depth than
     /// [`Self::request`] is planned from what it holds, and the report notes
     /// the shortfall. Charges `export:record.invalid` for each Error of
     /// [`EncodeInput::validation`] that the output carries, then refuses with
     /// [`EncodeError::StrictRejected`] where [`EncodeInput::strictness`]
     /// refuses an entry of the completed report (§3.4, Refusals).
-    fn plan(
-        &self,
-        input: EncodeInput<'_>,
-        request: TargetRequest<'_>,
-    ) -> Result<ExportPlan, EncodeError>;
+    fn plan(&self, input: EncodeInput<'_>) -> Result<ExportPlan, EncodeError>;
 }
 
 impl<E: EncoderBackend> Encoder for E {
@@ -156,13 +163,10 @@ impl<E: EncoderBackend> Encoder for E {
         E::REQUEST
     }
 
-    fn plan(
-        &self,
-        input: EncodeInput<'_>,
-        request: TargetRequest<'_>,
-    ) -> Result<ExportPlan, EncodeError> {
+    fn plan(&self, input: EncodeInput<'_>) -> Result<ExportPlan, EncodeError> {
+        let outputs = planned_outputs(input.ir, input.outputs)?;
         let target = E::TARGET
-            .resolve(input.ir, request, E::FORMAT)
+            .resolve(input.ir, input.target, E::FORMAT)
             .map_err(EncodeError::from_backend)?;
         let identity = target.export_target().cloned();
         let synthesized_identity = target.synthesized_target().cloned();
@@ -184,6 +188,7 @@ impl<E: EncoderBackend> Encoder for E {
             coverage,
             mut losses,
             mut notes,
+            synthesis_cause,
         } = body;
         notes.extend(restore_notes);
         losses.extend(restore_losses);
@@ -217,20 +222,30 @@ impl<E: EncoderBackend> Encoder for E {
                 E::REQUEST
             ));
         }
+        let synthesis_cause = match &write_path {
+            WritePath::Synthesized { consumption } if E::REUSES_SOURCE && same_format => {
+                Some(synthesis_cause.unwrap_or_else(|| consumption.patch_declined(input.fidelity)))
+            }
+            WritePath::Synthesized { .. }
+            | WritePath::Patched { .. }
+            | WritePath::VerbatimReplay => None,
+        };
         let identity = match write_path {
             WritePath::Synthesized { .. } => synthesized_identity,
             WritePath::Patched { .. } | WritePath::VerbatimReplay => identity,
         };
         let write_path = write_path.into_report(input.fidelity.is_some());
-        let report = match identity {
+        let mut report = match identity {
             None => ExportReport::cadir(census, write_path, losses, notes),
             Some(target) => ExportReport::native(target, census, write_path, losses, notes),
         };
+        report.synthesis_cause = synthesis_cause;
         let mut plan = ExportPlan {
             report,
             bytes,
             format: E::FORMAT,
             coverage,
+            outputs,
         };
         if let Some(validation) = input.validation {
             plan.charge_carried_errors(input.ir, validation);
@@ -253,6 +268,13 @@ pub enum EncodeError {
     /// default, or the writer cannot deliver the target from this document.
     #[error("{0}")]
     UnsupportedTarget(Box<TargetRefusal>),
+    /// An output the writer produces has no name in
+    /// [`EncodeInput::outputs`]. Nothing is planned or written.
+    #[error("the encode names no output for definition {definition}")]
+    OutputUnnamed {
+        /// The definition whose output has no name.
+        definition: ProductDefinitionId,
+    },
     /// A session ceiling of the caller's limits ran out.
     #[error(
         "resource limit on {:?}: {:?} (scope {:?}, limit {}, used {}, requested {})",
@@ -273,14 +295,64 @@ pub enum EncodeError {
 }
 
 impl EncodeError {
+    /// A planning failure. Planning writes into memory and touches no
+    /// destination, so an I/O failure it meets is no [`Self::Io`].
     fn from_backend(error: CodecError) -> Self {
         match error {
             CodecError::UnsupportedTarget(refusal) => Self::UnsupportedTarget(refusal),
             CodecError::ResourceLimit(limit) => Self::ResourceLimit(limit),
-            CodecError::Io(error) => Self::Io(error),
             error => Self::Backend(error),
         }
     }
+}
+
+/// The caller's names of the outputs of one encode, keyed by the definition
+/// each output holds (§3.4, Encode sets).
+pub type OutputNames = BTreeMap<ProductDefinitionId, NonBlankString>;
+
+/// How the caller names the outputs of one encode (§3.4, Encode sets).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Outputs<'a> {
+    /// One output, the root definition's, which the destination of
+    /// [`ExportPlan::write_to`] names.
+    Root,
+    /// The caller's name of every output, keyed by definition.
+    Named(&'a OutputNames),
+}
+
+/// One output file of an [`ExportPlan`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlannedOutput {
+    /// The definition the output holds: the document's root definition, or
+    /// `None` where the document states none.
+    pub definition: Option<ProductDefinitionId>,
+    /// The caller's name of the output; `None` where the destination of
+    /// [`ExportPlan::write_to`] names it.
+    pub name: Option<NonBlankString>,
+}
+
+/// The outputs the writers produce: one, the root definition's (§3.4,
+/// Encode sets). An output keyed by no definition, of a document that states
+/// no root definition, takes its name from the destination.
+fn planned_outputs(ir: &CadIr, names: Outputs<'_>) -> Result<Vec<PlannedOutput>, EncodeError> {
+    let definition = ir
+        .model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.is_root())
+        .map(|definition| definition.id.clone());
+    let name = match (names, &definition) {
+        (Outputs::Root, _) | (Outputs::Named(_), None) => None,
+        (Outputs::Named(names), Some(definition)) => Some(
+            names
+                .get(definition)
+                .cloned()
+                .ok_or_else(|| EncodeError::OutputUnnamed {
+                    definition: definition.clone(),
+                })?,
+        ),
+    };
+    Ok(vec![PlannedOutput { definition, name }])
 }
 
 /// The strictness of an [`EncodeInput`] that states none: it refuses nothing.
@@ -297,6 +369,13 @@ pub struct EncodeInput<'a> {
     pub ir: &'a CadIr,
     /// Decode-time fidelity state, when available.
     pub fidelity: Option<&'a SourceFidelity>,
+    /// The target the caller asks for. The default inherits the source's.
+    pub target: TargetRequest<'a>,
+    /// The caller's names of the outputs (§3.4, Encode sets).
+    pub outputs: Outputs<'a>,
+    /// The session ceilings of the write: a writer refuses with
+    /// [`EncodeError::ResourceLimit`] only where one of them runs out.
+    pub limits: ResourceLimits,
     /// The source of the files that external assets of the document name,
     /// for an encoder that writes their content into its output.
     pub assets: Option<&'a dyn Companions>,
@@ -335,12 +414,36 @@ impl<'a> EncodeInput<'a> {
         Self {
             ir,
             fidelity,
+            target: TargetRequest::Inherit,
+            outputs: Outputs::Root,
+            limits: ResourceLimits::desktop(),
             assets: None,
             scene: SceneOptions::DEFAULT,
             missing_states: MissingStateForm::GeometryTrue,
             strictness: &PERMISSIVE,
             validation: None,
         }
+    }
+
+    /// Selects the target of the export.
+    #[must_use]
+    pub const fn with_target(mut self, target: TargetRequest<'a>) -> Self {
+        self.target = target;
+        self
+    }
+
+    /// Names the outputs of the export.
+    #[must_use]
+    pub const fn with_outputs(mut self, outputs: Outputs<'a>) -> Self {
+        self.outputs = outputs;
+        self
+    }
+
+    /// Selects the session ceilings of the export.
+    #[must_use]
+    pub const fn with_limits(mut self, limits: ResourceLimits) -> Self {
+        self.limits = limits;
+        self
     }
 
     /// Attaches the source of the files that external assets name.
@@ -394,6 +497,21 @@ pub enum Consumption {
         /// Explanation of the degradation.
         reason: String,
     },
+}
+
+impl Consumption {
+    /// The cause of a same-format synthesis whose backend stated none: the
+    /// reason fidelity was not consumed.
+    fn patch_declined(&self, fidelity: Option<&SourceFidelity>) -> SynthesisCause {
+        let reason = match (self, fidelity) {
+            (Self::Degraded { reason }, _) => reason.clone(),
+            (Self::NotConsumed, None) => "the encode holds no source fidelity".to_owned(),
+            (Self::NotConsumed, Some(_)) => {
+                "the writer wrote the file from the document without its source".to_owned()
+            }
+        };
+        SynthesisCause::PatchDeclined { reason }
+    }
 }
 
 impl From<Consumption> for FidelityResolution {
@@ -502,6 +620,10 @@ pub struct ExportBody {
     pub losses: Vec<LossNote>,
     /// Free-form notes.
     pub notes: Vec<String>,
+    /// Why a writer with a patch or replay path synthesized a file of a
+    /// same-format source. The wrapper reports it only for such a writer and
+    /// such a file, and states the fidelity's reason where this is `None`.
+    pub synthesis_cause: Option<SynthesisCause>,
 }
 
 impl ExportBody {
@@ -520,6 +642,7 @@ impl ExportBody {
             coverage,
             losses: Vec::new(),
             notes: Vec::new(),
+            synthesis_cause: None,
         }
     }
 }
@@ -534,12 +657,19 @@ pub struct ExportPlan {
     coverage: ArenaCoverage,
     report: ExportReport,
     bytes: Vec<u8>,
+    outputs: Vec<PlannedOutput>,
 }
 
 impl ExportPlan {
     /// Returns the complete plan-time export report.
     pub fn report(&self) -> &ExportReport {
         &self.report
+    }
+
+    /// The outputs the plan writes (§3.4, Encode sets).
+    #[must_use]
+    pub fn outputs(&self) -> &[PlannedOutput] {
+        &self.outputs
     }
 
     /// The error findings of `report` that name something this payload may carry.
@@ -672,6 +802,7 @@ impl EncoderBackend for CadirEncoder {
     /// The document states its own depth, so a container-only dump is a
     /// faithful CADIR document.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REUSES_SOURCE: bool = false;
 
     /// CADIR writes the neutral document. Its version identifies the CADIR
     /// schema. The serialized export report uses the `cadir` identity variant,

@@ -3,7 +3,7 @@
 //! writes exactly, or leaves out with the body that holds them.
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{BodyId, LoopId, PointId, ProceduralCurveId, ProceduralSurfaceId, VertexId};
@@ -28,7 +28,7 @@ fn cube() -> cadmpeg_ir::CadIr {
 
 pub(super) fn plan_losses(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     SldprtCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None))
         .unwrap()
         .report()
         .losses

@@ -20,8 +20,9 @@ fn a_cage_body_is_left_out_with_its_cage() {
     let mut bytes = Vec::new();
     let report = RhinoCodec
         .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V7.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                RhinoArchiveVersion::V7.descriptor().id.as_str(),
+            )),
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("the write succeeds");

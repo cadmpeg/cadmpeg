@@ -26,8 +26,8 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
     let decoded = &*CORE_DESIGN;
     let unsupported = FcstdCodec
         .plan(
-            EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit("fcstd:schema-3"),
+            EncodeInput::new(decoded.ir(), None)
+                .with_target(TargetRequest::Explicit("fcstd:schema-3")),
         )
         .expect_err("unsupported target must fail");
     let EncodeError::UnsupportedTarget(refusal) = &unsupported else {
@@ -59,7 +59,7 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
         std::collections::BTreeMap::new(),
     ));
     let missing_graph = FcstdCodec
-        .plan(EncodeInput::new(&step_source, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&step_source, None))
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("missing graph must fail");
     let EncodeError::UnsupportedTarget(refusal) = &missing_graph else {
@@ -92,11 +92,7 @@ fn inherit(
     ir: &CadIr,
     fidelity: Option<&cadmpeg_ir::SourceFidelity>,
 ) -> Result<cadmpeg_ir::codec::write::ExportPlan, EncodeError> {
-    Encoder::plan(
-        &FcstdCodec,
-        EncodeInput::new(ir, fidelity),
-        TargetRequest::Inherit,
-    )
+    Encoder::plan(&FcstdCodec, EncodeInput::new(ir, fidelity))
 }
 
 /// Names every archive entry with its payload, so preservation can be
@@ -331,8 +327,7 @@ fn an_explicit_schema_four_target_refuses_a_schema_two_source_by_name() {
         .expect("decode schema 2");
     let error = Encoder::plan(
         &FcstdCodec,
-        EncodeInput::new(decoded.ir(), None),
-        TargetRequest::Explicit("fcstd:schema-4"),
+        EncodeInput::new(decoded.ir(), None).with_target(TargetRequest::Explicit("fcstd:schema-4")),
     )
     .expect_err("this writer regenerates no Document.xml");
     let EncodeError::UnsupportedTarget(refusal) = &error else {
@@ -470,12 +465,8 @@ fn an_untyped_retained_record_is_patched_and_reported() {
     let decoded = decode_at(DecodeDepth::Full);
     let (ir, _, mut fidelity) = decoded.into_parts();
     let write = |fidelity: &cadmpeg_ir::SourceFidelity| {
-        let plan = Encoder::plan(
-            &FcstdCodec,
-            EncodeInput::new(&ir, Some(fidelity)),
-            TargetRequest::Inherit,
-        )
-        .expect("the retained document patches");
+        let plan = Encoder::plan(&FcstdCodec, EncodeInput::new(&ir, Some(fidelity)))
+            .expect("the retained document patches");
         let mut bytes = Vec::new();
         let report = plan.write_to(&mut bytes).expect("the patch writes");
         (report, bytes)

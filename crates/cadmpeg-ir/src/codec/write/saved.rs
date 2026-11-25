@@ -79,7 +79,7 @@ pub fn saved_source<'a>(
     else {
         return Ok(None);
     };
-    if replays && !fidelity.edited(input.ir)? {
+    if replays && !fidelity.edited(input.ir, input.limits)? {
         return Ok(None);
     }
     Ok(Some(image))

@@ -36,6 +36,7 @@ impl EncoderBackend for StepCodec {
     /// Writes B-rep, product structure, presentation and PMI; design arenas are
     /// reported as omitted, not read.
     const REQUEST: DecodeDepth = DecodeDepth::Geometry;
+    const REUSES_SOURCE: bool = false;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(StepSchema::TARGETS, Some(2));
 

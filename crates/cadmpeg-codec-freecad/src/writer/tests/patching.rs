@@ -8,8 +8,8 @@ use crate::native::{PropertyRecord, ValueRecord};
 use crate::test_support::test_archive::{archive_entries, CORE_DESIGN_PRODUCT};
 use crate::writer::{serialize_property, serialize_value, validate_entry_names};
 use crate::FcstdCodec;
+use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::write::Encoder;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -157,10 +157,7 @@ fn writes_typed_property_edits_and_preserves_other_entries() {
 
     let mut encoded = Vec::new();
     let report = FcstdCodec
-        .plan(
-            EncodeInput::new(&edited, Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(&edited, Some(decoded.source_fidelity())))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("encode edit");
     assert!(report.losses.is_empty(), "{:#?}", report.losses);
@@ -286,7 +283,7 @@ fn writer_rejects_direct_link_carrier_graph_drift() {
         .expect("replace properties");
 
     let error = FcstdCodec
-        .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&edited, None))
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("writer must check the written semantic graph");
     assert!(error.to_string().contains("value or link graph"));
@@ -302,7 +299,7 @@ fn seekable_encoder_matches_the_write_only_fallback() {
         .expect("decode source");
     let mut staged = Vec::new();
     FcstdCodec
-        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(decoded.ir(), None))
         .and_then(|plan| plan.write_to(&mut staged))
         .expect("write-only fallback");
     let mut streamed = Cursor::new(Vec::new());
@@ -315,7 +312,12 @@ fn seekable_encoder_matches_the_write_only_fallback() {
         .dialect();
     let resolution = retained_baseline(decoded.ir(), source_dialect)
         .expect("the decoded schema-4 baseline is preserved");
-    crate::writer::write_seekable(&mut streamed, &resolution).expect("seekable writer");
+    crate::writer::write_seekable(
+        &mut streamed,
+        &resolution,
+        cadmpeg_core::decode::ResourceLimits::desktop(),
+    )
+    .expect("seekable writer");
 
     assert_eq!(streamed.into_inner(), staged);
 }
@@ -345,10 +347,7 @@ pub(crate) fn writer_rejects_unserialized_declaration_and_stale_payload_edits() 
         )
         .expect("replace objects");
     let error = FcstdCodec
-        .plan(
-            EncodeInput::new(&declaration_edit, None),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(&declaration_edit, None))
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("unserialized declaration edit must fail");
     assert!(error.to_string().contains("declaration edits"));
@@ -374,7 +373,7 @@ pub(crate) fn writer_rejects_unserialized_declaration_and_stale_payload_edits() 
         )
         .expect("replace entries");
     let error = FcstdCodec
-        .plan(EncodeInput::new(&stale_entry, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&stale_entry, None))
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("stale entry metadata must fail");
     assert!(error
@@ -421,7 +420,7 @@ fn retaining_writes_preserve_physical_restoration_order_after_cadir_finalization
             }
             let mut output = Vec::new();
             FcstdCodec
-                .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+                .plan(EncodeInput::new(&ir, None))
                 .and_then(|plan| plan.write_to(&mut output))
                 .expect("required invariant");
             let mut archive =
@@ -498,7 +497,7 @@ fn typed_input_edits_persist_owner_recompute_state_without_touching_outputs_or_n
             );
             let mut bytes = Vec::new();
             FcstdCodec
-                .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+                .plan(EncodeInput::new(&ir, None))
                 .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("write edit");
             let output = FcstdCodec
@@ -540,7 +539,7 @@ fn schema_two_input_edits_refuse_an_ignored_recompute_marker_but_labels_remain_w
                 value,
             )
             .expect("edit property");
-        let plan = FcstdCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit);
+        let plan = FcstdCodec.plan(EncodeInput::new(&ir, None));
         if writable {
             assert!(plan.is_ok());
         } else {
@@ -578,7 +577,7 @@ fn checked_native_input_record_edits_also_schedule_owner_recomputation() {
         .expect("replace values");
     let mut bytes = Vec::new();
     FcstdCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None))
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("write native edit");
     let output = FcstdCodec

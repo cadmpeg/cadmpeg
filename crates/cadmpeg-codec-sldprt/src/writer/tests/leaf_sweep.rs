@@ -10,7 +10,7 @@ use std::io::Cursor;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::features::Feature;
 use cadmpeg_test_support::EditableDecodeResult;
@@ -173,10 +173,10 @@ fn run(part: &DecodeResult, baseline: &[Entry], job: &Job) -> Result<Outcome, St
     }
     let mut output = Vec::new();
     let report = SldprtCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(
+            decoded.ir(),
+            Some(decoded.source_fidelity()),
+        ))
         .and_then(|plan| plan.write_to(&mut output))
         .map_err(|error| format!("{label}: refused: {error}"))?;
     let unwritten = report
