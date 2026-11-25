@@ -1,7 +1,7 @@
 //! Relation instance records and scalar roles.
 
 use super::parameter_classes::{
-    relation_kind, stated_parameters, token_relation_classes, Statement, DECLARATION_PREFIX,
+    declaration_end, relation_kind, stated_parameters, token_relation_classes, Statement,
 };
 use super::scalars::FeatureObjectNames;
 use super::{is_class_token, RELATION_INSTANCE_ID_PREFIX, SKETCH_POINT_TOLERANCE};
@@ -458,14 +458,6 @@ fn first_framed_after_native(
 
 /// The zero u32 that opens a relation object, before its parameter class.
 const RELATION_OBJECT_ZERO: u64 = 4;
-
-/// The offset at which the class declaration `class` ends.
-fn declaration_end(class: &FeatureInputClass) -> Option<u64> {
-    class
-        .offset
-        .checked_add(DECLARATION_PREFIX)?
-        .checked_add(u64::try_from(class.name.len()).ok()?)
-}
 
 pub(super) fn relation_instances(
     histories: &[crate::records::FeatureHistory],
@@ -2613,14 +2605,44 @@ mod relation_records_tests {
         );
     }
 
-    /// Where two relation classes are declared before the first use of a
-    /// refused dimension's relation-class token, the token names neither, and
-    /// the dimension forms no relation.
+    /// The relation-class token takes a declaration before the parameter-class
+    /// token's: where a second relation class is declared after the length
+    /// parameter's declaration and before the tokens' first use, the token
+    /// still names the first relation class.
+    #[test]
+    fn a_refused_dimension_takes_the_relation_declared_before_its_parameter() {
+        let (mut lane, _) = refused_dimension_lane(2);
+        lane.classes
+            .push(class(lane.scalars[0].offset + 1, "sgLLDist"));
+        let distance = lane
+            .classes
+            .iter()
+            .find(|class| class.name == "sgPntPntDist")
+            .unwrap()
+            .id
+            .clone();
+        let instances = relation_instances(&sketch_history(), &lane).unwrap();
+        let dimension = instances
+            .iter()
+            .find(|relation| relation.scalar_refs().contains(&lane.scalars[3].id))
+            .expect("the refused dimension's relation");
+        assert_eq!(dimension.class_ref, distance);
+    }
+
+    /// Where two relation classes are declared before the parameter class
+    /// that the refused dimension's parameter-class token names, its
+    /// relation-class token names neither, and the dimension forms no
+    /// relation.
     #[test]
     fn a_refused_dimension_whose_token_two_classes_precede_forms_no_relation() {
         let (mut lane, angle) = refused_dimension_lane(2);
-        lane.classes
-            .push(class(lane.scalars[0].offset + 1, "sgLLDist"));
+        let parameter = lane
+            .classes
+            .iter()
+            .find(|class| class.name == "moLengthParameter_c")
+            .unwrap()
+            .offset;
+        lane.classes.push(class(parameter - 1, "sgLLDist"));
         let instances = relation_instances(&sketch_history(), &lane).unwrap();
         assert!(instances
             .iter()

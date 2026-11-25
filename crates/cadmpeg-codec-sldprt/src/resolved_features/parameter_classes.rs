@@ -260,11 +260,13 @@ fn takes_relation_slot(name: &str) -> bool {
 
 /// The relation class that the relation-class token of each display or
 /// driving scalar of a feature in `features` names (§2), by scalar id. The
-/// lane's own relation-class tokens, ascending, map onto the lane's
-/// relation-class declarations, in stream order, with each token first used
-/// after its declaration. A token to which every such mapping gives one
-/// declaration names that declaration's class. A compound-file lane does not
-/// state which tokens are its own (open item EV-05), so its tokens name none.
+/// lane's own class tokens of those relation slots and of the parameter
+/// slots of its display and driving scalars, ascending, map onto the lane's
+/// declarations of the classes that take those slots, in stream order, with
+/// each token first used after its declaration and given a class of its own
+/// slot. A token to which every such mapping gives one declaration names
+/// that declaration's class. A compound-file lane does not state which
+/// tokens are its own (open item EV-05), so its tokens name none.
 pub(super) fn token_relation_classes<'l>(
     lane: &'l FeatureInputLane,
     features: &HashSet<&str>,
@@ -313,36 +315,87 @@ pub(super) fn token_relation_classes<'l>(
                 .then_some((scalar.id.as_str(), name, token))
         })
         .collect::<Vec<_>>();
-    let mut first_use = BTreeMap::<u16, u64>::new();
+    let mut first_use = BTreeMap::<u16, (u64, ClassSlot)>::new();
     for &(_, name, token) in &tokens {
         first_use
             .entry(token)
+            .and_modify(|(first, _)| *first = (*first).min(name))
+            .or_insert((name, ClassSlot::Relation));
+    }
+    let ends = lane
+        .classes
+        .iter()
+        .filter_map(|class| Some((declaration_end(class)?, class.name.as_str())))
+        .collect::<HashMap<_, _>>();
+    let mut parameter_use = BTreeMap::<u16, u64>::new();
+    let mut framed = BTreeSet::new();
+    for scalar in &lane.scalars {
+        let Some(&name) = name_offsets.get(scalar.name.as_str()) else {
+            continue;
+        };
+        let Some(Slot::Token(token)) = slot(payload, &ends, name) else {
+            continue;
+        };
+        if held.is_some_and(|count| u32::from(token) < count) {
+            continue;
+        }
+        parameter_use
+            .entry(token)
             .and_modify(|first| *first = (*first).min(name))
             .or_insert(name);
+        if matches!(
+            scalar.role,
+            FeatureInputScalarRole::Driving | FeatureInputScalarRole::Display
+        ) {
+            framed.insert(token);
+        }
+    }
+    for (token, name) in parameter_use {
+        if !framed.contains(&token) {
+            continue;
+        }
+        if first_use
+            .insert(token, (name, ClassSlot::Parameter))
+            .is_some()
+        {
+            return HashMap::new();
+        }
     }
     let mut declared = lane
         .classes
         .iter()
-        .filter(|class| takes_relation_slot(&class.name))
+        .filter_map(|class| {
+            if takes_relation_slot(&class.name) {
+                Some((class, ClassSlot::Relation))
+            } else {
+                ArchiveParameterClass::from_class_name(&class.name)
+                    .map(|_| (class, ClassSlot::Parameter))
+            }
+        })
         .collect::<Vec<_>>();
-    declared.sort_by_key(|class| class.offset);
-    let redeclared = declared.iter().enumerate().any(|(index, class)| {
+    declared.sort_by_key(|(class, _)| class.offset);
+    let redeclared = declared.iter().enumerate().any(|(index, (class, _))| {
         declared[..index]
             .iter()
-            .any(|earlier| earlier.name == class.name)
+            .any(|(earlier, _)| earlier.name == class.name)
     });
     if redeclared {
         return HashMap::new();
     }
-    let ordered = first_use.into_iter().collect::<Vec<_>>();
-    let offsets = declared
+    let ordered = first_use
+        .into_iter()
+        .map(|(token, (first, slot))| (token, first, slot))
+        .collect::<Vec<_>>();
+    let slots = declared
         .iter()
-        .map(|class| class.offset)
+        .map(|&(class, slot)| (class.offset, slot))
         .collect::<Vec<_>>();
     let named = ordered
         .iter()
-        .zip(only_assignments(&ordered, &offsets))
-        .filter_map(|(&(token, _), declaration)| Some((token, declared[declaration?])))
+        .zip(only_assignments(&ordered, &slots))
+        .filter_map(|(&(token, _, slot), declaration)| {
+            (slot == ClassSlot::Relation).then_some((token, declared[declaration?].0))
+        })
         .collect::<HashMap<_, _>>();
     tokens
         .into_iter()
@@ -374,20 +427,42 @@ fn relation_token(
     (is_class_token(token) && zero == 0).then_some(token & 0x7fff)
 }
 
-/// For each of `tokens`, `(index, first use)` ascending by index, the one
-/// declaration of `declarations`, offsets in stream order, that every
-/// order-preserving assignment gives it, where each token is assigned a
-/// declaration before its first use; `None` where the assignments differ
-/// or none exists.
-fn only_assignments(tokens: &[(u16, u64)], declarations: &[u64]) -> Vec<Option<usize>> {
-    let fits = |first_use: u64| declarations.iter().map(move |&offset| offset < first_use);
+/// The slot of a sketch dimension's relation object that a class takes (§2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ClassSlot {
+    Relation,
+    Parameter,
+}
+
+/// The offset at which the class declaration `class` ends.
+pub(super) fn declaration_end(class: &FeatureInputClass) -> Option<u64> {
+    class
+        .offset
+        .checked_add(DECLARATION_PREFIX)?
+        .checked_add(u64::try_from(class.name.len()).ok()?)
+}
+
+/// For each of `tokens`, `(index, first use, slot)` ascending by index, the
+/// one declaration of `declarations`, `(offset, slot)` in stream order, that
+/// every order-preserving assignment gives it, where each token is assigned
+/// a declaration of its slot before its first use; `None` where the
+/// assignments differ or none exists.
+fn only_assignments(
+    tokens: &[(u16, u64, ClassSlot)],
+    declarations: &[(u64, ClassSlot)],
+) -> Vec<Option<usize>> {
+    let fits = |first_use: u64, slot: ClassSlot| {
+        declarations
+            .iter()
+            .map(move |&(offset, taken)| taken == slot && offset < first_use)
+    };
     // `forward[t][d]`: the tokens up to `t` have an assignment that gives
     // `t` the declaration `d`; `backward[t][d]`: the tokens from `t` on.
     let mut forward = Vec::<Vec<bool>>::new();
-    for &(_, first_use) in tokens {
+    for &(_, first_use, slot) in tokens {
         let previous = forward.last();
         let mut earlier = previous.is_none();
-        let row = fits(first_use)
+        let row = fits(first_use, slot)
             .zip(
                 previous
                     .into_iter()
@@ -404,10 +479,10 @@ fn only_assignments(tokens: &[(u16, u64)], declarations: &[u64]) -> Vec<Option<u
         forward.push(row);
     }
     let mut backward = Vec::<Vec<bool>>::new();
-    for &(_, first_use) in tokens.iter().rev() {
+    for &(_, first_use, slot) in tokens.iter().rev() {
         let next = backward.last();
         let mut later = next.is_none();
-        let mut row = fits(first_use)
+        let mut row = fits(first_use, slot)
             .rev()
             .zip(
                 next.into_iter()
