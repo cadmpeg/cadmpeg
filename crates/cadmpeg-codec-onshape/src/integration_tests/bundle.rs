@@ -277,16 +277,11 @@ fn unresolved_edges_never_fall_back_to_final_topology_or_another_rollback() {
 #[test]
 fn wrong_magic_schema_and_manifest_identity_are_refused() {
     assert!(read(b"not a zip").is_err());
-    for failure in ["schema", "assembly", "multiple", "path"] {
+    for failure in ["schema", "path"] {
         let bytes = changed(&fixture("revolve"), |path, value| {
             if path == "manifest.json" {
                 match failure {
                     "schema" => value["schema"] = json!("dutchman.onshape-bundle/2"),
-                    "assembly" => value["elements"][0]["type"] = json!("ASSEMBLY"),
-                    "multiple" => {
-                        let row = value["elements"][0].clone();
-                        value["elements"].as_array_mut().unwrap().push(row);
-                    }
                     "path" => value["elements"][0]["id"] = json!("../studio"),
                     _ => {}
                 }

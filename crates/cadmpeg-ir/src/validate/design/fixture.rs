@@ -26,7 +26,7 @@ use crate::products::{ProductDefinition, ProductDefinitionKind, Storage};
 use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 
-pub(in crate::validate) fn id<T>(kind: &str, key: &str) -> T
+pub(crate) fn id<T>(kind: &str, key: &str) -> T
 where
     T: TryFrom<String>,
     T::Error: Debug,
@@ -125,7 +125,7 @@ pub(in crate::validate) fn arrangement(key: &str, kind: ArrangementKind) -> Arra
     }
 }
 
-pub(in crate::validate) fn parameter(key: &str, kind: ValueKind) -> DesignParameter {
+pub(crate) fn parameter(key: &str, kind: ValueKind) -> DesignParameter {
     DesignParameter {
         id: id("parameter", key),
         scope: id("definition", "part"),
@@ -149,10 +149,10 @@ pub(in crate::validate) fn parameter(key: &str, kind: ValueKind) -> DesignParame
 /// fillet, rolled to its end; two configurations; the current state after the
 /// fillet holding the cube; and an evaluation of the base configuration after
 /// the extrude, stored against the current state.
-pub(in crate::validate) fn document() -> CadIr {
+pub(crate) fn document() -> CadIr {
     let mut ir = crate::examples::unit_cube().unwrap();
     ir.model.product_definitions.clear();
-    ir.set_scope(ContentScope::full()).unwrap();
+    ir.set_scope(ContentScope::full());
     let body = body(&ir);
     ir.model.product_definitions.push(ProductDefinition {
         kind: Some(ProductDefinitionKind::Part),

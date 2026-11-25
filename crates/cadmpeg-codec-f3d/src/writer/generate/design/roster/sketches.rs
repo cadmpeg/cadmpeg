@@ -1056,6 +1056,8 @@ pub(super) struct ItemTail {
 
 /// The 78-byte feature item tail of an unsuppressed item with no label and
 /// no history state, the paired header and the owner collection reference.
+/// An item after the timeline marker sets both `s0` and `s1` (f3d.md §3.1,
+/// "In every form, the state bytes").
 pub(super) fn item_tail(out: &mut DesignRecords, classes: &Classes, tail: &ItemTail) {
     out.u32(tail.ordinal)
         .u32(0)
@@ -1070,7 +1072,7 @@ pub(super) fn item_tail(out: &mut DesignRecords, classes: &Classes, tail: &ItemT
         .u32(EPOCH)
         .reference(tail.companion)
         .byte(1)
-        .byte(0)
+        .byte(u8::from(tail.rolled_back))
         .byte(u8::from(tail.rolled_back))
         .reference(tail.stamps)
         .zeros(2)

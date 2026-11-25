@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 import unittest
 
-from scripts.ci_cargo import HEAVY_CRATES, command, low_ram_prebuild_commands
+from scripts.ci_cargo import command, low_ram_rustc_wrapper, low_ram_test_command
+from scripts.ci_rustc_lock import EXCLUSIVE_CRATES, MEDIUM_HEAVY_CRATES, crate_name
 
 
 class CommandTests(unittest.TestCase):
@@ -17,16 +18,33 @@ class CommandTests(unittest.TestCase):
                 self.assertIn("--bins", args)
                 self.assertNotIn("--lib", args)
 
-    def test_low_ram_prebuild_stages_heavy_crates_at_one_job(self):
-        stages = low_ram_prebuild_commands(["nextest", "run", "--bins", "--tests", "--no-fail-fast"])
-        self.assertEqual(len(stages), 4)
-        self.assertEqual([jobs for jobs, _ in stages], [None, 1, 2, 1])
-        for _, argv in stages:
-            self.assertIn("--no-run", argv)
-            self.assertNotIn("--no-fail-fast", argv)
-        one_job_args = [arg for jobs, argv in stages if jobs == 1 for arg in argv]
-        for crate in HEAVY_CRATES:
-            self.assertIn(crate, one_job_args)
+    def test_low_ram_macos_uses_in_process_cargo_test(self):
+        args = low_ram_test_command(
+            ["nextest", "run", "--bins", "--tests", "--no-fail-fast"],
+            platform="darwin",
+        )
+        self.assertEqual(
+            args,
+            ["cargo", "test", "-q", "--workspace", "--bins", "--tests", "--no-fail-fast"],
+        )
+
+    def test_low_ram_linux_keeps_nextest(self):
+        args = low_ram_test_command(
+            ["nextest", "run", "--bins", "--tests", "--no-fail-fast"],
+            platform="linux",
+        )
+        self.assertEqual(args[:3], ["cargo", "nextest", "run"])
+        self.assertIn("--workspace", args)
+
+    def test_rustc_lock_wrapper_classifies_heavy_crates(self):
+        self.assertTrue(low_ram_rustc_wrapper().is_file())
+        self.assertEqual(crate_name(["--crate-name", "cadmpeg_ir", "src/lib.rs"]), "cadmpeg_ir")
+        self.assertEqual(crate_name(["--crate-name=cadmpeg_codec_f3d"]), "cadmpeg_codec_f3d")
+        self.assertIsNone(crate_name(["-vV"]))
+        self.assertIn("cadmpeg_ir", EXCLUSIVE_CRATES)
+        self.assertIn("cadmpeg_codec_f3d", EXCLUSIVE_CRATES)
+        self.assertIn("cadmpeg_codec_sldprt", EXCLUSIVE_CRATES)
+        self.assertTrue(EXCLUSIVE_CRATES.isdisjoint(MEDIUM_HEAVY_CRATES))
 
 
 if __name__ == "__main__":

@@ -23,6 +23,15 @@ pub struct CageBody {
 ///
 /// Panics where `codec` makes an invalid identity.
 pub fn push_cage_body(ir: &mut CadIr, codec: &str) -> CageBody {
+    push_cage(ir, codec, cadmpeg_ir::subd::SubdCage::default())
+}
+
+/// Adds `cage` to `ir` as [`push_cage_body`] adds an empty cage.
+///
+/// # Panics
+///
+/// Panics where `codec` makes an invalid identity.
+pub fn push_cage(ir: &mut CadIr, codec: &str, cage: cadmpeg_ir::subd::SubdCage) -> CageBody {
     let id = |kind: &str| format!("test:{codec}:{kind}#cage");
     let subd = SubdId::mint(id("subd")).expect("identity grammar");
     let body = BodyId::mint(id("body")).expect("identity grammar");
@@ -32,7 +41,7 @@ pub fn push_cage_body(ir: &mut CadIr, codec: &str) -> CageBody {
             id: subd.clone(),
             scheme: cadmpeg_ir::SubdScheme::CatmullClark,
             source_object: None,
-            cage: cadmpeg_ir::subd::SubdCage::default(),
+            cage,
             native_ref: None,
         },
         body.clone(),

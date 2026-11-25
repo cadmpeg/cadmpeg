@@ -14,14 +14,14 @@ use cadmpeg_ir::features as old;
 use cadmpeg_ir::features::sheet_metal_forms::SheetMetalThicknessSide;
 use cadmpeg_ir::features::FeatureOperation as LegacyOperation;
 use cadmpeg_ir::scalar::{Length, PositiveLength};
-use cadmpeg_ir::sketches::Sketch;
 use cadmpeg_ir::units::UnitVector3;
 
+use super::selections::SketchData;
 use super::{selections, swept, Projected};
 
 pub(super) fn operation(
     value: &LegacyOperation,
-    sketches: &[Sketch],
+    sketches: SketchData<'_>,
 ) -> Option<Projected<FeatureOperation>> {
     let kind = match value {
         LegacyOperation::SheetMetalBaseFlange { profile, thickness, side } => (|| {
@@ -68,7 +68,7 @@ pub(super) fn operation(
 
 fn contour(
     value: &old::sheet_metal::SheetMetalContourFlangeConstruction,
-    sketches: &[Sketch],
+    sketches: SketchData<'_>,
 ) -> Projected<SheetMetalKind> {
     if value.neutral_factor.is_some() {
         return Err(
@@ -88,6 +88,7 @@ fn contour(
         return Err("the contour profile has no oriented sketch plane");
     };
     let (_, normal, _) = sketches
+        .sketches
         .iter()
         .find(|item| &item.id == sketch)
         .and_then(|item| item.placement.resolved())
