@@ -149,8 +149,10 @@ fn a_run_whose_feature_has_no_state_writes_the_geometry_true_form() {
     );
 }
 
-#[test]
-fn a_rolled_back_extrude_follows_the_marker_with_its_definition() {
+/// The unit cube as `Sketch` and `Extrude`, then a second `Extrude` of the
+/// same profile, rolled back before the second extrude. Returns the design
+/// and the second extrude.
+fn with_a_rolled_back_extrude() -> (CadIr, FeatureId) {
     let mut ir = sketch_and_extrude(blind(), false);
     let second = feature(
         "second",
@@ -169,7 +171,12 @@ fn a_rolled_back_extrude_follows_the_marker_with_its_definition() {
     ir.design.scopes[0].current[0].at = Position::After(Member::Feature(
         FeatureId::mint(EXTRUDE).expect("identity grammar"),
     ));
+    (ir, second_id)
+}
 
+#[test]
+fn a_rolled_back_extrude_follows_the_marker_with_its_definition() {
+    let (ir, second_id) = with_a_rolled_back_extrude();
     let (report, decoded, _) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
     assert_eq!(
         kinds(&decoded),
@@ -201,4 +208,72 @@ fn a_rolled_back_extrude_follows_the_marker_with_its_definition() {
     );
     let residual = loss(&report, "export/record.residual-unavailable").join("\n");
     assert!(residual.contains("DR-1032"), "{residual}");
+}
+
+/// `ir` with an `f3d` namespace whose one native Design record is a Fusion
+/// Design type row: the writer writes the Design stream from its native
+/// records.
+fn with_a_native_design(mut ir: CadIr) -> CadIr {
+    use crate::records::entity_header::{BaseTypeGuid, SegmentType, SegmentTypeData};
+    crate::test_support::native_test::f3d_native_mut(&mut ir).design_types =
+        vec![SegmentType::try_new(
+            "f3d:generated/MetaStream.dat:design-type#0".into(),
+            SegmentTypeData {
+                byte_offset: 0,
+                module: "Fusion".to_owned(),
+                entities: crate::records::identity::ReferenceRun::unlocated(vec![1]),
+                type_guid: "11111111-2222-3333-4444-555555555555"
+                    .to_owned()
+                    .try_into()
+                    .expect("type GUID"),
+                type_guid_offset: 0,
+                base_type_guid: BaseTypeGuid::Absent,
+                version: 7,
+                version_offset: 0,
+            },
+        )
+        .expect("a Design type row")];
+    ir
+}
+
+#[test]
+fn a_native_design_rolled_back_writes_the_chosen_form() {
+    let (ir, second) = with_a_rolled_back_extrude();
+    let ir = with_a_native_design(ir);
+    let dropped = |report: &cadmpeg_ir::report::export::ExportReport, form: &str| {
+        let omitted = loss(report, "export/native.records-omitted").join("\n");
+        assert!(
+            omitted.contains(&format!(
+                "of the Design stream, because the generator writes the design's timeline, rolled back before {second}, from its neutral records in the {form} form"
+            )),
+            "{omitted}"
+        );
+    };
+
+    let (report, decoded, _) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
+    dropped(&report, "history-true");
+    assert_eq!(
+        kinds(&decoded),
+        ["sketch", "extrude", "extrude"],
+        "{:#?}",
+        report.losses
+    );
+    let (rollback, members) = decoded_rollback(&decoded);
+    assert_eq!(rollback, Some(Rollback::Before(members[2].clone())));
+    let missing = loss(&report, EVALUATION_MISSING);
+    let rolled = missing
+        .iter()
+        .find(|message| message.contains("after the timeline marker, rolled back"))
+        .unwrap_or_else(|| panic!("{missing:#?}"));
+    assert!(rolled.contains(second.as_str()), "{rolled}");
+
+    let (report, decoded, _) = write_bytes_as(&ir, MissingStateForm::GeometryTrue);
+    dropped(&report, "geometry-true");
+    assert!(kinds(&decoded).contains(&"base"), "{:#?}", report.losses);
+    let missing = loss(&report, EVALUATION_MISSING).join("\n");
+    assert!(missing.contains(second.as_str()), "{missing}");
+    assert!(
+        !missing.contains("rolled back with their definitions"),
+        "{missing}"
+    );
 }
