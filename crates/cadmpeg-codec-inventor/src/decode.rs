@@ -646,11 +646,7 @@ fn decode_container<'a>(
         _ => None,
     };
     let kernel_brep = kernel_brep.unwrap_or_else(AsmBrep::default);
-    let body_keys = if delivered >= DecodeDepth::Design {
-        kernel_brep.body_native_keys.clone()
-    } else {
-        Vec::new()
-    };
+    let body_keys = kernel_brep.body_native_keys.clone();
     let face_keys = kernel_brep
         .face_native_keys
         .iter()
@@ -662,6 +658,7 @@ fn decode_container<'a>(
             unknowns: kernel_unknowns,
             stats: kernel_stats,
             annotation_records: kernel_annotations,
+            unbounded_faces: kernel_unbounded_faces,
         },
     ) = transfer_into_ir(ctx, &mut ir, cadmpeg_ir::codec_id!("inventor"), kernel_brep)?;
     let history_framing = match &container.rse.active_carrier {
@@ -705,7 +702,7 @@ fn decode_container<'a>(
     } else {
         UnresolvedDesign::default()
     };
-    if delivered >= DecodeDepth::Design {
+    if delivered >= DecodeDepth::Geometry {
         losses.extend(crate::annotation::project(
             ctx,
             &crate::annotation::Inputs {
@@ -718,7 +715,7 @@ fn decode_container<'a>(
         )?);
     }
     let mut stored_body_losses = Vec::new();
-    if !body_keys.is_empty() {
+    if delivered >= DecodeDepth::Design && !body_keys.is_empty() {
         let projection = crate::feature::base::project(
             ctx,
             &container.rse,
@@ -755,7 +752,11 @@ fn decode_container<'a>(
             metadata: &segment_meta,
             roots: &design_inventory.model_roots,
         },
-        &body_keys,
+        if delivered >= DecodeDepth::Design {
+            &body_keys
+        } else {
+            &[]
+        },
         &mut ir,
     )?;
     unresolved.features = unresolved
@@ -770,7 +771,7 @@ fn decode_container<'a>(
             .namespace_mut(cadmpeg_ir::codec_id!("inventor"))
             .set_arena(ctx, "composite_member_links", &composite_links)?;
     }
-    if delivered >= DecodeDepth::Design {
+    if delivered >= DecodeDepth::Geometry {
         let links = crate::feature::body_selection::links(
             ctx,
             &container.rse,
@@ -796,30 +797,32 @@ fn decode_container<'a>(
                 .namespace_mut(cadmpeg_ir::codec_id!("inventor"))
                 .set_arena(ctx, "body_wrapper_links", &links)?;
         }
-        if let ActiveCarrierState::Selected(carrier) = &container.rse.active_carrier {
-            let history = crate::feature::history_states::project(
-                ctx,
-                carrier,
-                &history_read,
-                &crate::feature::history_states::Inputs {
-                    features: &feature_inventory.features,
-                    model_features: &ir.model.features,
-                    kernel_links: &feature_inventory.kernel_entity_links,
-                    wrapper_links: &links,
-                    properties: &feature_inventory.properties,
-                },
-            )?;
-            if !history.records.is_empty() {
-                ir.native
-                    .namespace_mut(cadmpeg_ir::codec_id!("inventor"))
-                    .set_arena(ctx, "feature_history_states", &history.records)?;
+        if delivered >= DecodeDepth::Design {
+            if let ActiveCarrierState::Selected(carrier) = &container.rse.active_carrier {
+                let history = crate::feature::history_states::project(
+                    ctx,
+                    carrier,
+                    &history_read,
+                    &crate::feature::history_states::Inputs {
+                        features: &feature_inventory.features,
+                        model_features: &ir.model.features,
+                        kernel_links: &feature_inventory.kernel_entity_links,
+                        wrapper_links: &links,
+                        properties: &feature_inventory.properties,
+                    },
+                )?;
+                if !history.records.is_empty() {
+                    ir.native
+                        .namespace_mut(cadmpeg_ir::codec_id!("inventor"))
+                        .set_arena(ctx, "feature_history_states", &history.records)?;
+                }
+                losses.extend(crate::feature::history_states::losses(&history));
+                ir.model.history_bodies = history.bodies.bodies;
             }
-            losses.extend(crate::feature::history_states::losses(&history));
-            ir.model.history_bodies = history.bodies.bodies;
+            losses.extend(crate::feature::body_selection::native_losses(
+                &ir.model, &joined,
+            ));
         }
-        losses.extend(crate::feature::body_selection::native_losses(
-            &ir.model, &joined,
-        ));
     }
     ir.set_native_unknowns(ctx, "inventor", &[])?;
     let geometry_transferred = !(ir.geometry.surfaces.is_empty()
@@ -931,6 +934,14 @@ fn decode_container<'a>(
                     kernel_stats.unknown_surface_faces()
                 )),
             );
+        }
+        for face in &kernel_unbounded_faces {
+            losses.push(InventorLossCode::TopologyFaceBoundaryUnstated.note(format!(
+                "ASM face record {} states no loop on a {}, which no face covers whole: face {} is stated partial.",
+                face.record_index,
+                face.surface_kind,
+                face.face.as_str()
+            )));
         }
         if !segment_pairs.is_empty() {
             losses.push(InventorLossCode::RseSegmentPairUntyped.note(format!(
@@ -1053,10 +1064,12 @@ fn decode_container<'a>(
             &feature_inventory.work_planes,
             &ir.model.features,
         ));
-        losses.extend(crate::feature::pattern::native_losses(
-            feature_inventory.pattern_features.iter(),
-            &ir.model.features,
-        ));
+        if delivered >= DecodeDepth::Design {
+            losses.extend(crate::feature::pattern::native_losses(
+                feature_inventory.pattern_features.iter(),
+                &ir.model.features,
+            ));
+        }
         losses.extend(crate::feature::loft_sweep::retained_control_losses(
             ir.model
                 .features
@@ -1571,7 +1584,7 @@ fn decode_container<'a>(
             feature_inventory.sheet_metal_flanges.len(),
         ),
     ];
-    let mut coverage: cadmpeg_ir::report::decode::Coverage = coverage_entries
+    let coverage: cadmpeg_ir::report::decode::Coverage = coverage_entries
         .into_iter()
         .chain(
             sheet_metal_coverage
@@ -1607,20 +1620,20 @@ fn decode_container<'a>(
             )
         })?;
     }
-    if document_kind == DocumentKind::Assembly {
-        crate::design_v11::assembly::project(ctx, &mut ir, &mut losses)?;
-    }
-    coverage.record(
-        crate::coverage::DESIGN_UNPRODUCED_BODIES,
-        crate::design_v11::unproduced_bodies(&ir),
-    );
-    let body = DecodeBody {
+    let mut body = DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::at(delivered, geometry_transferred),
         coverage,
         losses,
         notes: Vec::new(),
         transfer_ledger: TransferLedger::default(),
     };
+    if document_kind == DocumentKind::Assembly {
+        crate::design_v11::assembly::project(ctx, &mut ir, &mut body)?;
+    }
+    body.coverage.record(
+        crate::coverage::DESIGN_UNPRODUCED_BODIES,
+        crate::design_v11::unproduced_bodies(&ir),
+    );
     Ok(Decoded {
         ir,
         body,

@@ -7,7 +7,7 @@ use std::io::Cursor;
 use std::num::NonZeroI8;
 
 use cadmpeg_core::text::NonBlankString;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, MissingStateForm};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::design::container::{Container, Folder, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
@@ -21,7 +21,7 @@ use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, 
 use cadmpeg_ir::design::ids::{ArrangementId, ContainerId, EvaluationId};
 use cadmpeg_ir::design::options::NativeOptions;
 use cadmpeg_ir::design::parameter::{
-    DesignParameter, ParameterDefinition, ParameterOwner, ParameterValue,
+    DesignParameter, ParameterDefinition, ParameterOwner, ParameterValue, Tolerance,
 };
 use cadmpeg_ir::design::refs::{Evaluated, Member, Position};
 use cadmpeg_ir::design::scope::{DesignScope, OccurrenceDesign};
@@ -30,6 +30,7 @@ use cadmpeg_ir::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKin
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ConfigurationId, FeatureId, ParameterId};
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
+use cadmpeg_ir::pmi::{FitZone, LimitsAndFits};
 use cadmpeg_ir::report::export::ExportReport;
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::scalar::NonNegativeReal;
@@ -198,9 +199,17 @@ fn write(ir: &CadIr) -> (ExportReport, CadIr) {
 }
 
 fn write_bytes(ir: &CadIr) -> (ExportReport, CadIr, Vec<u8>) {
+    write_bytes_as(ir, MissingStateForm::GeometryTrue)
+}
+
+/// [`write_bytes`] in the form `missing_states`.
+fn write_bytes_as(ir: &CadIr, missing_states: MissingStateForm) -> (ExportReport, CadIr, Vec<u8>) {
     let mut bytes = Vec::new();
     let report = F3dCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(
+            EncodeInput::new(ir, None).with_missing_states(missing_states),
+            TargetRequest::Inherit,
+        )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("the writer writes the design scope");
     let decoded = F3dCodec
@@ -352,6 +361,51 @@ fn a_reference_cycle_is_written_as_a_cached_value_where_it_is_broken() {
         .iter()
         .any(|message| message.contains(parameter_id("a").as_str())
             && !message.contains(parameter_id("b").as_str())));
+    assert!(loss(&report, "export/dependency.cycle-broken")
+        .iter()
+        .any(|message| message.contains(parameter_id("a").as_str())
+            && !message.contains(parameter_id("b").as_str())));
+}
+
+#[test]
+fn a_fit_and_a_general_tolerance_are_written_as_no_tolerance() {
+    let mut ir = scoped_cube();
+    ir.design.parameters.extend([
+        DesignParameter {
+            tolerance: Some(Tolerance::Fit {
+                fit: LimitsAndFits {
+                    form_variance: "H".into(),
+                    zone: FitZone::Hole,
+                    grade: "7".into(),
+                    source: None,
+                },
+                mate: None,
+                deviations: None,
+            }),
+            ..parameter("bore", "Bore", neutral(number(8.0, None)), Some(8.0))
+        },
+        DesignParameter {
+            tolerance: Some(Tolerance::General),
+            ..parameter("depth", "Depth", neutral(number(5.0, None)), Some(5.0))
+        },
+    ]);
+    let (report, _) = write(&ir);
+    let dropped_fits = loss(&report, "export/fit.dropped");
+    assert_eq!(dropped_fits.len(), 1);
+    assert!(dropped_fits[0].contains(parameter_id("bore").as_str()));
+    assert!(!dropped_fits[0].contains(parameter_id("depth").as_str()));
+    let dropped_general = loss(&report, "export/general_tolerance.dropped");
+    assert_eq!(dropped_general.len(), 1);
+    assert!(dropped_general[0].contains(root().as_str()));
+    let severities = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code().ends_with(".dropped"))
+        .map(|loss| loss.severity)
+        .collect::<Vec<_>>();
+    assert!(severities
+        .iter()
+        .all(|severity| *severity == Severity::Warning));
 }
 
 #[test]
@@ -370,7 +424,7 @@ fn a_comment_is_written_with_its_parameter() {
 
 #[test]
 fn a_failure_of_the_design_module_drops_the_design_not_the_body() {
-    super::FAIL_NEXT_PLAN.with(|fail| fail.set(true));
+    super::FAIL_NEXT_PLAN.with(|fail| fail.set(1));
     let (report, ir) = write(&scoped_cube());
     assert_eq!(ir.geometry.bodies.len(), 1);
     assert!(ir.model.parameters.is_empty());
@@ -972,7 +1026,7 @@ fn a_dropped_design_charges_every_scope_container_feature_and_parameter() {
             pmi: None,
             native_ref: None,
         });
-    super::FAIL_NEXT_PLAN.with(|fail| fail.set(true));
+    super::FAIL_NEXT_PLAN.with(|fail| fail.set(1));
     let (report, _) = write(&ir);
     let omitted = loss(
         &report,
@@ -1090,7 +1144,7 @@ fn a_stale_and_a_current_evaluation_are_each_charged_once_by_name() {
     let stale = format!("{stale}: {root} tool body of {EXTRUDE} (stale)");
     let current = format!("{current}: {root} state at the start of {timeline}");
     for dropped in [false, true] {
-        super::FAIL_NEXT_PLAN.with(|fail| fail.set(dropped));
+        super::FAIL_NEXT_PLAN.with(|fail| fail.set(u32::from(dropped)));
         let (report, _) = write(&ir);
         assert!(
             loss(&report, "export/evaluation.stale")

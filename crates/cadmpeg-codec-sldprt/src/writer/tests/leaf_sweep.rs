@@ -6,12 +6,11 @@
 #![allow(clippy::unwrap_used)]
 
 use std::collections::BTreeSet;
-use std::io::Cursor;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
-use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
+use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::features::Feature;
 use cadmpeg_test_support::EditableDecodeResult;
 use serde_json::Value;
@@ -182,7 +181,7 @@ fn run(part: &DecodeResult, baseline: &[Entry], job: &Job) -> Result<Outcome, St
     let unwritten = report
         .losses
         .iter()
-        .filter(|loss| loss.code == SldprtLossCode::WriterFeatureEditUnwritten.kind())
+        .filter(|loss| crate::test_support::is_edit_dropped(&loss.code))
         .filter(|loss| loss.message.contains(feature_id.as_str()))
         .count();
     let stale = report
@@ -191,8 +190,7 @@ fn run(part: &DecodeResult, baseline: &[Entry], job: &Job) -> Result<Outcome, St
         .filter(|loss| loss.code == SldprtLossCode::WriterSolidStaleAfterEdit.kind())
         .filter(|loss| loss.message.contains(&format!("\"{}\"", job.feature)))
         .count();
-    let written = SldprtCodec
-        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+    let written = crate::decode::decode_for_read_back(&output)
         .map_err(|error| format!("{label}: output does not decode: {error}"))?;
     let read = named(&written.ir().model.features, &job.feature);
     let [read] = read.as_slice() else {

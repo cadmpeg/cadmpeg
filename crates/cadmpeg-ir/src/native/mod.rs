@@ -37,8 +37,10 @@ pub(crate) fn test_ctx() -> DecodeContext<'static> {
 /// per container, and `canon::CanonText` enters one frame per container.
 /// The bound is therefore stated where a field enters the record, so every
 /// reader of a constructed record is already inside it.
-/// It is twice the 128 containers a `serde_json` text parse admits, so every
-/// field a CADIR document can state is read back.
+/// It bounds stored text in memory and is deeper than any field a CADIR
+/// document holds, so every such field is read back. A document holds a
+/// native record at its fifth level, and the decode wrapper gives up a record
+/// that passes the document's 128 levels (§2.5).
 const MAX_NATIVE_NESTING_DEPTH: usize = 256;
 
 /// The text every refusal of [`MAX_NATIVE_NESTING_DEPTH`] carries.
@@ -1111,6 +1113,17 @@ impl Native {
         })
     }
 
+    /// The first arena, as `<codec>.<arena>`, whose records do not state
+    /// their ids in strictly increasing order.
+    pub(crate) fn unordered_arena(&self) -> Option<String> {
+        self.0.iter().find_map(|(format, namespace)| {
+            namespace.arenas.iter().find_map(|(arena, records)| {
+                (!records.windows(2).all(|pair| pair[0].id() < pair[1].id()))
+                    .then(|| format!("{format}.{arena}"))
+            })
+        })
+    }
+
     /// States one record of each id in each sorted namespace arena whose
     /// copies hold one value and none of an id whose copies differ,
     /// returning each such id.
@@ -1127,6 +1140,18 @@ impl Native {
             }
         }
         repeated
+    }
+
+    /// Removes the record at `index` of `codec`'s arena `arena`, returning
+    /// its id.
+    pub(crate) fn remove_record(
+        &mut self,
+        codec: &str,
+        arena: &str,
+        index: usize,
+    ) -> Option<String> {
+        let records = self.0.get_mut(codec)?.arenas.get_mut(arena)?;
+        (index < records.len()).then(|| records.remove(index).id().to_owned())
     }
 
     /// Sort every arena into canonical identity order.

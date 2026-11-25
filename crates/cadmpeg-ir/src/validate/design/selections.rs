@@ -21,6 +21,7 @@ use crate::design::selection::{
     SelectionRule, StepRef,
 };
 use crate::document::CadIr;
+use crate::features::ConfigurationId;
 use crate::ids::ProductDefinitionId;
 use crate::native::view::NativeView;
 use crate::report::check::{Check, Finding};
@@ -455,7 +456,7 @@ fn check_pick<'a>(
                 findings,
                 at,
                 crate::rule!(
-                    "design.pick-states-resolved-document-stores-no",
+                    "design.resolved-without-stored-state",
                     "a pick states `resolved`, but the document stores no state at its anchor"
                 ),
             );
@@ -499,6 +500,32 @@ pub(super) enum Stored<'a> {
     Extents(Vec<&'a Extent<'a>>),
     /// A stored evaluation, by id.
     Evaluation(&'a str),
+}
+
+impl<'a> Stored<'a> {
+    /// The configuration the state is resolved in: the scope's active
+    /// configuration for current states, the evaluation's own for a stored
+    /// evaluation.
+    pub(super) fn configuration(&self, records: &DesignRecords<'a>) -> Option<&'a str> {
+        let configuration = match self {
+            Self::Extents(extents) => extents.first().and_then(|extent| {
+                records
+                    .scopes
+                    .get(extent.scope)?
+                    .active_configuration
+                    .as_ref()
+            }),
+            Self::Evaluation(evaluation) => records
+                .ir
+                .design
+                .evaluations
+                .iter()
+                .find(|record| record.id.as_str() == *evaluation)?
+                .configuration
+                .as_ref(),
+        };
+        configuration.map(ConfigurationId::as_str)
+    }
 }
 
 /// The stored states a pick without a context resolves in (§5.8): the
@@ -836,7 +863,7 @@ pub(in crate::validate) fn check_unconfigured(
             findings,
             at,
             crate::rule!(
-                "design.states-step-configuration",
+                "design.path-states-step-configuration",
                 "{what} states a step configuration"
             ),
         );
@@ -914,5 +941,55 @@ pub(in crate::validate) fn check_path(
             );
         }
         previous = Some(placed.prototype.as_str());
+    }
+}
+
+/// Every `TemplateInput` pick names an input of an instance that lists the
+/// picking feature as a member: the feature whose definition holds the pick,
+/// or that owns the sketch, sketch record, or parameter that holds it.
+pub(super) fn check_template_inputs(
+    index: &DesignRecords<'_>,
+    held: &[Held<'_>],
+    findings: &mut Vec<Finding>,
+) {
+    for record in held {
+        let Some(picking) = record.holder.feature() else {
+            continue;
+        };
+        for selection in &record.selections {
+            for pick in selection.picks() {
+                let PickTarget::TemplateInput { instance, input } = &pick.target else {
+                    continue;
+                };
+                let valid = match index
+                    .features
+                    .get(instance.as_str())
+                    .map(|feature| &feature.definition.operation)
+                {
+                    Some(FeatureOperation::TemplateInstance(template)) => {
+                        template
+                            .members
+                            .iter()
+                            .any(|member| member.as_str() == picking)
+                            && usize::try_from(*input)
+                                .is_ok_and(|input| input < template.inputs.len())
+                    }
+                    _ => false,
+                };
+                if !valid {
+                    record_finding(
+                        findings,
+                        Check::Design,
+                        Severity::Error,
+                        Some(record.holder.record()),
+                        crate::rule!(
+                            "design.templateinput-picks-input-no-input-instance",
+                            "TemplateInput picks input {input} of {}, which is no input of an instance that lists this feature",
+                            instance.as_str()
+                        ),
+                    );
+                }
+            }
+        }
     }
 }

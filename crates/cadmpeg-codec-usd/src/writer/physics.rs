@@ -22,7 +22,7 @@ use cadmpeg_ir::products::{
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
-use super::text::{quoted, real32, tuple32, Names};
+use super::text::{float, floats, quoted, Names};
 use super::Writer;
 
 /// Name of the scope that holds physical materials and joints.
@@ -156,21 +156,6 @@ fn quaternion(transform: &Transform) -> [f64; 4] {
         .sum::<f64>()
         .sqrt();
     components.map(|value| value / norm)
-}
-
-/// A `float` attribute value: `value` rounded to binary32.
-fn float(value: f64) -> String {
-    real32(crate::text::value::round_f32(value))
-}
-
-/// A `float` tuple value, each component rounded to binary32.
-fn floats(values: &[f64]) -> String {
-    tuple32(
-        &values
-            .iter()
-            .map(|value| crate::text::value::round_f32(*value))
-            .collect::<Vec<_>>(),
-    )
 }
 
 fn mass_lines(mass: &MassProperties, length: f64) -> Vec<String> {

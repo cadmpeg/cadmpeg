@@ -20,8 +20,9 @@ pub(crate) fn redactions(ir: &CadIr) -> Result<BTreeMap<String, String>, CodecEr
             .and_then(|tail| tail.split_once(':'))
             .map(|(scope, _)| scope)
         {
-            if let Some(raw) = crate::ids::decode_identity_key_component(scope) {
-                remember_scope(&raw, &mut components, &mut replacements);
+            let (key, local) = qualifier(scope);
+            if let Some(raw) = crate::ids::decode_identity_key_component(local) {
+                remember_scope(key, &raw, &mut components, &mut replacements);
             }
         }
     }
@@ -34,7 +35,7 @@ pub(crate) fn redactions(ir: &CadIr) -> Result<BTreeMap<String, String>, CodecEr
                     continue;
                 };
                 if field == "stream" {
-                    remember_scope(text, &mut components, &mut replacements);
+                    remember_scope(None, text, &mut components, &mut replacements);
                 }
                 if matches!(field.as_str(), "blob_name" | "source_brep") {
                     if let Some(name) = text.strip_prefix("BREP.") {
@@ -44,7 +45,8 @@ pub(crate) fn redactions(ir: &CadIr) -> Result<BTreeMap<String, String>, CodecEr
                 }
                 if field == "source_namespace" {
                     if let Some(scope) = text.strip_prefix("f3d:") {
-                        remember_scope(scope, &mut components, &mut replacements);
+                        let (key, local) = qualifier(scope);
+                        remember_scope(key, local, &mut components, &mut replacements);
                     }
                 }
             }
@@ -53,13 +55,42 @@ pub(crate) fn redactions(ir: &CadIr) -> Result<BTreeMap<String, String>, CodecEr
     Ok(replacements)
 }
 
+/// The definition key of a qualified scope and the scope it qualifies.
+fn qualifier(scope: &str) -> (Option<&str>, &str) {
+    scope
+        .split_once('@')
+        .map_or((None, scope), |(key, local)| (Some(key), local))
+}
+
+/// Anonymizes the scope `raw`, qualified by definition key `key` when the
+/// record was read from an archive member.
 fn remember_scope(
+    key: Option<&str>,
     raw: &str,
     components: &mut BTreeMap<String, String>,
     replacements: &mut BTreeMap<String, String>,
 ) {
-    let anonymous = raw
-        .split('/')
+    let anonymous = anonymous_path(raw, components);
+    replacements.insert(raw.into(), anonymous.clone());
+    let encoded = crate::ids::identity_key_component(raw);
+    let anonymous_encoded = crate::ids::identity_key_component(&anonymous);
+    let (scope, anonymous_scope) = match key {
+        Some(key) => {
+            let anonymous_key = anonymous_path(key, components);
+            replacements.insert(encoded.clone(), anonymous_encoded.clone());
+            (
+                format!("{key}@{encoded}"),
+                format!("{anonymous_key}@{anonymous_encoded}"),
+            )
+        }
+        None => (encoded, anonymous_encoded),
+    };
+    replacements.insert(scope.clone(), anonymous_scope.clone());
+    replacements.insert(format!("f3d:{scope}"), format!("f3d:{anonymous_scope}"));
+}
+
+fn anonymous_path(raw: &str, components: &mut BTreeMap<String, String>) -> String {
+    raw.split('/')
         .map(|component| {
             let occurrence = component
                 .strip_prefix("occurrence-")
@@ -84,16 +115,7 @@ fn remember_scope(
             }
         })
         .collect::<Vec<_>>()
-        .join("/");
-    replacements.insert(raw.into(), anonymous.clone());
-    replacements.insert(
-        crate::ids::identity_key_component(raw),
-        crate::ids::identity_key_component(&anonymous),
-    );
-    replacements.insert(
-        format!("f3d:{}", crate::ids::identity_key_component(raw)),
-        format!("f3d:{}", crate::ids::identity_key_component(&anonymous)),
-    );
+        .join("/")
 }
 
 fn anonymous_component(raw: &str, components: &mut BTreeMap<String, String>) -> String {

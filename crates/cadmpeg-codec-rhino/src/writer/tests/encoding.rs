@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::writer::{
-    archive_body_len, archive_final_size, brep_loop_type, brep_trim_type, check_object_attributes,
-    native_i32_count, object_attributes_payload, utf16, wire_index,
+    archive_body_len, archive_final_size, brep_loop_type, brep_trim_type, native_i32_count,
+    object_attributes_payload, utf16, wire_index,
 };
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
@@ -19,19 +19,29 @@ use cadmpeg_ir::topology::{Color, Point};
 use crate::{RhinoArchiveVersion, RhinoCodec};
 
 #[test]
-fn admitted_angular_tolerance_above_pi_is_a_writer_limit() {
+fn angular_tolerance_above_pi_is_written_as_the_default_and_named() {
     let mut ir = CadIr::empty();
     ir.tolerances = cadmpeg_ir::units::Tolerances::new(1.0e-6, 4.0)
         .expect("positive finite tolerances are admitted");
-    let mut output = Vec::new();
-    let error = RhinoCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("Rhino cannot state this angular tolerance");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    ir.geometry.points.push(Point::new(
+        PointId::mint("cadir:model:point#angular").expect("identity grammar"),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+            .expect("a finite position is a point"),
+        None,
+    ));
+    let (written, losses) = super::written(&ir);
+    assert!(
+        (written.tolerances.angular.get() - std::f64::consts::PI / 180.0).abs() < 1.0e-15,
+        "{:?}",
+        written.tolerances
+    );
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.starts_with("export/value.unwritable")
+                && loss.contains("document angular tolerance")),
+        "{losses:?}"
+    );
 }
 
 #[test]
@@ -66,10 +76,23 @@ fn admitted_archive_sizes_outside_native_lanes_are_writer_limits() {
 }
 
 #[test]
-fn admitted_name_with_null_character_is_a_writer_limit() {
-    let error = check_object_attributes("cadir:model:body#named", Some("left\0right"))
-        .expect_err("Rhino strings cannot state an embedded null");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+fn name_with_null_character_is_written_up_to_it_and_named() {
+    let mut ir = super::polygon_sheet(&[
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(1.0, 0.0, 0.0),
+        Point3::new(0.0, 1.0, 0.0),
+    ]);
+    ir.geometry.bodies[0].name = Some("left\0right".into());
+    let body = ir.geometry.bodies[0].id.as_str().to_owned();
+    let (written, losses) = super::written(&ir);
+    assert_eq!(written.geometry.bodies.len(), 1);
+    assert_eq!(written.geometry.bodies[0].name.as_deref(), Some("left"));
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.starts_with("export/value.unwritable") && loss.contains(&body)),
+        "{losses:?}"
+    );
 }
 
 #[test]
@@ -113,7 +136,7 @@ fn object_attribute_items_are_written_in_ascending_order() {
 }
 
 #[test]
-fn nonempty_user_string_presentation_is_refused_before_output() {
+fn nonempty_user_string_presentation_is_omitted_and_named() {
     let mut source = CadIr::empty();
     source.geometry.points.push(Point::new(
         PointId::mint("cadir:model:point#user-strings").expect("identity grammar"),
@@ -133,7 +156,7 @@ fn nonempty_user_string_presentation_is_refused_before_output() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("required invariant");
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    {
+    let omitted = {
         let mut ir = decoded.ir_mut();
         let records = ir
             .native
@@ -149,26 +172,25 @@ fn nonempty_user_string_presentation_is_refused_before_output() {
             serde_json::json!([{ "key": "name", "value": "value" }]),
         );
         records[0] = cadmpeg_ir::NativeRecord::new(
-            cadmpeg_ir::ids::Identity::new(id).expect("valid identity"),
+            cadmpeg_ir::ids::Identity::new(id.clone()).expect("valid identity"),
             fields,
         )
         .expect("valid native identity");
-    }
+        id
+    };
 
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("user-string metadata must not be discarded");
-    assert!(error.to_string().contains("survival handling"));
-    assert_eq!(output, [0xaa]);
+    let (written, losses) = super::written(decoded.ir());
+    assert_eq!(written.geometry.points.len(), 1);
+    assert!(
+        losses.iter().any(
+            |loss| loss.starts_with("export/native.records-omitted") && loss.contains(&omitted)
+        ),
+        "{losses:?}"
+    );
 }
 
 #[test]
-fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
+fn nonempty_mesh_modifier_presentation_is_omitted_and_named() {
     let mut source = CadIr::empty();
     source.geometry.points.push(Point::new(
         PointId::mint("cadir:model:point#mesh-modifiers").expect("identity grammar"),
@@ -188,7 +210,7 @@ fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("required invariant");
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    {
+    let omitted = {
         let mut ir = decoded.ir_mut();
         let records = ir
             .native
@@ -204,26 +226,25 @@ fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
             serde_json::json!({ "displacement": { "on": true } }),
         );
         records[0] = cadmpeg_ir::NativeRecord::new(
-            cadmpeg_ir::ids::Identity::new(id).expect("valid identity"),
+            cadmpeg_ir::ids::Identity::new(id.clone()).expect("valid identity"),
             fields,
         )
         .expect("valid native identity");
-    }
+        id
+    };
 
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("mesh modifier metadata must not be discarded");
-    assert!(error.to_string().contains("survival handling"));
-    assert_eq!(output, [0xaa]);
+    let (written, losses) = super::written(decoded.ir());
+    assert_eq!(written.geometry.points.len(), 1);
+    assert!(
+        losses.iter().any(
+            |loss| loss.starts_with("export/native.records-omitted") && loss.contains(&omitted)
+        ),
+        "{losses:?}"
+    );
 }
 
 #[test]
-fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
+fn nonempty_layer_per_viewport_settings_are_omitted_and_named() {
     let mut source = CadIr::empty();
     source.geometry.points.push(Point::new(
         PointId::mint("cadir:model:point#layer-settings").expect("identity grammar"),
@@ -243,7 +264,7 @@ fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("required invariant");
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    {
+    let omitted = {
         let mut ir = decoded.ir_mut();
         let records = ir
             .native
@@ -263,20 +284,19 @@ fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
             }]),
         );
         records[0] = cadmpeg_ir::NativeRecord::new(
-            cadmpeg_ir::ids::Identity::new(id).expect("valid identity"),
+            cadmpeg_ir::ids::Identity::new(id.clone()).expect("valid identity"),
             fields,
         )
         .expect("valid native identity");
-    }
+        id
+    };
 
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("layer metadata must not be discarded");
-    assert!(error.to_string().contains("survival handling"));
-    assert_eq!(output, [0xaa]);
+    let (written, losses) = super::written(decoded.ir());
+    assert_eq!(written.geometry.points.len(), 1);
+    assert!(
+        losses.iter().any(
+            |loss| loss.starts_with("export/native.records-omitted") && loss.contains(&omitted)
+        ),
+        "{losses:?}"
+    );
 }

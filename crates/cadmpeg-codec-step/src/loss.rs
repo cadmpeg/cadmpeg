@@ -59,6 +59,8 @@ pub(crate) enum StepLossCode {
     SourceDialectUnverified,
     /// The selected write target differs from the same-format source dialect.
     SourceDialectDisplaced,
+    /// The requested write target is written as another catalog row.
+    TargetRequestDisplaced,
     /// The declared schema object identifier names a module edition that the
     /// decoder reads as a published AP edition.
     SourceSchemaEditionAssumed,
@@ -334,7 +336,9 @@ pub(crate) enum StepLossCode {
     RegionVerticesRecovered,
     /// Edges of unwritable faces were retained as wire geometry.
     RegionEdgesRecovered,
-    /// No geometry was placed in the output representations.
+    /// No geometry was placed in the output representations, while other
+    /// records of the document were written. A file that holds no record of
+    /// the document charges `export:output.empty` instead.
     NoGeometryWritten,
     /// Different coedge pcurves were compared at discrete parameters.
     EdgePcurveAgreementSampled,
@@ -398,6 +402,13 @@ pub(crate) enum StepLossCode {
     /// A non-manifold edge of a closed shell was written as one edge per
     /// forward and reversed use pair.
     NonManifoldEdgeSplit,
+    /// An open edge whose ends coincide within the linear tolerance was
+    /// written as one edge: no point of its curve between the ends was found.
+    OpenEdgeUnsplit,
+    /// A face the source holds with no boundary on a plane, cylinder, or
+    /// cone, whose domain is unbounded, or whose stored boundary does not
+    /// resolve to a closed loop, is stated partial with no loop.
+    TopologyFaceBoundaryUnstated,
     /// An edge vertex lies off its own carrier by more than the document
     /// tolerance, and the edge's parameter range was derived anyway.
     ///
@@ -455,6 +466,7 @@ impl StepLossCode {
         Self::HeaderMetadataNoncanonical,
         Self::SourceDialectUnverified,
         Self::SourceDialectDisplaced,
+        Self::TargetRequestDisplaced,
         Self::SourceSchemaEditionAssumed,
         Self::AttributeStringInvalid,
         Self::PlacementReferenceInferred,
@@ -619,6 +631,8 @@ impl StepLossCode {
         Self::OccurrenceExpansionOutputTruncated,
         Self::OccurrenceExpansionDepthTruncated,
         Self::NonManifoldEdgeSplit,
+        Self::OpenEdgeUnsplit,
+        Self::TopologyFaceBoundaryUnstated,
         Self::EdgeVertexOffCarrier,
         Self::AngleUnitFactorCorrected,
         Self::LengthUnitContradicted,
@@ -653,6 +667,7 @@ impl StepLossCode {
             Self::HeaderMetadataNoncanonical => "parse.header-metadata-noncanonical",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
+            Self::TargetRequestDisplaced => "target.request-displaced",
             Self::SourceSchemaEditionAssumed => "source.schema-edition-assumed",
             Self::AttributeStringInvalid => "attribute.string-invalid",
             Self::PlacementReferenceInferred => "geometry.placement-reference-inferred",
@@ -835,6 +850,8 @@ impl StepLossCode {
             Self::OccurrenceExpansionOutputTruncated => "occurrence.expansion-output-truncated",
             Self::OccurrenceExpansionDepthTruncated => "occurrence.expansion-depth-truncated",
             Self::NonManifoldEdgeSplit => "topology.non-manifold-edge-split",
+            Self::OpenEdgeUnsplit => "topology.open-edge-unsplit",
+            Self::TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
             Self::EdgeVertexOffCarrier => "geometry.edge-vertex-off-carrier",
             Self::AngleUnitFactorCorrected => "geometry.angle-unit-factor-corrected",
             Self::LengthUnitContradicted => "geometry.length-unit-contradicted",
@@ -939,7 +956,9 @@ impl StepLossCode {
             Self::ImplementationLevelUnverified
             | Self::SourceDialectUnverified
             | Self::SourceSchemaEditionAssumed => LossTaxonomy::SourceDialectUnverified,
-            Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
+            Self::SourceDialectDisplaced | Self::TargetRequestDisplaced => {
+                LossTaxonomy::SourceDialectDisplaced
+            }
             Self::MetadataStringInvalid
             | Self::SchemaObjectIdentifierOutOfRange
             | Self::PresentationAnnotationTextUnordered
@@ -1033,7 +1052,9 @@ impl StepLossCode {
             | Self::EdgeStartVertexMissing
             | Self::EdgeEndVertexMissing
             | Self::EdgeNoVertex
-            | Self::NonManifoldEdgeSplit => LossTaxonomy::TopologyNotTransferred,
+            | Self::NonManifoldEdgeSplit
+            | Self::OpenEdgeUnsplit
+            | Self::TopologyFaceBoundaryUnstated => LossTaxonomy::TopologyNotTransferred,
             Self::SeamEdgePcurveUnresolved
             | Self::EdgeNoSurfaceOrCurveForPcurve
             | Self::PcurveAssociationAmbiguous
@@ -1160,6 +1181,7 @@ mod tests {
                 "parse.header-metadata-noncanonical",
                 "source.dialect-unverified",
                 "target.source-dialect-displaced",
+                "target.request-displaced",
                 "source.schema-edition-assumed",
                 "attribute.string-invalid",
                 "geometry.placement-reference-inferred",
@@ -1324,6 +1346,8 @@ mod tests {
                 "occurrence.expansion-output-truncated",
                 "occurrence.expansion-depth-truncated",
                 "topology.non-manifold-edge-split",
+                "topology.open-edge-unsplit",
+                "topology.face-boundary-unstated",
                 "geometry.edge-vertex-off-carrier",
                 "geometry.angle-unit-factor-corrected",
                 "geometry.length-unit-contradicted",

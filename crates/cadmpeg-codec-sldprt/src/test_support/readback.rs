@@ -45,7 +45,7 @@ pub(crate) fn diff(stated: &CadIr, written: &CadIr) -> Vec<Entry> {
             renames.insert(id.to_owned(), format!("{id}:written"));
         }
     }
-    let renamed = edited_json(written, &mut |value| rename(value, &renames), &|id| {
+    let renamed = edited_neutral_json(written, &mut |value| rename(value, &renames), &|id| {
         renames.get(id).cloned().unwrap_or_else(|| id.to_owned())
     });
     let renamed_records = Document::of(&renamed).expect("the renamed document serializes");
@@ -85,12 +85,16 @@ pub(crate) fn diff(stated: &CadIr, written: &CadIr) -> Vec<Entry> {
         }));
     }
     // A digest attribute digests encoded bytes; the records they encode are
-    // compared instead.
+    // compared instead. A configuration's stale mark is the writer's own
+    // (§3.4, States), and `export:evaluation.stale` names the edits it marks.
     entries.extend(
         diff.source
             .attributes
             .into_iter()
-            .filter(|change| !change.key.as_str().ends_with("_sha256"))
+            .filter(|change| {
+                let key = change.key.as_str();
+                !key.ends_with("_sha256") && !key.ends_with("_needs_update")
+            })
             .map(|change| Entry {
                 arena: "source.attributes".into(),
                 id: change.key.to_string(),
@@ -222,6 +226,7 @@ pub(crate) fn baseline(part: &cadmpeg_ir::codec::DecodeResult) -> Vec<Entry> {
         &part.source_fidelity().codec_digests,
         &records,
         &[],
+        &[],
         &mut bytes,
     )
     .map(|_| {
@@ -316,22 +321,44 @@ pub(crate) fn renamed(ir: &CadIr, renames: &[(String, String, String)]) -> CadIr
 }
 
 /// `ir` with `edit` applied to its JSON form and to the JSON form of each
-/// arena the CADIR wire omits, which a document read from JSON does not hold.
-/// `id` maps a feature id as `edit` changes it, so each feature-parent
-/// relation is kept.
+/// arena the CADIR wire omits, which a document read from JSON does not hold,
+/// with each arena in id order again after `edit` renames its ids. `id` maps a
+/// feature id as `edit` changes it, so each feature-parent relation is kept.
 pub(crate) fn edited_json(
     ir: &CadIr,
     edit: &mut dyn FnMut(&mut Value),
     id: &dyn Fn(&str) -> String,
 ) -> CadIr {
-    let mut value = serde_json::to_value(ir).expect("the document serializes");
+    let value = serde_json::to_value(ir).expect("the document serializes");
+    apply_edited_json(ir, value, edit, id)
+}
+
+fn edited_neutral_json(
+    ir: &CadIr,
+    edit: &mut dyn FnMut(&mut Value),
+    id: &dyn Fn(&str) -> String,
+) -> CadIr {
+    let value = ir
+        .to_neutral_json_value()
+        .expect("the neutral document serializes");
+    apply_edited_json(ir, value, edit, id)
+}
+
+fn apply_edited_json(
+    ir: &CadIr,
+    mut value: Value,
+    edit: &mut dyn FnMut(&mut Value),
+    id: &dyn Fn(&str) -> String,
+) -> CadIr {
     edit(&mut value);
-    let mut edited: CadIr = serde_json::from_value(value).expect("the edited document reads");
+    let mut edited = CadIr::from_projection(value).expect("the edited document reads");
     macro_rules! arenas {
         ($($arena:ident),*) => {$(
-            let mut value = serde_json::to_value(&ir.model.$arena).expect("the arena serializes");
-            edit(&mut value);
-            edited.model.$arena = serde_json::from_value(value).expect("the edited arena reads");
+            if !ir.model.$arena.is_empty() {
+                let mut value = serde_json::to_value(&ir.model.$arena).expect("the arena serializes");
+                edit(&mut value);
+                edited.model.$arena = serde_json::from_value(value).expect("the edited arena reads");
+            }
         )*};
     }
     arenas!(
@@ -350,6 +377,7 @@ pub(crate) fn edited_json(
         assembly_joints,
         history_bodies
     );
+    edited.finalize();
     for feature in &ir.model.features {
         if let Some(parent) = ir.model.feature_regeneration_parent(&feature.id) {
             let child = cadmpeg_ir::features::FeatureId::mint(id(feature.id.as_str()))

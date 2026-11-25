@@ -6,6 +6,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::f64::consts::TAU;
 
+use cadmpeg_ir::codec::write::MissingStateForm;
 use cadmpeg_ir::design::construction::{
     AxisValue, Construction, ConstructionInput, InputReference, InputRole, Relation, Subject,
 };
@@ -43,7 +44,10 @@ use super::super::parameters::OwnedParameter;
 use super::super::{plan, Fallback};
 use super::roster::segment;
 use super::sketch::{entity_id, feature, feature_id, frame, picked, point2, principal, Source};
-use super::{loss, neutral, number, parameter, parameter_id, reference, root, write, write_bytes};
+use super::{
+    loss, neutral, number, parameter, parameter_id, reference, root, write, write_bytes,
+    write_bytes_as,
+};
 
 mod body;
 
@@ -277,11 +281,13 @@ fn tube_design() -> CadIr {
 /// The item the design writes for `ir`'s revolve, or the reason the Base
 /// Feature holds it.
 fn decided(ir: &CadIr) -> Result<usize, String> {
-    let design = plan(ir, &Fallback::default())
+    let design = plan(ir, MissingStateForm::GeometryTrue, &Fallback::default())
         .expect("a plan")
         .expect("a design scope");
     match design.item {
-        Decision::Item(Item::Revolve(plan)) => Ok(plan.sides.len()),
+        Decision::Item(Item::Revolve(plan)) => {
+            Ok(plan.result.as_ref().map_or(0, |result| result.sides.len()))
+        }
         Decision::Item(Item::Extrude(_)) => Err("an Extrude".to_owned()),
         Decision::BaseFeature { reason, .. } => Err(reason),
         Decision::None => Err("no item".to_owned()),
@@ -793,7 +799,7 @@ fn bound_to(parameters: Vec<DesignParameter>) -> CadIr {
 /// The `AlongAngle` parameter of the Revolve the design writes for `ir`, or
 /// the reason the Base Feature holds it.
 fn planned_angle(ir: &CadIr) -> Result<OwnedParameter, String> {
-    let design = plan(ir, &Fallback::default())
+    let design = plan(ir, MissingStateForm::GeometryTrue, &Fallback::default())
         .expect("a plan")
         .expect("a design scope");
     match design.item {
@@ -873,6 +879,24 @@ fn an_angle_bound_to_a_parameter_another_names_is_named_by_its_own_parameter() {
 }
 
 #[test]
+fn a_revolve_refused_after_its_angle_row_leaves_the_parameter_a_user_parameter() {
+    let mut ir = bound_to(vec![turn_parameter(360.0)]);
+    ir.geometry.bodies[0].kind = BodyKind::Sheet;
+    let design = plan(&ir, MissingStateForm::GeometryTrue, &Fallback::default())
+        .expect("a plan")
+        .expect("a design scope");
+    let Decision::BaseFeature { reason, .. } = &design.item else {
+        panic!("the Base Feature holds the revolve: {:?}", design.item);
+    };
+    assert_eq!(reason, "its body is not a solid");
+    let turn = parameter_id("turn");
+    assert!(
+        design.parameters.written().any(|written| *written == turn),
+        "Turn stays a user parameter"
+    );
+}
+
+#[test]
 fn an_angle_parameter_that_is_no_full_turn_angle_names_its_reason() {
     assert_eq!(
         decided(&bound_to(vec![turn_parameter(180.0)])),
@@ -932,4 +956,56 @@ fn a_sketch_on_xy_stores_the_axis_carrier_without_a_matrix() {
     let near = |a: [f64; 3], b: [f64; 3]| a.iter().zip(b).all(|(x, y)| (x - y).abs() <= 1e-12);
     assert!(near(at(21), [0.0, -0.1, 0.0]), "{:?}", at(21));
     assert!(near(at(45), [0.0, 0.8, 0.0]), "{:?}", at(45));
+}
+
+#[test]
+fn a_rolled_back_revolve_follows_the_marker_with_its_definition() {
+    let mut ir = tube_design();
+    let second = feature(
+        "second",
+        FeatureOperation::Revolve(Box::new(revolve(Some(axis("axis"))))),
+    );
+    let second_id = second.id.clone();
+    ir.design.features.push(second);
+    let Some(Container::Ordered {
+        members, rollback, ..
+    }) = ir.design.containers.last_mut()
+    else {
+        panic!("the tube's timeline");
+    };
+    members.push(Member::Feature(second_id.clone()));
+    *rollback = Some(Rollback::Before(Member::Feature(second_id.clone())));
+
+    let (report, decoded, _) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
+    let mut features = decoded.model.features.iter().collect::<Vec<_>>();
+    features.sort_by_key(|feature| feature.ordinal);
+    let revolves = features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Revolve { .. }
+                )
+            )
+        })
+        .filter_map(|feature| feature.name.as_deref())
+        .collect::<Vec<_>>();
+    assert_eq!(revolves, ["Revolve 1", "Revolve 2"], "{:#?}", report.losses);
+    let [Container::Ordered {
+        members, rollback, ..
+    }] = decoded.design.containers.as_slice()
+    else {
+        panic!("one decoded timeline: {:#?}", decoded.design.containers);
+    };
+    assert_eq!(members.len(), 3);
+    assert_eq!(rollback, &Some(Rollback::Before(members[2].clone())));
+    assert_eq!(decoded.geometry.bodies.len(), 1);
+    let missing = loss(&report, EVALUATION_MISSING).join("\n");
+    assert!(
+        missing.contains(&format!(
+            "rolled back with their definitions and without their states (1): {second_id}"
+        )),
+        "{missing}"
+    );
 }

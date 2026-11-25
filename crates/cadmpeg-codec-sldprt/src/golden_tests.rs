@@ -273,7 +273,10 @@ fn fixtures_survive_the_semantic_write_path() {
             }
             SemanticOutcome::Refused { error } => {
                 assert!(
-                matches!(error, CodecError::NotImplemented(_)),
+                matches!(
+                    error,
+                    cadmpeg_ir::codec::write::EncodeError::Backend(CodecError::NotImplemented(_))
+                ),
                 "fixture `{name}`: the semantic writer may decline an edit it has not built, but this \
                  refusal reports a defect in what it already retains: {error}"
             );

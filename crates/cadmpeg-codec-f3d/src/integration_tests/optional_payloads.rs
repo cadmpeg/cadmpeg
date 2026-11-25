@@ -317,9 +317,9 @@ fn a_brep_payload_that_does_not_open_is_given_up_alone() {
             .message
             .starts_with(&format!("part archive-entry {name:?} stream=\"\" offset=")));
         let strict = DecodeOptions {
-            policy: DecodePolicy {
-                mode: cadmpeg_core::decode::DecodeMode::Strict,
-                ..DecodePolicy::default()
+            strictness: cadmpeg_ir::report::strictness::Strictness {
+                pinned: true,
+                ..Default::default()
             },
             ..DecodeOptions::default()
         };

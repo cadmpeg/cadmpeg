@@ -71,6 +71,9 @@ pub(super) struct Crate {
     specs: Vec<(u32, u32, u32)>,
     /// A token or string table outgrew 32-bit indices.
     overflowed: bool,
+    /// The fields left out because their value has no USDC 0.8.0 form in
+    /// this writer, each as its spec path and field.
+    left_out: Vec<String>,
 }
 
 /// The path index, signed element token, and jump of each path item.
@@ -170,6 +173,7 @@ impl Crate {
             field_set_index: BTreeMap::new(),
             specs: Vec::new(),
             overflowed: false,
+            left_out: Vec::new(),
         };
         // Token 0 is the empty element of the root path, so that no
         // property name has token index 0.
@@ -282,8 +286,25 @@ impl Crate {
         Ok(())
     }
 
+    /// `lowered`, or `None` with `field` recorded as left out when its value
+    /// has no USDC form ([`unsupported`]).
+    fn or_left_out<T>(
+        &mut self,
+        lowered: Result<T, CodecError>,
+        field: impl FnOnce() -> String,
+    ) -> Result<Option<T>, CodecError> {
+        match lowered {
+            Ok(value) => Ok(Some(value)),
+            Err(CodecError::NotImplemented(_)) => {
+                self.left_out.push(field());
+                Ok(None)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
     /// The fields of the metadata `items`, list operations of one key
-    /// joined into one field.
+    /// joined into one field. A key with no USDC form is left out.
     fn metadata(&mut self, items: &[MetaItem], anchor: &str) -> Result<Fields, CodecError> {
         let mut keys: Vec<&str> = Vec::new();
         for item in items {
@@ -294,7 +315,10 @@ impl Crate {
         let mut out = Vec::new();
         for key in keys {
             let group: Vec<&MetaItem> = items.iter().filter(|item| item.key == key).collect();
-            out.extend(self.metadata_field(key, &group, anchor)?);
+            let fields = self.metadata_field(key, &group, anchor);
+            if let Some(fields) = self.or_left_out(fields, || format!("{anchor} metadata {key}"))? {
+                out.extend(fields);
+            }
         }
         Ok(out)
     }
@@ -662,17 +686,22 @@ impl Crate {
             match &statement.field {
                 AttributeField::Declared => {}
                 AttributeField::Default(value) => {
-                    let value = self.attribute_value(value, first)?;
-                    fields.push(("default".to_owned(), value));
+                    let value = self.attribute_value(value, first);
+                    if let Some(value) = self.or_left_out(value, || format!("{path} default"))? {
+                        fields.push(("default".to_owned(), value));
+                    }
                 }
                 AttributeField::TimeSamples(samples) => {
-                    let mut times = Vec::new();
-                    let mut values = Vec::new();
-                    for sample in samples {
-                        times.push(sample.time.float);
-                        values.push(self.attribute_value(&sample.value, first)?);
+                    let times: Vec<f64> = samples.iter().map(|sample| sample.time.float).collect();
+                    let values: Result<Vec<u64>, CodecError> = samples
+                        .iter()
+                        .map(|sample| self.attribute_value(&sample.value, first))
+                        .collect();
+                    if let Some(values) =
+                        self.or_left_out(values, || format!("{path} timeSamples"))?
+                    {
+                        fields.push(("timeSamples".to_owned(), self.time_samples(&times, &values)));
                     }
-                    fields.push(("timeSamples".to_owned(), self.time_samples(&times, &values)));
                 }
                 AttributeField::Connect(list) => {
                     let paths = match list {
@@ -683,7 +712,7 @@ impl Crate {
                     };
                     connections.push((statement.list_op, paths));
                 }
-                AttributeField::Spline(_) => return Err(unsupported("a spline")),
+                AttributeField::Spline(_) => self.left_out.push(format!("{path} spline")),
             }
         }
         if !connections.is_empty() {
@@ -729,11 +758,11 @@ impl Crate {
                     };
                     targets.push((statement.list_op, paths));
                 }
-                RelationshipField::BracketTarget(target) => {
+                // The reader takes a `.default` target as the target path
+                // it names, as it takes the bracket form.
+                RelationshipField::BracketTarget(target)
+                | RelationshipField::DefaultTarget(target) => {
                     targets.push((statement.list_op, vec![absolute(prim, target)]));
-                }
-                RelationshipField::DefaultTarget(_) => {
-                    return Err(unsupported("a relationship default target"));
                 }
             }
         }
@@ -903,11 +932,14 @@ fn borrow<'a>(
         .collect()
 }
 
-/// `layer` as a USDC 0.8.0 layer.
-pub(crate) fn write(layer: &Layer) -> Result<Vec<u8>, CodecError> {
+/// `layer` as a USDC 0.8.0 layer, and the fields left out because their
+/// value has no USDC 0.8.0 form in this writer, each as its spec path and
+/// field.
+pub(crate) fn write(layer: &Layer) -> Result<(Vec<u8>, Vec<String>), CodecError> {
     let mut out = Crate::new();
     out.layer(layer)?;
-    out.finish()
+    let left_out = std::mem::take(&mut out.left_out);
+    Ok((out.finish()?, left_out))
 }
 
 #[cfg(test)]

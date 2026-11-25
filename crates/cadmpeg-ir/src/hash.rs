@@ -18,12 +18,7 @@ use crate::units::{CanonicalUnitsWire, Tolerances};
 pub mod digest;
 pub mod finite_json;
 
-use finite_json::admission::CanonicalAdmission;
-use finite_json::{write_canonical_json, CanonicalJsonError};
-
-/// Bytes gathered before the hasher sees them; the pretty JSON writer emits one
-/// short write per token.
-const DIGEST_BUFFER_BYTES: usize = 64 * 1024;
+use finite_json::CanonicalJsonError;
 
 /// Borrowed unique owners. Repeated construction references have no owner.
 pub(crate) struct ProceduralOwners<'a, T>(HashMap<&'a str, Option<&'a T>>);
@@ -80,24 +75,80 @@ pub fn content_digest(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
 ) -> Result<digest::Sha256Digest, DigestError> {
-    canonical_json_digest(ctx, ir)
+    let bytes = cadmpeg_core::finite_json::canonical_json_sha256_erased(
+        Some((ctx, "walk document digest")),
+        &|serializer| ir.serialize_erased(serializer),
+    )
+    .map_err(digest_error_from_finite)?;
+    Ok(digest::Sha256Digest::from_bytes(bytes))
+}
+
+/// Returns [`content_digest`], and the records of `ir` past a bound of §2.5,
+/// found in the same walk. A refused walk returns what it found before the
+/// refusal.
+pub(crate) fn measured_content_digest(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> (
+    Result<digest::Sha256Digest, DigestError>,
+    crate::bounds::Measured,
+) {
+    let mut buffered = std::io::BufWriter::with_capacity(
+        cadmpeg_core::finite_json::DIGEST_BUFFER_BYTES,
+        DigestWriter(Sha256::new()),
+    );
+    let mut measure = crate::bounds::Measure::new(&mut buffered);
+    let written = finite_json::write_canonical_json_erased(
+        finite_json::admission::CanonicalAdmission::limited(ctx, "walk document digest"),
+        &mut measure,
+        &|serializer| ir.serialize_erased(serializer),
+    );
+    let measured = measure.finish();
+    let digest = written
+        .map_err(DigestError::from)
+        .and_then(|()| finish_digest(buffered));
+    (digest, measured)
 }
 
 fn canonical_json_digest<T: Serialize + ?Sized>(
     ctx: &DecodeContext<'_>,
     value: &T,
 ) -> Result<digest::Sha256Digest, DigestError> {
-    let mut buffered =
-        std::io::BufWriter::with_capacity(DIGEST_BUFFER_BYTES, DigestWriter(Sha256::new()));
-    write_canonical_json(
-        CanonicalAdmission::limited(ctx, "walk document digest"),
-        &mut buffered,
-        value,
-    )?;
+    let bytes = cadmpeg_core::finite_json::canonical_json_sha256_erased(
+        Some((ctx, "walk document digest")),
+        &|serializer| value.serialize(serializer),
+    )
+    .map_err(digest_error_from_finite)?;
+    Ok(digest::Sha256Digest::from_bytes(bytes))
+}
+
+struct DigestWriter(Sha256);
+
+impl std::io::Write for DigestWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.update(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn finish_digest(
+    buffered: std::io::BufWriter<DigestWriter>,
+) -> Result<digest::Sha256Digest, DigestError> {
     let writer = buffered
         .into_inner()
         .map_err(|error| DigestError::Write(error.into_error()))?;
     Ok(digest::Sha256Digest::from_bytes(writer.0.finalize().into()))
+}
+
+fn digest_error_from_finite(error: cadmpeg_core::finite_json::FiniteJsonError) -> DigestError {
+    match error {
+        cadmpeg_core::finite_json::FiniteJsonError::Write(error) => DigestError::Write(error),
+        other => DigestError::CanonicalJson(CanonicalJsonError::from(other)),
+    }
 }
 
 /// A digest could not be computed.
@@ -655,19 +706,6 @@ fn sorted_records(records: &[NativeRecord]) -> Vec<&NativeRecord> {
     refs
 }
 
-/// A byte sink that feeds a SHA-256 hasher.
-struct DigestWriter(Sha256);
-
-impl std::io::Write for DigestWriter {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        self.0.update(bytes);
-        Ok(bytes.len())
-    }
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
 /// Borrowed bytes displayed and serialized as two lowercase hexadecimal digits per byte.
 pub struct LowerHex<'a>(pub &'a [u8]);
 
@@ -739,7 +777,7 @@ mod tests {
     fn canonical_json_sha256_matches_json_larger_than_the_buffer() {
         let value: Vec<String> = (0..6_000).map(|index| format!("entry-{index}")).collect();
         let json = crate::hash::finite_json::to_canonical_json_string(&value).unwrap();
-        assert!(json.len() > super::DIGEST_BUFFER_BYTES);
+        assert!(json.len() > cadmpeg_core::finite_json::DIGEST_BUFFER_BYTES);
         assert_eq!(
             canonical_json_sha256(
                 &cadmpeg_core::decode::test_support::service_decode_context(),

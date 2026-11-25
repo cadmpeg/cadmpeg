@@ -189,8 +189,8 @@ pub(super) struct Regenerated {
     pub(super) residual: Vec<String>,
     /// The member fields written with a placeholder, each naming its member.
     pub(super) placeholders: Vec<String>,
-    /// The members the envelope cannot store: a name it cannot encode, or a
-    /// count or offset past its field.
+    /// The sections the envelope stores no member for: a name it cannot
+    /// encode, or a time/date word, count or offset past its field.
     pub(super) dropped: Vec<String>,
 }
 
@@ -214,9 +214,10 @@ impl Regenerated {
                  index, and internal_attrs 0",
                 self.placeholders.iter().cloned(),
             ))
-            .chain(cadmpeg_ir::codec::write::native_records_omitted(
+            .chain(cadmpeg_ir::codec::write::value_unwritable(
                 "SLDPRT",
-                "whose name, member count or offset the native envelope cannot store",
+                "writes no member for these sections, whose name, member count or offset the \
+                 native envelope cannot store",
                 self.dropped.iter().cloned(),
             ))
     }
@@ -273,47 +274,45 @@ pub(super) fn build(
     source_scan: Option<&ContainerScan<'_>>,
 ) -> Result<Regenerated, CodecError> {
     debug_assert_eq!(sections.len(), stored_time_dates.len());
-    let time_dates = stored_time_dates
-        .iter()
-        .enumerate()
-        .map(|(index, time_date)| match time_date {
-            Some(time_date) => Ok(*time_date),
-            None => u32::try_from(index)
-                .ok()
-                .and_then(|index| PLACEHOLDER_TIME_DATE.checked_add(index))
-                .ok_or_else(|| {
-                    CodecError::NotImplemented(
-                        "SLDPRT section count exceeds the time/date word".into(),
-                    )
-                }),
-        })
-        .collect::<Result<Vec<_>, _>>()?;
     let retained = source_scan.map(retained).transpose()?.flatten();
     let mut dropped = Vec::new();
     let mut members = Vec::<Member<'_>>::new();
-    let mut length = 0usize;
-    for (index, ((name, payload), time_date)) in sections.iter().zip(&time_dates).enumerate() {
-        if !storable_name(name) {
+    let mut count = 0u16;
+    let mut length = 0u32;
+    let mut central_size = 0u32;
+    for (index, ((name, payload), stored)) in sections.iter().zip(stored_time_dates).enumerate() {
+        let time_date = stored.or_else(|| {
+            u32::try_from(index)
+                .ok()
+                .and_then(|index| PLACEHOLDER_TIME_DATE.checked_add(index))
+        });
+        let (Some(time_date), Some(next)) = (
+            time_date.filter(|_| storable_name(name)),
+            count.checked_add(1),
+        ) else {
             dropped.push(name.clone());
             continue;
-        }
-        let relative = u32::try_from(length)
-            .ok()
-            .filter(|_| members.len() < usize::from(u16::MAX));
-        let Some(relative) = relative else {
-            dropped.extend(sections[index..].iter().map(|(name, _)| name.clone()));
-            break;
         };
-        let frame = super::block(payload, name, *time_date)?;
-        length += LOCAL_TOKEN_LEN + frame.len();
+        let frame = super::block(payload, name, time_date)?;
+        let end = u32::try_from(LOCAL_TOKEN_LEN + frame.len())
+            .ok()
+            .and_then(|framed| length.checked_add(framed));
+        let directory = u32::try_from(central::LEN + name.len())
+            .ok()
+            .and_then(|entry| central_size.checked_add(entry));
+        let (Some(end), Some(directory)) = (end, directory) else {
+            dropped.push(name.clone());
+            continue;
+        };
         members.push(Member {
             index,
             name,
             payload,
-            time_date: *time_date,
+            time_date,
             frame,
-            relative,
+            relative: length,
         });
+        (count, length, central_size) = (next, end, directory);
     }
     let mut residual = Vec::new();
     let (header, root, new_local, new_central) = match &retained {
@@ -402,24 +401,29 @@ pub(super) fn build(
                 continue;
             };
             let kept = retained.is_some() && cell_members_unchanged(scan, &cell.name, &written);
-            match scan.source_image.get(range.clone()) {
-                Some(bytes) if kept => output.extend(bytes),
+            let bytes = scan.source_image.get(range.clone());
+            let end = bytes
+                .and_then(|bytes| u32::try_from(bytes.len()).ok())
+                .and_then(|cell| length.checked_add(cell));
+            match (bytes, end) {
+                (Some(bytes), Some(end)) if kept => {
+                    output.extend(bytes);
+                    length = end;
+                }
                 _ => omitted_envelope_bytes += range.len(),
             }
         }
     }
-    let too_large = || {
-        CodecError::NotImplemented(
-            "SLDPRT output exceeds the native envelope's 32-bit offsets".into(),
-        )
-    };
     let central_start = output.len();
-    let count = u16::try_from(central_entries.len()).map_err(|_| too_large())?;
     for directory in central_entries {
         output.extend(directory);
     }
-    let central_size = u32::try_from(output.len() - central_start).map_err(|_| too_large())?;
-    let central_offset = u32::try_from(central_start - outer::LEN).map_err(|_| too_large())?;
+    debug_assert_eq!(usize::try_from(length), Ok(central_start - outer::LEN));
+    debug_assert_eq!(
+        usize::try_from(central_size),
+        Ok(output.len() - central_start)
+    );
+    let central_offset = length;
     output.extend(root);
     output.extend([0u8; 4]);
     output.extend(count.to_le_bytes());
@@ -526,7 +530,7 @@ mod tests {
             [
                 "record.residual-unavailable",
                 "record.residual-unavailable",
-                "native.records-omitted"
+                "value.unwritable"
             ]
         );
 

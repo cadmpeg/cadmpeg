@@ -57,7 +57,11 @@ fn decode(bytes: &[u8], max_retained_bytes: u64) -> Result<Decoded, String> {
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
         .map_err(|error| error.to_string())?;
     let available = ctx.retained_bytes_available();
-    let result = F3dCodec.decode_with_context(&ctx, root);
+    let result = F3dCodec.decode_with_context(
+        &ctx,
+        root,
+        &cadmpeg_ir::report::strictness::Strictness::default(),
+    );
     let retained_bytes = available - ctx.retained_bytes_available();
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(format!("{refusal:?}"));
