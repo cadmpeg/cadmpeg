@@ -2263,8 +2263,7 @@ impl Topology {
 /// missing-field or type error. This is the single version gate: both
 /// [`Deserialize`] for [`CadIr`] and [`CadIr::from_json`] call it.
 fn check_ir_version<E: serde::de::Error>(version: Option<&serde_json::Value>) -> Result<(), E> {
-    let version = version.and_then(serde_json::Value::as_str);
-    if version != Some(IR_VERSION) {
+    if version.and_then(serde_json::Value::as_str) != Some(IR_VERSION) {
         return Err(E::custom(legacy::unsupported_version(version)));
     }
     Ok(())
