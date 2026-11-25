@@ -758,9 +758,12 @@ See [`formats/solidedge.md`](formats/solidedge.md) and
 
 <!-- /generated: dialects onshape -->
 
-The decoder reads one Part Studio from an offline version 1 bundle. It
-composes final STEP geometry and maps supported sketches, variables,
-extrusions, revolves, fillets, chamfers and holes. Historical picks use
-rollback topology. Original members remain embedded assets. Synthetic tests
+The decoder reads the Part Studios and the root assembly of an offline
+version 1 bundle. It composes final STEP geometry and maps supported
+sketches, variables, extrusions, revolves, fillets, chamfers and holes.
+Historical picks use rollback topology. An assembly maps to product
+definitions, occurrences with placements and suppression, grounded joints,
+and mate joints with evaluated connector frames. Mate limits and offsets stay
+in the native feature responses. Original members remain embedded assets. Synthetic tests
 pin the reader projection and resource bounds. Real-file evaluation is
 pending.

@@ -26,6 +26,7 @@ element records. Each record has a `type` and a nonblank `id`.
 A single-Part-Studio bundle selects its sole element. For assembly selection,
 `root_element` accepts an element-ID string or an object with a string `id`.
 Omission and `null` select the first `ASSEMBLY` element in source order.
+An element ID declared more than once selects its first declaration.
 The ID consists of ASCII letters, digits, underscores and hyphens. A Part
 Studio ID forms the member prefix `partstudios/<id>`. An assembly ID forms
 `assemblies/<id>`. `external` entries store `documentId`, `elementId`, and
@@ -300,7 +301,11 @@ microversion matches the pinned document microversion or is omitted, and its
 configuration is omitted, empty, or `default`. Part and body names establish
 a binding when the name is unique in both the Part Studio's part list and
 its final bodies. A Part Studio with one part and one final body establishes
-a binding independently of the name. Two instances of the same part place
-the same product definition. External reference entries supply an omitted
+a binding independently of the name. A microversion equal to the pinned
+document microversion names the same reference as an omitted microversion,
+and a `default` configuration names the same reference as an omitted or empty
+configuration. Two instances of the same part place the same product
+definition. An `Assembly` instance resolves against the `subAssemblies`
+record with the same reference. External reference entries supply an omitted
 `documentMicroversion` through their `microversionId` when the document and
 element identify one microversion.
