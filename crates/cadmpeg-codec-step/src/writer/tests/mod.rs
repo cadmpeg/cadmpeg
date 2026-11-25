@@ -3,6 +3,7 @@
 
 mod accuracy;
 mod approximations;
+mod cages;
 mod collapsed_edges;
 mod cones;
 mod helix;

@@ -109,6 +109,11 @@ pub(crate) fn write_step_outcome(
     opts: &StepWriteOptions,
     recovered_edges: HashSet<EdgeId>,
 ) -> Result<StepWriteOutcome, cadmpeg_core::CodecError> {
+    // STEP holds no cage, so a cage body is not written as an empty shell
+    // either (§5.6); the cage's `geometry.subd-omitted` loss names both.
+    let cage_bodies = cadmpeg_ir::codec::write::cage_bodies(ir);
+    let cageless = cadmpeg_ir::codec::write::without_cage_bodies(ir);
+    let ir = cageless.as_ref().unwrap_or(ir);
     let definitions = ir
         .model
         .product_definitions
@@ -145,6 +150,7 @@ pub(crate) fn write_step_outcome(
     }
     let mut b = Builder::new(ir, schema, recovered_edges)?;
     b.model_name = &opts.product_name;
+    b.cage_bodies = cage_bodies;
     b.build();
     if let Some(error) = b.edge_split_error.take() {
         return Err(error);
@@ -302,6 +308,8 @@ pub(crate) struct Builder<'a> {
     schema: StepSchema,
     recovered_edges: HashSet<EdgeId>,
     model_name: &'a str,
+    /// The bodies of the input that hold only the omitted cages.
+    cage_bodies: Vec<cadmpeg_ir::ids::BodyId>,
     emitter: Emitter,
     losses: Vec<LossNote>,
 
@@ -523,6 +531,7 @@ impl<'a> Builder<'a> {
             schema,
             recovered_edges,
             model_name: "cadmpeg_model",
+            cage_bodies: Vec::new(),
             emitter: Emitter::for_schema(schema),
             losses: Vec::new(),
             points: ir
@@ -744,10 +753,21 @@ impl<'a> Builder<'a> {
         let standalone_items = self.emit_standalone_geometry();
         emitted_items.extend(standalone_items.iter().copied());
         let has_model_items = !emitted_items.is_empty();
-        if cadmpeg_ir::products::stated_definitions(&self.ir.model.product_definitions)
-            .next()
-            .is_none()
-        {
+        let states_structure =
+            cadmpeg_ir::products::stated_definitions(&self.ir.model.product_definitions)
+                .next()
+                .is_some();
+        if states_structure {
+            self.emit_product_graph(context);
+            if !standalone_items.is_empty() {
+                self.emit_shape_representation(
+                    "standalone geometry",
+                    standalone_items,
+                    Vec::new(),
+                    context,
+                );
+            }
+        } else {
             let origin = geometry::placement(
                 &mut self.emitter,
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
@@ -762,20 +782,20 @@ impl<'a> Builder<'a> {
                 "SHAPE_DEFINITION_REPRESENTATION",
                 &format!("{product_def_shape},{representation}"),
             );
-        } else {
-            self.emit_product_graph(context);
-            if !standalone_items.is_empty() {
-                self.emit_shape_representation(
-                    "standalone geometry",
-                    standalone_items,
-                    Vec::new(),
-                    context,
-                );
-            }
         }
+
+        // Every instance emitted from here on writes a record of the
+        // document. Before it, a document that states no structure has only
+        // the writer's context and default product structure in the file.
+        let scaffolding = self.emitter.instance_count();
 
         self.emit_visibility();
         self.emit_tessellations(context);
+        self.emit_presentation(context);
+        self.emit_appearance_visibility();
+        self.emit_pmi(context);
+        self.emit_layers();
+        self.emit_layer_visibility();
         if !has_model_items && self.tessellation_step_refs.is_empty() {
             if !self.ir.geometry.bodies.is_empty() {
                 self.loss(
@@ -783,16 +803,19 @@ impl<'a> Builder<'a> {
                     "no body geometry could be placed in a STEP representation".to_string(),
                 );
             }
-            self.loss(
-                StepLossCode::NoGeometryWritten,
-                "no geometry was written to a STEP representation".to_string(),
-            );
+            if states_structure || self.emitter.instance_count() > scaffolding {
+                self.loss(
+                    StepLossCode::NoGeometryWritten,
+                    "no geometry was written to a STEP representation".to_string(),
+                );
+            } else {
+                self.losses.push(cadmpeg_ir::codec::write::output_empty(
+                    "the written STEP file holds no record of the document: it states no \
+                     geometry, tessellation, product structure, presentation, PMI, or layer \
+                     this writer encodes",
+                ));
+            }
         }
-        self.emit_presentation(context);
-        self.emit_appearance_visibility();
-        self.emit_pmi(context);
-        self.emit_layers();
-        self.emit_layer_visibility();
         self.note_unrepresented();
     }
 
@@ -6577,12 +6600,22 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.ir.geometry.subds.is_empty() {
+            let ir = self.ir;
+            let mut subds = ir
+                .geometry
+                .subds
+                .iter()
+                .map(|subd| subd.id.as_str())
+                .collect::<Vec<_>>();
+            subds.sort_unstable();
             self.loss(
                 StepLossCode::SubdOmitted,
                 format!(
                     "{} subdivision surface(s) were omitted because this STEP writer \
-                     does not encode SubD control cages",
-                    self.ir.geometry.subds.len()
+                     does not encode SubD control cages: {}{}",
+                    subds.len(),
+                    subds.join(", "),
+                    cadmpeg_ir::codec::write::cage_bodies_clause(&self.cage_bodies)
                 ),
             );
         }

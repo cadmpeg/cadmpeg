@@ -131,10 +131,66 @@ const COVERAGE: ArenaDispositions = {
         physics_scenes: Written,
         solver_settings: Written,
         declared_measures: Omitted,
-        design: cadmpeg_ir::codec::write::DesignArenaDispositions::uniform(Omitted),
+        design: cadmpeg_ir::codec::write::DesignArenaDispositions {
+            scopes: Reported,
+            containers: Reported,
+            features: Reported,
+            ..cadmpeg_ir::codec::write::DesignArenaDispositions::uniform(Omitted)
+        },
         process: cadmpeg_ir::codec::write::ProcessArenaDispositions::uniform(Omitted),
     }
 };
+
+/// The loss of the design records the writer does not write: design
+/// features other than joints, except those that restate a model feature,
+/// whose arena the write omits, and the design state of scopes. A
+/// container only groups features, so its features account for it.
+fn design_losses(ir: &CadIr) -> Option<LossNote> {
+    let restated: BTreeSet<&str> = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.id.as_str())
+        .collect();
+    let features = ir
+        .design
+        .features
+        .iter()
+        .filter(|feature| {
+            !matches!(
+                feature.definition.operation,
+                cadmpeg_ir::design::feature::FeatureOperation::Joint(_)
+            ) && !restated.contains(feature.id.as_str())
+        })
+        .count();
+    let scopes = ir
+        .design
+        .scopes
+        .iter()
+        .filter(|scope| {
+            scope.active_configuration.is_some()
+                || !scope.active_arrangements.is_empty()
+                || !scope.occurrences.is_empty()
+        })
+        .count();
+    let parts: Vec<String> = [
+        (features > 0).then(|| format!("{features} design feature(s) other than joints")),
+        (scopes > 0).then(|| {
+            format!(
+                "the configuration, arrangement, and occurrence state of {scopes} design scope(s)"
+            )
+        }),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    (!parts.is_empty()).then(|| {
+        UsdLossCode::ExportDesignNotWritten.note(format!(
+            "{} have no UsdPhysics or PhysX form and were not written",
+            parts.join(" and ")
+        ))
+    })
+}
 
 /// A package member: its name and its content.
 pub(crate) type Member = (String, Vec<u8>);
@@ -164,19 +220,29 @@ pub(crate) fn plan(
             )))
         }
     };
-    let mut writer = Writer::new(input.ir, version, input.scene, metres);
+    // USD holds no cage, so a cage body is not written either (§5.6); the
+    // `subds` coverage charges the cage.
+    let cageless = cadmpeg_ir::codec::write::without_cage_bodies(input.ir);
+    let written = cageless.as_ref().unwrap_or(input.ir);
+    let mut writer = Writer::new(written, version, input.scene, metres);
     if packaged {
         writer.package = Some(Vec::new());
         writer.assets = input.assets;
     }
-    let text = writer.layer();
-    let losses = writer.losses();
+    let (text, holds_prims) = writer.layer();
+    let mut losses = writer.losses();
+    if !holds_prims {
+        losses.push(cadmpeg_ir::codec::write::output_empty(
+            "the written USD layer holds no prim: the document states no occurrence, body, \
+             mesh, curve, point, material, or physics record this writer encodes",
+        ));
+    }
     let members = writer.package.take().unwrap_or_default();
     let body = ExportBody {
         bytes: text.into_bytes(),
         census: cadmpeg_ir::report::export::EntityCensus {
             basis: cadmpeg_ir::report::export::CensusBasis::IrArenas,
-            counts: input.ir.census(),
+            counts: written.census(),
         },
         write_path: WritePath::Synthesized {
             consumption: Consumption::NotConsumed,
@@ -549,7 +615,9 @@ impl<'ir> Writer<'ir> {
         }
     }
 
-    fn layer(&mut self) -> String {
+    /// The layer text, and whether it holds a prim. Every prim writes a
+    /// record of the document; the layer metadata is the writer's own.
+    fn layer(&mut self) -> (String, bool) {
         // A root definition the source names, or one that owns bodies beside
         // stating structure, is written as the root prim; an unnamed one is
         // the layer itself, and its occurrences are the root prims.
@@ -600,7 +668,7 @@ impl<'ir> Writer<'ir> {
             || !free_curves.is_empty()
             || !free_points.is_empty();
         let mut names = Names::default();
-        let physics = !self.ir.model.assembly_joints.is_empty()
+        let physics = !self.physics.joints.is_empty()
             || !self.ir.model.physical_materials.is_empty()
             || !self.ir.model.physics_scenes.is_empty();
         let default_prim = match roots.as_slice() {
@@ -653,6 +721,8 @@ impl<'ir> Writer<'ir> {
         }
         let (prims, unresolved) = physx::resolve(&prims, &self.target_paths);
         self.unwritten.solver_properties += unresolved + self.physics.unwritten_settings;
+        self.unwritten.joints += self.physics.unwritten_joints;
+        self.unwritten.joint_properties += self.physics.unwritten_joint_properties;
         let mut header = Emitter::default();
         header.line(&format!("#usda {}", self.version));
         header.line("(");
@@ -669,7 +739,8 @@ impl<'ir> Writer<'ir> {
         header.line(&format!("    upAxis = {}", quoted(self.up_axis)));
         header.line(")");
         header.blank();
-        header.finish() + &prims
+        let holds_prims = !prims.trim().is_empty();
+        (header.finish() + &prims, holds_prims)
     }
 
     /// The `Looks` scope with one material per appearance, under the root
@@ -1998,6 +2069,9 @@ impl<'ir> Writer<'ir> {
                  does not name and were not written",
                 unwritten.joint_drives
             )));
+        }
+        if let Some(note) = design_losses(self.ir) {
+            losses.push(note);
         }
         if !unwritten.unmeshed.is_empty() {
             losses.push(UsdLossCode::ExportFaceNotWritten.note(format!(

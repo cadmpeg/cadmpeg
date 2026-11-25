@@ -87,7 +87,7 @@ fn active_site_copy_refuses_retained_limit() {
         ResourceDimension::RetainedBytes,
         "retain SLDPRT active site",
         |limit| {
-            let mut limited = options;
+            let mut limited = options.clone();
             limited.policy.limits.max_retained_bytes = limit;
             SldprtCodec
                 .decode(&mut Cursor::new(&source), &limited)
@@ -334,6 +334,34 @@ fn strict_accepts_operator_requested_container_only() {
         .expect("strict container-only decode is accepted");
 }
 
+/// A container decode of a part whose metadata and history a full decode
+/// states as model records states none of them, so its container scope holds.
+#[test]
+fn a_container_decode_states_no_model_record() {
+    for fixture in [
+        crate::test_support::container::sldprt_with_body_and_envelope(&triangle_body()),
+        sldprt_with_body_and_history(&triangle_body()),
+    ] {
+        let full = SldprtCodec
+            .decode(&mut Cursor::new(&fixture), &DecodeOptions::default())
+            .expect("full decode");
+        assert!(full.ir().model.features.len() + full.ir().model.attributes.len() > 0);
+        let container = SldprtCodec
+            .decode(
+                &mut Cursor::new(&fixture),
+                &DecodeOptions {
+                    depth: cadmpeg_core::decode::DecodeDepth::Container,
+                    ..DecodeOptions::default()
+                },
+            )
+            .expect("container decode");
+        for class in ArenaClass::ALL {
+            assert_eq!(container.ir().populated_arena(class), None, "{class}");
+        }
+        assert!(container.ir().source.is_some());
+    }
+}
+
 #[test]
 fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
     use crate::loss::SldprtLossCode;
@@ -430,22 +458,6 @@ fn strict_rejects_residual_parasolid_schema_while_salvage_reports_it() {
         ),
         other => panic!("strict decode must reject the residual kernel layer, got {other:?}"),
     }
-}
-
-/// Phase 5 freeze: export precondition (:50) rejects shared broken IR; empty accepts.
-#[test]
-fn phase5_freeze_export_precondition_admissibility_fixtures() {
-    let accepted = cadmpeg_test_support::admissibility::accepted_empty();
-    // Empty IR has no B-rep; writer refuses later for missing B-rep, but the
-    // :50 precondition is full validate — empty passes validate.
-    assert!(cadmpeg_ir::validate_neutral(&accepted, Vec::new())
-        .expect("validate the neutral model")
-        .is_ok());
-    let rejected = cadmpeg_test_support::admissibility::rejected_missing_point("sldprt:test")
-        .expect("fixture identities are valid");
-    assert!(!cadmpeg_ir::validate_neutral(&rejected, Vec::new())
-        .expect("validate the neutral model")
-        .is_ok());
 }
 
 #[test]

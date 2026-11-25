@@ -82,3 +82,40 @@ fn a_hidden_free_carrier_with_a_colour_is_hidden_by_its_binding() {
     };
     assert_eq!(binding.visible, Some(false));
 }
+
+#[test]
+fn a_cage_body_is_placed_by_its_cage_object() {
+    let mut ir = CadIr::empty();
+    let body = BodyId::mint("rhino:object:body#cage").expect("identity grammar");
+    ir.geometry.push_cage_object(
+        cadmpeg_ir::SubdSurface {
+            id: cadmpeg_ir::ids::SubdId::mint("rhino:object:subd#cage").expect("identity grammar"),
+            scheme: cadmpeg_ir::SubdScheme::CatmullClark,
+            source_object: Some(SourceObjectAssociation {
+                format: cadmpeg_ir::codec_id!("rhino"),
+                object_id: cadmpeg_core::nonblank_literal!("cage"),
+                geometry_role: None,
+                instance_path: Vec::new(),
+            }),
+            cage: cadmpeg_ir::subd::SubdCage::default(),
+            native_ref: None,
+        },
+        body.clone(),
+        cadmpeg_ir::ids::RegionId::mint("rhino:object:region#cage").expect("identity grammar"),
+        cadmpeg_ir::ids::ShellId::mint("rhino:object:shell#cage").expect("identity grammar"),
+    );
+    let presentation = ObjectPresentation {
+        display: ObjectDisplay {
+            name: None,
+            color: None,
+            visible: Some(true),
+        },
+        layer_index: Some(3),
+    };
+    let lookup = |association: Option<&SourceObjectAssociation>| {
+        association
+            .filter(|association| association.object_id.as_str() == "cage")
+            .map(|_| &presentation)
+    };
+    assert_eq!(body_objects(&ir, &lookup), [(body, &presentation)]);
+}
