@@ -1590,6 +1590,41 @@ mod tests {
     }
 
     #[test]
+    fn editing_the_appended_suffix_keeps_the_prefix_index() {
+        let (prefix, suffix) = ("test:model:point#prefix", "test:model:point#suffix");
+        let mut ir = CadIr::empty();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+        let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
+        session
+            .commit_model(point_draft(prefix))
+            .unwrap()
+            .expect("prefix commit");
+        assert!(session.contains(prefix).unwrap());
+        let checkpoint = ModelCheckpoint::capture(session.document());
+        session
+            .commit_model(point_draft(suffix))
+            .unwrap()
+            .expect("suffix commit");
+
+        // Rolling the suffix back through an edit must forget exactly the suffix.
+        let document = session.edit_appended_model(&checkpoint).unwrap();
+        checkpoint.discard_appended(document).unwrap();
+        assert!(session.contains(prefix).unwrap());
+        assert!(!session.contains(suffix).unwrap());
+        assert_eq!(
+            session.commit_model(point_draft(prefix)).unwrap(),
+            Err(DraftError::IdentityCollision(prefix.into()))
+        );
+        session
+            .commit_model(point_draft(suffix))
+            .unwrap()
+            .expect("the discarded suffix identity is free again");
+        assert!(session.contains(suffix).unwrap());
+        drop(session);
+        assert_eq!(ir.geometry.points.len(), 2);
+    }
+
+    #[test]
     fn commit_session_rejects_cross_draft_identity_collision() {
         let mut ir = CadIr::empty();
         let ctx = cadmpeg_core::decode::test_support::service_decode_context();
