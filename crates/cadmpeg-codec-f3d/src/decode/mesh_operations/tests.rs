@@ -1,6 +1,6 @@
 use super::*;
-use cadmpeg_ir::math::Point3;
 use crate::records::feature::scope::DesignFeatureKind;
+use cadmpeg_ir::math::Point3;
 
 fn convert(
     fields: MeshOperationFields,
