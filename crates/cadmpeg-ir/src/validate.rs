@@ -23,7 +23,7 @@ use cadmpeg_core::CodecError;
 pub mod admit;
 mod annotations_native;
 mod appearance_attributes;
-mod carriers_parameterization;
+pub(crate) mod carriers_parameterization;
 mod cycles;
 pub(crate) mod design;
 mod drawings;

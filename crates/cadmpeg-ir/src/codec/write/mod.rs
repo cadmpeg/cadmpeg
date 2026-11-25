@@ -732,7 +732,14 @@ fn within_the_bounds(
     };
     let mut ir = ir.clone();
     let held = holds_records(&ir);
-    let mut losses = unstate_outside(&mut ir, &measured.outside)?;
+    let mut losses = Vec::new();
+    for unstated in crate::bounds::unstate_outside(&mut ir, &measured.outside)? {
+        losses.extend(value_unwritable(
+            CadirEncoder::FORMAT.as_str(),
+            &format!("writes {}", unstated.what),
+            [unstated.field],
+        ));
+    }
     let (restated, records) = restate_expressions_past_the_bound(&mut ir, &measured.records)?;
     losses.extend(restated);
     losses.extend(drop_records_past_the_bounds(&mut ir, &records)?);
@@ -744,94 +751,6 @@ fn within_the_bounds(
         ir = CadIr::empty();
     }
     Ok((ir, losses))
-}
-
-/// Writes each value of `outside`, which belongs to no record and passes a
-/// bound, as the value it takes when unstated (§2.4). An entry of the name
-/// table states its native name alone, or is not written where it has
-/// none (§5.7); any other field takes its value in the empty document. Each
-/// charges one `export:value.unwritable` that names the field.
-fn unstate_outside(
-    ir: &mut CadIr,
-    outside: &std::collections::BTreeMap<crate::bounds::Outside, crate::bounds::Bound>,
-) -> Result<Vec<LossNote>, CodecError> {
-    let mut losses = Vec::new();
-    for (place, bound) in outside.iter().rev() {
-        let reason = match (place.field.as_str(), place.entry) {
-            ("design.names", Some(entry)) => {
-                let mut entries = ir.design.names.entries().clone();
-                let Some((entity, mut stated)) = entries
-                    .iter()
-                    .nth(entry)
-                    .map(|(entity, stated)| (entity.clone(), stated.clone()))
-                else {
-                    continue;
-                };
-                let reason = if stated.native.is_some() {
-                    stated.name = None;
-                    entries.insert(entity.clone(), stated);
-                    format!(
-                        "writes the name of {} with its native name alone, since its name {}",
-                        entity.id(),
-                        bound.describe()
-                    )
-                } else {
-                    entries.remove(&entity);
-                    format!(
-                        "writes no name of {}, since its name {}",
-                        entity.id(),
-                        bound.describe()
-                    )
-                };
-                ir.design.names = entries.into();
-                reason
-            }
-            (field, _) => {
-                unstate(ir, field)?;
-                format!(
-                    "writes the unstated value of a field that {}",
-                    bound.describe()
-                )
-            }
-        };
-        losses.extend(value_unwritable(
-            CadirEncoder::FORMAT.as_str(),
-            &reason,
-            [place.field.clone()],
-        ));
-    }
-    Ok(losses)
-}
-
-/// Replaces `field` of `ir`, a root member or `home.field`, by its value in
-/// the empty document, or removes it where the empty document omits it.
-fn unstate(ir: &mut CadIr, field: &str) -> Result<(), CodecError> {
-    let malformed = |error: String| CodecError::Malformed(error);
-    let mut document = crate::hash::finite_json::to_json_value(&*ir)
-        .map_err(|error| malformed(error.to_string()))?;
-    let empty = crate::hash::finite_json::to_json_value(&CadIr::empty())
-        .map_err(|error| malformed(error.to_string()))?;
-    let pointer = format!("/{}", field.replace('.', "/"));
-    let unstated = empty.pointer(&pointer).cloned();
-    let Some((parent, key)) = pointer.rsplit_once('/') else {
-        return Ok(());
-    };
-    let Some(parent) = document
-        .pointer_mut(parent)
-        .and_then(serde_json::Value::as_object_mut)
-    else {
-        return Ok(());
-    };
-    match unstated {
-        Some(value) => {
-            parent.insert(key.to_owned(), value);
-        }
-        None => {
-            parent.remove(key);
-        }
-    }
-    *ir = serde_json::from_value(document).map_err(|error| malformed(error.to_string()))?;
-    Ok(())
 }
 
 /// States `Source` with no tokens each expression past its bound in the

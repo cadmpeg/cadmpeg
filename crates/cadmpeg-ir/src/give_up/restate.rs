@@ -90,12 +90,14 @@ enum Fate {
     Lost,
 }
 
-/// Whether `value` holds a string of `gone`.
+/// Whether `value` holds a string of `gone`, as a value or as a key.
 pub(crate) fn names(value: &Value, gone: &BTreeSet<String>) -> bool {
     match value {
         Value::String(text) => gone.contains(text.as_str()),
         Value::Array(items) => items.iter().any(|item| names(item, gone)),
-        Value::Object(map) => map.values().any(|item| names(item, gone)),
+        Value::Object(map) => map
+            .iter()
+            .any(|(key, item)| gone.contains(key.as_str()) || names(item, gone)),
         Value::Null | Value::Bool(_) | Value::Number(_) => false,
     }
 }
@@ -234,6 +236,8 @@ impl<'a> Restate<'a> {
         candidates.next().is_none().then_some(first)
     }
 
+    /// An object whose keys are the ids of a map loses the entry whose key
+    /// is a lost id: the map is keyed by its members' own ids.
     fn object(&self, node: &Value, map: &mut Map<String, Value>) -> Fate {
         let properties = node.get("properties").and_then(Value::as_object);
         let patterned = node
@@ -246,6 +250,16 @@ impl<'a> Restate<'a> {
             .filter(|schema| schema.is_object())
             .or(patterned);
         let mut fate = Fate::Clean;
+        if values.is_some() {
+            let before = map.len();
+            map.retain(|key, _| {
+                !self.gone.contains(key.as_str())
+                    || properties.is_some_and(|properties| properties.contains_key(key))
+            });
+            if map.len() != before {
+                fate = Fate::Kept;
+            }
+        }
         for (key, value) in map.iter_mut() {
             let child = match properties
                 .and_then(|properties| properties.get(key))

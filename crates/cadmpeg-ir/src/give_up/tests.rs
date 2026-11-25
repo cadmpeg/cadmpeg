@@ -710,3 +710,190 @@ fn a_shell_that_loses_its_cage_states_its_members_unstated() {
         after.difference(&before).collect::<Vec<_>>()
     );
 }
+
+/// Each finding of `ir` of the checks of `checks`, by rule and record.
+fn findings(
+    ir: &CadIr,
+    checks: &[crate::report::check::Check],
+) -> BTreeSet<(String, Option<String>)> {
+    crate::validate::validate_neutral(ir, Vec::new())
+        .expect("validation runs")
+        .findings
+        .into_iter()
+        .filter(|finding| checks.contains(&finding.check))
+        .map(|finding| (finding.rule.as_str().to_owned(), finding.entity))
+        .collect()
+}
+
+#[track_caller]
+fn assert_no_dangling_reference(ir: &CadIr) {
+    let dangling = findings(ir, &[crate::report::check::Check::ReferentialIntegrity]);
+    assert!(dangling.is_empty(), "{dangling:#?}");
+}
+
+/// The design document whose evaluation `after-extrude` stores a delta
+/// that holds its own version of the cube's first face, a face of its own
+/// on the cube's shell, and the removal of that shell, with the ids of the
+/// shell, the first face, and the delta's own face.
+fn stored_state() -> (CadIr, String, String, String) {
+    use crate::design::refs::RecordRef;
+    let mut ir = crate::validate::design::fixture::document();
+    let face = ir.geometry.faces[0].clone();
+    let shell = face.shell.clone();
+    let own = crate::topology::Face {
+        id: crate::ids::FaceId::mint("test:design:face#delta").unwrap(),
+        loops: FaceLoops::PartialUnspecified { loops: Vec::new() },
+        ..face.clone()
+    };
+    let delta = &mut ir.design.evaluations[0]
+        .content
+        .as_mut()
+        .expect("the fixture stores the state")
+        .delta;
+    delta.records.faces = vec![face.clone(), own.clone()];
+    delta.removed = vec![RecordRef::Shell(shell.clone())];
+    ir.finalize();
+    (
+        ir,
+        shell.as_str().to_owned(),
+        face.id.as_str().to_owned(),
+        own.id.as_str().to_owned(),
+    )
+}
+
+fn after_extrude(ir: &CadIr) -> &crate::design::evaluation::Evaluation {
+    ir.design
+        .evaluations
+        .iter()
+        .find(|evaluation| evaluation.id.as_str() == "test:design:evaluation#after-extrude")
+        .expect("the evaluation stays")
+}
+
+fn delta(ir: &CadIr) -> &crate::design::evaluation::StateDelta {
+    &after_extrude(ir)
+        .content
+        .as_ref()
+        .expect("the evaluation keeps its stored state")
+        .delta
+}
+
+/// A stored state loses only the records of its delta that need a given-up
+/// id, and keeps each record of its own of that id (§3.3, §5.4).
+#[test]
+fn a_stored_state_loses_only_what_of_its_delta_needs_a_given_up_record() {
+    let (mut ir, shell, face, own) = stored_state();
+    assert_no_dangling_reference(&ir);
+    let (outcome, _) = run(&mut ir, seed("geometry", "shells", &shell));
+    let evaluation = after_extrude(&ir).id.as_str().to_owned();
+    assert!(!outcome.dropped.contains(&evaluation), "{outcome:?}");
+    assert!(outcome.marked.contains(&evaluation), "{outcome:?}");
+    assert!(outcome.dropped.contains(&own), "{outcome:?}");
+    assert!(delta(&ir).records.faces.is_empty());
+    assert!(delta(&ir).removed.is_empty());
+    assert_no_dangling_reference(&ir);
+
+    let (mut ir, _, face_id, _) = stored_state();
+    let (outcome, _) = run(&mut ir, seed("geometry", "faces", &face_id));
+    let evaluation = after_extrude(&ir).id.as_str().to_owned();
+    assert!(!outcome.dropped.contains(&evaluation), "{outcome:?}");
+    let held: BTreeSet<&str> = delta(&ir)
+        .records
+        .faces
+        .iter()
+        .map(|face| face.id.as_str())
+        .collect();
+    assert_eq!(held, BTreeSet::from([face.as_str(), own.as_str()]));
+    assert_eq!(delta(&ir).removed.len(), 1);
+    assert_no_dangling_reference(&ir);
+}
+
+/// A configuration and an arrangement that override a given-up parameter
+/// lose that override: their overrides are keyed by their members' own ids
+/// (§3.3).
+#[test]
+fn an_override_keyed_by_a_given_up_record_is_released() {
+    use crate::design::configuration::{
+        Arrangement, ArrangementKind, Overrides, ParameterOverride,
+    };
+    use crate::design::expr::{Expression, Neutral, Node};
+    use crate::validate::design::fixture::{id, parameter};
+
+    let mut ir = crate::validate::design::fixture::document();
+    let length = parameter("length", crate::design::units::ValueKind::Boolean);
+    let overrides = || Overrides {
+        parameters: [(
+            length.id.clone(),
+            ParameterOverride {
+                expression: Some(Expression::Neutral(Neutral(Node::Boolean(true)))),
+                value: None,
+            },
+        )]
+        .into_iter()
+        .collect(),
+        ..Overrides::default()
+    };
+    for configuration in &mut ir.design.configurations {
+        configuration.overrides = overrides();
+    }
+    ir.design.arrangements.push(Arrangement {
+        id: id("arrangement", "shown"),
+        scope: id("definition", "part"),
+        name: cadmpeg_core::text::NonBlankString::new("shown").unwrap(),
+        kind: ArrangementKind::Display,
+        configuration: None,
+        overrides: overrides(),
+        appearances: Vec::new(),
+        moves: Vec::new(),
+        nested: Vec::new(),
+        native_ref: None,
+    });
+    ir.design.parameters.push(length.clone());
+    ir.finalize();
+    assert_no_dangling_reference(&ir);
+
+    let (outcome, _) = run(&mut ir, seed("design", "parameters", length.id.as_str()));
+    assert!(outcome.dropped.is_empty(), "{outcome:?}");
+    let holders: BTreeSet<String> = ir
+        .design
+        .configurations
+        .iter()
+        .map(|configuration| configuration.id.as_str().to_owned())
+        .chain(
+            ir.design
+                .arrangements
+                .iter()
+                .map(|arrangement| arrangement.id.as_str().to_owned()),
+        )
+        .collect();
+    assert_eq!(holders.len(), 3);
+    assert_eq!(outcome.marked, holders);
+    assert!(ir
+        .design
+        .configurations
+        .iter()
+        .all(|configuration| configuration.overrides.parameters.is_empty()));
+    assert!(ir.design.arrangements[0].overrides.parameters.is_empty());
+    assert_no_dangling_reference(&ir);
+}
+
+/// A carrier that the give-up leaves with no user is dropped with the
+/// records that needed the given-up record.
+#[test]
+fn a_carrier_left_with_no_user_is_dropped() {
+    let mut ir = crate::examples::unit_cube().unwrap();
+    let face = ir.geometry.faces[0].clone();
+    let checks = [
+        crate::report::check::Check::ReferentialIntegrity,
+        crate::report::check::Check::CarrierReachability,
+    ];
+    assert!(findings(&ir, &checks).is_empty());
+
+    let (outcome, _) = run(&mut ir, seed("geometry", "faces", face.id.as_str()));
+    assert!(
+        outcome.dropped.contains(face.surface.as_str()),
+        "{outcome:?}"
+    );
+    assert!(!holds(&ir, face.surface.as_str()));
+    let after = findings(&ir, &checks);
+    assert!(after.is_empty(), "{after:#?}");
+}

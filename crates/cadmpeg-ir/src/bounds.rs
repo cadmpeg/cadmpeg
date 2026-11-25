@@ -431,5 +431,104 @@ impl<W: Write> Write for Measure<W> {
     }
 }
 
+/// A value outside every record that [`unstate_outside`] stated in its
+/// unstated form: its field, and what the document states in its place.
+#[derive(Debug)]
+pub(crate) struct Unstated {
+    pub(crate) field: String,
+    pub(crate) what: String,
+}
+
+/// States each value of `outside`, which belongs to no record and passes a
+/// bound, as the value it takes when unstated (§2.4). An entry of the name
+/// table states its native name alone, or is removed where it has none
+/// (§5.7); any other field takes its value in the empty document.
+///
+/// # Errors
+///
+/// [`CodecError::Malformed`] where the document does not read back from its
+/// JSON.
+pub(crate) fn unstate_outside(
+    ir: &mut crate::document::CadIr,
+    outside: &BTreeMap<Outside, Bound>,
+) -> Result<Vec<Unstated>, cadmpeg_core::CodecError> {
+    let mut unstated = Vec::new();
+    for (place, bound) in outside.iter().rev() {
+        let what = match (place.field.as_str(), place.entry) {
+            ("design.names", Some(entry)) => {
+                let mut entries = ir.design.names.entries().clone();
+                let Some((entity, mut stated)) = entries
+                    .iter()
+                    .nth(entry)
+                    .map(|(entity, stated)| (entity.clone(), stated.clone()))
+                else {
+                    continue;
+                };
+                let what = if stated.native.is_some() {
+                    stated.name = None;
+                    entries.insert(entity.clone(), stated);
+                    format!(
+                        "the name of {} with its native name alone, since its name {}",
+                        entity.id(),
+                        bound.describe()
+                    )
+                } else {
+                    entries.remove(&entity);
+                    format!(
+                        "no name of {}, since its name {}",
+                        entity.id(),
+                        bound.describe()
+                    )
+                };
+                ir.design.names = entries.into();
+                what
+            }
+            (field, _) => {
+                unstate(ir, field)?;
+                format!("the unstated value of a field that {}", bound.describe())
+            }
+        };
+        unstated.push(Unstated {
+            field: place.field.clone(),
+            what,
+        });
+    }
+    Ok(unstated)
+}
+
+/// Replaces `field` of `ir`, a root member or `home.field`, by its value in
+/// the empty document, or removes it where the empty document omits it. The
+/// arenas the wire omits keep their records.
+fn unstate(ir: &mut crate::document::CadIr, field: &str) -> Result<(), cadmpeg_core::CodecError> {
+    let malformed = |error: String| cadmpeg_core::CodecError::Malformed(error);
+    let mut document = crate::hash::finite_json::to_json_value(&*ir)
+        .map_err(|error| malformed(error.to_string()))?;
+    let empty = crate::hash::finite_json::to_json_value(&crate::document::CadIr::empty())
+        .map_err(|error| malformed(error.to_string()))?;
+    let pointer = format!("/{}", field.replace('.', "/"));
+    let unstated = empty.pointer(&pointer).cloned();
+    let Some((parent, key)) = pointer.rsplit_once('/') else {
+        return Ok(());
+    };
+    let Some(parent) = document
+        .pointer_mut(parent)
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return Ok(());
+    };
+    match unstated {
+        Some(value) => {
+            parent.insert(key.to_owned(), value);
+        }
+        None => {
+            parent.remove(key);
+        }
+    }
+    let decoded = serde_json::from_value(document).map_err(|error| malformed(error.to_string()))?;
+    let original = std::mem::replace(ir, decoded);
+    ir.model.adopt_omitted_arenas(&original.model);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests;

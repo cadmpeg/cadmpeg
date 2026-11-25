@@ -891,6 +891,13 @@ macro_rules! declare_topology {
                 SortedTopology { $($field: sorted_model_value!(self, $field),)* }
             }
 
+            /// The id of each record of each arena.
+            pub(crate) fn identities(&self) -> Vec<&str> {
+                let mut ids = Vec::new();
+                $(ids.extend(self.$field.iter().map(crate::schema::ArenaRecord::record_identity));)*
+                ids
+            }
+
             /// Moves every arena from another topology.
             pub(crate) fn append(&mut self, mut other: Self) {
                 self.append_arenas(&mut other);
@@ -1175,8 +1182,16 @@ macro_rules! declare_document_arenas {
             /// The references of the document, from one walk of its records
             /// (§3.3).
             pub(crate) fn references(&self) -> crate::give_up::References {
+                self.references_from(crate::give_up::References::default())
+            }
+
+            /// The references of the document added to `references`, which
+            /// counts the ids it names that the document does not hold.
+            pub(crate) fn references_from(
+                &self,
+                mut references: crate::give_up::References,
+            ) -> crate::give_up::References {
                 use crate::schema::ArenaRecord;
-                let mut references = crate::give_up::References::default();
                 $(for entity in &self.$home.$field {
                     references.hold(entity.record_identity());
                 })*

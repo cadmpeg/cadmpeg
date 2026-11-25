@@ -1012,37 +1012,37 @@ impl CodecBackend for DeepContextCodec {
     }
 }
 
+/// A value outside every record that passes a bound is stated as the value
+/// it takes when unstated, with one `record.unreadable` Error that names its
+/// field, so the decode returns a document within the bounds (§2.5, §3.3)
+/// and digests it.
 #[test]
-fn a_document_without_canonical_json_keeps_no_content_digest_and_reads_as_edited() {
+fn a_value_past_the_bound_outside_every_record_is_unstated_with_its_loss() {
     let result = DeepContextCodec
         .decode(&mut Cursor::new(Vec::new()), &DecodeOptions::default())
-        .expect("a digest the walk refuses does not refuse the decode");
-    assert_eq!(result.source_fidelity().content_digest, None);
-    assert!(result.source_fidelity().edited(result.ir()).unwrap());
-    let unavailable = result
+        .expect("a value past the bound does not refuse the decode");
+    assert!(result.ir().repro.is_none());
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    assert_eq!(
+        result.source_fidelity().content_digest,
+        Some(crate::hash::content_digest(&ctx, result.ir()).unwrap())
+    );
+    assert!(!result
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code.to_string() == "decode/content-digest.unavailable")
-        .collect::<Vec<_>>();
-    let [loss] = unavailable.as_slice() else {
-        panic!("one loss for the missing digest: {unavailable:?}");
-    };
-    assert_eq!(loss.severity, crate::report::Severity::Warning);
-    let outside = result
+        .any(|loss| loss.code.to_string() == "decode/content-digest.unavailable"));
+    let unreadable = result
         .report()
         .losses
         .iter()
         .filter(|loss| loss.code == crate::unknown::part::record_unreadable_kind())
         .collect::<Vec<_>>();
-    let [loss] = outside.as_slice() else {
-        panic!("one loss for the depth outside every record: {outside:?}");
+    let [loss] = unreadable.as_slice() else {
+        panic!("one loss for the value outside every record: {unreadable:?}");
     };
-    assert!(
-        loss.message.contains("outside every record"),
-        "{}",
-        loss.message
-    );
+    assert_eq!(loss.severity, crate::report::Severity::Error);
+    assert!(loss.message.contains("(repro)"), "{}", loss.message);
 }
 
 /// A decoder that states, beside the unit cube, two native records: one at

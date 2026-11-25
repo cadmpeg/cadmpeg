@@ -167,3 +167,26 @@ fn the_measure_places_each_record_holding_an_expression_past_its_bound() {
     );
     assert!(found.outside.is_empty());
 }
+
+/// Unstating a field keeps the records of the arenas the CADIR wire omits,
+/// so the document's census counts them.
+#[test]
+fn an_unstated_field_keeps_the_arenas_the_wire_omits() {
+    let mut ir = crate::examples::unit_cube_with_history_body().unwrap();
+    let held = ir.model.history_bodies.clone();
+    assert!(!held.is_empty());
+    let before = ir.census();
+    let outside = BTreeMap::from([(
+        Outside {
+            field: "source".to_owned(),
+            entry: None,
+        },
+        Bound::Document,
+    )]);
+    let unstated = super::unstate_outside(&mut ir, &outside).unwrap();
+    assert_eq!(unstated.len(), 1);
+    assert_eq!(unstated[0].field, "source");
+    assert!(ir.source.is_none());
+    assert_eq!(ir.model.history_bodies, held);
+    assert_eq!(ir.census(), before);
+}
