@@ -509,6 +509,21 @@ impl DecodeReport {
         }
     }
 
+    /// The report of a CADIR read, for the sidecar of a document written
+    /// from it: its losses are the read's report, and it delivered `depth`,
+    /// the depth of the document's scope (§3.3, Reading CADIR).
+    #[must_use]
+    pub fn of_cadir_read(losses: Vec<LossNote>, depth: DecodeDepth) -> Self {
+        Self {
+            classification: FormatIdentity::unclassified(crate::codec_id!("cadir")),
+            transfer: DecodeTransfer::at(depth, true),
+            coverage: Coverage::default(),
+            losses,
+            notes: Vec::new(),
+            transfer_ledger: TransferLedger::default(),
+        }
+    }
+
     /// Returns the source format id.
     #[must_use]
     pub fn format(&self) -> &str {

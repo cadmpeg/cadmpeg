@@ -131,9 +131,9 @@ fn take_expression_past() -> bool {
     EXPRESSION_PAST.with(|past| past.replace(false))
 }
 
-/// The bound a record passes.
+/// The depth bound of §2.5 that a record or a document passes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Bound {
+pub enum Bound {
     /// [`MAX_DOCUMENT_DEPTH`].
     Document,
     /// [`MAX_EXPRESSION_DEPTH`].

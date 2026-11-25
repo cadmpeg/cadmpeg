@@ -34,76 +34,8 @@ def command(arguments: list[str], packages: list[str], *, full: bool = False,
     return ['cargo', arguments[0], '-q', *scope, *arguments[1:]]
 
 
-# Crates whose single-process rustc RSS exceeds ~3 GiB and therefore swap
-# heavily when compiled concurrently on low-RAM runners (e.g. 7 GiB macOS).
-HEAVY_CODECS = (
-    'cadmpeg-codec-f3d',
-    'cadmpeg-codec-sldprt',
-    'cadmpeg-codec-nx',
-    'cadmpeg-codec-catia',
-    'cadmpeg-codec-creo',
-)
-
-# Lightweight and medium workspace crates that fit two concurrent rustc
-# processes comfortably inside 7 GiB RAM once cadmpeg-ir is built.
-MEDIUM_CRATES = (
-    'cadmpeg-asm',
-    'cadmpeg-parasolid',
-    'cadmpeg-measure',
-    'cadmpeg-tessellate',
-    'cadmpeg-protein',
-    'cadmpeg-test-support',
-    'cadmpeg-codec-step',
-    'cadmpeg-codec-iges',
-    'cadmpeg-codec-freecad',
-    'cadmpeg-codec-inventor',
-    'cadmpeg-codec-rhino',
-    'cadmpeg-codec-sat',
-    'cadmpeg-codec-usd',
-    'cadmpeg-codec-pvz',
-    'cadmpeg-codec-solidedge',
-    'cadmpeg-codec-edrawings',
-    'cadmpeg-codec-onshape',
-)
-
-HEAVY_CRATES = ('cadmpeg-ir', *HEAVY_CODECS)
-
-# Runners at or below this GiB ceiling pre-build heavy crates one at a time.
-LOW_RAM_GIB = 10
-# Runners at or below this GiB ceiling cap full builds at two parallel jobs.
-BROAD_BUILD_CAP_RAM_GIB = 18
-
-
-def low_ram_prebuild_commands(arguments: list[str]) -> list[tuple[int | None, list[str]]]:
-    """Return `(jobs_override, argv)` pre-build stages for a full low-RAM nextest run.
-
-    Each stage enables the workspace test-support features so Cargo reuses
-    every compiled artifact without rebuilding during the final `--workspace`
-    invocation.
-    """
-    extra = [arg for arg in arguments[2:] if arg not in ('--no-fail-fast', '--no-run')]
-    base = ['cargo', 'nextest', 'run', '--cargo-quiet', '--no-run']
-    stage_core = [
-        *base,
-        '-p', 'cadmpeg-core',
-        '-p', 'cadmpeg-container',
-        '--features', 'cadmpeg-core/test-support',
-        *extra,
-    ]
-    stage_ir = [*base, '-p', 'cadmpeg-ir', *extra]
-    stage_medium = [
-        *base,
-        *(item for crate in MEDIUM_CRATES for item in ('-p', crate)),
-        '--features',
-        'cadmpeg-asm/test-support,cadmpeg-measure/test-support,cadmpeg-parasolid/test-support',
-        *extra,
-    ]
-    stage_heavy = [
-        *base,
-        *(item for crate in HEAVY_CODECS for item in ('-p', crate)),
-        *extra,
-    ]
-    return [(None, stage_core), (1, stage_ir), (2, stage_medium), (1, stage_heavy)]
+# Runners at or below this many GiB build with at most two parallel jobs.
+TWO_JOB_RAM_GIB = 18
 
 
 def main() -> int:
@@ -120,21 +52,10 @@ def main() -> int:
     ram_text = os.environ.get('CI_RUNNER_RAM_GIB', '').strip()
     ram_gib = int(ram_text) if ram_text.isdigit() else None
     env: dict[str, str] | None = None
-    if full and arguments[:2] == ['nextest', 'run'] and ram_gib is not None:
+    if (full and arguments[:2] == ['nextest', 'run'] and ram_gib is not None
+            and ram_gib <= TWO_JOB_RAM_GIB):
         env = os.environ.copy()
-        if ram_gib <= LOW_RAM_GIB:
-            for jobs, stage_cmd in low_ram_prebuild_commands(arguments):
-                stage_env = env.copy()
-                if jobs is not None:
-                    stage_env['CARGO_BUILD_JOBS'] = str(jobs)
-                rc = subprocess.run(stage_cmd, env=stage_env).returncode
-                if rc != 0:
-                    return rc
-            current_jobs = int(env.get('CARGO_BUILD_JOBS', '2'))
-            env['CARGO_BUILD_JOBS'] = str(min(current_jobs, 2))
-        elif ram_gib <= BROAD_BUILD_CAP_RAM_GIB:
-            current_jobs = int(env.get('CARGO_BUILD_JOBS', '2'))
-            env['CARGO_BUILD_JOBS'] = str(min(current_jobs, 2))
+        env['CARGO_BUILD_JOBS'] = str(min(int(env.get('CARGO_BUILD_JOBS', '2')), 2))
     argv = command(arguments, packages, full=full, codecs=codecs)
     if env is not None:
         return subprocess.run(argv, env=env).returncode
