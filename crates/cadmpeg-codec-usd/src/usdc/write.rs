@@ -758,11 +758,11 @@ impl Crate {
                     };
                     targets.push((statement.list_op, paths));
                 }
-                RelationshipField::BracketTarget(target) => {
+                // The reader takes a `.default` target as the target path
+                // it names, as it takes the bracket form.
+                RelationshipField::BracketTarget(target)
+                | RelationshipField::DefaultTarget(target) => {
                     targets.push((statement.list_op, vec![absolute(prim, target)]));
-                }
-                RelationshipField::DefaultTarget(_) => {
-                    self.left_out.push(format!("{path} default target"));
                 }
             }
         }

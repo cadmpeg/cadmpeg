@@ -99,9 +99,9 @@ pub(crate) struct StepWriteOutcome {
 /// Writes STEP bytes and returns the facts measured by the writer.
 ///
 /// An occurrence whose prototype the document does not hold is left out with
-/// `export:record.invalid`. A real the writer computes that is not finite is
-/// left out with the instances that need it (`export:value.unwritable`):
-/// Part 21 states no such number.
+/// `occurrence.no-local-product`. A real the writer computes that is not
+/// finite is left out with the instances that need it
+/// (`export:value.unwritable`): Part 21 states no such number.
 pub(crate) fn write_step_outcome(
     ir: &CadIr,
     w: &mut (impl Write + ?Sized),
@@ -144,8 +144,8 @@ pub(crate) fn write_step_outcome(
 }
 
 /// `ir` without the occurrences whose prototype it does not hold, and the
-/// `export:record.invalid` note naming them. No STEP product holds such an
-/// occurrence: `NEXT_ASSEMBLY_USAGE_OCCURRENCE` relates two product
+/// `occurrence.no-local-product` note naming them. No STEP product holds
+/// such an occurrence: `NEXT_ASSEMBLY_USAGE_OCCURRENCE` relates two product
 /// definitions. The definitions that list one stop listing it.
 fn without_dangling_occurrences(ir: &CadIr) -> (std::borrow::Cow<'_, CadIr>, Option<LossNote>) {
     let definitions = ir
@@ -164,18 +164,15 @@ fn without_dangling_occurrences(ir: &CadIr) -> (std::borrow::Cow<'_, CadIr>, Opt
     if dangling.is_empty() {
         return (std::borrow::Cow::Borrowed(ir), None);
     }
-    let note = cadmpeg_ir::codec::write::record_invalid(
-        cadmpeg_ir::schema::EntityKind::Occurrence,
-        format!(
-            "STEP writes no occurrence whose prototype the document does not hold ({}): {}",
-            dangling.len(),
-            dangling
-                .iter()
-                .map(OccurrenceId::as_str)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-    );
+    let note = StepLossCode::OccurrenceNoLocalProduct.note(format!(
+        "STEP writes no occurrence whose prototype the document does not hold ({}): {}",
+        dangling.len(),
+        dangling
+            .iter()
+            .map(OccurrenceId::as_str)
+            .collect::<Vec<_>>()
+            .join(", ")
+    ));
     let mut written = ir.clone();
     written
         .model
@@ -399,12 +396,9 @@ pub(crate) struct Builder<'a> {
     /// Open edges whose ends coincide, written as one `EDGE_CURVE` because no
     /// point of their curve between the ends was found.
     unsplit_open_edges: BTreeSet<String>,
-    /// Procedural constructions written as their solved carrier because a
-    /// real the construction needs is not finite.
+    /// Procedural constructions left out because a real the construction
+    /// needs is not finite.
     non_finite_constructions: BTreeSet<String>,
-    /// Procedural replicas written as their solved carrier because their
-    /// transform is not a similarity.
-    dissimilar_replicas: BTreeSet<String>,
 
     /// Individual enclosing topology relations that could not be emitted.
     topology_relation_losses: BTreeSet<String>,
@@ -669,7 +663,6 @@ impl<'a> Builder<'a> {
             non_finite_carriers: BTreeSet::new(),
             unsplit_open_edges: BTreeSet::new(),
             non_finite_constructions: BTreeSet::new(),
-            dissimilar_replicas: BTreeSet::new(),
             topology_relation_losses: BTreeSet::new(),
             face_step_refs: HashMap::new(),
             body_step_refs: HashMap::new(),
@@ -1986,6 +1979,7 @@ impl<'a> Builder<'a> {
         let mut items = Vec::new();
         let ir = self.ir;
         for region in &ir.geometry.regions {
+            self.emitter.write_for(Some(region.body.as_str()));
             if self.omitted_prototype_bodies.contains(&region.body) {
                 continue;
             }
@@ -2207,6 +2201,7 @@ impl<'a> Builder<'a> {
                 &mut items,
             );
         }
+        self.emitter.write_for(None);
         items
     }
 
@@ -2981,6 +2976,7 @@ impl<'a> Builder<'a> {
         let mut members = Vec::new();
         let mut has_surfaces = false;
         for surface_id in surface_ids {
+            self.emitter.write_for(Some(&surface_id));
             if let Some(reference) = self.emit_surface(&surface_id) {
                 let ranges =
                     self.procedural_surfaces
@@ -3033,6 +3029,7 @@ impl<'a> Builder<'a> {
             .map(|curve| curve.id.as_str().to_owned())
             .collect::<Vec<_>>();
         for curve_id in curve_ids {
+            self.emitter.write_for(Some(&curve_id));
             if let Some(reference) = self.emit_curve(&curve_id) {
                 let reference = if let Some(range) = self
                     .curves
@@ -3066,6 +3063,7 @@ impl<'a> Builder<'a> {
             .map(|point| point.id.as_str().to_owned())
             .collect::<Vec<_>>();
         for point_id in point_ids {
+            self.emitter.write_for(Some(&point_id));
             let Some(point) = self.points.get(point_id.as_str()).copied() else {
                 continue;
             };
@@ -3073,6 +3071,7 @@ impl<'a> Builder<'a> {
             self.point_refs.insert(point_id, reference);
             members.push(reference);
         }
+        self.emitter.write_for(None);
         if members.is_empty() {
             Vec::new()
         } else {
@@ -3107,6 +3106,7 @@ impl<'a> Builder<'a> {
         let ir = self.ir;
         let mut representation_items = Vec::new();
         for mesh in &ir.model.tessellations {
+            self.emitter.write_for(Some(mesh.id.as_str()));
             if !mesh.feature_edges().is_empty() {
                 self.loss(
                     StepLossCode::TessellationFeatureEdges,
@@ -3297,6 +3297,7 @@ impl<'a> Builder<'a> {
                 .insert(mesh.id.to_string(), item);
             representation_items.push(item);
         }
+        self.emitter.write_for(None);
         if !representation_items.is_empty() {
             self.emitter.emit(
                 "TESSELLATED_SHAPE_REPRESENTATION",
@@ -4566,7 +4567,6 @@ impl<'a> Builder<'a> {
                 // place, or the face is left out as on an unsupported surface.
                 if let ProceduralSurfaceDefinition::Replica { transform, .. } = &definition {
                     if !geometry::states_similarity(transform) {
-                        self.dissimilar_replicas.insert(id);
                         return None;
                     }
                 }
@@ -4893,7 +4893,6 @@ impl<'a> Builder<'a> {
                 // As a surface replica: the solved carrier, or no edge.
                 if let ProceduralCurveDefinition::Replica { transform, .. } = &definition {
                     if !geometry::states_similarity(transform) {
-                        self.dissimilar_replicas.insert(id);
                         return None;
                     }
                 }
@@ -6334,7 +6333,7 @@ impl<'a> Builder<'a> {
                 matches!(written, WrittenAnalyticSurface::Carrier(SolvedSurfaceGeometry::Cone(cone_surface))
                 if {
                     let ratio = cone_surface.ratio().get();
-                    ratio != 1.0 && cone_surface.half_angle().get() != 0.0
+                    ratio != 1.0 && geometry::written_half_angle(cone_surface) != 0.0
                 })
             })
             .count();
@@ -7131,13 +7130,14 @@ impl<'a> Builder<'a> {
             .procedural_surfaces
             .iter()
             .filter(|(owner, procedural)| {
-                self.surface_refs.contains_key::<str>(owner)
+                self.surface_refs
+                    .get::<str>(owner)
+                    .is_some_and(|written| self.emitter.holds(written.reference))
                     && !self
                         .written_procedural_surfaces
                         .contains(procedural.id.as_str())
                     && !self.fitted_helix_surfaces.contains(procedural.id.as_str())
                     && !self.sampled_surfaces.contains(procedural.id.as_str())
-                    && !self.unwritable_construction(procedural.id.as_str())
             })
             .map(|(_, procedural)| procedural.id.as_str())
             .collect();
@@ -7145,13 +7145,14 @@ impl<'a> Builder<'a> {
             .procedural_curves
             .iter()
             .filter(|(owner, procedural)| {
-                self.curve_refs.contains_key::<str>(owner)
+                self.curve_refs
+                    .get::<str>(owner)
+                    .is_some_and(|written| self.emitter.holds(*written))
                     && !self
                         .written_procedural_curves
                         .contains(procedural.id.as_str())
                     && !self.fitted_helix_curves.contains(procedural.id.as_str())
                     && !self.sampled_curves.contains(procedural.id.as_str())
-                    && !self.unwritable_construction(procedural.id.as_str())
             })
             .map(|(_, procedural)| procedural.id.as_str())
             .collect();
@@ -7168,7 +7169,9 @@ impl<'a> Builder<'a> {
                     && !self.failed_helix_fits.contains_key(procedural.id.as_str())
                     && !self.sampled_surfaces.contains(procedural.id.as_str())
                     && !reduced_surfaces.contains(procedural.id.as_str())
-                    && !self.unwritable_construction(procedural.id.as_str())
+                    && !self
+                        .non_finite_constructions
+                        .contains(procedural.id.as_str())
             })
             .count();
         let omitted_curve_count = self
@@ -7184,16 +7187,24 @@ impl<'a> Builder<'a> {
                     && !self.failed_helix_fits.contains_key(procedural.id.as_str())
                     && !self.sampled_curves.contains(procedural.id.as_str())
                     && !reduced_curves.contains(procedural.id.as_str())
-                    && !self.unwritable_construction(procedural.id.as_str())
+                    && !self
+                        .non_finite_constructions
+                        .contains(procedural.id.as_str())
             })
             .count();
         let procedural_surface_count = reduced_surfaces.len();
         let procedural_curve_count = reduced_curves.len();
         if procedural_surface_count > 0 || procedural_curve_count > 0 {
+            let reduced = reduced_surfaces
+                .iter()
+                .chain(&reduced_curves)
+                .copied()
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::ProceduralReducedToCarrier,
                 format!(
-                    "{procedural_surface_count} procedural surface definition(s) and {procedural_curve_count} procedural curve definition(s) were reduced to their solved STEP carriers"
+                    "{procedural_surface_count} procedural surface definition(s) and {procedural_curve_count} procedural curve definition(s) were reduced to their solved STEP carriers: {reduced}"
                 ),
             );
         }
@@ -7299,8 +7310,8 @@ impl<'a> Builder<'a> {
 
     /// Leaves out the instances that hold a non-finite real, with the
     /// instances that need them, and charges `export:value.unwritable`
-    /// naming the carriers left out, the constructions written as their
-    /// solved carrier, and any other instance left out.
+    /// naming the carriers and constructions left out, and the document
+    /// record any other instance left out was written for.
     fn drop_non_finite(&mut self) {
         let dropped = self.emitter.drop_non_finite();
         let carriers = std::mem::take(&mut self.non_finite_carriers);
@@ -7315,32 +7326,33 @@ impl<'a> Builder<'a> {
             .extend(cadmpeg_ir::codec::write::value_unwritable(
                 "STEP",
                 "writes no construction for the procedural geometry that needs a non-finite real, \
-             which Part 21 cannot state; the solved carrier stands in where it is written",
+             which Part 21 cannot state",
                 self.non_finite_constructions.iter().cloned(),
             ));
-        self.losses
-            .extend(cadmpeg_ir::codec::write::value_unwritable(
-            "STEP",
-            "writes no replica for the procedural replicas whose transform is not a similarity, \
-             which CARTESIAN_TRANSFORMATION_OPERATOR_3D cannot state; the solved carrier stands \
-             in where it is written",
-            self.dissimilar_replicas.iter().cloned(),
-        ));
+        let (owned, unowned): (Vec<_>, Vec<_>) = dropped
+            .iter()
+            .partition(|instance| instance.record.is_some());
         self.losses
             .extend(cadmpeg_ir::codec::write::value_unwritable(
                 "STEP",
-                "leaves out the instances that hold or need a non-finite real, which Part 21 \
-             cannot state",
-                dropped
+                "leaves out the records whose instances hold or need a non-finite real, which \
+             Part 21 cannot state",
+                owned
+                    .iter()
+                    .filter_map(|instance| instance.record.as_deref())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .map(str::to_owned),
+            ));
+        self.losses
+            .extend(cadmpeg_ir::codec::write::value_unwritable(
+                "STEP",
+                "leaves out the instances of the file's own structure that hold or need a \
+             non-finite real, which Part 21 cannot state",
+                unowned
                     .iter()
                     .map(|instance| format!("#{} {}", instance.name.0, instance.tally)),
             ));
-    }
-
-    /// Whether the procedural construction `id` was charged
-    /// `export:value.unwritable` in place of a procedural reduction.
-    fn unwritable_construction(&self, id: &str) -> bool {
-        self.non_finite_constructions.contains(id) || self.dissimilar_replicas.contains(id)
     }
 
     fn finish_outcome(&self) -> StepWriteOutcome {

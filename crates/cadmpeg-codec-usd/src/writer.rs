@@ -25,7 +25,7 @@ mod physics;
 mod physx;
 mod records;
 mod shading;
-mod text;
+pub(crate) mod text;
 mod texture;
 mod trims;
 
@@ -309,7 +309,7 @@ struct Unwritten {
     past_range_prims: Vec<String>,
     /// Attributes left out because their value is past the binary32 range.
     past_range_values: Vec<String>,
-    /// Link targets left out because they name a prim left out, and joints
+    /// Link targets left out because they name a prim left out, and prims
     /// left out because they need one.
     cut_links: Vec<String>,
 }
@@ -730,7 +730,7 @@ impl<'ir> Writer<'ir> {
         let prims = cut.text;
         self.unwritten.past_range_prims = finished.prims;
         self.unwritten.cut_links = cut.links;
-        self.unwritten.cut_links.extend(cut.joints.iter().cloned());
+        self.unwritten.cut_links.extend(cut.needing.iter().cloned());
         self.unwritten.solver_properties += unresolved + self.physics.unwritten_settings;
         self.unwritten.joints += self.physics.unwritten_joints;
         self.unwritten.joint_properties += self.physics.unwritten_joint_properties;
@@ -740,7 +740,7 @@ impl<'ir> Writer<'ir> {
         // A default prim left out is not named.
         if let Some(name) = default_prim.filter(|name| {
             let path = format!("/{name}");
-            !self.unwritten.past_range_prims.contains(&path) && !cut.joints.contains(&path)
+            !self.unwritten.past_range_prims.contains(&path) && !cut.needing.contains(&path)
         }) {
             header.line(&format!("    defaultPrim = {}", quoted(&name)));
         }
@@ -2221,8 +2221,8 @@ impl<'ir> Writer<'ir> {
         ));
         losses.extend(cadmpeg_ir::codec::write::value_unwritable(
             "USD",
-            "leaves out the relationship targets, connections and references that name a prim \
-             left out, and the joints that need one",
+            "leaves out the relationship targets and connections that name a prim left out, \
+             the joints that name one, and the prims whose references or inherits reach one",
             unwritten.cut_links.iter().cloned(),
         ));
         losses

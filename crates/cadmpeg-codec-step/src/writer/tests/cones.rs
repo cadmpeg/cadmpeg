@@ -182,6 +182,14 @@ pub(super) fn assert_first_surface_faces_omitted(ir: &CadIr) {
         "{:?}",
         plan.report().losses
     );
+    assert!(
+        plan.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
+                && loss.message.contains(surface.as_str())
+        }),
+        "{:?}",
+        plan.report().losses
+    );
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("write the planned file");
     let decoded = StepCodec::default()
@@ -409,4 +417,132 @@ fn a_face_on_a_right_angle_cone_is_left_out() {
 #[test]
 fn a_face_on_a_negative_right_angle_cone_is_left_out() {
     assert_first_surface_faces_omitted(&circular_cone_cube(-std::f64::consts::FRAC_PI_2));
+}
+
+/// Writes `ir` and decodes the file back, with the report and the STEP text.
+fn written_cone_round_trip(ir: &CadIr) -> (ExportReport, String, CadIr) {
+    let mut output = Vec::new();
+    let report = write_step(
+        ir,
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("write the cone cube");
+    let text = String::from_utf8(output.clone()).expect("STEP output is UTF-8");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode the written file")
+        .into_parts()
+        .0;
+    (report, text, decoded)
+}
+
+/// `radius + v tan(angle)` repeats with period `pi`: a semi-angle of 2 rad
+/// is the semi-angle `pi - 2` over the reversed axis, at `(-u, -v)`.
+#[test]
+fn a_cone_past_a_right_angle_is_written_with_the_supplementary_semi_angle() {
+    let ir = circular_cone_cube(2.0);
+    let SurfaceGeometry::Solved(source) = ir.geometry.surfaces[0].geometry.clone() else {
+        unreachable!("the fixture surface is solved")
+    };
+    let (report, text, decoded) = written_cone_round_trip(&ir);
+
+    assert!(text.contains("CONICAL_SURFACE("), "{text}");
+    for code in [
+        StepLossCode::UnknownSurfaceFaceOmitted,
+        StepLossCode::GeometryCarrierNotWritten,
+    ] {
+        assert!(
+            !report.losses.iter().any(|loss| loss.code == code.kind()),
+            "{}: {:?}",
+            code.kind(),
+            report.losses
+        );
+    }
+    assert_eq!(decoded.geometry.faces.len(), ir.geometry.faces.len());
+    let written = decoded
+        .geometry
+        .surfaces
+        .iter()
+        .find_map(|surface| match surface.geometry.solved() {
+            Some(cone @ SolvedSurfaceGeometry::Cone(_)) => Some(cone),
+            _ => None,
+        })
+        .expect("written cone surface");
+    let SolvedSurfaceGeometry::Cone(written_cone) = written else {
+        unreachable!("matched a cone")
+    };
+    assert!(
+        (written_cone.half_angle().get() - (std::f64::consts::PI - 2.0)).abs()
+            < EPS_ZERO_ANGLE_CONE_POINT
+    );
+    for (u, v) in ZERO_ANGLE_CONE_SAMPLES {
+        let source_point = surface_point_solved(EvaluationAdmission::Standard, &source, u, v)
+            .expect("source point")
+            .get();
+        let written_point = surface_point_solved(EvaluationAdmission::Standard, written, -u, -v)
+            .expect("written point")
+            .get();
+        assert!(distance(source_point, written_point) < EPS_ZERO_ANGLE_CONE_POINT);
+    }
+}
+
+/// A semi-angle of `pi` is the semi-angle 0 cone, a cylinder over the origin
+/// section.
+#[test]
+fn a_half_turn_cone_is_written_as_its_cylinder() {
+    let (report, text, decoded) =
+        written_cone_round_trip(&circular_cone_cube(std::f64::consts::PI));
+
+    assert!(text.contains("CYLINDRICAL_SURFACE("), "{text}");
+    assert_no_cone_reduction(&report, &text);
+    assert_eq!(
+        decoded.geometry.faces.len(),
+        unit_cube().unwrap().geometry.faces.len()
+    );
+}
+
+#[test]
+fn a_pcurve_on_a_cone_past_a_right_angle_is_written_in_the_reversed_chart() {
+    let mut ir = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("../../../tests/fixtures/ap214_sheet.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode sheet pcurve")
+        .into_parts()
+        .0;
+    let surface_id = ir.geometry.faces[0].surface.clone();
+    ir.geometry
+        .surfaces
+        .iter_mut()
+        .find(|surface| surface.id == surface_id)
+        .expect("face surface")
+        .geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+        ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            1.0,
+            2.0,
+        )
+        .expect("cone past a right angle"),
+    ));
+
+    let (report, text, decoded) = written_cone_round_trip(&ir);
+    assert!(text.contains("CONICAL_SURFACE("), "{text}");
+    assert!(text.contains("PCURVE("), "{text}");
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::PcurveCarrierUnwritable.kind()));
+    // The chart's half-turn is applied to the pcurve itself.
+    assert!(!text.contains("CURVE_REPLICA("), "{text}");
+    assert!(
+        !text.contains("CARTESIAN_TRANSFORMATION_OPERATOR_2D("),
+        "{text}"
+    );
+    assert_eq!(decoded.geometry.faces.len(), ir.geometry.faces.len());
 }

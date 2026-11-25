@@ -5,7 +5,9 @@
 //! types, and interns repeated points and directions.
 
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use crate::options::StepSchema;
 
@@ -33,6 +35,8 @@ pub(crate) struct DroppedInstance {
     pub(crate) name: Ref,
     /// Its entity-count key.
     pub(crate) tally: &'static str,
+    /// The document record it was written for ([`Emitter::write_for`]).
+    pub(crate) record: Option<Rc<str>>,
 }
 
 /// A point in the emission that [`Emitter::take_non_finite_since`] reads
@@ -51,6 +55,10 @@ pub(crate) struct Emitter {
     /// Each emitted instance, with its entity-count key; a dropped one is
     /// `None`.
     lines: Vec<Option<(String, &'static str)>>,
+    /// The document record each instance in `lines` was written for.
+    records: Vec<Option<Rc<str>>>,
+    /// The record [`Self::write_for`] names for the instances emitted next.
+    record: Option<Rc<str>>,
     counts: BTreeMap<&'static str, usize>,
     /// Leaf instances keyed by encoded type and parameters.
     interned: HashMap<String, Ref>,
@@ -73,6 +81,8 @@ impl Emitter {
         Emitter {
             schema,
             lines: Vec::new(),
+            records: Vec::new(),
+            record: None,
             counts: BTreeMap::new(),
             interned: HashMap::new(),
             non_finite: Vec::new(),
@@ -95,6 +105,12 @@ impl Emitter {
     /// ([`Self::drop_non_finite`]).
     pub(crate) fn real(v: f64) -> String {
         part21_real(v).unwrap_or_else(|| NON_FINITE.to_owned())
+    }
+
+    /// Names `record` as the document record the instances emitted next are
+    /// written for, until the next call.
+    pub(crate) fn write_for(&mut self, record: Option<&str>) {
+        self.record = record.map(Rc::from);
     }
 
     /// A mark for [`Self::take_non_finite_since`].
@@ -130,6 +146,7 @@ impl Emitter {
             self.non_finite.push((index, false));
         }
         self.lines.push(Some((line, tally)));
+        self.records.push(self.record.clone());
         *self.counts.entry(tally).or_insert(0) += 1;
         Ref(cadmpeg_core::decode::u64_from_index(index) + 1)
     }
@@ -194,8 +211,9 @@ impl Emitter {
     }
 
     /// Leaves out of the section every instance that holds a non-finite
-    /// number and every instance that references one left out, as a record
-    /// that needs a dropped record is dropped (CADIR §3.3), then each
+    /// number and every instance that needs one left out, as a record that
+    /// needs a dropped record is dropped (CADIR §3.3); a set that lists one
+    /// keeps its other members ([`cascade`]). Then it leaves out each
     /// instance a discarded carrier emitted that no instance left in the
     /// section references. The others keep their instance names; Part 21
     /// does not require them to be consecutive. Returns the instances left
@@ -212,9 +230,14 @@ impl Emitter {
             .iter()
             .filter(|(_, answered)| !*answered)
             .map(|(index, _)| *index);
-        let dropped = dependents(&self.lines, all);
-        let reported = dependents(&self.lines, unanswered);
+        let reported = cascade(&self.lines, unanswered).dropped;
+        let Cascade { dropped, kept } = cascade(&self.lines, all);
         self.non_finite.clear();
+        for (index, line) in kept {
+            if let Some((held, _)) = self.lines.get_mut(index).and_then(Option::as_mut) {
+                *held = line;
+            }
+        }
         let mut out = Vec::new();
         for index in dropped {
             let Some(tally) = self.remove(index) else {
@@ -224,6 +247,7 @@ impl Emitter {
                 out.push(DroppedInstance {
                     name: Ref(cadmpeg_core::decode::u64_from_index(index) + 1),
                     tally,
+                    record: self.records.get(index).cloned().flatten(),
                 });
             }
         }
@@ -280,31 +304,138 @@ impl Emitter {
     }
 }
 
-/// The indices of `seeds` and of every line that references one of them,
-/// directly or through other such lines.
+/// What leaving the instances at some seeds out of the section does to the
+/// instances emitted after them.
+struct Cascade {
+    /// The seeds and every instance that needs one, directly or through
+    /// other such instances.
+    dropped: BTreeSet<usize>,
+    /// The instances that list a dropped instance as a member of a set and
+    /// keep another member, with the text that leaves it out.
+    kept: BTreeMap<usize, String>,
+}
+
+/// The instances that need `seeds`. An instance whose type [`lists_members`]
+/// stays in the section without them while each list keeps a member; any
+/// other instance that references one needs it.
 ///
 /// An instance references only instances emitted before it, so one pass in
 /// emission order finds them all.
-fn dependents(
+fn cascade(
     lines: &[Option<(String, &'static str)>],
     seeds: impl Iterator<Item = usize>,
-) -> std::collections::BTreeSet<usize> {
-    let mut out: std::collections::BTreeSet<usize> = seeds.collect();
-    let Some(&first) = out.first() else {
-        return out;
+) -> Cascade {
+    let mut dropped: BTreeSet<usize> = seeds.collect();
+    let mut kept = BTreeMap::new();
+    let Some(&first) = dropped.first() else {
+        return Cascade { dropped, kept };
     };
     for (index, line) in lines.iter().enumerate().skip(first + 1) {
-        let Some((line, _)) = line else {
+        let Some((line, tally)) = line else {
             continue;
         };
-        if instance_references(line)
-            .iter()
-            .any(|referenced| out.contains(referenced))
+        if dropped.contains(&index)
+            || !instance_references(line)
+                .iter()
+                .any(|referenced| dropped.contains(referenced))
         {
-            out.insert(index);
+            continue;
+        }
+        match lists_members(tally)
+            .then(|| without_members(line, &dropped))
+            .flatten()
+        {
+            Some(line) => {
+                kept.insert(index, line);
+            }
+            None => {
+                dropped.insert(index);
+            }
         }
     }
-    out
+    Cascade { dropped, kept }
+}
+
+/// Whether instances of the entity type `tally` list the members of a set
+/// that holds without any one of them: the items of a representation, the
+/// elements of a geometric set, and the items a layer or an invisibility
+/// assigns.
+fn lists_members(tally: &str) -> bool {
+    (tally.ends_with("_REPRESENTATION") && !tally.ends_with("DEFINITION_REPRESENTATION"))
+        || matches!(
+            tally,
+            "DRAUGHTING_MODEL"
+                | "GEOMETRIC_SET"
+                | "GEOMETRIC_CURVE_SET"
+                | "PRESENTATION_LAYER_ASSIGNMENT"
+                | "INVISIBILITY"
+        )
+}
+
+/// The DATA line `line` with each reference to a `dropped` instance taken
+/// out of the aggregate that lists it, or `None` when a parameter outside an
+/// aggregate references one or an aggregate loses its last member.
+fn without_members(line: &str, dropped: &BTreeSet<usize>) -> Option<String> {
+    let (name, parameters) = line.split_once('=')?;
+    let mut out = String::with_capacity(line.len());
+    out.push_str(name);
+    out.push('=');
+    // The position in `out` of each open parenthesis, with whether a member
+    // left its aggregate.
+    let mut open: Vec<(usize, bool)> = Vec::new();
+    let mut quoted = false;
+    let mut characters = parameters.char_indices().peekable();
+    while let Some((at, character)) = characters.next() {
+        match character {
+            '\'' => {
+                quoted = !quoted;
+                out.push(character);
+            }
+            _ if quoted => out.push(character),
+            '(' => {
+                open.push((out.len(), false));
+                out.push(character);
+            }
+            ')' => {
+                let (start, removed) = open.pop()?;
+                if removed && out.len() == start + 1 {
+                    return None;
+                }
+                out.push(character);
+            }
+            '#' => {
+                let digits = parameters[at + 1..]
+                    .bytes()
+                    .take_while(u8::is_ascii_digit)
+                    .count();
+                let index = parameters[at + 1..at + 1 + digits]
+                    .parse::<usize>()
+                    .ok()
+                    .and_then(|name| name.checked_sub(1));
+                if !index.is_some_and(|index| dropped.contains(&index)) {
+                    out.push(character);
+                    continue;
+                }
+                // The entity's own parameter list is the first parenthesis;
+                // an aggregate parameter is nested in it.
+                if open.len() < 2 {
+                    return None;
+                }
+                let (_, removed) = open.last_mut()?;
+                *removed = true;
+                for _ in 0..digits {
+                    characters.next();
+                }
+                if characters.peek().is_some_and(|(_, next)| *next == ',') {
+                    characters.next();
+                } else if out.ends_with(',') {
+                    out.pop();
+                }
+            }
+            _ => out.push(character),
+        }
+    }
+    Some(out)
 }
 
 /// The line index of each instance name `#n` that the parameters of the

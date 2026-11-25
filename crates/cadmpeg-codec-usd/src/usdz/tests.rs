@@ -89,3 +89,75 @@ fn a_member_past_the_archive_limits_is_left_out() {
         assert_eq!(member.start() % DATA_ALIGNMENT, 0);
     });
 }
+
+/// A root layer past the archive limits is not left out: the package holds
+/// the empty layer as its root, and `export:output.empty` names the root
+/// layer's size.
+#[test]
+fn a_root_layer_past_the_archive_limits_leaves_an_empty_package() {
+    let root = "#usda 1.0\ndef Xform \"Root\"\n{\n    def Mesh \"Plate\"\n    {\n    }\n}\n";
+    let limit = super::EMPTY_LAYER.len();
+    let (bytes, losses) = super::package_layer_by(
+        root.as_bytes(),
+        &[("textures/a.png".to_owned(), b"\x89PNG image".to_vec())],
+        |name, length, end, central, count| {
+            (name != super::ROOT_MEMBER || length <= limit)
+                .then(|| super::admit(name, length, end, central, count))
+                .flatten()
+        },
+    );
+    let [note] = losses.as_slice() else {
+        panic!("one loss: {losses:#?}");
+    };
+    assert_eq!(note.code.to_string(), "export/output.empty");
+    assert!(
+        note.message.contains(&root.len().to_string()),
+        "{}",
+        note.message
+    );
+    with_root(&bytes, |ctx, archive| {
+        let package = open(ctx, archive).expect("open");
+        assert_eq!(package.root_name, super::ROOT_MEMBER);
+        assert_eq!(package.root.window(), super::EMPTY_LAYER);
+    });
+    let decoded = crate::test_support::decode_bytes(&bytes);
+    assert!(decoded.ir().model.product_definitions.len() <= 1);
+    assert!(decoded.ir().model.tessellations.is_empty());
+}
+
+/// A texture member past the archive limits is left out with the asset path
+/// that names it; the other member and its asset path are kept.
+#[test]
+fn a_texture_member_left_out_takes_its_asset_path() {
+    let long = format!("textures/{}.png", "a".repeat(usize::from(u16::MAX)));
+    let image = b"\x89PNG image".to_vec();
+    let root = format!(
+        "#usda 1.0\ndef Shader \"Long\"\n{{\n    asset inputs:file = @{long}@ (\n        colorSpace = \"sRGB\"\n    )\n    token inputs:wrapS = \"repeat\"\n}}\ndef Shader \"Short\"\n{{\n    asset inputs:file = @textures/b.png@\n}}\n"
+    );
+    let (bytes, losses) = super::package_layer(
+        root.as_bytes(),
+        &[
+            (long.clone(), image.clone()),
+            ("textures/b.png".to_owned(), image.clone()),
+        ],
+    );
+    let [note] = losses.as_slice() else {
+        panic!("one loss: {losses:#?}");
+    };
+    assert_eq!(note.code.to_string(), "export/value.unwritable");
+    assert!(note.message.contains(&long));
+    with_root(&bytes, |ctx, archive| {
+        let package = open(ctx, archive).expect("open");
+        assert_eq!(
+            package.root.window(),
+            "#usda 1.0\ndef Shader \"Long\"\n{\n    token inputs:wrapS = \"repeat\"\n}\ndef Shader \"Short\"\n{\n    asset inputs:file = @textures/b.png@\n}\n"
+                .as_bytes()
+        );
+        let member = package
+            .snapshot
+            .open(ctx, "textures/b.png")
+            .expect("member");
+        assert_eq!(member.window(), image.as_slice());
+    });
+    crate::test_support::decode_bytes(&bytes);
+}

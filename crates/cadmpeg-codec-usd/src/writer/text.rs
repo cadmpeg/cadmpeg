@@ -232,13 +232,41 @@ impl Emitter {
     }
 }
 
+/// The layer text `text` without the attribute lines whose value is the
+/// asset path of one of `paths`, with the metadata block each opens: each
+/// attribute takes its fallback value.
+pub(crate) fn without_assets(text: &str, paths: &[String]) -> String {
+    let values: Vec<String> = paths.iter().map(|path| asset(path)).collect();
+    let mut out = String::with_capacity(text.len());
+    let mut skipping = false;
+    for line in text.split_inclusive('\n') {
+        if skipping {
+            skipping = line.trim() != ")";
+            continue;
+        }
+        let value = line
+            .split_once(" = ")
+            .map_or("", |(_, value)| value.trim_end());
+        let (value, opens) = value
+            .strip_suffix(" (")
+            .map_or((value, false), |value| (value, true));
+        if values.iter().any(|asset| asset == value) {
+            skipping = opens;
+            continue;
+        }
+        out.push_str(line);
+    }
+    out
+}
+
 /// What [`cut_links`] left out.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(super) struct Cut {
     /// The text without them.
     pub(super) text: String,
-    /// The joint prims left out because a prim they name is left out.
-    pub(super) joints: Vec<String>,
+    /// The prims left out because they need a prim left out: a joint that
+    /// names it, and a prim whose composition arc reaches it.
+    pub(super) needing: Vec<String>,
     /// Each link target left out, as `prim.property <target>`.
     pub(super) links: Vec<String>,
 }
@@ -248,6 +276,19 @@ struct Prim {
     path: String,
     /// Whether the prim is a joint: it needs each prim it names.
     joint: bool,
+}
+
+/// Whether the trimmed line `line` states a composition arc: the prim
+/// composes the prims it targets, so it needs each of them.
+fn composes(line: &str) -> bool {
+    let head = line.split(" = ").next().unwrap_or_default();
+    let mut words = head.split_whitespace();
+    let Some(first) = words.next() else {
+        return false;
+    };
+    let last = words.last().unwrap_or(first);
+    !matches!(first, "delete" | "reorder")
+        && matches!(last, "references" | "inherits" | "specializes" | "payload")
 }
 
 /// Whether `path` is one of `prims` or below one.
@@ -306,8 +347,8 @@ fn prim_of(target: &str) -> &str {
 /// `text` without each link whose target is a prim of `left_out`, a prim
 /// below one, or a property of either: a link list keeps its other targets,
 /// and a line whose targets are all left out is not written. A joint that
-/// names such a prim needs it, so it is left out too, as are the links
-/// that name the joint.
+/// names such a prim, and a prim whose composition arc reaches one, needs
+/// it, so it is left out too, as are the links that name it.
 pub(super) fn cut_links(text: &str, left_out: &[String]) -> Cut {
     let lines: Vec<&str> = text.split_inclusive('\n').collect();
     let mut prims: Vec<Prim> = Vec::new();
@@ -339,21 +380,21 @@ pub(super) fn cut_links(text: &str, left_out: &[String]) -> Cut {
         owners.push(pending.or_else(|| stack.iter().rev().find_map(|block| *block)));
     }
     let mut gone = left_out.to_vec();
-    let mut joints = Vec::new();
+    let mut needing = Vec::new();
     loop {
         let mut grew = false;
         for (line, owner) in lines.iter().zip(&owners) {
             let Some(prim) = owner.map(|index| &prims[index]) else {
                 continue;
             };
-            if prim.joint
+            if (prim.joint || composes(line.trim()))
                 && !below(&prim.path, &gone)
                 && targets(line)
                     .iter()
                     .any(|target| below(prim_of(target), &gone))
             {
                 gone.push(prim.path.clone());
-                joints.push(prim.path.clone());
+                needing.push(prim.path.clone());
                 grew = true;
             }
         }
@@ -363,7 +404,7 @@ pub(super) fn cut_links(text: &str, left_out: &[String]) -> Cut {
     }
     let mut out = Cut {
         text: String::with_capacity(text.len()),
-        joints,
+        needing,
         links: Vec::new(),
     };
     let mut skipping = false;
@@ -447,7 +488,7 @@ fn hex_digit(value: u32) -> char {
 }
 
 /// An asset path in the delimiter its text admits (spec §2.8).
-pub(super) fn asset(path: &str) -> String {
+pub(crate) fn asset(path: &str) -> String {
     if path.contains('@') {
         format!("@@@{}@@@", path.replace("@@@", "\\@@@"))
     } else {

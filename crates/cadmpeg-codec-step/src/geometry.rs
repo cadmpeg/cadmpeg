@@ -65,15 +65,25 @@ pub(crate) fn surface_is_supported(surface: &SolvedSurfaceGeometry) -> bool {
 /// Whether a STEP surface record holds `cone`. `conical_surface` holds a
 /// semi-angle in `(0, pi/2)`, and a negative one by reversing the axis; a
 /// semi-angle 0 cone is a cylinder over its origin section
-/// ([`zero_angle_cone`]), which a zero section radius makes a line. A
-/// semi-angle of magnitude `pi/2` or more has no record.
+/// ([`zero_angle_cone`]), which a zero section radius makes a line. The
+/// written angle is [`written_half_angle`]; one of magnitude `pi/2` has no
+/// record.
 fn cone_is_writable(cone: &ConeSurface) -> bool {
-    let angle = cone.half_angle().get();
+    let angle = written_half_angle(cone);
     if angle == 0.0 {
         let radius = cone.radius().get();
         return radius > 0.0 && radius * cone.ratio().get() > 0.0;
     }
     angle.abs() < std::f64::consts::FRAC_PI_2
+}
+
+/// The half-angle in `[-pi/2, pi/2]` that states the surface of `cone` in
+/// the same `(u, v)` chart. The section radius `radius + v tan(angle)` repeats
+/// with period `pi` in the angle, so a magnitude above `pi/2` is written as
+/// the angle less a multiple of `pi`.
+pub(crate) fn written_half_angle(cone: &ConeSurface) -> f64 {
+    let angle = cone.half_angle().get();
+    angle - PI * (angle / PI).round()
 }
 
 fn valid_nurbs_surface(n: &NurbsSurface) -> bool {
@@ -418,7 +428,7 @@ impl WrittenChart {
     /// A negative-minor torus is written with the magnitude, at `(u, v + π)`.
     pub(crate) fn of(basis: &SolvedSurfaceGeometry) -> Option<Self> {
         let (sign, offset) = match basis {
-            SolvedSurfaceGeometry::Cone(cone) if cone.half_angle().get() < 0.0 => {
+            SolvedSurfaceGeometry::Cone(cone) if written_half_angle(cone) < 0.0 => {
                 ([-1.0, -1.0], [0.0, 0.0])
             }
             SolvedSurfaceGeometry::Sphere(sphere) if sphere.radius().get() < 0.0 => {
@@ -590,18 +600,18 @@ fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
         SolvedSurfaceGeometry::Cone(cone_surface) if !cone_is_writable(cone_surface) => {
             return None;
         }
-        SolvedSurfaceGeometry::Cone(cone_surface) if cone_surface.half_angle().get() == 0.0 => {
+        SolvedSurfaceGeometry::Cone(cone_surface) if written_half_angle(cone_surface) == 0.0 => {
             zero_angle_cone(e, cone_surface)
         }
         // ISO 10303-42 `conical_surface` holds `semi_angle` in `(0, pi/2)`.
-        // Reversing the axis and angle maps a negative-angle cone exactly under
-        // the parameter change `(u, v) -> (-u, -v)`.
+        // Reversing the axis and angle maps a negative written angle exactly
+        // under the parameter change `(u, v) -> (-u, -v)`.
         SolvedSurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin().get();
             let axis = *cone_surface.frame().axis();
             let ref_direction = *cone_surface.frame().reference();
             let radius = cone_surface.radius().get();
-            let half_angle = cone_surface.half_angle().get();
+            let half_angle = written_half_angle(cone_surface);
             let written_axis = if half_angle < 0.0 {
                 axis.reversed()
             } else {

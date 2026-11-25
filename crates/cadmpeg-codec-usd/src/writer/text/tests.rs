@@ -144,7 +144,7 @@ fn links_to_a_prim_left_out_are_cut() {
          def Xform \"User\"\n    {\n        rel a = [</Rig/Base>]\n        \
          string d = \"</Rig/Arm>\"\n    }\n}\n"
     );
-    assert_eq!(cut.joints, ["/Rig/Hinge"]);
+    assert_eq!(cut.needing, ["/Rig/Hinge"]);
     assert_eq!(
         cut.links,
         [
@@ -153,4 +153,27 @@ fn links_to_a_prim_left_out_are_cut() {
             "/Rig/User.c.connect </Rig/Arm.outputs:x>",
         ]
     );
+}
+
+/// A prim whose references or inherits reach a prim left out needs it: it
+/// is left out with its child prims, and so is a prim that composes it. A
+/// binding to it loses its target, and a prim that composes a kept prim
+/// stays.
+#[test]
+fn a_prim_composing_a_prim_left_out_is_left_out() {
+    let text = "def Scope \"Prototypes\"\n{\n    def Mesh \"Kept\"\n    {\n    }\n}\n\
+                def Xform \"Occurrence\" (\n    prepend references = </Prototypes/Gone>\n)\n\
+                {\n    def Xform \"Child\"\n    {\n    }\n}\n\
+                def Xform \"Inheritor\" (\n    inherits = </Occurrence>\n)\n{\n}\n\
+                def Xform \"Other\" (\n    prepend references = </Prototypes/Kept>\n)\n{\n}\n\
+                def Xform \"Binder\"\n{\n    rel material:binding = </Occurrence/Child>\n}\n";
+    let cut = cut_links(text, &["/Prototypes/Gone".to_owned()]);
+    assert_eq!(
+        cut.text,
+        "def Scope \"Prototypes\"\n{\n    def Mesh \"Kept\"\n    {\n    }\n}\n\
+         def Xform \"Other\" (\n    prepend references = </Prototypes/Kept>\n)\n{\n}\n\
+         def Xform \"Binder\"\n{\n}\n"
+    );
+    assert_eq!(cut.needing, ["/Occurrence", "/Inheritor"]);
+    assert_eq!(cut.links, ["/Binder.material:binding </Occurrence/Child>"]);
 }

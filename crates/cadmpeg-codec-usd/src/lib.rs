@@ -155,21 +155,9 @@ impl EncoderBackend for UsdCodec {
             )];
         }
         if packaged {
-            let mut all = vec![(usdz::ROOT_MEMBER, body.bytes.as_slice())];
-            all.extend(
-                members
-                    .iter()
-                    .map(|(name, bytes)| (name.as_str(), bytes.as_slice())),
-            );
-            let (bytes, left_out) = usdz::package(&all);
+            let (bytes, losses) = usdz::package_layer(&body.bytes, &members);
             body.bytes = bytes;
-            body.losses
-                .extend(cadmpeg_ir::codec::write::value_unwritable(
-                    "USDZ",
-                    "leaves out the members that a ZIP archive without ZIP64 records cannot \
-                     address",
-                    left_out,
-                ));
+            body.losses.extend(losses);
             body.notes
                 .push(format!("USDZ package, root layer {}", usdz::ROOT_MEMBER));
         }

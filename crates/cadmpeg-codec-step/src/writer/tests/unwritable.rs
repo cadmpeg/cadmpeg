@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Values the STEP writer cannot state: a non-finite real, and a replica
-//! transform that is not a similarity, are left out with the rest written.
+//! Values the STEP writer cannot state: a non-finite real is left out with
+//! the rest written, and a replica whose transform is not a similarity is
+//! reduced to its solved carrier.
 
 use std::io::Cursor;
 
@@ -287,6 +288,54 @@ fn the_section_leaves_out_an_instance_with_a_non_finite_value() {
     }
 }
 
+/// An instance a representation lists that holds a non-finite number is
+/// left out of the list, and the representation keeps its other items: the
+/// drop reaches only the record that needs the number, and names it.
+#[test]
+fn a_representation_keeps_the_items_a_non_finite_number_does_not_reach() {
+    let mut emitter = crate::writer::Emitter::new();
+    let context = emitter.emit("REPRESENTATION_CONTEXT", "'',''");
+    emitter.write_for(Some("test:model:body#kept"));
+    let kept = emitter.emit("CARTESIAN_POINT", "'',(1.,0.,0.)");
+    emitter.write_for(Some("test:model:body#left-out"));
+    let left_out = emitter.emit(
+        "CARTESIAN_POINT",
+        &format!("'',({},0.,0.)", crate::writer::Emitter::real(f64::NAN)),
+    );
+    let user = emitter.emit("VERTEX_POINT", &format!("'',{left_out}"));
+    emitter.write_for(None);
+    let representation = emitter.emit(
+        "SHAPE_REPRESENTATION",
+        &format!("'',({kept},{user}),{context}"),
+    );
+    let only_left_out = emitter.emit("SHAPE_REPRESENTATION", &format!("'',({user}),{context}"));
+    let relation = emitter.emit(
+        "SHAPE_REPRESENTATION_RELATIONSHIP",
+        &format!("'','',{representation},{only_left_out}"),
+    );
+    let dropped = emitter.drop_non_finite();
+    assert_eq!(
+        dropped
+            .iter()
+            .map(|instance| (instance.name, instance.record.as_deref()))
+            .collect::<Vec<_>>(),
+        [
+            (left_out, Some("test:model:body#left-out")),
+            (user, Some("test:model:body#left-out")),
+            (only_left_out, None),
+            (relation, None),
+        ]
+    );
+    assert_eq!(
+        emitter.into_lines(),
+        [
+            format!("{context} = REPRESENTATION_CONTEXT('','');"),
+            format!("{kept} = CARTESIAN_POINT('',(1.,0.,0.));"),
+            format!("{representation} = SHAPE_REPRESENTATION('',({kept}),{context});"),
+        ]
+    );
+}
+
 /// A model written by [`replica_written_with`].
 struct WrittenReplica {
     /// The STEP text.
@@ -372,9 +421,9 @@ const CURVE_REPLICA_EXCHANGE: &str = "#1=CARTESIAN_POINT('',(0.,0.,0.));
 #10=GEOMETRIC_CURVE_SET('',(#9));
 #11=SHAPE_REPRESENTATION('',(#10),$);";
 
-/// A procedural replica under `rows` is not written: the loss names it, the
-/// solved carrier stands in, and no replica of the file read back holds
-/// `rows`.
+/// A procedural replica under `rows` is not written: the solved carrier
+/// stands in, `geometry.procedural-reduced-to-carrier` names the replica, and
+/// no replica of the file read back holds `rows`.
 fn assert_replica_is_left_out(exchange: &str, rows: [[f64; 4]; 3]) {
     use cadmpeg_ir::geometry::procedural_curves::ProceduralCurveDefinition;
     use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
@@ -383,9 +432,17 @@ fn assert_replica_is_left_out(exchange: &str, rows: [[f64; 4]; 3]) {
     let written = replica_written_with(exchange, transform);
     assert!(
         written.losses.iter().any(|loss| {
-            loss.code.to_string() == "export/value.unwritable"
+            loss.code == crate::loss::StepLossCode::ProceduralReducedToCarrier.kind()
                 && loss.message.contains(&written.replica)
         }),
+        "{:?}",
+        written.losses
+    );
+    assert!(
+        !written
+            .losses
+            .iter()
+            .any(|loss| loss.code.to_string() == "export/value.unwritable"),
         "{:?}",
         written.losses
     );

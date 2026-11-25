@@ -5,6 +5,7 @@
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::report::loss::LossNote;
 
 pub(crate) mod source;
 
@@ -168,13 +169,91 @@ fn admit(name: &str, data_len: usize, end: u32, central_len: u32, count: u16) ->
     })
 }
 
+/// The layer the package holds in place of a root layer it cannot address.
+const EMPTY_LAYER: &[u8] = b"#usda 1.0\n";
+
+/// The `.usdz` package of the written root layer `root` and the texture
+/// `members` its asset paths name, with the losses of the packaging.
+///
+/// The root layer is the first member. One past the archive limits
+/// ([`admit`]) leaves the package with the empty layer as its root, charged
+/// `export:output.empty`. A texture member past them is left out with the
+/// asset paths that name it, and each attribute takes its fallback value.
+pub(crate) fn package_layer(
+    root: &[u8],
+    members: &[(String, Vec<u8>)],
+) -> (Vec<u8>, Vec<LossNote>) {
+    package_layer_by(root, members, admit)
+}
+
+/// [`package_layer`] with the archive limits of `admit`.
+fn package_layer_by(
+    root: &[u8],
+    members: &[(String, Vec<u8>)],
+    admit: impl Fn(&str, usize, u32, u32, u16) -> Option<Admitted>,
+) -> (Vec<u8>, Vec<LossNote>) {
+    let all: Vec<(&str, &[u8])> = std::iter::once((ROOT_MEMBER, root))
+        .chain(
+            members
+                .iter()
+                .map(|(name, bytes)| (name.as_str(), bytes.as_slice())),
+        )
+        .collect();
+    let (bytes, left_out) = package_by(&all, &admit);
+    if left_out.iter().any(|name| name == ROOT_MEMBER) {
+        let (bytes, rest) = package_by(&[(ROOT_MEMBER, EMPTY_LAYER)], &admit);
+        debug_assert!(rest.is_empty(), "the archive addresses the empty layer");
+        let note = cadmpeg_ir::codec::write::output_empty(format!(
+            "the root layer of {} bytes is past the 32-bit sizes of a ZIP archive without \
+             ZIP64 records; the package holds an empty root layer",
+            root.len()
+        ));
+        return (bytes, vec![note]);
+    }
+    if left_out.is_empty() {
+        return (bytes, Vec::new());
+    }
+    // The root layer only shrinks, so each member admitted after the larger
+    // root layer is admitted after the smaller one.
+    let root = std::str::from_utf8(root).map_or_else(
+        |_| root.to_vec(),
+        |text| crate::writer::text::without_assets(text, &left_out).into_bytes(),
+    );
+    let kept: Vec<(&str, &[u8])> = std::iter::once((ROOT_MEMBER, root.as_slice()))
+        .chain(
+            members
+                .iter()
+                .filter(|(name, _)| !left_out.contains(name))
+                .map(|(name, bytes)| (name.as_str(), bytes.as_slice())),
+        )
+        .collect();
+    let (bytes, again) = package_by(&kept, &admit);
+    debug_assert!(again.is_empty(), "a smaller root layer admits the members");
+    let notes = cadmpeg_ir::codec::write::value_unwritable(
+        "USDZ",
+        "leaves out the texture members that a ZIP archive without ZIP64 records cannot \
+         address, and the asset paths that name them; each attribute takes its fallback value",
+        left_out,
+    );
+    (bytes, notes.into_iter().collect())
+}
+
 /// A package of the stored `members`, by name and content, in order, each
 /// with its data at a multiple of 64 bytes, and the names of the members
 /// left out.
 ///
 /// The archive has no ZIP64 records ([`admit`]). A member past its limits
 /// is left out, and the members after it are written where they fit.
+#[cfg(test)]
 pub(crate) fn package(members: &[(&str, &[u8])]) -> (Vec<u8>, Vec<String>) {
+    package_by(members, admit)
+}
+
+/// [`package`] with the archive limits of `admit`.
+fn package_by(
+    members: &[(&str, &[u8])],
+    admit: impl Fn(&str, usize, u32, u32, u16) -> Option<Admitted>,
+) -> (Vec<u8>, Vec<String>) {
     let mut out = Vec::new();
     let mut entries = Vec::new();
     // The archive end, the central directory length and the member count
