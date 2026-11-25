@@ -150,16 +150,35 @@ split-debuginfo = "unpacked"
 [profile.dev.package.sha2]
 opt-level = 3
 
-# Golden, sweep, and source-scan tests spend their time in serde_json and
-# proc-macro2. Dependencies rebuild only when the lockfile changes.
+# Hot JSON, compression, byte-search, and checksum dependencies stay at
+# opt-level 2; remaining third-party dependencies (syn, serde_derive, hdf5,
+# proptest, clap, regex, etc.) compile at opt-level 1 to cut cold build time.
 [profile.dev.package."*"]
+opt-level = 1
+
+[profile.dev.package.serde_json]
+opt-level = 2
+
+[profile.dev.package.flate2]
+opt-level = 2
+
+[profile.dev.package.ruzstd]
+opt-level = 2
+
+[profile.dev.package.memchr]
+opt-level = 2
+
+[profile.dev.package.crc32fast]
+opt-level = 2
+
+[profile.dev.package.twox-hash]
 opt-level = 2
 
 # Evaluation charges `WorkBudget` once per step. At opt-level 0 the budget
 # debit and its ancestor walk take about a quarter of the self time of
 # measured-geometry tests. Compiling `cadmpeg-core` and `cadmpeg-container`
-# at opt-level 2 keeps byte-level container scanning, erased serde adapters,
-# and JSON formatting fast without optimizing the large codec crates.
+# at opt-level 1 keeps byte-level container scanning, erased serde adapters,
+# and JSON formatting fast while avoiding -O2 LLVM compile overhead.
 [profile.dev.package.cadmpeg-core]
 opt-level = 1
 
@@ -174,6 +193,15 @@ opt-level = 1
 # Measurement tests spend most of their time in this crate's quadrature;
 # opt-level 1 keeps quadrature fast while avoiding -O2 LLVM compile overhead.
 [profile.dev.package.cadmpeg-measure]
+opt-level = 1
+
+# SLDPRT leaf-sweep and edit-refusal tests decode and read back real SolidWorks
+# parts over a hundred times; opt-level 1 speeds up both decode and read-back
+# without paying the multi-minute -O2 compile penalty.
+[profile.dev.package.cadmpeg-codec-sldprt]
+opt-level = 1
+
+[profile.test.package.cadmpeg-codec-sldprt]
 opt-level = 1
 
 [profile.test]

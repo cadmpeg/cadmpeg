@@ -135,7 +135,12 @@ fn curve_pipeline_composes_points_clouds_lines_arcs_polylines_and_compounds() {
     let result = decode(support::archive(&objects));
     assert!(!result.ir().geometry.points.is_empty());
     assert!(result.ir().geometry.curves.len() >= 3);
-    assert!(!result.ir().geometry.procedural_curves.is_empty());
+    assert!(result.ir().geometry.curves.iter().any(|curve| matches!(
+        curve.geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Solved(
+            cadmpeg_ir::geometry::SolvedCurveGeometry::Composite { .. }
+        )
+    )));
     assert_valid(&result);
 }
 #[test]
