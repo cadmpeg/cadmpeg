@@ -987,6 +987,16 @@ option `2`, and side extents `[1, 0]`.
 
 **Need.** A Sketch, a new-body `Extrude` of a box, and a join `Extrude` whose profile lies on a face of the box, saved once with every side face of the join outside the box and once with some of its side faces inside the box: the GUID of the join's body entry compared with the GUIDs of the browser nodes and of the body entry of the creating `Extrude`, and the tokens compared with the keys of the side entries of the join's table.
 
+### DR-1064. Current history-state identities that decrease along a timeline
+
+**Question.** Which stored history state holds the result after each timeline item when the current history-state identities of the items that commit a state decrease from one item to a later one?
+
+**Known.** `f3d.md` §3.1 "**History chain.**" and "**States of a document.**" give the `delta_state` chain of each `.smbh` history and the state after a timeline item: the stored state with the largest identity at or below the item's current identity. The identities increase from the root state to the head state. A timeline can store two items before the saved rollback marker, each with `s0 = 0` and a current identity that names a stored state, where the later item stores the smaller current identity. Each of the two identities names a `delta_state` of the history.
+
+**Need.** A Sketch and two new-body `Extrude` items, saved once; the same design after the second `Extrude` is moved before the first in the timeline and the design is computed again, saved once. For each save, the current and preceding identities of both items, compared with the `delta_state` chain and the bodies of each state.
+
+**Note.** The decoder states no evaluation of the states after the items of such a timeline and charges `history.states-unread`.
+
 ### DR-1054. Bulletin board of a state that changes an earlier body
 
 **Question.** Which entity slots does the bulletin board of a history state keep as updates, and which does it delete and insert, when the item of the state changes a body of the state before it?
