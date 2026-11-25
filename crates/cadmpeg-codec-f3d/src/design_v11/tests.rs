@@ -566,25 +566,27 @@ fn an_unprojected_item_takes_its_suppression_from_its_thread_companion_flag() {
 
 #[test]
 fn a_referenced_design_is_a_document_of_its_own() {
-    const XREF: &str = "xref/role-1/reference-0/occurrence-0/";
+    const XREF: &str = "role-1/reference-0/occurrence-0@";
     assert_eq!(super::timeline::document_prefix(STREAM), "");
     let nested = format!("f3d:{XREF}FusionAssetName[Active]/Design1/BulkStream.dat");
     assert_eq!(super::timeline::document_prefix(&nested), XREF);
-    let deeper = format!("f3d:{XREF}xref/role-2/reference-1/occurrence-3/Design1/BulkStream.dat");
+    let deeper =
+        "f3d:role-1/reference-0/occurrence-0/xref/role-2/reference-1/occurrence-3@Design1/BulkStream.dat";
     assert_eq!(
-        super::timeline::document_prefix(&deeper),
-        format!("{XREF}xref/role-2/reference-1/occurrence-3/")
+        super::timeline::document_prefix(deeper),
+        "role-1/reference-0/occurrence-0/xref/role-2/reference-1/occurrence-3@"
     );
 }
 
 #[test]
 fn a_referenced_design_without_a_definition_is_hosted_by_its_enclosing_scope() {
-    const OUTER: &str = "xref/role-1/reference-0/occurrence-0/";
+    const OUTER: &str = "role-1/reference-0/occurrence-0@";
     let scopes = BTreeMap::from([(String::new(), 0_u8), (OUTER.to_owned(), 0)]);
-    let inner = format!("{OUTER}xref/role-2/reference-0/occurrence-1/");
-    assert_eq!(super::host(&scopes, &inner), OUTER);
+    let inner = "role-1/reference-0/occurrence-0/xref/role-2/reference-0/occurrence-1@";
+    assert_eq!(super::host(&scopes, inner), OUTER);
+    assert_eq!(super::host(&scopes, "role-3/reference-0/occurrence-0@"), "");
     assert_eq!(
-        super::host(&scopes, "xref/role-3/reference-0/occurrence-0/"),
+        super::host(&scopes, "role-1/reference-0/occurrence-01@"),
         ""
     );
     assert_eq!(super::host(&BTreeMap::<String, u8>::new(), OUTER), "");
@@ -605,9 +607,9 @@ fn definition(id: &str, storage: Storage, bodies: &[&str]) -> ProductDefinition 
 
 #[test]
 fn a_definition_and_its_bodies_belong_to_the_scope_that_spans_it() {
-    const XREF: &str = "xref/role-1/reference-0/occurrence-0/";
+    const XREF: &str = "role-1/reference-0/occurrence-0@";
     let root = crate::tree::file_root_id();
-    let member = format!("f3d:{XREF}archive:product-definition#0");
+    let member = "f3d:xref:product-definition#role-1/reference-0/occurrence-0".to_owned();
     let definitions = [
         definition(
             root.as_str(),
@@ -852,7 +854,7 @@ fn parameters_state_literals_and_source_text_in_their_scope() {
     use cadmpeg_ir::features::parameters::ParameterValue as V10;
     use cadmpeg_ir::scalar::{Angle, FiniteReal, Length};
     const OWNER: &str = "f3d:model:feature#extrude:20";
-    const XREF: &str = "xref/role-1/reference-0/occurrence-0/";
+    const XREF: &str = "role-1/reference-0/occurrence-0@";
     let mut shared = parameter(
         "shared",
         Some(format!("f3d:{XREF}model:document-parameters#0").as_str()),
@@ -933,7 +935,8 @@ fn parameters_state_literals_and_source_text_in_their_scope() {
     ];
     let root = crate::tree::file_root_id();
     let referenced =
-        ProductDefinitionId::mint(format!("f3d:{XREF}archive:product-definition#0")).unwrap();
+        ProductDefinitionId::mint("f3d:xref:product-definition#role-1/reference-0/occurrence-0")
+            .unwrap();
     let scopes = BTreeMap::from([
         (String::new(), root.clone()),
         (XREF.to_owned(), referenced.clone()),
@@ -1134,10 +1137,10 @@ fn the_parameter_of_a_driven_dimension_is_driven() {
 fn a_hosted_referenced_designs_user_parameters_stay_off_the_scope_that_hosts_it() {
     use cadmpeg_ir::features::parameters::ParameterValue as V10;
     use cadmpeg_ir::scalar::Length;
-    const FIRST: &str = "xref/role-1/reference-0/occurrence-0/";
-    const SECOND: &str = "xref/role-1/reference-1/occurrence-0/";
-    const UNLISTED: &str = "xref/role-1/reference-2/occurrence-0/";
-    const OWNER: &str = "f3d:xref/role-1/reference-0/occurrence-0/model:feature#extrude:5";
+    const FIRST: &str = "role-1/reference-0/occurrence-0@";
+    const SECOND: &str = "role-1/reference-1/occurrence-0@";
+    const UNLISTED: &str = "role-1/reference-2/occurrence-0@";
+    const OWNER: &str = "f3d:role-1/reference-0/occurrence-0@model:feature#extrude:5";
     let in_document = |prefix: &str, key: &str, name: &str, owner: &str| {
         let mut parameter = parameter(
             key,
@@ -1390,12 +1393,13 @@ fn rows_and_cells_the_design_omits_are_named_by_one_loss_per_class() {
     use cadmpeg_ir::features::{ConfigurationId, ParameterId};
     const OWNER: &str = "f3d:model:feature#extrude:20";
     const UNLISTED: &str = "f3d:model:feature#unlisted:9";
-    const HOSTED: &str = "xref/role-1/reference-0/occurrence-0/";
-    const UNKEYED: &str = "xref/role-1/reference-1/occurrence-0/";
-    const INACTIVE: &str = "xref/role-1/reference-2/occurrence-0/";
+    const HOSTED: &str = "role-1/reference-0/occurrence-0@";
+    const UNKEYED: &str = "role-1/reference-1/occurrence-0@";
+    const INACTIVE: &str = "role-1/reference-2/occurrence-0@";
     let root = crate::tree::file_root_id();
     let inactive_scope =
-        ProductDefinitionId::mint(format!("f3d:{INACTIVE}archive:product-definition#0")).unwrap();
+        ProductDefinitionId::mint("f3d:xref:product-definition#role-1/reference-2/occurrence-0")
+            .unwrap();
     let scopes = BTreeMap::from([
         (String::new(), root.clone()),
         (HOSTED.to_owned(), root.clone()),

@@ -59,7 +59,7 @@ fn configuration_documents_with_rows_in_two_tables_have_no_single_order() {
 fn scoped_document(scope: &str, name: &str, rows: bool) -> DesignConfiguration {
     let mut value = serde_json::to_value(document(name, rows)).unwrap();
     value["id"] = serde_json::json!(format!(
-        "f3d:xref/role-{scope}/reference-0/occurrence-0/configuration:entry#{name}"
+        "f3d:role-{scope}/reference-0/occurrence-0@configuration:entry#{name}"
     ));
     serde_json::from_value(value).unwrap()
 }

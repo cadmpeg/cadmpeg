@@ -350,9 +350,11 @@ impl<'a> DesignRecords<'a> {
     }
 
     /// Every feature definition the design states, with the record that
-    /// states it: each feature's own, and each definition override of a
-    /// configuration or an arrangement.
-    pub(in crate::validate) fn feature_definitions(&self) -> Vec<(&'a str, &'a FeatureDefinition)> {
+    /// states it and the feature it defines: each feature's own, and each
+    /// definition override of a configuration or an arrangement.
+    pub(in crate::validate) fn feature_definitions(
+        &self,
+    ) -> Vec<(&'a str, &'a str, &'a FeatureDefinition)> {
         let design = &self.ir.design;
         let overrides = design
             .configurations
@@ -367,12 +369,20 @@ impl<'a> DesignRecords<'a> {
         design
             .features
             .iter()
-            .map(|feature| (feature.id.as_str(), &feature.definition))
+            .map(|feature| {
+                (
+                    feature.id.as_str(),
+                    feature.id.as_str(),
+                    &feature.definition,
+                )
+            })
             .chain(overrides.flat_map(|(holder, overrides)| {
                 overrides
                     .features
-                    .values()
-                    .filter_map(move |state| Some((holder, state.definition.as_ref()?)))
+                    .iter()
+                    .filter_map(move |(feature, state)| {
+                        Some((holder, feature.as_str(), state.definition.as_ref()?))
+                    })
             }))
             .collect()
     }

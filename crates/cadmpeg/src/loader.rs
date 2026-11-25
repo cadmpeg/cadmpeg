@@ -7,7 +7,7 @@ use std::path::Path;
 use anyhow::{anyhow, Context};
 use cadmpeg_core::decode::{ContentScope, DecodeArena, DecodeContext, View};
 use cadmpeg_ir::codec::{Confidence, DecodeOptions};
-use cadmpeg_ir::{CadIr, DecodeSidecar};
+use cadmpeg_ir::{CadIr, DecodeSidecar, ReadFailure, ReadOptions};
 
 use cadmpeg_registry::{
     ForcedInput, InputCatalog, ResolveSourceError, ResolvedSource, Selection, DETECTION_PREFIX_LEN,
@@ -15,7 +15,7 @@ use cadmpeg_registry::{
 
 use crate::application::artifact_store::{self, SidecarLoad};
 use crate::application::document::{LoadOrigin, LoadedDocument};
-use crate::application::refusal::ApplicationError;
+use crate::application::refusal::{ApplicationError, ConversionRefusal};
 
 pub(crate) mod companions;
 
@@ -37,9 +37,9 @@ pub(crate) fn detection_failure(error: &ResolveSourceError) -> anyhow::Error {
 /// JSON object is parsed as CADIR when no native codec recognizes it.
 ///
 /// Every command loads through here, so here is where the load's notices go
-/// to stderr: a decode sidecar the load ignored, a document whose scope
-/// excludes a class the command requested, and a detection below high
-/// confidence.
+/// to stderr: a decode sidecar the load ignored, each entry of a CADIR read's
+/// report, a document whose scope excludes a class the command requested, and
+/// a detection below high confidence.
 pub(crate) fn load_artifact(
     catalog: &InputCatalog,
     path: &Path,
@@ -55,6 +55,9 @@ pub(crate) fn load_artifact(
 fn print_load_notice(path: &Path, document: &LoadedDocument, requested: ContentScope) {
     if let Some(loss) = &document.stale_sidecar {
         eprintln!("warning: {}: {}", loss.code, loss.message);
+    }
+    for entry in &document.read_report {
+        eprintln!("warning: {}: {}", entry.code, entry.message);
     }
     if let Some(note) = scope_note(document.ir.scope(), requested) {
         eprintln!("note: {}: {note}", path.display());
@@ -134,37 +137,46 @@ fn load(
 
     let max_bytes = options.policy.limits.max_input_bytes;
     ctx.complete_input(&mut file, &mut prefix)?;
-    let text =
-        String::from_utf8(prefix).map_err(|error| anyhow!("invalid CADIR UTF-8: {error}"))?;
     ctx.finish_session()?;
-    let ir = CadIr::from_json(&text).map_err(|e| {
-        if names_decode_sidecar(path) {
-            anyhow!(
-                "{} is a decode sidecar; pass the CADIR document beside it",
-                path.display()
-            )
-        } else {
-            anyhow!(
-                "{} is neither a recognized CAD file nor a valid .cadir.json document: {e}",
-                path.display()
-            )
+    // The decode's strictness judges the report of this CADIR read. A restored
+    // sidecar's report describes an earlier decode and never decides (CADIR v11
+    // §3.5).
+    let read_options = ReadOptions {
+        limits: options.policy.limits,
+        strictness: options.strictness.clone(),
+    };
+    let read = CadIr::read(&prefix, &read_options).map_err(|error| match error {
+        ReadFailure::ResourceLimit(limit) => {
+            ApplicationError::from(cadmpeg_core::CodecError::ResourceLimit(limit))
         }
+        ReadFailure::StrictRejected { report, entry } => {
+            ConversionRefusal::StrictReadRejected { report, entry }.into()
+        }
+        _ if names_decode_sidecar(path) => anyhow!(
+            "{} is a decode sidecar; pass the CADIR document beside it",
+            path.display()
+        )
+        .into(),
+        error => anyhow!(
+            "{} is neither a recognized CAD file nor a valid .cadir.json document: {error}",
+            path.display()
+        )
+        .into(),
     })?;
-    let input_bytes = cadmpeg_core::decode::u64_from_index(text.len());
-    Ok(
-        match artifact_store::load_matching_sidecar(path, text.as_bytes(), max_bytes)? {
-            SidecarLoad::Absent => LoadedDocument::neutral(ir, input_bytes),
-            SidecarLoad::Stale(loss) => {
-                LoadedDocument::neutral(ir, input_bytes).with_stale_sidecar(loss)
-            }
-            SidecarLoad::Matching(sidecar) => {
-                let DecodeSidecar {
-                    report, fidelity, ..
-                } = *sidecar;
-                LoadedDocument::restored(ir, report, fidelity, input_bytes)
-            }
-        },
-    )
+    let input_bytes = cadmpeg_core::decode::u64_from_index(prefix.len());
+    let document = match artifact_store::load_matching_sidecar(path, &prefix, max_bytes)? {
+        SidecarLoad::Absent => LoadedDocument::neutral(read.document, input_bytes),
+        SidecarLoad::Stale(loss) => {
+            LoadedDocument::neutral(read.document, input_bytes).with_stale_sidecar(loss)
+        }
+        SidecarLoad::Matching(sidecar) => {
+            let DecodeSidecar {
+                report, fidelity, ..
+            } = *sidecar;
+            LoadedDocument::restored(read.document, report, fidelity, input_bytes)
+        }
+    };
+    Ok(document.with_read_report(read.report))
 }
 
 /// Whether the file name has the decode-sidecar suffix that `dump` writes

@@ -50,6 +50,7 @@ use super::{
 mod arcs;
 mod construction;
 mod faces;
+mod history;
 mod holes;
 mod reversed;
 
