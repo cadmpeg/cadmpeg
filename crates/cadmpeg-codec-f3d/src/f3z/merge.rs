@@ -2667,7 +2667,7 @@ fn rescope_native_reference_fields(
         "design_mesh_features" => {
             scope_named_fields(ctx, fields, &["tessellation_id"], scope)?;
         }
-        "xref_references" => {
+        "xref_references" | "design_hidden_occurrences" => {
             scope_named_fields(ctx, fields, &["stream"], scope)?;
         }
         "design_parameter_scopes" => {

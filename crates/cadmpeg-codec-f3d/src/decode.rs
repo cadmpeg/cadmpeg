@@ -3960,7 +3960,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.ir.model.product_definitions,
             &self.ir.model.occurrences,
         );
-        crate::design::decode::hidden_occurrences::apply_hidden_occurrences(
+        let native_visibility = crate::design::decode::hidden_occurrences::apply_hidden_occurrences(
             &mut self.ir.model.occurrences,
             &parents,
             &prereqs.design_component_occurrences,
@@ -3968,7 +3968,13 @@ impl<'a> F3dDecodeSession<'a> {
                 .xref_table()
                 .map_or(&[], |table| table.references.as_slice()),
             &prereqs.design_hidden_occurrences,
+            &local_components,
         );
+        if native_visibility != 0 {
+            self.report.losses.push(F3dLossCode::OccurrenceVisibilityNative.note(format!(
+                "{native_visibility} hidden occurrence path(s) retain unbound carriers in native records; admitted occurrence visibility is projected."
+            )));
+        }
         self.report.losses.extend(local.losses);
         let mut component_inserts = crate::design::components::ComponentInserts::decide(
             &prereqs.design_parameter_scopes,

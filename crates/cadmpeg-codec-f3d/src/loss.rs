@@ -26,6 +26,8 @@ use cadmpeg_ir::report::{
 pub(crate) enum F3dLossCode {
     /// A counted display override candidate fails its local grammar.
     SceneOverrideRefused,
+    /// Saved scene visibility names retain their native display state.
+    SceneVisibilityNative,
     DraftPartingControlsPartial,
     DraftNeutralAnchorAssumed,
     DraftSlopeOutOfRange,
@@ -226,6 +228,8 @@ pub(crate) enum F3dLossCode {
     LocalOccurrenceEnvelopeSuperseded,
     /// A registered unnamed local occurrence has an unresolved envelope.
     LocalOccurrenceEnvelopeNative,
+    /// A hidden path retains carriers without neutral occurrence bindings.
+    OccurrenceVisibilityNative,
     /// A component-path record with only local elements matches no admitted
     /// local path form.
     LocalComponentPathNative,
@@ -1440,6 +1444,7 @@ impl F3dLossCode {
     #[cfg(test)]
     const ALL: &'static [F3dLossCode] = &[
         Self::SceneOverrideRefused,
+        Self::SceneVisibilityNative,
         Self::DraftPartingControlsPartial,
         Self::DraftNeutralAnchorAssumed,
         Self::DraftSlopeOutOfRange,
@@ -1581,6 +1586,7 @@ impl F3dLossCode {
         Self::RootInstanceDefinitionUnbound,
         Self::LocalOccurrenceEnvelopeSuperseded,
         Self::LocalOccurrenceEnvelopeNative,
+        Self::OccurrenceVisibilityNative,
         Self::LocalComponentPathNative,
         Self::LocalOccurrenceTypeUnregistered,
         Self::LocalOccurrenceYieldedToRegistered,
@@ -2290,6 +2296,7 @@ impl F3dLossCode {
     const fn code(self) -> &'static str {
         match self {
             Self::SceneOverrideRefused => "scene.override-refused",
+            Self::SceneVisibilityNative => "scene.visibility-native",
             Self::DraftPartingControlsPartial => "feature.draft-parting-controls-partial",
             Self::DraftNeutralAnchorAssumed => "feature.draft-neutral-anchor-assumed",
             Self::DraftSlopeOutOfRange => "feature.draft-slope-out-of-range",
@@ -2473,6 +2480,7 @@ impl F3dLossCode {
             Self::RootInstanceDefinitionUnbound => "assembly.root-instance-definition-unbound",
             Self::SavedFreeEdgeBodyUnowned => "assembly.saved-free-edge-body-unowned",
             Self::LocalOccurrenceEnvelopeNative => "assembly.local-occurrence-envelope-native",
+            Self::OccurrenceVisibilityNative => "assembly.occurrence-visibility-native",
             Self::LocalComponentPathNative => "assembly.local-component-path-native",
             Self::LocalOccurrenceIdentityOrdinalUnresolved => {
                 "assembly.local-occurrence-identity-ordinal-unresolved"
@@ -3533,7 +3541,7 @@ impl F3dLossCode {
             Self::FeatureBodyHistoryIncomplete
             | Self::FeatureBodyHistoryOwnerUnresolved
             | Self::FeatureBodyHistoryUnread => Severity::Warning,
-            Self::SceneOverrideRefused => Severity::Warning,
+            Self::SceneOverrideRefused | Self::SceneVisibilityNative => Severity::Warning,
             Self::BendStationaryRoleAssumed
             | Self::BendAngleUnresolved
             | Self::BendRadiusFirstAssumed
@@ -3740,6 +3748,7 @@ impl F3dLossCode {
             | Self::LocalOccurrenceKeyRepeated
             | Self::LocalOccurrenceFirstMatrixRefused
             | Self::LocalOccurrenceEnvelopeNative
+            | Self::OccurrenceVisibilityNative
             | Self::LocalComponentPathNative
             | Self::LocalOccurrenceEnvelopeSuperseded
             | Self::LocalOccurrenceTypeUnregistered
@@ -4381,7 +4390,10 @@ impl F3dLossCode {
             Self::FeatureBodyHistoryIncomplete
             | Self::FeatureBodyHistoryOwnerUnresolved
             | Self::FeatureBodyHistoryUnread => LossTaxonomy::FeatureHistoryRetained,
-            Self::SceneOverrideRefused => LossTaxonomy::RecordNotTyped,
+            Self::OccurrenceVisibilityNative => LossTaxonomy::AttributesNotTransferred,
+            Self::SceneOverrideRefused | Self::SceneVisibilityNative => {
+                LossTaxonomy::RecordNotTyped
+            }
             Self::BendStationaryRoleAssumed
             | Self::BendAngleUnresolved
             | Self::BendRadiusFirstAssumed
@@ -5335,6 +5347,7 @@ mod tests {
             codes,
             [
                 "scene.override-refused",
+                "scene.visibility-native",
                 "feature.draft-parting-controls-partial",
                 "feature.draft-neutral-anchor-assumed",
                 "feature.draft-slope-out-of-range",
@@ -5476,6 +5489,7 @@ mod tests {
                 "assembly.root-instance-definition-unbound",
                 "assembly.local-occurrence-envelope-superseded",
                 "assembly.local-occurrence-envelope-native",
+                "assembly.occurrence-visibility-native",
                 "assembly.local-component-path-native",
                 "assembly.local-occurrence-type-unregistered",
                 "assembly.local-occurrence-yielded-to-registered",

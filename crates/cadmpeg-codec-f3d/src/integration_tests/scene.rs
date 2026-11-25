@@ -5,6 +5,26 @@ use crate::scene::SceneBinding;
 use crate::test_support::scene::{override_row, with_world};
 
 #[test]
+fn native_scene_visibility_preserves_geometry_and_the_source_image() {
+    let baseline = super::decode(crate::test_support::scene::archive(&[]));
+    let mut world = Vec::new();
+    crate::test_support::lp_utf16(&mut world, "VisibilityAttribute");
+    world.extend_from_slice(&[0; 6]);
+    let bytes = crate::test_support::scene::archive(&world);
+    let decoded = super::decode(bytes.clone());
+    assert_eq!(decoded.ir().geometry, baseline.ir().geometry);
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::SceneVisibilityNative.kind()));
+    let mut output = Vec::new();
+    crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut output)
+        .unwrap();
+    assert_eq!(output, bytes);
+}
+
+#[test]
 fn scene_local_paths_bind_without_changing_occurrences_or_joints() {
     let (bulk, meta) = crate::test_support::component_design::nested_local_component_design(&[300]);
     let bytes = crate::test_support::body_map_test::f3d_with_breps_and_design(

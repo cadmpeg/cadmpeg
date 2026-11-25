@@ -494,6 +494,17 @@ impl<'ir> Measurer<'ir> {
         };
         let mut body_out: Vec<BodyMeasures> =
             body_rows.iter().map(|body| bodies.row(body)).collect();
+        if !body_out.is_empty() {
+            let visibility = crate::visibility::bodies(self.input.ir, selection, ctx)?;
+            for row in &mut body_out {
+                if row.visible != Some(false) {
+                    row.visible = visibility
+                        .get(row.body.as_str())
+                        .copied()
+                        .unwrap_or(row.visible);
+                }
+            }
+        }
         if let Some(space) = space.as_ref().filter(|space| space.placed()) {
             let placement = RowPlacement::Occurrence {
                 occurrence: space.report.occurrence.clone(),

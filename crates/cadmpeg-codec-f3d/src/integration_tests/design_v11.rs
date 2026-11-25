@@ -93,6 +93,39 @@ fn position_design_on(base: Vec<u8>) -> Vec<u8> {
 }
 
 #[test]
+fn geometry_depth_keeps_the_model_without_projecting_the_design_timeline() {
+    use cadmpeg_core::decode::DecodeDepth;
+    use cadmpeg_ir::DecodeOptions;
+
+    let mut zip = zip::ZipWriter::new_append(Cursor::new(position_design())).unwrap();
+    zip.start_file(
+        "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+        crate::zip_write::file_options(zip::CompressionMethod::Stored),
+    )
+    .unwrap();
+    zip.write_all(&crate::test_support::smbh_geometry_test::synthetic_geometry_smbh())
+        .unwrap();
+    let bytes = zip.finish().unwrap().into_inner();
+    let full = super::decode(bytes.clone());
+    let geometry = crate::test_support::archive_session::decode(
+        &mut Cursor::new(bytes),
+        &DecodeOptions {
+            depth: DecodeDepth::Geometry,
+            ..DecodeOptions::default()
+        },
+    )
+    .expect("geometry decode with a saved design timeline");
+
+    assert_eq!(geometry.report().depth(), DecodeDepth::Geometry);
+    assert_eq!(geometry.ir().scope().depth(), DecodeDepth::Geometry);
+    assert!(geometry.ir().design.containers.is_empty());
+    assert_eq!(full.ir().design.containers.len(), 1);
+    assert!(!geometry.ir().geometry.bodies.is_empty());
+    assert_eq!(geometry.ir().geometry, full.ir().geometry);
+    assert_eq!(geometry.ir().model.occurrences, full.ir().model.occurrences);
+}
+
+#[test]
 fn a_timeline_is_one_ordered_container_of_the_root_scope() {
     let decoded = super::decode(position_design());
     let ir = decoded.ir();

@@ -913,6 +913,35 @@ fn external_placement_source_keeps_its_local_owner_and_scopes_its_stream() {
 }
 
 #[test]
+fn hidden_occurrence_native_stream_is_scoped_with_its_member() {
+    let mut fields = serde_json::json!({
+        "stream": "f3d:Design/BulkStream.dat",
+        "record_index": 11,
+        "target": 30,
+        "ancestors": [10, 20]
+    })
+    .as_object()
+    .unwrap()
+    .clone();
+    crate::test_support::with_decode_context(|ctx| {
+        super::super::rescope_native_reference_fields(
+            ctx,
+            "design_hidden_occurrences",
+            &mut fields,
+            "part/occurrence-2",
+        )
+        .unwrap();
+    });
+    assert_eq!(
+        fields["stream"],
+        "f3d:xref/part/occurrence-2/Design/BulkStream.dat"
+    );
+    assert_eq!(fields["record_index"], 11);
+    assert_eq!(fields["target"], 30);
+    assert_eq!(fields["ancestors"], serde_json::json!([10, 20]));
+}
+
+#[test]
 fn imported_definition_bodies_keep_their_definition_frame() {
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     ir.source = Some(member_source());

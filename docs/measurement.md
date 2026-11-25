@@ -14,6 +14,23 @@ admits `cadmpeg-codec-f3d`, for the body boxes its writer writes.
 
 ## Value object
 
+Each body row's `visible` is its effective display state. The body and each
+occurrence on its complete path supply visibility gates. Appearance bindings,
+presentation layers, configurations, and nested occurrence overrides apply
+through the CADIR effective-visibility rules. An unset gate permits display.
+A hidden gate sets `visible` to `false`. Hidden bodies remain in the report
+and contribute to its geometric totals.
+
+In model space a body shared by several instances is visible when at least
+one instance is visible. With `--occurrence`, visibility uses the complete
+path from the root through the selected occurrence and its descendants.
+An unplaced body uses its definition-space display state. An explicit hidden
+body remains hidden. A visibility resolution error gives `null` for other
+bodies unless another instance establishes visibility.
+
+Decode losses identify source display state retained in native records.
+Measurement resolves the display gates carried by CADIR.
+
 Every quantity is one tagged object. A quantity that does not apply to an
 entity is absent.
 
