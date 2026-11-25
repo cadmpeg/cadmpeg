@@ -164,6 +164,82 @@ fn adjacent_planar_faces_round_trip_shared_edge_and_domains() {
     }
 }
 
+/// `planar_tetrahedron` with its first face on a plane whose normal points
+/// into the solid and with the face reversed: the face keeps its outward
+/// side, and its Brep face stores `reversed surface` 1.
+fn tetrahedron_with_reversed_face() -> cadmpeg_ir::document::CadIr {
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+
+    let mut ir = planar_tetrahedron();
+    let surface = ir.geometry.faces[0].surface.clone();
+    let record = ir
+        .geometry
+        .surfaces
+        .iter_mut()
+        .find(|record| record.id == surface)
+        .expect("the face's surface");
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) = &record.geometry else {
+        panic!("a plane");
+    };
+    let axis = *plane.frame().axis().as_raw();
+    let reference = *plane.frame().reference().as_raw();
+    record.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            plane.origin().get(),
+            cadmpeg_ir::math::Vector3::new(-axis.x, -axis.y, -axis.z),
+            reference,
+        )
+        .expect("a plane frame"),
+    ));
+    ir.geometry.faces[0].sense = cadmpeg_ir::topology::Sense::Reversed;
+    ir
+}
+
+#[test]
+fn closed_solid_with_a_reversed_surface_face_decodes_as_one_joined_solid() {
+    use cadmpeg_ir::topology::{BodyKind, Sense};
+
+    let ir = tetrahedron_with_reversed_face();
+    let (decoded, losses) = super::written(&ir);
+    let geometry = &decoded.geometry;
+    assert_eq!(geometry.bodies.len(), 1, "{losses:?}");
+    assert_eq!(geometry.bodies[0].kind, BodyKind::Solid, "{losses:?}");
+    assert_eq!(geometry.faces.len(), 4);
+    assert_eq!(geometry.edges.len(), 6);
+    assert_eq!(
+        geometry
+            .faces
+            .iter()
+            .filter(|face| face.sense == Sense::Reversed)
+            .count(),
+        1
+    );
+    for edge in &geometry.edges {
+        let uses = geometry
+            .coedges
+            .iter()
+            .filter(|coedge| coedge.edge == edge.id)
+            .collect::<Vec<_>>();
+        let [first, second] = uses.as_slice() else {
+            panic!("edge {} has {} uses", edge.id.as_str(), uses.len());
+        };
+        assert_ne!(first.sense, second.sense, "{}", edge.id.as_str());
+        assert_eq!(first.radial_next, second.id);
+        assert_eq!(second.radial_next, first.id);
+    }
+    let validation =
+        cadmpeg_ir::validate_neutral(&decoded, Vec::new()).expect("validate the neutral model");
+    assert!(validation.is_ok(), "{:?}", validation.findings);
+    assert!(
+        losses
+            .iter()
+            .all(|loss| !loss.contains("writer.record-omitted")
+                && !loss.contains("writer.edge-unjoined")
+                && !loss.contains("writer.body-split")),
+        "{losses:?}"
+    );
+}
+
 #[test]
 fn planar_tetrahedron_round_trips_as_closed_solid() {
     let ir = planar_tetrahedron();
