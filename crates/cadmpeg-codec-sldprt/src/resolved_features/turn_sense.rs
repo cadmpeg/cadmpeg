@@ -35,7 +35,8 @@ pub(crate) fn turn_sense(payload: &[u8], start: usize, end: usize) -> Option<Tur
         let declared = payload.get(list..list + CLASS_MARKER.len()) == Some(CLASS_MARKER)
             && View::u16_le_at(payload, list + CLASS_MARKER.len())
                 == u16::try_from(SUOBLIST.len()).ok()
-            && payload.get(list + CLASS_MARKER.len() + 2..list + CLASS_MARKER.len() + 2 + SUOBLIST.len())
+            && payload
+                .get(list + CLASS_MARKER.len() + 2..list + CLASS_MARKER.len() + 2 + SUOBLIST.len())
                 == Some(SUOBLIST);
         if declared {
             Some(list + CLASS_MARKER.len() + 2 + SUOBLIST.len())

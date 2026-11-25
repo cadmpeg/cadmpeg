@@ -1864,7 +1864,10 @@ const REVOLVES: &[&str] = &["moRevolution_c", "moRevCut_c", "moRevolutionThin_c"
 /// Whether the bytes at `at` are a revolve's turn block with a `suObList`
 /// after it.
 fn is_turn_block(reader: &Reader<'_>, at: usize) -> Res<bool> {
-    if at.checked_add(turn::LEN + 2).is_none_or(|end| end > reader.len()) {
+    if at
+        .checked_add(turn::LEN + 2)
+        .is_none_or(|end| end > reader.len())
+    {
         return Ok(false);
     }
     Ok(reader.eq(at + turn::LEAD, &turn::LEAD_VALUE)

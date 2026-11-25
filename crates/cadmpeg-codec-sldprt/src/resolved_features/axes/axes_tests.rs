@@ -1626,7 +1626,10 @@ fn the_reverse_byte_turns_the_stored_axis_direction() {
         enrich_history_revolution_inputs_test(&mut histories, &[lane]);
         let revolution = &histories[0].features[1];
         assert_eq!(
-            revolution.properties.get("AxisDirection").map(String::as_str),
+            revolution
+                .properties
+                .get("AxisDirection")
+                .map(String::as_str),
             Some(direction)
         );
         assert_eq!(
@@ -1644,7 +1647,10 @@ fn lanes_that_disagree_on_the_turn_state_no_sense() {
     enrich_history_revolution_inputs_test(&mut histories, &[stored, reversed]);
     let revolution = &histories[0].features[1];
     assert_eq!(
-        revolution.properties.get("AxisDirection").map(String::as_str),
+        revolution
+            .properties
+            .get("AxisDirection")
+            .map(String::as_str),
         Some("0,0,-1")
     );
     assert_eq!(revolution.properties.get("TurnSense"), None);

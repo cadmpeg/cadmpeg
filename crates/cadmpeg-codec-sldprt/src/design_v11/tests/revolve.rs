@@ -771,7 +771,12 @@ fn a_partial_turn_whose_record_stores_its_sense_is_typed_with_a_warning() {
             r#"<Dimension Name="D1">90deg</Dimension>"#,
             &with_centreline(),
             &[sensed(
-                revolution([0.0, 0.0, 0.0], [0.0, -1.0, 0.0], &one_sided(FRAC_PI_2), "join"),
+                revolution(
+                    [0.0, 0.0, 0.0],
+                    [0.0, -1.0, 0.0],
+                    &one_sided(FRAC_PI_2),
+                    "join",
+                ),
                 sense,
             )],
         );
@@ -811,8 +816,16 @@ fn only_a_sense_read_with_the_axis_that_the_solid_depends_on_is_named() {
     let partial = revolution([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], &one_sided(PI), "join");
     for (revolve, named, reason) in [
         (sensed(about_y(), "Reversed"), false, None),
-        (partial.clone(), false, Some("less than a full turn on one side")),
-        (derived(sensed(partial, "Stored")), false, Some("less than a full turn on one side")),
+        (
+            partial.clone(),
+            false,
+            Some("less than a full turn on one side"),
+        ),
+        (
+            derived(sensed(partial, "Stored")),
+            false,
+            Some("less than a full turn on one side"),
+        ),
         (sensed(two_sided, "Stored"), true, Some("two-sided")),
     ] {
         let (ir, native) = part("", &with_centreline(), &[revolve]);
