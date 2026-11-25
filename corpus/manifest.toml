@@ -905,7 +905,7 @@ authoring_app_version = "2704.1.53"
 acquisition_date = "2026-11-14"
 license = "CC0-1.0"
 sha256 = "0c2e2eb25234b714bcb827e5da161d602a9dffb538e18356f7b3d5f43e2c4c1d"
-notes = "CC0 Fusion API save. Cut whose one Sketch-profile operand selects three of five profiles; then a rectangular pattern of the cut."
+notes = "CC0 Fusion API save. Cut whose one Sketch-profile operand selects three of five profiles; then a rectangular pattern of the cut, quantity 6 at 3 mm; API-added zero-distance second direction, quantity 3."
 
 [[file]]
 filename = "f3d/mirror_remove.f3d"
