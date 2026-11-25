@@ -4,8 +4,8 @@ use std::collections::BTreeMap;
 
 use super::{SolverSettings, SolverTarget, SolverValue};
 use crate::design::units::Quantity;
+use crate::features::FeatureId;
 use crate::ids::{OccurrenceId, SolverSettingsId};
-use crate::products::JointId;
 use crate::scalar::FiniteReal;
 
 fn settings() -> SolverSettings {
@@ -14,7 +14,7 @@ fn settings() -> SolverSettings {
         solver: "physx".to_owned(),
         schema: "PhysxJointAPI".to_owned(),
         target: SolverTarget::Joint {
-            joint: JointId::mint("test:model:joint#0").unwrap(),
+            joint: FeatureId::mint("test:model:feature#joint").unwrap(),
         }
         .into(),
         values: BTreeMap::from([
