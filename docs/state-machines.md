@@ -33,11 +33,11 @@ Evidence is current as of `t3/state-machine-audit` on `origin/main`. Confirmed r
 | From | Event | To (exit) | Report |
 | --- | --- | --- | --- |
 | running | command completes | 0 | `ok` |
-| running | `CheckFailed`, loss policy, unsupported dialect/target, strict decode, insufficient measure depth | 1 | `refused` |
+| running | `CheckFailed`, strict decode/export/measure, unsupported dialect/target, insufficient measure depth | 1 | `refused` |
 | running | `diff` models or geometry disagree | 1 | `ok` with `different: true` |
 | running | I/O, `DecodeFailed`, resource limit, binary stdout | 2 | `refused` when typed |
 
-`diff` reporting `ok` with exit 1 is the documented verdict split. Measure depth refusals reuse `insufficient_depth` with wire `stage: plan`.
+`diff` reporting `ok` with exit 1 is the documented verdict split. `diff --geometry` depth refusals reuse `insufficient_depth` with wire `stage: plan`. `measure --reject-empty` refuses `measure:output.empty` with `strict_measure_rejected` at stage `measure`.
 
 ### Convert stages
 
@@ -47,13 +47,13 @@ Evidence is current as of `t3/state-machine-audit` on `origin/main`. Confirmed r
 | --- | --- | --- | --- | --- |
 | start | resolve target / destination | existing output and no `--force` | refused before decode | continue |
 | open | `load_artifact` | native / CADIR / sidecar | `Decoded` / `Restored` / `Neutral` | operational error |
-| decoded | `--reject-lossy` decode | any decode loss | `decode_loss_rejected` | continue |
-| decoded | `validate_loaded` | `--reject-errors` and error findings in the payload | `check_failed` | continue |
-| checked | `encoder.plan` | plan `Err`, `--reject-errors`, and error findings | `check_failed` preferred | plan refusal |
-| planned | export losses and reject-lossy | nonempty export losses | `export_loss_rejected` | write |
+| decoded | decode `Strictness` | an entry of this invocation's decode report refused | `strict_decode_rejected` | continue |
+| decoded | `validate_loaded` | resource ceiling and `--reject-errors` | `resource_limit` at `check` | continue, check reported incomplete |
+| checked | `encoder.plan` | plan `Err` | plan refusal | charge `export:record.invalid` per carried error |
+| planned | write `Strictness` | an entry of the export report refused | `strict_export_rejected` | write |
 | write | `NamedTempFile` then rename | persist fails | operational error | `ok` |
 
-Convert writes after check errors and reports them; `--reject-errors` refuses. CADIR and sidecar use two independent renames; a crash between them leaves a digest mismatch, and the next load ignores the sidecar with `sidecar.stale` and loads the document without it.
+Convert writes after check errors and reports them; `--reject-errors` refuses through `export:record.invalid`. CADIR and sidecar use two independent renames; a crash between them leaves a digest mismatch, and the next load ignores the sidecar with `sidecar.stale` and loads the document without it.
 
 No CLI retry loop exists.
 
@@ -136,7 +136,7 @@ Registry `read` in `dialect-support.toml` is a capability column. Golden tests r
 
 **Explicit.** Backend `WritePath`: `VerbatimReplay` \| `Patched` \| `Synthesized`. Fidelity: `NotProvided` \| `NotConsumed` \| `Replayed` \| `Degraded`. `into_report` collapses by `fidelity_provided`. Verbatim cannot be `NotConsumed`. Synthesized cannot be `Replayed`.
 
-Strict decode evaluates `LossNote::strict_consequence` once in `DecodeResult::new` for non-container Strict mode. CLI `--reject-lossy` counts every loss, including Info.
+Strict decode evaluates `LossNote::strict_consequence` once in `DecodeResult::new` for non-container Strict mode. CLI `--reject-lossy` refuses every loss at or above `--reject-lossy-floor`, whose default `info` refuses every loss.
 
 ## Topology and measurement
 
