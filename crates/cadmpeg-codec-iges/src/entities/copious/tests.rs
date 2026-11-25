@@ -483,16 +483,18 @@ fn semantic_copious_projection_uses_entity_boundary_before_generic_candidate() {
 }
 
 #[test]
-fn strict_decode_refuses_an_unusable_required_copious_geometry_record() {
+fn strict_decode_reads_and_reports_an_unusable_required_copious_geometry_record() {
     let bytes = copious_data_file(11, b"106,2,2,0,0,0,1,0,0;", "00000000");
     let mut options = DecodeOptions::default();
     options.policy.mode = DecodeMode::Strict;
-    let failure = IgesCodec
+    let decoded = IgesCodec
         .decode(&mut Cursor::new(bytes), &options)
-        .unwrap_err();
-    assert!(
-        matches!(failure, cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } if rejection.loss().code == IgesLossCode::GeometryNotProjected.kind())
-    );
+        .expect("the not-projected code pins no strict floor");
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
 }
 
 #[test]

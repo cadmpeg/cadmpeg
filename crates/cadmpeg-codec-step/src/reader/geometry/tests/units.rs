@@ -639,23 +639,22 @@ fn decode_reports_distinct_context_uncertainties_as_ambiguous() {
     assert_ambiguous_length_uncertainty(&result.report().losses, &[0.1, 0.2], default_linear);
 }
 
-/// A kept default replaces the source value, so strict decode refuses the
-/// substitution. Strict decode keeps a faithfully transferred source relation.
 #[test]
-fn strict_decode_rejects_a_substituted_length_uncertainty() {
+fn strict_decode_reads_and_reports_a_substituted_length_uncertainty() {
     let mut options = DecodeOptions::default();
     options.policy.mode = DecodeMode::Strict;
-    let error = StepCodec::default()
+    let decoded = StepCodec::default()
         .decode(
             &mut Cursor::new(DISTINCT_CONTEXT_UNCERTAINTY_SOURCE.as_bytes()),
             &options,
         )
-        .expect_err("strict mode rejects a substituted default tolerance");
+        .expect("the length-uncertainty code pins no strict floor");
 
-    assert!(matches!(
-        error,
-        cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. }
-    ));
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::UncertaintyLengthAmbiguous.kind()));
 }
 
 #[test]

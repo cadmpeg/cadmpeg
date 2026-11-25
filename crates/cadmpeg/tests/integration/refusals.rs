@@ -11,8 +11,8 @@ use tempfile::tempdir;
 use crate::support::fixture;
 #[cfg(all(feature = "creo", feature = "step"))]
 use crate::support::geometryless_creo;
-#[cfg(feature = "rhino")]
-use crate::support::minimal_rhino_archive;
+#[cfg(feature = "iges")]
+use crate::support::iges_with_unverified_version;
 
 #[test]
 fn garbage_reports_supported_formats() {
@@ -101,11 +101,11 @@ fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
         .success();
 }
 
-#[cfg(feature = "rhino")]
+#[cfg(feature = "iges")]
 #[test]
 fn strict_decode_refusal_is_semantic_and_serializes_the_completed_report() {
     let dir = tempdir().unwrap();
-    let input = minimal_rhino_archive(dir.path(), "undeclared.3dm", "100");
+    let input = iges_with_unverified_version();
 
     for (command, extra) in [
         ("dump", Vec::<&str>::new()),
@@ -135,7 +135,7 @@ fn strict_decode_refusal_is_semantic_and_serializes_the_completed_report() {
             .unwrap()
             .iter()
             .any(|loss| {
-                loss["code"]["value"]["namespace"] == "rhino"
+                loss["code"]["value"]["namespace"] == "iges"
                     && loss["code"]["value"]["code"] == "source.dialect-unverified"
             }));
     }

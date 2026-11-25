@@ -439,20 +439,7 @@ impl RhinoLossCode {
         }
     }
 
-    /// Strict floor pinned from this local code (independent of taxonomy remap).
-    ///
-    /// Defaults to the taxonomy floor so a later local→taxonomy remap cannot
-    /// silently change rejection. `ObjectFramingUndecodable` pins Warning above
-    /// its `DecodeDiagnostic` taxonomy (which is otherwise tolerable).
-    const fn strict_floor(self) -> Option<Severity> {
-        match self {
-            Self::IntegrityFailure | Self::ObjectFramingUndecodable => Some(Severity::Warning),
-            Self::SourceWriterStampUnverified => None,
-            other => other.shared_taxonomy().strict_floor(),
-        }
-    }
-
-    /// Namespaced [`LossKind`] for this local code (taxonomy + pinned floor).
+    /// Namespaced [`LossKind`] for this local code.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
         cadmpeg_ir::report::loss::NamespacedLossKind::new(
@@ -465,14 +452,13 @@ impl RhinoLossCode {
             self.code(),
             self.shared_taxonomy(),
         )
-        .with_strict_floor(self.strict_floor())
         .into()
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `rhino/<local>`; the message is the per-instance
-    /// text only. Severity and strict floor come from the local code.
+    /// text only. Severity comes from the local code.
     #[must_use]
     pub(crate) fn note(self, message: impl std::fmt::Display) -> LossNote {
         LossNote::new(self.kind(), message.to_string()).with_severity(self.severity())
@@ -573,16 +559,9 @@ mod tests {
     }
 
     #[test]
-    fn missing_writer_stamp_does_not_trigger_document_dialect_strictness() {
-        assert_eq!(
-            RhinoLossCode::SourceWriterStampUnverified
-                .kind()
-                .strict_floor(),
-            None
-        );
-        assert_eq!(
-            RhinoLossCode::SourceDialectUnverified.kind().strict_floor(),
-            Some(cadmpeg_ir::report::Severity::Warning)
-        );
+    fn no_rhino_code_pins_a_strict_floor() {
+        for code in RhinoLossCode::ALL {
+            assert_eq!(code.kind().strict_floor(), None, "{}", code.code());
+        }
     }
 }

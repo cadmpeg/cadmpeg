@@ -60,14 +60,14 @@ fn assert_invalid_configuration_is_contained(name: &str, payload: &[u8], expecte
 
     let mut strict = DecodeOptions::default();
     strict.policy.mode = cadmpeg_core::decode::DecodeMode::Strict;
-    let refused = F3dCodec.decode(&mut Cursor::new(bytes), &strict);
+    let strict = F3dCodec
+        .decode(&mut Cursor::new(bytes), &strict)
+        .expect("the configuration code pins no strict floor");
     assert!(
-        matches!(
-            &refused,
-            Err(cadmpeg_ir::DecodeFailure::StrictRejected { rejection })
-                if rejection.loss().message.contains(expected)
-        ),
-        "{refused:?}"
+        strict.report().losses.iter().any(|loss| loss.code
+            == crate::loss::F3dLossCode::ConfigurationDocumentUndecoded.kind()
+            && loss.message.contains(expected)),
+        "{expected}"
     );
 }
 

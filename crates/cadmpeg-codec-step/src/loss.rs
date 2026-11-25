@@ -1125,7 +1125,7 @@ impl StepLossCode {
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `step/<local>`. Severity comes from the local
-    /// code; the strict floor comes from the taxonomy.
+    /// code.
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
@@ -1378,11 +1378,10 @@ mod tests {
         assert_eq!(note.strict_consequence(), StrictConsequence::Tolerate);
     }
 
-    /// A kept default replaces a source value, so strict decode refuses it.
     #[test]
-    fn substituted_length_uncertainty_refuses_strict_decode() {
+    fn substituted_length_uncertainty_pins_no_strict_floor() {
         let note = StepLossCode::UncertaintyLengthAmbiguous.note("x");
         assert_eq!(note.severity, Severity::Warning);
-        assert_eq!(note.strict_consequence(), StrictConsequence::Reject);
+        assert_eq!(note.strict_consequence(), StrictConsequence::Tolerate);
     }
 }

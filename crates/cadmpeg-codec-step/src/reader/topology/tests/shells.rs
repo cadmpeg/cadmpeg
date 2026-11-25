@@ -330,20 +330,21 @@ fn oriented_shell_without_the_derived_slot_is_read_and_reported() {
 }
 
 #[test]
-fn strict_decode_rejects_an_oriented_shell_missing_its_derived_slot() {
+fn strict_decode_reads_and_reports_an_oriented_shell_missing_its_derived_slot() {
     let mut options = DecodeOptions::default();
     options.policy.mode = DecodeMode::Strict;
-    let error = StepCodec::default()
+    let decoded = StepCodec::default()
         .decode(
             &mut Cursor::new(oriented_closed_shell_source(false)),
             &options,
         )
-        .expect_err("strict mode rejects a noncanonical oriented shell");
+        .expect("the oriented-shell code pins no strict floor");
 
-    assert!(matches!(
-        error,
-        cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. }
-    ));
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::OrientedShellOmitsCfsFaces.kind()));
 }
 
 #[test]
@@ -731,7 +732,7 @@ fn rejected_solid_root_reports_an_error_severity_loss() {
 }
 
 #[test]
-fn strict_decode_rejects_a_destroyed_solid() {
+fn strict_decode_reads_and_reports_a_destroyed_solid() {
     let source = String::from_utf8(
         include_bytes!("../../../../tests/fixtures/ap242_vertex_loop.p21").to_vec(),
     )
@@ -740,13 +741,14 @@ fn strict_decode_rejects_a_destroyed_solid() {
     let mut options = DecodeOptions::default();
     options.policy.mode = DecodeMode::Strict;
 
-    let error = StepCodec::default()
+    let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &options)
-        .expect_err("strict mode rejects a destroyed solid");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. }
-    ));
+        .expect("the root-rejection code pins no strict floor");
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::TopologyRootRejected.kind()));
 }
 
 #[test]

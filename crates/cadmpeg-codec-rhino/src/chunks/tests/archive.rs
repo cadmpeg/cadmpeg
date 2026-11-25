@@ -659,37 +659,20 @@ fn required_mesh_channel_failure_is_atomic_and_optional_crc_is_recoverable() {
         .any(|loss| loss.severity == Severity::Error && loss.message.contains("normals")));
 }
 
-/// `ObjectFramingUndecodable` carries severity `Error` and pins its strict
-/// floor at `Warning`, above the tolerable floor of its `DecodeDiagnostic`
-/// taxonomy, so the loss rejects. Strict decode therefore refuses the archive,
-/// and it refuses with the policy class that names the loss: the container
-/// parses, one record payload does not, and salvage mode keeps the result.
 #[test]
-fn strict_decode_refuses_an_undecodable_framed_object_record() {
+fn strict_decode_reads_and_reports_an_undecodable_framed_object_record() {
     let bad_mesh = object_record(0x20, MESH_CLASS, &mesh_payload(3, 5, true, false));
     let point = object_record(1, POINT_CLASS, &point_payload([8.0, 9.0, 10.0]));
     let mut options = DecodeOptions::default();
     options.policy.mode = DecodeMode::Strict;
 
-    let error = RhinoCodec
+    let decoded = RhinoCodec
         .decode(&mut Cursor::new(archive(&[bad_mesh, point])), &options)
-        .expect_err("strict mode refuses an undecodable framed object record");
+        .expect("the framing code pins no strict floor");
 
-    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &error else {
-        panic!("a strict refusal is a policy class, not a container defect: {error:?}");
-    };
-    assert_eq!(
-        rejection.loss().code,
-        crate::loss::RhinoLossCode::ObjectFramingUndecodable.kind()
-    );
-    assert!(
-        rejection
-            .loss()
-            .message
-            .starts_with("1 framed object record(s)"),
-        "the refusal carries the loss message alone: {}",
-        rejection.loss().message
-    );
+    assert!(decoded.report().losses.iter().any(|loss| loss.code
+        == crate::loss::RhinoLossCode::ObjectFramingUndecodable.kind()
+        && loss.message.starts_with("1 framed object record(s)")));
 }
 
 #[test]

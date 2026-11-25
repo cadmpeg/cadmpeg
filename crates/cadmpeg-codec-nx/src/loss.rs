@@ -176,19 +176,7 @@ loss_codes! {
 }
 
 impl NxLossCode {
-    /// Strict floor pinned from this local code.
-    ///
-    /// Defaults to the taxonomy floor. `NativeAttachmentFailed` pins Error
-    /// above its `DecodeDiagnostic` taxonomy, which strict mode otherwise
-    /// tolerates.
-    const fn strict_floor(self) -> Option<Severity> {
-        match self {
-            Self::NativeAttachmentFailed => Some(Severity::Error),
-            other => other.shared_taxonomy().strict_floor(),
-        }
-    }
-
-    /// Namespaced [`LossKind`] for this local code (taxonomy + pinned floor).
+    /// Namespaced [`LossKind`] for this local code.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
         cadmpeg_ir::report::loss::NamespacedLossKind::new(
@@ -201,14 +189,13 @@ impl NxLossCode {
             self.code(),
             self.shared_taxonomy(),
         )
-        .with_strict_floor(self.strict_floor())
         .into()
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `nx/<local>`. Severity comes from the local
-    /// code; the strict floor comes from [`Self::strict_floor`].
+    /// code.
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
@@ -313,22 +300,10 @@ mod tests {
         }
     }
 
-    /// Only an attachment failure pins a floor above its taxonomy floor.
     #[test]
-    fn strict_floor_follows_taxonomy_except_attachment_failure() {
-        use cadmpeg_ir::report::loss::StrictConsequence;
+    fn no_nx_code_pins_a_strict_floor() {
         for code in NxLossCode::ALL {
-            let expected = match code {
-                NxLossCode::NativeAttachmentFailed => Some(cadmpeg_ir::report::Severity::Error),
-                other => other.shared_taxonomy().strict_floor(),
-            };
-            assert_eq!(code.kind().strict_floor(), expected, "{}", code.code());
+            assert_eq!(code.kind().strict_floor(), None, "{}", code.code());
         }
-        assert_eq!(
-            NxLossCode::NativeAttachmentFailed
-                .note("x")
-                .strict_consequence(),
-            StrictConsequence::Reject
-        );
     }
 }

@@ -1279,10 +1279,14 @@ fn damaged_first_ancillary_local_frame_keeps_required_root_readable() {
         .any(|id| id.as_str().contains(":zip-declaration#")));
     let mut strict = DecodeOptions::default();
     strict.policy.mode = cadmpeg_core::decode::DecodeMode::Strict;
-    assert!(matches!(
-        codec.decode(&mut Cursor::new(&bytes), &strict),
-        Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. })
-    ));
+    let strict = codec
+        .decode(&mut Cursor::new(&bytes), &strict)
+        .expect("the container-member code pins no strict floor");
+    assert!(strict
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::StepLossCode::ContainerMemberNoncanonical.kind()));
 }
 
 #[test]

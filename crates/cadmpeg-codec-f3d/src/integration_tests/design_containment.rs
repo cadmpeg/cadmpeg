@@ -83,22 +83,20 @@ fn a_design_intent_failure_keeps_geometry_and_reports_one_error_loss() {
 }
 
 #[test]
-fn strict_mode_refuses_a_contained_design_intent_failure() {
+fn strict_mode_reads_and_reports_a_contained_design_intent_failure() {
     let mut options = DecodeOptions::default();
     options.policy.mode = DecodeMode::Strict;
     inject_failure(malformed_design);
 
-    let failure = F3dCodec
+    let contained = F3dCodec
         .decode(&mut Cursor::new(design_archive()), &options)
-        .expect_err("strict mode refuses the design-intent loss");
+        .expect("the design-intent code pins no strict floor");
 
-    let DecodeFailure::StrictRejected { rejection } = &failure else {
-        panic!("expected a strict rejection, got {failure:?}");
-    };
-    assert_eq!(
-        rejection.loss().code,
-        F3dLossCode::DesignIntentUndecoded.kind()
-    );
+    assert!(contained
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::DesignIntentUndecoded.kind()));
 }
 
 fn moved_first_point(result: &EditableDecodeResult) -> cadmpeg_ir::document::CadIr {
@@ -526,15 +524,16 @@ fn an_unread_primary_header_is_a_loss_at_geometry_and_design_depth() {
             ..DecodeOptions::default()
         };
         options.policy.mode = DecodeMode::Strict;
-        let failure = F3dCodec
+        let decoded = F3dCodec
             .decode(&mut Cursor::new(&bytes), &options)
-            .expect_err("strict decode refuses the unread header");
-        let DecodeFailure::StrictRejected { rejection } = &failure else {
-            panic!("expected a strict rejection at {depth:?}, got {failure:?}");
-        };
-        assert_eq!(
-            rejection.loss().code,
-            F3dLossCode::PrimaryRecordUndecoded.kind()
+            .expect("the unread-header code pins no strict floor");
+        assert!(
+            decoded
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == F3dLossCode::PrimaryRecordUndecoded.kind()),
+            "{depth:?}"
         );
     }
 }

@@ -35,7 +35,7 @@ fn physically_dependent_point_retains_source_without_becoming_a_free_vertex() {
 }
 
 #[test]
-fn unreadable_required_nurbs_pole_has_a_geometry_loss_and_refuses_strict_mode() {
+fn unreadable_required_nurbs_pole_has_a_geometry_loss() {
     for literal in ["3Hbad", "", "1E999", "bad"] {
         let parameters = format!("126,1,1,0,0,1,0,0,0,1,1,1,1,{literal},0,0,2,0,0,0,1,0,0,1;");
         let bytes = polynomial_nurbs_curve_file(parameters.as_bytes());
@@ -50,13 +50,18 @@ fn unreadable_required_nurbs_pole_has_a_geometry_loss_and_refuses_strict_mode() 
             .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
         let mut strict = DecodeOptions::default();
         strict.policy.mode = cadmpeg_core::decode::DecodeMode::Strict;
-        assert!(
-            matches!(
-                IgesCodec.decode(&mut Cursor::new(bytes), &strict),
-                Err(DecodeFailure::StrictRejected { .. })
-            ),
-            "{literal}"
-        );
+        let strict = IgesCodec.decode(&mut Cursor::new(bytes), &strict);
+        if matches!(literal, "1E999" | "bad") {
+            assert!(
+                matches!(strict, Err(DecodeFailure::StrictRejected { .. })),
+                "{literal}: an unusable numeric literal pins a strict floor"
+            );
+        } else {
+            assert!(
+                strict.is_ok(),
+                "{literal}: the not-projected code pins no strict floor"
+            );
+        }
     }
 }
 

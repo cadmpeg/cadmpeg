@@ -66,7 +66,13 @@ fn with_parameter(mut ir: CadIr) -> CadIr {
 struct RejectFloorCodec;
 
 fn reject_floor_kind() -> LossKind {
-    LossKind::shared(LossTaxonomy::TopologyNotTransferred)
+    crate::report::loss::NamespacedLossKind::new(
+        crate::report::loss::LossNamespace::new("test").unwrap(),
+        "synthetic.reject-floor",
+        LossTaxonomy::TopologyNotTransferred,
+    )
+    .with_strict_floor(Some(crate::report::Severity::Warning))
+    .into()
 }
 
 impl CodecBackend for RejectFloorCodec {

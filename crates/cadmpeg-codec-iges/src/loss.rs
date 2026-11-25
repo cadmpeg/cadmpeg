@@ -19,7 +19,7 @@
 //! geometry, writer) have no honest common default.
 
 use cadmpeg_ir::report::{
-    loss::{LossKind, LossNote, LossTaxonomy},
+    loss::{LossKind, LossNote, LossTaxonomy, NamespacedLossKind},
     Severity,
 };
 macro_rules! loss_codes {
@@ -290,10 +290,32 @@ impl IgesLossCode {
         }
     }
 
-    /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
+    /// The strict floor `iges.md` states for this code.
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::PointerUnresolved
+            | Self::CompositeCarrierDegraded
+            | Self::SourceDialectUnverified
+            | Self::GlobalSemanticContextSubstituted
+            | Self::GlobalNumericSyntaxRecovered
+            | Self::GlobalLengthUnitUnresolved
+            | Self::GlobalNoncanonicalFraming
+            | Self::DirectoryRecordQuarantined
+            | Self::DirectoryRecordRepeated
+            | Self::ParameterDataQuarantined
+            | Self::ParameterCountOverdeclared
+            | Self::ParameterLiteralUnusable
+            | Self::CardFramingRecovered
+            | Self::DirectoryMetadataNoncanonical
+            | Self::SplineClaimRecovered => Some(Severity::Warning),
+            _ => None,
+        }
+    }
+
+    /// Namespaced [`LossKind`] for this local code.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
-        LossKind::namespaced(
+        NamespacedLossKind::new(
             const {
                 match cadmpeg_ir::report::loss::LossNamespace::new("iges") {
                     Ok(namespace) => namespace,
@@ -303,13 +325,14 @@ impl IgesLossCode {
             self.code(),
             self.shared_taxonomy(),
         )
+        .with_strict_floor(self.strict_floor())
+        .into()
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `iges/<local>`; the message is the per-instance
-    /// text only. Severity comes from the local code and the strict floor from
-    /// the shared taxonomy.
+    /// text only. Severity and strict floor come from the local code.
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
@@ -413,5 +436,43 @@ mod tests {
             assert_eq!(note.message, "x");
             assert!(note.provenance.is_none());
         }
+    }
+
+    /// `iges.md` states a Warning floor for these codes and no floor for any
+    /// other IGES code.
+    #[test]
+    fn strict_floors_are_the_ones_the_format_specification_states() {
+        let floored: BTreeSet<&str> = IgesLossCode::ALL
+            .iter()
+            .filter(|code| {
+                let floor = code.kind().strict_floor();
+                assert!(matches!(
+                    floor,
+                    None | Some(cadmpeg_ir::report::Severity::Warning)
+                ));
+                floor.is_some()
+            })
+            .map(|code| code.code())
+            .collect();
+        assert_eq!(
+            floored,
+            BTreeSet::from([
+                "card.framing-recovered",
+                "curve.composite-carrier-degraded",
+                "directory.metadata-noncanonical",
+                "directory.record-quarantined",
+                "directory.record-repeated",
+                "geometry.spline-claim-recovered",
+                "global.length-unit-unresolved",
+                "global.noncanonical-framing",
+                "global.numeric-syntax-recovered",
+                "global.semantic-context-substituted",
+                "graph.pointer-unresolved",
+                "parameter.count-overdeclared",
+                "parameter.data-quarantined",
+                "parameter.literal-unusable",
+                "source.dialect-unverified",
+            ])
+        );
     }
 }

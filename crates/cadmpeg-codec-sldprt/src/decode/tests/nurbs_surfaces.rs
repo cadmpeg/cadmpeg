@@ -572,8 +572,8 @@ fn face_on_untyped_surface_keeps_topology() {
 }
 
 #[test]
-fn strict_rejects_topology_decode_resting_on_untyped_surface() {
-    use cadmpeg_ir::report::loss::{LossTaxonomy, StrictConsequence};
+fn strict_reads_and_reports_topology_resting_on_an_untyped_surface() {
+    use cadmpeg_ir::report::loss::LossTaxonomy;
 
     let mut body = Vec::new();
     body.extend(bridge(10, 20, 999));
@@ -597,25 +597,15 @@ fn strict_rejects_topology_decode_resting_on_untyped_surface() {
         .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
         .expect("salvage keeps the topology decode");
     assert_eq!(salvaged.ir().geometry.faces.len(), 1);
-    let census = salvaged
+    let strict = SldprtCodec
+        .decode(&mut Cursor::new(fixture), &strict_options())
+        .expect("the census code pins no strict floor");
+    assert_eq!(strict.ir().geometry.faces.len(), 1);
+    assert!(strict
         .report()
         .losses
         .iter()
-        .find(|l| l.code.taxonomy() == LossTaxonomy::GeometryNotTransferred)
-        .expect("untyped support surface raises a census note");
-    assert_eq!(census.strict_consequence(), StrictConsequence::Reject);
-
-    let error = SldprtCodec
-        .decode(&mut Cursor::new(fixture), &strict_options())
-        .expect_err("strict refuses the untyped-surface census");
-    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &error else {
-        panic!("a strict refusal is a policy class, not a container defect: {error:?}");
-    };
-    assert!(
-        rejection.loss().code.to_string().starts_with("sldprt/"),
-        "unexpected: {}",
-        rejection.loss().code
-    );
+        .any(|l| l.code.taxonomy() == LossTaxonomy::GeometryNotTransferred));
 }
 
 #[test]

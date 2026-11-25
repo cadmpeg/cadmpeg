@@ -5197,29 +5197,7 @@ impl F3dLossCode {
         }
     }
 
-    /// Strict floor pinned by this local code.
-    ///
-    /// Defaults to the taxonomy floor. `DesignIntentUndecoded` pins Warning
-    /// above its tolerable `DecodeDiagnostic` taxonomy: strict mode refuses a
-    /// document whose design intent was dropped. `WriterEdgeRangeAssumed`
-    /// pins Warning above `TopologyGaugeSubstituted`: strict mode refuses an
-    /// edge written over an arc the source does not state.
-    /// The other listed undecoded-record codes also pin Warning so strict
-    /// mode rejects partial Design decoding.
-    const fn strict_floor(self) -> Option<Severity> {
-        match self {
-            Self::DesignIntentUndecoded
-            | Self::PrimaryRecordUndecoded
-            | Self::FeatureTimelineUndecoded
-            | Self::ConfigurationDocumentUndecoded
-            | Self::BendSettingsUndecoded
-            | Self::ConfigurationProjectionNative
-            | Self::WriterEdgeRangeAssumed => Some(Severity::Warning),
-            other => other.shared_taxonomy().strict_floor(),
-        }
-    }
-
-    /// Namespaced [`LossKind`] for this local code (taxonomy + pinned floor).
+    /// Namespaced [`LossKind`] for this local code.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
         NamespacedLossKind::new(
@@ -5227,14 +5205,13 @@ impl F3dLossCode {
             self.code(),
             self.shared_taxonomy(),
         )
-        .with_strict_floor(self.strict_floor())
         .into()
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `f3d/<local>`. Severity comes from the local
-    /// code; the strict floor comes from [`Self::strict_floor`].
+    /// code.
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
@@ -5273,12 +5250,12 @@ mod tests {
     ];
 
     #[test]
-    fn unread_design_records_keep_strict_refusal() {
+    fn unread_design_records_pin_no_strict_floor() {
         for code in UNREAD_DESIGN_RECORD_CODES {
             assert_eq!(
                 code.note("synthetic unread Design record")
                     .strict_consequence(),
-                cadmpeg_ir::report::loss::StrictConsequence::Reject,
+                cadmpeg_ir::report::loss::StrictConsequence::Tolerate,
                 "{}",
                 code.kind().local_code()
             );

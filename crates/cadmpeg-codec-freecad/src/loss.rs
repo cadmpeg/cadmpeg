@@ -380,19 +380,13 @@ impl FreecadLossCode {
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     fn kind(self) -> LossKind {
-        let strict_floor = match self {
-            Self::SourceGuiSchemaUnverified => None,
-            other => other.shared_taxonomy().strict_floor(),
-        };
-        NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy())
-            .with_strict_floor(strict_floor)
-            .into()
+        NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy()).into()
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `fcstd/<local>`. Severity comes from the local
-    /// code; the strict floor comes from the taxonomy.
+    /// code.
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
@@ -497,18 +491,9 @@ mod tests {
     }
 
     #[test]
-    fn gui_schema_recovery_does_not_trigger_document_dialect_strictness() {
-        assert_eq!(
-            FreecadLossCode::SourceGuiSchemaUnverified
-                .kind()
-                .strict_floor(),
-            None
-        );
-        assert_eq!(
-            FreecadLossCode::SourceDialectUnverified
-                .kind()
-                .strict_floor(),
-            Some(cadmpeg_ir::report::Severity::Warning)
-        );
+    fn no_fcstd_code_pins_a_strict_floor() {
+        for code in FreecadLossCode::ALL {
+            assert_eq!(code.kind().strict_floor(), None, "{}", code.code());
+        }
     }
 }

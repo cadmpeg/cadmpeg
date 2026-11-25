@@ -78,7 +78,7 @@ fn a_shared_loss_kind_carries_no_code_and_no_strict_floor() {
     .to_string();
     assert!(error.contains("strict_floor"), "{error}");
 
-    let namespaced = LossKind::namespaced(
+    let namespaced: LossKind = NamespacedLossKind::new(
         const {
             match LossNamespace::new("rhino") {
                 Ok(namespace) => namespace,
@@ -87,7 +87,9 @@ fn a_shared_loss_kind_carries_no_code_and_no_strict_floor() {
         },
         "brep.trim-pcurve-dropped",
         LossTaxonomy::TopologyNotTransferred,
-    );
+    )
+    .with_strict_floor(Some(Severity::Warning))
+    .into();
     let wire = serde_json::to_value(&namespaced).expect("serializes");
     assert_eq!(
         wire,
@@ -169,29 +171,30 @@ fn loss_taxonomy_static_names_match_the_serde_wire_names() {
 }
 
 #[test]
-fn loss_kind_strict_consequence_depends_on_severity() {
+fn strict_consequence_compares_the_severity_with_the_pinned_floor() {
+    let pinned: LossKind = NamespacedLossKind::new(
+        LossNamespace::new("rhino").unwrap(),
+        "brep.trim-pcurve-dropped",
+        LossTaxonomy::TopologyNotTransferred,
+    )
+    .with_strict_floor(Some(Severity::Warning))
+    .into();
+    assert_eq!(
+        LossNote::new(pinned.clone(), "missing topology").strict_consequence(),
+        StrictConsequence::Reject
+    );
+    assert_eq!(
+        LossNote::new(pinned, "diagnostic")
+            .with_severity(Severity::Info)
+            .strict_consequence(),
+        StrictConsequence::Tolerate
+    );
     assert_eq!(
         LossNote::new(
             LossKind::shared(LossTaxonomy::TopologyNotTransferred),
             "missing topology"
         )
-        .strict_consequence(),
-        StrictConsequence::Reject
-    );
-    assert_eq!(
-        LossNote::new(
-            LossKind::shared(LossTaxonomy::TopologyNotTransferred),
-            "diagnostic"
-        )
-        .with_severity(Severity::Info)
-        .strict_consequence(),
-        StrictConsequence::Tolerate
-    );
-    assert_eq!(
-        LossNote::new(
-            LossKind::shared(LossTaxonomy::PassthroughRecordOmitted),
-            "retained source"
-        )
+        .with_severity(Severity::Blocking)
         .strict_consequence(),
         StrictConsequence::Tolerate
     );
@@ -228,36 +231,47 @@ fn process_losses_belong_to_the_process_category() {
     );
 }
 
+/// §3.2 states no floor for a `shared/` kind, and a codec's code pins one
+/// only where its format specification states it, so no taxonomy brings one.
 #[test]
-fn noncanonical_source_syntax_is_a_strict_rejectable_warning() {
-    let kind = LossKind::shared(LossTaxonomy::NoncanonicalSourceSyntax);
-    assert_eq!(
-        kind.to_string(),
-        format!("{SHARED_LOSS_NAMESPACE}/noncanonical_source_syntax")
-    );
-    assert_eq!(kind.category(), LossCategory::Other);
-    assert_eq!(kind.default_severity(), Severity::Warning);
-    assert_eq!(kind.strict_floor(), Some(Severity::Warning));
-    assert_eq!(
-        LossNote::new(kind, "source order is noncanonical").strict_consequence(),
-        StrictConsequence::Reject
-    );
-}
-
-#[test]
-fn integrity_failure_is_a_strict_rejectable_error() {
-    let kind = LossKind::shared(LossTaxonomy::IntegrityFailure);
-    assert_eq!(
-        kind.to_string(),
-        format!("{SHARED_LOSS_NAMESPACE}/integrity_failure")
-    );
-    assert_eq!(kind.category(), LossCategory::Other);
-    assert_eq!(kind.default_severity(), Severity::Error);
-    assert_eq!(kind.strict_floor(), Some(Severity::Warning));
-    assert_eq!(
-        LossNote::new(kind, "stored checksum differs").strict_consequence(),
-        StrictConsequence::Reject
-    );
+fn a_taxonomy_brings_no_strict_floor_to_a_shared_or_codec_code() {
+    for taxonomy in [
+        LossTaxonomy::MissingGeometryStream,
+        LossTaxonomy::TopologyNotTransferred,
+        LossTaxonomy::GeometryNotTransferred,
+        LossTaxonomy::GeometryAgreementSampled,
+        LossTaxonomy::ReferenceGraphNotClosed,
+        LossTaxonomy::CurvelessEdgeOmitted,
+        LossTaxonomy::UnknownSurfaceFaceOmitted,
+        LossTaxonomy::SubdOmitted,
+        LossTaxonomy::NoncanonicalSourceSyntax,
+        LossTaxonomy::SourceDialectUnverified,
+        LossTaxonomy::IntegrityFailure,
+        LossTaxonomy::NoExportableSolids,
+    ] {
+        let shared = LossKind::shared(taxonomy);
+        assert_eq!(shared.strict_floor(), None, "{taxonomy}");
+        assert_eq!(
+            LossNote::new(shared, "message")
+                .with_severity(Severity::Blocking)
+                .strict_consequence(),
+            StrictConsequence::Tolerate,
+            "{taxonomy}"
+        );
+        let local = NamespacedLossKind::new(
+            LossNamespace::new("synthetic").unwrap(),
+            "local.code",
+            taxonomy,
+        );
+        let owned = NamespacedLossKind::new_owned(
+            "synthetic".to_owned(),
+            "local.code".to_owned(),
+            taxonomy,
+        )
+        .unwrap();
+        assert_eq!(LossKind::from(local).strict_floor(), None, "{taxonomy}");
+        assert_eq!(LossKind::from(owned).strict_floor(), None, "{taxonomy}");
+    }
 }
 
 /// §3.2 states no strict floor for `target.source-dialect-displaced` or

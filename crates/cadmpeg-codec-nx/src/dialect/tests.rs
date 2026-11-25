@@ -71,7 +71,7 @@ fn extracted_parasolid_schema_emits_a_kernel_layer() {
     assert_eq!(losses[0].code, NxLossCode::KernelDialectUnverified.kind());
     assert_eq!(
         losses[0].strict_consequence(),
-        cadmpeg_ir::report::loss::StrictConsequence::Reject
+        cadmpeg_ir::report::loss::StrictConsequence::Tolerate
     );
     assert!(losses[0].message.contains("SCH_TEST_1_9999"));
 }
@@ -104,7 +104,7 @@ fn a_named_sldprt_parasolid_schema_remains_unverified_under_nx() {
     assert_eq!(losses[0].code, NxLossCode::KernelDialectUnverified.kind());
     assert_eq!(
         losses[0].strict_consequence(),
-        cadmpeg_ir::report::loss::StrictConsequence::Reject
+        cadmpeg_ir::report::loss::StrictConsequence::Tolerate
     );
     assert!(losses[0].message.contains("host did not verify"));
 }

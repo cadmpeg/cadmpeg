@@ -184,6 +184,14 @@ pub(crate) fn synthetic_rhino_point(
     path
 }
 
+/// An IGES file whose Global version flag names no verified dialect. Its
+/// `iges/source.dialect-unverified` loss pins a strict floor at Warning.
+#[cfg(feature = "iges")]
+pub(crate) fn iges_with_unverified_version() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../cadmpeg-codec-iges/tests/golden/fixtures/unknown_version_flag_99.igs")
+}
+
 #[cfg(feature = "rhino")]
 pub(crate) fn minimal_rhino_archive(
     dir: &std::path::Path,

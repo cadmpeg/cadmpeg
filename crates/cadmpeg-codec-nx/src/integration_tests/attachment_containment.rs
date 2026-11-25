@@ -133,48 +133,23 @@ fn attachment_failure_without_geometry_keeps_the_container_decode() {
     assert_one_error_loss(&contained);
 }
 
-/// A topology part whose Parasolid prologue states no schema token, so no
-/// unverified kernel dialect refuses it under strict mode.
-fn schemaless_topology_prt() -> Vec<u8> {
-    let mut stream = topology_partition_stream();
-    let schema = stream
-        .windows(4)
-        .position(|window| window == b"SCH_")
-        .expect("fixture prologue states a schema token");
-    stream[schema] = b'X';
-    prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", zlib_compress(&stream))])
+fn topology_prt() -> Vec<u8> {
+    prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        zlib_compress(&topology_partition_stream()),
+    )])
 }
 
 #[test]
-fn strict_decode_refuses_a_contained_attachment_failure() {
-    let mut strict = DecodeOptions::default();
-    strict.policy.mode = DecodeMode::Strict;
-    NxCodec
-        .decode(&mut Cursor::new(schemaless_topology_prt()), &strict)
-        .expect("strict decode admits the fixture without an attachment failure");
-    try_decode_failing_at(
-        schemaless_topology_prt(),
-        Point::Entry,
-        malformed,
-        DecodeMode::Salvage,
-    )
-    .expect("salvage decode keeps the geometry");
-    let error = try_decode_failing_at(
-        schemaless_topology_prt(),
-        Point::Entry,
-        malformed,
-        DecodeMode::Strict,
-    )
-    .expect_err("strict decode refuses the attachment failure");
-    match error {
-        DecodeFailure::StrictRejected { rejection } => {
-            assert_eq!(
-                rejection.loss().code.local_code(),
-                "native.attachment-failed"
-            );
-        }
-        other => panic!("expected a strict refusal, got {other:?}"),
-    }
+fn strict_decode_reads_and_reports_a_contained_attachment_failure() {
+    let decoded =
+        try_decode_failing_at(topology_prt(), Point::Entry, malformed, DecodeMode::Strict)
+            .expect("the attachment-failure code pins no strict floor");
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "native.attachment-failed"));
 }
 
 #[test]
