@@ -23,7 +23,6 @@ use cadmpeg_core::CodecError;
 pub mod admit;
 mod annotations_native;
 mod appearance_attributes;
-mod bounds;
 pub(crate) mod carriers_parameterization;
 mod cycles;
 pub(crate) mod design;
@@ -140,20 +139,7 @@ fn validate_model(
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
     let index = crate::index::ModelIndex::build(ir);
-    validate_document_with_index(ctx, ir, losses, &index)
-}
-
-/// [`validate_model_with_index`] and the depth bounds of the whole document,
-/// which decoder admission routes do not read.
-fn validate_document_with_index<'ir>(
-    ctx: &DecodeContext<'_>,
-    ir: &'ir CadIr,
-    losses: Vec<LossNote>,
-    ids: &crate::index::ModelIndex<'ir>,
-) -> Result<ValidationReport, CodecError> {
-    let mut report = validate_model_with_index(ctx, ir, losses, ids)?;
-    bounds::check_bounds(ir, &mut report.findings);
-    Ok(report)
+    validate_model_with_index(ctx, ir, losses, &index)
 }
 
 fn validate_model_with_index<'ir>(
@@ -326,7 +312,7 @@ fn validate_model_with_annotations(
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
     let index = crate::index::ModelIndex::build(ir);
-    let mut report = validate_document_with_index(ctx, ir, losses, &index)?;
+    let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
     validate_annotations(
         ctx,
         &index,
@@ -345,7 +331,7 @@ pub fn validate_neutral_with_additional_native_identities<'a>(
 ) -> Result<ValidationReport, CodecError> {
     standalone_validation(|ctx| {
         let index = crate::index::ModelIndex::with_additional_native_identities(ir, additional);
-        validate_document_with_index(ctx, ir, losses, &index)
+        validate_model_with_index(ctx, ir, losses, &index)
     })
 }
 
@@ -391,7 +377,7 @@ pub fn validate_neutral_with_source_fidelity_for_decode(
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
     let index = crate::index::ModelIndex::build(ir);
-    let mut report = validate_document_with_index(ctx, ir, losses, &index)?;
+    let mut report = validate_model_with_index(ctx, ir, losses, &index)?;
     validate_annotations(
         ctx,
         &index,

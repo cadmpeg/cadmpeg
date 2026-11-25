@@ -139,9 +139,6 @@ pub enum Check {
     /// reference between process records, a toolpath or process state key,
     /// a binding, or a setting stated off its operation's class.
     Process,
-    /// A record, or the document outside every record, nests past a depth
-    /// bound of a CADIR document (§2.5).
-    Depth,
 }
 
 impl Check {
@@ -178,7 +175,6 @@ impl Check {
             Self::DeclaredMeasure => cadmpeg_core::nonblank_literal!("declared_measure"),
             Self::Design => cadmpeg_core::nonblank_literal!("design"),
             Self::Process => cadmpeg_core::nonblank_literal!("process"),
-            Self::Depth => cadmpeg_core::nonblank_literal!("depth"),
         }
     }
 }
