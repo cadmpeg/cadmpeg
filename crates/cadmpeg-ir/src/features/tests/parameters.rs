@@ -8,9 +8,12 @@ fn parameter_real_admission_preserves_finite_signed_wire_values() {
     for value in [-f64::MAX, -1.0, -0.0, 0.0, 1.0, f64::MAX] {
         let parameter = ParameterValue::Real(FiniteReal::new(value).unwrap());
         let wire = serde_json::json!({"kind": "real", "value": value});
-        assert_eq!(serde_json::to_value(&parameter).unwrap(), wire);
         assert_eq!(
-            serde_json::from_value::<ParameterValue>(wire).unwrap(),
+            cadmpeg_core::serde_erase::json::to_value(&parameter).unwrap(),
+            wire
+        );
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::from_value::<ParameterValue>(wire).unwrap(),
             parameter
         );
     }
@@ -39,17 +42,26 @@ fn parameter_dependencies_reject_duplicates_and_preserve_source_order() {
         "id":"test:test:parameter#owner", "ordinal":0, "name":"value", "expression":"first+second",
         "dependencies":[second, first], "properties": {}
     });
-    let parameter: DesignParameter = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(parameter).unwrap(), wire);
+    let parameter: DesignParameter =
+        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(parameter).unwrap(),
+        wire
+    );
     wire["dependencies"] = serde_json::json!([first, first]);
-    let error = serde_json::from_value::<DesignParameter>(wire.clone()).unwrap_err();
+    let error =
+        cadmpeg_core::serde_erase::json::from_value::<DesignParameter>(wire.clone()).unwrap_err();
     assert!(error.to_string().contains("dependencies"));
     wire["dependencies"] = serde_json::json!([]);
-    let parameter: DesignParameter = serde_json::from_value(wire.clone()).unwrap();
+    let parameter: DesignParameter =
+        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
     assert!(parameter.dependencies.is_empty());
-    assert_eq!(serde_json::to_value(parameter).unwrap(), wire);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(parameter).unwrap(),
+        wire
+    );
     wire.as_object_mut().unwrap().remove("dependencies");
-    let error = serde_json::from_value::<DesignParameter>(wire).unwrap_err();
+    let error = cadmpeg_core::serde_erase::json::from_value::<DesignParameter>(wire).unwrap_err();
     assert!(
         error.to_string().contains("missing field `dependencies`"),
         "{error}"

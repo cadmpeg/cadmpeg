@@ -64,7 +64,7 @@ pub(crate) fn frame(response: &mut Value, divider: bool) {
         "operationId":[format!("{native}.wireOp")],"sketchEntityId":"hole"}},-1]]}]});
     response["features"][1]["parameters"][2]["queries"][0]["queryString"] = json!(format!(
         "query=qCompressed(1.0,{},id);",
-        serde_json::to_string(&format!("%{}", compact(&query))).unwrap()
+        cadmpeg_core::serde_erase::json::to_string(&format!("%{}", compact(&query))).unwrap()
     ));
 }
 

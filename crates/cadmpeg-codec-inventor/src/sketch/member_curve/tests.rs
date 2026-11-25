@@ -169,9 +169,11 @@ fn polynomial_and_rational_curve_bodies_keep_every_lane() {
         assert_eq!(curve.poles[2][0].get(), 2.0);
         assert_eq!(curve.interval[1].get(), 1.0);
         assert!(data.native_reason().contains("exact curve rule"));
-        let wire = serde_json::to_value(&data).expect("serialize member curve");
+        let wire =
+            cadmpeg_core::serde_erase::json::to_value(&data).expect("serialize member curve");
         assert_eq!(
-            serde_json::from_value::<MemberCurveRecord>(wire).expect("deserialize"),
+            cadmpeg_core::serde_erase::json::from_value::<MemberCurveRecord>(wire)
+                .expect("deserialize"),
             data
         );
     }

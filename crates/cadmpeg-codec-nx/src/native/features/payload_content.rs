@@ -244,10 +244,16 @@ mod tests {
         let content: FeaturePayloadContent<[FeaturePayloadBlock; 2]> =
             serde_json::from_str(TWO_BLOCKS).unwrap();
         assert_eq!(content.byte_len(), 8);
-        assert_eq!(serde_json::to_string(&content).unwrap(), TWO_BLOCKS);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_string(&content).unwrap(),
+            TWO_BLOCKS
+        );
         let variable: FeaturePayloadContent<Vec<FeaturePayloadBlock>> =
             serde_json::from_str(TWO_BLOCKS).unwrap();
-        assert_eq!(serde_json::to_string(&variable).unwrap(), TWO_BLOCKS);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_string(&variable).unwrap(),
+            TWO_BLOCKS
+        );
     }
 
     #[test]

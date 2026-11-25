@@ -311,18 +311,25 @@ mod tests {
             "table_end_offset": 8,
             "groups": [group.clone(), group],
         });
-        let table: super::OmRollForwardStateTable = serde_json::from_value(wire.clone()).unwrap();
+        let table: super::OmRollForwardStateTable =
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
         assert_eq!(table.groups().len(), 2);
-        assert_eq!(serde_json::to_value(&table).unwrap(), wire);
         assert_eq!(
-            serde_json::to_vec(&table).unwrap(),
-            serde_json::to_vec(&super::OmRollForwardStateTableWire::from(table.clone())).unwrap()
+            cadmpeg_core::serde_erase::json::to_value(&table).unwrap(),
+            wire
+        );
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_vec(&table).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&super::OmRollForwardStateTableWire::from(
+                table.clone()
+            ))
+            .unwrap()
         );
 
         let mut invalid = wire;
         invalid["table_trailing_bytes"] = serde_json::json!("01");
         assert!(
-            serde_json::from_value::<super::OmRollForwardStateTable>(invalid)
+            cadmpeg_core::serde_erase::json::from_value::<super::OmRollForwardStateTable>(invalid)
                 .unwrap_err()
                 .to_string()
                 .contains("table_trailing_bytes")
@@ -334,26 +341,36 @@ mod tests {
         let json = r#"{"id":"group","opener":"0100","count_prefix":1,"declared_count":3,"rows":[{"List":{"ordinal":0,"object_index":1,"raw_object_index":"01","position":1,"raw_position":"01","source_offset":4}},{"Pair":{"ordinal":1,"tag":79,"first":2,"raw_first":"02","second":3,"raw_second":"03","source_offset":8}}],"source_offset":0}"#;
         let group: OmRollForwardStateGroup = serde_json::from_str(json).unwrap();
         assert_eq!(group.frame.end_offset(), 13);
-        assert_eq!(serde_json::to_string(&group).unwrap(), json);
         assert_eq!(
-            serde_json::to_vec(&group).unwrap(),
-            serde_json::to_vec(&super::OmRollForwardStateGroupWire::from(group.clone())).unwrap()
+            cadmpeg_core::serde_erase::json::to_string(&group).unwrap(),
+            json
+        );
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_vec(&group).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&super::OmRollForwardStateGroupWire::from(
+                group.clone()
+            ))
+            .unwrap()
         );
         let wire: serde_json::Value = serde_json::from_str(json).unwrap();
         for (index, kind) in [(0, "List"), (1, "Pair")] {
             let mut invalid = wire.clone();
             invalid["rows"][index][kind]["source_offset"] = 9.into();
-            assert!(serde_json::from_value::<OmRollForwardStateGroup>(invalid)
-                .unwrap_err()
-                .to_string()
-                .contains("rows.source_offset"));
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<OmRollForwardStateGroup>(invalid)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("rows.source_offset")
+            );
         }
         let mut overflow = wire;
         overflow["source_offset"] = u64::MAX.into();
-        assert!(serde_json::from_value::<OmRollForwardStateGroup>(overflow)
-            .unwrap_err()
-            .to_string()
-            .contains("source_offset"));
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<OmRollForwardStateGroup>(overflow)
+                .unwrap_err()
+                .to_string()
+                .contains("source_offset")
+        );
     }
 
     #[test]
@@ -382,7 +399,8 @@ mod tests {
                 "count_prefix": null, "declared_count": 0,
                 "rows": [], "source_offset": 0}]
         });
-        let table: super::OmRollForwardStateTable = serde_json::from_value(wire.clone()).unwrap();
+        let table: super::OmRollForwardStateTable =
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &Record {
                 id: "nx:om:roll-forward-table#0",

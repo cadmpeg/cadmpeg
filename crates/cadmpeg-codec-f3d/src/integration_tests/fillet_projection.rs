@@ -124,7 +124,10 @@ fn typed_fillet_without_radius_retains_group_and_missing_member() {
     let source: serde_json::Value =
         serde_json::from_str(&feature.source_properties["fillet:source"]).unwrap();
     assert_eq!(source["scope"]["record_index"], 226);
-    assert_eq!(source["groups"][0], serde_json::to_value(&group).unwrap());
+    assert_eq!(
+        source["groups"][0],
+        cadmpeg_core::serde_erase::json::to_value(&group).unwrap()
+    );
     assert!(source["owners"].as_array().unwrap().is_empty());
     assert!(projected
         .projection_losses
@@ -199,7 +202,10 @@ fn typed_fillet_keeps_missing_parameter_owner_and_source_only_expressions() {
     ));
     let source: serde_json::Value =
         serde_json::from_str(&feature.source_properties["fillet:source"]).unwrap();
-    assert_eq!(source["owners"][0], serde_json::to_value(&owner).unwrap());
+    assert_eq!(
+        source["owners"][0],
+        cadmpeg_core::serde_erase::json::to_value(&owner).unwrap()
+    );
     assert_eq!(source["owners"][0]["record_index"], 44);
     assert_eq!(source["owners"][0]["parameter_record_index"], 45);
     assert_eq!(source["owners"][0]["evaluated_value"], 6.0);
@@ -213,11 +219,11 @@ fn typed_fillet_keeps_missing_parameter_owner_and_source_only_expressions() {
     assert_eq!(source["parameters"][0]["evaluated_value"], 0.7);
     assert_eq!(
         source["parameters"][0],
-        serde_json::to_value(&parameters[0]).unwrap()
+        cadmpeg_core::serde_erase::json::to_value(&parameters[0]).unwrap()
     );
     assert_eq!(
         source["parameters"][1],
-        serde_json::to_value(&parameters[1]).unwrap()
+        cadmpeg_core::serde_erase::json::to_value(&parameters[1]).unwrap()
     );
     assert!(projected
         .projection_losses

@@ -68,7 +68,10 @@ fn rmfastload_terminal_token_serde_preserves_width_without_numeric_meaning() {
     for text in ["00", "7f", "8000", "8fff", "a00000", "afffff", "c0000000"] {
         let json = format!("\"{text}\"");
         let atom: TerminalAtom = serde_json::from_str(&json).unwrap();
-        assert_eq!(serde_json::to_string(&atom).unwrap(), json);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_string(&atom).unwrap(),
+            json
+        );
     }
     for text in [
         "", "80", "800000", "9000", "a000", "b00000", "c00000", "c1000000", "AF0000",

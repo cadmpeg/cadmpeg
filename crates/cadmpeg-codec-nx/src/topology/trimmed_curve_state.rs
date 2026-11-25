@@ -96,14 +96,19 @@ mod tests {
         let json =
             r#"{"basis_xmt":9,"points":[[-0.0,1.0,2.0],[3.0,4.0,5.0]],"parameters":[7.0,-2.0]}"#;
         let state: TrimmedCurveState = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&state).unwrap(), json);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_string(&state).unwrap(),
+            json
+        );
         for basis in [0, 1] {
-            let mut wire = serde_json::to_value(state).unwrap();
+            let mut wire = cadmpeg_core::serde_erase::json::to_value(state).unwrap();
             wire["basis_xmt"] = basis.into();
-            assert!(serde_json::from_value::<TrimmedCurveState>(wire)
-                .unwrap_err()
-                .to_string()
-                .contains("basis_xmt"));
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<TrimmedCurveState>(wire)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("basis_xmt")
+            );
         }
     }
 

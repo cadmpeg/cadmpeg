@@ -159,10 +159,13 @@ fn an_uncaptured_source_pair_keeps_its_native_operation() {
 #[test]
 fn source_pair_cadir_round_trip_checks_byte_locations() {
     let (_, scope) = fixture(true);
-    let wire = serde_json::to_value(&scope).unwrap();
-    let restored: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
+    let restored: DesignParameterScope =
+        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
     assert_eq!(restored.derived_base_source, scope.derived_base_source);
     let mut displaced = wire;
     displaced["derived_base_source"]["source_body"]["offset"] = serde_json::json!(1076);
-    assert!(serde_json::from_value::<DesignParameterScope>(displaced).is_err());
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(displaced).is_err()
+    );
 }

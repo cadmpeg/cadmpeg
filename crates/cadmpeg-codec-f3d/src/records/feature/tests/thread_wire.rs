@@ -12,7 +12,10 @@ fn a_fractional_nominal_size_keeps_its_spelling_and_value() {
     assert_eq!(thread.nominal_size.text(), "1/8");
     assert_eq!(thread.nominal_size.value(), Some(0.125));
     assert!(!thread.nominal_size.is_decimal());
-    assert_eq!(serde_json::to_string(&thread).unwrap(), json);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_string(&thread).unwrap(),
+        json
+    );
     assert!(DesignThreadNominalSize::try_from("8".to_owned())
         .unwrap()
         .is_decimal());
@@ -32,7 +35,10 @@ fn the_thread_angle_defaults_to_sixty_degrees_and_round_trips_otherwise() {
     let json = wire("1/8", "0.125", Some("55.0"));
     let whitworth: DesignThreadConstruction = serde_json::from_str(&json).unwrap();
     assert_eq!(whitworth.angle.degrees(), 55.0);
-    assert_eq!(serde_json::to_string(&whitworth).unwrap(), json);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_string(&whitworth).unwrap(),
+        json
+    );
     for angle in ["0.0", "180.0", "-55.0"] {
         assert!(
             serde_json::from_str::<DesignThreadConstruction>(&wire("1/8", "0.125", Some(angle)))

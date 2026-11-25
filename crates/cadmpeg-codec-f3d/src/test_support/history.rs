@@ -203,7 +203,7 @@ pub(crate) fn bounded_face_operand(
     references: Vec<crate::records::dimensions::DesignRecipeReference>,
 ) -> crate::records::topology::face::DesignFaceOperand {
     let mut operand: crate::records::topology::face::DesignFaceOperand =
-        serde_json::from_value(serde_json::json!({
+        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "id": "f3d:Design/BulkStream.dat:design-face-operand#110",
             "scope_record_index": 42,
             "scope_reference_ordinal": 1,

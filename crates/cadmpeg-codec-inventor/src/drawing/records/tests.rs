@@ -106,7 +106,9 @@ fn sheet_prefix_keeps_both_lists_and_its_opaque_tail() -> TestResult {
         .all(|reference| reference.qualified()));
     assert_eq!(tail.len, 46);
     assert!(record.valid(&ctx)?);
-    let restored: Record = serde_json::from_value(serde_json::to_value(&record)?)?;
+    let restored: Record = cadmpeg_core::serde_erase::json::from_value(
+        cadmpeg_core::serde_erase::json::to_value(&record)?,
+    )?;
     assert_eq!(restored, record);
     assert!(restored.valid(&ctx)?);
     Ok(())
@@ -132,7 +134,9 @@ fn both_view_forms_keep_every_operand_and_the_extension() -> TestResult {
         assert_eq!(text, "Generated view");
         assert_eq!(tail.len, 2);
         assert!(record.valid(&ctx)?);
-        let restored: Record = serde_json::from_value(serde_json::to_value(&record)?)?;
+        let restored: Record = cadmpeg_core::serde_erase::json::from_value(
+            cadmpeg_core::serde_erase::json::to_value(&record)?,
+        )?;
         assert_eq!(restored, record);
         assert!(restored.valid(&ctx)?);
     }
@@ -153,7 +157,9 @@ fn modeled_document_reference_keeps_each_path_form() -> TestResult {
         assert_eq!(stored, path);
         assert_eq!(tail.len, 2);
         assert!(record.valid(&ctx)?);
-        let restored: Record = serde_json::from_value(serde_json::to_value(&record)?)?;
+        let restored: Record = cadmpeg_core::serde_erase::json::from_value(
+            cadmpeg_core::serde_erase::json::to_value(&record)?,
+        )?;
         assert!(restored.valid(&ctx)?);
     }
     for path in [

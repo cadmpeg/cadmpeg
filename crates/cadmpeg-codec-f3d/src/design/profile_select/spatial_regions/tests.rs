@@ -136,7 +136,7 @@ fn operand(regions: &[Vec<Vec<(u32, u32)>>]) -> DesignSketchProfileOperand {
             }));
         }
     }
-    serde_json::from_value(json!({
+    cadmpeg_core::serde_erase::json::from_value(json!({
         "scope_reference_ordinal": 0,
         "record_index": 100,
         "byte_offset": 10,

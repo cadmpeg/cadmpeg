@@ -17,7 +17,7 @@ fn offset_plane(offset: &Value, after: &Value) -> FeatureDefinition {
 }
 
 fn optioned_plane(offset: &Value, after: &Value, options: &Value) -> FeatureDefinition {
-    serde_json::from_value(json!({"operation": {"kind": "datum", "value": {
+    cadmpeg_core::serde_erase::json::from_value(json!({"operation": {"kind": "datum", "value": {
         "element": {"kind": "plane", "value": {
             "inputs": [{
                 "role": {"subject": "whole", "relation": {"kind": "offset"}},
@@ -123,15 +123,17 @@ fn the_comparison_of_the_deepest_construction_runs_on_the_smallest_default_stack
                 "reference": {"kind": "built", "value": {"kind": "plane", "inputs": inputs, "after": [], "resolved_in": {}}}
             }]);
         }
-        serde_json::from_value(json!({"operation": {"kind": "datum", "value": {
-            "element": {"kind": "plane", "value": {
-                "inputs": inputs,
-                "after": [],
-                "resolved_in": {}
-            }},
-            "native_options": {},
-            "source_settings": {}
-        }}}))
+        cadmpeg_core::serde_erase::json::from_value(
+            json!({"operation": {"kind": "datum", "value": {
+                "element": {"kind": "plane", "value": {
+                    "inputs": inputs,
+                    "after": [],
+                    "resolved_in": {}
+                }},
+                "native_options": {},
+                "source_settings": {}
+            }}}),
+        )
         .unwrap()
     };
     let mut ir = overridden(nested(12.0));

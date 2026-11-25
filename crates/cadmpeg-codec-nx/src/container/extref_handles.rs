@@ -121,13 +121,17 @@ mod tests {
             let wire = serde_json::json!({
                 "handles": handles, "closing_duplicate": closing, "prefix_byte_len": length,
             });
-            assert_eq!(serde_json::to_value(&value).unwrap(), wire);
             assert_eq!(
-                serde_json::to_vec(&value).unwrap(),
-                serde_json::to_vec(&super::HandlesWire::from(value.clone())).unwrap()
+                cadmpeg_core::serde_erase::json::to_value(&value).unwrap(),
+                wire
             );
             assert_eq!(
-                serde_json::from_value::<ExtrefHandles>(wire).unwrap(),
+                cadmpeg_core::serde_erase::json::to_vec(&value).unwrap(),
+                cadmpeg_core::serde_erase::json::to_vec(&super::HandlesWire::from(value.clone()))
+                    .unwrap()
+            );
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::from_value::<ExtrefHandles>(wire).unwrap(),
                 value
             );
         }
@@ -169,10 +173,11 @@ mod tests {
             (vec![7], false, 36, "prefix_byte_len"),
             (vec![7; 254], true, 1301, "handles"),
         ] {
-            let error = serde_json::from_value::<ExtrefHandles>(serde_json::json!({
-                "handles": handles, "closing_duplicate": closing, "prefix_byte_len": length,
-            }))
-            .unwrap_err();
+            let error =
+                cadmpeg_core::serde_erase::json::from_value::<ExtrefHandles>(serde_json::json!({
+                    "handles": handles, "closing_duplicate": closing, "prefix_byte_len": length,
+                }))
+                .unwrap_err();
             assert!(error.to_string().contains(field));
         }
     }

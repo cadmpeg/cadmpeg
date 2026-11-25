@@ -418,8 +418,10 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             scope, &parameters, inputs, ctx, &mut projection_losses,
                         )? {
                             promoted_fillet_sets = Some((
-                                serde_json::to_string(&scope.fillet_sets()).map_err(CodecError::malformed)?,
-                                serde_json::to_string(expressions).map_err(CodecError::malformed)?,
+                                cadmpeg_core::serde_erase::to_json_string(&scope.fillet_sets())
+                                    .map_err(CodecError::malformed)?,
+                                cadmpeg_core::serde_erase::to_json_string(expressions)
+                                    .map_err(CodecError::malformed)?,
                             ));
                             FeatureDefinition::Operation(operation)
                         } else {
@@ -1350,7 +1352,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     if let Some(source) = promoted_fillet_source {
                         properties.insert(
                             cadmpeg_core::nonblank_literal!("fillet:source"),
-                            serde_json::to_string(&source).map_err(CodecError::malformed)?,
+                            cadmpeg_core::serde_erase::to_json_string(&source)
+                                .map_err(CodecError::malformed)?,
                         );
                     }
                     if retain_base_face_records {
@@ -1364,13 +1367,16 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     if retain_chamfer_records {
                         properties.insert(
                             cadmpeg_core::nonblank_literal!("chamfer:parameters"),
-                            serde_json::to_string(&chamfer::retained_parameters(scope, inputs))
-                                .map_err(CodecError::malformed)?,
+                            cadmpeg_core::serde_erase::to_json_string(
+                                &chamfer::retained_parameters(scope, inputs),
+                            )
+                            .map_err(CodecError::malformed)?,
                         );
                         if let Some(sets) = scope.chamfer_sets() {
                             properties.insert(
                                 cadmpeg_core::nonblank_literal!("chamfer:sets"),
-                                serde_json::to_string(sets).map_err(CodecError::malformed)?,
+                                cadmpeg_core::serde_erase::to_json_string(sets)
+                                    .map_err(CodecError::malformed)?,
                             );
                         }
                     }
@@ -1380,13 +1386,16 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     {
                         properties.insert(
                             cadmpeg_core::nonblank_literal!("shell:parameters"),
-                            serde_json::to_string(&scope_parameter_expressions(scope, &parameters)?)
-                                .map_err(CodecError::malformed)?,
+                            cadmpeg_core::serde_erase::to_json_string(
+                                &scope_parameter_expressions(scope, &parameters)?,
+                            )
+                            .map_err(CodecError::malformed)?,
                         );
                         if let crate::records::feature::scope::DesignScopePayload::Shell(Some(operation)) = scope.payload() {
                             properties.insert(
                                 cadmpeg_core::nonblank_literal!("shell:construction"),
-                                serde_json::to_string(operation).map_err(CodecError::malformed)?,
+                                cadmpeg_core::serde_erase::to_json_string(operation)
+                                    .map_err(CodecError::malformed)?,
                             );
                         }
                     }

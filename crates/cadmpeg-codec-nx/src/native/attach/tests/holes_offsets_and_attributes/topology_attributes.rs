@@ -63,17 +63,19 @@ fn string_attribute_output_preserves_value() {
         );
         assert_eq!(index.contexts.len(), 1);
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-        let value_use: ParasolidEntity51StringUse = serde_json::from_value(serde_json::json!({
-            "id": "string-use", "stream_ordinal": 3, "entity_51_record": "entity",
-            "reference_ordinal": 5, "referenced_xmt": 70, "string_record": "string-value",
-            "inflated_offset": 200
-        }))
-        .unwrap();
-        let value: ParasolidEntity54StringRecord = serde_json::from_value(serde_json::json!({
-            "id": "string-value", "stream_ordinal": 3, "xmt": 70,
-            "value": "TEXT", "byte_len": 18, "inflated_offset": 400
-        }))
-        .unwrap();
+        let value_use: ParasolidEntity51StringUse =
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+                "id": "string-use", "stream_ordinal": 3, "entity_51_record": "entity",
+                "reference_ordinal": 5, "referenced_xmt": 70, "string_record": "string-value",
+                "inflated_offset": 200
+            }))
+            .unwrap();
+        let value: ParasolidEntity54StringRecord =
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+                "id": "string-value", "stream_ordinal": 3, "xmt": 70,
+                "value": "TEXT", "byte_len": 18, "inflated_offset": 400
+            }))
+            .unwrap();
         attach_parasolid_topology_string_attributes(
             &mut ir,
             &ParasolidStringAttributeSources {

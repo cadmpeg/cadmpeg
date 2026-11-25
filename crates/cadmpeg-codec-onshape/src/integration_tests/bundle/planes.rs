@@ -167,7 +167,7 @@ fn matrix_bundle(matrix: &Value) -> Vec<u8> {
     )
     .unwrap();
     let response = json!({"sketches":[{"featureId":"Base sketch", "sketchMatrix":matrix}]});
-    zip.write_all(&serde_json::to_vec(&response).unwrap())
+    zip.write_all(&cadmpeg_core::serde_erase::json::to_vec(&response).unwrap())
         .unwrap();
     zip.finish().unwrap().into_inner()
 }
@@ -325,11 +325,14 @@ fn unreadable_stale_and_duplicate_sketch_responses_retain_exact_bytes() {
     for (data, duplicate) in [
         (b"{malformed".to_vec(), false),
         (
-            serde_json::to_vec(&json!({"microversionId":"stale", "sketches":[]})).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(
+                &json!({"microversionId":"stale", "sketches":[]}),
+            )
+            .unwrap(),
             false,
         ),
         (
-            serde_json::to_vec(
+            cadmpeg_core::serde_erase::json::to_vec(
                 &json!({"sketches":[{"featureId":"Base sketch"},{"featureId":"Base sketch"}]}),
             )
             .unwrap(),
@@ -443,8 +446,10 @@ fn malformed_stored_matrices_keep_the_support_frame_with_named_assumption() {
             zip::write::SimpleFileOptions::default(),
         )
         .unwrap();
-        zip.write_all(&serde_json::to_vec(&json!({"sketches":[row]})).unwrap())
-            .unwrap();
+        zip.write_all(
+            &cadmpeg_core::serde_erase::json::to_vec(&json!({"sketches":[row]})).unwrap(),
+        )
+        .unwrap();
         let (model, report) = read(&zip.finish().unwrap().into_inner()).unwrap();
         assert_support_frame_kept(&model, case);
         assert!(
@@ -483,7 +488,7 @@ fn sketch_response_microversion_must_match_the_bundle() {
     ];
     let response = json!({"sourceMicroversion":"another-microversion",
         "sketches":[{"featureId":"Base sketch","sketchMatrix":matrix}]});
-    zip.write_all(&serde_json::to_vec(&response).unwrap())
+    zip.write_all(&cadmpeg_core::serde_erase::json::to_vec(&response).unwrap())
         .unwrap();
     let (model, report) = read(&zip.finish().unwrap().into_inner()).unwrap();
     assert_support_frame_kept(&model, "wrong-microversion");
@@ -504,7 +509,7 @@ fn sketch_response_row_count_is_bounded() {
     )
     .unwrap();
     let response = json!({"sketches":vec![json!({}); crate::reader::ROWS + 1]});
-    zip.write_all(&serde_json::to_vec(&response).unwrap())
+    zip.write_all(&cadmpeg_core::serde_erase::json::to_vec(&response).unwrap())
         .unwrap();
     let (model, report) = read(&zip.finish().unwrap().into_inner()).unwrap();
     assert_support_frame_kept(&model, "row-limit");
@@ -520,12 +525,14 @@ fn optional_sketch_response_preserves_existing_default_plane_output() {
     let baseline = crate::test_support::review::decode(&fixture("default-plane-regions"));
     let bytes =
         crate::test_support::review::members(&fixture("default-plane-regions"), |members| {
-            let response: Value =
-                serde_json::from_slice(&members["partstudios/studio/features.json"]).unwrap();
+            let response: Value = cadmpeg_core::serde_erase::json::from_slice(
+                &members["partstudios/studio/features.json"],
+            )
+            .unwrap();
             let native = response["features"][0]["featureId"].clone();
             members.insert(
                 "partstudios/studio/sketches.json".into(),
-                serde_json::to_vec(&json!({
+                cadmpeg_core::serde_erase::json::to_vec(&json!({
                 "sketches":[{"featureId":native,"sketchMatrix":[
                     1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0,
                     0.0,0.0,1.0,0.0, 0.0,0.0,0.0,1.0]}]}))

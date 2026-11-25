@@ -158,7 +158,7 @@ impl Members {
                 .map_err(|_| NativeConvertError::MissingId)?;
             crate::ids::Identity::new(text)?
         } else {
-            let id = serde_json::from_slice::<String>(raw_id)
+            let id = cadmpeg_core::serde_erase::json::from_slice::<String>(raw_id)
                 .map_err(|_| NativeConvertError::MissingId)?;
             crate::ids::Identity::new(id)?
         };

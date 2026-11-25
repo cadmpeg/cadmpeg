@@ -118,18 +118,23 @@ mod tests {
                 .map(crate::wire::object_reference::ObjectReference::value),
             [0x02_0034, 3, 4, 5, 6]
         );
-        let wire = serde_json::to_value(&rows[0]).expect("valid bounded chamfer fixture");
+        let wire = cadmpeg_core::serde_erase::json::to_value(&rows[0])
+            .expect("valid bounded chamfer fixture");
         assert_eq!(wire["references"][0]["encoding"], "low_high_u8");
-        let loaded: CatiaObjectChamfer =
-            serde_json::from_value(wire.clone()).expect("valid bounded chamfer fixture");
+        let loaded: CatiaObjectChamfer = cadmpeg_core::serde_erase::json::from_value(wire.clone())
+            .expect("valid bounded chamfer fixture");
         assert_eq!(loaded, rows[0]);
         let mut invalid = wire.clone();
         invalid["references"][0]["value"] = serde_json::json!(0x02_0134);
-        assert!(serde_json::from_value::<CatiaObjectChamfer>(invalid).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<CatiaObjectChamfer>(invalid).is_err()
+        );
         let mut invalid = wire;
         invalid["parameters"]["definition"]["angle"] =
             serde_json::json!(std::f64::consts::FRAC_PI_2);
-        assert!(serde_json::from_value::<CatiaObjectChamfer>(invalid).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<CatiaObjectChamfer>(invalid).is_err()
+        );
         let at = bytes.len() - 22;
         bytes[at + 2] = 3;
         assert!(with_service_context(|_ctx| object_chamfers(&bytes)).is_empty());

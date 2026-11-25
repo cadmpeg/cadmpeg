@@ -111,7 +111,10 @@ mod tests {
                 r#"{{"xmt":2,"header_references":[1,0,3,4,5],"sense":false,"boundary_index":{boundary},"blend_surface_xmt":6}}"#
             );
             let state: BlendBoundState = serde_json::from_str(&json).unwrap();
-            assert_eq!(serde_json::to_string(&state).unwrap(), json);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_string(&state).unwrap(),
+                json
+            );
             for (field, invalid) in [
                 ("xmt", serde_json::json!(0)),
                 ("xmt", serde_json::json!(1)),
@@ -120,9 +123,10 @@ mod tests {
                 ("blend_surface_xmt", serde_json::json!(0)),
                 ("blend_surface_xmt", serde_json::json!(1)),
             ] {
-                let mut wire = serde_json::to_value(state).unwrap();
+                let mut wire = cadmpeg_core::serde_erase::json::to_value(state).unwrap();
                 wire[field] = invalid;
-                let error = serde_json::from_value::<BlendBoundState>(wire).unwrap_err();
+                let error = cadmpeg_core::serde_erase::json::from_value::<BlendBoundState>(wire)
+                    .unwrap_err();
                 assert!(error.to_string().contains(field), "{error}");
             }
         }

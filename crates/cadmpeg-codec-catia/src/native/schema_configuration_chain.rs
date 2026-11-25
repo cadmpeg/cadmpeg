@@ -339,24 +339,34 @@ mod tests {
                 .to_vec(),
             terminal: CatiaEntityReference::Unresolved { entity_id: 3 },
         };
-        let wire = serde_json::to_value(&chain).expect("serialize row chain");
+        let wire = cadmpeg_core::serde_erase::json::to_value(&chain).expect("serialize row chain");
         assert_eq!(wire["links"][0]["successor"], wire["links"][1]["row"]);
         assert_eq!(
             wire["links"][1]["successor"],
-            serde_json::to_value(&chain.terminal).expect("serialize terminal")
+            cadmpeg_core::serde_erase::json::to_value(&chain.terminal).expect("serialize terminal")
         );
         assert_eq!(
-            serde_json::from_value::<CatiaSchemaConfigurationRowChain>(wire.clone())
-                .expect("valid row chain"),
+            cadmpeg_core::serde_erase::json::from_value::<CatiaSchemaConfigurationRowChain>(
+                wire.clone()
+            )
+            .expect("valid row chain"),
             chain
         );
         let mut mismatched = wire.clone();
         mismatched["links"][0]["successor"] =
-            serde_json::to_value(&chain.terminal).expect("serialize terminal");
-        assert!(serde_json::from_value::<CatiaSchemaConfigurationRowChain>(mismatched).is_err());
+            cadmpeg_core::serde_erase::json::to_value(&chain.terminal).expect("serialize terminal");
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<CatiaSchemaConfigurationRowChain>(
+                mismatched
+            )
+            .is_err()
+        );
         let mut empty = wire;
         empty["links"] = serde_json::json!([]);
-        assert!(serde_json::from_value::<CatiaSchemaConfigurationRowChain>(empty).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<CatiaSchemaConfigurationRowChain>(empty)
+                .is_err()
+        );
     }
 }
 

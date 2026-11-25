@@ -242,7 +242,7 @@ fn definition(
         "solid": true}}});
     value["value"]["value"]["start"] = start;
     value["value"]["value"]["extent"] = extent;
-    serde_json::from_value(value).unwrap()
+    cadmpeg_core::serde_erase::json::from_value(value).unwrap()
 }
 
 fn blind(length: f64) -> serde_json::Value {

@@ -41,7 +41,7 @@ fn datum(element: &str, inputs: &[Value]) -> CadIr {
         construction
     };
     ir.design.features[0].definition.operation =
-        serde_json::from_value(json!({"kind": "datum", "value": {
+        cadmpeg_core::serde_erase::json::from_value(json!({"kind": "datum", "value": {
             "element": {"kind": element, "value": value},
             "native_options": {},
             "source_settings": {}

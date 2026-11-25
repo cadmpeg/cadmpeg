@@ -52,7 +52,7 @@ fn layers(primary: DialectMatch, extras: Vec<DialectMatch>) -> DialectLayers {
 }
 
 fn kernel_loss(host: &str) -> Value {
-    serde_json::to_value(LossNote::new(
+    cadmpeg_core::serde_erase::json::to_value(LossNote::new(
         LossKind::namespaced(
             LossNamespace::new(host).expect("host namespace is not reserved"),
             "source.kernel-dialect-unverified",
