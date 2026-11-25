@@ -188,7 +188,10 @@ fn complete_object_rendering_reports_nested_crc_without_losing_geometry_or_sourc
                 usize::from(corrupt != "none"),
                 "{archive:?}/{corrupt}: {losses:?}"
             );
-            let reread = CadIr::from_json(&serde_json::to_string(decoded.ir()).unwrap()).unwrap();
+            let reread = CadIr::from_json(
+                &cadmpeg_core::serde_erase::json::to_string(decoded.ir()).unwrap(),
+            )
+            .unwrap();
             for ir in [decoded.ir(), &reread] {
                 assert_eq!(ir.geometry.points.len(), 1, "{archive:?}/{corrupt}");
                 assert_eq!(

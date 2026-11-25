@@ -904,11 +904,13 @@ mod tests {
     #[cfg(feature = "schema")]
     #[test]
     fn exactness_schemas_preserve_field_and_population_admission() {
-        let schema = serde_json::to_value(schemars::schema_for!(NonEmptyMap)).unwrap();
+        let schema =
+            cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(NonEmptyMap)).unwrap();
         assert_eq!(schema["minProperties"], 1);
         assert_eq!(schema["additionalProperties"], false);
         assert!(schema["patternProperties"].get("[\\s\\S]").is_some());
-        let schema = serde_json::to_value(schemars::schema_for!(FieldName)).unwrap();
+        let schema =
+            cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(FieldName)).unwrap();
         assert_eq!(schema["type"], "string");
         assert_eq!(schema["minLength"], 1);
 
@@ -916,8 +918,11 @@ mod tests {
         for field in [" ", "\n", "geometry.radius"] {
             let key = FieldName::try_from(field.to_owned()).unwrap();
             let map = NonEmptyMap::try_from(BTreeMap::from([(key, Exactness::Derived)])).unwrap();
-            let wire = serde_json::to_value(&map).unwrap();
-            assert_eq!(serde_json::from_value::<NonEmptyMap>(wire).unwrap(), map);
+            let wire = cadmpeg_core::serde_erase::json::to_value(&map).unwrap();
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::from_value::<NonEmptyMap>(wire).unwrap(),
+                map
+            );
         }
         assert!(FieldName::try_from(String::new()).is_err());
         assert!(NonEmptyMap::try_from(BTreeMap::new()).is_err());
@@ -973,9 +978,10 @@ mod tests {
         assert_eq!(provenance.offset, 11);
         assert_eq!(provenance.tag, None);
 
-        let wire = serde_json::to_value(&annotations).expect("serialize annotations");
+        let wire =
+            cadmpeg_core::serde_erase::json::to_value(&annotations).expect("serialize annotations");
         let restored: Annotations =
-            serde_json::from_value(wire).expect("annotation wire round-trips");
+            cadmpeg_core::serde_erase::json::from_value(wire).expect("annotation wire round-trips");
         assert_eq!(restored, annotations);
     }
 
@@ -987,10 +993,11 @@ mod tests {
 
         let annotations = builder.build();
         assert_eq!(annotations.provenance["whitespace"].stream(), " \t");
-        let wire = serde_json::to_value(&annotations).expect("serialize annotations");
+        let wire =
+            cadmpeg_core::serde_erase::json::to_value(&annotations).expect("serialize annotations");
         assert_eq!(wire["provenance"]["whitespace"]["stream"], " \t");
         assert_eq!(
-            serde_json::from_value::<Annotations>(wire).unwrap(),
+            cadmpeg_core::serde_erase::json::from_value::<Annotations>(wire).unwrap(),
             annotations
         );
     }
@@ -1002,18 +1009,18 @@ mod tests {
         builder.note("f3d:body#0", &stream, 42, Some("body"));
         let annotations = builder.build();
 
-        let value = serde_json::to_value(&annotations).unwrap();
+        let value = cadmpeg_core::serde_erase::json::to_value(&annotations).unwrap();
         assert!(value.get("streams").is_none());
         assert_eq!(
             value["provenance"]["f3d:body#0"]["stream"],
             "f3d:Breps.BlobParts/body.smbh"
         );
         assert_eq!(
-            serde_json::from_value::<Annotations>(value).unwrap(),
+            cadmpeg_core::serde_erase::json::from_value::<Annotations>(value).unwrap(),
             annotations
         );
 
-        let error = serde_json::from_value::<Annotations>(serde_json::json!({
+        let error = cadmpeg_core::serde_erase::json::from_value::<Annotations>(serde_json::json!({
             "streams": ["f3d:native"],
             "provenance": {
                 "f3d:body#0": {"stream": "f3d:native", "offset": 42}
@@ -1023,7 +1030,7 @@ mod tests {
         .to_string();
         assert!(error.contains("unknown field `streams`"), "{error}");
 
-        let error = serde_json::from_value::<Annotations>(serde_json::json!({
+        let error = cadmpeg_core::serde_erase::json::from_value::<Annotations>(serde_json::json!({
             "provenance": {
                 "f3d:body#0": {"stream": "", "offset": 42}
             }
@@ -1060,8 +1067,8 @@ mod tests {
         ] {
             let annotations = builder.build();
             assert_eq!(annotations.provenance[id].stream(), "first");
-            let wire = serde_json::to_value(&annotations).unwrap();
-            let restored: Annotations = serde_json::from_value(wire).unwrap();
+            let wire = cadmpeg_core::serde_erase::json::to_value(&annotations).unwrap();
+            let restored: Annotations = cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
             assert_eq!(restored, annotations);
             assert_eq!(restored.provenance[id].stream(), "first");
         }
@@ -1135,16 +1142,18 @@ mod tests {
 
     #[test]
     fn an_entity_note_refuses_byte_exact_and_a_field_note_refuses_an_empty_map() {
-        let error = serde_json::from_value::<ExactnessNote>(serde_json::json!({
-            "kind": "entity", "entity": "byte_exact"
-        }))
-        .expect_err("byte-exact is the implicit entity exactness");
+        let error =
+            cadmpeg_core::serde_erase::json::from_value::<ExactnessNote>(serde_json::json!({
+                "kind": "entity", "entity": "byte_exact"
+            }))
+            .expect_err("byte-exact is the implicit entity exactness");
         assert!(error.to_string().contains("unknown variant"), "{error}");
 
-        let error = serde_json::from_value::<ExactnessNote>(serde_json::json!({
-            "kind": "fields", "fields": {}
-        }))
-        .expect_err("a field note carries at least one override");
+        let error =
+            cadmpeg_core::serde_erase::json::from_value::<ExactnessNote>(serde_json::json!({
+                "kind": "fields", "fields": {}
+            }))
+            .expect_err("a field note carries at least one override");
         assert!(
             error.to_string().contains("needs a field override"),
             "{error}"
@@ -1157,8 +1166,12 @@ mod tests {
             "kind": "entity", "entity": "derived",
             "fields": {"geometry": "derived"}
         });
-        let note: ExactnessNote = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(note).unwrap(), wire);
+        let note: ExactnessNote =
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(note).unwrap(),
+            wire
+        );
 
         for entity_first in [false, true] {
             let mut builder = AnnotationBuilder::new();
@@ -1172,8 +1185,10 @@ mod tests {
                 builder.exactness("nx:model:surface#1", Exactness::Derived);
             }
             assert_eq!(
-                serde_json::to_value(&builder.state.annotations.exactness["nx:model:surface#1"])
-                    .unwrap(),
+                cadmpeg_core::serde_erase::json::to_value(
+                    &builder.state.annotations.exactness["nx:model:surface#1"]
+                )
+                .unwrap(),
                 if entity_first {
                     wire.clone()
                 } else {
@@ -1212,8 +1227,8 @@ mod tests {
         let mut builder = AnnotationBuilder::new();
         builder.exactness(id, Exactness::Inferred);
         builder.derived(id, "position.x").expect("nonempty path");
-        let before =
-            serde_json::to_value(&builder.state.annotations).expect("serialize annotations");
+        let before = cadmpeg_core::serde_erase::json::to_value(&builder.state.annotations)
+            .expect("serialize annotations");
         for exactness in [
             Exactness::ByteExact,
             Exactness::Derived,
@@ -1227,20 +1242,23 @@ mod tests {
                 "{error}"
             );
             assert_eq!(
-                serde_json::to_value(&builder.state.annotations).expect("serialize annotations"),
+                cadmpeg_core::serde_erase::json::to_value(&builder.state.annotations)
+                    .expect("serialize annotations"),
                 before
             );
         }
         assert!(builder.derived(id, "").is_err());
         assert_eq!(
-            serde_json::to_value(&builder.state.annotations).expect("serialize annotations"),
+            cadmpeg_core::serde_erase::json::to_value(&builder.state.annotations)
+                .expect("serialize annotations"),
             before
         );
         for wire in [
             serde_json::json!({"kind": "entity", "entity": "derived", "fields": {"": "derived"}}),
             serde_json::json!({"kind": "fields", "fields": {"": "derived"}}),
         ] {
-            let error = serde_json::from_value::<ExactnessNote>(wire).expect_err("empty field key");
+            let error = cadmpeg_core::serde_erase::json::from_value::<ExactnessNote>(wire)
+                .expect_err("empty field key");
             assert!(
                 error.to_string().contains("field name cannot be empty"),
                 "{error}"
@@ -1250,9 +1268,10 @@ mod tests {
             "kind": "entity", "entity": "derived",
             "fields": {"position.x": "byte_exact"}
         });
-        let admitted: ExactnessNote = serde_json::from_value(wire.clone()).expect("nonempty path");
+        let admitted: ExactnessNote =
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).expect("nonempty path");
         assert_eq!(
-            serde_json::to_value(admitted).expect("serialize note"),
+            cadmpeg_core::serde_erase::json::to_value(admitted).expect("serialize note"),
             wire
         );
     }
@@ -1283,7 +1302,8 @@ mod tests {
                     crate::hash::digest::Sha256Digest::digest(b"test source"),
                 ),
             );
-            let text = serde_json::to_string(&sidecar).expect("serialize sidecar");
+            let text =
+                cadmpeg_core::serde_erase::json::to_string(&sidecar).expect("serialize sidecar");
             assert_eq!(
                 crate::source_fidelity::DecodeSidecar::from_json(&text).unwrap(),
                 sidecar

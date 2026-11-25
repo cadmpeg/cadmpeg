@@ -8,18 +8,20 @@ use std::io::Cursor;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::document::Topology;
 use cadmpeg_ir::eval::decode::{pcurve_uv, surface_point_solved};
 use cadmpeg_ir::examples::{add_document_root, unit_cube};
+use cadmpeg_ir::geometry::pcurve::PcurveMetadata;
 use cadmpeg_ir::geometry::SurfaceGeometry;
-use cadmpeg_ir::ids::{BodyId, CoedgeId};
+use cadmpeg_ir::ids::{BodyId, CoedgeId, EdgeId, SurfaceId};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::topology::Face;
+use cadmpeg_ir::topology::{Coedge, Face};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::covered_uses::cube_with_pcurves;
 use crate::writer::placement::separated_bodies;
@@ -63,37 +65,43 @@ fn charged<'a>(losses: &'a [LossNote], code: &str) -> Vec<&'a str> {
         .collect()
 }
 
-/// Appends `-instance` to the key of each identity of a kind in `kinds` in
+/// Appends `suffix` to the key of each identity of a kind in `kinds` in
 /// `value`.
-fn renamed(value: &mut Value, kinds: &[&str]) {
+fn renamed(value: &mut Value, kinds: &[&str], suffix: &str) {
     match value {
         Value::String(text) => {
             if let Some((head, _)) = text.split_once('#') {
                 if kinds.iter().any(|kind| head.ends_with(&format!(":{kind}"))) {
-                    text.push_str("-instance");
+                    text.push_str(suffix);
                 }
             }
         }
         Value::Array(items) => {
             for item in items {
-                renamed(item, kinds);
+                renamed(item, kinds, suffix);
             }
         }
         Value::Object(fields) => {
             for field in fields.values_mut() {
-                renamed(field, kinds);
+                renamed(field, kinds, suffix);
             }
         }
         _ => {}
     }
 }
 
+/// `records` with `suffix` appended to each identity of a kind in `kinds`.
+fn copied<T: Serialize + DeserializeOwned>(records: &[T], kinds: &[&str], suffix: &str) -> Vec<T> {
+    let mut value =
+        cadmpeg_core::serde_erase::json::to_value(records).expect("the records serialize");
+    renamed(&mut value, kinds, suffix);
+    cadmpeg_core::serde_erase::json::from_value(value).expect("the renamed records deserialize")
+}
+
 /// `records` with each identity of a kind in `kinds` renamed for the second
 /// body.
 fn instance<T: Serialize + DeserializeOwned>(records: &[T], kinds: &[&str]) -> Vec<T> {
-    let mut value = serde_json::to_value(records).expect("the records serialize");
-    renamed(&mut value, kinds);
-    serde_json::from_value(value).expect("the renamed records deserialize")
+    copied(records, kinds, "-instance")
 }
 
 /// The cube `ir` under `first`, and a second cube body under `second` on
@@ -505,4 +513,178 @@ fn the_ring_of_a_copied_edge_holds_only_the_coedges_of_its_body() {
         .map(|coedge| coedge.edge.clone())
         .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(edges.len(), 24);
+}
+
+/// The support of the face of `coedge` in `geometry`.
+fn coedge_support<'a>(geometry: &'a Topology, coedge: &Coedge) -> &'a SurfaceId {
+    geometry
+        .loops
+        .iter()
+        .find(|loop_| loop_.id == coedge.owner_loop)
+        .and_then(|loop_| geometry.faces.iter().find(|face| face.id == loop_.face))
+        .map(|face| &face.surface)
+        .expect("the coedge face")
+}
+
+#[test]
+fn a_copied_parameter_curve_names_the_copy_of_its_support() {
+    let mut ir = cube_with_pcurves(false);
+    let supports = ir
+        .geometry
+        .coedges
+        .iter()
+        .flat_map(|coedge| {
+            let support = coedge_support(&ir.geometry, coedge).clone();
+            coedge
+                .pcurves
+                .iter()
+                .map(move |pcurve_use| (pcurve_use.pcurve.clone(), support.clone()))
+        })
+        .collect::<BTreeMap<_, _>>();
+    for pcurve in &mut ir.geometry.pcurves {
+        let PcurveMetadata::General { form } = &mut pcurve.metadata else {
+            panic!("the cube states general parameter curves");
+        };
+        form.support_surface = Some(supports[&pcurve.id].clone());
+    }
+    let ir = shared_cubes(
+        ir,
+        None,
+        Transform::affine([
+            [2.0, 0.0, 0.0, 1.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 3.0, -1.0],
+        ]),
+        &TOPOLOGY_KINDS,
+    );
+    let Ok(separated) = separated_bodies(&ir) else {
+        panic!("the bodies separate");
+    };
+    let geometry = &separated.geometry;
+    let mut bodies = [BTreeSet::new(), BTreeSet::new()];
+    for coedge in &geometry.coedges {
+        let support = coedge_support(geometry, coedge);
+        bodies[usize::from(coedge.id.as_str().ends_with("-instance"))].insert(support.clone());
+        for pcurve_use in &coedge.pcurves {
+            let pcurve = geometry
+                .pcurves
+                .iter()
+                .find(|pcurve| pcurve.id == pcurve_use.pcurve)
+                .expect("the parameter curve");
+            let PcurveMetadata::General { form } = &pcurve.metadata else {
+                panic!("the copy keeps the general form");
+            };
+            assert_eq!(
+                form.support_surface.as_ref(),
+                Some(support),
+                "{} names another support than the face of {}",
+                pcurve.id,
+                coedge.id
+            );
+        }
+    }
+    assert_eq!(bodies[0].len(), 6);
+    assert!(bodies[0].is_disjoint(&bodies[1]), "{bodies:#?}");
+    let (losses, _) = written(&ir);
+    for code in [
+        "iges/writer.body-omitted",
+        "iges/writer.face-omitted",
+        "iges/writer.pcurve-omitted",
+    ] {
+        assert!(charged(&losses, code).is_empty(), "{losses:#?}");
+    }
+}
+
+/// The example cube with a copy of its first face, the fin, in the same
+/// shell on the same edges: each edge of the fin has three coedges.
+fn cube_with_a_fin() -> CadIr {
+    let mut ir = unit_cube().expect("the example cube builds");
+    let geometry = &mut ir.geometry;
+    let face = geometry.faces[0].clone();
+    let loops = geometry
+        .loops
+        .iter()
+        .filter(|loop_| loop_.face == face.id)
+        .cloned()
+        .collect::<Vec<_>>();
+    let coedges = geometry
+        .coedges
+        .iter()
+        .filter(|coedge| loops.iter().any(|loop_| loop_.id == coedge.owner_loop))
+        .cloned()
+        .collect::<Vec<_>>();
+    let kinds = ["face", "loop", "coedge"];
+    geometry
+        .faces
+        .extend(copied(std::slice::from_ref(&face), &kinds, "-fin"));
+    geometry.loops.extend(copied(&loops, &kinds, "-fin"));
+    geometry.coedges.extend(copied(&coedges, &kinds, "-fin"));
+    ir.finalize();
+    ir
+}
+
+#[test]
+fn the_ring_of_a_copied_edge_keeps_the_source_order_of_the_coedges_of_its_body() {
+    let mut ir = shared_cubes(
+        cube_with_a_fin(),
+        None,
+        Transform::affine([
+            [2.0, 0.0, 0.0, 1.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 3.0, -1.0],
+        ]),
+        &FACE_KINDS,
+    );
+    // Each source ring runs in descending identity order.
+    let mut rings = BTreeMap::<EdgeId, Vec<CoedgeId>>::new();
+    for coedge in &ir.geometry.coedges {
+        rings
+            .entry(coedge.edge.clone())
+            .or_default()
+            .push(coedge.id.clone());
+    }
+    for ring in rings.values_mut() {
+        ring.sort_by(|first, second| second.cmp(first));
+    }
+    let next = rings
+        .values()
+        .flat_map(|ring| {
+            ring.iter()
+                .zip(ring.iter().cycle().skip(1))
+                .map(|(coedge, next)| (coedge.clone(), next.clone()))
+        })
+        .collect::<BTreeMap<_, _>>();
+    for coedge in &mut ir.geometry.coedges {
+        coedge.radial_next = next[&coedge.id].clone();
+    }
+    let Ok(separated) = separated_bodies(&ir) else {
+        panic!("the bodies separate");
+    };
+    let instance = |coedge: &CoedgeId| coedge.as_str().ends_with("-instance");
+    let mut fins = 0;
+    for coedge in &separated.geometry.coedges {
+        let source = ir
+            .geometry
+            .coedges
+            .iter()
+            .find(|source| source.id == coedge.id)
+            .expect("the coedge keeps its identity");
+        let ring = rings[&source.edge]
+            .iter()
+            .filter(|member| instance(member) == instance(&coedge.id))
+            .collect::<Vec<_>>();
+        let position = ring
+            .iter()
+            .position(|member| **member == coedge.id)
+            .expect("the coedge is in its ring");
+        assert_eq!(
+            coedge.radial_next,
+            *ring[(position + 1) % ring.len()],
+            "{ring:#?}"
+        );
+        if ring.len() == 3 {
+            fins += 1;
+        }
+    }
+    assert_eq!(fins, 2 * 4 * 3);
 }

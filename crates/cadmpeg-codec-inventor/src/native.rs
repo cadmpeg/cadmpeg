@@ -1707,8 +1707,11 @@ mod tests {
     fn graphics_style_collection_checks_location_and_reference_indices() {
         let valid = serde_json::json!({"id": "inventor:presentation:graphics-style-collection#segment-0", "segment_token": "segment", "record_ordinal": 0, "segment_version_major": 26, "style_references": [], "style_reference_qualifiers": [], "list_metadata": null});
         let record: super::PmGraphicsStyleCollectionRecord =
-            serde_json::from_value(valid.clone()).expect("valid location");
-        assert_eq!(serde_json::to_value(record).expect("wire"), valid);
+            cadmpeg_core::serde_erase::json::from_value(valid.clone()).expect("valid location");
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(record).expect("wire"),
+            valid
+        );
         for (field, value) in [
             ("id", serde_json::json!("")),
             (
@@ -1721,15 +1724,19 @@ mod tests {
         ] {
             let mut wire = valid.clone();
             wire[field] = value;
-            assert!(
-                serde_json::from_value::<super::PmGraphicsStyleCollectionRecord>(wire).is_err()
-            );
+            assert!(cadmpeg_core::serde_erase::json::from_value::<
+                super::PmGraphicsStyleCollectionRecord,
+            >(wire)
+            .is_err());
         }
         let mut wire = valid;
         wire["style_references"] = serde_json::json!([2_147_483_648_u32]);
         wire["style_reference_qualifiers"] = serde_json::json!([false]);
         wire["list_metadata"] = serde_json::json!("0000");
-        assert!(serde_json::from_value::<super::PmGraphicsStyleCollectionRecord>(wire).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<
+            super::PmGraphicsStyleCollectionRecord,
+        >(wire)
+        .is_err());
     }
 
     #[test]
@@ -1741,7 +1748,7 @@ mod tests {
             "scalar_value": "7", "raw_len": 0, "raw_sha256": "0".repeat(64)
         });
         let record: super::PropertyRecord =
-            serde_json::from_value(expected.clone()).expect("valid fixture");
+            cadmpeg_core::serde_erase::json::from_value(expected.clone()).expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -1759,7 +1766,7 @@ mod tests {
             "suffix_len": 48, "suffix_sha256": "0".repeat(64)
         });
         let record: super::AssemblyPlacementRecord =
-            serde_json::from_value(expected.clone()).expect("valid fixture");
+            cadmpeg_core::serde_erase::json::from_value(expected.clone()).expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -1778,7 +1785,7 @@ mod tests {
             "suffix_sha256": "0".repeat(64)
         });
         let record: PmAppRenderingStyleRecord =
-            serde_json::from_value(expected.clone()).expect("valid fixture");
+            cadmpeg_core::serde_erase::json::from_value(expected.clone()).expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -1797,7 +1804,7 @@ mod tests {
             "values": [0, 0]
         });
         let record: super::PmGraphicsFaceRecord =
-            serde_json::from_value(expected.clone()).expect("valid fixture");
+            cadmpeg_core::serde_erase::json::from_value(expected.clone()).expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -1810,7 +1817,7 @@ mod tests {
             "list_metadata": null
         });
         let record: super::PmGraphicsStyleCollectionRecord =
-            serde_json::from_value(expected.clone()).expect("valid fixture");
+            cadmpeg_core::serde_erase::json::from_value(expected.clone()).expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -1821,7 +1828,7 @@ mod tests {
             "status": "malformed", "detail": "short metadata"
         });
         let record: super::SegmentMetaIssueRecord =
-            serde_json::from_value(expected.clone()).expect("valid fixture");
+            cadmpeg_core::serde_erase::json::from_value(expected.clone()).expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -1836,7 +1843,7 @@ mod tests {
             "record_detail": null
         });
         let record: SegmentBulkRecord =
-            serde_json::from_value(expected.clone()).expect("valid fixture");
+            cadmpeg_core::serde_erase::json::from_value(expected.clone()).expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -1849,7 +1856,7 @@ mod tests {
             "trailing_payload_len": 0, "trailer_len": 0, "trailer_sha256": "0"
         });
         let record: super::RseRecordRecord =
-            serde_json::from_value(expected.clone()).expect("valid fixture");
+            cadmpeg_core::serde_erase::json::from_value(expected.clone()).expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -1896,7 +1903,7 @@ mod tests {
             .expect("valid carrier");
         assert_eq!(
             wire,
-            vec![serde_json::to_value(&record).expect("valid carrier")]
+            vec![cadmpeg_core::serde_erase::json::to_value(&record).expect("valid carrier")]
         );
         for records in [
             vec![],
@@ -1934,9 +1941,10 @@ mod tests {
                 stream_trailer_sha256: cadmpeg_ir::hash::sha256_hex(&[]),
             },
         };
-        let wire = serde_json::to_value(&record).expect("valid test fixture");
+        let wire = cadmpeg_core::serde_erase::json::to_value(&record).expect("valid test fixture");
         assert_eq!(
-            serde_json::from_value::<SegmentBulkRecord>(wire.clone()).expect("valid test fixture"),
+            cadmpeg_core::serde_erase::json::from_value::<SegmentBulkRecord>(wire.clone())
+                .expect("valid test fixture"),
             record
         );
         for field in [
@@ -1951,17 +1959,19 @@ mod tests {
                 .expect("valid test fixture")
                 .remove(field);
             assert!(
-                serde_json::from_value::<SegmentBulkRecord>(missing).is_err(),
+                cadmpeg_core::serde_erase::json::from_value::<SegmentBulkRecord>(missing).is_err(),
                 "{field}"
             );
         }
         let mut mixed = wire.clone();
         mixed["record_detail"] = serde_json::json!("unavailable");
-        assert!(serde_json::from_value::<SegmentBulkRecord>(mixed).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<SegmentBulkRecord>(mixed).is_err());
         for state in ["not_expanded", "future"] {
             let mut invalid = wire.clone();
             invalid["record_state"] = serde_json::json!(state);
-            assert!(serde_json::from_value::<SegmentBulkRecord>(invalid).is_err());
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<SegmentBulkRecord>(invalid).is_err()
+            );
         }
         let unavailable = SegmentBulkRecord {
             records: SegmentBulkFrame::Unavailable {
@@ -1969,13 +1979,15 @@ mod tests {
             },
             ..record
         };
-        let mut wire = serde_json::to_value(&unavailable).expect("valid test fixture");
+        let mut wire =
+            cadmpeg_core::serde_erase::json::to_value(&unavailable).expect("valid test fixture");
         assert_eq!(
-            serde_json::from_value::<SegmentBulkRecord>(wire.clone()).expect("valid test fixture"),
+            cadmpeg_core::serde_erase::json::from_value::<SegmentBulkRecord>(wire.clone())
+                .expect("valid test fixture"),
             unavailable
         );
         wire["record_count"] = serde_json::json!(1);
-        assert!(serde_json::from_value::<SegmentBulkRecord>(wire).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<SegmentBulkRecord>(wire).is_err());
     }
 
     #[test]
@@ -1983,9 +1995,9 @@ mod tests {
         let record = ActiveCarrierRecord::NotApplicable {
             id: "inventor:rse:active-carrier#1".into(),
         };
-        let wire = serde_json::to_value(&record).expect("valid test fixture");
+        let wire = cadmpeg_core::serde_erase::json::to_value(&record).expect("valid test fixture");
         assert_eq!(
-            serde_json::from_value::<ActiveCarrierRecord>(wire.clone())
+            cadmpeg_core::serde_erase::json::from_value::<ActiveCarrierRecord>(wire.clone())
                 .expect("valid test fixture"),
             record
         );
@@ -1998,7 +2010,8 @@ mod tests {
             let mut invalid = wire.clone();
             invalid[field] = value;
             assert!(
-                serde_json::from_value::<ActiveCarrierRecord>(invalid).is_err(),
+                cadmpeg_core::serde_erase::json::from_value::<ActiveCarrierRecord>(invalid)
+                    .is_err(),
                 "{field}"
             );
         }
@@ -2006,14 +2019,15 @@ mod tests {
             id: "inventor:rse:active-carrier#1".into(),
             detail: "no selection".into(),
         };
-        let mut wire = serde_json::to_value(&unavailable).expect("valid test fixture");
+        let mut wire =
+            cadmpeg_core::serde_erase::json::to_value(&unavailable).expect("valid test fixture");
         assert_eq!(
-            serde_json::from_value::<ActiveCarrierRecord>(wire.clone())
+            cadmpeg_core::serde_erase::json::from_value::<ActiveCarrierRecord>(wire.clone())
                 .expect("valid test fixture"),
             unavailable
         );
         wire["segment_token"] = serde_json::json!("segment");
-        assert!(serde_json::from_value::<ActiveCarrierRecord>(wire).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<ActiveCarrierRecord>(wire).is_err());
     }
     #[test]
     fn rendering_style_version_controls_comment_and_extension() {
@@ -2024,11 +2038,21 @@ mod tests {
             "value": 0, "name_reference": 0, "name": "", "comment": "comment",
             "long_name": "", "suffix_len": 0, "suffix_sha256": "0".repeat(64)
         });
-        assert!(serde_json::from_value::<PmAppRenderingStyleRecord>(legacy.clone()).is_ok());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<PmAppRenderingStyleRecord>(
+                legacy.clone()
+            )
+            .is_ok()
+        );
         let mut modern = legacy.clone();
         modern["segment_version_major"] = serde_json::json!(17);
         modern["comment"] = serde_json::json!("");
-        assert!(serde_json::from_value::<PmAppRenderingStyleRecord>(modern.clone()).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<PmAppRenderingStyleRecord>(
+                modern.clone()
+            )
+            .is_err()
+        );
         for (field, value) in [
             ("style_state", serde_json::json!(0)),
             ("style_label", serde_json::json!("")),
@@ -2040,12 +2064,23 @@ mod tests {
         ] {
             modern[field] = value;
         }
-        assert!(serde_json::from_value::<PmAppRenderingStyleRecord>(modern.clone()).is_ok());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<PmAppRenderingStyleRecord>(
+                modern.clone()
+            )
+            .is_ok()
+        );
         let mut invalid = modern.clone();
         invalid["comment"] = serde_json::json!("comment");
-        assert!(serde_json::from_value::<PmAppRenderingStyleRecord>(invalid).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<PmAppRenderingStyleRecord>(invalid)
+                .is_err()
+        );
         modern["segment_version_major"] = serde_json::json!(16);
-        assert!(serde_json::from_value::<PmAppRenderingStyleRecord>(modern).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<PmAppRenderingStyleRecord>(modern)
+                .is_err()
+        );
     }
     #[test]
     fn property_kind_wire_agrees_with_ole_type_code() {
@@ -2106,28 +2141,34 @@ mod tests {
             "branch": 0, "graphics_state": 0, "occurrence_id": 0,
             "graphics_index": 0, "object_reference": 0, "suffix_len": 48, "suffix_sha256": "0".repeat(64)
         });
-        let placement: super::AssemblyPlacementRecord = serde_json::from_value(wire.clone())
-            .expect("assembly matrix fixture agrees with its masks");
+        let placement: super::AssemblyPlacementRecord =
+            cadmpeg_core::serde_erase::json::from_value(wire.clone())
+                .expect("assembly matrix fixture agrees with its masks");
         assert_eq!(
-            serde_json::to_value(placement).expect("assembly matrix fixture agrees with its masks"),
+            cadmpeg_core::serde_erase::json::to_value(placement)
+                .expect("assembly matrix fixture agrees with its masks"),
             wire
         );
         let mut empty_suffix = wire.clone();
         empty_suffix["suffix_len"] = serde_json::json!(0);
         assert!(
-            serde_json::from_value::<super::AssemblyPlacementRecord>(empty_suffix)
-                .expect_err("empty placement suffix")
-                .to_string()
-                .contains("suffix_len")
+            cadmpeg_core::serde_erase::json::from_value::<super::AssemblyPlacementRecord>(
+                empty_suffix
+            )
+            .expect_err("empty placement suffix")
+            .to_string()
+            .contains("suffix_len")
         );
         for len in [1, 48, 49] {
             let mut nonempty_suffix = wire.clone();
             nonempty_suffix["suffix_len"] = serde_json::json!(len);
             assert_eq!(
-                serde_json::from_value::<super::AssemblyPlacementRecord>(nonempty_suffix)
-                    .expect("nonempty placement suffix")
-                    .suffix_len
-                    .get(),
+                cadmpeg_core::serde_erase::json::from_value::<super::AssemblyPlacementRecord>(
+                    nonempty_suffix
+                )
+                .expect("nonempty placement suffix")
+                .suffix_len
+                .get(),
                 len
             );
         }
@@ -2135,10 +2176,12 @@ mod tests {
             let mut invalid = wire.clone();
             invalid["suffix_sha256"] = serde_json::json!(digest);
             assert!(
-                serde_json::from_value::<super::AssemblyPlacementRecord>(invalid)
-                    .expect_err("invalid digest")
-                    .to_string()
-                    .contains("suffix_sha256")
+                cadmpeg_core::serde_erase::json::from_value::<super::AssemblyPlacementRecord>(
+                    invalid
+                )
+                .expect_err("invalid digest")
+                .to_string()
+                .contains("suffix_sha256")
             );
         }
         let mut nonfinite = wire.clone();
@@ -2147,8 +2190,16 @@ mod tests {
         let json = nonfinite.to_string().replace("\"overflow\"", "1e999");
         assert!(serde_json::from_str::<super::AssemblyPlacementRecord>(&json).is_err());
         wire["transform"][0][0] = serde_json::json!(2.0);
-        assert!(serde_json::from_value::<super::AssemblyPlacementRecord>(wire.clone()).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<super::AssemblyPlacementRecord>(
+                wire.clone()
+            )
+            .is_err()
+        );
         wire["transform_encoding"] = serde_json::json!([0, 0]);
-        assert!(serde_json::from_value::<super::AssemblyPlacementRecord>(wire).is_ok());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<super::AssemblyPlacementRecord>(wire)
+                .is_ok()
+        );
     }
 }

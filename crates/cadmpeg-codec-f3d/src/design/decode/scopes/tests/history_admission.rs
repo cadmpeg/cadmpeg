@@ -756,9 +756,10 @@ fn a_later_envelope_without_flags_keeps_the_latest_stored_flags() {
             [note],
             "flags {flags:?}"
         );
-        let reloaded =
-            serde_json::from_value::<DesignParameterScope>(serde_json::to_value(retained).unwrap())
-                .expect("the kept scope reloads");
+        let reloaded = cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(
+            cadmpeg_core::serde_erase::json::to_value(retained).unwrap(),
+        )
+        .expect("the kept scope reloads");
         assert_eq!(reloaded.tail_flags, retained.tail_flags, "flags {flags:?}");
     }
 }

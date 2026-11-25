@@ -20,17 +20,29 @@ fn set() -> serde_json::Value {
 #[test]
 fn fillet_set_list_round_trips() {
     let value = wire(&serde_json::json!([set()]));
-    let list: DesignFilletSetList = serde_json::from_value(value.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&list).unwrap(), value);
+    let list: DesignFilletSetList =
+        cadmpeg_core::serde_erase::json::from_value(value.clone()).unwrap();
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(&list).unwrap(),
+        value
+    );
 }
 
 #[test]
 fn fillet_set_list_refuses_an_empty_set_run_and_unknown_keys() {
-    assert!(serde_json::from_value::<DesignFilletSetList>(wire(&serde_json::json!([]))).is_err());
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<DesignFilletSetList>(wire(
+            &serde_json::json!([])
+        ))
+        .is_err()
+    );
     let mut extra = set();
     extra["radius"] = serde_json::json!(1.0);
     assert!(
-        serde_json::from_value::<DesignFilletSetList>(wire(&serde_json::json!([extra]))).is_err()
+        cadmpeg_core::serde_erase::json::from_value::<DesignFilletSetList>(wire(
+            &serde_json::json!([extra])
+        ))
+        .is_err()
     );
 }
 
@@ -38,15 +50,15 @@ fn fillet_set_list_refuses_an_empty_set_run_and_unknown_keys() {
 fn a_set_list_takes_precedence_over_fixed_lanes() {
     use crate::records::feature::fillet_set::DesignFilletScope;
     let list: DesignFilletSetList =
-        serde_json::from_value(wire(&serde_json::json!([set()]))).unwrap();
-    let fixed = serde_json::from_value(serde_json::json!({"groups": [{
+        cadmpeg_core::serde_erase::json::from_value(wire(&serde_json::json!([set()]))).unwrap();
+    let fixed = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({"groups": [{
         "radii": [0.2], "radius_offsets": [2020], "radius_record_indexes": [202]
     }]}))
     .unwrap();
     let both = DesignFilletScope::admit(Some(fixed), Some(list.clone()));
     assert!(both.fixed.is_none());
     assert_eq!(both.sets, Some(list));
-    let fixed = serde_json::from_value(serde_json::json!({"groups": [{
+    let fixed = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({"groups": [{
         "radii": [0.2], "radius_offsets": [2020], "radius_record_indexes": [202]
     }]}))
     .unwrap();

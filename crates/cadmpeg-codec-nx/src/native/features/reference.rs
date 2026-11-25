@@ -103,10 +103,14 @@ mod tests {
     fn body11_continuation_borrowed_wire_matches_owned_bytes_and_retained_limit() {
         let json = r#"{"id":"nx:feature:body11-continuation#0","operation_label":"operation","body_reference_ordinal":0,"body_object_index":114,"continuation_index":67,"raw_continuation_index":"8043","continuation_source_offset":126,"terminal_object_index":113,"raw_terminal_object_index":"71","terminal_source_offset":131}"#;
         let record: FeatureOperationBody11Continuation = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&Body11ContinuationWire::from(record.clone())).unwrap()
+            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+            json.as_bytes()
+        );
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&Body11ContinuationWire::from(record.clone()))
+                .unwrap()
         );
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,

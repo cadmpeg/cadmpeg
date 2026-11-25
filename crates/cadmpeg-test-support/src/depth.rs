@@ -138,7 +138,7 @@ pub fn assert_each_depth_records_its_scope(codec: &dyn Codec, bytes: &[u8]) {
                 if result.ir().process.entity_count() != 0 {
                     failures.push(format!(
                         "a {depth} decode holds process records: {}",
-                        serde_json::to_string(&result.ir().process)
+                        cadmpeg_core::serde_erase::json::to_string(&result.ir().process)
                             .expect("serialize decoded process")
                     ));
                 }

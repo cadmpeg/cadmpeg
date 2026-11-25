@@ -13,7 +13,7 @@ const SKETCH: &str = "synthetic:test:sketch#profile";
 
 fn profile_model(geometry: &Value, construction: bool) -> CadIr {
     let mut ir = CadIr::empty();
-    ir.model.features = serde_json::from_value(json!([
+    ir.model.features = cadmpeg_core::serde_erase::json::from_value(json!([
         {"id": OWNER, "ordinal": 0, "suppressed": false,
          "definition": {"kind": "operation", "value": {"kind": "sketch", "value": {"sketch": {"kind": "planar", "sketch": SKETCH}}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []},
         {"id": EXTRUDE, "ordinal": 1, "suppressed": false,
@@ -23,13 +23,13 @@ fn profile_model(geometry: &Value, construction: bool) -> CadIr {
           "op": "join", "solid": true}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}
     ])).expect("synthetic feature definitions");
     ir.model.sketches.push(
-        serde_json::from_value(json!({
+        cadmpeg_core::serde_erase::json::from_value(json!({
             "id": SKETCH, "placement": {"kind": "unresolved"}, "profiles": []
         }))
         .expect("synthetic sketch"),
     );
     ir.model.sketch_entities.push(
-        serde_json::from_value(json!({
+        cadmpeg_core::serde_erase::json::from_value(json!({
             "id": "synthetic:test:entity#curve", "sketch": SKETCH,
             "construction": construction, "geometry": geometry, "endpoint_refs": []
         }))

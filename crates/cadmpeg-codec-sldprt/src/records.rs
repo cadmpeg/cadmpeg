@@ -2496,8 +2496,8 @@ mod tests {
         ] {
             let owned = String::from(source);
             assert_eq!(
-                serde_json::to_vec(&source).unwrap(),
-                serde_json::to_vec(&owned).unwrap()
+                cadmpeg_core::serde_erase::json::to_vec(&source).unwrap(),
+                cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
             );
         }
     }
@@ -2525,22 +2525,28 @@ mod tests {
             .set_arena(&service, arena_name, std::slice::from_ref(&record))
             .unwrap();
         assert_eq!(
-            serde_json::to_value(&namespace.arenas()[arena_name][0]).unwrap(),
-            serde_json::to_value(&record).unwrap()
+            cadmpeg_core::serde_erase::json::to_value(&namespace.arenas()[arena_name][0]).unwrap(),
+            cadmpeg_core::serde_erase::json::to_value(&record).unwrap()
         );
     }
 
     #[test]
     fn native_operand_wire_rejects_reserved_tags() {
         for tag in [0x0000, 0xffff, 0x80d6, 0x80e1] {
-            assert!(serde_json::from_value::<super::FeatureInputOperandKind>(
-                serde_json::json!({"native": tag})
-            )
-            .is_err());
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<super::FeatureInputOperandKind>(
+                    serde_json::json!({"native": tag})
+                )
+                .is_err()
+            );
         }
         let wire = serde_json::json!({"native": 0x812a});
-        let kind: super::FeatureInputOperandKind = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(kind).unwrap(), wire);
+        let kind: super::FeatureInputOperandKind =
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(kind).unwrap(),
+            wire
+        );
     }
 
     #[test]
@@ -2554,7 +2560,8 @@ mod tests {
             serde_json::json!({}),
             serde_json::json!({"endpoint_selector": 0}),
         ] {
-            let selection: Selection = serde_json::from_value(wire.clone()).unwrap();
+            let selection: Selection =
+                cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
             assert_eq!(
                 matches!(
                     selection.kind,
@@ -2562,7 +2569,10 @@ mod tests {
                 ),
                 wire.get("endpoint_selector").is_some(),
             );
-            assert_eq!(serde_json::to_value(selection).unwrap(), wire);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_value(selection).unwrap(),
+                wire
+            );
         }
     }
 
@@ -2574,15 +2584,22 @@ mod tests {
             value: Option<(String, u64)>,
         }
         let wire = serde_json::json!({"display_text": "25 mm", "display_text_offset": 17});
-        let display: Display = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(display).unwrap(), wire);
+        let display: Display = cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(display).unwrap(),
+            wire
+        );
         for field in ["display_text", "display_text_offset"] {
             let mut split = wire.clone();
             split.as_object_mut().unwrap().remove(field);
-            assert!(serde_json::from_value::<Display>(split).is_err());
+            assert!(cadmpeg_core::serde_erase::json::from_value::<Display>(split).is_err());
         }
-        let absent: Display = serde_json::from_value(serde_json::json!({})).unwrap();
-        assert_eq!(serde_json::to_value(absent).unwrap(), serde_json::json!({}));
+        let absent: Display =
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(absent).unwrap(),
+            serde_json::json!({})
+        );
     }
 
     #[test]
@@ -2598,11 +2615,12 @@ mod tests {
             serde_json::json!({"display_text": "25 mm", "display_text_offset": null}),
         ] {
             assert!(
-                serde_json::from_value::<Display>(wire.clone()).is_err(),
+                cadmpeg_core::serde_erase::json::from_value::<Display>(wire.clone()).is_err(),
                 "{wire}"
             );
         }
-        let absent: Display = serde_json::from_value(serde_json::json!({})).unwrap();
+        let absent: Display =
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({})).unwrap();
         assert!(absent.value.is_none());
     }
 
@@ -2619,11 +2637,12 @@ mod tests {
             serde_json::json!({"tree_parent": "record", "parent_source_id": null}),
         ] {
             assert!(
-                serde_json::from_value::<Parent>(wire.clone()).is_err(),
+                cadmpeg_core::serde_erase::json::from_value::<Parent>(wire.clone()).is_err(),
                 "{wire}"
             );
         }
-        let absent: Parent = serde_json::from_value(serde_json::json!({})).unwrap();
+        let absent: Parent =
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({})).unwrap();
         assert!(absent.parent.is_none());
     }
 
@@ -2634,11 +2653,12 @@ mod tests {
             #[serde(flatten, with = "super::surface_selection_kind_wire")]
             kind: super::FeatureInputSurfaceSelectionKind,
         }
-        assert!(serde_json::from_value::<Selection>(
+        assert!(cadmpeg_core::serde_erase::json::from_value::<Selection>(
             serde_json::json!({"endpoint_selector": null})
         )
         .is_err());
-        let absent: Selection = serde_json::from_value(serde_json::json!({})).unwrap();
+        let absent: Selection =
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({})).unwrap();
         assert_eq!(
             absent.kind,
             super::FeatureInputSurfaceSelectionKind::Component
@@ -2652,11 +2672,12 @@ mod tests {
             #[serde(flatten, with = "super::scalar_operands_wire")]
             operands: Vec<super::FeatureInputOperand>,
         }
-        assert!(
-            serde_json::from_value::<Operands>(serde_json::json!({"entity_indices": null}))
-                .is_err()
-        );
-        let absent: Operands = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(cadmpeg_core::serde_erase::json::from_value::<Operands>(
+            serde_json::json!({"entity_indices": null})
+        )
+        .is_err());
+        let absent: Operands =
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({})).unwrap();
         assert!(absent.operands.is_empty());
     }
 
@@ -2667,12 +2688,13 @@ mod tests {
             #[serde(flatten, with = "super::feature_class_wire")]
             name: String,
         }
-        assert!(serde_json::from_value::<Class>(
+        assert!(cadmpeg_core::serde_erase::json::from_value::<Class>(
             serde_json::json!({"name": "sgEntHandle", "role": null})
         )
         .is_err());
         let absent: Class =
-            serde_json::from_value(serde_json::json!({"name": "sgEntHandle"})).unwrap();
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({"name": "sgEntHandle"}))
+                .unwrap();
         assert_eq!(absent.name, "sgEntHandle");
     }
 
@@ -2683,11 +2705,12 @@ mod tests {
             #[serde(flatten, with = "super::sketch_input_links_wire")]
             links: Option<super::SketchInputLinks>,
         }
-        assert!(serde_json::from_value::<Links>(
+        assert!(cadmpeg_core::serde_erase::json::from_value::<Links>(
             serde_json::json!({"links": [], "link_selector": null})
         )
         .is_err());
-        let absent: Links = serde_json::from_value(serde_json::json!({})).unwrap();
+        let absent: Links =
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({})).unwrap();
         assert!(absent.links.is_none());
     }
 
@@ -2697,12 +2720,19 @@ mod tests {
             "id": "class", "parent": "lane", "ordinal": 0, "offset": 0,
             "name": "sgEntHandle", "role": "sketch_entity"
         });
-        let class: super::FeatureInputClass = serde_json::from_value(wire.clone()).unwrap();
+        let class: super::FeatureInputClass =
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
         assert_eq!(class.role(), super::FeatureInputClassRole::SketchEntity);
-        assert_eq!(serde_json::to_value(class).unwrap(), wire);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(class).unwrap(),
+            wire
+        );
         let mut inconsistent = wire;
         inconsistent["role"] = serde_json::json!("feature");
-        assert!(serde_json::from_value::<super::FeatureInputClass>(inconsistent).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<super::FeatureInputClass>(inconsistent)
+                .is_err()
+        );
     }
 
     #[test]
@@ -2719,13 +2749,20 @@ mod tests {
                 {"offset": 12, "reference_ref": "b", "kind": "e1", "entity_index": 9}
             ]
         });
-        let operands: Operands = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(operands).unwrap(), wire);
+        let operands: Operands = cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(operands).unwrap(),
+            wire
+        );
         let mut inconsistent = wire;
         inconsistent["entity_indices"] = serde_json::json!([7, 9]);
-        assert!(serde_json::from_value::<Operands>(inconsistent).is_err());
-        let empty: Operands = serde_json::from_value(serde_json::json!({})).unwrap();
-        assert_eq!(serde_json::to_value(empty).unwrap(), serde_json::json!({}));
+        assert!(cadmpeg_core::serde_erase::json::from_value::<Operands>(inconsistent).is_err());
+        let empty: Operands =
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(empty).unwrap(),
+            serde_json::json!({})
+        );
     }
 
     #[test]
@@ -2741,12 +2778,15 @@ mod tests {
             serde_json::json!({"parent_source_id": "7"}),
             serde_json::json!({"tree_parent": "record", "parent_source_id": "7"}),
         ] {
-            let parent: Parent = serde_json::from_value(wire.clone()).unwrap();
+            let parent: Parent = cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
             assert_eq!(
                 parent.parent.is_none(),
                 wire.as_object().unwrap().is_empty()
             );
-            assert_eq!(serde_json::to_value(parent).unwrap(), wire);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_value(parent).unwrap(),
+                wire
+            );
         }
     }
 
@@ -2791,9 +2831,10 @@ mod tests {
             references: Vec::new(),
             sketch_entities: vec![entity],
         };
-        let wire = serde_json::to_value(&lane).expect("lane JSON");
+        let wire = cadmpeg_core::serde_erase::json::to_value(&lane).expect("lane JSON");
         assert_eq!(
-            serde_json::from_value::<FeatureInputLane>(wire.clone()).expect("lane round trip"),
+            cadmpeg_core::serde_erase::json::from_value::<FeatureInputLane>(wire.clone())
+                .expect("lane round trip"),
             lane
         );
         assert_eq!(wire["sketch_entities"][0]["link_selector"], 3);
@@ -2803,15 +2844,17 @@ mod tests {
                 .as_object_mut()
                 .expect("entity object")
                 .remove(missing);
-            let error = serde_json::from_value::<FeatureInputLane>(split).unwrap_err();
+            let error =
+                cadmpeg_core::serde_erase::json::from_value::<FeatureInputLane>(split).unwrap_err();
             assert!(error.to_string().contains("links and link_selector"));
         }
         let mut empty = wire.clone();
         empty["sketch_entities"][0]["links"] = serde_json::json!([]);
-        assert!(serde_json::from_value::<FeatureInputLane>(empty).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<FeatureInputLane>(empty).is_err());
         let mut moved = wire.clone();
         moved["sketch_entities"][0]["offset"] = serde_json::json!(3);
-        let error = serde_json::from_value::<FeatureInputLane>(moved).unwrap_err();
+        let error =
+            cadmpeg_core::serde_erase::json::from_value::<FeatureInputLane>(moved).unwrap_err();
         assert!(error
             .to_string()
             .contains("is not a marker in native_payload"));
@@ -2822,17 +2865,19 @@ mod tests {
         entity.remove("links");
         entity.remove("link_selector");
         let restored: FeatureInputLane =
-            serde_json::from_value(absent.clone()).expect("linkless round trip");
+            cadmpeg_core::serde_erase::json::from_value(absent.clone())
+                .expect("linkless round trip");
         assert!(restored.sketch_entities[0].links.is_none());
         assert_eq!(
-            serde_json::to_value(&restored).expect("lane JSON"),
+            cadmpeg_core::serde_erase::json::to_value(&restored).expect("lane JSON"),
             absent,
             "an entity with no links round-trips with both keys absent"
         );
 
         let mut renamed = wire;
         renamed["sketch_entities"][0]["local_id"] = serde_json::json!(4_242);
-        let error = serde_json::from_value::<FeatureInputLane>(renamed).unwrap_err();
+        let error =
+            cadmpeg_core::serde_erase::json::from_value::<FeatureInputLane>(renamed).unwrap_err();
         assert!(error.to_string().contains("local object id does not match"));
         assert!(SketchInputLinks::new(3, Vec::new()).is_none());
     }
@@ -2871,18 +2916,21 @@ mod tests {
             references: Vec::new(),
             sketch_entities: vec![entity],
         };
-        let mut wire = serde_json::to_value(&lane).expect("native JSON");
+        let mut wire = cadmpeg_core::serde_erase::json::to_value(&lane).expect("native JSON");
         let record = &wire["sketch_entities"][0];
         assert_eq!(record["coordinates_m"], serde_json::json!([1.25, -2.5]));
         assert_eq!(
             record.to_string(),
             r#"{"coordinates_m":[1.25,-2.5],"id":"marker","kind":"point","offset":0,"ordinal":0,"parent":"lane"}"#
         );
-        let restored: FeatureInputLane =
-            serde_json::from_value(wire.clone()).expect("native JSON round trip");
-        assert_eq!(serde_json::to_value(restored).expect("native JSON"), wire);
+        let restored: FeatureInputLane = cadmpeg_core::serde_erase::json::from_value(wire.clone())
+            .expect("native JSON round trip");
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(restored).expect("native JSON"),
+            wire
+        );
         wire["sketch_entities"][0]["coordinates_m"] = serde_json::json!([1.25, "bad"]);
-        let refusal = serde_json::from_value::<FeatureInputLane>(wire)
+        let refusal = cadmpeg_core::serde_erase::json::from_value::<FeatureInputLane>(wire)
             .expect_err("invalid coordinate")
             .to_string();
         assert_eq!(
@@ -2902,9 +2950,12 @@ mod tests {
             assert!(matches!(handle, SketchInputKind::NativeHandle(_)));
             assert_eq!(handle.native_code(), code);
             let wire = serde_json::json!({"native": code});
-            assert_eq!(serde_json::to_value(handle).unwrap(), wire);
             assert_eq!(
-                serde_json::from_value::<SketchInputKind>(wire).unwrap(),
+                cadmpeg_core::serde_erase::json::to_value(handle).unwrap(),
+                wire
+            );
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::from_value::<SketchInputKind>(wire).unwrap(),
                 handle
             );
         }
@@ -3057,17 +3108,21 @@ mod tests {
             reference_only: false,
             reference_only_offset: 0,
         };
-        let wire = serde_json::to_value(&dimension).unwrap();
+        let wire = cadmpeg_core::serde_erase::json::to_value(&dimension).unwrap();
         assert!(wire.get("item_count").is_none());
-        let decoded: PmiDimension = serde_json::from_value(wire.clone()).unwrap();
+        let decoded: PmiDimension =
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
         assert_eq!(decoded, dimension);
         let mut explicit = wire.clone();
         explicit["item_count"] = serde_json::json!(1);
-        let decoded: PmiDimension = serde_json::from_value(explicit).unwrap();
-        assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
+        let decoded: PmiDimension = cadmpeg_core::serde_erase::json::from_value(explicit).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(decoded).unwrap(),
+            wire
+        );
         let mut zero = wire;
         zero["item_count"] = serde_json::json!(0);
-        assert!(serde_json::from_value::<PmiDimension>(zero).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<PmiDimension>(zero).is_err());
     }
 }
 

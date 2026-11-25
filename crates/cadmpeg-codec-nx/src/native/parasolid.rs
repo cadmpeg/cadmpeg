@@ -420,7 +420,10 @@ mod deltas_record_wire_tests {
             r#"{"id":"nx:test:region#0","stream_ordinal":0,"family":"REGION","kind":19,"xmt":10,"node_id":7,"references":[3,4,5,6,30],"region_type":83,"byte_len":24,"inflated_offset":0}"#,
         ] {
             let value: ParasolidDeltasRecord = serde_json::from_str(json).unwrap();
-            assert_eq!(serde_json::to_string(&value).unwrap(), json);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_string(&value).unwrap(),
+                json
+            );
             cadmpeg_test_support::native_serialization::assert_native_limit(
                 &value,
                 serde_json::from_str::<serde_json::Value>(json).unwrap(),
@@ -432,7 +435,10 @@ mod deltas_record_wire_tests {
             ] {
                 let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
                 wire[field] = invalid;
-                assert!(serde_json::from_value::<ParasolidDeltasRecord>(wire).is_err());
+                assert!(
+                    cadmpeg_core::serde_erase::json::from_value::<ParasolidDeltasRecord>(wire)
+                        .is_err()
+                );
             }
         }
     }
@@ -1032,12 +1038,15 @@ mod term_use_wire_tests {
         let json = r#"{"id":"term","stream_ordinal":0,"xmt":2,"count":2,"form":"TF","data":{"layout":"xyz3","hvecs":[[0.0,-0.0,1.0],[0.0,-0.0,1.0]]},"framing":"direct","inflated_offset":10}"#;
         let record: ParasolidTermUseRecord = serde_json::from_str(json).unwrap();
         assert_eq!(
-            serde_json::to_string(&record).unwrap(),
+            cadmpeg_core::serde_erase::json::to_string(&record).unwrap(),
             json.replace("-0.0", "0.0")
         );
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&super::ParasolidTermUseRecordWire::from(record.clone())).unwrap()
+            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&super::ParasolidTermUseRecordWire::from(
+                record.clone()
+            ))
+            .unwrap()
         );
     }
 
@@ -1062,7 +1071,8 @@ mod term_use_wire_tests {
             let mut malformed = valid.clone();
             malformed[field] = value;
             assert!(
-                serde_json::from_value::<ParasolidTermUseRecord>(malformed).is_err(),
+                cadmpeg_core::serde_erase::json::from_value::<ParasolidTermUseRecord>(malformed)
+                    .is_err(),
                 "{field}"
             );
         }
@@ -1317,17 +1327,22 @@ mod blend_surface_wire_tests {
     fn checked_blend_state_retains_the_flat_native_wire() {
         let json = r#"{"id":"blend","stream_ordinal":0,"xmt":20,"support_xmts":[6,7],"spine_xmt":0,"offsets":[-3.0,3.0],"thumb_weights":[-0.0,-2.0],"inflated_offset":10}"#;
         let record: ParasolidBlendSurfaceRecord = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&record).unwrap(), json);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_string(&record).unwrap(),
+            json
+        );
         for (field, value) in [
             ("support_xmts", serde_json::json!([1, 7])),
             ("offsets", serde_json::json!([3.0, 4.0])),
         ] {
             let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
             wire[field] = value;
-            assert!(serde_json::from_value::<ParasolidBlendSurfaceRecord>(wire)
-                .unwrap_err()
-                .to_string()
-                .contains(field));
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<ParasolidBlendSurfaceRecord>(wire)
+                    .unwrap_err()
+                    .to_string()
+                    .contains(field)
+            );
         }
     }
 }

@@ -74,13 +74,18 @@ mod tests {
     fn extension_codes_exclude_low_layout_codes() {
         for code in 0..=3 {
             assert!(NativeSketchCode::try_from(code).is_err());
-            assert!(serde_json::from_value::<NativeSketchCode>(serde_json::json!(code)).is_err());
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<NativeSketchCode>(serde_json::json!(
+                    code
+                ))
+                .is_err()
+            );
         }
         for code in [4, 85, 86, u32::MAX] {
             let value = NativeSketchCode::try_from(code).unwrap();
             assert_eq!(value.value(), code);
             assert_eq!(
-                serde_json::to_value(value).unwrap(),
+                cadmpeg_core::serde_erase::json::to_value(value).unwrap(),
                 serde_json::json!(code)
             );
         }
