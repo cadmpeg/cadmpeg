@@ -966,3 +966,16 @@ fn a_tessellation_states_what_it_is_under_of() {
     legacy["body"] = serde_json::json!("test:mesh:body#0");
     assert!(serde_json::from_value::<Tessellation>(legacy).is_err());
 }
+
+#[test]
+fn a_native_ref_round_trips_and_is_absent_when_none() {
+    let mut value = mesh();
+    assert!(serde_json::to_value(&value)
+        .unwrap()
+        .get("native_ref")
+        .is_none());
+    value.native_ref = Some("test:native:mesh#0".to_owned());
+    let wire = serde_json::to_value(&value).unwrap();
+    assert_eq!(wire["native_ref"], "test:native:mesh#0");
+    assert_eq!(serde_json::from_value::<Tessellation>(wire).unwrap(), value);
+}

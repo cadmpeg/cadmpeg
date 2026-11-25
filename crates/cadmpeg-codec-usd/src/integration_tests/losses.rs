@@ -314,18 +314,38 @@ fn physics_losses_are_emitted() {
     );
     let source = decode("#usda 1.0\ndef Xform \"A\"\n{\n}\ndef Xform \"B\"\n{\n}\ndef PhysicsFixedJoint \"J\"\n{\n    rel physics:body0 = </A>\n    rel physics:body1 = </B>\n}\n");
     let (mut ir, _, _) = source.into_parts();
-    let joint = ir.model.assembly_joints.remove(0);
-    let connectors: Vec<_> = joint.connectors().cloned().collect();
-    ir.model
-        .assembly_joints
-        .push(cadmpeg_ir::products::AssemblyJoint::paired(
-            joint.id.clone(),
-            cadmpeg_ir::products::PairedJointKind::Parallel {},
-            [connectors[0].clone(), connectors[1].clone()],
-            None,
-        ));
+    let id = crate::ids::joint_feature("/J");
+    let feature = ir
+        .design
+        .features
+        .iter_mut()
+        .find(|feature| feature.id == id)
+        .expect("the joint feature");
+    let cadmpeg_ir::design::feature::FeatureOperation::Joint(joint) =
+        &mut feature.definition.operation
+    else {
+        panic!("not a joint feature");
+    };
+    joint.kind = cadmpeg_ir::design::ops::shared::JointKind::Parallel;
     let (_, report) = encode(&ir);
     assert!(emitted(&report.losses, UsdLossCode::ExportJointNotWritten));
+}
+
+#[test]
+fn design_state_beside_the_joints_is_reported_on_write() {
+    let source = decode("#usda 1.0\ndef Xform \"A\"\n{\n}\ndef Xform \"B\"\n{\n}\ndef PhysicsFixedJoint \"J\"\n{\n    rel physics:body0 = </A>\n    rel physics:body1 = </B>\n}\n");
+    let (mut ir, _, _) = source.into_parts();
+    let (_, report) = encode(&ir);
+    assert!(!emitted(
+        &report.losses,
+        UsdLossCode::ExportDesignNotWritten
+    ));
+    ir.design.scopes[0].active_arrangements.insert(
+        cadmpeg_ir::design::ids::ArrangementId::mint("test:design:arrangement#open")
+            .expect("identity grammar"),
+    );
+    let (_, report) = encode(&ir);
+    assert!(emitted(&report.losses, UsdLossCode::ExportDesignNotWritten));
 }
 
 #[test]

@@ -31,6 +31,8 @@ impl Serialize for Tessellation {
             #[serde(skip_serializing_if = "Option::is_none")]
             colors: Option<&'a MeshColors>,
             channels: &'a [TessellationChannel],
+            #[serde(skip_serializing_if = "Option::is_none")]
+            native_ref: Option<&'a String>,
         }
         Wire {
             id: &self.id,
@@ -45,6 +47,7 @@ impl Serialize for Tessellation {
             texture_coordinates: &self.texture_coordinates,
             colors: self.colors.as_ref(),
             channels: &self.channels,
+            native_ref: self.native_ref.as_ref(),
         }
         .serialize(serializer)
     }
