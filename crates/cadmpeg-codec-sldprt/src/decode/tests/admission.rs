@@ -334,6 +334,34 @@ fn strict_accepts_operator_requested_container_only() {
         .expect("strict container-only decode is accepted");
 }
 
+/// A container decode of a part whose metadata and history a full decode
+/// states as model records states none of them, so its container scope holds.
+#[test]
+fn a_container_decode_states_no_model_record() {
+    for fixture in [
+        crate::test_support::container::sldprt_with_body_and_envelope(&triangle_body()),
+        sldprt_with_body_and_history(&triangle_body()),
+    ] {
+        let full = SldprtCodec
+            .decode(&mut Cursor::new(&fixture), &DecodeOptions::default())
+            .expect("full decode");
+        assert!(full.ir().model.features.len() + full.ir().model.attributes.len() > 0);
+        let container = SldprtCodec
+            .decode(
+                &mut Cursor::new(&fixture),
+                &DecodeOptions {
+                    depth: cadmpeg_core::decode::DecodeDepth::Container,
+                    ..DecodeOptions::default()
+                },
+            )
+            .expect("container decode");
+        for class in ArenaClass::ALL {
+            assert_eq!(container.ir().populated_arena(class), None, "{class}");
+        }
+        assert!(container.ir().source.is_some());
+    }
+}
+
 #[test]
 fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
     use crate::loss::SldprtLossCode;
