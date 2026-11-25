@@ -13,6 +13,7 @@ use std::cmp::Ordering;
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
 use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 /// Relative slack within which a range end counts as a knot-domain end.
@@ -442,9 +443,9 @@ impl ArcAxis {
         let start = self.span_start(value);
         let offset = value - (start + self.half);
         let ratio = if self.hyperbolic {
-            (offset / 2.0).tanh() / (self.half / 2.0).tanh()
+            (offset / 2.0).portable_tanh() / (self.half / 2.0).portable_tanh()
         } else {
-            (offset / 2.0).tan() / (self.half / 2.0).tan()
+            (offset / 2.0).portable_tan() / (self.half / 2.0).portable_tan()
         };
         start + self.half * (ratio + 1.0)
     }
@@ -455,9 +456,9 @@ impl ArcAxis {
         let start = self.span_start(value);
         let ratio = (value - start) / self.half - 1.0;
         let offset = if self.hyperbolic {
-            2.0 * (ratio * (self.half / 2.0).tanh()).atanh()
+            2.0 * (ratio * (self.half / 2.0).portable_tanh()).portable_atanh()
         } else {
-            2.0 * (ratio * (self.half / 2.0).tan()).atan()
+            2.0 * (ratio * (self.half / 2.0).portable_tan()).portable_atan()
         };
         start + self.half + offset
     }
@@ -468,9 +469,9 @@ type Real = fn(f64) -> f64;
 
 fn trig(hyperbolic: bool) -> (Real, Real) {
     if hyperbolic {
-        (f64::cosh, f64::sinh)
+        (f64::portable_cosh, f64::portable_sinh)
     } else {
-        (f64::cos, f64::sin)
+        (f64::portable_cos, f64::portable_sin)
     }
 }
 
@@ -627,7 +628,7 @@ pub(super) fn analytic_patch(
         }
         SolvedSurfaceGeometry::Cone(cone) => {
             let radius = cone.radius().get();
-            let slope = cone.half_angle().get().tan();
+            let slope = cone.half_angle().get().portable_tan();
             if !slope.is_finite() {
                 return Err("the cone half angle has no finite slope".into());
             }
@@ -865,7 +866,7 @@ pub(super) fn pcurve_spline(geometry: &PcurveGeometry, range: [f64; 2]) -> Resul
             let before = pcurve_point(geometry, -1.0)?;
             let at_zero = pcurve_point(geometry, 0.0)?;
             let after = pcurve_point(geometry, 1.0)?;
-            let (cosh, sinh) = (1.0_f64.cosh(), 1.0_f64.sinh());
+            let (cosh, sinh) = (1.0_f64.portable_cosh(), 1.0_f64.portable_sinh());
             let even = Point2::new(0.5 * (after.u + before.u), 0.5 * (after.v + before.v));
             let x = Point2::new(
                 (even.u - at_zero.u) / (cosh - 1.0),
