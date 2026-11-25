@@ -1681,6 +1681,16 @@ macro_rules! declare_arena_name {
                 None
             }
 
+            /// Every registered arena of `class` that holds a record, in
+            /// registry order.
+            pub(crate) fn populated_arenas(self, class: ArenaClass) -> Vec<ArenaName> {
+                let mut arenas = Vec::new();
+                $(if arena_class!($class) == class && !self.$home.$field.is_empty() {
+                    arenas.push(arena_name!($field, $class, $home));
+                })*
+                arenas
+            }
+
             /// Whether an arena of `class` in `home` holds a record.
             pub(crate) fn holds(self, class: ArenaClass, home: ArenaHome) -> bool {
                 $(if arena_class!($class) == class && arena_home!($home) == home && !self.$home.$field.is_empty() {
@@ -2787,41 +2797,53 @@ pub struct CadIr {
     pub native: Native,
 }
 
-/// A document scope that excludes a class the document needs.
+/// A breach of the scope rules of §2.1, the detail of a part 10 finding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ScopeViolation {
-    /// The excluded class.
-    pub class: ArenaClass,
-    /// The first arena of `class` that holds a record, the first arena of
-    /// another class whose records reference `class`, or `None` when a class
-    /// the scope holds requires `class`.
-    pub arena: Option<ArenaName>,
+pub enum ScopeViolation {
+    /// The scope holds `held` and excludes `required`, which `held`
+    /// requires.
+    Unmet {
+        /// The held class.
+        held: ArenaClass,
+        /// The class it requires.
+        required: ArenaClass,
+    },
+    /// `arena` holds a record and the scope excludes its class.
+    Populated {
+        /// The arena.
+        arena: ArenaName,
+    },
+    /// The scope excludes `class`, and `arena`, an arena of another class,
+    /// holds a record that references it.
+    Referenced {
+        /// The excluded class.
+        class: ArenaClass,
+        /// The arena that holds the reference.
+        arena: ArenaName,
+    },
 }
 
 impl fmt::Display for ScopeViolation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.arena {
-            Some(arena) if arena.class() == self.class => write!(
+        match self {
+            Self::Unmet { held, required } => write!(
+                f,
+                "the document's scope holds {held} but excludes {required}, which {held} requires"
+            ),
+            Self::Populated { arena } => write!(
                 f,
                 "the document's scope excludes {} but {} arena `{arena}` holds records",
-                self.class, self.class
-            ),
-            Some(arena) => write!(
-                f,
-                "the document's scope excludes {} but {} arena `{arena}` holds a reference into it",
-                self.class,
+                arena.class(),
                 arena.class()
             ),
-            None => write!(
+            Self::Referenced { class, arena } => write!(
                 f,
-                "the document's scope excludes {}, which a class it holds requires",
-                self.class
+                "the document's scope excludes {class} but {} arena `{arena}` holds a reference into it",
+                arena.class()
             ),
         }
     }
 }
-
-impl std::error::Error for ScopeViolation {}
 
 #[derive(Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2885,7 +2907,6 @@ impl CadIr {
         &self,
         serializer: cadmpeg_core::serde_erase::SerAdapter<'_>,
     ) -> Result<(), cadmpeg_core::serde_erase::SerError> {
-        self.check_scope().map_err(serde::ser::Error::custom)?;
         if !(self.design.is_finalized()
             && self.process.is_finalized()
             && self.native.is_finalized())
@@ -2915,7 +2936,6 @@ impl CadIr {
         &self,
         serializer: cadmpeg_core::serde_erase::SerAdapter<'_>,
     ) -> Result<(), cadmpeg_core::serde_erase::SerError> {
-        self.check_scope().map_err(serde::ser::Error::custom)?;
         let sorted_design;
         let design = if self.design.is_finalized() {
             &self.design
@@ -3006,7 +3026,7 @@ impl CadIr {
 impl CadIrReadWire {
     fn admit<E: serde::de::Error>(self) -> Result<CadIr, E> {
         self.admit_state_chains().map_err(E::custom)?;
-        self.try_into().map_err(E::custom)
+        Ok(self.into())
     }
 
     /// Refuses an arena whose records do not state their ids in strictly
@@ -3047,11 +3067,9 @@ fn admit_state_chains(design: &Design, process: &Process, cycles: Cycles) -> Res
     crate::process::state::admit_state_chains(&process.states, &evaluations, cycles)
 }
 
-impl TryFrom<CadIrReadWire> for CadIr {
-    type Error = ScopeViolation;
-
-    fn try_from(wire: CadIrReadWire) -> Result<Self, Self::Error> {
-        let ir = Self {
+impl From<CadIrReadWire> for CadIr {
+    fn from(wire: CadIrReadWire) -> Self {
+        Self {
             fragment: wire.fragment,
             repro: wire.repro,
             scope: wire.scope,
@@ -3062,9 +3080,7 @@ impl TryFrom<CadIrReadWire> for CadIr {
             design: wire.design,
             process: wire.process,
             native: wire.native,
-        };
-        ir.check_scope()?;
-        Ok(ir)
+        }
     }
 }
 
@@ -3286,59 +3302,50 @@ impl CadIr {
         self.scope
     }
 
-    /// Declare which neutral arena classes the document holds.
-    ///
-    /// # Errors
-    ///
-    /// Refuses, without changing the scope, a scope that holds a class
-    /// without the class it requires, or that excludes a class with a
-    /// populated arena or, for the design class, with a model record that
-    /// references it.
-    pub fn set_scope(&mut self, scope: ContentScope) -> Result<(), ScopeViolation> {
-        self.check_scope_value(scope)?;
+    /// Declare which neutral arena classes the document holds. A scope
+    /// that breaks a rule of §2.1 is set as given; validation reports each
+    /// [`ScopeViolation`].
+    pub fn set_scope(&mut self, scope: ContentScope) {
         self.scope = scope;
-        Ok(())
     }
 
-    /// Check the scope's class requirements, that every populated neutral
-    /// arena belongs to a held class, and that no model record references
-    /// the design class when the scope excludes it.
-    ///
-    /// # Errors
-    ///
-    /// Names the excluded class and its first populated arena, or the first
-    /// model arena that references it, or the excluded class that a held
-    /// class requires.
-    pub fn check_scope(&self) -> Result<(), ScopeViolation> {
-        self.check_scope_value(self.scope)
-    }
-
-    fn check_scope_value(&self, scope: ContentScope) -> Result<(), ScopeViolation> {
-        if let Some(unmet) = scope.unmet_requirement() {
-            return Err(ScopeViolation {
-                class: unmet.required,
-                arena: None,
-            });
-        }
+    /// Every breach of the scope rules of §2.1: the held class whose
+    /// required class the scope excludes, each arena of an excluded class
+    /// that holds a record, and, where the scope excludes the design class,
+    /// each model arena that holds a reference into it.
+    #[must_use]
+    pub fn scope_violations(&self) -> Vec<ScopeViolation> {
+        let scope = self.scope;
+        let mut violations: Vec<ScopeViolation> = scope
+            .unmet_requirement()
+            .map(|unmet| ScopeViolation::Unmet {
+                held: unmet.held,
+                required: unmet.required,
+            })
+            .into_iter()
+            .collect();
         for class in ArenaClass::ALL {
             if !scope.holds(class) {
-                if let Some(arena) = self.populated_arena(class) {
-                    return Err(ScopeViolation {
-                        class,
-                        arena: Some(arena),
-                    });
-                }
+                violations.extend(
+                    self.arenas()
+                        .populated_arenas(class)
+                        .into_iter()
+                        .map(|arena| ScopeViolation::Populated { arena }),
+                );
             }
         }
         if !scope.holds(ArenaClass::Design) {
-            if let Some(arena) = design_references::first(&self.model) {
-                return Err(ScopeViolation {
-                    class: ArenaClass::Design,
-                    arena: Some(arena),
-                });
-            }
+            violations.extend(
+                design_references::holders(&self.model)
+                    .into_iter()
+                    .filter(|(_, ids)| !ids.is_empty())
+                    .map(|(arena, _)| ScopeViolation::Referenced {
+                        class: ArenaClass::Design,
+                        arena,
+                    }),
+            );
         }
-        Ok(())
+        violations
     }
 
     /// The first registered arena of `class` that holds a record.
@@ -3407,10 +3414,9 @@ impl CadIr {
     }
 
     /// Parse canonical JSON and reject any unsupported `ir_version`, any
-    /// spelling or value [`CadIr::read`] repairs or gives up, a document
-    /// whose scope excludes a class it holds records of, or one that nests
-    /// deeper than a CADIR document's bound. Every float zero, `-0` and
-    /// `-0.0` included, reads as 0 (§2.5).
+    /// spelling or value [`CadIr::read`] repairs or gives up, or a document
+    /// that nests deeper than a CADIR document's bound. Every float zero,
+    /// `-0` and `-0.0` included, reads as 0 (§2.5).
     ///
     /// Version is probed first (`ir_version` only) so the full document is
     /// materialized once after the version gate.
