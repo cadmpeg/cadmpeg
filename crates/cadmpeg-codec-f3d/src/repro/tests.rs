@@ -6,11 +6,13 @@ fn repro_streams_keep_member_grammar_and_share_anonymous_owner() {
     let mut owners = BTreeMap::new();
     let mut replacements = BTreeMap::new();
     remember_scope(
+        None,
         "PLANTED_SOURCE/Design1/BulkStream.dat",
         &mut owners,
         &mut replacements,
     );
     remember_scope(
+        None,
         "PLANTED_SOURCE/Design1/MetaStream.dat",
         &mut owners,
         &mut replacements,
@@ -68,7 +70,7 @@ fn repro_body_binding_accepts_anonymous_stream_and_blob() {
 #[test]
 fn repro_xref_stream_keeps_occurrence_and_member_joins() {
     let mut original = serde_json::json!({
-        "id":"f3d:xref/PLANTED_CONTEXT/occurrence-7/PLANTED_SOURCE/Design1/BulkStream.dat:design-body-binding#16",
+        "id":"f3d:PLANTED_CONTEXT/occurrence-7@PLANTED_SOURCE/Design1/BulkStream.dat:design-body-binding#16",
         "stream":"PLANTED_SOURCE/Design1/BulkStream.dat", "pair_count":1,
         "pair_ordinal":0, "asm_body_key":1, "asm_body_key_offset":16,
         "entity_suffix":7, "entity_suffix_offset":24,
@@ -89,11 +91,11 @@ fn repro_xref_stream_keeps_occurrence_and_member_joins() {
     original["stream"] = serde_json::json!(replacements["PLANTED_SOURCE/Design1/BulkStream.dat"]);
     original["id"] = serde_json::json!(format!(
         "{}:design-body-binding#16",
-        replacements["f3d:xref/PLANTED_CONTEXT/occurrence-7/PLANTED_SOURCE/Design1/BulkStream.dat"]
+        replacements["f3d:PLANTED_CONTEXT/occurrence-7@PLANTED_SOURCE/Design1/BulkStream.dat"]
     ));
     original["blob_name"] = serde_json::json!(replacements["BREP.PLANTED_FILE.smb"]);
     let _: crate::records::bodies::DesignBodyBinding =
         serde_json::from_value(original.clone()).unwrap();
-    assert!(original["id"].as_str().unwrap().contains("/occurrence-7/"));
+    assert!(original["id"].as_str().unwrap().contains("/occurrence-7@"));
     assert!(!original.to_string().contains("PLANTED"));
 }
