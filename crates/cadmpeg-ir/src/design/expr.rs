@@ -17,6 +17,7 @@ mod tree;
 #[cfg(feature = "schema")]
 use std::borrow::Cow;
 
+use cadmpeg_core::read_session::{self, Repair};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
@@ -598,13 +599,24 @@ pub enum ExprError {
 pub fn read<R: PartialEq + Clone>(wire: &NeutralWire<R>) -> Result<Node<R>, ExprError> {
     let node = parse(&wire.text, &wire.refs, &wire.measures)?;
     let again = print(&node)?;
-    if again.text != wire.text {
+    if again.text != wire.text
+        && !read_session::repair(Repair::Spelling, || {
+            format!(
+                "expression text {:?} is restated as its canonical text {:?}",
+                wire.text, again.text
+            )
+        })
+    {
         return Err(ExprError::Malformed(format!(
             "text {:?} is not canonical; it prints as {:?}",
             wire.text, again.text
         )));
     }
-    if again.refs != wire.refs || again.measures != wire.measures {
+    if (again.refs != wire.refs || again.measures != wire.measures)
+        && !read_session::repair(Repair::Spelling, || {
+            "expression refs and measures are restated in order of first use".into()
+        })
+    {
         return Err(ExprError::Malformed(
             "refs and measures are not each stated once in order of first use".into(),
         ));

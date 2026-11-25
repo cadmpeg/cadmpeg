@@ -15,8 +15,8 @@
 //! without embedding validation. Start a hand-built document with [`CadIr::empty`], populate its
 //! arenas, call [`CadIr::finalize`] to establish canonical identity order, then
 //! call [`validate_neutral()`]. Use [`CadIr::to_canonical_json`] (sorted view)
-//! and [`CadIr::from_json`] for the versioned JSON form, and [`diff()`] for
-//! identity-based structural comparison.
+//! to write the versioned JSON form and [`CadIr::read`] to read it, and
+//! [`diff()`] for identity-based structural comparison.
 //!
 //! Format crates implement [`CodecBackend`]; callers use the sealed [`Codec`]
 //! entry points. Detection selects a codec from a byte prefix, inspection
@@ -99,6 +99,7 @@ pub use diff::{
     diff, ArenaDiff, ArenaKind, AttributeChange, DialectsChange, IrDiff, ModifiedEntity,
     NonEmptyFields, SourceDiff,
 };
+pub use document::read::{CadirRead, ReadFailure, ReadOptions};
 pub use document::{
     ArenaHome, ArenaName, CadIr, CensusKey, ScopeViolation, SourceMeta, IR_VERSION,
 };
