@@ -104,11 +104,6 @@ pub fn without_partial_topology(
         removed_records.push(to_json(coedge)?);
     }
 
-    let radial_next: HashMap<&str, &CoedgeId> = geometry
-        .coedges
-        .iter()
-        .map(|coedge| (coedge.id.as_str(), &coedge.radial_next))
-        .collect();
     let mut out = ir.clone();
     let written = &mut out.geometry;
     written
@@ -117,19 +112,7 @@ pub fn without_partial_topology(
     written
         .loops
         .retain(|loop_| !removed_loops.contains(loop_.id.as_str()));
-    written
-        .coedges
-        .retain(|coedge| !removed_coedges.contains(coedge.id.as_str()));
-    for coedge in &mut written.coedges {
-        let mut next = coedge.radial_next.clone();
-        for _ in 0..removed_coedges.len() {
-            if !removed_coedges.contains(next.as_str()) {
-                break;
-            }
-            next = radial_next[next.as_str()].clone();
-        }
-        coedge.radial_next = next;
-    }
+    close_radial_rings(written, geometry, &removed_coedges);
     for region in &mut written.regions {
         if region.unstated.take().is_some() {
             let stated: Vec<ShellId> = region.stated_shells().cloned().collect();
@@ -145,14 +128,203 @@ pub fn without_partial_topology(
             body.kind = BodyKind::Sheet;
         }
     }
+    drop_unreferenced(&mut out, &removed_records)?;
+    Ok(Some((out, losses)))
+}
+
+/// `ir` without the faces `faces` and the bodies `bodies`, as a writer writes
+/// a document from which it drops them (§3.4, Content the target cannot
+/// hold): each face is left out with its loops and their coedges, and each
+/// body with its regions, their shells, and those shells' faces. Every radial
+/// ring that ran through a coedge left out closes past it. A shell left with
+/// no face, wire edge, or free vertex is left out, then a region left with no
+/// shell, then a body left with no region. A solid body that loses a face
+/// becomes a sheet body, which a writer writes as shells. A carrier, edge,
+/// vertex, point, or pcurve that only the records left out referenced is left
+/// out with them.
+///
+/// # Errors
+///
+/// Returns a malformed error where the geometry does not serialize.
+pub fn without_faces_and_bodies(
+    ir: &CadIr,
+    faces: &BTreeSet<&str>,
+    bodies: &BTreeSet<&str>,
+) -> Result<CadIr, CodecError> {
+    let geometry = &ir.geometry;
+    let removed_regions: BTreeSet<&str> = geometry
+        .regions
+        .iter()
+        .filter(|region| bodies.contains(region.body.as_str()))
+        .map(|region| region.id.as_str())
+        .collect();
+    let mut removed_shells: BTreeSet<&str> = geometry
+        .shells
+        .iter()
+        .filter(|shell| removed_regions.contains(shell.region.as_str()))
+        .map(|shell| shell.id.as_str())
+        .collect();
+    let removed_faces: BTreeSet<&str> = geometry
+        .faces
+        .iter()
+        .filter(|face| {
+            faces.contains(face.id.as_str()) || removed_shells.contains(face.shell.as_str())
+        })
+        .map(|face| face.id.as_str())
+        .collect();
+    let opened_shells: BTreeSet<&str> = geometry
+        .faces
+        .iter()
+        .filter(|face| removed_faces.contains(face.id.as_str()))
+        .map(|face| face.shell.as_str())
+        .filter(|shell| !removed_shells.contains(shell))
+        .collect();
+    let kept_face_shells: BTreeSet<&str> = geometry
+        .faces
+        .iter()
+        .filter(|face| !removed_faces.contains(face.id.as_str()))
+        .map(|face| face.shell.as_str())
+        .collect();
+    removed_shells.extend(geometry.shells.iter().filter_map(|shell| {
+        let id = shell.id.as_str();
+        (opened_shells.contains(id)
+            && !kept_face_shells.contains(id)
+            && shell.wire_edges().next().is_none()
+            && shell.free_vertices().next().is_none())
+        .then_some(id)
+    }));
+    let opened_regions: BTreeSet<&str> = geometry
+        .shells
+        .iter()
+        .filter(|shell| opened_shells.contains(shell.id.as_str()))
+        .map(|shell| shell.region.as_str())
+        .collect();
+    let mut removed_regions = removed_regions;
+    removed_regions.extend(geometry.regions.iter().filter_map(|region| {
+        let id = region.id.as_str();
+        (opened_regions.contains(id)
+            && region
+                .stated_shells()
+                .all(|shell| removed_shells.contains(shell.as_str())))
+        .then_some(id)
+    }));
+    let opened_bodies: BTreeSet<&str> = geometry
+        .regions
+        .iter()
+        .filter(|region| opened_regions.contains(region.id.as_str()))
+        .map(|region| region.body.as_str())
+        .collect();
+    let mut removed_bodies: BTreeSet<&str> = bodies.clone();
+    removed_bodies.extend(geometry.bodies.iter().filter_map(|body| {
+        let id = body.id.as_str();
+        (opened_bodies.contains(id)
+            && geometry
+                .regions
+                .iter()
+                .filter(|region| region.body == body.id)
+                .all(|region| removed_regions.contains(region.id.as_str())))
+        .then_some(id)
+    }));
+    let removed_loops: BTreeSet<&str> = geometry
+        .loops
+        .iter()
+        .filter(|loop_| removed_faces.contains(loop_.face.as_str()))
+        .map(|loop_| loop_.id.as_str())
+        .collect();
+    let removed_coedges: BTreeSet<&str> = geometry
+        .coedges
+        .iter()
+        .filter(|coedge| removed_loops.contains(coedge.owner_loop.as_str()))
+        .map(|coedge| coedge.id.as_str())
+        .collect();
+    let mut removed_records = Vec::new();
+    macro_rules! record_removed {
+        ($($arena:ident: $set:ident),*) => {$(
+            for record in geometry
+                .$arena
+                .iter()
+                .filter(|record| $set.contains(record.id.as_str()))
+            {
+                removed_records.push(to_json(record)?);
+            }
+        )*};
+    }
+    record_removed!(
+        bodies: removed_bodies,
+        regions: removed_regions,
+        shells: removed_shells,
+        faces: removed_faces,
+        loops: removed_loops,
+        coedges: removed_coedges
+    );
+    let mut out = ir.clone();
+    let written = &mut out.geometry;
+    written
+        .bodies
+        .retain(|body| !removed_bodies.contains(body.id.as_str()));
+    written
+        .regions
+        .retain(|region| !removed_regions.contains(region.id.as_str()));
+    written
+        .shells
+        .retain(|shell| !removed_shells.contains(shell.id.as_str()));
+    written
+        .faces
+        .retain(|face| !removed_faces.contains(face.id.as_str()));
+    written
+        .loops
+        .retain(|loop_| !removed_loops.contains(loop_.id.as_str()));
+    close_radial_rings(written, geometry, &removed_coedges);
+    for region in &mut written.regions {
+        region.retain_stated_shells(|shell| !removed_shells.contains(shell.as_str()));
+    }
+    for body in &mut written.bodies {
+        if body.kind == BodyKind::Solid && opened_bodies.contains(body.id.as_str()) {
+            body.kind = BodyKind::Sheet;
+        }
+    }
+    drop_unreferenced(&mut out, &removed_records)?;
+    Ok(out)
+}
+
+/// Leaves out the coedges in `removed` from `written`, the geometry of
+/// `source` without them, and closes every radial ring that ran through one
+/// past it.
+fn close_radial_rings(
+    written: &mut crate::document::Topology,
+    source: &crate::document::Topology,
+    removed: &BTreeSet<&str>,
+) {
+    let radial_next: HashMap<&str, &CoedgeId> = source
+        .coedges
+        .iter()
+        .map(|coedge| (coedge.id.as_str(), &coedge.radial_next))
+        .collect();
+    written
+        .coedges
+        .retain(|coedge| !removed.contains(coedge.id.as_str()));
+    for coedge in &mut written.coedges {
+        let mut next = coedge.radial_next.clone();
+        for _ in 0..removed.len() {
+            if !removed.contains(next.as_str()) {
+                break;
+            }
+            next = radial_next[next.as_str()].clone();
+        }
+        coedge.radial_next = next;
+    }
+}
+
+/// Leaves out of `out` each carrier that only `removed` referenced, keeping
+/// those a record outside the geometry names.
+fn drop_unreferenced(out: &mut CadIr, removed: &[Json]) -> Result<(), CodecError> {
     let mut outside = out.clone();
     outside.geometry = crate::document::Topology::default();
     let outside = to_json(&outside)?;
     let mut named_outside = Vec::new();
     strings(&outside, &mut named_outside);
     let named_outside: BTreeSet<String> = named_outside.into_iter().map(str::to_owned).collect();
-    remove_unreferenced(&mut out.geometry, &removed_records, &named_outside)?;
-    Ok(Some((out, losses)))
+    remove_unreferenced(&mut out.geometry, removed, &named_outside)
 }
 
 fn to_json<T: serde::Serialize>(record: &T) -> Result<Json, CodecError> {
