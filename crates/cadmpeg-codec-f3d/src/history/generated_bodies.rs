@@ -365,12 +365,14 @@ fn combine_side(
 }
 
 /// A Combine operand named by model bodies or by the features that generate
-/// them, the producers of generated bodies, and the features that become
-/// dependencies.
+/// them, the producers of generated bodies, the features that become
+/// dependencies, and the slots named by their inserting feature because the
+/// state that last updates them has no unique earlier scope.
 type CombineSideBinding = (
     cadmpeg_ir::features::selections::BodySelection,
     Vec<Producer>,
     Vec<cadmpeg_ir::features::FeatureId>,
+    Vec<i64>,
 );
 
 /// Bind the target and the tools of a Combine resolved in its input state to
@@ -420,6 +422,7 @@ fn bind_combine_producers(
     }
     let mut producers = Vec::new();
     let mut dependencies = Vec::new();
+    let mut assumed = Vec::new();
     let mut edited = false;
     feature.evaluation.edit(|definition, _| {
         if let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) = definition
@@ -427,10 +430,13 @@ fn bind_combine_producers(
             edited = operands
                 .try_edit(|stored_target, stored_tools| {
                     for (stored, binding) in [(stored_target, target), (stored_tools, tools)] {
-                        if let Some((selection, side_producers, side_dependencies)) = binding {
+                        if let Some((selection, side_producers, side_dependencies, side_assumed)) =
+                            binding
+                        {
                             *stored = selection;
                             producers.extend(side_producers);
                             dependencies.extend(side_dependencies);
+                            assumed.extend(side_assumed);
                         }
                     }
                 })
@@ -443,6 +449,12 @@ fn bind_combine_producers(
             feature.id
         )));
         return;
+    }
+    if !assumed.is_empty() {
+        losses.push(F3dLossCode::FeatureCombineOperandWriterAssumed.note(format!(
+            "Combine {} names slots {assumed:?} by the features that insert them: the state that last updates each slot before the Combine has no unique earlier scope.",
+            feature.id
+        )));
     }
     for dependency in dependencies {
         feature.dependencies.insert(dependency);
@@ -486,7 +498,7 @@ fn combine_side_binding(
         let (producer, ordinal) = context.feature_by_scope.get(&candidate.id)?;
         (*ordinal < feature.ordinal).then(|| producer.clone())
     };
-    let inserter = |slot: i64| -> Option<cadmpeg_ir::features::FeatureId> {
+    let inserting = |slot: i64| -> Option<Producer> {
         let mut inserting = history
             .states()
             .iter()
@@ -495,7 +507,8 @@ fn combine_side_binding(
         if inserting.next().is_some() {
             return None;
         }
-        feature_of_state(state)
+        let inserted = state.transition.as_ref()?.topology.bodies.inserted.clone();
+        Some((feature_of_state(state)?, state.state_id, inserted))
     };
     let order = history.states_oldest_first();
     let result_position = order.as_ref().and_then(|order| {
@@ -545,7 +558,8 @@ fn combine_side_binding(
         let dependencies = side
             .slots
             .iter()
-            .filter_map(|slot| inserter(*slot))
+            .filter_map(|slot| inserting(*slot))
+            .map(|(producer, _, _)| producer)
             .collect::<Vec<_>>();
         let selection = if side.single_native {
             BodySelection::Resolved {
@@ -565,17 +579,24 @@ fn combine_side_binding(
                     .map_err(|error| format!("the model bodies form no body set: {error}"))?,
             }
         };
-        return Ok((selection, Vec::new(), dependencies));
+        return Ok((selection, Vec::new(), dependencies, Vec::new()));
     }
     if unchanged != 0 {
         return Err(format!(
             "BREP source {source} keeps some of the slots unchanged, and the model bodies do not represent the others"
         ));
     }
+    let mut assumed = Vec::new();
     let producers = side
         .slots
         .iter()
-        .map(|slot| last_writer(*slot))
+        .map(|slot| {
+            last_writer(*slot).or_else(|| {
+                let producer = inserting(*slot)?;
+                assumed.push(*slot);
+                Some(producer)
+            })
+        })
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| {
             format!(
@@ -600,7 +621,7 @@ fn combine_side_binding(
         .ok_or("a generated body identity is malformed")?;
     let selection = BodySelection::generated(refs, native.clone())
         .map_err(|error| format!("the generated bodies form no body set: {error}"))?;
-    Ok((selection, producers, Vec::new()))
+    Ok((selection, producers, Vec::new(), assumed))
 }
 
 /// The body slots that a transition after the result state of `scope`
