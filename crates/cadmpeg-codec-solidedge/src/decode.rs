@@ -2,7 +2,6 @@
 //! Solid Edge document decode.
 
 use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
-use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::SourceMeta;
