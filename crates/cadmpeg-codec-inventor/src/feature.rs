@@ -1967,6 +1967,7 @@ pub(crate) enum FeatureFamily {
     Shell,
     Sweep,
     Loft,
+    SurfaceLoft,
     Revolve,
     Motion,
     Combine,
@@ -1989,6 +1990,7 @@ impl FeatureFamily {
             Self::Shell => &[SHELL_CLASS_ID],
             Self::Sweep => &[loft_sweep::slots::SWEEP_CLASS],
             Self::Loft => &[loft_sweep::slots::LOFT_CLASS],
+            Self::SurfaceLoft => &[loft_sweep::slots::SURFACE_LOFT_CLASS],
             Self::Revolve => &[REVOLVE_CLASS_ID],
             Self::Motion => &[
                 motion::MOVE_CLASS_ID,
@@ -2026,6 +2028,7 @@ impl FeatureFamily {
             Self::Shell => 9,
             Self::Sweep => 15,
             Self::Loft => 13,
+            Self::SurfaceLoft => 6,
             Self::Revolve => 17,
             Self::Motion if source.properties.references().len() == 13 => 8,
             Self::Motion => 0,
@@ -2048,6 +2051,7 @@ impl FeatureFamily {
             Self::Shell,
             Self::Sweep,
             Self::Loft,
+            Self::SurfaceLoft,
             Self::Revolve,
             Self::Motion,
             Self::Combine,
@@ -2113,6 +2117,9 @@ impl FeatureFamily {
                 Self::Loft,
                 FeatureDefinition::Operation(FeatureOperation::Loft { solid: true, .. })
             ) | (
+                Self::SurfaceLoft,
+                FeatureDefinition::Operation(FeatureOperation::Loft { solid: false, .. })
+            ) | (
                 Self::Revolve,
                 FeatureDefinition::Operation(FeatureOperation::Revolve { .. })
             ) | (
@@ -2157,6 +2164,9 @@ impl FeatureFamily {
             FeatureDefinition::Operation(FeatureOperation::Sweep { .. }) => Some(Self::Sweep),
             FeatureDefinition::Operation(FeatureOperation::Loft { solid: true, .. }) => {
                 Some(Self::Loft)
+            }
+            FeatureDefinition::Operation(FeatureOperation::Loft { solid: false, .. }) => {
+                Some(Self::SurfaceLoft)
             }
             FeatureDefinition::Operation(FeatureOperation::Revolve { .. }) => Some(Self::Revolve),
             FeatureDefinition::Operation(
@@ -2575,14 +2585,16 @@ pub(crate) fn project(
                         project_thicken(ctx, feature, label, &index, inventory)
                     }
                     FeatureFamily::Shell => project_shell(ctx, feature, label, &index),
-                    FeatureFamily::Sweep | FeatureFamily::Loft => loft_sweep::projection::project(
-                        ctx,
-                        feature,
-                        label,
-                        &index,
-                        family,
-                        &mut loft_losses,
-                    ),
+                    FeatureFamily::Sweep | FeatureFamily::Loft | FeatureFamily::SurfaceLoft => {
+                        loft_sweep::projection::project(
+                            ctx,
+                            feature,
+                            label,
+                            &index,
+                            family,
+                            &mut loft_losses,
+                        )
+                    }
                     FeatureFamily::Revolve => {
                         project_revolve(ctx, feature, label, &index, &mut revolve_losses)
                     }
@@ -3219,6 +3231,7 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
             FeatureFamily::Shell => NativeFeatureKind::Other("Shell".into()),
             FeatureFamily::Sweep => NativeFeatureKind::Other("Sweep".into()),
             FeatureFamily::Loft => NativeFeatureKind::Other("Loft".into()),
+            FeatureFamily::SurfaceLoft => NativeFeatureKind::Other("LoftSurface".into()),
             FeatureFamily::Revolve => NativeFeatureKind::Other("Revolve".into()),
             FeatureFamily::Motion => NativeFeatureKind::Other(
                 NATIVE_CLASSES

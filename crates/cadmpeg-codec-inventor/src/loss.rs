@@ -247,6 +247,8 @@ pub(crate) enum InventorLossCode {
     FeatureLoftResultOperandsNative,
     /// Surface-loft section selections have no complete neutral construction.
     FeatureSurfaceLoftSectionsNative,
+    /// A surface loft keeps its face-loop section selection native.
+    FeatureSurfaceLoftFaceLoopNative,
     /// Inventor operations retain unresolved suppression and dependency state.
     FeatureStateUnresolved,
     /// Derived components retain external source construction only natively.
@@ -466,6 +468,7 @@ impl InventorLossCode {
         Self::FeatureLoftOperandsNative,
         Self::FeatureLoftResultOperandsNative,
         Self::FeatureSurfaceLoftSectionsNative,
+        Self::FeatureSurfaceLoftFaceLoopNative,
         Self::FeatureStateUnresolved,
         Self::FeatureDerivedSourceNative,
         Self::FeatureDerivedResultNative,
@@ -664,6 +667,7 @@ impl InventorLossCode {
             Self::FeatureLoftOperandsNative => "feature.loft-operands-native",
             Self::FeatureLoftResultOperandsNative => "feature.loft-result-operands-native",
             Self::FeatureSurfaceLoftSectionsNative => "feature.surface-loft-sections-native",
+            Self::FeatureSurfaceLoftFaceLoopNative => "feature.surface-loft-face-loop-native",
             Self::FeatureStateUnresolved => "feature.state-unresolved",
             Self::FeatureDerivedSourceNative => "feature.derived-source-native",
             Self::FeatureDerivedResultNative => "feature.derived-result-native",
@@ -832,6 +836,7 @@ impl InventorLossCode {
             | Self::FeatureLoftOperandsNative
             | Self::FeatureLoftResultOperandsNative
             | Self::FeatureSurfaceLoftSectionsNative
+            | Self::FeatureSurfaceLoftFaceLoopNative
             | Self::FeatureProfileBodyUndecoded
             | Self::SketchConstructionUnresolved
             | Self::SketchAxisDistanceNative
@@ -1033,6 +1038,7 @@ mod tests {
                 "feature.loft-operands-native",
                 "feature.loft-result-operands-native",
                 "feature.surface-loft-sections-native",
+                "feature.surface-loft-face-loop-native",
                 "feature.state-unresolved",
                 "feature.derived-source-native",
                 "feature.derived-result-native",

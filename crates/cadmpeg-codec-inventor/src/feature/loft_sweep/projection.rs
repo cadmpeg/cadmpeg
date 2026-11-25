@@ -4,13 +4,13 @@
 use cadmpeg_core::{decode::DecodeContext, CodecError};
 use cadmpeg_ir::features::evaluation::FeatureResultTopology;
 use cadmpeg_ir::features::operation_settings::BooleanOp;
-use cadmpeg_ir::features::profiles::ProfileRef;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
 use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{Feature, FeatureContent, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::sketches::Sketch;
 
 use super::super::{
-    boolean_properties, feature_result, resolve_property, FeatureFamily, PmDcFeature,
+    body_result, boolean_properties, feature_result, resolve_property, FeatureFamily, PmDcFeature,
     PmDcFeatureLabel, ProjectionIndex,
 };
 use cadmpeg_ir::features::profiles::LoftSection;
@@ -44,11 +44,21 @@ pub(in crate::feature) fn project(
             }
             Err(Refusal::Codec(error)) => return Some(Err(error)),
         },
+        FeatureFamily::SurfaceLoft => match surface_loft(source, label, index) {
+            Ok(operation) => operation,
+            Err(_) => return None,
+        },
         _ => return None,
     };
-    let (id, result) = match feature_result(ctx, source, family.output_slot(source), index) {
+    let result = if matches!(family, FeatureFamily::SurfaceLoft) {
+        body_result(ctx, source, family.output_slot(source), index)
+    } else {
+        feature_result(ctx, source, family.output_slot(source), index)
+    };
+    let (id, result) = match result {
         Some(Ok(value)) => value,
         Some(Err(error)) => return Some(Err(error)),
+        None if matches!(family, FeatureFamily::SurfaceLoft) => return None,
         None => {
             losses.push(if matches!(family, FeatureFamily::Sweep) {
                 super::sweep::NativeReason::ResultIdentity.note()
@@ -60,6 +70,11 @@ pub(in crate::feature) fn project(
     };
     if let Err(error) = ctx.charge_entities(1, "project Inventor loft or sweep") {
         return Some(Err(error));
+    }
+    if matches!(family, FeatureFamily::SurfaceLoft) {
+        losses.push(crate::loss::InventorLossCode::FeatureSurfaceLoftFaceLoopNative.note(
+            "Surface loft retains its face-loop section selection; the selected loop has no resolved neutral profile.",
+        ));
     }
     Some(Ok((
         Feature {
@@ -103,6 +118,91 @@ impl From<NativeReason> for Refusal {
     }
 }
 
+/// The numeric parameter record and solved value that `reference` selects.
+fn section_parameter<'a>(
+    token: &str,
+    reference: crate::pmdc::PmDcReference,
+    index: &'a ProjectionIndex<'a>,
+) -> Option<(
+    &'a crate::design::PmDcParameter,
+    &'a cadmpeg_ir::features::parameters::ParameterValue,
+)> {
+    let parameter = index
+        .parameters
+        .get(&(token, reference.record_ordinal()?))?
+        .as_ref()?;
+    let value = index
+        .parameter_values
+        .get(parameter.id().as_str())?
+        .as_ref()?
+        .value
+        .as_ref()?;
+    Some((*parameter, value))
+}
+
+/// A positional surface loft: one sketch-wire section and one face-loop
+/// section. The sketch section resolves to the profile regions of its
+/// consumed sketch. The face-loop section stays a native reference to its
+/// section record.
+fn surface_loft(
+    source: &PmDcFeature,
+    label: &PmDcFeatureLabel,
+    index: &ProjectionIndex<'_>,
+) -> Result<FeatureOperation, NativeReason> {
+    let token = source.identity.segment_token.as_str();
+    let admitted = controls::surface_sections(
+        source,
+        |reference| resolve_property(token, reference.index(), index),
+        |reference| section_parameter(token, reference, index),
+    )?;
+    let sketches = participant_sketches(source, label, index);
+    let [(ordinal, sketch)] = sketches.as_slice() else {
+        return Err(NativeReason::Profile);
+    };
+    if label.participants.references().len() != 2 {
+        return Err(NativeReason::Profile);
+    }
+    let sketch_link = admitted
+        .sketch
+        .entity_link
+        .record_ordinal()
+        .ok_or(NativeReason::Profile)?;
+    let loop_link = admitted
+        .face_loop
+        .entity_link
+        .record_ordinal()
+        .ok_or(NativeReason::Profile)?;
+    let profile = index
+        .profiles
+        .regions(token, *ordinal, sketch, &[sketch_link])
+        .ok_or(NativeReason::Profile)?;
+    index
+        .profiles
+        .face_loop_edges(token, loop_link, &[*ordinal])
+        .ok_or(NativeReason::Profile)?;
+    let section = resolve_property(token, admitted.face_loop.record.index(), index)
+        .ok_or(NativeReason::SectionRecord)?;
+    let sketch_section = LoftSection::Profile(ProfileRef::Planar(profile));
+    let loop_section =
+        LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::native(section.id())));
+    let sections = if admitted.sketch_first {
+        vec![sketch_section, loop_section]
+    } else {
+        vec![loop_section, sketch_section]
+    };
+    Ok(FeatureOperation::Loft {
+        sections,
+        guidance: LoftGuidance::default(),
+        op: BooleanOp::NewBody,
+        closed: false,
+        solid: false,
+        ruled: false,
+        linearize: false,
+        max_degree: None,
+        allow_multi_profile_faces: None,
+    })
+}
+
 fn loft(
     ctx: &DecodeContext<'_>,
     source: &PmDcFeature,
@@ -113,19 +213,7 @@ fn loft(
     let links = controls::sections(
         source,
         |reference| resolve_property(token, reference.index(), index),
-        |reference| {
-            let parameter = index
-                .parameters
-                .get(&(token, reference.record_ordinal()?))?
-                .as_ref()?;
-            let value = index
-                .parameter_values
-                .get(parameter.id().as_str())?
-                .as_ref()?
-                .value
-                .as_ref()?;
-            Some((*parameter, value))
-        },
+        |reference| section_parameter(token, reference, index),
     )?;
     let sketches = participant_sketches(source, label, index);
     let mut selected = Vec::new();

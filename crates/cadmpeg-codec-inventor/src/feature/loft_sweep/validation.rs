@@ -53,6 +53,70 @@ impl<'a> ValidationIndex<'a> {
         }
     }
 
+    /// Whether a neutral surface loft is the positional form of its source
+    /// operands: the sketch section selects regions of a sketch the label
+    /// consumes, and the face-loop section is the native reference to its
+    /// section record, in the stored order.
+    pub(crate) fn surface_matches(
+        &self,
+        source: &PmDcFeature,
+        label: &PmDcFeatureLabel,
+        definition: &FeatureDefinition,
+        property: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
+        parameter: impl Fn(PmDcReference) -> Option<(&'a PmDcParameter, &'a ParameterValue)>,
+    ) -> bool {
+        if !controls::matches_surface_definition(definition) {
+            return false;
+        }
+        let Ok(admitted) = controls::surface_sections(source, &property, parameter) else {
+            return false;
+        };
+        let FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) = definition
+        else {
+            return false;
+        };
+        let (sketch, face_loop) = if admitted.sketch_first {
+            (&sections[0], &sections[1])
+        } else {
+            (&sections[1], &sections[0])
+        };
+        let Some(section) = property(admitted.face_loop.record) else {
+            return false;
+        };
+        if !matches!(
+            face_loop,
+            LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(id)))
+                if *id == section.id()
+        ) {
+            return false;
+        }
+        let LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::SketchRegions {
+            sketch,
+            ..
+        })) = sketch
+        else {
+            return false;
+        };
+        let Some(raw) = self
+            .sketches
+            .get(sketch.as_str())
+            .copied()
+            .flatten()
+            .and_then(|sketch| sketch.native_ref.as_deref())
+            .and_then(|id| self.raw.get(id))
+            .and_then(Option::as_ref)
+        else {
+            return false;
+        };
+        raw.identity.segment_token == source.identity.segment_token
+            && label.participants.references().len() == 2
+            && label
+                .participants
+                .references()
+                .iter()
+                .any(|r| r.record_ordinal() == Some(raw.identity.record_ordinal))
+    }
+
     pub(crate) fn matches(
         &self,
         source: &PmDcFeature,

@@ -446,3 +446,137 @@ fn validator_checks_vector_lengths_controls_sections_and_both_scalars() {
         assert!(!accepts(&f));
     }
 }
+
+/// A surface loft fixture: slot 6 holds the result wrapper, slot 13 is null,
+/// the first section is the face loop (its `source_value` is its own source
+/// index), and the second section selects a sketch wire.
+fn surface_fixture() -> Fixture {
+    let mut f = Fixture::new();
+    f.source = test_feature(20, 14, &[(0, 0), (1, 1), (2, 2), (9, 3), (10, 4), (6, 5)]);
+    f.properties[1] = edited(&f.properties[1], |p| {
+        let PmDcFeaturePropertyKind::Enumeration { value, .. } = &mut p.kind else {
+            panic!("part operation");
+        };
+        *value = 5;
+    });
+    f.properties[5] = edited(&f.properties[5], |p| {
+        p.kind = PmDcFeaturePropertyKind::SurfaceBody { body: reference(0) };
+    });
+    f.properties[6] = edited(&f.properties[6], |p| {
+        p.header.source_index = 7;
+        let PmDcFeaturePropertyKind::LoftSection { source_value, .. } = &mut p.kind else {
+            panic!("section");
+        };
+        *source_value = 7;
+    });
+    f
+}
+
+impl Fixture {
+    fn admitted_surface(&self) -> Result<SurfaceSections, NativeReason> {
+        surface_sections(
+            &self.source,
+            |r| {
+                self.properties
+                    .iter()
+                    .find(|p| Some(p.identity.record_ordinal) == r.record_ordinal())
+            },
+            |r| {
+                let ordinal = usize::try_from(r.record_ordinal()?).ok()?.checked_sub(9)?;
+                Some((self.parameters.get(ordinal)?, self.values.get(ordinal)?))
+            },
+        )
+    }
+}
+
+#[test]
+fn surface_loft_admits_one_sketch_section_and_one_face_loop_in_either_order() {
+    let f = surface_fixture();
+    let admitted = f.admitted_surface().expect("surface loft");
+    assert!(!admitted.sketch_first);
+    assert_eq!(admitted.face_loop.entity_link, reference(100));
+    assert_eq!(admitted.sketch.entity_link, reference(101));
+    assert_eq!(admitted.face_loop.record, reference(7));
+    let mut swapped = surface_fixture();
+    swapped.properties[0] = edited(&swapped.properties[0], |p| {
+        p.kind = PmDcFeaturePropertyKind::References {
+            family: PmDcFeatureReferenceFamily::LoftSections,
+            items: reference_list(&[8, 7]),
+        };
+    });
+    assert!(swapped.admitted_surface().expect("swapped").sketch_first);
+}
+
+#[test]
+fn surface_loft_refuses_forms_outside_the_positional_surface_vector() {
+    // The solid form is not a surface loft: slot 1 holds value 1 and slot 13
+    // holds the result collection.
+    assert!(Fixture::new().admitted_surface().is_err());
+    // Two sketch sections, or two face loops, are not the stored form.
+    let mut both_loops = surface_fixture();
+    both_loops.properties[7] = edited(&both_loops.properties[7], |p| {
+        p.header.source_index = 8;
+        let PmDcFeaturePropertyKind::LoftSection { source_value, .. } = &mut p.kind else {
+            panic!("section");
+        };
+        *source_value = 8;
+    });
+    assert_eq!(
+        both_loops.admitted_surface(),
+        Err(NativeReason::SectionRecord)
+    );
+    let mut both_sketch = surface_fixture();
+    both_sketch.properties[6] = edited(&both_sketch.properties[6], |p| {
+        let PmDcFeaturePropertyKind::LoftSection { source_value, .. } = &mut p.kind else {
+            panic!("section");
+        };
+        *source_value = 1;
+    });
+    assert_eq!(
+        both_sketch.admitted_surface(),
+        Err(NativeReason::SectionRecord)
+    );
+    // The result wrapper must be a surface body, and slot 13 stays null.
+    let mut no_body = surface_fixture();
+    no_body.properties[5] = edited(&no_body.properties[5], |p| {
+        p.kind = PmDcFeaturePropertyKind::Boolean {
+            name: String::new(),
+            name_value: 0,
+            value: false,
+        };
+    });
+    assert_eq!(
+        no_body.admitted_surface(),
+        Err(NativeReason::ResultCollection)
+    );
+    let mut solid_slot = surface_fixture();
+    solid_slot.source = test_feature(
+        20,
+        14,
+        &[(0, 0), (1, 1), (2, 2), (6, 5), (9, 3), (10, 4), (13, 5)],
+    );
+    assert_eq!(solid_slot.admitted_surface(), Err(NativeReason::Controls));
+}
+
+#[test]
+fn surface_definition_is_the_unguided_new_body_sheet_loft() {
+    let solid = positional_definition();
+    assert!(!matches_surface_definition(&solid));
+    let mut base = serde_json::to_value(&solid).expect("definition");
+    base["value"]["value"]["solid"] = serde_json::json!(false);
+    let surface: FeatureDefinition = serde_json::from_value(base.clone()).expect("surface loft");
+    assert!(matches_surface_definition(&surface));
+    assert!(!matches_definition(&surface));
+    for (field, value) in [
+        ("closed", serde_json::json!(true)),
+        ("ruled", serde_json::json!(true)),
+        ("linearize", serde_json::json!(true)),
+        ("op", serde_json::json!("join")),
+        ("max_degree", serde_json::json!(3)),
+    ] {
+        let mut changed = base.clone();
+        changed["value"]["value"][field] = value;
+        let changed = serde_json::from_value(changed).expect("changed loft");
+        assert!(!matches_surface_definition(&changed));
+    }
+}

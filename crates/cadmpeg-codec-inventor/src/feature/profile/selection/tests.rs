@@ -453,4 +453,45 @@ mod selected_path {
         ];
         assert!(open_path(offset_wire(), &closed).is_none());
     }
+
+    /// The edge count of the face loop whose edges carry `names`, with the
+    /// sketch curve name 9 present in the curve table of the sketch.
+    fn face_loop(names: &[i64]) -> Option<usize> {
+        let edges = names
+            .iter()
+            .enumerate()
+            .map(|(at, name)| {
+                let x = f64::from(u32::try_from(at).expect("edge"));
+                edge(Some(*name), (x, 0.0), (x + 1.0, 0.0))
+            })
+            .collect();
+        let body = ProfileBody {
+            segment_token: cadmpeg_ir::identity_key!("segment"),
+            record_ordinal: BODY_ORDINAL,
+            wires: vec![ProfileWire {
+                key: u64::from(WIRE_KEY),
+                edges,
+            }],
+        };
+        let links = [link()];
+        let bodies = [body];
+        let mut index = ProfileIndex::new(&bodies, &links, &[], &[], &[]);
+        index
+            .curves
+            .insert((TOKEN, SKETCH_ORDINAL, 9), Some("curve".to_owned()));
+        index.face_loop_edges(TOKEN, LINK_ORDINAL, &[SKETCH_ORDINAL])
+    }
+
+    #[test]
+    fn a_face_loop_names_its_edges_one_to_n_and_selects_no_sketch_curve() {
+        assert_eq!(face_loop(&[1, 2, 3]), Some(3));
+        assert_eq!(face_loop(&[3, 1, 2]), Some(3));
+        // Missing, repeated, or offset names are not the loop form.
+        assert_eq!(face_loop(&[1, 2, 4]), None);
+        assert_eq!(face_loop(&[1, 1, 2]), None);
+        assert_eq!(face_loop(&[2, 3]), None);
+        // A name that selects a curve of the sketch makes the wire a sketch
+        // selection.
+        assert_eq!(face_loop(&[1, 9]), None);
+    }
 }

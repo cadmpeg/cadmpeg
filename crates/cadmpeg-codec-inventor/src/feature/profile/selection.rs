@@ -88,6 +88,41 @@ impl ProfileIndex<'_> {
         Some((link, wire))
     }
 
+    /// The edge count of the keyed wire `ordinal` selects when it is a face
+    /// loop: every edge carries a name of the link's naming type, the names
+    /// are the integers 1 to the edge count, and no name selects a curve of
+    /// any of `sketch_ordinals`.
+    pub(in crate::feature) fn face_loop_edges(
+        &self,
+        token: &str,
+        ordinal: u32,
+        sketch_ordinals: &[u32],
+    ) -> Option<usize> {
+        let (link, wire) = self.wire(token, ordinal)?;
+        let mut names = wire
+            .edges
+            .iter()
+            .map(|edge| {
+                let name = edge.name?;
+                (name.naming_type == i64::from(link.entity_type)).then_some(name.associative_id)
+            })
+            .collect::<Option<Vec<_>>>()?;
+        if sketch_ordinals.iter().any(|sketch| {
+            names
+                .iter()
+                .any(|name| self.curves.contains_key(&(token, *sketch, *name)))
+        }) {
+            return None;
+        }
+        let count = names.len();
+        names.sort_unstable();
+        names
+            .iter()
+            .copied()
+            .eq(1..=i64::try_from(count).ok()?)
+            .then_some(count)
+    }
+
     pub(in crate::feature) fn circle(
         &self,
         token: &str,
