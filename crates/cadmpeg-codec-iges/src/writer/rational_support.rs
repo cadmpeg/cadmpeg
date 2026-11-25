@@ -2,6 +2,7 @@
 //! Analytic face supports restated as exact rational B-spline surfaces, which
 //! a trimmed surface (Type 144 over Type 128) can bound.
 
+use super::covered_uses::visit_pole_uses;
 use super::exact::nurbs_form;
 use super::{edge_span, flatten_curve, solved_curve, TopologyIndex};
 use crate::entities::curve_conversion::{elliptical_arc_nurbs, ANGULAR_TOLERANCE};
@@ -13,6 +14,7 @@ use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
 use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
@@ -62,6 +64,7 @@ pub(super) fn rational_analytic_supports(
     let mut surfaces = Vec::new();
     let mut pcurves = BTreeMap::new();
     let mut model_space = Vec::new();
+    let mut copies = Vec::new();
     for (surface, form) in forms {
         let Some(restated) = restated_support(&ends, &index, surface, &form) else {
             continue;
@@ -76,6 +79,7 @@ pub(super) fn rational_analytic_supports(
         surfaces.push((surface, restated.surface));
         pcurves.extend(restated.pcurves);
         model_space.extend(restated.model_space);
+        copies.extend(restated.copies);
     }
     if surfaces.is_empty() {
         return Ok((Cow::Borrowed(ir), Vec::new()));
@@ -90,6 +94,9 @@ pub(super) fn rational_analytic_supports(
         {
             surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs));
         }
+    }
+    for copy in &copies {
+        face_copy(&mut restated, copy);
     }
     for pcurve in &mut restated.geometry.pcurves {
         if let Some(nurbs) = pcurves.remove(pcurve.id.as_str()) {
@@ -404,6 +411,52 @@ struct Restated {
     surface: NurbsSurface,
     pcurves: BTreeMap<String, PcurveNurbs>,
     model_space: Vec<ModelSpaceFace>,
+    copies: Vec<FaceCopy>,
+}
+
+/// A copy of a parameter curve for the uses on the loops of one face, which
+/// place the curve at another period than the face that first uses it.
+struct FaceCopy {
+    source: String,
+    id: PcurveId,
+    loops: BTreeSet<String>,
+}
+
+/// Adds the copy of its source curve that `copy` names, and moves the uses of
+/// the source on its loops to the copy.
+fn face_copy(ir: &mut CadIr, copy: &FaceCopy) {
+    let Some(mut pcurve) = ir
+        .geometry
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.as_str() == copy.source)
+        .cloned()
+    else {
+        return;
+    };
+    pcurve.id = copy.id.clone();
+    ir.geometry.pcurves.push(pcurve);
+    let moved = |pcurve_use: &mut PcurveUse| {
+        if pcurve_use.pcurve.as_str() == copy.source {
+            pcurve_use.pcurve = copy.id.clone();
+        }
+    };
+    for coedge in ir
+        .geometry
+        .coedges
+        .iter_mut()
+        .filter(|coedge| copy.loops.contains(coedge.owner_loop.as_str()))
+    {
+        coedge.pcurves.iter_mut().for_each(moved);
+    }
+    for loop_ in ir
+        .geometry
+        .loops
+        .iter_mut()
+        .filter(|loop_| copy.loops.contains(loop_.id.as_str()))
+    {
+        visit_pole_uses(loop_, moved);
+    }
 }
 
 /// A face written with its model-space boundary only.
@@ -446,6 +499,21 @@ struct LoopImages {
 }
 
 impl LoopImages {
+    fn shift(&mut self, shift: Point2) {
+        for image in &mut self.images {
+            for point in [&mut image.start, &mut image.end] {
+                *point = Point2::new(point.u + shift.u, point.v + shift.v);
+            }
+        }
+    }
+
+    /// The middle of the azimuths of the loop, absent for a loop of no curve.
+    fn azimuth_centre(&self) -> Option<f64> {
+        let [low, high] = self.span().extent[0];
+        let centre = 0.5 * (low + high);
+        centre.is_finite().then_some(centre)
+    }
+
     fn span(&self) -> LoopSpan {
         let extent = |coordinate: fn(&Point2) -> f64| {
             self.images
@@ -647,7 +715,8 @@ fn restated_support(
     let mut v_extent = Extent::default();
     let mut model_space = Vec::new();
     let mut heights = Extent::default();
-    let mut seen = BTreeSet::new();
+    let mut placed = BTreeMap::<String, [Point2; 2]>::new();
+    let mut copies = Vec::new();
     let mut whole = false;
     for face in faces {
         if face.loops.stated().next().is_none() {
@@ -658,14 +727,25 @@ fn restated_support(
             continue;
         }
         match face_images(ends, index, face, circular)? {
-            Ok(loops) => {
+            Ok(mut loops) => {
+                // Each loop moves by whole turns of azimuth to the period of
+                // the first loop of the face.
+                if let Some(reference) = loops.iter().find_map(LoopImages::azimuth_centre) {
+                    for images in &mut loops {
+                        if let Some(centre) = images.azimuth_centre() {
+                            let turns = ((reference - centre) / TAU).round();
+                            images.shift(Point2::new(turns * TAU, 0.0));
+                        }
+                    }
+                }
                 let spans = loops.iter().map(LoopImages::span).collect::<Vec<_>>();
                 let (shifts, reach) = form.face_sides(face.sense, &spans).unwrap_or_else(|| {
                     (vec![Point2::new(0.0, 0.0); loops.len()], Default::default())
                 });
+                let mut own = BTreeSet::new();
                 for (loop_images, shift) in loops.into_iter().zip(shifts) {
                     for mut image in loop_images.images {
-                        if !seen.insert(image.id.clone()) {
+                        if !own.insert(image.id.clone()) {
                             continue;
                         }
                         for point in [&mut image.start, &mut image.end] {
@@ -673,7 +753,33 @@ fn restated_support(
                             u_extent.include(point.u);
                             v_extent.include(point.v);
                         }
-                        curves.push(image);
+                        let ends = [image.start, image.end];
+                        match placed.get(&image.id) {
+                            None => {
+                                placed.insert(image.id.clone(), ends);
+                                curves.push(image);
+                            }
+                            Some(first) if same_ends(*first, ends) => {}
+                            Some(_) => {
+                                let id = PcurveId::try_from(format!(
+                                    "iges:writer:pcurve#{}@{}",
+                                    image.id.replace('#', "/"),
+                                    face.id.as_str().replace('#', "/")
+                                ))
+                                .ok()?;
+                                copies.push(FaceCopy {
+                                    source: image.id.clone(),
+                                    id: id.clone(),
+                                    loops: face
+                                        .loops
+                                        .stated()
+                                        .map(|loop_| loop_.as_str().to_owned())
+                                        .collect(),
+                                });
+                                id.as_str().clone_into(&mut image.id);
+                                curves.push(image);
+                            }
+                        }
                     }
                 }
                 let [u_reach, v_reach] = reach;
@@ -850,6 +956,15 @@ fn restated_support(
         surface,
         pcurves,
         model_space,
+        copies,
+    })
+}
+
+/// Whether two parameter curve images start and end at the same points.
+fn same_ends(first: [Point2; 2], second: [Point2; 2]) -> bool {
+    first.iter().zip(&second).all(|(first, second)| {
+        (first.u - second.u).abs() <= ANGULAR_TOLERANCE
+            && (first.v - second.v).abs() <= ANGULAR_TOLERANCE
     })
 }
 
