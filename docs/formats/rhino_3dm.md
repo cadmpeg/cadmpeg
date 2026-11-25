@@ -3026,11 +3026,6 @@ converted. The parent retains the source object record. A bounded child gap is
 represented by the midpoint join repair and emits its geometry warning; a
 malformed child or parameter array does not enter the typed composite curve.
 
-The writer writes a composite curve object as one NURBS curve by the
-conversion below, with each segment over its interval. The segment intervals
-lie end to end from the start of the composite's parameter range, each as
-long as its child's parameter domain.
-
 Conversion of a polycurve to one NURBS curve first maps each segment to its
 polycurve parameter interval. Each segment is endpoint-clamped. Segments of
 lower degree are elevated to the maximum segment degree. At each join, the last
@@ -3714,10 +3709,8 @@ about the surface normal, on a face of either `reversed surface` value. A
 CADIR loop runs about the face normal. On a face with `reversed surface` 1,
 CADIR states each loop with the trims in reverse order, each coedge in the
 direction opposite to its trim, and each pcurve use over its trim domain in
-decreasing order. The writer applies the inverse map. Two trims that share an
-edge run in opposite directions along it. Where the two uses of a CADIR edge
-run in the same direction, the writer gives the second use a copy of the edge
-and charges `rhino/writer.edge-unjoined`.
+decreasing order. Two trims that share an edge run in opposite directions
+along it.
 
 Negative material channels map to zero. A vertex, edge, trim, loop, or face
 array position is authoritative and replaces a disagreeing stored positional

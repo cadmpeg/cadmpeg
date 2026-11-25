@@ -546,10 +546,9 @@ fn shared_edge_with_equal_uses_is_written_as_two_edges() {
     assert_eq!(decoded.geometry.faces.len(), 2);
     assert_eq!(decoded.geometry.edges.len(), 8);
     assert!(
-        losses
-            .iter()
-            .any(|loss| loss.contains("writer.edge-unjoined")
-                && loss.contains("cadir:model:edge#adjacent.1")),
+        losses.iter().any(|loss| loss
+            .contains(crate::loss::RhinoLossCode::WriterEdgeUnjoined.code())
+            && loss.contains("cadir:model:edge#adjacent.1")),
         "{losses:?}"
     );
     assert!(
