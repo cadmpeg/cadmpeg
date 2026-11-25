@@ -1170,6 +1170,105 @@ fn the_sealed_wrapper_gives_up_a_record_past_the_document_bound() {
     }
 }
 
+/// A decoder that states, beside the unit cube, [`Self::RECORDS`] native
+/// records past the document's depth bound, each holding the whole input as
+/// its innermost string. Their retained text passes the base retained
+/// allowance while the input stays small.
+struct LargePastTheBoundCodec;
+
+impl LargePastTheBoundCodec {
+    const RECORDS: usize = 10;
+    const INPUT_BYTES: usize = 2 << 20;
+
+    fn id(index: usize) -> String {
+        format!("test:native:large#{index}")
+    }
+}
+
+impl CodecBackend for LargePastTheBoundCodec {
+    const FORMAT: FormatId = FormatId::new("test");
+
+    fn detect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _prefix: View<'_>,
+    ) -> Result<Confidence, CodecError> {
+        Ok(Confidence::No)
+    }
+
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        panic!("the retained allowance test does not inspect")
+    }
+
+    fn decode_impl(&self, _ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
+        let mut ir = unit_cube().expect("valid unit cube fixture");
+        let text = std::str::from_utf8(root.window()).expect("ASCII input");
+        let past = crate::bounds::MAX_DOCUMENT_DEPTH - 5 + 1;
+        let records = (0..Self::RECORDS)
+            .map(|index| {
+                let field = (0..past).fold(serde_json::Value::from(text), |inner, _| {
+                    serde_json::Value::Array(vec![inner])
+                });
+                crate::NativeRecord::new(
+                    crate::ids::Identity::new(Self::id(index)).expect("valid native identity"),
+                    [("field".to_owned(), field)].into_iter().collect(),
+                )
+                .expect("valid native record")
+            })
+            .collect();
+        ir.native
+            .namespace_mut(crate::design::names::CodecId::new("test").expect("a codec id"))
+            .set_arena_records("large", records)
+            .expect("a valid arena");
+        Ok(decoded(ir))
+    }
+}
+
+/// The retained-text allowance of the wrapper's give-ups is the decode's: it
+/// grows with the input, and every record past the bound is given up and
+/// reported when their text passes the base allowance.
+#[test]
+fn the_sealed_wrapper_gives_up_records_whose_text_passes_the_base_retained_allowance() {
+    let input = vec![b'a'; LargePastTheBoundCodec::INPUT_BYTES];
+    let result = LargePastTheBoundCodec
+        .decode(&mut Cursor::new(input), &DecodeOptions::default())
+        .expect("records past the bound do not refuse the file");
+    assert!(result
+        .ir()
+        .native
+        .namespace("test")
+        .expect("the test namespace")
+        .arenas()
+        .get("large")
+        .is_none_or(|arena| arena.iter().next().is_none()));
+    let unreadable = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::unknown::part::record_unreadable_kind())
+        .collect::<Vec<_>>();
+    assert_eq!(unreadable.len(), LargePastTheBoundCodec::RECORDS);
+    for index in 0..LargePastTheBoundCodec::RECORDS {
+        let id = LargePastTheBoundCodec::id(index);
+        let naming = unreadable
+            .iter()
+            .filter(|loss| loss.message.contains(&format!("/{id}\"")))
+            .count();
+        assert_eq!(naming, 1, "one loss names {id}");
+    }
+    let retained: u64 = result
+        .source_fidelity()
+        .retained_records()
+        .values()
+        .map(crate::source_fidelity::RetainedSourceRecord::byte_len)
+        .sum();
+    assert!(retained > 16 << 20, "{retained} retained bytes");
+}
+
 /// `MAX_DOCUMENT_DEPTH` placements of the unit u axis: a pcurve that nests
 /// past the document bound wherever a record holds it.
 fn deep_pcurve() -> crate::geometry::pcurve::PcurveGeometry {
@@ -1243,12 +1342,15 @@ fn add_procedural_curve(
     });
 }
 
-/// The decode result of `ir` after the wrapper's digest walk, with its
-/// `record.unreadable` losses.
+/// The decode result of `ir` after the wrapper's digest walk in a decode
+/// under the service policy, the stock policy with the lowest recursion
+/// ceiling, with its `record.unreadable` losses.
 fn given_up(ir: CadIr) -> (DecodeResult, Vec<LossNote>) {
     let mut result = decode_result(ir);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     result
-        .record_content_digest(&DecodePolicy::desktop(), FormatId::new("test"))
+        .record_content_digest(&ctx, FormatId::new("test"))
         .expect("a record past the bound does not refuse the decode");
     let unreadable = result
         .report()
