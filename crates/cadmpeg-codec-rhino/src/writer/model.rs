@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::write::record_invalid;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},
@@ -8,13 +9,15 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::schema::EntityKind;
 use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Loop, Sense, Vertex};
 
 use super::{
-    admit_pcurve, check_frame, check_nurbs_curve, check_nurbs_surface, check_object_attributes,
-    close_point, generated_projected_brep_c2_curve, stated_write_tolerance, validate_nurbs_trim,
-    EPS_WRITE_DEGENERATE,
+    admit_pcurve, check_frame, check_nurbs_curve, check_nurbs_surface, close_point,
+    generated_projected_brep_c2_curve, singular_trim_iso, stated_write_tolerance,
+    validate_nurbs_trim, validate_singular_trim, EPS_WRITE_DEGENERATE,
 };
 
 pub(super) struct WritableModel<'a> {
@@ -25,6 +28,10 @@ pub(super) struct WritableModel<'a> {
     pub(super) loops: Vec<WritableLoop<'a>>,
     pub(super) faces: Vec<WritableFace<'a>>,
     pub(super) surfaces: Vec<WritableFaceSurface<'a>>,
+    /// The losses of the Brep write: `export:record.invalid` for each record
+    /// it writes although its geometry disagrees, and `export:value.unwritable`
+    /// for the face values a Brep face does not hold.
+    pub(super) losses: Vec<LossNote>,
 }
 
 pub(super) struct WritableVertex<'a> {
@@ -75,19 +82,36 @@ impl WritableEdgeCurve<'_> {
     }
 }
 
+/// The edge a trim runs along.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum TrimEdge {
+    /// The edge at this position of [`WritableModel::edges`].
+    Edge(usize),
+    /// A singular edge, which a 3DM Brep holds as no edge: the trim's ends
+    /// meet at the vertex at this position.
+    Singular(usize),
+}
+
 pub(super) struct WritableCoedge<'a> {
     pub(super) source: &'a Coedge,
-    pub(super) edge: usize,
+    pub(super) edge: TrimEdge,
     pub(super) owner_loop: usize,
     radial_next: usize,
     pub(super) c2: ([u8; 16], Vec<u8>),
+    /// The trim's parameter interval: its pcurve's, or its edge's where the
+    /// trim is the edge's projection.
+    pub(super) domain: [f64; 2],
     pub(super) fit_tolerance: f64,
+    /// The 3DM iso value of the trim.
+    pub(super) iso: i32,
 }
 
 pub(super) struct WritablePcurve<'a> {
     pub(super) source: &'a Pcurve,
     pub(super) payload: ([u8; 16], Vec<u8>),
     pub(super) domain_extent_points: Vec<cadmpeg_ir::math::Point2>,
+    /// The parameter interval the trim runs over.
+    pub(super) domain: [f64; 2],
 }
 
 pub(super) struct WritableLoop<'a> {
@@ -108,8 +132,15 @@ pub(super) struct WritableObjectCurve<'a> {
 }
 
 enum ObjectCurveGeometry<'a> {
-    Circle(&'a cadmpeg_ir::geometry::analytic::CircleCurve),
-    Nurbs(&'a NurbsCurve),
+    /// A circle, or its arc over an angle range of at most one turn.
+    Circle(&'a cadmpeg_ir::geometry::analytic::CircleCurve, [f64; 2]),
+    /// A bounded line: its endpoints and its parameter range.
+    Line {
+        from: Point3,
+        to: Point3,
+        domain: [f64; 2],
+    },
+    Nurbs(std::borrow::Cow<'a, NurbsCurve>),
 }
 
 impl<'a> WritableObjectCurve<'a> {
@@ -118,13 +149,79 @@ impl<'a> WritableObjectCurve<'a> {
         let geometry = match &curve.geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) => {
                 check_frame(curve.id.as_str(), *circle.frame(), "circle")?;
-                ObjectCurveGeometry::Circle(circle)
+                let range = curve
+                    .parameter_range
+                    .map_or([0.0, std::f64::consts::TAU], |range| {
+                        FiniteReal::raw_array(range.finite_endpoints())
+                    });
+                let span = range[1] - range[0];
+                if !(span > 0.0 && span <= std::f64::consts::TAU) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "circle {} has a parameter range that is not an arc of at most one turn",
+                        curve.id.as_str()
+                    )));
+                }
+                ObjectCurveGeometry::Circle(circle, range)
+            }
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) => {
+                let range = curve.parameter_range.ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "line {} states no parameter range, and 3DM holds no unbounded line",
+                        curve.id.as_str()
+                    ))
+                })?;
+                let domain = FiniteReal::raw_array(range.finite_endpoints());
+                let origin = line.origin().get();
+                let direction = *line.direction().as_raw();
+                let at = |parameter: f64| {
+                    Point3::new(
+                        origin.x + direction.x * parameter,
+                        origin.y + direction.y * parameter,
+                        origin.z + direction.z * parameter,
+                    )
+                };
+                ObjectCurveGeometry::Line {
+                    from: at(domain[0]),
+                    to: at(domain[1]),
+                    domain,
+                }
+            }
+            CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => {
+                let nurbs = polyline_nurbs(polyline).map_err(|error| {
+                    CodecError::NotImplemented(format!(
+                        "polyline {} has no degree-1 NURBS form: {error}",
+                        curve.id.as_str()
+                    ))
+                })?;
+                check_nurbs_curve(curve.id.as_str(), &nurbs)?;
+                ObjectCurveGeometry::Nurbs(std::borrow::Cow::Owned(nurbs))
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
                 check_nurbs_curve(curve.id.as_str(), nurbs)?;
-                ObjectCurveGeometry::Nurbs(nurbs)
+                ObjectCurveGeometry::Nurbs(std::borrow::Cow::Borrowed(nurbs))
             }
-            _ => {
+            CurveGeometry::Solved(solved) => {
+                let range = match (curve.parameter_range, solved) {
+                    (Some(range), _) => FiniteReal::raw_array(range.finite_endpoints()),
+                    (None, SolvedCurveGeometry::Ellipse(_)) => [0.0, std::f64::consts::TAU],
+                    (None, _) => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "curve {} states no parameter range, and 3DM holds no unbounded \
+                             curve",
+                            curve.id.as_str()
+                        )))
+                    }
+                };
+                let nurbs = super::convert::curve_nurbs(solved, range).map_err(|reason| {
+                    CodecError::NotImplemented(format!(
+                        "curve {} has no NURBS form the writer builds: {reason}",
+                        curve.id.as_str()
+                    ))
+                })?;
+                check_nurbs_curve(curve.id.as_str(), &nurbs)?;
+                ObjectCurveGeometry::Nurbs(std::borrow::Cow::Owned(nurbs))
+            }
+            CurveGeometry::Procedural { .. } => {
                 return Err(CodecError::NotImplemented(format!(
                     "Rhino writer cannot represent curve {} as a native object",
                     curve.id.as_str()
@@ -136,15 +233,24 @@ impl<'a> WritableObjectCurve<'a> {
 
     /// Encodes the admitted curve as a native class payload.
     pub(super) fn payload(&self) -> Result<([u8; 16], Vec<u8>), CodecError> {
-        Ok(match self.geometry {
-            ObjectCurveGeometry::Circle(circle) => {
+        Ok(match &self.geometry {
+            ObjectCurveGeometry::Line { from, to, domain } => (
+                super::LINE_CLASS,
+                super::bounded_line_payload(
+                    [from.x, from.y, from.z],
+                    [to.x, to.y, to.z],
+                    *domain,
+                    3,
+                )?,
+            ),
+            ObjectCurveGeometry::Circle(circle, range) => {
                 let center = circle.center().get();
                 let axis = circle.frame().axis().as_raw();
                 let ref_direction = circle.frame().reference().as_raw();
                 let radius = circle.radius().get();
                 (
                     super::ARC_CLASS,
-                    super::circle_payload(center, *axis, *ref_direction, radius)?,
+                    super::circle_payload(center, *axis, *ref_direction, radius, *range)?,
                 )
             }
             ObjectCurveGeometry::Nurbs(nurbs) => {
@@ -152,6 +258,39 @@ impl<'a> WritableObjectCurve<'a> {
             }
         })
     }
+}
+
+/// The degree-1 NURBS curve through the samples of `polyline`, at their
+/// stated parameters or, where it states none, at their indexes.
+fn polyline_nurbs(
+    polyline: &cadmpeg_ir::geometry::sampled::PolylineCurve,
+) -> Result<NurbsCurve, String> {
+    let points = polyline
+        .points()
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get)
+        .collect::<Vec<_>>();
+    if points.len() < 2 {
+        return Err("it holds one sample".into());
+    }
+    let parameters = match polyline.parameters() {
+        Some(parameters) => parameters.map(FiniteReal::get).collect::<Vec<_>>(),
+        None => (0..points.len())
+            .map(|index| {
+                cadmpeg_core::convert::f64_from_index(index)
+                    .ok_or_else(|| "a sample index exceeds the f64 range".to_owned())
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+    };
+    let (Some(first), Some(last)) = (parameters.first(), parameters.last()) else {
+        return Err("it holds no sample".into());
+    };
+    let knots = std::iter::once(*first)
+        .chain(parameters.iter().copied())
+        .chain(std::iter::once(*last))
+        .collect::<Vec<_>>();
+    let poles = cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_lanes(points, None)
+        .map_err(|error| error.to_string())?;
+    NurbsCurve::new(1, knots, poles, false).map_err(|error| error.to_string())
 }
 
 #[derive(Clone, Copy)]
@@ -258,41 +397,42 @@ impl<'a> WritableModel<'a> {
                 "body topology is not a writable Brep".into(),
             ));
         };
-        let layout = if geometry.faces.len() > 1 || body.kind == BodyKind::Solid {
-            Layout::MultiFace
-        } else {
-            Layout::SingleFace
-        };
         let edge_count = geometry.coedges.len();
-        let invalid_counts = match layout {
-            Layout::SingleFace => {
-                geometry.faces.len() != 1
-                    || geometry.loops.is_empty()
-                    || edge_count < 3
-                    || geometry.edges.len() != edge_count
-                    || geometry.vertices.len() != edge_count
-                    || geometry.points.len() != edge_count
-                    || geometry.curves.len() != edge_count
-                    || geometry.surfaces.len() != 1
-            }
-            Layout::MultiFace => {
-                geometry.faces.len() < 2
-                    || geometry.loops.len() < geometry.faces.len()
-                    || edge_count < 3 * geometry.faces.len()
-                    || geometry.edges.is_empty()
-                    || geometry.vertices.is_empty()
-                    || geometry.points.len() != geometry.vertices.len()
-                    || geometry.curves.len() != geometry.edges.len()
-                    || geometry.surfaces.len() != geometry.faces.len()
-            }
+        let singular_count = geometry
+            .edges
+            .iter()
+            .filter(|edge| super::is_singular_edge(edge))
+            .count();
+        let layout = if body.kind != BodyKind::Solid
+            && geometry.faces.len() == 1
+            && !geometry.loops.is_empty()
+            && geometry.edges.len() == edge_count
+            && geometry.vertices.len() == edge_count
+            && geometry.points.len() == edge_count
+            && geometry.curves.len() == edge_count
+            && geometry.surfaces.len() == 1
+        {
+            Layout::SingleFace
+        } else {
+            Layout::MultiFace
         };
+        let invalid_counts = layout == Layout::MultiFace
+            && (geometry.faces.is_empty()
+                || geometry.loops.len() < geometry.faces.len()
+                || geometry.edges.is_empty()
+                || geometry.vertices.is_empty()
+                || geometry.points.len() != geometry.vertices.len()
+                || geometry.curves.len() != geometry.edges.len() - singular_count
+                || geometry.surfaces.len() != geometry.faces.len());
         if geometry.bodies.len() != 1
             || geometry.regions.len() != 1
             || geometry.shells.len() != 1
             || !model.tessellations.is_empty()
             || invalid_counts
         {
-            return Err(CodecError::NotImplemented("Brep writing requires one shell with distinct explicit carriers and polygonal loops".into()));
+            return Err(CodecError::NotImplemented(
+                "Brep writing requires one shell with one carrier for each face and edge".into(),
+            ));
         }
         if geometry
             .complete_body_regions(&body.id)
@@ -309,7 +449,6 @@ impl<'a> WritableModel<'a> {
                 "Brep body placement is not writable".into(),
             ));
         }
-        check_object_attributes(body.id.as_str(), body.name.as_deref())?;
         let region = &geometry.regions[0];
         let shell = &geometry.shells[0];
         if region.body != body.id
@@ -377,13 +516,20 @@ impl<'a> WritableModel<'a> {
             }
         }
         let vertex_positions = positions(ordered_vertices.iter().map(|vertex| vertex.id.as_str()))?;
+        let (singular_edges, ordered_edges): (Vec<&Edge>, Vec<&Edge>) = ordered_edges
+            .into_iter()
+            .partition(|edge| super::is_singular_edge(edge));
+        let mut singular = BTreeMap::new();
+        for edge in singular_edges {
+            let vertex = resolve(&vertex_positions, super::edge_ends(edge)?.start.as_str())?;
+            singular.insert(edge.id.as_str(), (vertex, edge));
+        }
         let edge_positions = positions(ordered_edges.iter().map(|edge| edge.id.as_str()))?;
         let coedge_positions = positions(ordered_coedges.iter().map(|coedge| coedge.id.as_str()))?;
         let loop_positions = positions(geometry.loops.iter().map(|loop_| loop_.id.as_str()))?;
         let face_positions = positions(geometry.faces.iter().map(|face| face.id.as_str()))?;
         let surface_positions =
             positions(geometry.surfaces.iter().map(|surface| surface.id.as_str()))?;
-        let mut used_points = BTreeSet::new();
         let vertices = ordered_vertices
             .into_iter()
             .map(|vertex| {
@@ -397,18 +543,13 @@ impl<'a> WritableModel<'a> {
                             vertex.point.as_str()
                         ))
                     })?;
-                if layout == Layout::MultiFace && !used_points.insert(point.id.as_str()) {
-                    return Err(CodecError::malformed(format_args!(
-                        "vertex {} has a shared point",
-                        vertex.id.as_str()
-                    )));
-                }
                 Ok(WritableVertex {
                     source: vertex,
                     point: point.position().get(),
                 })
             })
             .collect::<Result<Vec<_>, CodecError>>()?;
+        let mut findings = Vec::new();
         let mut edges = Vec::new();
         let mut used_curves = BTreeSet::new();
         for edge in ordered_edges {
@@ -523,14 +664,18 @@ impl<'a> WritableModel<'a> {
             let ends = super::edge_ends(edge)?;
             let start = resolve(&vertex_positions, ends.start.as_str())?;
             let end = resolve(&vertex_positions, ends.end.as_str())?;
-            let tolerance = stated_write_tolerance(edge.tolerance, ir, edge.id.as_str())?;
+            let tolerance = stated_write_tolerance(edge.tolerance, ir);
             if !close_point(vertices[start].point, expected_start, tolerance)
                 || !close_point(vertices[end].point, expected_end, tolerance)
             {
-                return Err(CodecError::malformed(format_args!(
-                    "edge {} endpoints disagree with its line curve",
-                    edge.id.as_str()
-                )));
+                findings.push(record_invalid(
+                    EntityKind::Edge,
+                    format!(
+                        "edge {} endpoints disagree with its curve {}",
+                        edge.id.as_str(),
+                        curve.id.as_str()
+                    ),
+                ));
             }
             edges.push(WritableEdge {
                 source: edge,
@@ -570,12 +715,10 @@ impl<'a> WritableModel<'a> {
                 let boundary = face.loops.boundary().filter(|loops| !loops.is_empty());
                 if face.shell != shell.id
                     || boundary.is_none()
-                    || face.name.is_some()
-                    || face.color.is_some()
                     || !used_surfaces.insert(face.surface.as_str())
                 {
                     return Err(CodecError::NotImplemented(format!(
-                        "face {} has unsupported ownership, attributes, or shared surface state",
+                        "face {} has unsupported ownership or shared surface state",
                         face.id.as_str()
                     )));
                 }
@@ -610,7 +753,7 @@ impl<'a> WritableModel<'a> {
             .iter()
             .map(|loop_| {
                 let face = resolve(&face_positions, loop_.face.as_str())?;
-                if !faces[face].source.loops.contains(&loop_.id) || loop_.coedges().len() < 3 {
+                if !faces[face].source.loops.contains(&loop_.id) || loop_.coedges().is_empty() {
                     return Err(CodecError::malformed(format_args!(
                         "loop {} ownership or boundary is invalid",
                         loop_.id.as_str()
@@ -645,7 +788,14 @@ impl<'a> WritableModel<'a> {
         let coedges = ordered_coedges
             .into_iter()
             .map(|coedge| {
-                let edge = resolve(&edge_positions, coedge.edge.as_str())?;
+                let edge = match singular.get(coedge.edge.as_str()) {
+                    Some((vertex, _)) => TrimEdge::Singular(*vertex),
+                    None => TrimEdge::Edge(resolve(&edge_positions, coedge.edge.as_str())?),
+                };
+                let edge_domain = match edge {
+                    TrimEdge::Edge(position) => Some(FiniteReal::raw_array(edges[position].domain)),
+                    TrimEdge::Singular(_) => None,
+                };
                 let owner_loop = resolve(&loop_positions, coedge.owner_loop.as_str())?;
                 if !loops[owner_loop].source.coedges().contains(&coedge.id) {
                     return Err(CodecError::malformed(format_args!(
@@ -673,7 +823,7 @@ impl<'a> WritableModel<'a> {
                                     id.as_str()
                                 ))
                             })?;
-                        Some(admit_pcurve(&edges[edge], pcurve)?)
+                        Some(admit_pcurve(edge_domain, pcurve)?)
                     }
                     _ => {
                         return Err(CodecError::NotImplemented(format!(
@@ -687,20 +837,61 @@ impl<'a> WritableModel<'a> {
                     .and_then(|pcurve| pcurve.source.fit_tolerance())
                     .map_or(0.0, cadmpeg_ir::geometry::legacy_cache::FitTolerance::get);
                 let face = &faces[loops[owner_loop].face];
-                let c2 = match surfaces[face.surface] {
+                let face_tolerance = stated_write_tolerance(face.source.tolerance, ir);
+                let edge = match edge {
+                    TrimEdge::Singular(vertex) => {
+                        let pcurve = pcurve.ok_or_else(|| {
+                            CodecError::NotImplemented(format!(
+                                "coedge {} runs along singular edge {} and has no pcurve",
+                                coedge.id.as_str(),
+                                coedge.edge.as_str(),
+                            ))
+                        })?;
+                        let edge_tolerance = singular
+                            .get(coedge.edge.as_str())
+                            .and_then(|(_, edge)| edge.tolerance)
+                            .map_or(0.0, cadmpeg_ir::scalar::PositiveLength::get);
+                        if let Some(finding) = validate_singular_trim(
+                            surfaces[face.surface],
+                            face_tolerance.max(edge_tolerance),
+                            vertices[vertex].point,
+                            &pcurve,
+                        )? {
+                            findings.push(record_invalid(EntityKind::Pcurve, finding));
+                        }
+                        let iso = singular_trim_iso(surfaces[face.surface], &pcurve);
+                        return Ok(WritableCoedge {
+                            source: coedge,
+                            edge: TrimEdge::Singular(vertex),
+                            owner_loop,
+                            radial_next: resolve(&coedge_positions, coedge.radial_next.as_str())?,
+                            c2: pcurve.payload,
+                            domain: pcurve.domain,
+                            fit_tolerance,
+                            iso,
+                        });
+                    }
+                    TrimEdge::Edge(position) => position,
+                };
+                let (c2, domain) = match surfaces[face.surface] {
                     WritableFaceSurface::Plane { origin, normal, u_axis } => {
                         let generated = generated_projected_brep_c2_curve(
                             &vertices, &edges[edge], coedge.sense, origin, u_axis,
                             normal.cross(u_axis),
                         )?;
                         match pcurve {
-                            None => generated,
-                            Some(pcurve) if pcurve.payload == generated => pcurve.payload,
+                            None => (generated, FiniteReal::raw_array(edges[edge].domain)),
                             Some(pcurve) => {
-                                return Err(CodecError::malformed(format_args!(
-                                    "pcurve {} does not exactly match its directed planar C3 projection",
-                                    pcurve.source.id.as_str(),
-                                )))
+                                if pcurve.payload != generated {
+                                    findings.push(record_invalid(
+                                        EntityKind::Pcurve,
+                                        format!(
+                                            "pcurve {} does not exactly match its directed planar C3 projection",
+                                            pcurve.source.id.as_str(),
+                                        ),
+                                    ));
+                                }
+                                (pcurve.payload, pcurve.domain)
                             }
                         }
                     }
@@ -710,25 +901,29 @@ impl<'a> WritableModel<'a> {
                                 "coedge {} has no explicit pcurve", coedge.id.as_str(),
                             ))
                         })?;
-                        let face_tolerance = stated_write_tolerance(
-                            face.source.tolerance,
-                            ir,
-                            face.source.id.as_str(),
-                        )?;
-                        validate_nurbs_trim(
-                            surface, face_tolerance,
-                            &edges[edge], coedge.sense, &pcurve,
-                        )?;
-                        pcurve.payload
+                        let (from, to) = if coedge.sense == Sense::Forward {
+                            (edges[edge].start, edges[edge].end)
+                        } else {
+                            (edges[edge].end, edges[edge].start)
+                        };
+                        if let Some(finding) = validate_nurbs_trim(
+                            surface, face_tolerance, &edges[edge],
+                            [vertices[from].point, vertices[to].point], &pcurve,
+                        )? {
+                            findings.push(record_invalid(EntityKind::Pcurve, finding));
+                        }
+                        (pcurve.payload, pcurve.domain)
                     }
                 };
                 Ok(WritableCoedge {
                     source: coedge,
-                    edge,
+                    edge: TrimEdge::Edge(edge),
                     owner_loop,
                     radial_next: resolve(&coedge_positions, coedge.radial_next.as_str())?,
                     c2,
+                    domain,
                     fit_tolerance,
+                    iso: 0,
                 })
             })
             .collect::<Result<Vec<_>, CodecError>>()?;
@@ -745,6 +940,7 @@ impl<'a> WritableModel<'a> {
             loops,
             faces,
             surfaces,
+            losses: findings,
         };
         for loop_ in &result.loops {
             for (index, position) in loop_.coedges.iter().copied().enumerate() {
@@ -757,23 +953,24 @@ impl<'a> WritableModel<'a> {
                 }
             }
         }
+        let mut open_solid_edges = Vec::new();
         for (position, edge) in result.edges.iter_mut().enumerate() {
             let uses = result
                 .coedges
                 .iter()
                 .enumerate()
-                .filter(|(_, coedge)| coedge.edge == position)
+                .filter(|(_, coedge)| coedge.edge == TrimEdge::Edge(position))
                 .map(|(index, _)| index)
                 .collect::<Vec<_>>();
-            if uses.is_empty()
-                || uses.len() > 2
-                || body.kind == BodyKind::Solid && uses.len() != 2
-                || layout == Layout::SingleFace && uses.len() != 1
+            if uses.is_empty() || uses.len() > 2 || layout == Layout::SingleFace && uses.len() != 1
             {
                 return Err(CodecError::NotImplemented(format!(
                     "edge {} incidence is incompatible with the body kind",
                     edge.source.id.as_str()
                 )));
+            }
+            if body.kind == BodyKind::Solid && uses.len() == 1 {
+                open_solid_edges.push(edge.source.id.as_str().to_owned());
             }
             let start = uses[0];
             let mut current = start;
@@ -806,6 +1003,18 @@ impl<'a> WritableModel<'a> {
             }
             edge.uses = ordered;
         }
+        for id in singular.keys() {
+            let uses = result
+                .coedges
+                .iter()
+                .filter(|coedge| coedge.source.edge.as_str() == *id)
+                .count();
+            if uses != 1 {
+                return Err(CodecError::NotImplemented(format!(
+                    "singular edge {id} has {uses} uses, and a 3DM singular trim is one use"
+                )));
+            }
+        }
         if layout == Layout::MultiFace {
             let mut reached = BTreeSet::from([0_usize]);
             loop {
@@ -830,6 +1039,7 @@ impl<'a> WritableModel<'a> {
                 ));
             }
         }
+        let mut plane_findings = Vec::new();
         for loop_ in &result.loops {
             let face = &result.faces[loop_.face];
             match result.surfaces[face.surface] {
@@ -839,46 +1049,66 @@ impl<'a> WritableModel<'a> {
                     normal,
                     u_axis,
                 } => {
-                    let tolerance =
-                        stated_write_tolerance(face.source.tolerance, ir, face.source.id.as_str())?;
+                    let tolerance = stated_write_tolerance(face.source.tolerance, ir);
                     let mut boundary = Vec::new();
                     for position in &loop_.coedges {
                         let coedge = &result.coedges[*position];
-                        let edge = &result.edges[coedge.edge];
-                        if let WritableEdgeCurve::Nurbs(nurbs) = edge.curve {
-                            for point in nurbs.control_points() {
-                                let distance = (point.x - origin.x) * normal.x
-                                    + (point.y - origin.y) * normal.y
-                                    + (point.z - origin.z) * normal.z;
-                                if distance.abs() > tolerance {
-                                    return Err(CodecError::malformed(format_args!(
-                                        "edge curve {} is outside its face plane tolerance",
-                                        edge.curve_id
-                                    )));
+                        let (start, end) = result.endpoints(*position);
+                        if let TrimEdge::Edge(edge) = coedge.edge {
+                            let edge = &result.edges[edge];
+                            if let WritableEdgeCurve::Nurbs(nurbs) = edge.curve {
+                                for point in nurbs.control_points() {
+                                    let distance = (point.x - origin.x) * normal.x
+                                        + (point.y - origin.y) * normal.y
+                                        + (point.z - origin.z) * normal.z;
+                                    if distance.abs() > tolerance {
+                                        plane_findings.push(record_invalid(
+                                        EntityKind::Curve,
+                                        format!(
+                                            "edge curve {} is outside the plane tolerance of face {}",
+                                            edge.curve_id,
+                                            face.source.id.as_str()
+                                        ),
+                                    ));
+                                        break;
+                                    }
                                 }
                             }
                         }
-                        let (start, _) = result.endpoints(*position);
                         boundary.push(super::plane_uv(
                             result.vertices[start].point,
                             origin,
                             u_axis,
                             normal.cross(u_axis),
                         ));
-                        for vertex in [edge.start, edge.end] {
+                        for vertex in [start, end] {
                             let point = result.vertices[vertex].point;
                             let distance = (point.x - origin.x) * normal.x
                                 + (point.y - origin.y) * normal.y
                                 + (point.z - origin.z) * normal.z;
                             if distance.abs() > tolerance {
-                                return Err(CodecError::malformed(format_args!(
-                                    "loop {} vertex is outside its face plane tolerance",
-                                    loop_.source.id.as_str()
-                                )));
+                                plane_findings.push(record_invalid(
+                                    EntityKind::Vertex,
+                                    format!(
+                                        "vertex {} of loop {} is outside its face plane tolerance",
+                                        result.vertices[vertex].source.id.as_str(),
+                                        loop_.source.id.as_str()
+                                    ),
+                                ));
                             }
                         }
                     }
-                    if layout == Layout::MultiFace {
+                    let polygonal =
+                        loop_
+                            .coedges
+                            .iter()
+                            .all(|position| match result.coedges[*position].edge {
+                                TrimEdge::Edge(edge) => {
+                                    matches!(result.edges[edge].curve, WritableEdgeCurve::Line(_))
+                                }
+                                TrimEdge::Singular(_) => true,
+                            });
+                    if layout == Layout::MultiFace && polygonal {
                         let twice_area = boundary
                             .iter()
                             .zip(boundary.iter().cycle().skip(1))
@@ -886,21 +1116,47 @@ impl<'a> WritableModel<'a> {
                             .map(|(from, to)| from[0] * to[1] - to[0] * from[1])
                             .sum::<f64>();
                         if !twice_area.is_finite() || twice_area.abs() <= tolerance * tolerance {
-                            return Err(CodecError::malformed(format_args!(
-                                "loop {} has degenerate planar area",
-                                loop_.source.id.as_str()
-                            )));
+                            plane_findings.push(record_invalid(
+                                EntityKind::Loop,
+                                format!(
+                                    "loop {} has degenerate planar area",
+                                    loop_.source.id.as_str()
+                                ),
+                            ));
                         }
                     }
                 }
             }
         }
+        result.losses.extend(plane_findings);
+        if !open_solid_edges.is_empty() {
+            result.losses.push(record_invalid(
+                EntityKind::Body,
+                format!(
+                    "solid body {} has edges with one use and is written as an open Brep: {}",
+                    body.id.as_str(),
+                    open_solid_edges.join(", ")
+                ),
+            ));
+        }
+        result.losses.extend(cadmpeg_ir::codec::write::value_unwritable(
+            "Rhino",
+            "writes these Brep faces without their name or color, which a 3DM Brep face does not hold",
+            geometry
+                .faces
+                .iter()
+                .filter(|face| face.name.is_some() || face.color.is_some())
+                .map(|face| face.id.as_str().to_owned()),
+        ));
         Ok(result)
     }
 
     pub(super) fn endpoints(&self, coedge: usize) -> (usize, usize) {
         let coedge = &self.coedges[coedge];
-        let edge = &self.edges[coedge.edge];
+        let edge = match coedge.edge {
+            TrimEdge::Edge(edge) => &self.edges[edge],
+            TrimEdge::Singular(vertex) => return (vertex, vertex),
+        };
         if coedge.source.sense == Sense::Forward {
             (edge.start, edge.end)
         } else {

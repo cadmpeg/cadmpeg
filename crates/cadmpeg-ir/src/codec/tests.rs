@@ -10,6 +10,8 @@ use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
 
 use crate::examples::unit_cube;
 use crate::report::loss::{LossKind, LossNote, LossTaxonomy};
+use crate::report::strictness::{code_name, Strictness};
+use crate::report::Severity;
 use crate::source_fidelity::SourceFidelity;
 use crate::CadIr;
 
@@ -19,7 +21,7 @@ use super::{
 };
 use crate::ContainerSummary;
 use cadmpeg_core::decode::{
-    ContentScope, DecodeContext, DecodeDepth, DecodeMode, DecodePolicy, InspectOptions, View,
+    ContentScope, DecodeContext, DecodeDepth, DecodePolicy, InspectOptions, View,
 };
 use cadmpeg_core::CodecError;
 
@@ -428,7 +430,7 @@ fn strict_options(depth: DecodeDepth) -> DecodeOptions {
         depth,
         ..DecodeOptions::default()
     };
-    options.policy.mode = DecodeMode::Strict;
+    options.strictness.pinned = true;
     options
 }
 
@@ -475,6 +477,79 @@ fn a_container_only_strict_decode_keeps_its_losses_and_is_admitted() {
             .count(),
         1
     );
+}
+
+fn decode_with(depth: DecodeDepth, strictness: Strictness) -> Result<DecodeResult, DecodeFailure> {
+    RejectFloorCodec.decode(
+        &mut Cursor::new(vec![1u8, 2, 3, 4]),
+        &DecodeOptions {
+            depth,
+            strictness,
+            ..DecodeOptions::default()
+        },
+    )
+}
+
+fn refused_code(failure: DecodeFailure) -> LossKind {
+    match failure {
+        DecodeFailure::StrictRejected { rejection } => rejection.loss().code.clone(),
+        other => panic!("expected a strict refusal, got {other:?}"),
+    }
+}
+
+#[test]
+fn the_default_strictness_admits_a_reject_floor_loss() {
+    for depth in [DecodeDepth::Container, DecodeDepth::Full] {
+        let result = decode_with(depth, Strictness::default()).unwrap();
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == reject_floor_kind()));
+    }
+}
+
+#[test]
+fn a_severity_floor_refuses_a_full_and_a_container_only_decode() {
+    let severity = LossNote::new(reject_floor_kind(), "probe").severity;
+    for depth in [DecodeDepth::Container, DecodeDepth::Full] {
+        let strictness = Strictness {
+            floor: Some(severity),
+            ..Strictness::default()
+        };
+        assert_eq!(
+            refused_code(decode_with(depth, strictness).unwrap_err()),
+            reject_floor_kind()
+        );
+    }
+}
+
+#[test]
+fn a_severity_floor_above_every_loss_admits_the_decode() {
+    let severity = LossNote::new(reject_floor_kind(), "probe").severity;
+    assert!(severity < Severity::Blocking);
+    let strictness = Strictness {
+        floor: Some(Severity::Blocking),
+        ..Strictness::default()
+    };
+    decode_with(DecodeDepth::Full, strictness).unwrap();
+}
+
+#[test]
+fn a_refused_code_refuses_a_full_and_a_container_only_decode() {
+    for depth in [DecodeDepth::Container, DecodeDepth::Full] {
+        let strictness = Strictness::default().with_code(&code_name(&reject_floor_kind()));
+        assert_eq!(
+            refused_code(decode_with(depth, strictness).unwrap_err()),
+            reject_floor_kind()
+        );
+    }
+}
+
+#[test]
+fn a_code_the_report_does_not_hold_admits_the_decode() {
+    let strictness = Strictness::default().with_code("export:output.empty");
+    decode_with(DecodeDepth::Full, strictness).unwrap();
 }
 
 #[test]

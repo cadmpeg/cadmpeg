@@ -8,7 +8,6 @@ const EPS_TOPOLOGY_TOLERANCE: f64 = 1.0e-12;
 use std::fmt::Write;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::report::Severity;
@@ -664,7 +663,7 @@ fn strict_decode_reads_and_reports_an_undecodable_framed_object_record() {
     let bad_mesh = object_record(0x20, MESH_CLASS, &mesh_payload(3, 5, true, false));
     let point = object_record(1, POINT_CLASS, &point_payload([8.0, 9.0, 10.0]));
     let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
+    options.strictness.pinned = true;
 
     let decoded = RhinoCodec
         .decode(&mut Cursor::new(archive(&[bad_mesh, point])), &options)

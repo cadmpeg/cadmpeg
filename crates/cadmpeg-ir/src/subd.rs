@@ -174,6 +174,29 @@ impl SubdCage {
         &self.faces
     }
 
+    /// Whether every edge of the cage borders two of its faces, which makes
+    /// the body that holds the cage a solid rather than a sheet (§5.6).
+    #[must_use]
+    pub fn is_closed(&self) -> bool {
+        let mut bordered: Vec<[Option<usize>; 2]> = vec![[None, None]; self.edges.len()];
+        for (index, face) in self.faces.iter().enumerate() {
+            for edge_use in face.edge_uses() {
+                let Some(faces) = usize::try_from(edge_use.edge)
+                    .ok()
+                    .and_then(|edge| bordered.get_mut(edge))
+                else {
+                    return false;
+                };
+                match faces {
+                    [None, _] => faces[0] = Some(index),
+                    [Some(first), None] if *first != index => faces[1] = Some(index),
+                    _ => return false,
+                }
+            }
+        }
+        !bordered.is_empty() && bordered.iter().all(|faces| faces[1].is_some())
+    }
+
     /// Atomically edit edge copies while preserving cage invariants.
     /// A present user-knot extension gives every unannotated edge an inherited value.
     pub fn edit_edges(

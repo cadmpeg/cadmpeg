@@ -12,6 +12,7 @@ use cadmpeg_core::decode::{
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::index::ModelIndex;
+use cadmpeg_ir::report::strictness::{code_name, Strictness};
 use cadmpeg_ir::source_fidelity::SourceFidelity;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
@@ -52,13 +53,16 @@ pub struct MeasureInput<'ir> {
 }
 
 /// Options of a measurement pass.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct MeasureOptions {
     /// The work profile that sets the pass allowance.
     pub work: WorkProfile,
     /// The material density of every body; body rows report mass and
     /// inertia only with one.
     pub density: Option<Density>,
+    /// The entries of the completed report on which the caller refuses the
+    /// measurement (§3.5). The default refuses none.
+    pub strictness: Strictness,
 }
 
 /// A material density in kilograms per cubic metre: finite and positive.
@@ -108,6 +112,15 @@ pub enum MeasureError {
         entity: String,
         /// The occurrence.
         occurrence: String,
+    },
+    /// The caller's [`MeasureOptions::strictness`] refused an entry of the
+    /// completed report.
+    #[error("the caller's strictness refuses the measurement at {}", code_name(&report.losses()[*entry].code))]
+    StrictRejected {
+        /// The completed report.
+        report: Box<MeasureReport>,
+        /// The index of the refused entry in the report's losses.
+        entry: usize,
     },
 }
 
@@ -216,7 +229,7 @@ pub fn body_boxes(ir: &CadIr) -> Result<Vec<BodyBox>, MeasureError> {
     };
     let options = MeasureOptions {
         work: WorkProfile::Service,
-        density: None,
+        ..MeasureOptions::default()
     };
     let boxes = Measurer::new(input, options).boxes(&ctx)?;
     ctx.finish_session()?;
@@ -556,7 +569,7 @@ impl<'ir> Measurer<'ir> {
             vec![MeasureLossCode::OutputEmpty
                 .note("the document's scope holds no model class, so the pass measured no body")]
         };
-        Ok(MeasureReport {
+        let report = MeasureReport {
             occurrence: space.map(|space| space.report),
             tolerances: ReportTolerances {
                 linear: self.input.ir.tolerances.linear.get(),
@@ -569,7 +582,14 @@ impl<'ir> Measurer<'ir> {
             surfaces: surface_out,
             document,
             losses,
-        })
+        };
+        match self.options.strictness.first_refused(&report.losses, false) {
+            None => Ok(report),
+            Some(entry) => Err(MeasureError::StrictRejected {
+                report: Box::new(report),
+                entry,
+            }),
+        }
     }
 
     /// One pass allowance of the options' work profile for every face and

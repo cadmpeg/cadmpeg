@@ -35,10 +35,12 @@ mod parameter_records;
 #[cfg(test)]
 mod parameter_tests;
 mod parameters;
+mod picked;
 mod programs;
 pub(super) mod records;
 pub(super) mod resolved;
 pub(super) mod selections;
+mod sheets;
 mod states;
 mod target_states;
 mod tolerances;
@@ -120,6 +122,7 @@ pub(super) fn check_design(
 ) -> Result<(), CodecError> {
     if ir.design.is_empty() {
         linkage::check_scope(ir, findings);
+        linkage::check_identities(ir, findings);
         tolerances::check_definition_general_tolerances(ir, findings);
         if !ir.process.parameters.is_empty() {
             let records = records::DesignRecords::new(ir);
@@ -156,6 +159,8 @@ pub(super) fn check_design(
     selections::check(ctx, &index, &matchers, &held, ids.native_view(), findings)?;
     constructions::check(&index, &held, findings);
     folds::check(&index, &matchers, &held, findings);
+    picked::check(&index, &matchers, findings);
+    sheets::check(&index, findings);
     materials::check(&index, &matchers, findings);
     Ok(())
 }

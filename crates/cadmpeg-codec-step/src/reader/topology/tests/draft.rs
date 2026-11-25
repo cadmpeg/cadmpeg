@@ -1,6 +1,6 @@
 use cadmpeg_ir::geometry::CurveGeometry;
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeMode, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
@@ -333,7 +333,7 @@ fn finite_pcurve_admission_marks_unsampled_global_divergence() {
 #[test]
 fn strict_decode_accepts_a_finitely_admitted_pcurve() {
     let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
+    options.strictness.pinned = true;
     let decoded = crate::StepCodec::default()
         .decode(
             &mut Cursor::new(include_bytes!("data/tp09_unsampled_divergence.p21")),

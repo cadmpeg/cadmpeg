@@ -8,7 +8,6 @@ use crate::directory::UseFlag;
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::IgesLossCode;
@@ -486,7 +485,7 @@ fn semantic_copious_projection_uses_entity_boundary_before_generic_candidate() {
 fn strict_decode_reads_and_reports_an_unusable_required_copious_geometry_record() {
     let bytes = copious_data_file(11, b"106,2,2,0,0,0,1,0,0;", "00000000");
     let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
+    options.strictness.pinned = true;
     let decoded = IgesCodec
         .decode(&mut Cursor::new(bytes), &options)
         .expect("the not-projected code pins no strict floor");

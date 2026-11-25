@@ -3,9 +3,7 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{
-    DecodeDepth, DecodeMode, ResourceDimension, ResourceFailure, ResourceLimit,
-};
+use cadmpeg_core::decode::{DecodeDepth, ResourceDimension, ResourceFailure, ResourceLimit};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_test_support::EditableDecodeResult;
@@ -85,7 +83,7 @@ fn a_design_intent_failure_keeps_geometry_and_reports_one_error_loss() {
 #[test]
 fn strict_mode_reads_and_reports_a_contained_design_intent_failure() {
     let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
+    options.strictness.pinned = true;
     inject_failure(malformed_design);
 
     let contained = F3dCodec
@@ -523,7 +521,7 @@ fn an_unread_primary_header_is_a_loss_at_geometry_and_design_depth() {
             depth,
             ..DecodeOptions::default()
         };
-        options.policy.mode = DecodeMode::Strict;
+        options.strictness.pinned = true;
         let decoded = F3dCodec
             .decode(&mut Cursor::new(&bytes), &options)
             .expect("the unread-header code pins no strict floor");

@@ -6,7 +6,6 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::CadIr;
@@ -332,7 +331,7 @@ fn oriented_shell_without_the_derived_slot_is_read_and_reported() {
 #[test]
 fn strict_decode_reads_and_reports_an_oriented_shell_missing_its_derived_slot() {
     let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
+    options.strictness.pinned = true;
     let decoded = StepCodec::default()
         .decode(
             &mut Cursor::new(oriented_closed_shell_source(false)),
@@ -739,7 +738,7 @@ fn strict_decode_reads_and_reports_a_destroyed_solid() {
     .expect("fixture is UTF-8")
     .replace("#10=VERTEX_POINT('',#8);", "#10=VERTEX_POINT('',#4);");
     let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
+    options.strictness.pinned = true;
 
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &options)

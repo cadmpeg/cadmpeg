@@ -77,6 +77,9 @@ loss_codes! {
     BoundaryPcurveDisagrees => "topology.boundary-pcurve-disagrees",
     /// A Type 144 boundary has no winding about its support normal and keeps its source traversal.
     BoundaryWindingUnresolved => "topology.boundary-winding-unresolved",
+    /// A face its source holds with no boundary on a plane, cylinder, or cone,
+    /// whose domain is unbounded, is stated partial with no loop.
+    TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
     /// A Directory Entry pointer did not resolve to the expected target.
     PointerUnresolved => "graph.pointer-unresolved",
     /// Parameter Data has more than one structural trailing pointer-group boundary.
@@ -155,6 +158,18 @@ loss_codes! {
     WriterBodyOpacityNotRepresented => "writer.body-opacity-not-represented",
     /// A free-geometry body has no single Directory Entry for visibility.
     WriterBodyVisibilityNotRepresented => "writer.body-visibility-not-represented",
+    /// A face the writer cannot write was dropped with the records only it uses.
+    WriterFaceOmitted => "writer.face-omitted",
+    /// A body the writer cannot write was dropped with the records only it uses.
+    WriterBodyOmitted => "writer.body-omitted",
+    /// An open shell was written as unjoined trimmed surfaces for a version
+    /// that defines no open shell.
+    WriterOpenShellUnjoined => "writer.open-shell-unjoined",
+    /// An open edge with no stated range was written over one of several
+    /// ranges its vertices bound, or between its vertices' feet on its curve.
+    WriterEdgeRangeAssumed => "writer.edge-range-assumed",
+    /// A vertex tolerance was raised to its distance from an edge's curve.
+    VertexToleranceWidened => "geometry.vertex-tolerance-widened",
     /// The decoded document holds an error-severity validation finding.
     ProjectionInvalid => "projection.invalid",
 }
@@ -185,6 +200,7 @@ impl IgesLossCode {
             | Self::BoundaryPcurveOutsideSupportDomain
             | Self::BoundaryPcurveDisagrees
             | Self::BoundaryWindingUnresolved
+            | Self::TopologyFaceBoundaryUnstated
             | Self::PointerUnresolved
             | Self::ParameterBoundaryAmbiguous
             | Self::ParameterCountOverdeclared
@@ -220,15 +236,24 @@ impl IgesLossCode {
             | Self::WriterBodyColorNotRepresented
             | Self::WriterBodyOpacityNotRepresented
             | Self::WriterBodyVisibilityNotRepresented
+            | Self::WriterEdgeRangeAssumed
+            | Self::WriterOpenShellUnjoined
+            | Self::VertexToleranceWidened
             | Self::ProjectionInvalid => Severity::Warning,
+            Self::WriterFaceOmitted | Self::WriterBodyOmitted => Severity::Error,
         }
     }
 
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
-            Self::WriterSupportEdgeNotRepresented => LossTaxonomy::TopologyNotTransferred,
-            Self::OccurrenceExpansionOutputTruncated
+            Self::WriterSupportEdgeNotRepresented
+            | Self::WriterFaceOmitted
+            | Self::WriterBodyOmitted
+            | Self::WriterOpenShellUnjoined => LossTaxonomy::TopologyNotTransferred,
+            Self::WriterEdgeRangeAssumed => LossTaxonomy::TopologyGaugeSubstituted,
+            Self::VertexToleranceWidened
+            | Self::OccurrenceExpansionOutputTruncated
             | Self::OccurrenceExpansionDepthTruncated
             | Self::OccurrenceRootInferenceBlocked
             | Self::OccurrencePlacementMalformed
@@ -240,6 +265,7 @@ impl IgesLossCode {
                 LossTaxonomy::SourceTopologyInvalid
             }
             Self::BoundaryWindingUnresolved => LossTaxonomy::TopologyGaugeSubstituted,
+            Self::TopologyFaceBoundaryUnstated => LossTaxonomy::TopologyNotTransferred,
             Self::PointerUnresolved => LossTaxonomy::ReferenceGraphNotClosed,
             Self::ParameterBoundaryAmbiguous => LossTaxonomy::DecodeDiagnostic,
             Self::DisplayDataNotProjected | Self::LineWeightScaleUnavailable => {
@@ -367,6 +393,7 @@ mod tests {
                 "topology.boundary-pcurve-outside-support-domain",
                 "topology.boundary-pcurve-disagrees",
                 "topology.boundary-winding-unresolved",
+                "topology.face-boundary-unstated",
                 "graph.pointer-unresolved",
                 "parameter.boundary-ambiguous",
                 "parameter.count-overdeclared",
@@ -405,6 +432,11 @@ mod tests {
                 "writer.body-color-not-represented",
                 "writer.body-opacity-not-represented",
                 "writer.body-visibility-not-represented",
+                "writer.face-omitted",
+                "writer.body-omitted",
+                "writer.open-shell-unjoined",
+                "writer.edge-range-assumed",
+                "geometry.vertex-tolerance-widened",
                 "projection.invalid",
             ]
         );

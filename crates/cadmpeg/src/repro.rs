@@ -49,7 +49,7 @@ pub(crate) fn run(inputs: &InputCatalog, args: &ReproArgs) -> Result<()> {
     let document = crate::loader::load_artifact(
         inputs,
         Path::new(input),
-        cadmpeg_ir::codec::DecodeOptions::default(),
+        &cadmpeg_ir::codec::DecodeOptions::default(),
         None,
     )?;
     let bundle = cut(&document.ir, &finding, &CutOptions::default())?;

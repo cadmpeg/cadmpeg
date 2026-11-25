@@ -137,15 +137,15 @@ impl DecodeArgs {
 impl DecodePolicyArgs {
     /// Options for a decode at `depth`.
     fn options_at(&self, depth: cadmpeg_core::decode::DecodeDepth) -> cadmpeg_ir::DecodeOptions {
-        let limits = self.limits.limits(self.max_input_bytes);
-        let mode = if self.no_salvage {
-            cadmpeg_core::decode::DecodeMode::Strict
-        } else {
-            cadmpeg_core::decode::DecodeMode::Salvage
-        };
         cadmpeg_ir::DecodeOptions {
             depth,
-            policy: cadmpeg_core::decode::DecodePolicy { mode, limits },
+            policy: cadmpeg_core::decode::DecodePolicy {
+                limits: self.limits.limits(self.max_input_bytes),
+            },
+            strictness: cadmpeg_ir::report::strictness::Strictness {
+                pinned: self.no_salvage,
+                ..Default::default()
+            },
         }
     }
 }
@@ -213,8 +213,8 @@ enum Command {
         #[arg(long, conflicts_with = "container_only")]
         full_decode: bool,
         /// Do not write if a loss at or above `--reject-lossy-floor` was
-        /// reported. `--reject-lossy=decode` judges this decode's report,
-        /// `=export` the write's, and the bare flag both. Every scope decodes
+        /// reported. `--reject-lossy=decode` judges this decode's report or
+        /// the CADIR read's, `=export` the write's, and the bare flag both. Every scope decodes
         /// the whole source, as `--full-decode` does, so a loss in its design
         /// intent counts.
         #[arg(

@@ -12,6 +12,7 @@ use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsPoles3, NurbsSurface},
     CurveGeometry, SolvedCurveGeometry,
 };
+use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::units::{FiniteVector, UnitVector3};
 
@@ -736,7 +737,7 @@ fn mitered_local(
     Ok(rodrigues(
         scaled,
         axis,
-        normal.x.hypot(normal.y).atan2(normal.z),
+        normal.x.portable_hypot(normal.y).portable_atan2(normal.z),
     ))
 }
 
@@ -1028,8 +1029,8 @@ fn local_to_world_vector(
 }
 
 fn rodrigues(value: Vector3, axis: Vector3, angle: f64) -> Vector3 {
-    let cosine = angle.cos();
-    let sine = angle.sin();
+    let cosine = angle.portable_cos();
+    let sine = angle.portable_sin();
     value.scale(cosine)
         + axis.cross(value).scale(sine)
         + axis.scale(axis.dot(value) * (1.0 - cosine))

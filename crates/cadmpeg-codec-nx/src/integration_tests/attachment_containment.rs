@@ -3,7 +3,7 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeMode, ResourceDimension, ResourceFailure, ResourceLimit};
+use cadmpeg_core::decode::{ResourceDimension, ResourceFailure, ResourceLimit};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::report::loss::LossNote;
@@ -46,11 +46,11 @@ fn try_decode_failing_at(
     bytes: Vec<u8>,
     point: Point,
     error: fn() -> CodecError,
-    mode: DecodeMode,
+    pinned: bool,
 ) -> Result<cadmpeg_ir::codec::DecodeResult, DecodeFailure> {
     let _injected = inject(point, error);
     let mut options = DecodeOptions::default();
-    options.policy.mode = mode;
+    options.strictness.pinned = pinned;
     NxCodec.decode(&mut Cursor::new(bytes), &options)
 }
 
@@ -142,9 +142,8 @@ fn topology_prt() -> Vec<u8> {
 
 #[test]
 fn strict_decode_reads_and_reports_a_contained_attachment_failure() {
-    let decoded =
-        try_decode_failing_at(topology_prt(), Point::Entry, malformed, DecodeMode::Strict)
-            .expect("the attachment-failure code pins no strict floor");
+    let decoded = try_decode_failing_at(topology_prt(), Point::Entry, malformed, true)
+        .expect("the attachment-failure code pins no strict floor");
     assert!(decoded
         .report()
         .losses
@@ -154,13 +153,8 @@ fn strict_decode_reads_and_reports_a_contained_attachment_failure() {
 
 #[test]
 fn attachment_resource_refusal_still_refuses_the_decode() {
-    let error = try_decode_failing_at(
-        prt_with_arrangements(),
-        Point::Exit,
-        resource_limit,
-        DecodeMode::Salvage,
-    )
-    .expect_err("a resource refusal is not contained");
+    let error = try_decode_failing_at(prt_with_arrangements(), Point::Exit, resource_limit, false)
+        .expect_err("a resource refusal is not contained");
     assert!(
         matches!(error, DecodeFailure::Codec(CodecError::ResourceLimit(_))),
         "{error:?}"

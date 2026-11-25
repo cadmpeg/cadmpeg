@@ -369,3 +369,40 @@ fn annotations_on_many_model_points_resolve_without_findings() {
     .unwrap();
     assert!(findings.is_empty());
 }
+
+#[test]
+fn a_native_record_links_no_neutral_record_while_a_stub_may() {
+    let cube = unit_cube().unwrap();
+    let face = cube.geometry.faces[0].id.as_str().to_owned();
+    let native_links = |links: serde_json::Value| {
+        let mut wire = serde_json::to_value(&cube).unwrap();
+        wire["native"] = serde_json::json!({"test": {
+            "properties": [
+                {"id": "test:native:property#a", "links": links},
+                {"id": "test:native:property#b", "links": []}
+            ],
+            "unknowns": [{"id": "test:source:unknown#stub", "links": [face]}]
+        }});
+        let ir = crate::CadIr::from_json(&wire.to_string()).unwrap();
+        validate_neutral(&ir, Vec::new())
+            .expect("validate the neutral model")
+            .findings
+            .into_iter()
+            .filter(|finding| finding.check == Check::NativeLinks)
+            .collect::<Vec<_>>()
+    };
+
+    let findings = native_links(serde_json::json!(["test:native:property#b"]));
+    assert!(findings.is_empty(), "{findings:?}");
+
+    let findings = native_links(serde_json::json!([face]));
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert_eq!(
+        findings[0].entity.as_deref(),
+        Some("test:native:property#a")
+    );
+    assert!(
+        findings[0].message.contains("names a neutral record"),
+        "{findings:?}"
+    );
+}

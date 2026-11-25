@@ -6,7 +6,6 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::scalar::PositiveReal;
@@ -642,7 +641,7 @@ fn decode_reports_distinct_context_uncertainties_as_ambiguous() {
 #[test]
 fn strict_decode_reads_and_reports_a_substituted_length_uncertainty() {
     let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
+    options.strictness.pinned = true;
     let decoded = StepCodec::default()
         .decode(
             &mut Cursor::new(DISTINCT_CONTEXT_UNCERTAINTY_SOURCE.as_bytes()),
