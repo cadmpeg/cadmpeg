@@ -261,9 +261,9 @@ impl EncoderBackend for F3dCodec {
         input: EncodeInput<'_>,
         target: &ResolvedWrite<'_>,
         notes: &mut Vec<String>,
-        _losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+        losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     ) -> Result<Option<CadIr>, CodecError> {
-        writer::saved::restore(input, target, notes)
+        writer::saved::restore(input, target, notes, losses)
     }
 }
 
