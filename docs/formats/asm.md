@@ -145,7 +145,7 @@ The class lineage is `Begin-of-ASM-History-Data`; `history_stream` is the second
 11
 ```
 
-`stream_size_duplicate` is equal to `stream_size` or larger. Stored Fusion histories have two or more states, and their four references are `-1`, `0`, `1`, `-1`. The third reference, `1`, is the node index of the tail state (§3.2). `stream_size` is not always the `state_id` of the head `delta_state` (see `asm-open-items.md` HS-01).
+`stream_size_duplicate` is equal to `stream_size` or larger. `stream_size` is not always the `state_id` of the head `delta_state` (see `asm-open-items.md` HS-01).
 
 An ACIS 217/218 history partition begins directly with the first exact `delta_state` record. The record framer establishes the preceding solved-record boundary; identifier bytes inside payload strings do not select it.
 
@@ -160,13 +160,13 @@ Each history node is a linked construction state:
 04 i64 = 0               (constant)
 0c ref prev_state        (-1 on head)
 0c ref next_state        (-1 on tail)
-0c ref node_index        (0,1,2,... in stream order)
+0c ref node_index        (distinct in the chain)
 0c ref = -1
 0c ref = 0
 0b                       (false sentinel)
 ```
 
-The `delta_state` records stand in node-index order, and `prev_state` and `next_state` are node indices. The node indices alternate between the two ends of the chain: the head state has node index `0`, the tail state `1`, the next state of the head `2`, the previous state of the tail `3`, and so on until the two runs meet. Thus in a chain of two or more states the record of the tail state is the second `delta_state` record, and the last record is a state in the middle of the chain. Stored Fusion chains of three or more states have this order, also where the timeline is rolled back after an edit.
+`prev_state` and `next_state` are node indices. The head state is the state whose `prev_state` is `-1`, and the tail state is the state whose `next_state` is `-1`. A decoder follows these links from the head state to the tail state. The position of a `delta_state` record in the stream has no meaning on decode. The order in which an application writes the records is given in the specification of its format.
 
 Each `delta_state` body contains a BulletinBoard chain. A bulletin entry stores an old and new entity reference: null→entity is insertion, entity→null is deletion, and entity→entity is update.
 
